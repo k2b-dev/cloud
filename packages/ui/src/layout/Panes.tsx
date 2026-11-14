@@ -50,6 +50,12 @@ export type PanesItem = {
 export type PanesProps = {
   layout: PanesLayout;
   onLayoutChange: (layout: PanesLayout) => void;
+  /**
+   * The person chose an item: a click, focus, or work in its pane. Below `PANES_NARROW_WIDTH` this is the only report,
+   * because the narrow row of tabs never changes the stored layout; an application that names the front item in its
+   * URL or keeps it across devices listens here.
+   */
+  onActivate?: (itemId: string) => void;
   items: readonly PanesItem[];
   movable?: boolean;
   resizable?: boolean;
@@ -338,6 +344,7 @@ export default function Panes(props: PanesProps): JSX.Element {
   });
   const activate = (itemId: string) => {
     setChosen(itemId);
+    props.onActivate?.(itemId);
     if (narrow()) {
       setProjectedActive(itemId);
       return;

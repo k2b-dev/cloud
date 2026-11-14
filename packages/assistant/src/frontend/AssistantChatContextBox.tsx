@@ -212,7 +212,8 @@ export function AssistantChatContextBox(props: {
     const t = copy();
     return buildContextBoxModel(snapshot, {
       locale: locale(),
-      formatSize: formatFileViewSize,
+      // Whole kilobytes keep the place at the row's end narrow.
+      formatSize: (bytes) => formatFileViewSize(bytes < 1024 * 1024 ? Math.round(bytes / 1024) * 1024 : bytes, locale()),
       project: props.project?.name ?? null,
       copy: {
         results: t.results,
@@ -227,6 +228,7 @@ export function AssistantChatContextBox(props: {
   return (
     <aside
       class="assistant-context-box"
+      data-k2b-primary="ai"
       data-variant={props.variant}
       aria-labelledby={props.headingId}
       aria-label={props.headingId ? undefined : copy().title}
@@ -321,7 +323,7 @@ export function AssistantChatContextBox(props: {
                       title={`${copy().boxContext}: ${summary()}`}
                       onClick={() => props.actions.onOpenContext()}
                     >
-                      <i class="assistant-context-box__icon ti ti-adjustments-horizontal" aria-hidden="true" />
+                      <i class="assistant-context-box__icon ti ti-adjustments" aria-hidden="true" />
                       <span class="assistant-context-box__title k2b-truncate-fade">
                         <span class="assistant-context-box__key">{copy().boxContext}</span>
                         {summary()}
@@ -425,6 +427,7 @@ export function AssistantChatContextPlaces(props: {
       <Button
         ref={host.buttonRef}
         class="assistant-context-button"
+        data-k2b-primary="ai"
         size="sm"
         variant="ghost"
         aria-label={copy().title}

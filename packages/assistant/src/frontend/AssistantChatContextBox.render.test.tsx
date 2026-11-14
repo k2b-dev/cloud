@@ -84,7 +84,7 @@ describe('Box "In this chat", server render', () => {
     // No descriptions and no button rows: a row is a sign, a title, and one word or number at its end.
     expect(html).not.toMatch(/>Der fertige Bericht/);
     expect(html).not.toContain("Link kopieren");
-    expect(html).toContain(">1.3 MB<");
+    expect(html).toContain(">1,3 MB<");
     expect(html).toContain("1 Webseite, 1 Suche");
     expect(html).toContain("1 Skill, 1 Erinnerung");
     // Three results: no "Show all".
@@ -125,7 +125,7 @@ describe('Box "In this chat", server render', () => {
     expect(loading).toContain('role="status"');
     expect(loading.match(/k2b-skeleton/g)?.length).toBe(3);
     const failed = renderBox(null, { error: new Error("offline") });
-    expect(failed).toContain("Der Kasten konnte nicht geladen werden.");
+    expect(failed).toContain("„In diesem Chat“ konnte nicht geladen werden.");
     expect(failed).toContain("Der Chat selbst ist davon nicht betroffen.");
     expect(failed).toContain(">Erneut versuchen<");
   });

@@ -107,7 +107,7 @@ export const chatSidebarMessages = i18n.define({
       yesterday: "Yesterday",
 
       boxEmpty: "Results, sources, and automations of this chat appear here.",
-      boxFailed: "The box could not be loaded.",
+      boxFailed: "“In this chat” could not be loaded.",
       boxFailedDetail: "The chat itself is not affected.",
       boxNone: "None yet",
       boxShowAll: "Show all",
@@ -244,7 +244,7 @@ export const chatSidebarMessages = i18n.define({
       yesterday: "Gestern",
 
       boxEmpty: "Ergebnisse, Quellen und Automationen dieses Chats erscheinen hier.",
-      boxFailed: "Der Kasten konnte nicht geladen werden.",
+      boxFailed: "„In diesem Chat“ konnte nicht geladen werden.",
       boxFailedDetail: "Der Chat selbst ist davon nicht betroffen.",
       boxNone: "Noch keine",
       boxShowAll: "Alle anzeigen",

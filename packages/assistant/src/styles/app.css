@@ -108,6 +108,13 @@
   .k2b-ui .assistant-context-boxcol > .assistant-context-box { pointer-events: auto; }
 }
 
+/* The third grey for meta text (F8); the shared token arrives with @k2b/ui, until then its values. */
+.k2b-ui { --assistant-context-meta: var(--k2b-text-subtle, #71717a); }
+:is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark .k2b-ui, .dark.k2b-ui) { --assistant-context-meta: var(--k2b-text-subtle, #8d8d98); }
+.k2b-ui .k2b-button.assistant-context-button { color: var(--k2b-ai-accent); font-size: var(--k2b-type-13, 0.8125rem); font-weight: 600; }
+.k2b-ui .k2b-button.assistant-context-button[aria-expanded="true"] { background: var(--k2b-surface); }
+.k2b-ui .assistant-context-box__head .k2b-button i,
+.k2b-ui .assistant-context-box__act .k2b-button i { font-size: 0.9375rem; }
 .k2b-ui .assistant-context-box {
   display: grid;
   min-width: 0;
@@ -122,7 +129,8 @@
   box-shadow: var(--k2b-island-shadow);
 }
 .k2b-ui .assistant-context-popover .assistant-context-box { padding: 0.375rem 0.375rem 0.5rem; }
-.k2b-ui .assistant-context-box[data-variant="sheet"] { padding: 0 0 0.5rem; }
+/* In the sheet, the text edge sits 16 px from the screen's edge, like the concept's. */
+.k2b-ui .assistant-context-box[data-variant="sheet"] { padding: 0 0 0.5rem; margin-inline: -0.5rem; }
 .k2b-ui .assistant-context-box__head {
   display: grid;
   height: 2rem;
@@ -169,7 +177,7 @@
   gap: 0.375rem;
   margin: 0.25rem 0 0;
   padding: 0 0.5rem;
-  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  color: var(--assistant-context-meta);
   font-size: var(--k2b-type-12, 0.75rem);
   font-weight: 400;
 }
@@ -198,7 +206,7 @@
   align-items: center;
   margin: 0;
   padding: 0 0.5rem;
-  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  color: var(--assistant-context-meta);
   font-size: var(--k2b-type-12, 0.75rem);
 }
 .k2b-ui .assistant-context-box__empty { height: auto; padding: 0.25rem 0.5rem 0.375rem; line-height: 1.45; }
@@ -232,7 +240,7 @@
   height: 1.125rem;
   place-items: center;
   border-radius: 0.3125rem;
-  background: color-mix(in srgb, var(--assistant-context-box-accent, var(--k2b-text-secondary)) 12%, var(--k2b-surface));
+  background: color-mix(in srgb, var(--assistant-context-box-accent, var(--k2b-text-secondary)) 5%, var(--k2b-surface));
   color: var(--assistant-context-box-accent, var(--k2b-text-secondary));
   font-size: 0.75rem;
 }
@@ -240,10 +248,10 @@
   box-shadow: 0 0 0 2px var(--k2b-ai-surface), 0 0 0 3px var(--k2b-ai-accent);
 }
 .k2b-ui .assistant-context-box__title { min-width: 0; overflow: hidden; white-space: nowrap; }
-.k2b-ui .assistant-context-box__key { margin-inline-end: 0.375rem; color: var(--k2b-text-subtle, var(--k2b-text-muted)); }
+.k2b-ui .assistant-context-box__key { margin-inline-end: 0.375rem; color: var(--assistant-context-meta); }
 .k2b-ui .assistant-context-box__trailing {
   min-width: 1.75rem;
-  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  color: var(--assistant-context-meta);
   font-size: var(--k2b-type-12, 0.75rem);
   font-variant-numeric: tabular-nums;
   text-align: end;
@@ -275,7 +283,7 @@
 .k2b-ui .assistant-context-box__skeleton:nth-child(3) { width: 54%; }
 .k2b-ui .assistant-context-box__failed { display: grid; gap: 0.25rem; justify-items: start; padding: 0.375rem 0.5rem 0.5rem; }
 .k2b-ui .assistant-context-box__failed p { margin: 0; }
-.k2b-ui .assistant-context-box__meta { display: block; color: var(--k2b-text-subtle, var(--k2b-text-muted)); font-size: var(--k2b-type-12, 0.75rem); }
+.k2b-ui .assistant-context-box__meta { display: block; color: var(--assistant-context-meta); font-size: var(--k2b-type-12, 0.75rem); }
 .k2b-ui .assistant-context-box__retry {
   padding: 0;
   border: 0;
