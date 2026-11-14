@@ -184,6 +184,9 @@ for (const width of [1440, 390])
       // The sentence gives way first: the step count and what did not go through are never cut.
       const whole = await page.locator(`${line} .ai-turn-work__steps`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5);
       expect(whole).toBe(true);
+      // On a phone the plain step count gives way to the sentence; what did not go through stays.
+      const visible = (await page.locator(`${line} .ai-turn-work__steps`).innerText()).replace(/\s+/g, " ").trim();
+      expect(visible).toBe(width < 768 ? "· 1 ohne Zugriff" : "· 5 Schritte, 1 ohne Zugriff");
       // ✦ in the AI colour, then one 20 px tile per app that went through, in the app's colour on its tint.
       const spark = await page.locator(`${line} .ai-turn-work__lead > i`).evaluate((node) => getComputedStyle(node).color);
       const plum = await page.evaluate(() => {

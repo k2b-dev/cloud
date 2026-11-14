@@ -98,22 +98,27 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
 };
 
 /**
- * The step line after the sentence: how many steps, and how many of them did not go through. Thinking counts as a
- * step, like in the opened list.
+ * The step line after the sentence: how many steps, and what did not go through. Thinking counts as a step, like in the
+ * opened list. `issues` stays visible where the count gives way to the sentence.
  */
-export const workStepLine = (blocks: AiTurnBlock[], steps: number, locale: string): string => {
+export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: string): { count: string; issues: string[] } => {
   const t = aiChatMessages(locale);
   const thoughts = blocks.filter((block) => block.kind === "thinking" && block.text.trim()).length;
   const calls = tools(blocks);
   const denied = calls.filter(isAccessDenied).length;
   const failed = calls.filter(isFailedTool).length - denied;
   const rejected = calls.filter((tool) => tool.status === "rejected").length;
-  return [
-    t.steps({ count: steps + thoughts }),
-    denied ? t.workNoAccess({ count: denied }) : "",
-    failed ? t.workFailed({ count: failed }) : "",
-    rejected ? t.workRejected({ count: rejected }) : "",
-  ]
-    .filter(Boolean)
-    .join(", ");
+  return {
+    count: t.steps({ count: steps + thoughts }),
+    issues: [
+      denied ? t.workNoAccess({ count: denied }) : "",
+      failed ? t.workFailed({ count: failed }) : "",
+      rejected ? t.workRejected({ count: rejected }) : "",
+    ].filter(Boolean),
+  };
+};
+
+export const workStepLine = (blocks: AiTurnBlock[], steps: number, locale: string): string => {
+  const parts = workStepParts(blocks, steps, locale);
+  return [parts.count, ...parts.issues].join(", ");
 };

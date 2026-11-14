@@ -97,6 +97,17 @@
   white-space: pre;
 }
 
+/* On a narrow chat the sentence needs the room: the plain step count gives way, what did not go through stays. */
+@container k2b-chat (max-width: 39.999rem) {
+  .k2b-ui .ai-turn-work__count {
+    display: none;
+  }
+
+  .k2b-ui .ai-turn-work__steps:not([data-issues]) {
+    display: none;
+  }
+}
+
 /* A step that goes on reads that way: "Thinking …". */
 .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence::after {
   content: " …";

@@ -37,7 +37,7 @@ import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
 import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 import { AiThoughtStep, AiWorkFollowedContext, AiWorkStep, keepsStepDetail } from "./work-steps";
-import { AI_WORK_APP_TILES, workApps, workStepLine, workSummary } from "./work-summary";
+import { AI_WORK_APP_TILES, workApps, workStepLine, workStepParts, workSummary } from "./work-summary";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type Messages = ReturnType<typeof aiChatMessages>;
@@ -201,10 +201,11 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     return short ? t().workedFor({ duration: short }) : t().worked;
   };
   /** After a finished turn's sentence: its steps, what did not go through, and how it ended. */
-  const stepLine = () => {
-    if (isLive(segment().phase) || (!layout().steps && !summary())) return "";
+  const stepParts = () => {
+    if (isLive(segment().phase) || (!layout().steps && !summary())) return null;
+    const parts = workStepParts(layout().work, layout().steps, locale());
     const ended = summary() && ending() ? (ending() === "stopped" ? t().workEndedStopped : t().workEndedInterrupted) : "";
-    return [workStepLine(layout().work, layout().steps, locale()), ended].filter(Boolean).join(", ");
+    return { count: parts.count, issues: [...parts.issues, ended].filter(Boolean).join(", ") };
   };
   const ariaLabel = () => {
     if (isLive(segment().phase)) return undefined;
@@ -240,8 +241,17 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
       label={
         <span class="ai-turn-work__text">
           <span class="ai-turn-work__sentence k2b-truncate-fade">{sentence()}</span>
-          <Show when={stepLine()}>
-            <span class="ai-turn-work__steps"> · {stepLine()}</span>
+          <Show when={stepParts()}>
+            {(parts) => (
+              <span class="ai-turn-work__steps" data-issues={parts().issues ? "" : undefined}>
+                {" · "}
+                <span class="ai-turn-work__count">{parts().count}</span>
+                <Show when={parts().issues}>
+                  <span class="ai-turn-work__count">, </span>
+                  <span>{parts().issues}</span>
+                </Show>
+              </span>
+            )}
           </Show>
         </span>
       }
