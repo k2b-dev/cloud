@@ -191,7 +191,7 @@ function MemoryLearningActivity(props: { close: () => void }) {
               if (col.id === "conversation") {
                 return row.conversationId ? (
                   <a
-                    class="font-medium text-primary hover:text-blue-600 hover:underline dark:hover:text-blue-400"
+                    class="font-medium text-primary hover:text-[var(--k2b-action)] hover:underline"
                     href={assistantConversationHref(globalThis.location?.href ?? "/app/assistant", row.conversationId)}
                   >
                     {row.conversationTitle}

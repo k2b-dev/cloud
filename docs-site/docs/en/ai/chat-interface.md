@@ -106,6 +106,12 @@ export function ItemChat(props: {
 Keep the `k2b-ui` scope on the nearest stable application root and import
 `@k2b/ui/styles.css` once in the application stylesheet.
 
+Each entry of `AiPeopleModels["options"]` carries `contextWindow` when the
+model catalog knows it. Pass it as `contextUsage.contextWindow` to
+`Chat.Composer`, so the usage ring shows how full the chat's context is and
+turns to the warning colour at 85 %. Without it the ring follows only the other
+sections, such as a budget.
+
 The controller exposes:
 
 - conversations and active conversation state;
