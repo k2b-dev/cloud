@@ -1556,7 +1556,8 @@ function createMailboxController(props: MailboxControllerProps) {
         .catch((error: unknown) => {
           // A navigation that replaced the list cancels this reload; that is not a failure.
           if (error instanceof Error && error.name === "AbortError") return;
-          reportRefreshFailure(error instanceof Error ? error : new Error(String(error)), t().refreshMailboxFailed);
+          // A short title and the explanation as the message, the same notice its Retry shows when it fails again.
+          reportRefreshFailure(new Error(t().refreshMailboxFailed), t().mailboxNotRefreshed);
         })
         .finally(() => setRowRefreshes((count) => count - 1));
     }
@@ -2124,7 +2125,7 @@ function createMailboxController(props: MailboxControllerProps) {
     onSuccess: (result, context) => {
       if (!result) return;
       toast.success(context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved);
-      if (result.refreshError) reportRefreshFailure(result.refreshError, t().refreshMailboxFailed);
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().mailboxNotRefreshed);
     },
     onError: (error, context) =>
       prompts.error(error.message, {

@@ -114,8 +114,29 @@ describe("SSR dev reload client", () => {
       document.dispatchEvent(new Event("visibilitychange"));
     };
 
+    const removeListeners: (() => void)[] = [];
+    const windowAdd = window.addEventListener.bind(window);
+    const documentAdd = document.addEventListener.bind(document);
+    const windowListeners = spyOn(window, "addEventListener").mockImplementation((...args: Parameters<typeof window.addEventListener>) => {
+      const [type, listener, options] = args;
+      windowAdd(type, listener, options);
+      removeListeners.push(() => window.removeEventListener(type, listener, options));
+    });
+    const documentListeners = spyOn(document, "addEventListener").mockImplementation(
+      (...args: Parameters<typeof document.addEventListener>) => {
+        const [type, listener, options] = args;
+        documentAdd(type, listener, options);
+        removeListeners.push(() => document.removeEventListener(type, listener, options));
+      },
+    );
+
     try {
-      Function(clientCode)();
+      try {
+        Function(clientCode)();
+      } finally {
+        windowListeners.mockRestore();
+        documentListeners.mockRestore();
+      }
       expect(FakeEventSource.instances).toHaveLength(0);
       expect(reload).not.toHaveBeenCalled();
       expect(localStorage.getItem("_ssr:/docs/_ssr:reload-id")).toBe("server-a");
@@ -193,6 +214,12 @@ describe("SSR dev reload client", () => {
       expect(lockManager.maxActive).toBe(1);
       expect(lockManager.requests).toBe(5);
     } finally {
+      // Suspending alone is insufficient: another test can dispatch pageshow.
+      window.dispatchEvent(new Event("pagehide"));
+      for (const remove of removeListeners) remove();
+      windowListeners.mockRestore();
+      documentListeners.mockRestore();
+      await flushPromises();
       jest.clearAllTimers();
       jest.useRealTimers();
       globalThis.fetch = originalFetch;
@@ -211,6 +238,27 @@ describe("SSR dev reload client", () => {
       localStorage.clear();
       document.head.innerHTML = "";
       document.body.innerHTML = "";
+    }
+
+    // Reproduce the next file's lifecycle event while its navigation fetch is mocked.
+    jest.useFakeTimers();
+    FakeEventSource.instances = [];
+    const navigationFetch = spyOn(globalThis, "fetch").mockResolvedValue(new Response("navigation page"));
+    Object.defineProperty(globalThis, "EventSource", { configurable: true, writable: true, value: FakeEventSource });
+    try {
+      window.dispatchEvent(new Event("pageshow"));
+      await flushPromises();
+      for (const source of FakeEventSource.instances) source.emitError();
+      jest.advanceTimersByTime(300);
+      await flushPromises();
+      expect(navigationFetch).not.toHaveBeenCalled();
+      expect(FakeEventSource.instances).toHaveLength(0);
+    } finally {
+      window.dispatchEvent(new Event("pagehide"));
+      jest.clearAllTimers();
+      jest.useRealTimers();
+      navigationFetch.mockRestore();
+      Object.defineProperty(globalThis, "EventSource", { configurable: true, writable: true, value: originalEventSource });
     }
   });
 
