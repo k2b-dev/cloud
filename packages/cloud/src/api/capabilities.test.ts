@@ -180,13 +180,22 @@ const credentialAuthenticate: NonNullable<CapabilityRouteDependencies["authentic
   return c.json({ message: "Authentication required" }, 401);
 };
 
+const getViewApp: NonNullable<CapabilityRouteDependencies["getApp"]> = async (id) => ({
+  id,
+  name: id,
+  description: id,
+  icon: "ti ti-apps",
+  baseUrl: `http://${id}:3000`,
+  routes: [`/app/${id}`],
+});
+
 const createCapabilityRoutes = (dependencies: CapabilityRouteDependencies = {}) =>
-  buildCapabilityRoutes({ withActiveSigner, signInvocation: signInvocationToken, ...dependencies });
+  buildCapabilityRoutes({ withActiveSigner, signInvocation: signInvocationToken, getApp: getViewApp, ...dependencies });
 const dispatchCapability = (params: Parameters<typeof performDispatch>[0]) =>
   performDispatch({
     authority: resourceAuthority,
     ...params,
-    dependencies: { withActiveSigner, signInvocation: signInvocationToken, ...params.dependencies },
+    dependencies: { withActiveSigner, signInvocation: signInvocationToken, getApp: getViewApp, ...params.dependencies },
   });
 
 describe("capability API", () => {
@@ -990,6 +999,71 @@ describe("capability API", () => {
     expect(await response.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
   });
 
+  test("result views are bound and checked against the responding app before returning the raw envelope", async () => {
+    const cases = [
+      { valid: true, blocks: [{ kind: "Text", text: "Read item" }] },
+      { valid: true, blocks: [{ kind: "Table", title: "Item", rows: [{ id: "one" }], columns: [{ path: ["id"], label: "ID" }] }] },
+      { valid: true, blocks: [{ kind: "Image", src: "/api/demo/images/one", alt: "Item" }] },
+      { valid: false, blocks: [{ kind: "Image", src: "/api/other/images/one", alt: "Item" }] },
+      { valid: false, blocks: [{ kind: "Link", label: "Open", href: "javascript:alert(1)" }] },
+      {
+        valid: false,
+        blocks: [{ kind: "Form", title: "Save", action: "/save", fields: [{ name: "x", label: "X", type: "text" }], submit: "Save" }],
+      },
+      {
+        valid: false,
+        blocks: [{ kind: "Table", title: "Missing", rows: { from: ["missing"] }, columns: [{ path: ["id"], label: "ID" }] }],
+      },
+      {
+        valid: false,
+        blocks: [
+          {
+            kind: "Choice",
+            id: "pick",
+            title: "Pick",
+            mode: "one",
+            options: [{ id: "one", title: "One" }],
+            option: { id: ["id"], title: ["title"] },
+            submit: "Go",
+            then: { query: "demo.query.missing", field: "id", input: {} },
+          },
+        ],
+      },
+      {
+        valid: true,
+        blocks: [
+          {
+            kind: "Choice",
+            id: "pick",
+            title: "Pick",
+            mode: "one",
+            options: [{ id: "one", title: "One" }],
+            option: { id: ["id"], title: ["title"] },
+            submit: "Go",
+            then: { query: "demo.query.get", field: "id", input: {} },
+          },
+        ],
+      },
+    ];
+    for (const fixture of cases) {
+      const body = { data: { id: "one" }, view: { version: 1, blocks: fixture.blocks } };
+      const routes = createCapabilityRoutes({
+        getCapability: async () => entry(),
+        getApp: async () => ({ ...summary(entry()), routes: ["/api/demo", "/app/demo"] }),
+        authenticate,
+        fetch: async () => Response.json(body),
+      });
+      const response = await routes.request("/capabilities/v1/queries/demo/get", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: { id: "one" } }),
+      });
+      expect(response.status).toBe(fixture.valid ? 200 : 502);
+      if (fixture.valid) expect(await response.json()).toEqual(body);
+      else expect(await response.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+    }
+  });
+
   test("preserves structured throttling errors from the owning app", async () => {
     const routes = createCapabilityRoutes({
       getCapability: async () => entry(),
@@ -1532,7 +1606,7 @@ describe("policy review and receipt validation", () => {
     [
       { text: "Queued", preview: { kind: "page", title: "Page", body: "Text", format: "plain", truncated: true } },
       [{ rel: "open", href: "/app/demo" }],
-      true,
+      false,
     ],
     [
       {
@@ -1553,7 +1627,7 @@ describe("policy review and receipt validation", () => {
     [
       { text: "Queued", preview: { kind: "message", to: [{ name: "Lea" }], subject: "Hi", body: "Text", format: "plain" } },
       undefined,
-      true,
+      false,
     ],
   ] as const)
     test(`Core receipt ${JSON.stringify(receipt)} ${!!links}`, async () => {

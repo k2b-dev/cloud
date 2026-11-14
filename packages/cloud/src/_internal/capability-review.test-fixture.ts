@@ -20,14 +20,29 @@ export const reviewFixture = (): CapabilityActionCallReview => ({
     subject: { kind: "object", title: "Meeting.pdf" },
     to: { kind: "person", people: [{ name: "Lea", address: "lea@example.com" }] },
   },
-  preview: {
-    kind: "message",
-    from: { name: "Ops", address: "ops@example.com" },
-    to: [{ name: "Lea", address: "lea@example.com" }],
-    subject: "Meeting",
-    body: "Hello\nLea\t!",
-    format: "plain",
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: "From", value: "Ops <ops@example.com>" },
+          { label: "To", value: "Lea <lea@example.com>" },
+          { label: "Subject", value: "Meeting" },
+          { label: "Body", value: "Hello\nLea\t!" },
+        ],
+      },
+    ],
   },
+});
+const legacyPreviewFixture = () => ({
+  kind: "message",
+  from: { name: "Ops", address: "ops@example.com" },
+  to: [{ name: "Lea", address: "lea@example.com" }],
+  subject: "Meeting",
+  body: "Hello\nLea\t!",
+  format: "plain",
 });
 export const compileReviewFixture = (policy: CapabilityActionPolicy | null = { ask: "sends" }) =>
   compileCapabilities("demo", {
@@ -140,7 +155,7 @@ export const reviewCases = (): Array<{ name: string; review: object; valid: bool
       [100_000, 100_001].map((count) =>
         change(
           `more.${field} ${count}`,
-          { preview: { ...base.preview, more: { [field]: count } }, links: [{ rel: "open", href: "/app/demo" }] },
+          { preview: { ...legacyPreviewFixture(), more: { [field]: count } }, links: [{ rel: "open", href: "/app/demo" }] },
           count === 100_000,
         ),
       ),
@@ -148,7 +163,7 @@ export const reviewCases = (): Array<{ name: string; review: object; valid: bool
     ...[100_000, 100_001].map((count) =>
       change(
         `moreAttachments ${count}`,
-        { preview: { ...base.preview, moreAttachments: count }, links: [{ rel: "open", href: "/app/demo" }] },
+        { preview: { ...legacyPreviewFixture(), moreAttachments: count }, links: [{ rel: "open", href: "/app/demo" }] },
         count === 100_000,
       ),
     ),
@@ -267,15 +282,14 @@ export const reviewCases = (): Array<{ name: string; review: object; valid: bool
     }),
     change("fields bound", { preview: { kind: "fields", rows: [] } }),
     change("rule when", { preview: { kind: "rule", when: { text: "{missing}" }, does: "Work", may: [], seesChat: false } }),
-  ];
+  ].map((entry) => ({ ...entry, valid: "preview" in entry.review ? false : entry.valid }));
 };
 
-const byteBoundaryReview = (over: boolean): CapabilityActionCallReview => {
-  const review = reviewFixture();
-  const changes = [2000, 2000, 2000, 0].map((count) => ({ change: "added" as const, text: "é".repeat(count) }));
-  review.preview = { kind: "page", title: "Page", body: "é".repeat(10_000), format: "plain", changes };
-  const bytes = new TextEncoder().encode(JSON.stringify(review)).byteLength;
-  changes[3]!.text = "x".repeat(CAPABILITY_MAX_REVIEW_BYTES - bytes + (over ? 1 : -1));
+export const byteBoundaryReview = (over: boolean): CapabilityActionCallReview => {
+  const review = { ...reviewFixture(), check: { query: "check", input: { id: "" } } };
+  const { view: _view, ...metadata } = review;
+  const bytes = new TextEncoder().encode(JSON.stringify(metadata)).byteLength;
+  review.check.input.id = "x".repeat(CAPABILITY_MAX_REVIEW_BYTES - bytes + (over ? 1 : -1));
   return review;
 };
 
@@ -451,85 +465,86 @@ export const outcomeCheckCases = () => [
       },
       ...(open ? { links: [{ rel: "open", href: "/app/demo" }] } : {}),
     },
-    valid: open,
+    valid: false,
   })),
 ];
 
-export const receiptCases = () => [
-  {
-    name: "sends receipt without from",
-    receipt: {
-      text: "Sent",
-      preview: { kind: "message", to: [{ name: "Lea" }], subject: "Hi", body: "Hello", format: "plain" },
-    },
-    links: undefined,
-    valid: true,
-  },
-  {
-    name: "valid own slots",
-    receipt: { text: "Saved {file}", slots: { file: { kind: "object", title: "Saved.pdf" } } },
-    links: undefined,
-    valid: true,
-  },
-  { name: "unknown own slot", receipt: { text: "Saved {missing}" }, links: undefined, valid: false },
-  {
-    name: "unused own slot",
-    receipt: { text: "Saved", slots: { file: { kind: "object", title: "Saved.pdf" } } },
-    links: undefined,
-    valid: false,
-  },
-  ...[200, 201].map((n) => ({ name: `receipt template ${n}`, receipt: { text: "x".repeat(n) }, links: undefined, valid: n === 200 })),
-  ...[6, 7].map((n) => {
-    const slots = Object.fromEntries(Array.from({ length: n }, (_, i) => [`s${i}`, { kind: "text", value: "X" }]));
-    return {
-      name: `receipt slots ${n}`,
-      receipt: {
-        text: Object.keys(slots)
-          .map((key) => `{${key}}`)
-          .join(" "),
-        slots,
-      },
-      links: undefined,
-      valid: n === 6,
-    };
-  }),
-  ...[3, 4].map((n) => {
-    const slots = Object.fromEntries(Array.from({ length: n }, (_, i) => [`s${i}`, { kind: "object", title: "X" }]));
-    return {
-      name: `receipt chips ${n}`,
-      receipt: {
-        text: Object.keys(slots)
-          .map((key) => `{${key}}`)
-          .join(" "),
-        slots,
-      },
-      links: undefined,
-      valid: n === 3,
-    };
-  }),
-  ...previewBoundaryCases().map(({ name, preview, valid }) => ({
-    name,
-    receipt: { text: "Saved", preview },
-    links: [{ rel: "open", href: "/app/demo" }],
-    valid,
-  })),
-  ...["to", "cc", "bcc", "moreAttachments", "truncated"].flatMap((field) =>
-    [false, true].map((open) => ({
-      name: `receipt completeness ${field} ${open}`,
+export const receiptCases = () =>
+  [
+    {
+      name: "sends receipt without from",
       receipt: {
         text: "Sent",
-        preview: {
-          ...reviewFixture().preview,
-          from: undefined,
-          ...(field === "truncated"
-            ? { truncated: true }
-            : field === "moreAttachments"
-              ? { moreAttachments: 1 }
-              : { more: { [field]: 1 } }),
-        },
+        preview: { kind: "message", to: [{ name: "Lea" }], subject: "Hi", body: "Hello", format: "plain" },
       },
-      links: open ? [{ rel: "open", href: "/app/demo" }] : undefined,
-      valid: open,
+      links: undefined,
+      valid: true,
+    },
+    {
+      name: "valid own slots",
+      receipt: { text: "Saved {file}", slots: { file: { kind: "object", title: "Saved.pdf" } } },
+      links: undefined,
+      valid: true,
+    },
+    { name: "unknown own slot", receipt: { text: "Saved {missing}" }, links: undefined, valid: false },
+    {
+      name: "unused own slot",
+      receipt: { text: "Saved", slots: { file: { kind: "object", title: "Saved.pdf" } } },
+      links: undefined,
+      valid: false,
+    },
+    ...[200, 201].map((n) => ({ name: `receipt template ${n}`, receipt: { text: "x".repeat(n) }, links: undefined, valid: n === 200 })),
+    ...[6, 7].map((n) => {
+      const slots = Object.fromEntries(Array.from({ length: n }, (_, i) => [`s${i}`, { kind: "text", value: "X" }]));
+      return {
+        name: `receipt slots ${n}`,
+        receipt: {
+          text: Object.keys(slots)
+            .map((key) => `{${key}}`)
+            .join(" "),
+          slots,
+        },
+        links: undefined,
+        valid: n === 6,
+      };
+    }),
+    ...[3, 4].map((n) => {
+      const slots = Object.fromEntries(Array.from({ length: n }, (_, i) => [`s${i}`, { kind: "object", title: "X" }]));
+      return {
+        name: `receipt chips ${n}`,
+        receipt: {
+          text: Object.keys(slots)
+            .map((key) => `{${key}}`)
+            .join(" "),
+          slots,
+        },
+        links: undefined,
+        valid: n === 3,
+      };
+    }),
+    ...previewBoundaryCases().map(({ name, preview, valid }) => ({
+      name,
+      receipt: { text: "Saved", preview },
+      links: [{ rel: "open", href: "/app/demo" }],
+      valid,
     })),
-  ),
-];
+    ...["to", "cc", "bcc", "moreAttachments", "truncated"].flatMap((field) =>
+      [false, true].map((open) => ({
+        name: `receipt completeness ${field} ${open}`,
+        receipt: {
+          text: "Sent",
+          preview: {
+            ...legacyPreviewFixture(),
+            from: undefined,
+            ...(field === "truncated"
+              ? { truncated: true }
+              : field === "moreAttachments"
+                ? { moreAttachments: 1 }
+                : { more: { [field]: 1 } }),
+          },
+        },
+        links: open ? [{ rel: "open", href: "/app/demo" }] : undefined,
+        valid: open,
+      })),
+    ),
+  ].map((entry) => ({ ...entry, valid: "preview" in entry.receipt ? false : entry.valid }));

@@ -14,36 +14,46 @@ import {
   useContext,
 } from "solid-js";
 import { Button } from "../actions/Button";
-import { Avatar } from "../surfaces/Avatar";
-import { useChatMessages } from "./chat-messages";
-import type {
-  ChatDecisionAnswer,
-  ChatDecisionReason,
-  ChatDecisionState,
-  ChatOutcomeLine,
-  ChatOutcomeTone,
-  ChatPreviewHeaderRow,
-  ChatPreviewPerson,
-} from "./types";
+import { Checkbox } from "../inputs/Checkbox";
+import type { ChatDecisionAnswer, ChatDecisionReason, ChatDecisionState, ChatOutcomeLine, ChatOutcomeTone } from "./types";
 
 // ---------------------------------------------------------------------------
 // Decision
 // ---------------------------------------------------------------------------
 
 export type ChatDecisionProps = {
-  /** `open` shows the question; every other state shows `outcome` in its place. */
+  /** `open` shows the question; every other state shows the head and `outcome` in its place. */
   state: ChatDecisionState;
+  /**
+   * `approve` asks for the answer. `edit` is the same card while the person still changes its details: a raised
+   * island instead of the tinted ground, the details editable, and `confirm` moves on to `approve`. Both have the same
+   * size, so switching moves nothing.
+   */
+  mode?: "approve" | "edit";
+  /** What the card is, such as "Approval" with `ti ti-shield-check`, or "Draft" with `ti ti-pencil`. */
+  kind: { label: string; icon: string };
+  /** Who asks: the app's name and icon, its icon tile in `accent`. */
+  source: { name: string; icon: string; accent?: string };
+  /** The state as a word with its icon at the end of the head, for every state but an open question. */
+  status?: { label: string; icon: string; tone: ChatOutcomeTone };
   /** The question as one sentence, usually with `ReferenceChip`s. */
   sentence: JSX.Element;
   /** Why this question is asked, in the platform's words. */
   reason: ChatDecisionReason;
-  /** The thing itself, usually `Chat.Preview`. */
-  preview?: JSX.Element;
-  /** The main answer, named by verb and target ("Send to Lea"). `danger` for deletions, `primary` for requests. */
-  confirm: ChatDecisionAnswer & { variant?: "ai" | "primary" | "danger" };
+  /** The thing itself on the surface colour, under its own label such as "Details from Mail". */
+  details?: { label: string; content: JSX.Element };
+  /** Quiet facts at the start of the answer row, such as when the question expires. */
+  meta?: readonly { text: string; icon: string }[];
+  /** The main answer, named by verb and target ("Send to Lea"); the only filled button. */
+  confirm: ChatDecisionAnswer;
   /** The other answer ("Don't send"). */
   decline: ChatDecisionAnswer;
-  /** An optional quiet third answer after the buttons, such as "Yes, and don't ask again in this chat". */
+  /** A quiet answer before the others, such as "Change" back to `edit`. It turns off with `waiting` only. */
+  back?: ChatDecisionAnswer;
+  /**
+   * A checkbox in the answer row, such as "Don't ask again here". Checked, `confirm` calls this answer's `onSelect`
+   * instead of its own.
+   */
   remember?: ChatDecisionAnswer;
   /** Turns `confirm` and `remember` off; this reason replaces `reason` in the same place. */
   unavailable?: ChatDecisionReason;
@@ -66,14 +76,17 @@ const DecisionScope = createContext<{ answered: () => boolean; pressed: () => vo
 const reasonIcon = (reason: ChatDecisionReason) => reason.icon ?? "ti ti-info-circle";
 
 /**
- * A question the person answers in the conversation: one sentence, why it is asked, the thing itself, and two answers.
- * An answer collapses it at once to its outcome line, which takes the focus and is announced.
+ * A question the person answers: what it is and who asks, one sentence, why it is asked, the thing itself, and the
+ * answers. It has one look in every place: a tinted ground in the AI colour, its own AI primary colour, no rules. An
+ * answer collapses it at once to its head and one outcome line, which takes the focus and is announced.
  */
 export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   const id = createUniqueId();
   const sentenceId = `k2b-chat-decision-${id}-sentence`;
   const reasonId = `k2b-chat-decision-${id}-reason`;
-  let root: HTMLDivElement | undefined;
+  const [remembered, setRemembered] = createSignal(false);
+  const editing = () => (props.mode ?? "approve") === "edit";
+  let root: HTMLElement | undefined;
   let sentence: HTMLParagraphElement | undefined;
   // An answer given here moves the focus to the outcome; a click in the outcome that reopens the question moves it
   // back to the sentence. A state change from elsewhere moves no focus.
@@ -146,15 +159,55 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
     ),
   );
 
+  // A switch between editing and approving made here keeps the person on the question, now with its new words.
+  createEffect(
+    on(
+      editing,
+      () => {
+        if (root?.contains(document.activeElement) && document.activeElement !== sentence) sentence?.focus({ preventScroll: true });
+      },
+      { defer: true },
+    ),
+  );
+
+  const confirm = () => {
+    const chosen = props.remember && remembered() && !editing() ? props.remember : props.confirm;
+    answer(chosen, !confirmOff());
+  };
+
   return (
-    <div
+    <section
       ref={root}
       class={`k2b-chat-decision ${props.class ?? ""}`}
       data-state={props.state}
+      data-mode={open() && editing() ? "edit" : "approve"}
+      data-k2b-primary="ai"
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
+      aria-labelledby={open() ? sentenceId : undefined}
+      aria-describedby={open() ? reasonId : undefined}
+      aria-label={open() ? undefined : `${props.kind.label} · ${props.source.name}${props.status ? `: ${props.status.label}` : ""}`}
     >
+      <div class="k2b-chat-decision__head">
+        <i class={`k2b-chat-decision__kind-icon ${props.kind.icon}`} aria-hidden="true" />
+        <span class="k2b-chat-decision__kind">{props.kind.label}</span>
+        <span aria-hidden="true">·</span>
+        <span class="k2b-chat-decision__source">
+          <span class="k2b-chat-decision__tile k2b-icon-tile" style={props.source.accent ? { color: props.source.accent } : undefined}>
+            <i class={props.source.icon} aria-hidden="true" />
+          </span>
+          {props.source.name}
+        </span>
+        <Show when={!open() && props.status}>
+          {(status) => (
+            <span class="k2b-chat-decision__status" data-tone={status().tone}>
+              <i class={status().icon} aria-hidden="true" />
+              {status().label}
+            </span>
+          )}
+        </Show>
+      </div>
       <Show when={open()} fallback={<DecisionScope.Provider value={scope}>{props.outcome}</DecisionScope.Provider>}>
-        <section class="k2b-chat-decision__card" aria-labelledby={sentenceId} aria-describedby={reasonId}>
+        <>
           <p
             ref={sentence}
             id={sentenceId}
@@ -183,45 +236,88 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
             <i class={`k2b-chat-line__icon ${reasonIcon(reason())}`} aria-hidden="true" />
             <span class="k2b-chat-line__text">{reason().text}</span>
           </p>
-          {props.preview}
+          <Show when={props.details}>
+            {(details) => (
+              <div class="k2b-chat-decision__details">
+                <p class="k2b-chat-decision__details-label">
+                  <span
+                    class="k2b-chat-decision__tile k2b-icon-tile"
+                    style={props.source.accent ? { color: props.source.accent } : undefined}
+                  >
+                    <i class={props.source.icon} aria-hidden="true" />
+                  </span>
+                  {details().label}
+                </p>
+                {details().content}
+              </div>
+            )}
+          </Show>
           <div class="k2b-chat-decision__answers">
-            <Button
-              class="k2b-chat-decision__answer"
-              wrap
-              variant={props.confirm.variant ?? "ai"}
-              disabled={confirmOff()}
-              onClick={() => answer(props.confirm, !confirmOff())}
-            >
-              <Show when={props.confirm.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-              {props.confirm.label}
-            </Button>
-            <Button
-              class="k2b-chat-decision__answer"
-              wrap
-              variant="subtle"
-              disabled={Boolean(props.waiting)}
-              onClick={() => answer(props.decline, !props.waiting)}
-            >
-              <Show when={props.decline.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-              {props.decline.label}
-            </Button>
-            <Show when={props.remember}>
-              {(remember) => (
-                <Button
-                  class="k2b-chat-decision__remember"
-                  wrap
-                  variant="text"
-                  disabled={confirmOff()}
-                  onClick={() => answer(remember(), !confirmOff())}
-                >
-                  {remember().label}
-                </Button>
-              )}
+            <Show when={(props.meta?.length ?? 0) > 0 || (props.remember && !editing())}>
+              <span class="k2b-chat-decision__meta">
+                <For each={props.meta ?? []}>
+                  {(item) => (
+                    <span class="k2b-chat-decision__fact">
+                      <i class={item.icon} aria-hidden="true" />
+                      {item.text}
+                    </span>
+                  )}
+                </For>
+                <Show when={!editing() ? props.remember : undefined}>
+                  {(remember) => (
+                    <Checkbox
+                      class="k2b-chat-decision__remember"
+                      label={remember().label}
+                      value={remembered()}
+                      disabled={confirmOff()}
+                      onValueChange={(value) => setRemembered(value)}
+                    />
+                  )}
+                </Show>
+              </span>
             </Show>
+            <span class="k2b-chat-decision__buttons">
+              <Show when={props.back}>
+                {(back) => (
+                  <Button
+                    class="k2b-chat-decision__answer"
+                    wrap
+                    variant="secondary"
+                    disabled={Boolean(props.waiting)}
+                    onClick={() => {
+                      if (!props.waiting) void back().onSelect();
+                    }}
+                  >
+                    <Show when={back().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                    {back().label}
+                  </Button>
+                )}
+              </Show>
+              <Button
+                class="k2b-chat-decision__answer"
+                wrap
+                variant={editing() ? "ghost" : "secondary"}
+                disabled={Boolean(props.waiting)}
+                onClick={() => answer(props.decline, !props.waiting)}
+              >
+                <Show when={props.decline.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                {props.decline.label}
+              </Button>
+              <Button
+                class="k2b-chat-decision__answer"
+                wrap
+                variant={editing() ? "secondary" : "ai"}
+                disabled={confirmOff()}
+                onClick={confirm}
+              >
+                <Show when={props.confirm.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                {props.confirm.label}
+              </Button>
+            </span>
           </div>
-        </section>
+        </>
       </Show>
-    </div>
+    </section>
   );
 }
 
@@ -397,263 +493,5 @@ export function ChatOutcome(props: ChatOutcomeProps): JSX.Element {
         {live()}
       </span>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Preview
-// ---------------------------------------------------------------------------
-
-export type ChatPreviewProps = { children: JSX.Element; class?: string };
-
-/** The thing a question is about, as calm text on the sentence's edge: no surface, no column. */
-function ChatPreviewRoot(props: ChatPreviewProps): JSX.Element {
-  return <div class={`k2b-chat-preview ${props.class ?? ""}`}>{props.children}</div>;
-}
-
-export type ChatPreviewHeaderProps = {
-  /** One row per field, such as From, To, Cc, and Bcc; the label stands right before its value. */
-  rows: readonly ChatPreviewHeaderRow[];
-  /** A last line, such as when the message goes out. */
-  note?: JSX.Element;
-};
-
-const PreviewPeople = (props: { people: readonly ChatPreviewPerson[] }) => (
-  <For each={props.people}>
-    {(person, index) => (
-      <>
-        {index() > 0 ? ", " : ""}
-        <span class="k2b-chat-preview__person">
-          <Show when={person.name}>{(name) => <b>{name()}</b>}</Show>
-          <Show when={person.address}>
-            {(address) => (
-              <span class="k2b-chat-preview__address" data-alone={person.name ? undefined : "true"}>
-                {address()}
-              </span>
-            )}
-          </Show>
-        </span>
-      </>
-    )}
-  </For>
-);
-
-function ChatPreviewHeader(props: ChatPreviewHeaderProps): JSX.Element {
-  return (
-    <div class="k2b-chat-preview__header">
-      <dl>
-        <For each={props.rows}>
-          {(row) => (
-            <div data-emphasis={row.emphasis ? "true" : undefined}>
-              <dt>{row.label}</dt>
-              <dd>
-                <Show when={row.people}>{(people) => <PreviewPeople people={people()} />}</Show>
-                {row.value}
-              </dd>
-            </div>
-          )}
-        </For>
-      </dl>
-      <Show when={props.note}>{(note) => <p>{note()}</p>}</Show>
-    </div>
-  );
-}
-
-export type ChatPreviewTitleProps = { children: JSX.Element; meta?: JSX.Element };
-
-/** The thing's name in the text's own face, with optional quiet facts after it. */
-function ChatPreviewTitle(props: ChatPreviewTitleProps): JSX.Element {
-  return (
-    <p class="k2b-chat-preview__title-line">
-      <span class="k2b-chat-preview__title">{props.children}</span>
-      <Show when={props.meta}>
-        {(meta) => (
-          <>
-            {" "}
-            <span class="k2b-chat-preview__meta">{meta()}</span>
-          </>
-        )}
-      </Show>
-    </p>
-  );
-}
-
-/** A rule or instruction as one sentence, such as what a routine does; chips and marks may stand inside. */
-function ChatPreviewSentence(props: { children: JSX.Element }): JSX.Element {
-  return <p class="k2b-chat-preview__sentence">{props.children}</p>;
-}
-
-export type ChatPreviewExcerptProps = {
-  children: JSX.Element;
-  /** Shows the whole text in place instead of the first lines, such as after `Chat.Preview.ShowAll`. */
-  expanded?: boolean;
-  id?: string;
-};
-
-/** The first lines of a longer text. It keeps its line breaks, shows about three lines, and fades out. */
-function ChatPreviewExcerpt(props: ChatPreviewExcerptProps): JSX.Element {
-  return (
-    <p
-      class="k2b-chat-preview__excerpt"
-      id={props.id}
-      data-expanded={props.expanded ? "true" : undefined}
-      tabindex={props.expanded ? -1 : undefined}
-    >
-      {props.children}
-    </p>
-  );
-}
-
-export type ChatPreviewShowAllProps = {
-  /** The id of the `Chat.Preview.Excerpt` this button opens. */
-  controls: string;
-  onShow: () => void;
-  children: JSX.Element;
-};
-
-/**
- * Shows the rest of an excerpt in place, for a text with no page of its own to open. It looks like `ReadMore`; the
- * caller removes it once the text is shown, and the focus moves to the text, so reading goes on where it was.
- */
-function ChatPreviewShowAll(props: ChatPreviewShowAllProps): JSX.Element {
-  const show = () => {
-    props.onShow();
-    queueMicrotask(() => document.getElementById(props.controls)?.focus({ preventScroll: true }));
-  };
-  return (
-    <button type="button" class="k2b-chat-preview__more" aria-controls={props.controls} aria-expanded="false" onClick={show}>
-      {props.children}
-    </button>
-  );
-}
-
-export type ChatPreviewReadMoreProps = {
-  href: string;
-  children: JSX.Element;
-  /** Tooltip, such as "Opens exactly this version of the draft". */
-  title?: string;
-};
-
-/** Opens the whole thing at exactly the version the question shows. */
-function ChatPreviewReadMore(props: ChatPreviewReadMoreProps): JSX.Element {
-  return (
-    <a class="k2b-chat-preview__more" href={props.href} title={props.title}>
-      {props.children}
-    </a>
-  );
-}
-
-const InList = createContext(false);
-
-/** A list of lines with a name, such as "What the routine may do". */
-function ChatPreviewLines(props: { label?: string; children: JSX.Element }): JSX.Element {
-  return (
-    <ul class="k2b-chat-preview__lines" aria-label={props.label}>
-      <InList.Provider value={true}>{props.children}</InList.Provider>
-    </ul>
-  );
-}
-
-export type ChatPreviewLineProps = {
-  /** Icon class; the text after it starts 1.5rem from the edge. */
-  icon: string;
-  /** Icon colour, such as the PDF colour of an attachment. */
-  accent?: string;
-  /** `muted` for limits and notes, `warning` for an application's own warning. */
-  tone?: "default" | "muted" | "warning";
-  /** Marks the whole line as new or removed. */
-  mark?: "added" | "removed";
-  /** Quiet facts after the text, such as a file size. */
-  meta?: JSX.Element;
-  children: JSX.Element;
-};
-
-/** One line led by an icon: a consequence, a right, an attachment, or a warning. */
-function ChatPreviewLine(props: ChatPreviewLineProps): JSX.Element {
-  const inList = useContext(InList);
-  const messages = useChatMessages();
-  const content = () => (
-    <>
-      <i class={`k2b-chat-line__icon ${props.icon}`} style={props.accent ? { color: props.accent } : undefined} aria-hidden="true" />
-      <span class="k2b-chat-line__text">
-        {/* One stable wrapper, so marking a line later never moves its mounted children. */}
-        <span class="k2b-chat-mark" data-change={props.mark}>
-          <Show when={props.mark}>
-            {(mark) => <span class="k2b-sr-only">{mark() === "added" ? messages().markAdded : messages().markRemoved} </span>}
-          </Show>
-          {props.children}
-        </span>
-        <Show when={props.meta}>
-          {(meta) => (
-            <>
-              {" "}
-              <span class="k2b-chat-preview__meta">{meta()}</span>
-            </>
-          )}
-        </Show>
-      </span>
-    </>
-  );
-  const attributes = () => ({
-    class: "k2b-chat-line k2b-chat-preview__line",
-    "data-tone": props.tone && props.tone !== "default" ? props.tone : undefined,
-  });
-  return inList ? <li {...attributes()}>{content()}</li> : <p {...attributes()}>{content()}</p>;
-}
-
-export type ChatPreviewPeopleProps = {
-  /** The first few people; their avatars overlap at the start of the line. */
-  people: readonly { name: string; src?: string | null }[];
-  /** The names as text, such as "Lea Berg, Tom Weber and 3 others". */
-  children: JSX.Element;
-};
-
-function ChatPreviewPeople(props: ChatPreviewPeopleProps): JSX.Element {
-  return (
-    <p class="k2b-chat-preview__people">
-      <span class="k2b-chat-preview__faces" aria-hidden="true">
-        <For each={props.people}>{(person) => <Avatar name={person.name} src={person.src} size="xs" />}</For>
-      </span>
-      <span>{props.children}</span>
-    </p>
-  );
-}
-
-export const ChatPreview = Object.assign(ChatPreviewRoot, {
-  Header: ChatPreviewHeader,
-  Title: ChatPreviewTitle,
-  Sentence: ChatPreviewSentence,
-  Excerpt: ChatPreviewExcerpt,
-  ReadMore: ChatPreviewReadMore,
-  ShowAll: ChatPreviewShowAll,
-  Lines: ChatPreviewLines,
-  Line: ChatPreviewLine,
-  People: ChatPreviewPeople,
-});
-
-// ---------------------------------------------------------------------------
-// Mark
-// ---------------------------------------------------------------------------
-
-export type ChatMarkProps = { change: "added" | "removed"; children: JSX.Element };
-
-/** Marks new or removed words; screen readers hear "new:" or "removed:" first. */
-export function ChatMark(props: ChatMarkProps): JSX.Element {
-  const messages = useChatMessages();
-  return (
-    <Show
-      when={props.change === "removed"}
-      fallback={
-        <mark class="k2b-chat-mark" data-change="added">
-          <span class="k2b-sr-only">{messages().markAdded} </span>
-          {props.children}
-        </mark>
-      }
-    >
-      <del class="k2b-chat-mark" data-change="removed">
-        <span class="k2b-sr-only">{messages().markRemoved} </span>
-        {props.children}
-      </del>
-    </Show>
   );
 }

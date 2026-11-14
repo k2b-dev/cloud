@@ -3,6 +3,7 @@ import { truncateMiddle } from "@k2b/nessi";
 import { complete } from "@k2b/nessi/ai";
 import type { AiProviderType } from "../shared/ai-models";
 import { taskReasoningEffort } from "./provider";
+import { modelCapabilityResult } from "./result-view";
 import { aiConversations } from "./store";
 import { safelyRecordStructuredRun } from "./structured-runs";
 import { buildAiTaskPrompt } from "./task-prompt";
@@ -69,7 +70,7 @@ const messageToCompactionText = (entry: StoreEntry): string => {
     return `#${entry.seq} user\n${truncateMiddle(text, 4_000)}`;
   }
   if (message.role === "assistant") return `#${entry.seq} assistant\n${truncateMiddle(textFromAssistant(message), 4_000)}`;
-  return `#${entry.seq} tool_result ${message.name}\n${truncateMiddle(JSON.stringify(message.result), COMPACTION_MAX_TOOL_RESULT_CHARS)}`;
+  return `#${entry.seq} tool_result ${message.name}\n${truncateMiddle(JSON.stringify(modelCapabilityResult(message.result)), COMPACTION_MAX_TOOL_RESULT_CHARS)}`;
 };
 
 const countConversationLoops = (entries: StoreEntry[]): number =>

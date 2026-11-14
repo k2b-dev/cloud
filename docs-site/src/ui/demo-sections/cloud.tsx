@@ -1,5 +1,7 @@
 import type { AiPeopleModels } from "@k2b/cloud/ai";
 import { AiChatActionsProvider, aiChatModelOptions, createAiChatTimeline } from "@k2b/cloud/ai/ui";
+import type { Block } from "@k2b/cloud/blocks";
+import { BlockTree } from "@k2b/cloud/blocks/ui";
 import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance.ts";
 import { Chat, type ChatCommand, Widget, WidgetHero, WidgetList, WidgetPills, WidgetStat, WidgetStatus } from "@k2b/ui";
 import { createSignal } from "solid-js";
@@ -211,13 +213,73 @@ const ApprovalsReference = () => (
     code={`// SSR: the first page renders with the page, so the list never pushes content down.
 const page = await loadPendingApprovals(c, { app: "mail", link: draftHref });
 
-<Approvals app="mail" link={draftHref} initial={page} layout="band" />;
+// Beside the draft: nothing until a request for it waits, then Cloud's one approval card.
+<Approvals app="mail" link={draftHref} initial={page} />;
 <Approvals app="mail" initial={page} />;`}
   >
     <BackendRequiredNote title="Real approval requests required">
       Rows come from Cloud's platform approval requests, and a decision continues the chat that asked. The catalog shows the contract
       without inventing requests that a click could not decide.
     </BackendRequiredNote>
+  </DemoCard>
+);
+
+const capabilityViewBlocks: Block[] = [
+  {
+    kind: "Stats",
+    items: [
+      { label: "Girokonto", value: 2481.2, format: { style: "currency", currency: "EUR" }, icon: "ti ti-building-bank" },
+      { label: "Tagesgeld", value: 12050, format: { style: "currency", currency: "EUR" }, icon: "ti ti-pig-money" },
+    ],
+  },
+  {
+    kind: "Detail",
+    title: "Zuständigkeit",
+    items: [
+      { label: "Zuständig", value: "Tim Brandt", before: "Jana Berger" },
+      { label: "Fällig", value: "12.11.2026" },
+    ],
+  },
+  {
+    kind: "Cards",
+    title: "Für Freitag, ab 19:00",
+    items: [
+      { id: "lucia", name: "Trattoria Lucia", kind: "Toskanisch", distance: "350 m" },
+      { id: "pozzo", name: "Osteria del Pozzo", kind: "Hausmannskost", distance: "600 m" },
+    ],
+    card: { id: ["id"], title: ["name"], subtitle: ["kind"], facts: [{ label: "Zu Fuß", value: ["distance"] }] },
+    choose: "restaurant",
+  },
+  {
+    kind: "Choice",
+    id: "restaurant",
+    title: "Wo möchtest du essen?",
+    mode: "one",
+    options: [
+      { id: "lucia", name: "Trattoria Lucia" },
+      { id: "pozzo", name: "Osteria del Pozzo" },
+    ],
+    option: { id: ["id"], title: ["name"] },
+    submit: "Tisch anfragen",
+  },
+];
+
+const CapabilityViewsDemo = () => (
+  <DemoCard
+    id="cloud-capability-views"
+    chip={[{ kind: "component", name: "BlockTree", from: "@k2b/cloud/blocks/ui" }]}
+    description="An app's result as checked blocks: flat key figures, a detail with its old value, and text cards that are the options of a choice."
+    code={`import { BlockTree } from "@k2b/cloud/blocks/ui";
+
+<BlockTree blocks={view.blocks} host="result" locale="de" timeZone="Europe/Berlin" choice={{ state: "open" }} />;`}
+  >
+    <BlockTree
+      blocks={capabilityViewBlocks}
+      host="result"
+      locale="de"
+      timeZone="Europe/Berlin"
+      choice={{ state: "open", submit: async () => true }}
+    />
   </DemoCard>
 );
 
@@ -307,6 +369,11 @@ const demos: DemoSection = {
   approvals: () => (
     <DemoGrid columns="one">
       <ApprovalsReference />
+    </DemoGrid>
+  ),
+  "capability-views": () => (
+    <DemoGrid columns="one">
+      <CapabilityViewsDemo />
     </DemoGrid>
   ),
 };

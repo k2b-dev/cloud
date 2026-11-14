@@ -5,11 +5,11 @@ import Approvals from "./Approvals";
 /** Renders the real list for a browser test, which answers the approvals API with invented requests. */
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
-const layout = new URLSearchParams(location.search).get("layout") === "band" ? "band" : "list";
+const link = new URLSearchParams(location.search).get("link") ?? undefined;
 render(
   () => (
     <LocaleProvider locale={document.documentElement.lang || "en"}>
-      <Approvals app="assistant" layout={layout} />
+      <Approvals app="assistant" link={link} />
     </LocaleProvider>
   ),
   host,

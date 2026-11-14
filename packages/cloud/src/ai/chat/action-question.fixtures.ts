@@ -4,8 +4,7 @@ import type { AiTurnBlock } from "../protocol";
 import type { AiToolPresentation } from "../types";
 
 /**
- * Demo questions for tests and screenshots: every preview kind and the card v4 scenarios, in German and English, until
- * the apps return their own reviews. Fixed times, so nothing depends on the day a test runs.
+ * View-based reviews for tests and screenshots, plus stored historical input for conversion tests. Fixed times, so nothing depends on the day a test runs.
  */
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -32,8 +31,6 @@ const ASSISTANT = (title: string) => app("core", "Assistant", "ti ti-sparkles", 
 
 const lea = { name: "Lea Berg", address: "lea.berg@example.com" };
 const tom = { name: "Tom Weber", address: "tom.weber@k2b.dev" };
-const mira = { name: "Mira Hoffmann", address: "mira.hoffmann@k2b.dev" };
-const valentin = { name: "Valentin Kolb", address: "valentin.kolb@k2b.dev" };
 
 const draftRef = { type: "mail.draft", id: "dr-42" };
 const mailBody = (l: ActionFixtureLocale) =>
@@ -41,7 +38,7 @@ const mailBody = (l: ActionFixtureLocale) =>
     ? "Hallo Lea,\ndas Wartungsfenster ist am Dienstag, 21.10., von 18 bis 20 Uhr. In der Zeit sind Mail und Files kurz nicht erreichbar. Montag um 9 planen wir die Details, am Donnerstag schauen wir im Review zurück.\n\nViele Grüße\nValentin"
     : "Hi Lea,\nthe maintenance window is on Tuesday, Oct 21, from 6 to 8 pm. Mail and Files are briefly unavailable then. We plan the details on Monday at 9 and look back in the review on Thursday.\n\nBest\nValentin";
 
-const mailReview = (l: ActionFixtureLocale, scheduled: boolean): CapabilityActionCallReview => ({
+const mailReview = (l: ActionFixtureLocale, scheduled: boolean): Extract<AiStoredActionReview, { sentence: unknown }> => ({
   locale: l,
   sentence:
     l === "de"
@@ -73,26 +70,45 @@ const mailReview = (l: ActionFixtureLocale, scheduled: boolean): CapabilityActio
     to: { kind: "person", people: [lea] },
     ...(scheduled ? { at: { kind: "time" as const, start: "2026-10-20T06:00:00.000Z", format: "date-time" as const } } : {}),
   },
-  preview: {
-    kind: "message",
-    from: valentin,
-    to: [lea],
-    ...(scheduled ? { cc: [mira], bcc: [tom], sendAt: "2026-10-20T06:00:00.000Z" } : {}),
-    subject: l === "de" ? "Wartungsfenster Dienstag" : "Maintenance window Tuesday",
-    body: mailBody(l),
-    format: "plain",
-    truncated: true,
-    attachments: [{ name: "Wartungsplan-KW43.pdf", size: 84_000 }],
-    ...(scheduled
-      ? {
-          warnings: [
-            l === "de"
-              ? "1 externer Empfänger. Diese E-Mail verlässt die für das Postfach festgelegten internen Domains."
-              : "1 external recipient. This email leaves the internal domains set for the mailbox.",
-          ],
-        }
-      : {}),
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Draft",
+        context: [
+          { label: l === "de" ? "An" : "To", value: "Lea Berg <lea.berg@example.com>" },
+          { label: l === "de" ? "Von" : "From", value: "Valentin Kolb <valentin.kolb@k2b.dev>" },
+          ...(scheduled
+            ? [
+                { label: "Cc", value: "Mira Hoffmann <mira.hoffmann@k2b.dev>" },
+                { label: "Bcc", value: "Tom Weber <tom.weber@k2b.dev>" },
+              ]
+            : []),
+          { label: l === "de" ? "Anhänge" : "Attachments", value: "Wartungsplan-KW43.pdf" },
+        ],
+        fields: [
+          {
+            name: "subject",
+            label: l === "de" ? "Betreff" : "Subject",
+            type: "text",
+            value: l === "de" ? "Wartungsfenster Dienstag" : "Maintenance window Tuesday",
+          },
+          { name: "body", label: l === "de" ? "Text" : "Body", type: "textarea", value: mailBody(l) },
+        ],
+      },
+      ...(scheduled
+        ? [
+            {
+              kind: "Notice" as const,
+              tone: "warning" as const,
+              title: l === "de" ? "Externer Empfänger" : "External recipient",
+              text: l === "de" ? "Diese E-Mail verlässt die internen Domains." : "This email leaves the internal domains.",
+            },
+          ]
+        : []),
+    ],
   },
+  draft: { editable: true, fields: ["subject", "body"] },
   ask: "sends",
   check: { query: "delivery.read", input: { draftId: "dr-42" } },
   links: [{ rel: "open", href: "/app/mail/drafts/dr-42?revision=7" }],
@@ -127,10 +143,18 @@ const shareReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
     },
     person: { kind: "person", people: [tom] },
   },
-  preview: {
-    kind: "file",
-    name: l === "de" ? "Rechnungen 2026" : "Invoices 2026",
-    place: l === "de" ? "48 Dateien in 3 Ordnern" : "48 files in 3 folders",
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: "Name", value: l === "de" ? "Rechnungen 2026" : "Invoices 2026" },
+          { label: l === "de" ? "Inhalt" : "Contents", value: l === "de" ? "48 Dateien in 3 Ordnern" : "48 files in 3 folders" },
+        ],
+      },
+    ],
   },
   consequences:
     l === "de"
@@ -171,15 +195,19 @@ const deleteReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
     event: { kind: "object", title: "Retro", ref: { type: "spaces.event", id: "ev-17" }, icon: "ti ti-calendar" },
     day: { kind: "time", start: "2026-10-17", format: "date" },
   },
-  preview: {
-    kind: "event",
-    title: "Retro",
-    start: "2026-10-17T13:00:00.000Z",
-    end: "2026-10-17T14:00:00.000Z",
-    timeZone: "Europe/Berlin",
-    location: l === "de" ? "Raum 2.14" : "Room 2.14",
-    place: l === "de" ? "im Kalender von Team Ops" : "in the Team Ops calendar",
-    attendees: [lea, tom, mira, { name: "Jonas Klein" }, { name: "Ada Lovelace" }, { name: "Sam Ortiz" }],
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: "Titel", value: "Retro" },
+          { label: "Beginn", value: "2026-10-17T13:00:00.000Z" },
+          { label: "Ort", value: l === "de" ? "Raum 2.14" : "Room 2.14" },
+        ],
+      },
+    ],
   },
   consequences: [
     {
@@ -202,13 +230,6 @@ const deletedReceipt = (l: ActionFixtureLocale) => ({
 
 const teamOps = { kind: "place" as const, title: "Team Ops", ref: { type: "spaces.space", id: "sp-ops" }, icon: "ti ti-layout-kanban" };
 const marketing = { kind: "place" as const, title: "Marketing", ref: { type: "spaces.space", id: "sp-mkt" }, icon: "ti ti-layout-kanban" };
-const newTasks = (l: ActionFixtureLocale) => ({
-  kind: "object" as const,
-  title: l === "de" ? "Neue Aufgaben" : "New tasks",
-  ref: { type: "notebooks.page", id: "pg-new" },
-  icon: "ti ti-notes",
-});
-
 const routineSlot = (l: ActionFixtureLocale) => ({
   kind: "object" as const,
   title: l === "de" ? "Neue Aufgaben zusammenfassen" : "Summarize new tasks",
@@ -237,29 +258,26 @@ const routineReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
           rejected: "Didn't create the routine {routine}.",
         },
   slots: { routine: routineSlot(l) },
-  preview: {
-    kind: "rule",
-    when: {
-      text:
-        l === "de"
-          ? "Immer wenn in {space} eine neue Aufgabe entsteht, ergänze ich {note} um einen Satz mit Titel, Zuständigen und Fälligkeit."
-          : "Whenever a new task is added in {space}, I add one sentence with title, owner and due date to {note}.",
-      slots: { space: teamOps, note: newTasks(l) },
-    },
-    does: "",
-    may:
-      l === "de"
-        ? [
-            { text: "Liest neue Aufgaben in Team Ops, keine Termine." },
-            { text: "Ergänzt nur die Notiz „Neue Aufgaben“." },
-            { text: "Sendet, löscht und teilt nichts und fragt dich nie." },
-          ]
-        : [
-            { text: "Reads new tasks in Team Ops, no events." },
-            { text: "Only adds to the note “New tasks”." },
-            { text: "Sends, deletes and shares nothing and never asks you." },
-          ],
-    seesChat: false,
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Text",
+        text:
+          l === "de"
+            ? "Neue Aufgaben zusammenfassen. Drei Abschnitte: Erledigt, Hängt, Nächste Woche."
+            : "Summarize new tasks. Three sections: Done, Stuck, Next week.",
+      },
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: l === "de" ? "Wenn" : "When", value: l === "de" ? "Neue Aufgabe in Team Ops" : "New task in Team Ops" },
+          { label: l === "de" ? "Darf" : "May", value: l === "de" ? "Liest neue Aufgaben, keine Termine." : "Reads new tasks, no events." },
+          { label: l === "de" ? "Kennt diesen Chat" : "Sees this chat", value: false },
+        ],
+      },
+    ],
   },
   ask: "keeps_working",
   check: { query: "ai.chat.read", input: { name: "summarize" } },
@@ -286,29 +304,26 @@ const rightReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
           rejected: "The routine {routine} is unchanged.",
         },
   slots: { routine: routineSlot(l), space: marketing },
-  preview: {
-    kind: "rule",
-    when: {
-      text:
-        l === "de"
-          ? "Immer wenn in {ops} oder {mkt} eine neue Aufgabe entsteht, ergänze ich {note} um einen Satz."
-          : "Whenever a new task is added in {ops} or {mkt}, I add one sentence to {note}.",
-      slots: { ops: teamOps, mkt: marketing, note: newTasks(l) },
-    },
-    does: "",
-    may:
-      l === "de"
-        ? [
-            { text: "Liest neue Aufgaben in Team Ops." },
-            { text: "Liest neue Aufgaben in Marketing.", mark: "added" },
-            { text: "Ergänzt nur die Notiz „Neue Aufgaben“." },
-          ]
-        : [
-            { text: "Reads new tasks in Team Ops." },
-            { text: "Reads new tasks in Marketing.", mark: "added" },
-            { text: "Only adds to the note “New tasks”." },
-          ],
-    seesChat: false,
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Text",
+        text:
+          l === "de"
+            ? "Neue Aufgaben zusammenfassen. Drei Abschnitte: Erledigt, Hängt, Nächste Woche."
+            : "Summarize new tasks. Three sections: Done, Stuck, Next week.",
+      },
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: l === "de" ? "Wenn" : "When", value: l === "de" ? "Neue Aufgabe in Team Ops" : "New task in Team Ops" },
+          { label: l === "de" ? "Darf" : "May", value: l === "de" ? "Liest neue Aufgaben, keine Termine." : "Reads new tasks, no events." },
+          { label: l === "de" ? "Kennt diesen Chat" : "Sees this chat", value: false },
+        ],
+      },
+    ],
   },
   ask: "keeps_working",
 });
@@ -334,32 +349,26 @@ const skillReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
           rejected: "Didn't create the Skill {skill}.",
         },
   slots: { skill: { kind: "object", title: l === "de" ? "Wochenbericht" : "Weekly report", icon: "ti ti-sparkles" } },
-  preview: {
-    kind: "rule",
-    when: {
-      text:
-        l === "de"
-          ? "Wenn du nach einem Wochenbericht fragst, lese ich die erledigten Aufgaben in {space} und schreibe den Bericht wie in {note}."
-          : "When you ask for a weekly report, I read the completed tasks in {space} and write the report like {note}.",
-      slots: { space: teamOps, note: { kind: "object", title: l === "de" ? "Woche 42" : "Week 42", icon: "ti ti-notes" } },
-    },
-    does:
-      l === "de"
-        ? "1. Nur erledigte Aufgaben der laufenden Woche.\n2. Drei Abschnitte: Erledigt, Hängt, Nächste Woche.\n3. Höchstens eine Seite, Namen statt Kürzel."
-        : "1. Only tasks completed this week.\n2. Three sections: Done, Stuck, Next week.\n3. One page at most, names instead of initials.",
-    may:
-      l === "de"
-        ? [
-            { text: "Ist sofort eingeschaltet und gilt in allen deinen späteren Chats.", mark: "added" },
-            { text: "Nur du nutzt ihn. Teilen wäre ein eigener Schritt." },
-            { text: "Gibt mir keine neuen Rechte. Ich darf damit nur, was ich ohnehin darf." },
-          ]
-        : [
-            { text: "Is on at once and applies in all your later chats.", mark: "added" },
-            { text: "Only you use it. Sharing would be a separate step." },
-            { text: "Gives me no new rights. I can only do what I may do anyway." },
-          ],
-    seesChat: true,
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Text",
+        text:
+          l === "de"
+            ? "Neue Aufgaben zusammenfassen. Drei Abschnitte: Erledigt, Hängt, Nächste Woche."
+            : "Summarize new tasks. Three sections: Done, Stuck, Next week.",
+      },
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: l === "de" ? "Wenn" : "When", value: l === "de" ? "Neue Aufgabe in Team Ops" : "New task in Team Ops" },
+          { label: l === "de" ? "Darf" : "May", value: l === "de" ? "Liest neue Aufgaben, keine Termine." : "Reads new tasks, no events." },
+          { label: l === "de" ? "Kennt diesen Chat" : "Sees this chat", value: false },
+        ],
+      },
+    ],
   },
   ask: "keeps_working",
   links: [{ rel: "open", href: "/app/assistant/skills/weekly" }],
@@ -386,29 +395,26 @@ const resumeReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
           rejected: "The routine {routine} stays paused.",
         },
   slots: { routine: routineSlot(l) },
-  preview: {
-    kind: "rule",
-    when: {
-      text:
-        l === "de"
-          ? "Immer wenn in {space} eine neue Aufgabe entsteht, ergänze ich {note} um einen Satz mit Titel, Zuständigen und Fälligkeit."
-          : "Whenever a new task is added in {space}, I add one sentence with title, owner and due date to {note}.",
-      slots: { space: teamOps, note: newTasks(l) },
-    },
-    does: "",
-    may:
-      l === "de"
-        ? [
-            { text: "Liest neue Aufgaben in Team Ops, keine Termine." },
-            { text: "Ergänzt nur die Notiz „Neue Aufgaben“." },
-            { text: "Was seit der Pause am Mo 13.10. passiert ist, holt sie nicht von selbst nach." },
-          ]
-        : [
-            { text: "Reads new tasks in Team Ops, no events." },
-            { text: "Only adds to the note “New tasks”." },
-            { text: "What happened since the pause on Mon Oct 13 is not caught up by itself." },
-          ],
-    seesChat: false,
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Text",
+        text:
+          l === "de"
+            ? "Neue Aufgaben zusammenfassen. Drei Abschnitte: Erledigt, Hängt, Nächste Woche."
+            : "Summarize new tasks. Three sections: Done, Stuck, Next week.",
+      },
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: l === "de" ? "Wenn" : "When", value: l === "de" ? "Neue Aufgabe in Team Ops" : "New task in Team Ops" },
+          { label: l === "de" ? "Darf" : "May", value: l === "de" ? "Liest neue Aufgaben, keine Termine." : "Reads new tasks, no events." },
+          { label: l === "de" ? "Kennt diesen Chat" : "Sees this chat", value: false },
+        ],
+      },
+    ],
   },
   ask: "keeps_working",
 });
@@ -436,22 +442,24 @@ const noteReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
   slots: {
     note: { kind: "object", title: l === "de" ? "Woche 42" : "Week 42", ref: { type: "notebooks.page", id: "pg-42" }, icon: "ti ti-notes" },
   },
-  preview: {
-    kind: "page",
-    title: l === "de" ? "Woche 42" : "Week 42",
-    place: l === "de" ? "Abschnitt „Aufgaben“" : "section “Tasks”",
-    body:
-      l === "de"
-        ? "Wartungsfenster Dienstag 18 bis 20 Uhr, Mail und Files kurz offline."
-        : "Maintenance window Tuesday 6 to 8 pm, Mail and Files briefly offline.",
-    format: "plain",
-    changes: [
+  view: {
+    version: 1,
+    blocks: [
       {
-        change: "added",
-        text:
-          l === "de"
-            ? "Aufgaben dazu in Team Ops: Server-Update vorbereiten, Monitoring prüfen, Kunden informieren, Backups testen."
-            : "Tasks in Team Ops: prepare server update, check monitoring, inform customers, test backups.",
+        kind: "Draft",
+        context: [{ label: l === "de" ? "Ort" : "Place", value: "Notebooks" }],
+        fields: [
+          { name: "title", label: l === "de" ? "Titel" : "Title", type: "text", value: l === "de" ? "Woche 42" : "Week 42" },
+          {
+            name: "body",
+            label: "Text",
+            type: "textarea",
+            value:
+              l === "de"
+                ? "Wartungsfenster Dienstag 18 bis 20 Uhr, Mail und Files kurz offline."
+                : "Maintenance window Tuesday 6 to 8 pm, Mail and Files briefly offline.",
+          },
+        ],
       },
     ],
   },
@@ -484,24 +492,20 @@ const taskReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
     space: teamOps,
     person: { kind: "person", people: [lea] },
   },
-  preview: {
-    kind: "task",
-    title: l === "de" ? "Backups testen" : "Test backups",
-    place: "Team Ops",
-    due: "2026-10-21",
-    assignees: [lea],
-    status: l === "de" ? "Offen" : "Open",
-    checklist:
-      l === "de"
-        ? [
-            { label: "Restore auf Staging", done: false },
-            { label: "Ergebnis in Woche 42 notieren", done: false },
-          ]
-        : [
-            { label: "Restore on staging", done: false },
-            { label: "Note the result in Week 42", done: false },
-          ],
-    tags: ["ops", "backup"],
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: l === "de" ? "Titel" : "Title", value: l === "de" ? "Backups testen" : "Test backups" },
+          { label: "Status", value: "open", type: "status", states: { open: { label: l === "de" ? "Offen" : "Open", tone: "neutral" } } },
+          { label: l === "de" ? "Zuständig" : "Assignee", value: "Lea Berg" },
+          { label: l === "de" ? "Ort" : "Place", value: "Team Ops" },
+        ],
+      },
+    ],
   },
   ask: "involves_people",
 });
@@ -527,12 +531,17 @@ const fieldsReview = (l: ActionFixtureLocale): CapabilityActionCallReview => ({
           rejected: "The contact {contact} is unchanged.",
         },
   slots: { contact: { kind: "object", title: "Nordwind GmbH", ref: { type: "contacts.contact", id: "c-9" }, icon: "ti ti-address-book" } },
-  preview: {
-    kind: "fields",
-    rows: [
-      { label: "IBAN", value: "DE89 3704 0044 0532 0130 00", before: "DE02 1203 0000 0000 2020 51" },
-      { label: l === "de" ? "Zahlungsziel" : "Payment terms", value: l === "de" ? "30 Tage" : "30 days" },
-      { label: l === "de" ? "Geändert am" : "Changed on", value: "2026-10-17", format: "date" },
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Detail",
+        title: "Details",
+        items: [
+          { label: "IBAN", value: "DE89 3704 0044 0532 0130 00", before: "DE02 1203 0000 0000 2020 51" },
+          { label: l === "de" ? "Zahlungsziel" : "Payment terms", value: l === "de" ? "30 Tage" : "30 days" },
+        ],
+      },
     ],
   },
   ask: "sensitive",
@@ -701,6 +710,17 @@ export const actionFixtures = (l: ActionFixtureLocale): Record<string, ActionFix
         fieldsReview(l),
       ),
     },
+    large: {
+      key: "large",
+      user: "Review the full proposal",
+      assistant: "The full proposal loads before approval.",
+      block: block("large-1", "mail__action__draft_dot_send", MAIL(l), {
+        ...mailReview(l, false),
+        view: undefined,
+        draft: undefined,
+        contentRef: { href: "/api/approvals/00000000-0000-4000-8000-000000000001/content", digest: "a".repeat(64) },
+      }),
+    },
     legacy: {
       key: "legacy",
       user: de ? "Schick den Entwurf raus." : "Send the draft out.",
@@ -731,3 +751,149 @@ export const actionFixtures = (l: ActionFixtureLocale): Record<string, ActionFix
 
 /** The receipt a delete returns: the deleted event's chip is struck through and no link. */
 export const actionFixtureReceipts = (l: ActionFixtureLocale) => ({ del: deletedReceipt(l) });
+
+/** Persisted pre-cut reviews: callers must convert these on read with legacyReviewView. */
+export const storedLegacyReviews = (l: ActionFixtureLocale) => {
+  const valentin = { name: "Valentin Kolb", address: "valentin.kolb@k2b.dev" };
+  const mira = { name: "Mira Hoffmann", address: "mira.hoffmann@k2b.dev" };
+  const scheduled = true;
+  const base = {
+    locale: l,
+    sentence: { action: "Review", running: "Running", done: "Done", confirm: "Approve", decline: "Decline" },
+    slots: {},
+    ask: "app_asks" as const,
+  };
+  return {
+    message: {
+      ...base,
+      preview: {
+        kind: "message",
+        from: valentin,
+        to: [lea],
+        ...(scheduled ? { cc: [mira], bcc: [tom], sendAt: "2026-10-20T06:00:00.000Z" } : {}),
+        subject: l === "de" ? "Wartungsfenster Dienstag" : "Maintenance window Tuesday",
+        body: mailBody(l),
+        format: "plain",
+        truncated: true,
+        attachments: [{ name: "Wartungsplan-KW43.pdf", size: 84_000 }],
+        ...(scheduled
+          ? {
+              warnings: [
+                l === "de"
+                  ? "1 externer Empfänger. Diese E-Mail verlässt die für das Postfach festgelegten internen Domains."
+                  : "1 external recipient. This email leaves the internal domains set for the mailbox.",
+              ],
+            }
+          : {}),
+      },
+    },
+    page: {
+      ...base,
+      preview: {
+        kind: "page",
+        title: l === "de" ? "Woche 42" : "Week 42",
+        place: l === "de" ? "Abschnitt „Aufgaben“" : "section “Tasks”",
+        body:
+          l === "de"
+            ? "Wartungsfenster Dienstag 18 bis 20 Uhr, Mail und Files kurz offline."
+            : "Maintenance window Tuesday 6 to 8 pm, Mail and Files briefly offline.",
+        format: "plain",
+        changes: [
+          {
+            change: "added",
+            text:
+              l === "de"
+                ? "Aufgaben dazu in Team Ops: Server-Update vorbereiten, Monitoring prüfen, Kunden informieren, Backups testen."
+                : "Tasks in Team Ops: prepare server update, check monitoring, inform customers, test backups.",
+          },
+        ],
+      },
+    },
+    event: {
+      ...base,
+      preview: {
+        kind: "event",
+        title: "Retro",
+        start: "2026-10-17T13:00:00.000Z",
+        end: "2026-10-17T14:00:00.000Z",
+        timeZone: "Europe/Berlin",
+        location: l === "de" ? "Raum 2.14" : "Room 2.14",
+        place: l === "de" ? "im Kalender von Team Ops" : "in the Team Ops calendar",
+        attendees: [lea, tom, mira, { name: "Jonas Klein" }, { name: "Ada Lovelace" }, { name: "Sam Ortiz" }],
+      },
+    },
+    task: {
+      ...base,
+      preview: {
+        kind: "task",
+        title: l === "de" ? "Backups testen" : "Test backups",
+        place: "Team Ops",
+        due: "2026-10-21",
+        assignees: [lea],
+        status: l === "de" ? "Offen" : "Open",
+        checklist:
+          l === "de"
+            ? [
+                { label: "Restore auf Staging", done: false },
+                { label: "Ergebnis in Woche 42 notieren", done: false },
+              ]
+            : [
+                { label: "Restore on staging", done: false },
+                { label: "Note the result in Week 42", done: false },
+              ],
+        tags: ["ops", "backup"],
+      },
+    },
+    file: {
+      ...base,
+      preview: {
+        kind: "file",
+        name: l === "de" ? "Rechnungen 2026" : "Invoices 2026",
+        place: l === "de" ? "48 Dateien in 3 Ordnern" : "48 files in 3 folders",
+      },
+    },
+    rule: {
+      ...base,
+      preview: {
+        kind: "rule",
+        when: {
+          text:
+            l === "de"
+              ? "Wenn du nach einem Wochenbericht fragst, lese ich die erledigten Aufgaben in {space} und schreibe den Bericht wie in {note}."
+              : "When you ask for a weekly report, I read the completed tasks in {space} and write the report like {note}.",
+          slots: { space: teamOps, note: { kind: "object", title: l === "de" ? "Woche 42" : "Week 42", icon: "ti ti-notes" } },
+        },
+        does:
+          l === "de"
+            ? "1. Nur erledigte Aufgaben der laufenden Woche.\n2. Drei Abschnitte: Erledigt, Hängt, Nächste Woche.\n3. Höchstens eine Seite, Namen statt Kürzel."
+            : "1. Only tasks completed this week.\n2. Three sections: Done, Stuck, Next week.\n3. One page at most, names instead of initials.",
+        may:
+          l === "de"
+            ? [
+                { text: "Ist sofort eingeschaltet und gilt in allen deinen späteren Chats.", mark: "added" },
+                { text: "Nur du nutzt ihn. Teilen wäre ein eigener Schritt." },
+                { text: "Gibt mir keine neuen Rechte. Ich darf damit nur, was ich ohnehin darf." },
+              ]
+            : [
+                { text: "Is on at once and applies in all your later chats.", mark: "added" },
+                { text: "Only you use it. Sharing would be a separate step." },
+                { text: "Gives me no new rights. I can only do what I may do anyway." },
+              ],
+        seesChat: true,
+      },
+    },
+    fields: {
+      ...base,
+      preview: {
+        kind: "fields",
+        rows: [
+          { label: "IBAN", value: "DE89 3704 0044 0532 0130 00", before: "DE02 1203 0000 0000 2020 51" },
+          { label: l === "de" ? "Zahlungsziel" : "Payment terms", value: l === "de" ? "30 Tage" : "30 days" },
+          { label: l === "de" ? "Geändert am" : "Changed on", value: "2026-10-17", format: "date" },
+        ],
+      },
+    },
+  };
+};
+
+export const largeReviewView = { version: 1 as const, blocks: [{ kind: "Text" as const, text: "Complete proposal. ".repeat(3000) }] };

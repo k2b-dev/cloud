@@ -23,6 +23,7 @@ import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
+import { AiClientToolResultSchema } from "./http";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
 import { drainQueuedMessages } from "./message-queue";
 import { aiUserPrefs } from "./prefs";
@@ -328,8 +329,16 @@ export const abortAiTurn = async (input: { conversationId: string; turnId: strin
 // ---------------------------------------------------------------------------
 
 export const AiTurnActionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("approval_response"), approved: z.boolean(), remember: z.enum(["chat", "always"]).optional() }),
-  z.object({ type: z.literal("tool_result"), result: z.unknown() }),
+  z.strictObject({
+    type: z.literal("approval_response"),
+    approved: z.boolean(),
+    remember: z.enum(["chat", "always"]).optional(),
+    digest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+  }),
+  z.strictObject({ type: z.literal("tool_result"), result: AiClientToolResultSchema }),
 ]);
 export type AiTurnActionInput = z.infer<typeof AiTurnActionSchema>;
 
@@ -390,13 +399,19 @@ export const submitAiTurnAction = async (input: {
       }
     }
     if (pending.approvalId) {
-      const decision = await approvals.decide(pending.approvalId, { approved: input.action.approved }, input.decidedBy);
+      const decision = await approvals.decide(
+        pending.approvalId,
+        { approved: input.action.approved, digest: input.action.digest },
+        input.decidedBy,
+      );
       if (!decision.ok)
-        return decision.code === "REJECT_ONLY"
-          ? { ok: false, status: 403, message: "Approve this request in Cloud. An editor can only reject it." }
-          : decision.code === "ALREADY_DECIDED"
-            ? { ok: false, status: 409, message: "AI action was already resolved with a different response." }
-            : { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
+        return decision.code === "REVIEW_CHANGED"
+          ? { ok: false, status: 409, message: "This draft changed. Reload and review it before approving." }
+          : decision.code === "REJECT_ONLY"
+            ? { ok: false, status: 403, message: "Approve this request in Cloud. An editor can only reject it." }
+            : decision.code === "ALREADY_DECIDED"
+              ? { ok: false, status: 409, message: "AI action was already resolved with a different response." }
+              : { ok: false, status: 404, message: "This request has expired — the assistant already moved on." };
     }
     if (remember && input.toolApprovalContext) {
       const toolName = pending.rememberToolName ?? pending.name;
@@ -715,3 +730,5 @@ export const notifyAiConversationUnwatched = async (conversationId: string): Pro
 };
 
 export const __aiRuntimeTest = { actionMatchesResolvedEvent, processMessage, publishSweepFinished };
+
+export { editAiApprovalDraft } from "./draft-edit";

@@ -73,7 +73,7 @@ databaseSuite()("independent Code-version approvals", () => {
     approverRole: "admin",
     sentence: "Approve this version of Monday report?",
     input: { codeId: "demo", versionId: "v1", sourceHash: "a".repeat(64), bundleHash: "b".repeat(64) },
-    review: { ...reviewFixture(), content: { kind: "page", title: "Source diff", body: "- old\n+ new", format: "plain" } },
+    review: { ...reviewFixture(), view: { version: 1, blocks: [{ kind: "Text", text: "- old\n+ new" }] } },
     expiresInMs: 600_000,
   });
   const ask = async (input = snapshot()) => {

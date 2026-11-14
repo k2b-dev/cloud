@@ -49,6 +49,7 @@ export {
   type CodeChartDescription,
   CodeChartDescriptionSchema,
   type CodePageField,
+  CodePageFieldSchema,
   type CodePageNode,
   CodePageNodeSchema,
   type CodePageTree,

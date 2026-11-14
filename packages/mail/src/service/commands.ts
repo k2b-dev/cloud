@@ -168,6 +168,8 @@ type PreparedActorCommand = {
   draftId: string | null;
   expectedDraftRevision: number | null;
   expectedContentHash: string | null;
+  subject?: string;
+  body?: string;
   safetyApproval: ComposeSafetyApproval | null;
   scheduledAt: string | null;
   undoSeconds: number;
@@ -370,12 +372,16 @@ const prepareActorCommand = (input: ProviderMessageCommandInput): Result<Prepare
       scheduledAt: input.scheduledAt ?? null,
       undoSeconds,
       safetyApproval: input.safetyApproval ?? null,
+      ...(input.subject === undefined ? {} : { subject: input.subject }),
+      ...(input.body === undefined ? {} : { body: input.body }),
     },
     folderRequirements: [],
     senderIdentityId: input.senderIdentityId,
     draftId: input.draftId,
     expectedDraftRevision: input.expectedDraftRevision,
     expectedContentHash: input.expectedContentHash,
+    subject: input.subject,
+    body: input.body,
     safetyApproval: input.safetyApproval ?? null,
     scheduledAt: input.scheduledAt ?? null,
     undoSeconds,
@@ -478,6 +484,7 @@ const createSendOutbox = async (params: {
     actor: params.actor,
     lock: true,
     context: params.context,
+    edits: { subject: prepared.subject, body: prepared.body },
   });
   if (!send.ok) throw Object.assign(new Error(send.error.message), send.error);
   if (send.data.contentHash !== prepared.expectedContentHash) {
@@ -505,6 +512,8 @@ const createSendOutbox = async (params: {
     draftId: prepared.draftId,
     expectedRevision: prepared.expectedDraftRevision!,
     approval: prepared.safetyApproval ?? undefined,
+    body: prepared.body,
+    subject: prepared.subject,
   });
   if (!safety.ok) throw Object.assign(new Error(safety.error.message), safety.error);
   const senderDomain = draft.from_address.split("@")[1]?.toLowerCase() || "mail.invalid";
@@ -571,6 +580,14 @@ const createSendOutbox = async (params: {
     const frozen = params.frozenDrafts?.get(prepared.draftId);
     if (!frozen) throw Object.assign(new Error("Shared draft send requires a drained platform boundary"), sendContentChanged());
     await saveDraftSendBoundary(params.db, params.commandId, prepared.draftId, frozen);
+  }
+  if (editing?.edit_mode !== "shared" && (prepared.subject !== undefined || prepared.body !== undefined)) {
+    const [edited] = await params.db<
+      { revision: number }[]
+    >`UPDATE mail.drafts SET subject=${snapshot.data.subject},body_markdown=${snapshot.data.body},revision=revision+1,updated_at=now()
+      WHERE id=${prepared.draftId}::uuid AND mailbox_id=${params.mailboxId}::uuid AND revision=${prepared.expectedDraftRevision!} AND state='draft' RETURNING revision`;
+    if (!edited) throw Object.assign(new Error("Draft changed before sending"), err.conflict("Draft changed before sending"));
+    snapshot.data.revision = Number(edited.revision);
   }
   const outboxRows = await withShortIdDb(
     params.db,
@@ -725,6 +742,16 @@ const createActorCommandInTransaction = async (params: CreateActorCommandInterna
       : fail(capabilityIdempotencyConflict("Idempotency key with a different mail command"));
   }
 
+  // Preserve the original payload/hash for retries; execution consumes the exact
+  // edited revision already saved before the shared room was frozen.
+  const edited = prepared.draftId ? params.frozenDrafts?.get(prepared.draftId)?.edited : undefined;
+  if (edited) {
+    prepared.expectedDraftRevision = edited.revision;
+    prepared.expectedContentHash = edited.contentHash;
+    prepared.safetyApproval = edited.safetyApproval;
+    prepared.subject = undefined;
+    prepared.body = undefined;
+  }
   const targets = await validateCommandTargets({
     mailboxId: params.mailboxId,
     prepared,

@@ -1,24 +1,39 @@
-import { CapabilityReviewContentSchema } from "../contracts/capabilities";
+import { BlockViewSchema } from "../blocks/schema";
+import type { CapabilityActionCallReview } from "../contracts/capabilities";
+import { LegacyCapabilityReviewContentSchema } from "./legacy-review-schema";
+import { boundReviewView } from "./reviews";
 
-/** JSONB cannot store NUL or lone UTF-16 surrogates. Nest the content's JSON as
- * text in the existing snapshot, preserving every code unit and the public digest. */
+/** JSON-in-text preserves NUL and lone surrogates through Postgres JSONB. Never convert before hashing. */
 export const serializeReviewSnapshot = (review: unknown): string => {
-  if (review && typeof review === "object" && "content" in review && review.content !== undefined)
-    return JSON.stringify({ ...review, content: JSON.stringify(CapabilityReviewContentSchema.parse(review.content)) });
-  return JSON.stringify(review);
+  if (!review || typeof review !== "object") return JSON.stringify(review);
+  const copy: Record<string, unknown> = { ...review };
+  if (copy.view && "sentence" in copy)
+    copy._boundViewBytes = Buffer.byteLength(JSON.stringify(boundReviewView(copy as CapabilityActionCallReview)));
+  for (const key of ["content", "view"] as const)
+    if (key in copy && copy[key] !== undefined) Object.assign(copy, { [key]: JSON.stringify(copy[key]) });
+  return JSON.stringify(copy);
 };
-
 export const parseStoredReviewContent = (value: unknown) => {
   try {
-    return CapabilityReviewContentSchema.safeParse(typeof value === "string" ? JSON.parse(value) : value);
+    return LegacyCapabilityReviewContentSchema.safeParse(typeof value === "string" ? JSON.parse(value) : value);
   } catch {
-    return CapabilityReviewContentSchema.safeParse(null);
+    return LegacyCapabilityReviewContentSchema.safeParse(null);
   }
 };
-
 export const restoreReviewSnapshot = (review: unknown): unknown => {
-  if (!review || typeof review !== "object" || !("content" in review)) return review;
-  const content = parseStoredReviewContent(review.content);
-  // Invalid stored content must fail validation, never become a content-free review.
-  return { ...review, content: content.success ? content.data : null };
+  if (!review || typeof review !== "object") return review;
+  const copy: Record<string, unknown> = { ...review };
+  delete copy._boundViewBytes;
+  for (const key of ["content", "view"] as const)
+    if (key in copy) {
+      let value: unknown = copy[key];
+      try {
+        if (typeof value === "string") value = JSON.parse(value);
+      } catch {
+        value = null;
+      }
+      const parsed = key === "view" ? BlockViewSchema.safeParse(value) : LegacyCapabilityReviewContentSchema.safeParse(value);
+      Object.assign(copy, { [key]: parsed.success ? parsed.data : null });
+    }
+  return copy;
 };

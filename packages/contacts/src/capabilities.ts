@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { BlockView } from "@k2b/cloud/blocks";
 import { capabilityCallDigest } from "@k2b/cloud/capabilities/server";
 import {
   type CapabilityActionReview,
@@ -687,8 +688,57 @@ const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, con
   if (!resolved.ok) return resolved;
   const [contact] = await projectContacts([resolved.data.contact]);
   if (!contact) return fail(err.notFound("Contact"));
+  const data = mapContactDetail(contact);
+  const { t } = contactCapabilityMessages.resolve([context.locale]);
+  const reachable = [
+    ...(data.emails.length ? [{ label: t.previewEmail, value: data.emails.map((entry) => entry.email).join("\n") }] : []),
+    ...(data.phones.length ? [{ label: t.previewPhone, value: data.phones.map((entry) => entry.phone).join("\n") }] : []),
+  ];
+  const view: BlockView = {
+    version: 1,
+    blocks: [
+      ...(reachable.length
+        ? [
+            {
+              kind: "Section" as const,
+              title: t.previewReachable,
+              children: [{ kind: "Detail" as const, title: t.previewReachable, items: reachable }],
+            },
+          ]
+        : []),
+      ...(data.addresses.length
+        ? [
+            {
+              kind: "Section" as const,
+              title: t.previewAddress,
+              children: [
+                {
+                  kind: "Detail" as const,
+                  title: t.previewAddress,
+                  items: data.addresses.map((entry) => ({
+                    label: t.previewAddress,
+                    value: [
+                      entry.recipientName,
+                      entry.companyName,
+                      entry.line1,
+                      entry.line2,
+                      [entry.postalCode, entry.city].filter(Boolean).join(" "),
+                      entry.stateRegion,
+                      entry.countryCode,
+                    ]
+                      .filter(Boolean)
+                      .join("\n"),
+                  })),
+                },
+              ],
+            },
+          ]
+        : []),
+    ],
+  };
   return ok({
-    data: mapContactDetail(contact),
+    data,
+    view,
     summary: boundedCapabilitySummary(`Read contact “${resolveContactName(contact)}”.`),
     refs: [contactRef(contact)],
     links: [{ rel: "open" as const, href: contactHref(contact) }],

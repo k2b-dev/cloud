@@ -59,6 +59,37 @@ const setup = (force = false) => {
 afterEach(() => mock.restore());
 
 describe("compaction inference accounting", () => {
+  test("summarizes result views without sending raw view blocks to the model", async () => {
+    const { compact, context, complete } = setup(true);
+    const history: StoreEntry[] = [
+      { seq: 1, kind: "message", message: { role: "user", content: [{ type: "text", text: "List the items" }] } },
+      {
+        seq: 2,
+        kind: "message",
+        message: { role: "assistant", content: [{ type: "tool_call", id: "list", name: "catalog_list", args: {} }] },
+      },
+      {
+        seq: 3,
+        kind: "message",
+        message: {
+          role: "tool_result",
+          callId: "list",
+          name: "catalog_list",
+          result: {
+            data: { items: [{ label: "Count", value: 3 }] },
+            view: { version: 1, blocks: [{ kind: "Stats", items: { from: ["items"] } }] },
+          },
+        },
+      },
+    ];
+    await compact({ ...context, entries: history });
+    const request = JSON.stringify(complete.mock.calls[0]?.[0]);
+    expect(request).toContain("viewSummary");
+    expect(request).toContain("Shown: stats (1)");
+    expect(request).not.toContain('\\"blocks\\"');
+    expect(history[2]).toMatchObject({ message: { result: { view: { version: 1 } } } });
+  });
+
   for (const force of [false, true]) {
     test(`${force ? "manual" : "automatic"} compaction retains provider and reasoning metadata in the next model request`, async () => {
       const fixture = setup(force);

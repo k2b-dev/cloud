@@ -56,15 +56,22 @@ const mailReview = (locale = "en"): CapabilityActionCallReview => ({
   slots: { recipient: { kind: "person", people: [{ name: "Lea Berg", address: "lea.berg@example.com" }] } },
   ask: "sends",
   links: [{ rel: "open", href: "/mail/drafts/maintenance?revision=7" }],
-  preview: {
-    kind: "message",
-    from: { name: "Team Ops", address: "ops@example.com" },
-    to: [{ name: "Lea Berg", address: "lea.berg@example.com" }],
-    cc: [{ name: "Ada", address: "ada@example.com" }],
-    subject: "Wartungsfenster Dienstag",
-    attachments: [{ name: "wartung.pdf", size: 84_000 }],
-    body: "Hallo Lea,\ndas Wartungsfenster ist am Dienstag.",
-    format: "plain",
+  view: {
+    version: 1,
+    blocks: [
+      {
+        kind: "Detail",
+        title: "Draft",
+        items: [
+          { label: "From", value: "Team Ops <ops@example.com>" },
+          { label: "To", value: "Lea Berg <lea.berg@example.com>" },
+          { label: "Cc", value: "Ada <ada@example.com>" },
+          { label: "Subject", value: "Wartungsfenster Dienstag" },
+          { label: "Attachments", value: "wartung.pdf (84000 B)" },
+          { label: "Body", value: "Hallo Lea, das Wartungsfenster ist am Dienstag." },
+        ],
+      },
+    ],
   },
 });
 
@@ -76,10 +83,11 @@ test("request snapshots take precedence and inherit the recorded reason", () => 
   const stored = { ...review, ask: "app_asks" as const };
   expect(pendingApprovalReview({ ...input, storedReview: stored }, { ask: "sends" })).toEqual(stored);
   const contentRef = { href: `/api/approvals/${row.id}/content`, digest: "a".repeat(64) };
-  const request = { ...review, contentRef, preview: { ...review.preview!, subject: "Original request" } };
-  const laterTurnReview = { ...stored, preview: { ...stored.preview!, subject: "Later turn" } };
+  const request = { ...review, contentRef, view: { version: 1 as const, blocks: [{ kind: "Text" as const, text: "Original request" }] } };
+  const laterTurnReview = { ...stored, view: { version: 1 as const, blocks: [{ kind: "Text" as const, text: "Later turn" }] } };
   expect(pendingApprovalReview({ details: request, storedReview: laterTurnReview }, { ask: "sends" })).toEqual({
-    ...request,
+    ...review,
+    view: request.view,
     ask: "app_asks",
   });
   expect(pendingApprovalReview({ details: null, storedReview: stored }, { ask: "sends" })).toBe(stored);
@@ -92,7 +100,7 @@ test("no-review questions use the card's question, reason and later sentence row
   expect(view.sentence).toBe("Send draft?");
   expect(view.requester.title).toBe("A letter");
   expect(view.message).toBe(pendingApprovalCard(input, options.appName).reason.text);
-  expect(view.details).toEqual([{ label: "To", value: "Ada Lovelace" }]);
+  expect(view.details).toEqual([{ label: "Text", value: "Details To: Ada Lovelace" }]);
   expect(view.truncated).toBe(false);
   expect(AppActionViewSchema.parse(view)).toEqual(view);
 });
@@ -112,11 +120,10 @@ for (const locale of ["de", "en"])
     expect(view.sentence).toBe(card.questionText);
     expect(view.sentence).toContain("Lea Berg <lea.berg@example.com>");
     expect(view.message).toBe(card.reason.text);
-    expect(view.details.map((detail) => detail.label)).toEqual(
-      locale === "de" ? ["Von", "An", "Cc", "Betreff", "Anhänge", "Text"] : ["From", "To", "Cc", "Subject", "Attachments", "Text"],
-    );
-    expect(view.details[0]?.value).toBe("Team Ops <ops@example.com>");
-    expect(view.details.at(-1)?.value).toBe("Hallo Lea, das Wartungsfenster ist am Dienstag.");
+    expect(view.details).toHaveLength(1);
+    expect(view.details[0]?.label).toBe(locale === "de" ? "Text" : "Text");
+    expect(view.details[0]?.value).toContain("Team Ops <ops@example.com>");
+    expect(view.details[0]?.value).toContain("Hallo Lea, das Wartungsfenster ist am Dienstag.");
     expect(view.truncated).toBe(false);
     expect(appActionOffered(view, card)).toBe(true);
     expect(AppActionViewSchema.parse(view)).toEqual(view);
@@ -141,21 +148,14 @@ test("legacy reviews preserve literal questions, date hints and Markdown blocks 
   expect(view.sentence).toBe("Read this letter?");
   expect(view.message).toBe(pendingApprovalCard(input, options.appName).reason.text);
   expect(view.details).toEqual([
-    { label: "Date", value: "2026-10-11", format: "date" },
-    { label: "Time", value: "2026-10-11T10:00:00+02:00", format: "date-time" },
-    { label: "Text", value: "**Body** **Hello** world" },
+    { label: "Text", value: "Details Date: 2026-10-11 Time: 2026-10-11T10:00:00+02:00 **Body** **Hello** world" },
   ]);
 });
 
-for (const kind of ["body", "more", "attachments", "rows", "value"] as const)
+for (const kind of ["value"] as const)
   test(`truncated sends stay browser-only: ${kind}`, async () => {
     const review = mailReview();
-    if (review.preview?.kind !== "message") throw new Error("Expected message fixture");
-    if (kind === "body") review.preview.truncated = true;
-    if (kind === "more") review.preview.more = { to: 1 };
-    if (kind === "attachments") review.preview.moreAttachments = 1;
-    if (kind === "rows") review.consequences = Array.from({ length: 3 }, () => ({ text: "Also updates the log" }));
-    if (kind === "value") review.preview.body = "x".repeat(APP_ACTION_LIMITS.valueChars + 1);
+    if (kind === "value") review.view = { version: 1, blocks: [{ kind: "Text", text: "x".repeat(APP_ACTION_LIMITS.valueChars + 1) }] };
     assertCapabilityReview(review);
     const input = { ...row, storedReview: review };
     const card = pendingApprovalCard(input, options.appName);
@@ -242,20 +242,17 @@ test("fallback questions and legacy rows retain plain-text cleaning and keep unl
     options,
   );
   expect(cleaned.sentence).toBe("Send draft ?");
-  expect(cleaned.details).toEqual([
-    { label: "To", value: "Ada Lovelace" },
-    { label: "Note", value: "Read this first" },
-  ]);
+  expect(cleaned.details).toEqual([{ label: "Text", value: "Details To: Ada Lovelace —: Read this first" }]);
   expect(cleaned.truncated).toBe(false);
   const review = await appActionView(
     { ...row, details: { message: "Read\nthis\u202e?", details: [{ label: "Body\u202e", value: "Hello\nworld\u200b" }] } },
     options,
   );
   expect(review.sentence).toBe("Read this?");
-  expect(review.details).toEqual([{ label: "Body", value: "Hello world" }]);
+  expect(review.details).toEqual([{ label: "Text", value: "Details Body: Hello world" }]);
 });
 
-test("all bounded fields cut within their limits and keep the first eight rows in order", async () => {
+test("bounded block text and envelope fields stay within device limits", async () => {
   const view = await appActionView(
     {
       ...row,
@@ -267,17 +264,12 @@ test("all bounded fields cut within their limits and keep the first eight rows i
     },
     { ...options, appName: () => "a".repeat(501) },
   );
-  expect(view.details).toHaveLength(APP_ACTION_LIMITS.details);
-  expect(view.details.at(-1)?.label).toBe(`7${"l".repeat(38)}…`);
+  expect(view.details).toHaveLength(1);
+  expect(view.details[0]?.label).toBe("Text");
+  expect(Array.from(view.details[0]!.value)).toHaveLength(APP_ACTION_LIMITS.valueChars);
   expect(Array.from(view.requester.title ?? "")).toHaveLength(APP_ACTION_LIMITS.titleChars);
   expect(Array.from(view.sentence)).toHaveLength(APP_ACTION_LIMITS.sentenceChars);
   expect(Array.from(view.message ?? "")).toHaveLength(APP_ACTION_LIMITS.messageChars);
-  expect(
-    view.details.every(
-      (field) =>
-        Array.from(field.label).length === APP_ACTION_LIMITS.labelChars && Array.from(field.value).length === APP_ACTION_LIMITS.valueChars,
-    ),
-  ).toBe(true);
   expect(view.truncated).toBe(true);
   expect(AppActionViewSchema.parse(view)).toEqual(view);
 });
@@ -286,7 +278,7 @@ test("a relayed review without its own reason takes the declared policy, and an 
   const { ask: _ask, ...withoutAsk } = mailReview();
   const review: CapabilityActionCallReview = {
     ...withoutAsk,
-    preview: { ...(mailReview().preview as Extract<CapabilityActionCallReview["preview"], { kind: "message" }>), truncated: true },
+    view: { version: 1, blocks: [{ kind: "Text", text: "x".repeat(APP_ACTION_LIMITS.valueChars + 1) }] },
   };
   const relayed = { ...row, details: review, storedReview: null };
   const sends = await appActionView(relayed, { ...options, policy: { ask: "sends" } });
@@ -302,9 +294,8 @@ test("a relayed review without its own reason takes the declared policy, and an 
 for (const stored of [false, true])
   test(`declared sends keeps a truncated question off the device despite its own reason: stored ${stored}`, async () => {
     const review = mailReview();
-    if (review.preview?.kind !== "message") throw new Error("Expected message fixture");
     review.ask = "involves_people";
-    review.preview.body = "x".repeat(APP_ACTION_LIMITS.valueChars + 1);
+    review.view = { version: 1, blocks: [{ kind: "Text", text: "x".repeat(APP_ACTION_LIMITS.valueChars + 1) }] };
     assertCapabilityReview(review);
     const input = {
       ...row,

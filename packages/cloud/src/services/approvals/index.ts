@@ -1,6 +1,7 @@
 import type { SQL } from "bun";
 import { approvalMessages } from "../../approvals/messages";
 import { capabilityRequestHash } from "../../capabilities/claims";
+import { presentReview } from "../../capabilities/legacy-review-view";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../../capabilities/review-storage";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
 import type { CapabilityActionReviewData } from "../../contracts/capabilities";
@@ -217,7 +218,10 @@ export const get = async (id: string, db?: SQL, compactReview = false): Promise<
     return row
       ? {
           ...row,
-          details: row.details === null ? null : CapabilityActionReviewPresentationSchema.parse(restoreReviewSnapshot(row.details)),
+          details:
+            row.details === null
+              ? null
+              : CapabilityActionReviewPresentationSchema.parse(presentReview(restoreReviewSnapshot(row.details), compactReview)),
         }
       : null;
   });
@@ -226,7 +230,16 @@ export type ApprovalDecisionResult =
   | { ok: true; status: ApprovalStatus; replay: boolean }
   | {
       ok: false;
-      code: "EXPIRED" | "NOT_FOUND" | "REJECT_ONLY" | "SELF_APPROVAL" | "UNAVAILABLE" | "NOT_REMEMBERABLE" | "REAUTHENTICATE" | "BUSY";
+      code:
+        | "REVIEW_CHANGED"
+        | "EXPIRED"
+        | "NOT_FOUND"
+        | "REJECT_ONLY"
+        | "SELF_APPROVAL"
+        | "UNAVAILABLE"
+        | "NOT_REMEMBERABLE"
+        | "REAUTHENTICATE"
+        | "BUSY";
     }
   | { ok: false; code: "ALREADY_DECIDED"; status: ApprovalStatus };
 /** A kind owner refuses a stale/invalid review. The transaction rolls back; transports return a visible conflict.
@@ -264,7 +277,7 @@ export const registerApprovalDecisionHandler = (kind: "code_version", handler: A
 /** Decide once under the current recipient policy, recording the decider and the owner's transition atomically. */
 export const decide = async (
   id: string,
-  decision: { approved: boolean; remember?: "chat" | "always" },
+  decision: { approved: boolean; remember?: "chat" | "always"; digest?: string },
   actor: ApprovalDecisionActor,
   db?: SQL,
 ): Promise<ApprovalDecisionResult> => {
@@ -305,6 +318,11 @@ export const decide = async (
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND (approver_user_id=${actor.userId}::uuid OR approver_role='admin') FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
+    if (!role && decision.approved && row.status === "pending") {
+      const details = restoreReviewSnapshot(row.details);
+      const edited = !!details && typeof details === "object" && "editedFields" in details;
+      if ((decision.digest !== undefined || edited) && decision.digest !== row.reviewDigest) return { ok: false, code: "REVIEW_CHANGED" };
+    }
     let soleAdmin = false;
     if (role) {
       if (decision.remember) return { ok: false, code: "NOT_REMEMBERABLE" };
@@ -344,7 +362,10 @@ export const decide = async (
         tx,
         {
           ...won,
-          details: won.details === null ? null : CapabilityActionReviewPresentationSchema.parse(restoreReviewSnapshot(won.details)),
+          details:
+            won.details === null
+              ? null
+              : CapabilityActionReviewPresentationSchema.parse(presentReview(restoreReviewSnapshot(won.details), true)),
         },
         actor,
       );

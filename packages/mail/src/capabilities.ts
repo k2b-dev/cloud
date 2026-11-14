@@ -36,7 +36,6 @@ import {
   buildMailReview,
   commentPreview,
   draftPreview,
-  draftReviewContent,
   folderDisplayReceipt,
   type MailReviewOptions,
   mailActionReviews,
@@ -3130,8 +3129,7 @@ const actionDefinitions = {
           { draft: draftSlot(input.draftId, proposed.subject, context.locale) },
           {
             ...(await draftAudienceOptions(current.data.mailboxId, mailboxId, context)),
-            preview: draftPreview(proposed, context.locale),
-            content: draftReviewContent(proposed),
+            view: draftPreview(proposed, context.locale),
             links: [openLink(`${draftReadHref(mailboxId, input.draftId)}?revision=${input.expectedRevision}`)],
           },
         ),
@@ -3264,8 +3262,7 @@ const actionDefinitions = {
           { draft: draftSlot(undefined, input.subject, context.locale) },
           {
             ...(await draftAudienceOptions(scope.data.id, mailboxId, context)),
-            preview: draftPreview(proposed, context.locale),
-            content: draftReviewContent(proposed),
+            view: draftPreview(proposed, context.locale),
             links: [openLink(mailboxHref(mailboxId))],
           },
         ),
@@ -3403,8 +3400,7 @@ const actionDefinitions = {
           { draft: draftSlot(input.draftId, proposed.subject, context.locale) },
           {
             ...(await draftAudienceOptions(current.data.mailboxId, mailboxId, context)),
-            preview: draftPreview(proposed, context.locale),
-            content: draftReviewContent(proposed),
+            view: draftPreview(proposed, context.locale),
             links: [openLink(`${draftReadHref(mailboxId, input.draftId)}?revision=${input.expectedRevision}`)],
           },
         ),
@@ -3475,8 +3471,7 @@ const actionDefinitions = {
           { draft: draftSlot(input.draftId, proposed.data.subject, context.locale) },
           {
             ...(await draftAudienceOptions(current.data.mailboxId, mailboxId, context)),
-            preview: draftPreview(proposed.data, context.locale),
-            content: draftReviewContent(proposed.data),
+            view: draftPreview(proposed.data, context.locale),
             links: [openLink(`${draftReadHref(mailboxId, input.draftId)}?revision=${input.expectedRevision}`)],
           },
         ),
@@ -3575,8 +3570,7 @@ const actionDefinitions = {
           context.locale,
           { draft: draftSlot(input.draftId, proposed.subject, context.locale) },
           {
-            preview: draftPreview(proposed, context.locale),
-            content: draftReviewContent(proposed),
+            view: draftPreview(proposed, context.locale),
             links: [openLink(`${draftReadHref(mailboxId, input.draftId)}?revision=${input.expectedRevision}`)],
           },
         ),
@@ -3637,12 +3631,23 @@ const actionDefinitions = {
           },
           {
             ...(await draftAudienceOptions(draft.data.mailboxId, target.data, context)),
-            preview: {
-              kind: "file",
-              name: reviewLine(input.file.name ?? "attachment", 255),
-              size: input.file.size,
-              mediaType: reviewLine(input.file.mediaType, 120),
-              place: reviewLine(draft.data.subject || mailCapabilityMessages(context.locale).noSubject),
+            view: {
+              version: 1 as const,
+              blocks: [
+                {
+                  kind: "Detail" as const,
+                  title: "Details",
+                  items: [
+                    { label: "Name", value: input.file.name ?? "attachment" },
+                    { label: context.locale?.startsWith("de") ? "Größe" : "Size", value: input.file.size },
+                    { label: context.locale?.startsWith("de") ? "Medientyp" : "Media type", value: input.file.mediaType },
+                    {
+                      label: context.locale?.startsWith("de") ? "Entwurf" : "Draft",
+                      value: draft.data.subject || mailCapabilityMessages(context.locale).noSubject,
+                    },
+                  ],
+                },
+              ],
             },
             links: [openLink(`${draftReadHref(target.data, input.draftId)}?revision=${input.expectedRevision}`)],
           },
@@ -3727,12 +3732,23 @@ const actionDefinitions = {
           { file: fileSlot(attachment.filename), draft: draftSlot(input.draftId, draft.data.subject, context.locale) },
           {
             ...(await draftAudienceOptions(draft.data.mailboxId, mailboxId, context)),
-            preview: {
-              kind: "file",
-              name: reviewLine(attachment.filename, 255),
-              size: attachment.byteLength,
-              mediaType: reviewLine(attachment.contentType, 120),
-              place: reviewLine(draft.data.subject || mailCapabilityMessages(context.locale).noSubject),
+            view: {
+              version: 1 as const,
+              blocks: [
+                {
+                  kind: "Detail" as const,
+                  title: "Details",
+                  items: [
+                    { label: context.locale?.startsWith("de") ? "Name" : "Name", value: attachment.filename },
+                    { label: context.locale?.startsWith("de") ? "Größe" : "Size", value: attachment.byteLength },
+                    { label: context.locale?.startsWith("de") ? "Medientyp" : "Media type", value: attachment.contentType },
+                    {
+                      label: context.locale?.startsWith("de") ? "Entwurf" : "Draft",
+                      value: draft.data.subject || mailCapabilityMessages(context.locale).noSubject,
+                    },
+                  ],
+                },
+              ],
             },
             links: [openLink(`${draftReadHref(mailboxId, input.draftId)}?revision=${input.expectedRevision}`)],
           },
@@ -3801,12 +3817,23 @@ const actionDefinitions = {
           context.locale,
           { file: fileSlot(attachment.filename), draft: draftSlot(input.draftId, draft.data.subject, context.locale) },
           {
-            preview: {
-              kind: "file",
-              name: reviewLine(attachment.filename, 255),
-              size: attachment.byteLength,
-              mediaType: reviewLine(attachment.contentType, 120),
-              place: reviewLine(draft.data.subject || mailCapabilityMessages(context.locale).noSubject),
+            view: {
+              version: 1 as const,
+              blocks: [
+                {
+                  kind: "Detail" as const,
+                  title: "Details",
+                  items: [
+                    { label: context.locale?.startsWith("de") ? "Name" : "Name", value: attachment.filename },
+                    { label: context.locale?.startsWith("de") ? "Größe" : "Size", value: attachment.byteLength },
+                    { label: context.locale?.startsWith("de") ? "Medientyp" : "Media type", value: attachment.contentType },
+                    {
+                      label: context.locale?.startsWith("de") ? "Entwurf" : "Draft",
+                      value: draft.data.subject || mailCapabilityMessages(context.locale).noSubject,
+                    },
+                  ],
+                },
+              ],
             },
             links: [openLink(`${draftReadHref(mailboxId, input.draftId)}?revision=${input.expectedRevision}`)],
           },
@@ -3878,6 +3905,8 @@ const actionDefinitions = {
           draftId: scope.data.draftId,
           expectedRevision: input.expectedRevision,
           locale: mailReviewLocale(context.locale),
+          body: input.body,
+          subject: input.subject,
         }),
       ]);
       if (!draft.ok) return draft;
@@ -3889,6 +3918,7 @@ const actionDefinitions = {
         mailboxId: scope.data.mailbox.id,
         draft: draft.data,
         senderIdentityId: identity.data,
+        edits: { subject: input.subject, body: input.body },
       });
       if (!content.ok) return content;
       if (content.data.contentHash !== input.expectedContentHash) return fail(sendContentChanged());
@@ -3927,6 +3957,8 @@ const actionDefinitions = {
           draftId: scope.data.draftId,
           expectedDraftRevision: input.expectedRevision,
           expectedContentHash: input.expectedContentHash,
+          subject: input.subject,
+          body: input.body,
           senderIdentityId: senderIdentity.data,
           scheduledAt: input.scheduledAt,
           undoSeconds: input.undoSeconds,
@@ -4011,11 +4043,17 @@ const actionDefinitions = {
             ),
           },
           {
-            preview: {
-              kind: "fields",
-              rows: [
-                { label: t.subject, value: reviewLine(delivery.data.subject, 998) },
-                { label: t.scheduledFor, value: delivery.data.scheduledAt, format: "date-time" },
+            view: {
+              version: 1 as const,
+              blocks: [
+                {
+                  kind: "Detail" as const,
+                  title: "Details",
+                  items: [
+                    { label: t.subject, value: reviewLine(delivery.data.subject, 998) },
+                    { label: t.scheduledFor, value: delivery.data.scheduledAt },
+                  ],
+                },
               ],
             },
             consequences: [
@@ -4342,11 +4380,17 @@ const actionDefinitions = {
           {
             scope: `mailbox:${mailboxId}`,
             links: [openLink(conversation.data.href)],
-            preview: {
-              kind: "fields",
-              rows: [
-                { label: t.add, value: reviewLine(input.addTagIds.map((id) => names.get(id) ?? id).join(", "), 2000) || t.none },
-                { label: t.remove, value: reviewLine(input.removeTagIds.map((id) => names.get(id) ?? id).join(", "), 2000) || t.none },
+            view: {
+              version: 1 as const,
+              blocks: [
+                {
+                  kind: "Detail" as const,
+                  title: "Details",
+                  items: [
+                    { label: t.add, value: reviewLine(input.addTagIds.map((id) => names.get(id) ?? id).join(", "), 2000) || t.none },
+                    { label: t.remove, value: reviewLine(input.removeTagIds.map((id) => names.get(id) ?? id).join(", "), 2000) || t.none },
+                  ],
+                },
               ],
             },
           },
@@ -4665,13 +4709,7 @@ const actionDefinitions = {
           {
             scope: `mailbox:${mailboxId}`,
             links: [openLink(conversation.data.href)],
-            content: {
-              kind: "page",
-              title: conversation.data.subject,
-              body: input.summary,
-              format: "plain",
-              baseRevision: input.expectedSummaryRevision,
-            },
+            view: { version: 1 as const, blocks: [{ kind: "Text" as const, text: conversation.data.subject + "\n\n" + input.summary }] },
           },
         ),
       );
@@ -5072,7 +5110,7 @@ const actionDefinitions = {
           context.locale,
           { conversation: conversationSlot(input.conversationId, conversation.data.subject) },
           {
-            preview: commentPreview(input.body, context.locale),
+            view: commentPreview(input.body, context.locale),
             links: [openLink(conversation.data.href)],
             scope: `mailbox:${mailboxId}`,
           },
@@ -5137,7 +5175,7 @@ const actionDefinitions = {
           context.locale,
           { conversation: conversationSlot(input.conversationId, review.data.conversation.subject) },
           {
-            preview: commentPreview(input.body, context.locale, review.data.comment.body),
+            view: commentPreview(input.body, context.locale, review.data.comment.body),
             links: [openLink(review.data.conversation.href)],
           },
         ),
@@ -5201,7 +5239,7 @@ const actionDefinitions = {
         mailActionReviews["conversation.comment.delete"](
           context.locale,
           { conversation: conversationSlot(input.conversationId, review.data.conversation.subject) },
-          { preview: commentPreview(review.data.comment.body, context.locale), links: [openLink(review.data.conversation.href)] },
+          { view: commentPreview(review.data.comment.body, context.locale), links: [openLink(review.data.conversation.href)] },
         ),
       );
     },
@@ -5274,13 +5312,19 @@ const actionDefinitions = {
           context.locale,
           { folder: reviewPlace(folder.data.path, { type: "mail.folder", id: input.folderId }, "ti ti-folder") },
           {
-            preview: {
-              kind: "fields",
-              rows: [
+            view: {
+              version: 1 as const,
+              blocks: [
                 {
-                  label: t.newFolderDisplay,
-                  value: t.folderDisplay({ display: input.display }),
-                  before: t.folderDisplay({ display: folder.data.display }),
+                  kind: "Detail" as const,
+                  title: "Details",
+                  items: [
+                    {
+                      label: t.newFolderDisplay,
+                      value: t.folderDisplay({ display: input.display }),
+                      before: t.folderDisplay({ display: folder.data.display }),
+                    },
+                  ],
                 },
               ],
             },
@@ -5321,16 +5365,22 @@ const actionDefinitions = {
             inheritedFrom ? reviewPlace(folder.data.paths.get(inheritedFrom) ?? inheritedFrom, undefined, "ti ti-folder") : undefined,
             context.locale,
           ),
-          preview: {
-            kind: "fields" as const,
-            rows: [
-              {
-                label: t.newFolderDisplay,
-                value: t.folderDisplay({ display: result.data.effectiveDisplay }),
-                before: t.folderDisplay({ display: folder.data.display }),
-              },
-            ],
-          },
+        },
+        view: {
+          version: 1 as const,
+          blocks: [
+            {
+              kind: "Detail" as const,
+              title: "Details",
+              items: [
+                {
+                  label: t.newFolderDisplay,
+                  value: t.folderDisplay({ display: result.data.effectiveDisplay }),
+                  before: t.folderDisplay({ display: folder.data.display }),
+                },
+              ],
+            },
+          ],
         },
         summary: capabilitySummary(
           inheritedFrom
@@ -5364,7 +5414,10 @@ const actionDefinitions = {
           context.locale,
           { tag: tagSlot(undefined, input.name) },
           {
-            preview: { kind: "fields" as const, rows: [{ label: t.color, value: input.color }] },
+            view: {
+              version: 1 as const,
+              blocks: [{ kind: "Detail" as const, title: "Details", items: [{ label: t.color, value: input.color }] }],
+            },
             scope: `mailbox:${mailboxId}`,
             links: [openLink(mailboxHref(mailboxId))],
           },
@@ -5428,11 +5481,17 @@ const actionDefinitions = {
           context.locale,
           { tag: tagSlot(input.tagId, tag.name) },
           {
-            preview: {
-              kind: "fields" as const,
-              rows: [
-                { label: t.tag, value: reviewLine(input.name ?? tag.name), before: reviewLine(tag.name) },
-                { label: t.color, value: reviewLine(input.color ?? tag.color), before: reviewLine(tag.color) },
+            view: {
+              version: 1 as const,
+              blocks: [
+                {
+                  kind: "Detail" as const,
+                  title: "Details",
+                  items: [
+                    { label: t.tag, value: reviewLine(input.name ?? tag.name), before: reviewLine(tag.name) },
+                    { label: t.color, value: reviewLine(input.color ?? tag.color), before: reviewLine(tag.color) },
+                  ],
+                },
               ],
             },
             scope: `mailbox:${mailboxId}`,
@@ -5462,13 +5521,19 @@ const actionDefinitions = {
         data,
         receipt: {
           ...mailReceipt("mailbox.tag.update", context.locale, { tag: tagSlot(data.id, data.name) }),
-          preview: {
-            kind: "fields" as const,
-            rows: [
-              { label: t.tag, value: reviewLine(data.name) },
-              { label: t.color, value: reviewLine(data.color) },
-            ],
-          },
+        },
+        view: {
+          version: 1 as const,
+          blocks: [
+            {
+              kind: "Detail" as const,
+              title: "Details",
+              items: [
+                { label: t.tag, value: reviewLine(data.name) },
+                { label: t.color, value: reviewLine(data.color) },
+              ],
+            },
+          ],
         },
         summary: capabilitySummary(
           input.name && input.color
@@ -5508,7 +5573,7 @@ const actionDefinitions = {
         mailActionReviews["mailbox.tag.delete"](
           context.locale,
           { tag: tagSlot(input.tagId, tag.name) },
-          { preview: undefined, links: [openLink(mailboxHref(mailboxId))] },
+          { links: [openLink(mailboxHref(mailboxId))] },
         ),
       );
     },
@@ -5569,9 +5634,15 @@ const actionDefinitions = {
           context.locale,
           { list: reviewObject(subscription.data.name, undefined, "ti ti-mail-forward") },
           {
-            preview: {
-              kind: "fields",
-              rows: [...reviewFieldRows(t.endpoint, input.href), ...reviewFieldRows(t.address, subscription.data.address)],
+            view: {
+              version: 1 as const,
+              blocks: [
+                {
+                  kind: "Detail" as const,
+                  title: "Details",
+                  items: [...reviewFieldRows(t.endpoint, input.href), ...reviewFieldRows(t.address, subscription.data.address)],
+                },
+              ],
             },
             ...(href ? { links: [openLink(href)] } : {}),
           },
