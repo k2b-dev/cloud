@@ -548,7 +548,9 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(version).toContain("ti ti-plus k2b-change-list__icon");
     expect(version).toContain("ti ti-minus k2b-change-list__icon");
     expect(version).toContain("ti ti-equal k2b-change-list__icon");
-    expect(version).toContain('<span class="k2b-change-list__mark" data-tone="neutral"><i class="ti ti-eye" aria-hidden="true"></i>needs approval</span>');
+    expect(version).toContain(
+      '<span class="k2b-change-list__mark" data-tone="neutral"><i class="ti ti-eye" aria-hidden="true"></i>needs approval</span>',
+    );
     const access = list({ label: "What changes", items: [{ tone: "add", icon: "ti ti-user-plus", content: "Tom gets Edit" }] });
     expect(access).toContain('data-marker="icon"');
     expect(access).toContain("ti ti-user-plus k2b-change-list__icon");

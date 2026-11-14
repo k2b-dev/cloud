@@ -56,7 +56,10 @@ export function ChangeList(props: ChangeListProps): JSX.Element {
       <For each={props.items}>
         {(item) => (
           <li class="k2b-change-list__item" data-tone={item.tone}>
-            <i class={`${sign() ? DEFAULT_ICONS[item.tone] : (item.icon ?? DEFAULT_ICONS[item.tone])} k2b-change-list__icon`} aria-hidden="true" />
+            <i
+              class={`${sign() ? DEFAULT_ICONS[item.tone] : (item.icon ?? DEFAULT_ICONS[item.tone])} k2b-change-list__icon`}
+              aria-hidden="true"
+            />
             <span class="k2b-change-list__text">
               <span>
                 {item.content}

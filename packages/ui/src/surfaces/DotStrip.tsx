@@ -51,9 +51,7 @@ export function DotStrip(props: DotStripProps): JSX.Element {
   const mark = (index: number) => (
     // The AI tones carry their own `-ai` class: the AI palette stays with AI surfaces (F3).
     <i
-      class={
-        state(index) === "ai" || state(index) === "running" ? "k2b-dot-strip__dot k2b-dot-strip__dot-ai" : "k2b-dot-strip__dot"
-      }
+      class={state(index) === "ai" || state(index) === "running" ? "k2b-dot-strip__dot k2b-dot-strip__dot-ai" : "k2b-dot-strip__dot"}
       data-state={state(index)}
       data-selected={props.selected === index ? "" : undefined}
     />
@@ -63,8 +61,7 @@ export function DotStrip(props: DotStripProps): JSX.Element {
       class={`k2b-dot-strip ${props.class ?? ""}`}
       data-size={props.size ?? "md"}
       data-variant={props.variant ?? "dot"}
-      role={linked() ? "list" : "img"}
-      aria-label={props.label}
+      {...{ role: linked() ? "list" : "img", "aria-label": props.label }}
       style={{ "--k2b-dot-strip-columns": String(props.columns ?? length()) }}
     >
       <For each={slots()}>

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { meterType } from "../../../../scripts/fixtures/type-meter";
@@ -18,24 +18,23 @@ import { createSignal } from "solid-js";
 import { ChangeList, DotStrip, Tabs } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const [count, setCount] = createSignal("0");
 window.__setCount = setCount;
-render(() => [
-  createComponent(DotStrip, { id: "bars", variant: "bar", size: "lg", label: "Last 5 runs: 1 failed",
-    dots: ["success", "danger", "muted", "success", "running"],
-    links: ["#r1", "#r2", "#r3", "#r4", "#r5"], dotLabels: ["Run 1: succeeded", "Run 2: failed", "Run 3: skipped", "Run 4: succeeded", "Run 5: running"] }),
-  createComponent(DotStrip, { id: "dots", label: "Last 3 runs", dots: ["success", "danger", "muted"], size: "lg" }),
-  createComponent(DotStrip, { id: "slots", variant: "slot", label: "Runner: 1 of 3 places taken", dots: ["accent", "muted", "muted"], size: "lg" }),
-  createComponent(ChangeList, { id: "changes", label: "What changes", marker: "sign", items: [
-    { tone: "add", content: "Also runs Mon–Fri at 08:00" },
-    { tone: "add", content: "May save files in the folder Delivery notes 2026", marks: [{ label: "needs approval", icon: "ti ti-eye" }] },
-    { tone: "remove", content: "May no longer mark conversations", detail: "Version 4 did this." },
-    { tone: "same", content: "5 more stay the same." },
-  ] }),
-  createComponent(Tabs, { ariaLabel: "Review", value: "overview", onValueChange: () => {}, get options() { return [
-    { value: "overview", label: "Overview" },
-    { value: "code", label: "Code", count: count(), countReserve: "99" },
-    { value: "diff", label: "Diff", count: "+2 −1", countReserve: "+99 −99" },
-  ]; } }),
-], document.getElementById("app"));
+const mount = (id, component, props) => render(() => createComponent(component, props), document.getElementById(id));
+mount("bars", DotStrip, { variant: "bar", size: "lg", label: "Last 5 runs: 1 failed",
+  dots: ["success", "danger", "muted", "success", "running"],
+  links: ["#r1", "#r2", "#r3", "#r4", "#r5"], dotLabels: ["Run 1: succeeded", "Run 2: failed", "Run 3: skipped", "Run 4: succeeded", "Run 5: running"] });
+mount("dots", DotStrip, { label: "Last 3 runs", dots: ["success", "danger", "muted"], size: "lg" });
+mount("slots", DotStrip, { variant: "slot", label: "Runner: 1 of 3 places taken", dots: ["accent", "muted", "muted"], size: "lg" });
+mount("changes", ChangeList, { label: "What changes", marker: "sign", items: [
+  { tone: "add", content: "Also runs Mon–Fri at 08:00" },
+  { tone: "add", content: "May save files in the folder Delivery notes 2026", marks: [{ label: "needs approval", icon: "ti ti-eye" }] },
+  { tone: "remove", content: "May no longer mark conversations", detail: "Version 4 did this." },
+  { tone: "same", content: "5 more stay the same." },
+] });
+mount("tabs", Tabs, { ariaLabel: "Review", value: "overview", onValueChange: () => {}, get options() { return [
+  { value: "overview", label: "Overview" },
+  { value: "code", label: "Code", count: count(), countReserve: "99" },
+  { value: "diff", label: "Diff", count: "+2 −1", countReserve: "+99 −99" },
+]; } });
 `;
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the marks fixture for the browser.");
@@ -53,15 +52,18 @@ afterAll(async () => {
 const open = async (width: number) => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   await page.route(`${assets}**`, (route) =>
-    route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)), headers: { "access-control-allow-origin": "*" } }),
+    route.fulfill({
+      path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)),
+      headers: { "access-control-allow-origin": "*" },
+    }),
   );
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style><style>${fonts}</style><style>${icons}</style>
       <style>body{margin:0} #app{display:grid;gap:24px;padding:16px;justify-items:start}</style></head>
-      <body class="k2b-ui" data-theme="light"><div id="app"></div></body></html>`,
+      <body class="k2b-ui" data-theme="light"><div id="app"><div id="bars"></div><div id="dots"></div><div id="slots"></div><div id="changes"></div><div id="tabs"></div></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
-  await page.waitForSelector("#changes");
+  await page.waitForSelector("#changes .k2b-change-list");
   await page.evaluate(() => document.fonts.ready);
   await settled(page);
   return page;
@@ -74,6 +76,22 @@ const boxes = (page: Page, selector: string) =>
     }),
   );
 
+// Evidence for reviews: K2B_MARKS_SCREENSHOTS=<dir> writes the fixture at both widths.
+const shots = process.env.K2B_MARKS_SCREENSHOTS;
+test.if(Boolean(shots))("screenshots of the marks", async () => {
+  mkdirSync(shots!, { recursive: true });
+  for (const width of [1440, 390]) {
+    const page = await open(width);
+    try {
+      await page.evaluate(() => window.__setCount("3"));
+      await settled(page);
+      await page.screenshot({ path: `${shots}/marks-${width}.png` });
+    } finally {
+      await page.close();
+    }
+  }
+});
+
 for (const width of [1440, 390]) {
   describe(`marks at ${width}`, () => {
     test("bars are 5 × 22 px on one base line; a failed run is broken, a skipped one short, and each is a named link", async () => {
@@ -84,9 +102,13 @@ for (const width of [1440, 390]) {
         expect(bars.map((bar) => bar.height)).toEqual([22, 22, 6, 22, 22]);
         expect(new Set(bars.map((bar) => bar.y + bar.height)).size).toBe(1);
         for (let index = 1; index < bars.length; index++) expect(bars[index]!.x - bars[index - 1]!.x).toBe(8);
-        const failed = await page.locator('#bars .k2b-dot-strip__dot[data-state="danger"]').evaluate((node) => getComputedStyle(node).backgroundImage);
-        expect(failed).toContain("transparent");
-        expect(await page.locator("#bars").getAttribute("role")).toBe("list");
+        // The gap of a failed run is open: no fill behind the broken bar.
+        const failed = await page
+          .locator('#bars .k2b-dot-strip__dot[data-state="danger"]')
+          .evaluate((node) => ({ image: getComputedStyle(node).backgroundImage, fill: getComputedStyle(node).backgroundColor }));
+        expect(failed.image).toContain("rgba(0, 0, 0, 0) 36%");
+        expect(failed.fill).toBe("rgba(0, 0, 0, 0)");
+        expect(await page.locator("#bars .k2b-dot-strip").getAttribute("role")).toBe("list");
         expect(await page.getByRole("listitem", { name: "Run 2: failed" }).getAttribute("href")).toBe("#r2");
       } finally {
         await page.close();
@@ -99,13 +121,19 @@ for (const width of [1440, 390]) {
         const shapes = await page.locator("#dots .k2b-dot-strip__dot").evaluateAll((nodes) =>
           nodes.map((node) => {
             const style = getComputedStyle(node);
-            return { radius: style.borderRadius, rotated: style.transform !== "none", filled: style.backgroundColor !== "rgba(0, 0, 0, 0)" };
+            return {
+              radius: style.borderRadius,
+              rotated: style.transform !== "none",
+              filled: style.backgroundColor !== "rgba(0, 0, 0, 0)",
+            };
           }),
         );
         expect(shapes[0]).toEqual({ radius: "999px", rotated: false, filled: true });
         expect(shapes[1]).toEqual({ radius: "2px", rotated: true, filled: true });
         expect(shapes[2]).toEqual({ radius: "999px", rotated: false, filled: false });
-        const places = await page.locator("#slots .k2b-dot-strip__dot").evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).borderRadius));
+        const places = await page
+          .locator("#slots .k2b-dot-strip__dot")
+          .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).borderRadius));
         expect(new Set(places)).toEqual(new Set(["2px"]));
       } finally {
         await page.close();
@@ -138,7 +166,12 @@ for (const width of [1440, 390]) {
           await settled(page);
           expect(await boxes(page, "[role=tab]")).toEqual(before);
         }
-        expect(await page.locator(".k2b-tabs__count").first().evaluate((node) => getComputedStyle(node).fontVariantNumeric)).toBe("tabular-nums");
+        expect(
+          await page
+            .locator(".k2b-tabs__count")
+            .first()
+            .evaluate((node) => getComputedStyle(node).fontVariantNumeric),
+        ).toBe("tabular-nums");
       } finally {
         await page.close();
       }

@@ -36,9 +36,23 @@ For one bar, pass `segments` and `limit` to `ProgressBar` directly;
 
 Use `DotStrip` for a fixed window of outcomes, not for a percentage. Each dot
 is one item in order; the tone says what happened: `accent` (the app colour)
-for "it worked", `warning` for skipped, `danger` for failed, `ai` for an
-outcome that came from AI, and `muted` for "nothing to do". Always show a
-legend or counts next to it, because colour alone carries no meaning. Pass
+or `success` for "it worked", `warning` for something to look at, `danger` for
+failed, `ai` for an outcome that came from AI, `muted` for "nothing to do" or
+skipped, and `running` for a run in progress (a plum ring that pulses until its
+result; still with reduced motion). The shape repeats the state, so colour is
+never the only sign: a circle when it worked, a diamond for `warning` and
+`danger`, a ring for `muted`. Still show a legend or counts next to it.
+
+`variant="bar"` draws upright bars on one base line, 5 × 22 px at `size="lg"`
+(4 × 14 px at `md`), 3px apart, as for the last runs beside a time: a failed
+run is red and broken in the middle, a skipped one is a short 6px bar, an
+empty place a quiet full bar. `variant="slot"` draws square places, as for the
+places of a runner: filled when taken, a square ring when free.
+
+Pass `links` (one `href` per dot, `undefined` for none) and `dotLabels` (one
+name per dot, such as "Run at 14:01: failed") to make each dot lead to what it
+stands for; the strip then becomes a list of named items, hover darkens a mark,
+and focus rings it. Pass
 `length` while the window is still filling: the remaining slots stay as empty
 rings, so the strip keeps its size and nothing shifts. `waiting` shows every
 slot as a quiet placeholder before anything was checked.
@@ -74,11 +88,12 @@ type ProgressRingProps = {
   value: number; tone?: ProgressRingTone; label?: string; class?: string;
 };
 
-type DotStripTone = "accent" | "warning" | "danger" | "ai" | "muted";
+type DotStripTone = "accent" | "success" | "warning" | "danger" | "ai" | "muted" | "running";
 
 type DotStripProps = {
   dots: readonly DotStripTone[]; length?: number; waiting?: boolean; selected?: number | null;
-  size?: "md" | "lg"; columns?: number; label: string; class?: string;
+  size?: "md" | "lg"; variant?: "dot" | "bar" | "slot"; columns?: number; label: string;
+  links?: readonly (string | undefined)[]; dotLabels?: readonly string[]; class?: string;
 };
 ```
 
@@ -88,7 +103,7 @@ type DotStripProps = {
 
 Pass a task-specific `label`. Tone supplements the numeric value and must not carry meaning alone.
 
-`DotStrip` is one image with the `label` as its name. Put the counts into the
+Without `links`, `DotStrip` is one image with the `label` as its name. Put the counts into the
 label ("Last 50 mails: 17 matched, 6 skipped, 27 not"); single dots are not
 announced. `selected` adds a ring around one dot for the item shown next to the
 strip. `columns` wraps long windows into rows, for example 25 per row on a phone.
