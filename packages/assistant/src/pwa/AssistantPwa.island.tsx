@@ -41,6 +41,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { assistantApi } from "../api/client";
+import AssistantAuthoringStop from "../frontend/AssistantAuthoringStop";
 import AssistantCodeVersionCard from "../frontend/AssistantCodeVersionCard";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantDictation } from "../frontend/assistant-dictation";
@@ -974,6 +975,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                 <AiChatActionsProvider
                   actions={{
                     // The same version card as the workspace: on a phone it says where switching on works.
+                    renderCodeAuthoringStop: (state, continuable) => <AssistantAuthoringStop state={state} continuable={continuable} />,
                     renderCodeVersion: (version) => (
                       <AssistantLiveProvider value={liveHub}>
                         <AssistantCodeVersionCard {...version} timeZone={props.timeZone} />
@@ -1003,7 +1005,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                       if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? t().retry);
                     },
                     onContinueTurn: async (message) => {
-                      await send({ intent: "send", text: message, attachments: [] }, false);
+                      if (!(await send({ intent: "send", text: message, attachments: [] }, false))) throw new Error(t().retry);
                     },
                     fileUrl: chat.fileContentUrl,
                   }}

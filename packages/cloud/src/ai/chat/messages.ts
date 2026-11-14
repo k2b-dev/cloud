@@ -53,6 +53,7 @@ const messages = /* @__PURE__ */ i18n.define({
       thinking: "Thinking",
       showReasoning: "Show reasoning",
       reconnecting: "Reconnecting",
+      authoringTurnStopped: "Work paused after reaching this turn’s safety limit.",
       turnErrorTitle: "The answer was interrupted.",
       turnErrorReason: ({ code, limitMinutes }: AiTurnError) => {
         if (code === "model_unavailable") return "The model service did not answer.";
@@ -425,6 +426,7 @@ const messages = /* @__PURE__ */ i18n.define({
       thinking: "Denkt nach",
       showReasoning: "Denkprozess anzeigen",
       reconnecting: "Verbindung wird wiederhergestellt",
+      authoringTurnStopped: "Die Arbeit pausiert, weil die Grenze für diesen Lauf erreicht ist.",
       turnErrorTitle: "Die Antwort wurde abgebrochen.",
       turnErrorReason: ({ code, limitMinutes }) => {
         if (code === "model_unavailable") return "Der KI-Dienst hat nicht geantwortet.";

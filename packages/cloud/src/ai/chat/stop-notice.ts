@@ -1,10 +1,14 @@
-import type { AiStoredMessage } from "../types";
+import type { AiCodeAuthoringStop, AiStoredMessage } from "../types";
 
-export type AiStopNotice = { kind: "output_limit"; reasoning: boolean } | { kind: "stopped" };
+export type AiStopNotice =
+  | { kind: "code_authoring"; state: AiCodeAuthoringStop }
+  | { kind: "output_limit"; reasoning: boolean }
+  | { kind: "stopped" };
 
 /** Silent truncation guard: every non-normal terminal reason has a message-level explanation. */
 export function aiMessageStopNotice(entry: AiStoredMessage): AiStopNotice | null {
   if (entry.message.role !== "assistant") return null;
+  if (entry.meta?.codeAuthoringStop) return { kind: "code_authoring", state: entry.meta.codeAuthoringStop };
   const reason = entry.stopReason ?? entry.message.stopReason;
   if (!reason || reason === "stop" || reason === "tool_use") return null;
   if (reason === "max_tokens" || reason === "length") {

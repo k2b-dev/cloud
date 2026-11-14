@@ -14,7 +14,7 @@ import { createContext, createSignal, For, type JSX, Show, useContext } from "so
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
-import type { AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
+import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import {
   type AiForkMessageInput,
   type AiRetryMessageInput,
@@ -36,6 +36,8 @@ type RetryMessageHandler = (entry: AiStoredMessage, input?: AiRetryMessageInput)
 type RetrySteerHandler = (block: Extract<AiTurnBlock, { kind: "steer_message" }>) => void | Promise<void>;
 
 export type AiChatActions = {
+  /** Host-localized authoring budget notice. Consent uses the normal onContinueTurn send path. */
+  renderCodeAuthoringStop?: (state: AiCodeAuthoringStop, continuable: () => boolean) => JSX.Element;
   /**
    * Host-owned visualizations, persisted independently of the execution session. Called once per `code_present`
    * call, from its first event: `result()` is undefined while the call runs and the saved result afterwards, so

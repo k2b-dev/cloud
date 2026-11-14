@@ -36,6 +36,7 @@ export type {
   AiChatActions,
   AiTurnActionRequest,
 } from "./chat/message-actions";
+export { useAiChatActions } from "./chat/message-actions";
 export type {
   AiForkMessageInput,
   AiRetryMessageInput,

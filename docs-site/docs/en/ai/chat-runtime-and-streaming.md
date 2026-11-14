@@ -914,6 +914,70 @@ reason `step_limit` instead of continuing without them. Each hint logs the warni
 and each switch to the final answer logs `AI turn answers without further
 tools`, both under `ai:executor` with the conversation and turn IDs.
 
+### Code authoring safety budget
+
+When Gustav invokes a lasting Code authoring tool or selects the authoring
+Skill, one turn can make at most 16 model attempts and admit at most 512,000 cumulative input tokens, including
+instructions, conversation, and tool schemas. Provider retries and automatic
+compaction share this allowance. Previously loaded tools alone do not activate
+the allowance in a later turn. Admission reserves the input estimate; reported input replaces it when higher. These
+estimates use the same four-characters-per-token convention as AI accounting,
+so they are a safety budget rather than an exact provider invoice ceiling.
+
+The same Code authoring error gets an initial attempt and two retries.
+Different diagnostic codes, source locations, messages, and assertion paths
+are separate errors; an undifferentiated failed check is not an error identity.
+Changing a fixture title, source text, or switching between test and simulation
+does not reset that error count. Successful fixtures that deliberately test
+an error do not count as failures. A response containing several checks cannot
+run more identical failing checks than this allowance.
+
+At a bound, Gustav completes the current tool, skips remaining authoring tools
+in that response when the repair allowance is spent, and ends with a short
+persisted receipt in the chat. Assistant renders it in English or German as one
+notice: the reason (the same problem repeated, the attempt limit or the input
+budget), what the receipt confirms as done (checks and example tests of drafts
+not yet submitted) and what is still open (checks, example tests and version
+saves), and whether a draft or version is saved. This summary comes from settled tool results,
+not model prose; a later draft edit invalidates earlier passing checks. No
+additional model call writes the notice. Saved results and the server-held
+draft remain available. The receipt describes the state at the stop, rather
+than promising indefinite draft retention. Forks omit this conversation-bound
+receipt because they do not copy its draft. **Continue** starts a new turn through the normal
+message send path only after a click; rendering, reconnecting and reloading
+never resume work. The action is disabled during other work and while sending;
+a failed send keeps the notice with a retry explanation. Stopping does not
+submit or activate the draft. Hosts of `createAiChatTimeline` provide localized
+presentation with `AiChatActions.renderCodeAuthoringStop` and use
+`useAiChatActions()` from `@k2b/cloud/ai/ui` for the shared continuation action.
+Worker recovery restores provider usage and check failures for the whole turn,
+including archived messages. Missing provider input usage reserves 64,000
+estimated tokens per call on recovery, rather than spending the entire turn
+allowance. Steering does not refill this safety budget.
+
+These are authoring limits, separate from the configured Assistant cost
+allowances, which still apply to every provider call. The F7 per-attempt and
+daily AI allowances apply to AI invoked **by saved Code**. They do not fund
+Gustav's interactive authoring, and an unpriced model supplies no conversion
+from those monetary allowances to authoring tokens.
+
+The authoring allocation is four 128,000-token reference windows (512,000 input
+tokens). A half-window (64,000) estimates a recovered call without usage and
+reserves room before compaction, whose source is already bounded to 60,000
+characters. The allocation allows 16 attempts at a quarter-window planning size
+(32,000). The two repair retries follow the existing malformed-response repair allowance. These fixed
+operational limits also cover free and unpriced models.
+
+After a successful check of a Code's draft, later requests replace its earlier
+SDK dumps with a short reload note. The complete results stay in conversation
+history. Gustav can request fresh signatures when editing again. Normal model
+compaction remains available for earlier turns and smaller context windows,
+subject to the same authoring allowance. Authoring asks for compaction when
+history exceeds the half-window reserve, so a model with a large window does
+not wait until history alone exceeds the turn allowance. There is no separate fixed request
+ceiling that could permanently block a long conversation. The representative
+context regression fixture pins requests below the 32,000-token planning size.
+
 ### Transient provider failures
 
 A chat turn, including one that runs scheduled or in the background, repeats a

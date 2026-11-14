@@ -36,9 +36,11 @@ import {
 import { aiChatMessages } from "./chat/messages";
 import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
+import { CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
 import { createCloudCompactFn } from "./compaction";
 import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { aiFileStore } from "./files-store";
+import { readAiTurnCallUsage } from "./inference-calls";
 import { AI_LIVE_ARGS_INTERVAL_MS, createLiveArgsReader } from "./live-tool-args";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
 import { isMalformedToolCallId } from "./malformed-tool-calls";
@@ -1224,7 +1226,9 @@ export class AiTurnExecutor {
       );
       return;
     }
+    let authoringBudget: ReturnType<typeof createCodeAuthoringTurnBudget> | undefined;
     const store = aiConversations.createSessionStore({
+      codeAuthoringStop: () => authoringBudget?.stopped() ?? null,
       onMessage: async (message) => {
         if (message.message.role === "assistant") await pipeline.timing.finishGeneration();
         await pipeline.emitMessage(message);
@@ -1557,11 +1561,27 @@ export class AiTurnExecutor {
     const remember = (reason: AiTurnFailureReason | null) => {
       failureReason.current = reason;
     };
+    const usage = await readAiTurnCallUsage(turnId);
+    authoringBudget = createCodeAuthoringTurnBudget({
+      priorCalls: {
+        calls: usage.calls,
+        inputTokens: usage.inputTokens + usage.unknownCalls * CODE_AUTHORING_TURN_BUDGET.unknownInputTokens,
+      },
+      finishedToolCalls: turnBlocks.flatMap((block) =>
+        block.kind === "tool" && !isMalformedToolCallId(block.callId)
+          ? [{ ...block, name: providerNamesByCallId.get(block.callId) ?? block.name }]
+          : [],
+      ),
+      selected: loadedSkills.some((skill) => skill.name === "code-authoring"),
+      onStop: (reason) => log.info("AI authoring turn reached its safety budget", { conversationId, turnId, reason }),
+    });
     const turnPolicy = applyAiTurnPolicy({
       provider: acceptCanonicalToolNames(
         retryTransientProviderErrors(
           rememberProviderErrors(
-            assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId, resolved.model),
+            authoringBudget.wrap(
+              assistantQuotaProvider(resolved.provider, config, quotaSubject, resolved.profile, turnId, conversationId, resolved.model),
+            ),
             remember,
           ),
           {
@@ -1623,7 +1643,7 @@ export class AiTurnExecutor {
       }),
       tools: async () => {
         try {
-          return await turnPolicy.tools();
+          return authoringBudget.tools(await turnPolicy.tools());
         } catch (error) {
           remember(aiTurnReasonFromThrown(error));
           throw error;
@@ -1636,27 +1656,32 @@ export class AiTurnExecutor {
       coalesce: { ms: AI_COALESCE_MS, maxChars: AI_COALESCE_MAX_CHARS },
       // Steps of tools that declare `streamArgs` show those arguments while the model writes them.
       toolArgsPreview: true,
-      compact: createCloudCompactFn({
-        conversationId,
-        turnId,
-        modelId: resolved.profile.id,
-        providerType: resolved.profile.provider,
-        // Accounted as compaction, outside the chat turn's tool policy and retries.
-        provider: rememberProviderErrors(
-          inferenceProvider(resolved.provider, resolved.profile, {
-            subject: quotaSubject,
-            turnId,
-            conversationId,
-            modelRef: resolved.model,
-            kind: "background",
-            task: "chat-compaction",
-          }),
-          remember,
-        ),
-        additionalInstructions: settings.compactionInstructions,
-        maxOutputTokens: resolved.profile.maxOutputTokens,
-        signal: abortController.signal,
-      }),
+      compact: authoringBudget.compact(
+        createCloudCompactFn({
+          conversationId,
+          turnId,
+          modelId: resolved.profile.id,
+          providerType: resolved.profile.provider,
+          // Retains background accounting; shares the authoring call/input allowance.
+          provider: authoringBudget.wrap(
+            rememberProviderErrors(
+              inferenceProvider(resolved.provider, resolved.profile, {
+                subject: quotaSubject,
+                turnId,
+                conversationId,
+                modelRef: resolved.model,
+                kind: "background",
+                task: "chat-compaction",
+              }),
+              remember,
+            ),
+            "compaction",
+          ),
+          additionalInstructions: settings.compactionInstructions,
+          maxOutputTokens: resolved.profile.maxOutputTokens,
+          signal: abortController.signal,
+        }),
+      ),
       maxToolResultChars: resolveAiToolResultMaxChars({
         contextWindow: resolved.provider.contextWindow,
         configuredMaxChars: settings.maxToolResultChars,
@@ -1687,7 +1712,10 @@ export class AiTurnExecutor {
       freshApprovalRequired,
       appliedSteers,
       noteToolRound: turnPolicy.noteToolRound,
-      noteToolCall: turnPolicy.noteToolCall,
+      noteToolCall: (call) => {
+        authoringBudget.noteToolCall(call);
+        turnPolicy.noteToolCall(call);
+      },
       failureReason,
       rejectedToolCallIds,
       unavailablePlaceToolNames,
