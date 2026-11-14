@@ -164,7 +164,7 @@ describe(`Panes drop previews in ${browserName}`, () => {
       await page.keyboard.press("Escape");
       await page.mouse.up();
 
-      expect({ overGroup, overEdge, preview }).toEqual(EXPECTED);
+      expect({ overGroup, overEdge, preview }).toEqual(expectedIn(browserName));
     } finally {
       await context.close();
     }
@@ -568,3 +568,22 @@ const EXPECTED = {
     opacity: "0.92",
   },
 };
+
+/**
+ * WebKit has no rounded `polygon(round …)` clip paths and reports `none` for the trapezoids; the stylesheet is the same.
+ * Every other value is the same in both engines.
+ */
+const expectedIn = (engine: string) =>
+  engine === "webkit"
+    ? {
+        ...EXPECTED,
+        overGroup: EXPECTED.overGroup.map((target) => ({
+          ...target,
+          clipPath: target.clipPath.startsWith("polygon(round") ? "none" : target.clipPath,
+        })),
+        overEdge: EXPECTED.overEdge.map((target) => ({
+          ...target,
+          clipPath: target.clipPath.startsWith("polygon(round") ? "none" : target.clipPath,
+        })),
+      }
+    : EXPECTED;
