@@ -108,18 +108,22 @@ Use `Chat.Decision` for one question in a conversation. The host owns the answer
 execution, expiry, and any policy change. Use verb-and-target answers such as
 "Send to Lea" and "Keep draft"; never offer "Approve all". Answers are at
 least 44 px high and a long label wraps inside its button. In Cloud, approvals
-use `ApprovalCard` from `@k2b/cloud/approvals/ui`, which draws this component;
-see [Cloud approvals](/en/ui/cloud/approvals).
+use `ApprovalFrame` or `ApprovalCard` from `@k2b/cloud/approvals/ui`, which draw
+this component; see [Cloud approvals](/en/ui/cloud/approvals).
 
 A decision has one look in every place: a tinted ground in the AI colour
-(`--k2b-ai-surface`), 14 px corners, no rules, no shadow, and its own AI primary
+(`--k2b-ai-surface`), 12 px corners, no rules, no shadow, and its own AI primary
 scope (`data-k2b-primary="ai"`). The head names the `kind` ("Approval") and the
 `source` with its icon tile; once answered, it ends with the `status` word and
-icon. The sentence (16 px, weight 400) and the reason follow. `details` lie on
-the surface colour under their label, such as "Details from Mail". The answer
-row ends the card: quiet `meta` facts such as the expiry and the `remember`
-checkbox on the left, then `back`, decline, and the one filled `confirm` answer
-on the right. The decision follows its own width: below 32.5 rem the answers
+icon. The sentence (18 px, weight 400) and the reason follow. `details` lie on
+the surface colour under their label, such as "Details from Mail", with an
+optional quiet `note` line under them; `notes` are further lines after them.
+The answer row ends the card: quiet `meta` facts such as the expiry (a fact may
+carry a `success`, `warning`, or `danger` tone) and the `remember` checkbox on
+the left, then `link` and `back` as quiet text in the AI colour, `more` answers,
+decline, and the one filled `confirm` answer on the right; every answer is
+optional. While a tall decision is in view, its answer row stays at the bottom
+of the view. The decision follows its own width: below 32.5 rem the answers
 take the full row first and the facts sit under them, as in a side panel or on
 a phone.
 
@@ -301,7 +305,7 @@ type ChatOutcomeProps = {
 
 | Member | Props / behavior |
 | --- | --- |
-| `Chat.Decision` | `ChatDecisionProps`; confirm is the filled `ai` answer (`secondary` in `edit` mode), decline and back are `secondary` on the tint (decline `ghost` in `edit` mode), remember is a checkbox. Reason defaults to `neutral` and an info icon. |
+| `Chat.Decision` | `ChatDecisionProps`; confirm is the filled `ai` answer (`secondary` in `edit` mode), decline and `more` are `secondary` on the tint (decline is quiet `text` in `edit` mode), `back` and `link` are quiet `text`, remember is a checkbox. Reason defaults to `neutral` and an info icon. |
 | `Chat.Outcome` | `ChatOutcomeProps`; tone chooses the default icon, `icon` overrides it. The root accepts programmatic focus with `tabindex=-1`. |
 
 ### Commands and file selection

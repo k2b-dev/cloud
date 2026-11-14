@@ -57,8 +57,8 @@ every time. Cloud records the level and checks the decision channel.
 A person can decide the same request in these places:
 
 - The approval card in the chat that waits for it.
-- The owning app's list or band, rendered with the shared `Approvals` component.
-  Mail shows a band on the draft that the Assistant wants to send.
+- The owning app's list, rendered with the shared `Approvals` component.
+  Mail lists the request on the draft that the Assistant wants to send.
 - The Assistant's **Approvals** view at `/app/assistant?approvals=1`.
   Its navigation row sits in the sidebar while a request waits.
   The row appears or disappears only on navigation. It stays while the view
@@ -74,7 +74,7 @@ comes from the app's review or declared policy, not the model's explanation;
 legacy reviews and Actions without a policy use `app_asks`. Filling a missing
 reason in a displayed copy never changes the approval snapshot or its digest.
 
-The list and the band's detail panel reuse the chat's preview and reading
+The list reuses the chat's approval card and reading
 controls. They show the stored review, including its locale and revision links.
 An excerpt without a link can expand in place; a preview with an `open` link
 opens the app's reviewed revision. These surfaces share the
@@ -386,9 +386,10 @@ export const InventoryApprovals = (props: { initial: ApprovalPage }) =>
   <Approvals app="inventory" initial={props.initial} />;
 ```
 
-Use `layout="band"` above a resource. The band shows nothing when the loaded
-page has no requests. Decided rows stay as receipts until the next load.
-The default `list` layout includes an empty state.
+Pass `link` to list only the requests for one resource, such as the draft a
+send Action would send; that list shows nothing until such a request waits.
+Decided rows stay as receipts until the next load. Without `link` the list
+includes an empty state.
 Without `initial`, the component loads in the browser.
 
 An optional navigation row can use `ApprovalsNavStatus` and `approvalNavCount`

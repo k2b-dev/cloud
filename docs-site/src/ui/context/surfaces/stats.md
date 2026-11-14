@@ -5,7 +5,9 @@ framed tile of its own: an optional icon and the label at the top, the figure
 with its change below, and one support line with the comparison, a note, and
 the trend. The tile is an island (layers and shadows): lifted in the main
 content, flat inside another island, a column, a panel, or a dialog. A muted
-grid tints its tiles instead and never lifts them.
+grid tints its tiles instead and never lifts them. A `flat` grid has no tiles
+at all: figures stand side by side in the flow, the icon without its chip, as
+key figures in a chat answer do.
 
 The application owns the values, their scope, and the links used to investigate them.
 
@@ -51,7 +53,7 @@ import {
 | `action` | `{ label: string; href: string }` | none | Adds a link beside the title when `title` is present. |
 | `columns` | `1 \| 2 \| 3 \| 4 \| 5 \| 6` | `4` | Tiles per row on a wide container. |
 | `size` | `"lg" \| "md" \| "sm"` | `"md"` | Sets the density inherited by the tiles. |
-| `surface` | `"white" \| "muted"` | `"white"` | Gives the tiles the page or the muted surface. |
+| `surface` | `"white" \| "muted" \| "flat"` | `"white"` | Gives the tiles the page or the muted surface, or drops the tiles (`flat`). |
 | `class` | `string` | none | Adds sizing or layout classes to the outer element. |
 
 The grid is a container, so the row follows the space it gets, not the

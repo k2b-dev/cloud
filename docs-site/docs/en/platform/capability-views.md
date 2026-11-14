@@ -207,6 +207,15 @@ binds its view for the `preview` place, which allows no `Choice` and no
 `Draft`. Without a reader view, on an error, a timeout, or without access, the
 column shows the search facts (`metadata`, `preview`, `previewUrl`) as before.
 
+The hits keep a 360 px column; the preview takes the rest of the dialog, and
+detail blocks stand flat in it. A button left of **Close** maximizes the search
+to nearly the whole window, with 440 px for the hits; the browser remembers the
+choice. On a phone the search already fills the screen and the preview opens as
+its own page. Mail's `message.read` shows the people, the date, the attachments,
+and the text of a message (16 KiB, then a note to open it in Mail);
+`conversation.read` shows its state, assignees, tags, summary, and latest
+messages.
+
 ## Text for terminals, MCP, and the model
 
 - `cld assistant` prints the result's `summary` and the view as text

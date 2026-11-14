@@ -1,7 +1,8 @@
 # Cloud approvals
 
 Approvals look the same in every place, so a person always recognises one.
-`ApprovalCard` draws every approval: in the Assistant chat, the side panel, the
+`ApprovalFrame` draws every approval and `ApprovalCard` fills it for a
+Capability Action: in the Assistant chat, the side panel, the
 **Approvals** list, Code pages, other apps, and on phones. Only its width
 follows the place. `Approvals` lists the signed-in person's open approvals with
 that card and lets them approve or reject each one in place. Every app uses the
@@ -23,7 +24,7 @@ component loads in the browser and shows a loading state first.
 ## Import
 
 ```ts
-import { Approvals, ApprovalsNavStatus, approvalNavCount } from "@k2b/cloud/approvals/ui";
+import { ApprovalFrame, Approvals, ApprovalsNavStatus, approvalNavCount } from "@k2b/cloud/approvals/ui";
 import { loadPendingApprovals } from "@k2b/cloud/server";
 ```
 
@@ -38,8 +39,42 @@ import { loadPendingApprovals } from "@k2b/cloud/server";
   it waits, and no count or bulk action.
 - `initial`: the SSR page for the same `app` and `link`.
 
-There are no look props. `ApprovalCard` takes data and answers only; the
-`approval-card-calls` rule rejects `class`, `style`, variants, and spreads on it.
+There are no look props. `ApprovalCard` and `ApprovalFrame` take data and
+answers only; the `approval-card-calls` rule rejects `class`, `style`, variants,
+and spreads on either, and lets only `ApprovalFrame` draw `Chat.Decision`.
+
+## Approval frame
+
+Something that must look like an approval but is no Capability Action, such as
+switching on a Code version or an admin's review of one, fills `ApprovalFrame`
+with its own data. The frame knows no Capability:
+
+- `locale`, `state` (`open`, `sending`, `decided`, `expired`, or `loading`),
+  and `mode` (`approve` or `edit`, which reads "Draft").
+- `source`: the app's `name`, `icon`, and `accent`, shown as "Approval · App".
+- `status`: `{ tone, label }` at the end of the head in every state but an open
+  question. The frame picks the icon from the tone (`running`, `done`, `off`,
+  `waiting`, `warning`, `error`, `expired`); `loading` says "Loading" itself and
+  holds the place with two placeholder lines.
+- `sentence`: text and chips (`ActionText`), never markup. `reason`: the line
+  under it, with an icon and a `neutral`, `warning`, or `danger` tone.
+- `details`: `{ label, content, note? }` on the surface colour; `note` is one
+  quiet line under them that holds for every such question, such as "Cloud
+  checks access and triggers, not behaviour."
+- `notes`: lines after the details, such as what happens now and what holds
+  until then.
+- `meta`: quiet facts at the start of the answer row; `tone: "success"` or
+  `"warning"` colours a result such as "3 of 3 examples passed".
+- Answers: `confirm` (the one filled answer), `decline`, `back` and `link`
+  (quiet text in the AI colour, such as **Change** or **See everything**),
+  `more` (further answers on the surface colour, such as **Withdraw**), and
+  `remember`. All are optional; `waiting` turns every answer off, `unavailable`
+  the confirming ones.
+- `outcome`: the result line of every closed state, usually `Chat.Outcome`.
+
+The answer row of a tall frame, such as an admin review, stays at the bottom of
+the view while the frame is in view. That is the frame's behaviour, not an
+option.
 
 An app that confirms an Action itself before it runs it, such as a runner
 dialog, draws the review's details with `ApprovalDetails` from
@@ -48,13 +83,13 @@ dialog, draws the review's details with `ApprovalDetails` from
 ## The card
 
 - **Ground.** A tinted ground in the AI colour (`--k2b-ai-surface`) in every
-  place, light and dark, with 14 px corners, no rules, and no shadow. The card
+  place, light and dark, with 12 px corners, no rules, and no shadow. The card
   sets its own AI primary scope, so it looks the same in a blue app. A flat side
   panel keeps the tint: a tint without a shadow is no depth.
 - **Head.** "Approval · App" with a shield icon and the app's icon tile. After
   an answer, the head ends with the state as a word and an icon: Running, Done,
   Declined, Expired, Failed, or Unclear.
-- **Question.** The app's sentence with chips (16 px), then Cloud's reason line
+- **Question.** The app's sentence with chips (18 px), then Cloud's reason line
   with its icon, such as "Sends something to other people."
 - **Details.** The app's [view blocks](/en/docs/platform/capability-views) on the
   surface colour under "Details from App". An image and the details that follow
@@ -62,7 +97,9 @@ dialog, draws the review's details with `ApprovalDetails` from
 - **Answer row.** Left, quiet facts: "Expires in 9 min" where Cloud knows the
   expiry, and either the checkbox **Don't ask again in this chat** (only on
   `standard` requests that offer it) or "Asks every time". Right, **Change** for
-  a draft, the decline answer, and the one filled approve answer. Below 32.5 rem
+  a draft as quiet text in the AI colour, the decline answer, and the one filled
+  approve answer. While a tall card is in view, the answer row stays at the
+  bottom of the view. Below 32.5 rem
   of the card's own width the answers take the full row and the facts sit under
   them.
 
@@ -74,8 +111,8 @@ read before it can be approved; the approve answer says why it waits.
 
 When the review's details contain a `Draft`, the card starts as "Draft · App"
 in edit mode: one raised island with the intent, the note "Nothing goes out
-before you approve.", the fields with their labels above them, **Discard**, and
-**Send …**. Read-only context rows such as "To" stand above the fields; people,
+before you approve.", the fields with their labels above them, **Discard** as
+quiet text, and **Send …**. Read-only context rows such as "To" stand above the fields; people,
 places, and files are never edited here. A review link with `rel: "edit"` such
 as **Change recipients in Mail** opens the app.
 
