@@ -111,7 +111,8 @@ the focus ring; on a coarse pointer its hit area grows to 2.75rem.
   `aria-haspopup="dialog"`, `aria-controls`, and `aria-expanded` instead of a
   description.
 - The last line holds the actions at its start and `hint` at its end, in the
-  12px meta step. Controls in the body, such as "Try again" after a failed
+  12px meta step. Links there read as text; only their underline carries the
+  link accent, so they follow the primary scope. Controls in the body, such as "Try again" after a failed
   load, count as actions as well; the card must then have `actions`.
 
 A card without `actions` keeps the hint behaviour above; like every card it is
