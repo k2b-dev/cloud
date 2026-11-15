@@ -1,6 +1,6 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
-import { Button, ButtonLink, useLocale } from "@k2b/ui";
-import { createSignal, For, onMount, Show } from "solid-js";
+import { Button, ButtonLink, Paper, useLocale } from "@k2b/ui";
+import { For, Show } from "solid-js";
 import { type CodeAttentionItem, type CodeAttentionReason, type CodePlace, loadCodeAttention } from "../code-summary";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
 import { browserCodeInvoke } from "./code-client";
@@ -20,47 +20,28 @@ const placeOf = async (item: CodeAttentionItem): Promise<CodePlace> => {
   }
 };
 
+/** The browser's read of Code that needs the person, from `cursor` on, each with its place. */
+export const loadCodeAttentionView = async (cursor?: string): Promise<CodeAttentionView> => {
+  const page = await loadCodeAttention(browserCodeInvoke, cursor);
+  return {
+    items: await Promise.all(page.items.map(async (item) => ({ ...item, place: await placeOf(item) }))),
+    nextCursor: page.nextCursor,
+  };
+};
+
 /**
- * "Code you administer" under Waiting for you: only Code of a place that needs the person (failed, without access, awaiting approval,
- * paused). It is managed at its place, so each row leads there. Nothing shows when nothing waits.
- * `initial` is the server's answer (null when Core could not answer); without it, the list loads in the browser.
+ * "Code you administer" under Waiting for you: only Code of a place that needs the person (failed, without access,
+ * awaiting approval, paused). It is managed at its place, so each row leads there. The page decides when the section
+ * shows; `view` null says that Core could not answer.
  */
-export default function AssistantCodeAttention(props: { initial?: CodeAttentionView | null }) {
+export default function AssistantCodeAttention(props: {
+  view: CodeAttentionView | null;
+  more: "idle" | "loading" | "failed";
+  onRetry: () => void;
+  onMore: () => void;
+}) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
-  const [view, setView] = createSignal<CodeAttentionView | null | undefined>(props.initial);
-  const [more, setMore] = createSignal<"idle" | "loading" | "failed">("idle");
-  const withPlaces = async (cursor?: string) => {
-    const page = await loadCodeAttention(browserCodeInvoke, cursor);
-    return {
-      items: await Promise.all(page.items.map(async (item) => ({ ...item, place: await placeOf(item) }))),
-      nextCursor: page.nextCursor,
-    };
-  };
-  const load = async () => {
-    setView(undefined);
-    try {
-      setView(await withPlaces());
-    } catch {
-      setView(null);
-    }
-  };
-  // Core checks Code in bounded windows; the person continues where the last check stopped.
-  const loadMore = async () => {
-    const current = view();
-    if (!current?.nextCursor || more() === "loading") return;
-    setMore("loading");
-    try {
-      const next = await withPlaces(current.nextCursor);
-      setView({ items: [...current.items, ...next.items], nextCursor: next.nextCursor });
-      setMore("idle");
-    } catch {
-      setMore("failed");
-    }
-  };
-  onMount(() => {
-    if (props.initial === undefined) void load();
-  });
   const reasonText = (reason: CodeAttentionReason) =>
     ({
       run_failed: t().codeAttentionRunFailed,
@@ -68,50 +49,59 @@ export default function AssistantCodeAttention(props: { initial?: CodeAttentionV
       approval_pending: t().codeAttentionApproval,
       paused: t().codeAttentionPaused,
     })[reason];
-  const placeName = (item: CodeView) => item.place.name ?? item.place.type ?? item.title;
-  type CodeView = CodeAttentionView["items"][number];
+  type Item = CodeAttentionView["items"][number];
+  const placeName = (item: Item) => item.place.name ?? item.place.type ?? item.title;
 
   return (
-    <Show when={view() === null || (view()?.items.length ?? 0) > 0 || Boolean(view()?.nextCursor)}>
-      <section class="assistant-code-attention" aria-labelledby="assistant-code-attention-title">
-        <h2 id="assistant-code-attention-title" class="assistant-code-attention__heading">
-          {t().codeAttentionHeading}
-        </h2>
+    <section class="assistant-waiting-page__section assistant-code-attention" aria-labelledby="assistant-code-attention-title">
+      <h2 id="assistant-code-attention-title" class="assistant-waiting-page__heading">
+        {t().codeAttentionHeading}{" "}
+        <Show when={props.view}>{(view) => <span class="assistant-waiting-page__count">{view().items.length}</span>}</Show>
+      </h2>
+      <Paper class="assistant-waiting-page__rows">
         <Show
-          when={view()}
+          when={props.view}
           fallback={
-            <div class="assistant-code-attention__row" role="alert">
-              <span class="assistant-code-attention__tile" aria-hidden="true">
+            <div class="assistant-waiting-page__row" role="alert">
+              <span class="assistant-waiting-page__tile" aria-hidden="true">
                 <i class="ti ti-cloud-off" />
               </span>
-              <span class="min-w-0 text-primary">{t().codeAttentionFailed}</span>
-              <Button type="button" size="sm" variant="secondary" onClick={() => void load()}>
-                <i class="ti ti-refresh" aria-hidden="true" />
-                {t().codeBlockRetry}
+              <span class="assistant-waiting-page__row-copy">
+                <span class="assistant-waiting-page__row-title">{t().codeAttentionFailed}</span>
+              </span>
+              <Button type="button" size="sm" variant="secondary" onClick={() => props.onRetry()}>
+                {t().codeViewRetry}
               </Button>
             </div>
           }
         >
-          {(current) => (
+          {(view) => (
             <>
-              <ul class="assistant-code-attention__list">
-                <For each={current().items}>
+              <ul class="assistant-waiting-page__list">
+                <For each={view().items}>
                   {(item) => (
-                    <li class="assistant-code-attention__row">
-                      <span class="assistant-code__mark" aria-hidden="true">
-                        <FeatCodeMark variant="glyph" size="title" decorative />
+                    <li class="assistant-waiting-page__row">
+                      <span class="assistant-waiting-page__tile" aria-hidden="true">
+                        <FeatCodeMark variant="glyph" size={16} decorative />
                       </span>
-                      <span class="flex min-w-0 flex-col">
-                        <span class="text-primary">
+                      <span class="assistant-waiting-page__row-copy">
+                        <span class="assistant-waiting-page__row-title">
                           {t().codeAttentionTitle({ place: placeName(item), reasons: item.reasons.map(reasonText).join(", ") })}
                         </span>
-                        <span class="text-sm text-secondary">{t().codeAttentionSub({ title: item.title, place: placeName(item) })}</span>
+                        <span class="assistant-waiting-page__row-sub">
+                          {t().codeAttentionSub({ title: item.title, place: placeName(item) })}
+                        </span>
                       </span>
                       <Show when={item.place.href}>
                         {(href) => (
-                          <ButtonLink href={href()} size="sm" variant="secondary" class="assistant-code-attention__open">
-                            <i class="ti ti-arrow-right" aria-hidden="true" />
-                            {t().codeOpenPlace({ type: item.place.type ?? "" })}
+                          <ButtonLink
+                            href={href()}
+                            size="sm"
+                            variant="secondary"
+                            class="assistant-waiting-page__open"
+                            aria-label={t().waitingViewLabel({ title: placeName(item) })}
+                          >
+                            {t().waitingView}
                           </ButtonLink>
                         )}
                       </Show>
@@ -119,14 +109,14 @@ export default function AssistantCodeAttention(props: { initial?: CodeAttentionV
                   )}
                 </For>
               </ul>
-              <Show when={current().nextCursor}>
-                <div class="flex flex-wrap items-center gap-3">
-                  <span class="text-sm text-secondary">{t().codeAttentionTruncated}</span>
-                  <Button type="button" size="sm" variant="secondary" loading={more() === "loading"} onClick={() => void loadMore()}>
+              <Show when={view().nextCursor}>
+                <div class="assistant-waiting-page__row assistant-waiting-page__row--more">
+                  <span class="assistant-waiting-page__row-sub">{t().codeAttentionTruncated}</span>
+                  <Button type="button" size="sm" variant="ghost" loading={props.more === "loading"} onClick={() => props.onMore()}>
                     {t().codeAttentionMore}
                   </Button>
-                  <Show when={more() === "failed"}>
-                    <span role="alert" class="text-sm text-danger">
+                  <Show when={props.more === "failed"}>
+                    <span role="alert" class="assistant-waiting-page__failed">
                       {t().codeLoadMoreFailed}
                     </span>
                   </Show>
@@ -135,8 +125,7 @@ export default function AssistantCodeAttention(props: { initial?: CodeAttentionV
             </>
           )}
         </Show>
-        <p class="max-w-[40rem] text-sm text-secondary">{t().codeAttentionNote}</p>
-      </section>
-    </Show>
+      </Paper>
+    </section>
   );
 }

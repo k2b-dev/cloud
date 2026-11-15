@@ -5,7 +5,7 @@ section: Platform services
 order: 967
 description: Mount the shared Code page at a resource so its administrators see automations, targets, refused calls, runs, versions and switch Code on.
 tags: [code, ssr, ui, permissions]
-updated: 2026-11-11
+updated: 2026-11-14
 ---
 
 # Show a resource's Code page
@@ -19,53 +19,53 @@ registry, by type and ID.
 
 ## What people see
 
-The page is titled with the feat/code wordmark; screen readers hear whose Code
-it is.
+The page shows what the Code does, in words. It shows no source except in the
+editors' **Code** tab. Targets are named for the person who reads them, or by
+their type ("a space you cannot see").
 
-- **Overview:** the service account the Code runs as and its handle ("Runs as
-  service account “Code of info@example.com” · Handle code-7k2q9m4xwt") with
-  **Copy**, also before the first run; Administration › Code shows the same line
-  for an app's Code. Then the running version; its automations (schedules and
-  manual starts) with status, next run and last run; and its targets as
-  operation at target, as written in the Code. Targets say what the Code calls, not whether it
-  may: whoever manages a target decides that. A newer version that is ready but
-  off marks what it newly calls and offers **Switch on**. A version that waits
-  for a Cloud admin says so and cannot be switched on yet. When the newest
-  finished run failed with a refused call, **Last run** shows it first (see
-  below). Paused Code shows how to resume. Internet origins come from the full
-  `manifest.internet` list reviewed with each version, including calls without
-  a secret. Running and waiting versions list their own origins; new ones are
-  marked. Historical versions show their reviewed list too.
-- **Runs:** each run with its trigger, version and state, including skipped
-  schedule ticks. A run lists its calls in order with their result. A failed
-  run with a refused call shows the refusal in place of the generic failure. A run that
-  failed after its first action offers **Run again**, once per failed run; a
-  run that failed earlier was already retried by Core. Editors can open any
-  failed run in the panel with **View with <panel>**. A run started again says
-  "run again by Ben Schulz" in the list and detail and links the failed run
-  ("Run again from #2284a1"); a hidden name leaves "run again".
-- **Secrets (editors only):** each secret's name, the address, path and headers
-  that may receive it, who last set the value and which versions use it; never
-  the value. Editors create a secret, replace a value, change a binding or
-  delete a value. Replacing needs no approval. A new binding submits a new
-  version, and the running version keeps its old binding until that one is
-  switched on. A binding change asks for the value again: Cloud never moves a
-  stored value to a new address unasked. Deleting always asks first. See
+- **Head:** the state as one large word with its sign (Switched on; Switched
+  on, needs you; Paused with **Resume**; Not switched on yet), one quiet line
+  with the place and the running version, **Change with <panel>** and a **…**
+  menu. The menu offers pause or resume, **Copy handle** of the service
+  account, **Copy link** and, for editors, **Get the source locally**, which
+  shows the `cld code pull` command.
+- **Tabs** in one row: Overview, Runs, Secrets (editors), Versions and Code
+  (editors). The tab is in the address (`?tab=`), so reload and back return to
+  it.
+- **Overview:** the description Gustav wrote for the version, marked as not
+  checked by Cloud; the situation (next run, last run and a strip of the last
+  30 runs, each a link to its run); **What it did for you** this week, with
+  counts and the last effects (resource Code only); **When it runs** with
+  **Run now**; and **What it may do** (apps, internet and its own data in one
+  list). A newer version that waits shows the shared approval frame above the
+  situation. When the last run failed, a notice says what happened and what
+  to check. Run updates arrive live; see [Follow run updates](#follow-run-updates).
+- **Runs:** a list with filters (all, failed, skipped) and a detail that says
+  in words what happened. A failed run explains its reason and offers **Run
+  again …**, which first shows what the run already changed. No run number or
+  function name appears.
+- **Secrets (editors only):** each secret, the address that may receive it,
+  **Stored** or **No value** with what that means, and the dialogs to enter,
+  replace or delete a value. Never the value. See
   [Code secrets](/en/docs/platform/code-secrets).
-- **Versions:** each version with its approval state, including
-  "self-approved (only administrator)", and the selected version's full code
-  difference and permissions.
+- **Versions:** each version with its state word, and for the selected one
+  what changed in access and triggers, Gustav's description and its examples.
+  `?tab=versions&version=<id>` opens that version.
+- **Code (editors only):** the source of the switched-on version, read only,
+  in a fixed-height field that scrolls. **Compare with** chooses an earlier
+  version and shows the difference with its added and removed lines; the files
+  stand in the field's bar. File and comparison are in the address
+  (`?tab=code&file=…&compare=<version>`). Readers and Cloud admins without the
+  editor right get no tab, and `?tab=code` opens the overview for them; Core's
+  `code.source.tab` query refuses them too.
 - **Switch on:** a dialog lists every operation at every target the version
-  needs, starts Core's durable activation and shows its result. When the person
-  does not administer a target, nothing changes and the dialog offers **Copy
-  link** to this page for someone who does. A foreign target appears by type
-  and ID only, never with its name or who manages it, whatever the refusal
-  carries. Phone sessions and non-interactive credentials see why they cannot
-  switch on.
+  needs, starts Core's durable activation and shows its result. Phone sessions
+  and non-interactive credentials see why they cannot switch on.
 
 Only people who manage the owner and editors or readers of the Code see the
 page. Readers see runs without their calls and no actions. Every part that
-cannot load shows an error with a way to try again.
+cannot load shows an error with a way to try again, and says that loading
+changes nothing about the automation.
 
 Automation names use the optional reviewed `entrypoints[].title`. Without a
 title, an event reads by its title and place, a page by its method and path,
@@ -287,3 +287,38 @@ confirmed control on administrator lists. Both inherit the UI locale.
 and binds confirmation to that exact database incarnation and unused period.
 The service rechecks editor or administrator permission and refuses a changed
 or in-use database with `409`. Repeating an accepted request is idempotent.
+
+## Follow run updates
+
+An island can follow run hints from Core even when its page belongs to another
+application:
+
+```ts
+import { followCodeRuns } from "@k2b/cloud/ssr/code-live";
+
+const stop = followCodeRuns(codeId, (event) => {
+  // Animate the run or invalidate its authorized snapshot.
+  animateRun(event.runId, event.state, event.at);
+}, async () => {
+  await reloadRunSnapshot();
+});
+// Call stop() when the island is disposed.
+```
+
+The optional third callback reloads canonical state once after admission and
+on `resync`; it receives no event. Without it, resync uses the guarded page
+reload and offers a manual reload when that guard prevents another automatic reload. Revocation
+or a terminal live failure also uses this recovery path. Reconnects and replay
+belong to the platform client. Repeated hints are possible, so animations must
+be idempotent. Effect counts refresh with the run's completion hint
+(`succeeded` or `failed`); individual effect calls produce no hint. `runId`
+identifies the snapshot to refresh, and `at` identifies when Core produced the hint.
+
+A fourth argument takes the live position the page's snapshot belongs to: read
+`aiLive.cursor()` on the server before the page's first read and pass it on, so
+a run that finishes in between still arrives. Without a position, the callback
+covers that gap once after admission. The shared Code page does both by itself;
+a host only passes `onLive` to replace that wiring.
+See [Core's live channel contract](/en/docs/automation/live-updates#define-the-updates)
+for admission rules and the event schema. The helper validates each hint
+before calling `onRun`.

@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { type Context, Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { codeSurfaceFindings } from "../../../../../scripts/checks/code-no-source";
 import { renderedText, withoutComments } from "../../../../../scripts/fixtures/rendered-markup";
 import { currentLibrary } from "../../../test/future-capability-manifest";
 import * as capabilityProvider from "../../capabilities/server";
@@ -13,7 +14,7 @@ import { capabilityResultSchema } from "../../contracts/capabilities";
 import { cloudResourcePageHref } from "../../contracts/resource-pages";
 import * as coreLocation from "../../services/identity/core-origin";
 import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
-import { codePageFixture } from "./code-page.fixture";
+import { CODE_PAGE_FIXTURE_STATES, type CodePageFixtureState, codePageFixture } from "./code-page.fixture";
 import type { CodePageInvoke } from "./data";
 import { describeCodeSchedule } from "./schedule";
 
@@ -30,8 +31,7 @@ const { LocaleProvider } = await import("@k2b/ui");
 
 const renderMarkup = (render: Parameters<typeof renderToString>[0]) => withoutComments(renderToString(render));
 
-type State = Parameters<typeof codePageFixture>[0];
-const html = (state: State, locale = "de") =>
+const html = (state: CodePageFixtureState, locale = "de") =>
   renderMarkup(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -40,391 +40,324 @@ const html = (state: State, locale = "de") =>
       },
     }),
   );
-const text = (state: State, locale = "de") =>
-  renderedText(html(state, locale), " ")
-    .replaceAll(/\s+/g, " ")
-    // A sentence may end right after a linked ID.
-    .replaceAll(/ \./g, ".");
-
-// Refusal actions belong to the notice; the account line always keeps its ordinary copy action.
-const refusalMarkup = (state: State) => {
-  const markup = html(state);
-  const start = markup.indexOf('<div class="cloud-code__refusal">');
-  const end = markup.indexOf("</section>", start);
-  if (start < 0 || end < 0) throw new Error(`Missing refusal notice in ${state}`);
-  return markup.slice(start, end);
-};
-
-const personal = (state: State, locale = "de") =>
+/** Visible text only: server scripts and the reserved widths of status words stay out. */
+const text = (state: CodePageFixtureState, locale = "de") =>
   renderedText(
-    renderMarkup(() =>
-      createComponent(LocaleProvider, {
-        locale,
-        get children() {
-          return createComponent(CodePage, {
-            data: {
-              ...codePageFixture(state, locale),
-              owner: { kind: "person", ref: null, title: state === "error" ? "" : "Wochenbericht Vertrieb", typeTitle: null },
-              href: "/app/assistant/code/c_woche1",
-            },
-          });
-        },
-      }),
-    ),
+    new HTMLRewriter()
+      .on("script", { element: (element) => void element.remove() })
+      .on('[aria-hidden="true"]', { element: (element) => void element.remove() })
+      .transform(html(state, locale)),
     " ",
   ).replaceAll(/\s+/g, " ");
 
-describe("personal Code", () => {
-  test("leads with its own title, runs as its person and never lists target access", () => {
-    const page = personal("overview");
-    expect(page).toContain("Wochenbericht Vertrieb");
-    expect(page).toContain("Dein Code · läuft als du");
-    expect(page).toContain("Er nutzt deine Rechte, nicht mehr.");
-    expect(page).not.toContain("Handelt im Namen von");
-    expect(page).not.toContain("an info@moebel-beispiel.de selbst");
-  });
-  test("someone else's shared personal Code names whose rights it runs with", () => {
-    const shared = renderedText(
-      renderMarkup(() =>
-        createComponent(LocaleProvider, {
-          locale: "de",
-          get children() {
-            return createComponent(CodePage, {
-              data: {
-                ...codePageFixture("overview", "de"),
-                owner: { kind: "person", ref: null, title: "Wochenbericht Vertrieb", typeTitle: null, runsAs: { name: "Lea Muster" } },
-                href: "/app/assistant/code/c_woche1",
-              },
-            });
-          },
-        }),
-      ),
-      " ",
-    ).replaceAll(/\s+/g, " ");
-    expect(shared).toContain("Code von Lea Muster · läuft als Lea Muster");
-    expect(shared).toContain("Er nutzt die Rechte der Person, der er gehört");
-    expect(shared).not.toContain("Dein Code");
-  });
-  test("an unreadable personal Code says so without naming a place", () => {
-    expect(personal("error")).toContain("Dieser Code konnte nicht geladen werden");
-    expect(personal("no-access")).toContain("Nur wer den Code besitzt oder mit wem er geteilt ist, sieht ihn.");
-  });
-});
-
-describe("Code page states", () => {
-  test("overview lists automations with schedule, status and last run, and targets as operation at target", () => {
+describe("Code page: overview (Bild 19 to 21)", () => {
+  test("the head says the state in one large word, the place and version in one quiet line, and offers Gustav and More", () => {
     const page = text("overview");
-    // As in the mockup: the word "Kennung" before it and a short "Kopieren" that still says what it copies.
-    expect(page).toContain("Läuft als Dienstkonto „Code von info@moebel-beispiel.de“ · Kennung code-7k2q9m4xwt Kopieren");
-    expect(html("overview")).toMatch(/<button aria-label="Kennung kopieren"[^>]*>(?:(?!<\/button>).)*>Kopieren<\/span><\/button>/);
-    expect(text("overview", "en")).toContain("Runs as service account “Code of info@moebel-beispiel.de” · Handle code-7k2q9m4xwt Copy");
-    expect(page).toContain("Version 4");
-    expect(page).toContain("Ursprünge im Internet");
-    expect(page).toContain("https://bank.example");
-    expect(page).toContain("https://status.example:8443");
-    // Who switched a version on came from target grants; the page reads none.
-    expect(page).not.toContain("eingeschaltet von");
-    // An untitled schedule is named by when it runs.
-    expect(page).toContain("Alle 15 Minuten");
-    expect(page).toContain("Montags 07:00");
-    expect(page).toContain("nächster Lauf");
-    // Operations read by their title and app; the technical ID stays in the tooltip.
-    expect(page).toContain("Aufgabe anlegen · Spaces");
-    expect(html("overview")).toContain('<span class="cloud-code__op-title" title="spaces.task.create">Aufgabe anlegen · Spaces</span>');
-    // A foreign target by type and ID, linked from its type's page pattern; never by name.
-    expect(page).toContain("an Space sp_2lg8");
-    expect(html("overview")).toContain('<a href="/app/spaces/sp_2lg8">an Space sp_2lg8</a>');
-    expect(page).toContain("an info@moebel-beispiel.de selbst");
-    expect(page).toContain("Ob er darf, entscheidet, wer das Ziel verwaltet.");
-    expect(page).toContain("Keine. Darum hat dieser Code keine Adresse, nur Automationen.");
-    expect(page).toContain("Mit Gustav bearbeiten");
-    // A place's Code is titled with the feat/code wordmark (slim drawing); screen readers hear whose Code it is.
-    const title = html("overview").match(/<h1 class="cloud-code__page-title">.*?<\/h1>/)?.[0] ?? "";
-    // The mark itself (not only its inner sign) is hidden, so screen readers hear the title once.
-    const mark = title.match(/<span class="cloud-featcode"[^>]*>/)?.[0] ?? "";
-    expect(mark).toContain('data-variant="wordmark"');
-    expect(mark).toContain('aria-hidden="true"');
-    expect(mark).not.toContain("aria-label");
-    expect(title).toContain('data-drawing="large"');
-    expect(title).toContain('<span class="sr-only">Code von info@moebel-beispiel.de</span>');
+    expect(page).toContain("Eingeschaltet");
+    expect(page).toContain("Postfach info@moebel-beispiel.de · Version 4 von Ben Schulz, 28.10.");
+    expect(page).toContain("Mit Gustav ändern");
+    // "View code" and the account line with its handle are gone; the handle lives in the menu.
+    expect(page).not.toContain("Code ansehen");
+    expect(page).not.toContain("code-7k2q9m4xwt");
+    expect(html("overview").match(/Kennung kopieren/g)).toHaveLength(1);
+    expect(page).toContain("Quelltext lokal holen");
   });
 
-  test("a finished version that is still off offers switching on, names its new access and keeps the running version", () => {
-    const page = text("waiting");
-    expect(page).toContain("Version 5 ist fertig, aber noch aus.");
-    expect(page).toContain("Bis jemand sie einschaltet, läuft Version 4 weiter.");
-    expect(page).toContain("Version 5 einschalten");
-    expect(page).toContain("neu beim Einschalten von Version 5");
-    expect(page).toContain("Neu in Version 5 · aus");
+  test("tabs in one row: overview, runs, secrets with a count, versions with a count, code only for editors", () => {
+    const markup = html("overview");
+    for (const tab of ["?tab=runs", "?tab=secrets", "?tab=versions", "?tab=code"]) expect(markup).toContain(`/app/mail/Mb4kd2/code${tab}`);
+    const reader = html("reader");
+    expect(reader).not.toContain("?tab=code");
+    expect(reader).not.toContain("?tab=secrets");
   });
 
-  test("manifest internet origins are listed, new ones marked", () => {
-    const page = text("internet");
-    expect(page).toContain("Ursprünge im Internet");
-    expect(page).toContain("https://api.spedition-probe.example");
-    expect(page).toContain("https://tracking.example:8443 neu beim Einschalten von Version 5");
-    expect(text("no-internet")).not.toContain("Ursprünge im Internet");
-  });
-
-  test("a version waiting for approval cannot be switched on", () => {
-    const page = text("approval");
-    expect(page).toContain("Version 5 wartet auf Freigabe.");
-    expect(page).not.toContain("Version 5 einschalten");
-  });
-
-  test("a failed run with a target refusal says what was refused, as a fact, with type, ID, link and handle", () => {
-    const page = text("refused");
-    expect(page).toContain("Letzter Lauf");
-    expect(page).toContain(
-      "Kein Zugriff auf Space sp_2lg8. Der Code wollte dort „Aufgabe erstellen“. Entweder fehlt dem Dienstkonto „Code von info@moebel-beispiel.de“ das Recht dafür, oder das Ziel existiert nicht.",
-    );
-    expect(html("refused")).toContain('<a class="k2b-text-link" href="/app/spaces/sp_2lg8"><code>sp_2lg8</code></a>');
-    expect(page).toContain("Kennung kopieren");
-    expect(page).toContain(
-      "Wer das Ziel verwaltet, fügt das Dienstkonto im Rechte-Editor des Ziels mit der Kennung code-7k2q9m4xwt hinzu. Der nächste Lauf versucht es erneut.",
-    );
-    // The page names no foreign target and asks nobody for access.
-    expect(page).not.toContain("Logistik");
-    expect(page.toLowerCase()).not.toContain("zugriff anfragen");
-    const english = text("refused", "en");
-    expect(english).toContain("No access to Space sp_2lg8. The Code tried “Aufgabe erstellen” there.");
-    expect(english).toContain("Copy handle");
-    expect(english).toContain("The next run tries again.");
-  });
-
-  test("a type whose page also needs another ID gets no link, only its ID", () => {
-    const page = text("refused-nolink");
-    expect(page).toContain("Kein Zugriff auf Aufgabe it_7f3k.");
-    expect(html("refused-nolink")).toContain("<code>it_7f3k</code>");
-    expect(html("refused-nolink")).not.toContain("it_7f3k</code></a>");
-  });
-
-  test("a reader’s refusal notice gives no action, target ID, link or handle", () => {
-    const page = text("refused-reader");
-    expect(page).toContain(
-      "Ein Aufruf wurde abgelehnt. Der Code läuft als Dienstkonto „Code von info@moebel-beispiel.de“. Welches Ziel abgelehnt hat, sehen alle, die den Code bearbeiten dürfen.",
-    );
-    for (const hidden of ["sp_2lg8", "Aufgabe erstellen", "spaces.task.create", "Kennung kopieren", "Rechte-Editor", "/app/spaces/"])
-      expect(refusalMarkup("refused-reader")).not.toContain(hidden);
-  });
-
-  test("an editor whose refused call could not be read is told so, not given the reader's text", () => {
-    const page = text("refused-unloaded");
-    expect(page).toContain("Ein Aufruf wurde abgelehnt. Welches Ziel abgelehnt hat, ließ sich gerade nicht laden.");
-    expect(page).not.toContain("sehen alle, die den Code bearbeiten dürfen");
-    expect(refusalMarkup("refused-unloaded")).not.toContain("Kennung kopieren");
-  });
-
-  test("policy and approval refusals never read as a target refusal and offer no handle", () => {
-    const policy = text("refused-policy");
-    expect(policy).toContain("Die Richtlinie erlaubt das nicht.");
-    expect(policy).toContain("Der Code wollte „Kommentar schreiben“ an Space sp_2lg8.");
-    expect(policy).toContain("Die Richtlinie für Code legt der Cloud-Admin fest.");
-    const approval = text("refused-approval");
-    expect(approval).toContain("Diese Version braucht die Freigabe des Cloud-Admins.");
-    expect(approval).toContain("Der Code wollte „Aufgabe erstellen“ an Space sp_2lg8.");
-    // Cloud admins decide approvals, so only they get the link to the version's review.
-    expect(approval).toContain("Freigabe ansehen");
-    expect(html("refused-approval")).toContain('href="/admin/code?sec=approvals&amp;id=00000000-0000-4000-8000-000000000004"');
-    for (const page of [refusalMarkup("refused-policy"), refusalMarkup("refused-approval")]) {
-      expect(page).not.toContain("Kein Zugriff");
-      expect(page).not.toContain("Kennung kopieren");
-      expect(page).not.toContain("Wer das Ziel verwaltet");
-      expect(page).not.toContain("das Recht dafür");
-    }
-    expect(text("refused-policy")).not.toContain("Freigabe ansehen");
-    expect(text("refused-policy", "en")).toContain("The policy does not allow this.");
-    expect(text("refused-approval", "en")).toContain("This version needs the Cloud admin's approval.");
-    expect(text("run-refused-policy")).toContain("Die Richtlinie erlaubt das nicht.");
-  });
-
-  test("a successful last run shows no refusal notice, even when one of its calls was refused", () => {
-    for (const state of ["overview", "runs"] as const) {
-      expect(text(state)).not.toContain("Kein Zugriff");
-      expect(text(state)).not.toContain("abgelehnt");
-    }
-  });
-
-  test("the handle shows before the first run, and without one the hint still says what to do", () => {
-    const first = codePageFixture("overview");
-    if (first.state.kind !== "ready") throw new Error("Expected ready fixture");
-    first.state.runs = { items: [], nextCursor: null };
-    const render = (data: ReturnType<typeof codePageFixture>) =>
-      renderedText(
-        renderMarkup(() =>
-          createComponent(LocaleProvider, {
-            locale: "de",
-            get children() {
-              return createComponent(CodePage, { data });
-            },
-          }),
-        ),
-        " ",
-      ).replaceAll(/\s+/g, " ");
-    expect(render(first)).toContain("Kennung code-7k2q9m4xwt Kopieren");
-    const unknown = codePageFixture("refused");
-    if (unknown.state.kind !== "ready") throw new Error("Expected ready fixture");
-    unknown.state.code.serviceAccountHandle = null;
-    const page = render(unknown);
-    expect(page).not.toContain("Kennung kopieren");
-    expect(page).toContain(
-      "Wer das Ziel verwaltet, fügt das Dienstkonto im Rechte-Editor des Ziels hinzu. Der nächste Lauf versucht es erneut.",
-    );
-  });
-
-  test("paused Code offers resume", () => {
-    expect(text("paused")).toContain("Dieser Code ist pausiert.");
-    expect(text("paused")).toContain("Fortsetzen");
-  });
-
-  test("a run shows its calls in order with their results", () => {
-    const page = text("runs");
-    expect(page).toContain("Aufrufe 2");
-    expect(page).toContain("Karte „Lieferung KW 45 – Rampe 2“ angelegt");
-    expect(page).toContain("Übersprungen, vorheriger Lauf läuft noch");
-    expect(page).not.toContain("Erneut ausführen");
-  });
-
-  test("a run that failed after its first action offers run again", () => {
-    const failed = codePageFixture("run-failed");
-    if (failed.state.kind !== "ready") throw new Error("Expected ready fixture");
-    failed.state.run!.refusal = null;
-    failed.state.run!.calls![1]!.refusal = "bridge";
+  test("the description is Gustav's one sentence with its plum mark; without one the line is gone", () => {
+    expect(text("overview")).toContain("Trägt Lieferavise aus dem Postfach als Aufgaben im Space Logistik ein");
+    expect(html("overview")).toContain('class="cloud-code__ai-mark" data-k2b-primary="ai"');
+    expect(text("overview")).toContain("von Gustav beschrieben");
+    const data = codePageFixture("overview");
+    if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
+    data.state.words!.current = { ...data.state.words!.current!, description: { state: "missing", text: null, modelLabel: "" } };
     const page = renderedText(
       renderMarkup(() =>
         createComponent(LocaleProvider, {
           locale: "de",
           get children() {
-            return createComponent(CodePage, { data: failed });
+            return createComponent(CodePage, { data });
           },
         }),
       ),
       " ",
-    ).replaceAll(/\s+/g, " ");
-    expect(page).toContain("Fehlgeschlagen nach dem ersten Aufruf.");
-    expect(page).toContain("Erneut ausführen");
+    );
+    expect(page).not.toContain("von Gustav beschrieben");
   });
 
-  test("a failed run's refusal takes the place of the generic failure and keeps run again", () => {
-    const page = text("run-failed");
-    expect(page).toContain("Kein Zugriff auf Space sp_2lg8.");
-    expect(page).toContain("Erneut ausführen");
-    expect(page).toContain("Kennung kopieren");
-    expect(page).not.toContain("Fehlgeschlagen nach dem ersten Aufruf.");
+  test("the situation: next run large, last run with its sign, and the last 30 runs as bars that each open their run", () => {
+    const markup = html("overview");
+    const page = text("overview");
+    expect(page).toContain("Nächster Lauf");
+    expect(page).toContain("in 11 Min.");
+    expect(page).toContain("Zuletzt");
+    expect(page).toContain("Letzte 30 Läufe · heute 30, davon 1 fehlgeschlagen");
+    expect(page).toContain("Alle Läufe");
+    expect(markup).toContain('data-shape="bar"');
+    expect(markup.match(/<a class="k2b-dot-strip__link" role="listitem" href="\/app\/mail\/Mb4kd2\/code\?tab=runs&amp;run=/g)).toHaveLength(
+      30,
+    );
+    expect(markup.match(/data-state="danger"/g)?.length).toBeGreaterThanOrEqual(1);
+    for (const word of ["erfolgreich", "fehlgeschlagen", "übersprungen"]) expect(page).toContain(word);
   });
 
-  test("a failed run offers a look with the panel, under the panel's own name and icon", () => {
-    expect(text("run-failed")).toContain("Mit Gustav ansehen");
-    expect(html("run-failed")).toContain("ti ti-moustache");
-    expect(text("run-failed", "en")).toContain("View with Gustav");
-    expect(text("run-unclassified")).toContain("Mit Gustav ansehen");
-    expect(text("reader")).not.toContain("Mit Gustav ansehen");
+  test("what it did for you: two counted numbers and the latest effects, never for personal Code", () => {
+    const page = text("overview");
+    expect(page).toContain("Was sie für dich getan hat diese Woche");
+    expect(page).toContain("41 Aufgaben angelegt");
+    expect(page).toContain("44 Unterhaltungen sortiert");
+    expect(html("overview")).toContain('<a href="/app/spaces/Lg8x2q">Lieferung Polsterei Weber</a>');
+    expect(text("personal")).not.toContain("Was sie für dich getan hat");
   });
 
-  test("the Edit with panel buttons show the panel's icon, never a spark", () => {
-    for (const state of ["overview", "empty", "refused"] as const) {
-      const page = html(state);
-      expect(page).toContain("ti ti-moustache");
-      expect(page).not.toContain("ti-sparkles");
-    }
+  test("when it runs: schedule in words, what it does, last and next run, and run now", () => {
+    const page = text("overview");
+    expect(page).toContain("Wann sie läuft");
+    expect(page).toContain("Alle 15 Minuten Trägt neue Lieferavise ein");
+    expect(page).toContain("nächster Lauf in 11 Min.");
+    expect(page).toContain("Montags um 07:00");
+    expect(page).toContain("noch nie gelaufen");
+    expect(page).toContain("Jetzt ausführen");
+    expect(text("long")).toContain("4 weitere anzeigen");
   });
 
-  test("a run started again says by whom and links the run it repeats", () => {
-    const page = text("run-rerun");
-    expect(page).toContain("erneut ausgeführt von Ben Schulz");
-    expect(page).toContain("Erneuter Lauf von #2284a1");
-    expect(html("run-rerun")).toContain("run=2284a1b2-0000-4000-8000-000000000004");
-    expect(text("run-rerun", "en")).toContain("run again by Ben Schulz");
-    expect(text("run-rerun", "en")).toContain("Run again from #2284a1");
-    expect(text("runs")).not.toContain("erneut ausgeführt");
+  test("what it may do: apps, the internet and its own data in one list, with the service account and no page", () => {
+    const page = text("overview");
+    expect(page).toContain("Was sie darf");
+    expect(page).toContain("Aufgaben anlegen Spaces · Space Logistik");
+    expect(page).toContain("bank.example und status.example aufrufen Internet · nur diese 2 Adressen, nur verschlüsselt");
+    expect(page).toContain(
+      "Läuft als Dienstkonto „Code von info@moebel-beispiel.de“. Ob sie ein Ziel wirklich erreicht, entscheidet, wer das Ziel verwaltet.",
+    );
+    expect(page).toContain("Sie hat keine eigene Seite und nimmt nichts von außen an.");
+    expect(page).not.toContain("Seiten und Adressen");
+    const pages = text("with-pages");
+    expect(pages).toContain("Seiten und Adressen");
+    expect(pages).toContain("Rückruf bestätigen");
+    expect(pages).toContain("öffentlich");
+    expect(pages).toContain("api.buchhaltung-beispiel.de aufrufen Internet · bekommt das Secret „BUCHHALTUNG_TOKEN“");
+    expect(pages).toContain("Internet · ohne Secret");
+    expect(pages).toContain("Eigene Daten merken Liest und schreibt nur in der eigenen Datenbank · 12 MB");
+    expect(pages).not.toContain("Sie hat keine eigene Seite");
   });
 
-  test("secrets show where a value may go, who set it and every next step, never a value", () => {
-    const page = text("secrets");
-    expect(page).toContain("LAGER_TOKEN");
-    expect(page).toContain("2 Secrets · Werte nie sichtbar");
-    expect(page).toContain("https://api.lager-beispiel.de/v2/");
-    expect(page).toContain("authorization");
-    expect(page).toContain("[secret:LAGER_TOKEN]");
-    expect(page).toContain("gesetzt von Ben Schulz");
-    expect(page).toContain("Version 4 (aktiv)");
-    expect(page).toContain("Wert ersetzen …");
-    expect(page).toContain("Bindung ändern");
-    expect(page).toContain("Löschen …");
-    expect(html("secrets")).not.toContain('type="password"');
-    expect(text("secrets", "en")).toContain("Only sent to");
+  test("a new version: the approval card above the situation, its new trigger marked, Gustav no longer filled", () => {
+    const page = text("new-version");
+    expect(page).toContain("Version 5 von info@moebel-beispiel.de einschalten?");
+    expect(page).toContain("Bis dahin bleibt Version 4 eingeschaltet.");
+    expect(page).toContain("Läuft zusätzlich Mo–Fr um 08:00");
+    expect(page).toContain("5 weitere bleiben gleich.");
+    expect(page).toContain("3 von 3 Beispielen erfolgreich");
+    expect(page).toContain("Version 5 einschalten");
+    expect(page).toContain("ab Version 5, noch aus");
+    const markup = html("new-version");
+    expect(markup.indexOf("cloud-code__approval")).toBeLessThan(markup.indexOf("cloud-code__lage"));
   });
 
-  test("secrets keep empty, error and result states with a way forward", () => {
-    expect(text("secrets-empty")).toContain("Noch keine Secrets");
-    expect(text("secrets-empty")).toContain("Secret anlegen");
-    expect(text("secrets-error")).toContain("Die Secrets konnten nicht geladen werden");
-    expect(text("secrets-error")).toContain("Die Werte sind unverändert gespeichert.");
-    expect(text("secrets-replaced")).toContain("Wert ersetzt.");
-    expect(text("secrets-submitted")).toContain("Version 5 ist eingereicht.");
-    expect(text("secrets-submitted")).toContain("Bis dahin läuft Version 4 mit der alten Bindung.");
-    expect(text("secrets-unsubmitted")).toContain("Noch nutzt keine Version diese Bindung.");
-    expect(text("secrets-unsubmitted")).toContain("Version 5 einreichen");
-    const deleted = text("secrets-deleted");
-    expect(deleted).toContain("Wert setzen …");
-    expect(deleted).not.toContain("Löschen …");
-  });
-
-  test("the secrets tab is offered to editors only", () => {
-    expect(html("overview")).toContain("tab=secrets");
-    expect(html("reader")).not.toContain("tab=secrets");
-  });
-
-  test("readers see runs without their contents and no actions", () => {
-    const page = text("reader");
-    expect(page).toContain("Was ein Lauf getan hat, sehen nur Bearbeiter dieses Codes.");
-    expect(page).not.toContain("Erneut ausführen");
-    expect(page).not.toContain("einschalten");
-    expect(page).not.toContain("Mit Gustav bearbeiten");
-  });
-
-  test("versions show their state, the code difference and what the version may do", () => {
-    const page = text("versions");
-    expect(page).toContain("Version 5 verglichen mit Version 4");
-    expect(page).toContain("selbst freigegeben (einziger Admin)");
-    expect(page).toContain("code.ts:7");
-    expect(page).toContain("Aktiv");
-    expect(html("versions")).toContain("Hinzugefügt, Zeile 6: ");
-  });
-
-  test("empty, no access and error states", () => {
-    expect(text("empty")).toContain("info@moebel-beispiel.de hat noch keinen Code");
-    expect(text("empty")).toContain("cld code pull mail/Mb4kd2");
-    expect(text("empty")).toContain("Mit Gustav anlegen");
-    // The editor is named from the data, never as a fixed product.
-    expect(text("empty")).toContain("Gustav schreibt ihn mit dir.");
-    expect(text("empty")).not.toContain("Assistent");
-    expect(text("no-access")).toContain("Diesen Code siehst du nicht");
-    expect(text("error")).toContain("Der Code von info@moebel-beispiel.de konnte nicht geladen werden");
-    expect(text("error")).toContain("info@moebel-beispiel.de und laufende Automationen sind nicht betroffen.");
-  });
-
-  test("a failed run whose calls are not all loaded makes no claim about its first action", () => {
-    const page = text("run-unclassified");
-    expect(page).not.toContain("Erneut ausführen");
-    expect(page).not.toContain("vor dem ersten Aufruf");
-    expect(page).toContain("Weitere Aufrufe anzeigen");
-  });
-
-  test("without the version list nothing can be switched on, and the page says so", () => {
-    const page = text("versions-failed");
-    expect(page).toContain("Die Versionen konnten nicht geladen werden.");
+  test("changes requested: the administrator's message and Gustav's rework", () => {
+    const page = text("changes-requested");
+    expect(page).toContain("Version 5 braucht noch Änderungen.");
+    expect(page).toContain("Jana Probe hat sie geprüft und noch nicht freigegeben. Version 4 bleibt eingeschaltet.");
+    expect(page).toContain("Nachricht von Jana Probe");
+    expect(page).toContain("Bitte so ändern, dass nur PDF-Anhänge im Ordner landen.");
+    expect(page).toContain("Gustav überarbeiten lassen");
     expect(page).not.toContain("Version 5 einschalten");
   });
 
-  test("the page right after switching on confirms it", () => {
-    expect(text("activated")).toContain("Version 4 ist eingeschaltet.");
+  test("needs you: the large state turns red, the notice says what happened with two next steps", () => {
+    const page = text("needs-you");
+    expect(page).toContain("Eingeschaltet, braucht dich");
+    expect(page).toContain("Der Lauf ist fehlgeschlagen. Prüfe vor einer Wiederholung, was bis dahin passiert ist.");
+    expect(page).toContain("Unterhaltungen lesen · 2 bestätigt · 1 Aufruf abgelehnt");
+    expect(html("needs-you")).toContain('href="/app/spaces/Lg8x2q"');
+    expect(page).toContain("Zugriff prüfen");
+    expect(page).toContain("Lauf ansehen");
   });
 
-  test("English copy", () => {
-    expect(text("waiting", "en")).toContain("Version 5 is ready but still off.");
-    expect(text("refused-reader", "en")).toContain("A call was refused.");
+  test("paused: brown state, resume in the head, no next run, every trigger paused, no host footer", () => {
+    const page = text("paused");
+    expect(page).toContain("Pausiert");
+    expect(page).toContain("Fortsetzen");
+    expect(page).toContain("keiner, solange pausiert ist");
+    expect(page).toContain("Letzte 30 Läufe vor der Pause");
+    expect(page).not.toContain("Jetzt ausführen");
+    const data = codePageFixture("paused");
+    const footer = () => "Vorhandene E-Mails nachholen";
+    const paused = renderedText(
+      renderMarkup(() => createComponent(CodePage, { data, footer: footer() })),
+      " ",
+    );
+    expect(paused).not.toContain("Vorhandene E-Mails nachholen");
+    const active = renderedText(
+      renderMarkup(() => createComponent(CodePage, { data: codePageFixture("overview"), footer: footer() })),
+      " ",
+    );
+    expect(active).toContain("Vorhandene E-Mails nachholen");
   });
+
+  test("empty, loading and error keep the page's frame and say that nothing changed", () => {
+    expect(text("empty")).toContain("Für info@moebel-beispiel.de gibt es noch keine Automation.");
+    expect(text("empty")).toContain("Mit Gustav erstellen");
+    expect(html("loading")).toContain('aria-busy="true"');
+    expect(html("loading")).toContain("cloud-code__skel-strip");
+    expect(text("error")).toContain("Die Code-Seite konnte nicht geladen werden.");
+    expect(text("error")).toContain("Das Laden ändert nichts an der Automation.");
+    expect(text("error")).toContain("Erneut versuchen");
+  });
+});
+
+describe("Code page: runs (Bild 22)", () => {
+  test("filters with counts, runs in words without numbers or code names, the selected run on the right", () => {
+    const page = text("runs");
+    expect(page).toContain("Alle 30");
+    expect(page).toContain("Fehlgeschlagen 1");
+    expect(page).toContain("Übersprungen 2");
+    expect(page).toContain("Aufgaben anlegen · 3 bestätigt");
+    expect(page).toContain("vor 4 Min. · nach Zeitplan");
+    expect(page).toContain("Der vorige Lauf lief noch");
+    expect(page).not.toContain("lieferungenEintragen");
+    expect(page).not.toMatch(/#[0-9a-f]{6}/);
+    expect(page).toContain("nach Zeitplan „Alle 15 Minuten“ · Version 4 · 2 Sekunden");
+    expect(page).toContain("Was passiert ist");
+    expect(html("runs")).toContain('data-phone="detail"');
+    expect(html("runs-list")).toContain('data-phone="list"');
+  });
+
+  test("a failed run: notice with what happened, check access and run again, and the sentence about running again", () => {
+    const page = text("run-failed");
+    expect(page).toContain("Fehlgeschlagen");
+    expect(page).toContain("Zugriff prüfen");
+    expect(page).toContain("Lauf wiederholen …");
+    expect(page).toContain("„Lauf wiederholen …“ startet einen neuen Lauf mit der Version, die dann eingeschaltet ist.");
+  });
+
+  test("empty, error and long", () => {
+    expect(text("runs-empty")).toContain("Noch kein Lauf.");
+    expect(text("runs-empty")).toContain("Der erste startet in 11 Min.");
+    expect(text("runs-error")).toContain("Die Läufe konnten nicht geladen werden.");
+    expect(text("runs-error")).toContain("Erneut versuchen");
+    const long = text("runs-long");
+    expect(long).toContain("Ältere Läufe laden");
+    // Not every run is loaded, so the chips name their filter without a number.
+    expect(long).not.toContain("Alle 30");
+  });
+
+  test("readers see that a run failed, never its calls", () => {
+    const page = text("reader");
+    expect(page).not.toContain("Lauf wiederholen");
+    expect(page).not.toContain("Zugriff prüfen");
+  });
+});
+
+describe("Code page: versions (Bilder 23, 24)", () => {
+  test("the list: each version, who and when, its state in one word, and the hint to cld code pull", () => {
+    const page = text("versions");
+    for (const words of [
+      "Version 5",
+      "Bereit, noch aus",
+      "Version 4",
+      "Eingeschaltet",
+      "Ersetzt",
+      "Abgelehnt",
+      "von Lea Muster · heute, 13:41",
+    ])
+      expect(page).toContain(words);
+    expect(page).toContain("Den Code der eingeschalteten Version zeigt der Tab „Code“, nur zum Lesen.");
+    expect(html("versions")).toContain("<code>cld code pull</code>");
+  });
+
+  test("a new version in words: approval card, Gustav's text marked, and examples with their result word; no code diff", () => {
+    const page = text("versions");
+    expect(page).toContain("Version 5 von info@moebel-beispiel.de einschalten?");
+    expect(page).toContain("Was Gustav geändert hat");
+    expect(page).toContain("von Gustav beschrieben, nicht von Cloud geprüft");
+    expect(page).toContain("Beispiele 3 von 3 Beispielen erfolgreich");
+    expect(page).toContain("Lieferavis ohne Anhang");
+    expect(page).not.toContain("code.ts");
+    expect(html("versions")).not.toContain("k2b-code-diff");
+  });
+
+  test("the running version, behaviour only, changes requested, rejected, first, error and long", () => {
+    expect(text("versions-active")).toContain("Was sich an Zugriffen und Auslösern geändert hat");
+    expect(text("versions-behavior")).toContain("Zugriffe gleich, Verhalten anders");
+    expect(text("versions-changes")).toContain("Nachricht von Jana Probe");
+    expect(text("versions-rejected")).toContain("Version 2 wurde abgelehnt.");
+    expect(text("versions-rejected")).toContain("Begründung von Jana Probe");
+    expect(text("versions-first")).toContain("Die erste Version. Es gibt nichts zu vergleichen.");
+    expect(text("versions-list")).toContain("Wähle eine Version. Hier steht dann, was sie geändert hat.");
+    expect(text("versions-error")).toContain("Diese Version konnte nicht geladen werden.");
+    expect(text("versions-error")).toContain("Deine Auswahl bleibt.");
+    expect(text("versions-long")).toContain("Ältere Versionen laden");
+  });
+});
+
+describe("Code page: secrets (Bild 26)", () => {
+  test("each secret with where it goes, whether a value is stored and what to do", () => {
+    const page = text("secrets");
+    expect(page).toContain("Ein Secret ist ein Passwort oder Schlüssel für einen fremden Dienst.");
+    expect(page).toContain("Geht nur an api.buchhaltung-beispiel.de");
+    expect(page).toContain("Hinterlegt");
+    expect(page).toContain("geändert am 30.10. von Jana Probe");
+    expect(page).toContain("Wert ersetzen");
+    expect(page).toContain("Löschen");
+    expect(page).toContain("Secret anlegen");
+    const missing = text("secrets-missing");
+    expect(missing).toContain("Kein Wert");
+    expect(missing).toContain("Läufe, die ihn brauchen, schlagen fehl");
+    expect(missing).toContain("Wert eintragen");
+  });
+
+  test("refused, unclear, empty, error and long; unclear never offers to try again", () => {
+    expect(text("secrets-refused")).toContain("Cloud hat den neuen Wert abgelehnt. Für BUCHHALTUNG_TOKEN gilt weiter der bisherige Wert.");
+    expect(text("secrets-refused")).toContain("Wert noch einmal eintragen");
+    const unclear = text("secrets-unknown");
+    expect(unclear).toContain("Cloud weiß noch nicht, ob der neue Wert gespeichert ist.");
+    expect(unclear).toContain("Stand prüfen");
+    expect(unclear).not.toContain("Erneut versuchen");
+    expect(text("secrets-empty")).toContain("Diese Automation braucht kein Secret.");
+    expect(text("secrets-error")).toContain("Erneut versuchen");
+    expect(text("secrets-long")).toContain("6 weitere anzeigen");
+  });
+});
+
+describe("Code page: personal Code (CODE_P)", () => {
+  test("its own name with the state, your Code, no counted effects, and runs as you", () => {
+    const page = text("personal");
+    expect(page).toContain("Wochenbericht Vertrieb Eingeschaltet");
+    expect(page).toContain("Dein Code · Version 2");
+    expect(page).toContain("Läuft als du, mit deinen Rechten und nicht mehr.");
+    expect(page).not.toContain("Dienstkonto");
+    expect(text("personal-needs-you")).toContain("Eingeschaltet, braucht dich");
+    expect(text("personal-error")).toContain("Diese Automation konnte nicht geladen werden.");
+    expect(html("personal-loading")).toContain('aria-busy="true"');
+  });
+});
+
+test.each(["de", "en"])("%s: no state shows source, identifiers or an unqualified status word", (locale) => {
+  // The code tab is the one place for source (3p); its field carries its own exemption.
+  for (const state of CODE_PAGE_FIXTURE_STATES.filter((name) => name !== "code")) {
+    const visible = renderedText(
+      new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
+      "\n",
+    );
+    expect(codeSurfaceFindings(`${locale}/${state}`, visible)).toEqual([]);
+    for (const word of ["Passt", "Fertig", "Done", "OK"]) expect(visible.split(/\s+/)).not.toContain(word);
+  }
+});
+
+test("English copy", () => {
+  const page = text("overview", "en");
+  expect(page).toContain("Switched on");
+  expect(page).toContain("What it may do");
+  expect(page).toContain("When it runs");
+  expect(text("needs-you", "en")).toContain("Switched on, needs you");
 });
 
 describe("Code page helpers", () => {
@@ -585,80 +518,6 @@ describe("Code page helpers", () => {
   });
 });
 
-test("internet lists distinguish running/waiting versions, historical selection, no destinations and load failure", () => {
-  expect(text("waiting")).toContain("https://new.example");
-  expect(text("versions")).toContain("https://version.example:8443");
-  expect(text("no-internet")).not.toContain("Ursprünge im Internet");
-  expect(text("internet-failed")).toContain("Die Ursprünge im Internet konnten nicht geladen werden.");
-  expect(text("internet-failed")).toContain("Erneut versuchen");
-});
-
-test("one-time automation rows display the same explicit instant and zone in German and English", () => {
-  for (const locale of ["de", "en"]) {
-    const data = codePageFixture("overview", locale);
-    if (data.state.kind !== "ready" || !data.state.automations?.[0]) throw new Error("Expected automation fixture");
-    const automation = data.state.automations[0];
-    automation.cron = null;
-    automation.at = "2026-12-01T09:15:30+01:00";
-    automation.timeZone = "Europe/Berlin";
-    const rendered = renderMarkup(() =>
-      createComponent(LocaleProvider, {
-        locale,
-        get children() {
-          return createComponent(CodePage, { data });
-        },
-      }),
-    );
-    const expected = new Intl.DateTimeFormat(locale, { timeZone: "Europe/Berlin", dateStyle: "medium", timeStyle: "short" }).format(
-      new Date(automation.at),
-    );
-    expect(rendered).toContain(expected);
-    expect(rendered).toContain("(Europe/Berlin)");
-  }
-});
-
-test("automation rows and the last run use reviewed titles, an untitled schedule reads by when it runs", () => {
-  for (const state of ["overview", "refused", "waiting"] as const) {
-    const data = codePageFixture(state, "de");
-    if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
-    for (const automation of data.state.automations ?? []) automation.title = "Lieferungen eintragen";
-    const rendered = renderMarkup(() =>
-      createComponent(LocaleProvider, {
-        locale: "de",
-        get children() {
-          return createComponent(CodePage, { data });
-        },
-      }),
-    );
-    const text = renderedText(rendered, " ");
-    expect(text).toContain("Lieferungen eintragen");
-    expect(text).not.toContain("anfragenSortieren");
-    if (state === "refused") expect(text).toContain("Letzter Lauf");
-  }
-  expect(renderedText(html("overview"), " ")).toContain("Alle 15 Minuten");
-  expect(html("overview")).not.toContain("anfragenSortieren");
-});
-
-test("run lists and details use the run's title, else its automation's name, else the identifier", () => {
-  const data = codePageFixture("runs", "de");
-  if (data.state.kind !== "ready" || !data.state.run || !data.state.runs) throw new Error("Expected run fixture");
-  data.state.run.run.title = "Lieferungen eintragen";
-  data.state.runs.items[0]!.title = "Lieferungen eintragen";
-  const rendered = renderMarkup(() =>
-    createComponent(LocaleProvider, {
-      locale: "de",
-      get children() {
-        return createComponent(CodePage, { data });
-      },
-    }),
-  );
-  expect(rendered.match(/Lieferungen eintragen/g)?.length).toBeGreaterThanOrEqual(2);
-  // An untitled run reads as its automation does; one whose automation is no longer listed keeps its identifier.
-  expect(rendered).toContain("Alle 15 Minuten");
-  expect(rendered).not.toContain("anfragenSortieren");
-  expect(rendered).toContain("lieferungenEintragen");
-});
-
 describe("Code page loader", () => {
   const V4 = "00000000-0000-4000-8000-000000000004";
   const RUN = "2284a1b2-0000-4000-8000-000000000004";
@@ -682,6 +541,25 @@ describe("Code page loader", () => {
     startedAt: null,
     endedAt: null,
   };
+  /** A version in words, as Core's read model answers: only the fields the schema requires. */
+  const versionWords = (versionId: string) => ({
+    versionId,
+    number: 4,
+    submittedAt: "2026-10-28T09:00:00.000Z",
+    locale: "de",
+    description: { state: "visible", text: "Legt werktags Aufgaben im Space Logistik an.", modelLabel: "" },
+    assurance: "Cloud begrenzt die Zugriffe auf die Apps und Ziele dieser Version.",
+    mayDo: { items: [{ text: "Aufgabe erstellen · Space Logistik", app: "Spaces" }], more: 0, moreText: null },
+    timing: { items: [{ text: "Mo–Fr 08:00" }], more: 0, moreText: null },
+    changes: {
+      state: "first",
+      text: "Erste Version",
+      rows: { items: [{ kind: "same", text: "Aufgabe erstellen · Space Logistik" }], more: 0, moreText: null },
+      assurance: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+    },
+    examples: { state: "none", passed: 0, total: 0, summary: "Keine Beispiele", explanation: "", items: [] },
+    notices: { items: [], more: 0, moreText: null },
+  });
   /** Core as the page reads it; every other app answers with an error, so any call to one would show. */
   /** A policy refusal before the target refusal, as Core lists calls one per read. */
   const policyCall = {
@@ -695,7 +573,8 @@ describe("Code page loader", () => {
   };
   const core =
     (permission: "editor" | "reader", run: typeof failedRun, firstCall = policyCall, checkedManifest: unknown = manifest) =>
-    (capabilityId: string, input: { content?: unknown; cursor?: number }) => {
+    (capabilityId: string, input: { content?: unknown; cursor?: number; versionId?: string }) => {
+      if (capabilityId === "code.version.words") return versionWords(input.versionId ?? V4);
       if (capabilityId === "code.list")
         return {
           items: [{ id: "c_3mfa", title: "Code", state: "active", activeVersionId: V4, pauseReason: null, permission }],
@@ -762,6 +641,7 @@ describe("Code page loader", () => {
     firstCall = policyCall,
     checkedManifest: unknown = manifest,
     cloudTimeZone?: string,
+    roles: string[] = ["user"],
   ) => {
     const appCalls: string[] = [];
     const coreCalls: string[] = [];
@@ -776,7 +656,7 @@ describe("Code page loader", () => {
         run,
         firstCall,
         checkedManifest,
-      )(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number });
+      )(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number; versionId?: string });
       return { ok: true, data: capabilityResultSchema(schema).parse({ data }) };
     });
     const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockImplementation(async (appId) => ({
@@ -798,7 +678,7 @@ describe("Code page loader", () => {
       settings: { app: { timezone: cloudTimeZone } },
       actor: { kind: "user", sessionKind: "web" },
       credentialKind: "session",
-      user: { id: "00000000-0000-4000-8000-0000000000a1", roles: ["user"] },
+      user: { id: "00000000-0000-4000-8000-0000000000a1", roles },
       runtime: { apps: [] },
     };
     const c = {
@@ -834,6 +714,8 @@ describe("Code page loader", () => {
     );
     if (data.state.kind !== "ready") throw new Error("Expected ready page");
     expect(data.state.automations?.[0]).toMatchObject({ at, timeZone: "America/New_York" });
+    // Core's read model names the timing; without it the page says the same instant with its zone itself.
+    data.state.automations![0]!.timingText = undefined;
     const markup = renderMarkup(() => createComponent(CodePage, { data }));
     expect(markup).toContain("(America/New_York)");
     expect(markup).not.toContain("(undefined)");
@@ -930,22 +812,85 @@ describe("Code page loader", () => {
     expect(serialized).not.toContain("k7qm2x9a");
     expect(serialized).not.toContain("spaces.task.create");
   });
-});
 
-test("the handle is present before the first run and in the server's first render", () => {
-  const data = codePageFixture("overview", "de");
-  if (data.state.kind !== "ready") throw new Error("Expected draft Code fixture");
-  data.state.runs = { items: [], nextCursor: null };
-  const markup = renderMarkup(() =>
-    createComponent(LocaleProvider, {
-      locale: "de",
-      get children() {
-        return createComponent(CodePage, { data });
-      },
-    }),
-  );
-  expect(markup).toContain("code-7k2q9m4xwt");
-  expect(markup.match(/Kennung kopieren/g)).toHaveLength(1);
+  test("the known path ?tab=versions&version= still opens that version, now in words, without reading its source", async () => {
+    const { data, coreCalls } = await load("editor", `?tab=versions&version=${V4}`);
+    if (data.state.kind !== "ready") throw new Error(`Expected a ready page, got ${data.state.kind}`);
+    expect(data.tab).toBe("versions");
+    expect(data.state.diff?.version.id).toBe(V4);
+    expect(data.state.versionSelected).toBe(true);
+    expect(data.state.words?.selected?.versionId).toBe(V4);
+    expect(coreCalls).toContain("code.version.words");
+    expect(coreCalls).not.toContain("code.version.diff");
+    const page = renderedText(
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      ),
+      " ",
+    );
+    expect(page).toContain("Version 4");
+    expect(page).toContain("Die erste Version. Es gibt nichts zu vergleichen.");
+    expect(page).toContain("Aufgabe erstellen · Space Logistik");
+    expect(page).not.toContain("code.ts");
+    expect(page).not.toContain("Diese Version konnte nicht geladen werden.");
+  });
+
+  test("the overview reads the Code in words: running version, this week's effects and the last run", async () => {
+    const { data, coreCalls } = await load("editor");
+    if (data.state.kind !== "ready") throw new Error(`Expected a ready page, got ${data.state.kind}`);
+    expect(coreCalls).toContain("code.version.words");
+    expect(coreCalls).toContain("code.activity.words");
+    expect(coreCalls.filter((call) => call === "code.run.words")).toEqual(["code.run.words"]);
+    expect(data.state.words?.current?.versionId).toBe(V4);
+    // Each automation carries its timing in words from the same read model.
+    expect(data.state.automations?.[0]?.timingText).toBe("Mo–Fr 08:00");
+  });
+
+  test("?tab=code is for editors: a reader lands on the overview, an editor gets the code tab's own data", async () => {
+    const reader = await load("reader", "?tab=code");
+    expect(reader.data.tab).toBe("overview");
+    expect(reader.coreCalls).not.toContain("code.source.tab");
+    const editor = await load("editor", "?tab=code");
+    expect(editor.data.tab).toBe("code");
+    if (editor.data.state.kind !== "ready") throw new Error("Expected a ready page");
+    expect(editor.data.state.sourceTab).not.toBeUndefined();
+  });
+
+  test("F30: a Cloud admin without the editor right gets no code tab and no source, like any reader", async () => {
+    // Core answers a Cloud admin who does not edit this Code as a reader; the page never widens that.
+    const admin = await load("reader", "?tab=code", failedRun, policyCall, manifest, undefined, ["user", "admin"]);
+    expect(admin.data.cloudAdmin).toBe(true);
+    expect(admin.data.tab).toBe("overview");
+    expect(admin.coreCalls).not.toContain("code.source.tab");
+    const markup = renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data: admin.data });
+        },
+      }),
+    );
+    expect(markup).not.toContain("?tab=code");
+    expect(markup).not.toContain("data-code-source-region");
+    expect(markup).not.toContain("k2b-code-diff");
+  });
+
+  test("a failed read model is a part that did not load, never an empty one", async () => {
+    const { data } = await load("editor", "", failedRun, policyCall, manifest);
+    if (data.state.kind !== "ready") throw new Error("Expected a ready page");
+    // The mock answers the activity read model with nothing it can parse.
+    expect(data.state.words?.activity).toBeNull();
+    const page = renderedText(
+      renderMarkup(() => createComponent(CodePage, { data })),
+      " ",
+    );
+    expect(page).toContain("This part could not be loaded. Nothing changes for the automation.");
+  });
 });
 
 test("the real Code page loader retains the handle before the first run", async () => {
@@ -1014,15 +959,14 @@ test("a legacy version entry shows the reconfirmation hint", () => {
   expect(rendered).toContain("Beim Wechsel pausiert der alte Eintrag.");
 });
 
-test("failed event delivery remains visible and only an active editor can retry it", () => {
+test("failed event delivery remains visible by its event and only an active editor can retry it", () => {
   const page = (permission: "editor" | "reader", state: "active" | "paused", outcome = "code_event_backlog_full") => {
-    const data = codePageFixture("runs");
+    const data = codePageFixture("runs", "en");
     if (data.state.kind !== "ready") throw new Error("Missing ready fixture");
     data.state.permission = permission;
     data.state.code.state = state;
     data.state.runs = {
-      items: [],
-      nextCursor: null,
+      ...data.state.runs!,
       eventDeliveries: [
         {
           id: "11111111-1111-4111-8111-111111111111",
@@ -1031,7 +975,7 @@ test("failed event delivery remains visible and only an active editor can retry 
           state: "failed",
           code: outcome,
           attempts: 8,
-          createdAt: "2026-11-06T12:00:00Z",
+          createdAt: "2026-11-14T12:00:00Z",
         },
       ],
     };
@@ -1045,41 +989,22 @@ test("failed event delivery remains visible and only an active editor can retry 
     );
   };
   const markup = page("editor", "active");
-  expect(markup).toContain("fixture.changed");
-  expect(markup).toContain("code_event_backlog_full");
+  // Named by what happened, never by its type or a stable code.
+  expect(markup).not.toContain("fixture.changed");
+  expect(markup).not.toContain("code_event_backlog_full");
+  expect(markup).toContain("Delivery failed");
   expect(markup).toContain("Retry delivery");
-  expect(markup).toContain('data-tone="error"');
   expect(page("reader", "active")).not.toContain("Retry delivery");
   expect(page("editor", "paused")).not.toContain("Retry delivery");
   const revoked = page("editor", "active", "resource_access_revoked");
   expect(revoked).toContain("can no longer read the event place");
-  expect(revoked).toContain("Restore access to the place and its app");
   expect(revoked).toContain("Retry delivery");
 });
 
-test.each(["de", "en"])("Code page shows database use and storage in %s", (locale) => {
+test.each(["de", "en"])("Code page shows database use, storage and export in what it may do in %s", (locale) => {
   const data = codePageFixture("overview", locale);
   if (data.state.kind !== "ready") throw new Error("Missing fixture");
   data.state.databaseUsed = true;
-  data.state.code.database = { bytes: 1048576, limit: 104857600, state: "ready" };
-  const page = renderedText(
-    renderMarkup(() =>
-      createComponent(LocaleProvider, {
-        locale,
-        get children() {
-          return createComponent(CodePage, { data });
-        },
-      }),
-    ),
-    " ",
-  );
-  expect(page).toContain(locale === "de" ? "Nutzt Datenbank" : "Uses database");
-  expect(page).toContain(locale === "de" ? "Datenbank: 1,00 MB von 100,00 MB" : "Database: 1.00 MB of 100.00 MB");
-});
-
-test.each(["de", "en"])("Code page shows owner reservation and export in %s", (locale) => {
-  const data = codePageFixture("overview", locale);
-  if (data.state.kind !== "ready") throw new Error("Missing fixture");
   data.state.code.database = {
     bytes: 1048576,
     limit: 104857600,
@@ -1087,7 +1012,7 @@ test.each(["de", "en"])("Code page shows owner reservation and export in %s", (l
     canExport: true,
     owner: { reserved: 209715200, limit: 1048576000 },
   };
-  const page = () =>
+  const markup = () =>
     renderMarkup(() =>
       createComponent(LocaleProvider, {
         locale,
@@ -1096,18 +1021,20 @@ test.each(["de", "en"])("Code page shows owner reservation and export in %s", (l
         },
       }),
     );
-  const markup = page();
-  expect(renderedText(markup, " ")).toContain(
+  const page = renderedText(markup(), " ");
+  expect(page).toContain(locale === "de" ? "Eigene Daten merken" : "Remember its own data");
+  expect(page).toContain(locale === "de" ? "Datenbank: 1,00 MB von 100,00 MB" : "Database: 1.00 MB of 100.00 MB");
+  expect(page).toContain(
     locale === "de"
       ? "Reservierte Kapazität des Besitzers: 200,00 MB von 1.000,00 MB"
       : "Owner reserved capacity: 200.00 MB of 1,000.00 MB",
   );
-  expect(markup).toContain(`/api/code/authoring/database/${data.state.code.id}/export`);
+  expect(markup()).toContain(`/api/code/authoring/database/${data.state.code.id}/export`);
   data.state.code.database.canExport = false;
-  expect(page()).not.toContain(`/api/code/authoring/database/${data.state.code.id}/export`);
+  expect(markup()).not.toContain(`/api/code/authoring/database/${data.state.code.id}/export`);
 });
 
-test.each(["de", "en"])("unused database notice shows the deletion date and confirmed delete control in %s", (locale) => {
+test.each(["de", "en"])("an unused database keeps its deletion date and confirmed delete control in %s", (locale) => {
   const data = codePageFixture("overview", locale);
   if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
   data.state.code.database = {
@@ -1122,7 +1049,7 @@ test.each(["de", "en"])("unused database notice shows the deletion date and conf
       canDelete: true,
     },
   };
-  const html = renderMarkup(() =>
+  const markup = renderMarkup(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
@@ -1130,6 +1057,6 @@ test.each(["de", "en"])("unused database notice shows the deletion date and conf
       },
     }),
   );
-  expect(html).toContain(locale === "de" ? "Diese Datenbank wird am" : "This database will be deleted on");
-  expect(html).toContain(locale === "de" ? "Jetzt löschen" : "Delete now");
+  expect(markup).toContain(locale === "de" ? "Diese Datenbank wird am" : "This database will be deleted on");
+  expect(markup).toContain(locale === "de" ? "Jetzt löschen" : "Delete now");
 });

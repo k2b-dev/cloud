@@ -71,7 +71,19 @@ export type CodeRunReadModel = z.infer<typeof CodeRunReadModelSchema>;
 export const CodeActivityReadModelSchema = z.strictObject({
   week: z.iso.datetime(),
   counters: list(z.strictObject({ key: text, automationKey: text, text, count })),
-  recent: z.array(z.strictObject({ text, at: z.iso.datetime(), href: text.optional(), runId: z.uuid() })).max(CODE_READ_MODEL_RECENT_LIMIT),
+  recent: z
+    .array(
+      z.strictObject({
+        text,
+        at: z.iso.datetime(),
+        href: text.optional(),
+        runId: z.uuid(),
+        /** The app that did it and its icon, as in "what it may do". */
+        app: text.optional(),
+        icon: text.optional(),
+      }),
+    )
+    .max(CODE_READ_MODEL_RECENT_LIMIT),
   timeline: z.strictObject({
     from: z.iso.datetime(),
     to: z.iso.datetime(),

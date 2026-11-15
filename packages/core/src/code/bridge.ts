@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { type AiModelProfile, readAiSettingsState } from "@k2b/cloud/ai";
+import { aiLive } from "@k2b/cloud/ai/live";
 import {
   type CapabilityDispatchDependencies,
   type CodeBridgeAuthority,
@@ -480,6 +481,7 @@ export function createCodeBridgeHost(
         await complete(sql, receipt.ordinal, receipt.receiptTransactionId);
       }
     }
+    if (call.kind === "action" && success && !replayed) aiLive.wake();
     return response;
   };
   return {

@@ -21,6 +21,7 @@ import { migrate as migrateCodeActivation } from "./migrate/core/code-activation
 import { migrate as migrateCodeChatDrafts } from "./migrate/core/code-chat-drafts";
 import { migrate as migrateCodeJobs } from "./migrate/core/code-jobs";
 import { migrate as migrateCodeLifecycle } from "./migrate/core/code-lifecycle";
+import { migrate as migrateCodeLive } from "./migrate/core/code-live";
 import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
 import { migrate as migrateCodeScheduling } from "./migrate/core/code-scheduling";
 import { migrate as migrateCodeSecrets } from "./migrate/core/code-secrets";
@@ -175,6 +176,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "logging", run: migrateLogging },
     { name: "workflows", run: migrateWorkflows },
     { name: "events", run: migrateEvents },
+    { name: "code-live", run: migrateCodeLive },
     { name: "code-lifecycle", run: migrateCodeLifecycle },
     { name: "room-access-events", run: migrateRoomAccessEvents },
     { name: "app-events", run: migrateAppEvents },

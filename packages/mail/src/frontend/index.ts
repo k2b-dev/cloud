@@ -2,6 +2,7 @@ import { type AuthContext, auth } from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { ssr } from "../config";
 import automationLogPage from "./[mailboxId]/automations/log/page";
+import catchUpPage from "./[mailboxId]/code/catch-up/page";
 import codePage from "./[mailboxId]/code/page";
 import draftComposePage from "./[mailboxId]/compose/[draftId]/page";
 import draftSeedComposePage from "./[mailboxId]/compose/local/[seedId]/page";
@@ -22,5 +23,6 @@ export default new Hono<AuthContext>()
   .get("/:mailboxId/compose/:draftId", auth.requireRole("user", ssr.access), ...draftComposePage)
   .get("/:mailboxId/drafts/:draftId", auth.requireRole("user", ssr.access), ...draftReadPage)
   .get("/:mailboxId/automations/log", auth.requireRole("user", ssr.access), ...automationLogPage)
+  .get("/:mailboxId/code/catch-up", auth.requireRole("user", ssr.access), ...catchUpPage)
   .get("/:mailboxId/code", auth.requireRole("user", ssr.access), ...codePage)
   .get("/:mailboxId", auth.requireRole("user", ssr.access), ...mailboxPage);

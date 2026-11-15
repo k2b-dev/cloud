@@ -1,135 +1,50 @@
 /**
- * Small safe highlighters for CodeDisplay.
+ * Display highlighters for CodeDisplay, CodeDiff and DocCode.
  *
- * These are display-only highlighters: no AST, no runtime parser, no
- * dependency. Every input character is HTML-escaped before being wrapped
- * in token spans, so the returned strings are safe to inject with
- * `innerHTML`.
+ * TypeScript and JavaScript come from the linear `@k2b/stdlib` code preset
+ * (`hl-*` classes); Markdown and SQL keep their small line-based scanners here
+ * (`cd-*` classes). Every input character is HTML-escaped before it is wrapped
+ * in a token span, so the returned strings are safe to inject with `innerHTML`.
  */
-
-const KEYWORDS = new Set([
-  "const",
-  "let",
-  "var",
-  "function",
-  "return",
-  "if",
-  "else",
-  "for",
-  "while",
-  "import",
-  "from",
-  "export",
-  "default",
-  "async",
-  "await",
-  "new",
-  "true",
-  "false",
-  "null",
-  "undefined",
-  "as",
-  "type",
-  "interface",
-  "void",
-  "this",
-  "typeof",
-  "in",
-  "of",
-]);
+import { highlight } from "@k2b/stdlib";
 
 export type CodeDisplayLanguage = "ts" | "tsx" | "js" | "jsx" | "script" | "markdown" | "md" | "text" | "sql";
 
-export const escapeCodeHtml = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const escapeCodeHtml = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const isIdStart = (c: string): boolean => /[A-Za-z_$]/.test(c);
-const isIdCont = (c: string): boolean => /[\w$]/.test(c);
 const isDigit = (c: string): boolean => /[0-9]/.test(c);
 const wrap = (cls: string, raw: string): string => `<span class="${cls}">${escapeCodeHtml(raw)}</span>`;
 const isCodeLanguage = (language: string | undefined): boolean =>
   language === "script" || language === "js" || language === "jsx" || language === "ts" || language === "tsx";
 
-export const highlightCode = (code: string): string => {
-  let out = "";
-  let i = 0;
-  const n = code.length;
+const TOKEN = /(<span class="[^"]*">|<\/span>)/;
+const EMPTY_TOKEN = /<span class="[^"]*"><\/span>/g;
 
-  while (i < n) {
-    const c = code[i]!;
-
-    if (c === "/" && code[i + 1] === "/") {
-      const nl = code.indexOf("\n", i);
-      const end = nl === -1 ? n : nl;
-      out += wrap("cd-c", code.slice(i, end));
-      i = end;
-      continue;
+/**
+ * One display line per source line. A token that spans lines, such as a block comment or a template string, closes at
+ * each line end and opens again on the next line, so every line is balanced HTML. The stdlib output is flat: spans
+ * never nest.
+ */
+const highlightedLines = (html: string): string[] => {
+  const lines: string[] = [];
+  let line = "";
+  let open = "";
+  for (const part of html.split(TOKEN)) {
+    if (part.startsWith("<span ")) open = part;
+    else if (part === "</span>") open = "";
+    const [first = "", ...rest] = open === part || part === "</span>" ? [part] : part.split("\n");
+    line += first;
+    for (const piece of rest) {
+      lines.push((open ? `${line}</span>` : line).replace(EMPTY_TOKEN, ""));
+      line = open + piece;
     }
-
-    if (c === "/" && code[i + 1] === "*") {
-      const close = code.indexOf("*/", i + 2);
-      const end = close === -1 ? n : close + 2;
-      out += wrap("cd-c", code.slice(i, end));
-      i = end;
-      continue;
-    }
-
-    if (c === '"' || c === "'" || c === "`") {
-      const quote = c;
-      let j = i + 1;
-      while (j < n) {
-        if (code[j] === "\\") {
-          j += 2;
-          continue;
-        }
-        if (code[j] === quote) {
-          j++;
-          break;
-        }
-        j++;
-      }
-      out += wrap("cd-s", code.slice(i, j));
-      i = j;
-      continue;
-    }
-
-    if (isDigit(c)) {
-      let j = i;
-      while (j < n && (isDigit(code[j]!) || code[j] === ".")) j++;
-      out += wrap("cd-n", code.slice(i, j));
-      i = j;
-      continue;
-    }
-
-    if (isIdStart(c)) {
-      let j = i;
-      while (j < n && isIdCont(code[j]!)) j++;
-      const word = code.slice(i, j);
-      let cls = "";
-      if (KEYWORDS.has(word)) cls = "cd-k";
-      else if (/^[A-Z]/.test(word)) cls = "cd-p";
-      else {
-        let k = j;
-        while (k < n && code[k] === " ") k++;
-        const next = code[k];
-        const prev = i > 0 ? code[i - 1] : "";
-        const assignment = next === "=" && code[k + 1] !== "=" && code[k + 1] !== ">";
-        const objectKey = next === ":";
-        const functionCall = next === "(";
-        const property = prev === ".";
-        if (assignment || objectKey) cls = "cd-a";
-        else if (functionCall || property) cls = "cd-f";
-      }
-      out += cls ? wrap(cls, word) : escapeCodeHtml(word);
-      i = j;
-      continue;
-    }
-
-    out += escapeCodeHtml(c);
-    i++;
   }
-
-  return out;
+  lines.push(line.replace(EMPTY_TOKEN, ""));
+  return lines;
 };
+
+/** TypeScript and JavaScript, the whole text at once so tokens across lines keep their meaning. */
+const highlightCodeLines = (code: string): string[] => highlightedLines(highlight.presets.code(code));
 
 const highlightMarkdownLine = (line: string): string => {
   const escaped = escapeCodeHtml(line);
@@ -189,8 +104,6 @@ const highlightMarkdownInline = (escaped: string): string =>
     .replace(/(#[A-Za-z][\w/-]*)/g, '<span class="cd-md-tag">$1</span>')
     .replace(/(=[A-Z][A-Z0-9_]*\([^)\n]*\))/g, '<span class="cd-md-formula">$1</span>');
 
-export const highlightMarkdownDisplay = (code: string): string => code.split("\n").map(highlightMarkdownLine).join("\n");
-
 export const highlightCodeDisplayLines = (code: string, language: CodeDisplayLanguage = "text"): string[] => {
   const lines = code.split("\n");
   if (language === "sql") return highlightSql(code).split("\n");
@@ -206,26 +119,21 @@ export const highlightCodeDisplayLines = (code: string, language: CodeDisplayLan
         fencedLanguage = fencedLanguage ? undefined : fence[1] || undefined;
         return highlightedFence;
       }
-      return isCodeLanguage(fencedLanguage) ? highlightCode(line || " ") : highlightMarkdownLine(line || " ");
+      return isCodeLanguage(fencedLanguage) ? (highlightCodeLines(line)[0] ?? "") || " " : highlightMarkdownLine(line || " ");
     });
   }
 
   if (lines.length >= 2 && /^```\w+/.test(lines[0] ?? "") && /^```\s*$/.test(lines[lines.length - 1] ?? "")) {
-    return lines.map((line, index) => {
-      if (index === 0 || index === lines.length - 1) return highlightMarkdownLine(line || " ");
-      return highlightCode(line || " ");
-    });
+    const body = lines.slice(1, -1);
+    const inner = body.length > 0 ? highlightCodeLines(body.join("\n")) : [];
+    return [
+      highlightMarkdownLine(lines[0] || " "),
+      ...inner.map((line) => line || " "),
+      highlightMarkdownLine(lines[lines.length - 1] || " "),
+    ];
   }
 
-  return lines.map((line) => highlightCode(line || " "));
-};
-
-export const highlightCodeDisplay = (code: string, language: CodeDisplayLanguage = "text"): string => {
-  if (language === "sql") return highlightSql(code);
-  if (code.includes("\n")) return highlightCodeDisplayLines(code, language).join("\n");
-  if (language === "markdown" || language === "md") return highlightMarkdownDisplay(code);
-  if (language === "text") return escapeCodeHtml(code);
-  return highlightCode(code);
+  return highlightCodeLines(code).map((line) => line || " ");
 };
 
 const SQL_KEYWORDS = new Set(

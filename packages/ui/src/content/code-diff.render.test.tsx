@@ -72,9 +72,11 @@ describe("CodeDiff server rendering", () => {
     const markup = html({ files }, "de");
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain('aria-label="Dateien"');
-    expect(text(markup)).toContain("index.ts+2 −1");
-    expect(text(markup)).toContain("reply.test.ts+1 −1");
-    expect(text(markup)).toContain("params.tsgleich");
+    // Names are visible; the change summary is read out with them.
+    expect(text(markup)).toContain("index.ts, +2 −1");
+    expect(text(markup)).toContain("reply.test.ts, +1 −1");
+    expect(text(markup)).toContain("params.ts, gleich");
+    expect(markup).toMatch(/<span class="k2b-code-diff__path">index\.ts<\/span><span class="k2b-sr-only">/);
     expect(markup).toContain('aria-label="Code-Unterschied, nur lesen · index.ts"');
     expect(text(markup)).toContain("9 unveränderte Zeilen");
     expect(text(markup)).toContain("Entfernt, Zeile 13:");
@@ -98,8 +100,15 @@ describe("CodeDiff server rendering", () => {
     expect(markup).not.toContain("data-kind");
     expect(markup).not.toContain("k2b-code-diff__fold");
     expect(markup).not.toContain("k2b-code-diff__sign");
-    expect(text(markup)).toContain("index.ts17 Zeilen");
-    expect(markup).toContain('aria-label="Code-Unterschied, nur lesen · index.ts, neue Datei"');
+    expect(text(markup)).toContain("index.ts, 17 Zeilen");
+    // Whole code alone is just the code; "new file" only stands beside a file with a predecessor.
+    expect(markup).toContain('aria-label="Code-Unterschied, nur lesen · index.ts"');
+    const mixed = html({ files: [...first, files[2]!] }, "de");
+    expect(mixed).toContain('aria-label="Code-Unterschied, nur lesen · index.ts, neue Datei"');
+    // A file the application has not loaded yet carries no summary.
+    const lazy = html({ files: [...first, { path: "later.ts", lines: [] }] }, "de");
+    expect(text(lazy)).toContain("later.ts");
+    expect(text(lazy)).not.toContain("later.ts,");
     expect(rowNumbers(markup)).toHaveLength(17);
   });
 
@@ -120,12 +129,12 @@ describe("CodeDiff server rendering", () => {
     const loading = html({ files: [], status: "loading" });
     expect(loading).toMatch(/class="k2b-code-diff__body" role="status" aria-busy="true"/);
     expect(loading.match(/k2b-code-diff__loading/g)).toHaveLength(8);
-    expect(text(loading)).toContain("Loading the code difference");
+    expect(text(loading)).toContain("Loading the code");
 
     const failed = html({ files, status: "error", errorDescription: "Nothing was decided.", onRetry: () => {} }, "de");
     expect(failed).toContain('role="alert"');
     expect(failed).toContain("ti ti-cloud-off");
-    expect(text(failed)).toContain("Der Code-Unterschied konnte nicht geladen werden");
+    expect(text(failed)).toContain("Der Code konnte nicht geladen werden");
     expect(text(failed)).toContain("Nothing was decided.");
     expect(text(failed)).toContain("Erneut versuchen");
     expect(failed).not.toContain("k2b-code-diff__line");
@@ -148,5 +157,35 @@ describe("CodeDiff server rendering", () => {
     expect(markup).not.toContain("<script>alert");
     expect(markup).not.toContain("<img src=x");
     expect(markup).toContain("&lt;script&gt;");
+  });
+
+  test("a toolbar leads the file row and stays, with the file names, while the code loads or fails", () => {
+    for (const status of [undefined, "loading", "error"] as const) {
+      const markup = html({ files, status, toolbarStart: "Compare with", onRetry: () => {} });
+      const start = markup.indexOf('class="k2b-code-diff__toolbar"');
+      expect(start).toBeGreaterThan(-1);
+      expect(start).toBeLessThan(markup.indexOf('role="tablist"'));
+      expect(text(markup)).toContain("Compare with");
+      expect(markup).toContain('role="tabpanel"');
+      expect(markup.match(/role="tab"/g)).toHaveLength(3);
+    }
+    const single = html({ files: [files[0]!], status: "loading", toolbarStart: "Compare with" });
+    expect(single.indexOf("k2b-code-diff__toolbar")).toBeLessThan(single.indexOf("k2b-code-diff__file"));
+    expect(single).toContain('aria-busy="true"');
+    // Without a toolbar nothing is added.
+    expect(html({ files })).not.toContain("k2b-code-diff__toolbar");
+  });
+
+  test("the code surface is a keyboard stop, and TypeScript is highlighted by the stdlib preset", () => {
+    const markup = html({ files: [{ path: "index.ts", lines: [add("const answer = 42; // note")] }] });
+    expect(markup).toMatch(/class="k2b-code-diff__body" role="region"[^>]*tabindex="0"/);
+    expect(markup).toContain('<span class="hl-keyword">const</span>');
+    expect(markup).toContain('<span class="hl-comment">// note</span>');
+  });
+
+  test("unchanged code keeps the surface as one quiet state", () => {
+    const empty = html({ files: [files[2]!], toolbarStart: "Compare with" });
+    expect(empty).toMatch(/class="k2b-code-diff__state"><div[^>]*data-state="empty"/);
+    expect(text(empty)).toContain("Compare with");
   });
 });
