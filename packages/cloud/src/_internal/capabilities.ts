@@ -427,6 +427,25 @@ const readActionSentences = (value: unknown, operation: CapabilityActionManifest
   }
 };
 
+const readResultForm = (value: unknown, label: string): import("../contracts/capabilities").CapabilityActionResultForm => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  const form = value as Record<string, unknown>;
+  if (
+    Object.keys(form).some((key) => key !== "text" && key !== "targetType" && key !== "kind") ||
+    typeof form.text !== "string" ||
+    typeof form.targetType !== "string" ||
+    typeof form.kind !== "string" ||
+    !/^[a-z][a-z0-9._-]*$/.test(form.targetType) ||
+    /[{}]/.test(form.text.replace("{target}", "")) ||
+    /[\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.text)
+  )
+    throw new Error(`${label} needs text with at most one {target} and an app-local targetType`);
+  assertText(form.text, `${label}.text`, 200);
+  assertText(form.kind, `${label}.kind`, 80);
+  if (/[{}\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.kind)) throw new Error(`${label}.kind must be plain text`);
+  return { text: form.text.trim(), targetType: form.targetType, kind: form.kind.trim() };
+};
+
 const compileOperationPresentation = (
   value: unknown,
   operation: CapabilityQueryManifest | CapabilityActionManifest | CapabilityCommandManifest,
@@ -438,7 +457,7 @@ const compileOperationPresentation = (
   const allowed = new Set(
     "path" in operation
       ? ["title", "description", "input", "keywords"]
-      : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences"] : [])],
+      : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences", "result"] : [])],
   );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
   if (strict && extra) throw new Error(`${label} contains unsupported field "${extra}"`);
@@ -501,6 +520,7 @@ const compileOperationPresentation = (
     ...(data ? { data } : {}),
     ...(searchTags ? { searchTags } : {}),
     ...(sentences ? { sentences } : {}),
+    ...(translation.result !== undefined && isAction(operation) ? { result: readResultForm(translation.result, `${label}.result`) } : {}),
   };
 };
 
@@ -518,7 +538,10 @@ export const compileCapabilityPresentation = (
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Capability presentation must be an object");
   const catalog = value as Record<string, unknown>;
-  if (strict && Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "sentences" && key !== "translations")) {
+  if (
+    strict &&
+    Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "sentences" && key !== "results" && key !== "translations")
+  ) {
     throw new Error("Capability presentation contains unsupported fields");
   }
   const baseLocale = typeof catalog.baseLocale === "string" ? canonicalLocale(catalog.baseLocale) : undefined;
@@ -548,6 +571,24 @@ export const compileCapabilityPresentation = (
       }),
     );
   }
+  if (catalog.results !== undefined && (!catalog.results || typeof catalog.results !== "object" || Array.isArray(catalog.results))) {
+    if (strict) throw new Error("Capability presentation results must be an object");
+  }
+  const results: NonNullable<CapabilityPresentationCatalog["results"]> = Object.fromEntries(
+    Object.entries(
+      catalog.results && typeof catalog.results === "object" && !Array.isArray(catalog.results) ? catalog.results : {},
+    ).flatMap(([localId, value]) => {
+      try {
+        if (!manifest.actions.some((action) => action.localId === localId)) throw new Error(`Unknown result Action ${localId}`);
+        const form = readResultForm(value, `Action ${localId}.result`);
+        if (!manifest.types.some((type) => type.localId === form.targetType)) throw new Error(`Unknown result Type ${form.targetType}`);
+        return [[localId, form]];
+      } catch (error) {
+        if (strict) throw error;
+        return [];
+      }
+    }),
+  );
   const translations: Record<string, CapabilityPresentationTranslation> = {};
   for (const [locale, rawTranslation] of Object.entries(catalog.translations as Record<string, unknown>)) {
     const canonical = canonicalLocale(locale);
@@ -613,8 +654,16 @@ export const compileCapabilityPresentation = (
       });
       return (strict ? parsed.strict() : parsed).parse(entry);
     });
-    const operationPresentation = (entry: unknown, operation: Parameters<typeof compileOperationPresentation>[1], label: string) =>
-      compileOperationPresentation(entry, operation, label, strict);
+    const operationPresentation = (entry: unknown, operation: Parameters<typeof compileOperationPresentation>[1], label: string) => {
+      const copy = compileOperationPresentation(entry, operation, label, strict);
+      if (
+        copy.result &&
+        (!types.has(copy.result.targetType) ||
+          (results[operation.localId] && results[operation.localId]!.targetType !== copy.result.targetType))
+      )
+        throw new Error(`${label}.result must retain its declared result Type`);
+      return copy;
+    };
     const translatedQueries = compileGroup(raw.queries, queries, "Query", operationPresentation);
     const translatedActions = compileGroup(raw.actions, actions, "Action", operationPresentation);
     const translatedCommands = compileGroup(raw.commands, commands, "Command", operationPresentation);
@@ -639,7 +688,12 @@ export const compileCapabilityPresentation = (
       ...(translatedCommands ? { commands: translatedCommands } : {}),
     };
   }
-  return { baseLocale, ...(sentences && Object.keys(sentences).length > 0 ? { sentences } : {}), translations };
+  return {
+    baseLocale,
+    ...(Object.keys(results).length ? { results } : {}),
+    ...(sentences && Object.keys(sentences).length > 0 ? { sentences } : {}),
+    translations,
+  };
 };
 
 const assertPropertyDescriptions = (schema: unknown, label: string, path: readonly string[] = []): void => {
@@ -1317,6 +1371,7 @@ export const resolveCapabilityActionWording = (
   const inputDescriptions = Object.assign({}, ...overlays.map((translation) => translation.actions?.[operation.localId]?.input ?? {}));
   const sentences = resolveCapabilityActionSentences(operation.localId, catalog, requestedLocale);
   return {
+    result: overlays.reduce((form, overlay) => overlay.actions?.[operation.localId]?.result ?? form, catalog?.results?.[operation.localId]),
     title: resolveCapabilityOperationTitle(operation, "actions", catalog, requestedLocale),
     ...(sentences ? { sentences } : {}),
     fields: capabilitySentenceFields({

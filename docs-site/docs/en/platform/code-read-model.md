@@ -5,7 +5,7 @@ section: Platform services
 order: 972
 description: Read authorized version facts, example results and confirmed automation activity in the request language.
 tags: [code, versions, runs]
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Code in words
@@ -36,7 +36,12 @@ to this Code. Ordinary Code read permission suffices.
   bindings, pages and database use. Rows contain `kind`, `text` and optional
   `note`. The `access_same_behavior_changed` state means the checked access
   facts match while the executable bundle differs. Matching facts never prove
-  matching behavior.
+  matching behavior. Added accesses that require an admin decision carry
+  `requiresApproval`, `approvalReason` and `accessLabel`. `changes.approval`
+  contains the full trigger count, a reason and `withoutLabel`: one access is
+  named directly; multiple triggers use “Build without approval”. These facts
+  use the effective policy for the owner or version author, including live
+  group membership, in the existing version read statement.
 - `examples` contains saved names, results and observation sentences. Success
   means an example met its author's expectation; Cloud does not establish
   that the expectation is correct. A failed assertion may include up to four
@@ -72,8 +77,13 @@ outcomes add no effect. UTC Monday boundaries define the durable week.
 Run settlement saves its effect snapshot and updates one automation/week row
 in the same transaction. Repeating settlement cannot increment it again. A late authoritative call
 result updates the original run snapshot and the same weekly row atomically.
-`recent` returns at most six confirmed results, with target links only when the
-caller's current reader supplies an open link. `timeline` combines the local
+`recent` returns at most six confirmed results, each with `text`, `at`,
+`runId`, optional `app` and `icon`, and an authorized `href`. Result forms are
+provider-owned, translated presentation snapshots; a target title comes only
+from the caller's current resource reader. Without a readable title the sentence
+names the resource kind. Missing forms use “Action · n times”. The same sentences
+and metadata appear in run `untilThen.items`; their `state` distinguishes
+successful effects, replayed calls, refusals and unknown outcomes. `timeline` combines the local
 day's recorded runs with future schedule slots. It has at most 200 marks;
 large days are grouped with counts. Local day boundaries and planned slots
 respect time zones and daylight saving changes.
@@ -82,6 +92,18 @@ The activity snapshot uses one SQL statement after Code authorization. The
 integration SQL meter pins that statement and the complete loader's three
 statements for a personal Code without provider targets. Canonical target
 readers retain their own authorization and statement costs.
+
+## Activation and pause dates
+
+`core.code.read` and `core.code.list` include nullable `activatedAt`,
+`activatedBy: { name }` and `pausedAt`. Activation attribution comes from the
+current version's most recent successful `code.activations` receipt, projected
+in that transaction. Failed attempts do not change it. The name follows the
+person directory's visibility rules; a missing or unreadable name is null and
+never replaced by an identifier. Pause transitions record `pausedAt` for every
+pause cause; other updates preserve it, and resuming clears it. Older pauses
+without a recorded timestamp remain null. Read/list use their existing SQL
+statements for these fields.
 
 ## Read the Code tab
 

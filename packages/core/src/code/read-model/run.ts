@@ -6,18 +6,20 @@ import { type CodeContext, CodeDataError } from "../access";
 import { codeRunMessages } from "../run-messages";
 import { readCode } from "../store";
 import { unknownCodeCallOutcomes } from "./call-outcome";
+import { effectTarget, presentEffect } from "./effects";
 import { codeReadModelMessages } from "./messages";
 import { readModelNames } from "./names";
 import { describeReadModelTiming, readModelList } from "./present";
 
+type Effect = { operation: string; target: { type: string; id: string } | null; evidence: unknown };
 type Observation = { operation: string; confirmed: number; replayed: number; refused: number; unknown: number };
 export function presentRunObservations(observations: readonly Observation[], locale: string, operation: (id: string) => string) {
   const { t } = codeReadModelMessages.resolve([locale]);
   return observations.flatMap((call) => [
     ...(call.confirmed ? [{ text: t.calls({ action: operation(call.operation), count: call.confirmed }) }] : []),
-    ...(call.replayed ? [{ text: t.replayed({ count: call.replayed }) }] : []),
-    ...(call.refused ? [{ text: t.refused({ count: call.refused }) }] : []),
-    ...(call.unknown ? [{ text: t.unknown({ count: call.unknown }) }] : []),
+    ...(call.replayed ? [{ text: t.replayed({ count: call.replayed }), state: "replayed" as const }] : []),
+    ...(call.refused ? [{ text: t.refused({ count: call.refused }), state: "refused" as const }] : []),
+    ...(call.unknown ? [{ text: t.unknown({ count: call.unknown }), state: "unknown" as const }] : []),
   ]);
 }
 export async function loadCodeRunReadModel(
@@ -35,10 +37,17 @@ export async function loadCodeRunReadModel(
       trigger: string;
       manifest: unknown;
       observations: Observation[];
+      effects: Effect[];
+      effect_count: number;
       incomplete: boolean;
     }[]
   >`
     SELECT r.created_at,r.state,r.outcome,r.entrypoint,r.trigger,v.manifest,
+      (SELECT count(*)::int FROM code.calls WHERE run_id=r.id AND confirmed_effect AND NOT replayed AND state='succeeded') AS effect_count,
+      COALESCE((SELECT jsonb_agg(item ORDER BY ordinal) FROM (
+        SELECT ordinal,call->>'capability' AS operation,call->'target' AS target,effect AS evidence FROM code.calls
+        WHERE run_id=r.id AND confirmed_effect AND NOT replayed AND state='succeeded' ORDER BY ordinal LIMIT 50
+      ) item),'[]'::jsonb) AS effects,
       COALESCE((SELECT jsonb_agg(observed ORDER BY operation) FROM (
         SELECT call->>'capability' AS operation,
           count(*) FILTER (WHERE confirmed_effect AND NOT replayed AND state='succeeded')::int AS confirmed,
@@ -61,8 +70,17 @@ export async function loadCodeRunReadModel(
     manifest.success ? [manifest.data] : [],
     context,
     row.observations.map((item) => item.operation),
+    row.effects.flatMap((item) => {
+      const effect = effectTarget(item.evidence, locale, item.target);
+      return effect ? [effect.ref] : [];
+    }),
   );
-  const observations = presentRunObservations(row.observations, locale, (operation) => names.operation(operation).title);
+  const effects = row.effects.map((effect) => presentEffect(effect, names, locale));
+  const observations = presentRunObservations(
+    row.observations.map((item) => ({ ...item, confirmed: 0 })),
+    locale,
+    (operation) => names.operation(operation).title,
+  );
   const entry = manifest.success ? manifest.data.entrypoints.find((entry) => entry.entrypoint === row.entrypoint) : undefined;
   const at = row.created_at.toISOString();
   const timeZone = await coreSettings.get<string>("app.timezone");
@@ -76,18 +94,11 @@ export async function loadCodeRunReadModel(
       : row.state === "succeeded" || row.state === "failed" || row.state === "skipped" || row.state === "running"
         ? row.state
         : "queued";
-  const confirmed = row.observations.find((item) => item.confirmed > 0);
   return {
     runId: input.runId,
     state,
     at,
-    title:
-      !row.incomplete && confirmed
-        ? t.calls({
-            action: names.operation(confirmed.operation).title,
-            count: confirmed.confirmed,
-          })
-        : fallback,
+    title: !row.incomplete && effects[0] ? effects[0].text : fallback,
     status:
       state === "succeeded"
         ? t.successful
@@ -100,8 +111,13 @@ export async function loadCodeRunReadModel(
               : t.queued,
     reason: state === "failed" || state === "skipped" ? describeRunFailure(row.outcome, locale) : null,
     untilThen: readModelList(
-      [...observations, ...(row.incomplete ? [{ text: t.incomplete }] : !observations.length ? [{ text: t.nothing }] : [])],
+      [
+        ...effects,
+        ...observations,
+        ...(row.incomplete ? [{ text: t.incomplete }] : !effects.length && !observations.length ? [{ text: t.nothing }] : []),
+      ],
       locale,
+      Math.max(0, row.effect_count - row.effects.length),
     ),
     complete: !row.incomplete,
   };

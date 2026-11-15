@@ -87,8 +87,76 @@ test("an unavailable comparison has no misleading additions", () => {
   const model = present({ comparison: null, comparisonAvailable: false });
   expect(model.changes.state).toBe("unavailable");
   expect(model.changes.rows.items).toEqual([]);
+  expect(
+    present({
+      comparison: null,
+      comparisonAvailable: false,
+      names: { ...names, operation: () => ({ title: "Action", policyRow: "silent_shared" }) },
+      policy: { silent_shared: "admin" },
+    }).changes.approval,
+  ).toBeNull();
 });
 
 test("a missing model explanation leaves its section absent even with unreadable targets", () => {
   expect(present({ explanation: null }).description).toMatchObject({ state: "missing", text: null });
+});
+
+test("only added accesses at the effective admin policy carry approval causes and rebuild labels", () => {
+  const names: ReadModelNames = {
+    target: () => ({ name: "Visible folder", readable: true }),
+    operation: () => ({ title: "Dateien ablegen", policyRow: "silent_shared" }),
+    event: () => "Event",
+  };
+  for (const locale of ["de", "en"]) {
+    const model = present({ names, locale, comparison: { ...manifest, permissions: [] }, policy: { silent_shared: "admin" } });
+    expect(model.changes.rows.items.find((row) => row.kind === "add")).toMatchObject({
+      requiresApproval: true,
+      accessLabel: "Dateien ablegen",
+    });
+    expect(model.changes.approval?.count).toBe(1);
+    expect(model.changes.approval?.reason).toContain(locale === "de" ? "andere sehen" : "other people");
+    const multiple = present({
+      names,
+      locale,
+      manifest: { ...manifest, permissions: [...manifest.permissions, { ...manifest.permissions[0]!, operation: "fictional.second" }] },
+      comparison: { ...manifest, permissions: [] },
+      policy: { silent_shared: "admin" },
+    });
+    expect(multiple.changes.approval?.withoutLabel).toBe(locale === "de" ? "Ohne Freigabe bauen" : "Build without approval");
+    expect(present({ names, locale, policy: { silent_shared: "automatic" } }).changes.approval).toBeNull();
+    expect(present({ names, locale, policy: { silent_shared: "never" } }).changes.approval).toBeNull();
+  }
+});
+
+test("changed Internet, public-page and AI accesses retain one localized approval cause per access", () => {
+  for (const locale of ["de", "en"]) {
+    const input = {
+      ...manifest,
+      ai: true,
+      policyRows: ["internet", "ai", "public_routes"] as const,
+      internet: ["https://example.test"],
+      permissions: [{ ...manifest.permissions[0]!, operation: "core.ai.decide" }],
+      entrypoints: [
+        ...manifest.entrypoints,
+        {
+          kind: "route" as const,
+          cron: null,
+          entrypoint: "page",
+          route: { public: true, method: "GET" as const, path: "/report" },
+          file: "code.ts",
+          line: 3,
+        },
+      ],
+    };
+    const model = present({
+      locale,
+      manifest: { ...input, policyRows: [...input.policyRows] },
+      comparison: { ...manifest, permissions: [] },
+      names: { ...names, operation: () => ({ title: "AI decision", policyRow: "ai" }) },
+      policy: { ai: "admin", internet: "admin", public_routes: "admin" },
+    });
+    expect(model.changes.approval?.count).toBe(3);
+    expect(model.changes.rows.items.filter((row) => row.requiresApproval)).toHaveLength(3);
+    expect(model.changes.approval?.withoutLabel).toBe(locale === "de" ? "Ohne Freigabe bauen" : "Build without approval");
+  }
 });

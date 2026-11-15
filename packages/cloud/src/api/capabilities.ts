@@ -7,6 +7,7 @@ import { readBoundedJson } from "../_internal/bounded-json";
 import {
   isPersonVisibleCapabilityAction,
   isPersonVisibleCapabilityQuery,
+  resolveCapabilityActionWording,
   resolveCapabilityManifestPresentation,
 } from "../_internal/capabilities";
 import {
@@ -1790,6 +1791,19 @@ export async function dispatchCodeSdkCall({
       } finally {
         if (!read.body.locked) await read.body.cancel().catch(() => undefined);
       }
+    }
+    if (kind === "action" && result.ok && "idempotency" in operation) {
+      const observed = z.object({ refs: z.array(z.object({ type: z.string(), id: z.string() })).default([]) }).safeParse(result.data);
+      if (observed.success)
+        authority.onEffect?.({
+          forms: Object.fromEntries(
+            (["de", "en"] as const).flatMap((locale) => {
+              const form = resolveCapabilityActionWording(operation, entry.presentation, locale).result;
+              return form ? [[locale, form]] : [];
+            }),
+          ),
+          refs: observed.data.refs,
+        });
     }
     const payload = z.object({ data: z.json(), page: CapabilityPageSchema.optional() }).safeParse(result.ok ? result.data : null);
     if (response.ok && payload.success) return Response.json({ ok: true, data: kind === "query" ? payload.data : payload.data.data });

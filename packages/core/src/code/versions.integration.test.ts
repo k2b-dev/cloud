@@ -15,6 +15,7 @@ import { auth } from "@k2b/cloud/server";
 import { approvalArgsDigest, approvalDecisionHints, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
 import { z } from "zod";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { createCodeAdminRoutes } from "../api/code-admin";
 import { aiCapabilities } from "../capabilities";
@@ -37,6 +38,7 @@ import { codeAuthoringContracts } from "./authoring-contracts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
+import { loadCodeVersionReadModel } from "./read-model/load";
 import { readCodeReview, waitCodeReview } from "./review";
 import { cancelCodeReviewRevision } from "./review-chat";
 import { stopCodeReviewTurn } from "./review-chat-state";
@@ -272,6 +274,30 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
           submittedNumber: 2,
         });
       }
+
+  test("the shared version read marks the changed access that needs approval without extra SQL", async () => {
+    const code = await newCode();
+    const submission = await submitCodeVersion(input(code, "approval cause"), author);
+    const reader = spyOn(provider, "invokeCapabilityWithDataSchema").mockImplementation(async (_invocation, schema) => ({
+      ok: true as const,
+      data: { data: schema.parse({ view: { title: "Visible folder", permission: "read" } }) },
+    }));
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(async () => {
+        const words = await loadCodeVersionReadModel({ codeId: code.id, versionId: submission.version.id }, { ...author, locale: "de" });
+        expect(words.changes.rows.items.find((row) => row.kind === "add")).toMatchObject({
+          requiresApproval: true,
+          accessLabel: "Fixture",
+        });
+        expect(words.changes.approval?.reason).toContain("andere sehen");
+      });
+      expect(statements).toHaveLength(3);
+      await sql`UPDATE code.policy_rules SET value='automatic' WHERE group_id IS NULL AND row='silent_shared'`;
+      expect((await loadCodeVersionReadModel({ codeId: code.id, versionId: submission.version.id }, author)).changes.approval).toBeNull();
+    } finally {
+      reader.mockRestore();
+      await meter.close();
     }
   });
 

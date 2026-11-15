@@ -807,7 +807,12 @@ export type CapabilityActionSentences = {
   notRun?: string;
 };
 
+/** Evidence-backed result wording. Only {target} is substituted, through the caller's resource reader. */
+export type CapabilityActionResultForm = { text: string; targetType: string; kind: string };
+
 export type CapabilityOperationPresentationTranslation = {
+  /** Past-tense result for one confirmed effect; targetType is an app-local Type. */
+  result?: CapabilityActionResultForm;
   title?: string;
   description?: string;
   /** Human descriptions keyed by a stable dotted field path such as `filter.tags[]`. */
@@ -839,6 +844,8 @@ export type CapabilityPresentationTranslation = {
 };
 
 export type CapabilityPresentationCatalog = {
+  /** Base-locale result forms keyed by Action local ID. */
+  results?: Readonly<Record<string, CapabilityActionResultForm>>;
   /** Locale of the complete Type, Query, Action, search-tag, and schema presentation. */
   baseLocale: string;
   /** @deprecated removed with the next major; return per-call review forms. */
