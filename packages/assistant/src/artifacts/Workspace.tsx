@@ -11,13 +11,12 @@ import {
   formatFileViewSize,
   IconButtonLink,
   NoticeCard,
-  Panes,
-  type PanesItem,
   Placeholder,
   prompts,
   toast,
   useLocale,
 } from "@k2b/ui";
+import { Panes, type PanesItem } from "@k2b/ui/panes";
 import {
   type Accessor,
   createEffect,
