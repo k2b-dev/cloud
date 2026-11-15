@@ -1934,8 +1934,12 @@ test("result forms are translated, target-bound presentation for confirmed effec
   const { manifest } = compileCapabilities("example", example());
   const catalog = {
     baseLocale: "en",
-    results: { rename: { text: "Updated {target}", targetType: "item", kind: "item" } },
-    translations: { de: { actions: { rename: { result: { text: "{target} geändert", targetType: "item", kind: "Eintrag" } } } } },
+    results: { rename: { text: "Updated {target}", targetType: "item", kind: "item", countText: "Items updated" } },
+    translations: {
+      de: {
+        actions: { rename: { result: { text: "{target} geändert", targetType: "item", kind: "Eintrag", countText: "Einträge geändert" } } },
+      },
+    },
   };
   const compiled = compileCapabilityPresentation(manifest, catalog);
   const action = manifest.actions.find((action) => action.localId === "rename")!;
@@ -1947,6 +1951,11 @@ test("result forms are translated, target-bound presentation for confirmed effec
     expect(compileCapabilityPresentation(manifest, bad, "reader")?.results).toBeUndefined();
   }
   expect(() => compileCapabilityPresentation(manifest, { ...catalog, results: { unknown: catalog.results.rename } })).toThrow();
+  for (const countText of ["{target} changed", "", "Bad\nlabel"]) {
+    expect(() =>
+      compileCapabilityPresentation(manifest, { ...catalog, results: { rename: { ...catalog.results.rename, countText } } }),
+    ).toThrow();
+  }
   const badTranslation = {
     ...catalog,
     translations: { de: { actions: { rename: { result: { ...catalog.results.rename, targetType: "unknown" } } } } },

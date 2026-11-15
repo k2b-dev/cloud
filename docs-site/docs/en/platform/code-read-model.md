@@ -50,7 +50,12 @@ to this Code. Ordinary Code read permission suffices.
 - `notices` contains a sentence and consequence for each checker finding.
   Technical codes and source coordinates remain available to CLI clients.
 
-An unavailable target reader produces a generic type label and no link.
+An unavailable target reader produces a neutral type label and no link;
+a reader's explicit refusal may say that the target is not visible. Within one
+read-model load, the owner reader answer also supplies that same target's
+name and link, without another child Query. It is never reused across loads
+or identities. Multiple other targets remain subject to the platform's
+one-child-Query limit (tracked in #3423).
 Descriptions and example text are visible only when the caller can read every
 version target. Otherwise the answer explains that the description names
 unreadable targets. Administrator status alone does not authorize these names.
@@ -73,6 +78,9 @@ Its weekly counters count confirmed successful Action invocations, grouped by
 `automationKey` and operation. These are observed invocations, not inferred
 numbers of items changed or estimated time saved. Replays, Queries and unknown
 outcomes add no effect. UTC Monday boundaries define the durable week.
+Each counter's `text` uses the persisted provider `countText` (for example,
+“Tasks created”), with `count` displayed separately. Missing wording uses the
+explicit “Action · n times” fallback.
 
 Run settlement saves its effect snapshot and updates one automation/week row
 in the same transaction. Repeating settlement cannot increment it again. A late authoritative call
@@ -142,3 +150,9 @@ file, exact finding and count. Removed findings must lower or remove their
 entry; `bun scripts/check.ts code-no-source --fix` only makes those reductions.
 The version card/chat, Code page and administration migrations must empty
 this baseline before the v12 preview (issue #3357).
+
+Automation metadata keeps `nextRunAt` authoritative to the registered scheduler.
+`nextRunState` distinguishes `planned`, `none` (for example a paused automation)
+and `unavailable`. A null date with `unavailable` must not be labelled “none
+planned”. Hour-range minute schedules include the final hour: `* 7-20 * * *`
+means every minute from 07:00 through 20:59 in the schedule's time zone.

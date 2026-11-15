@@ -28,6 +28,8 @@ export const CodeAutomationSchema = z
     timeZone: z.string().optional(),
     /** When the installation's scheduler runs it next; null when it does not or the scheduler cannot say. */
     nextRunAt: z.iso.datetime().nullable(),
+    /** Null nextRunAt is not proof that no run is planned when the scheduler could not answer. */
+    nextRunState: z.enum(["planned", "none", "unavailable"]).optional(),
     /** Its newest run that did something; skipped ticks and cancelled starts are not results. */
     lastRun: z
       .object({
@@ -138,6 +140,11 @@ export async function listCodeAutomations(
       ...(entry.at === undefined ? {} : { at: entry.at }),
       ...(entry.kind === "schedule" ? { timeZone: entry.timeZone ?? defaultTimeZone } : {}),
       nextRunAt: nextRuns.get(entry.entrypoint) ?? null,
+      nextRunState: nextRuns.get(entry.entrypoint)
+        ? "planned"
+        : code.state === "active" && entry.kind === "schedule" && !entry.at
+          ? "unavailable"
+          : "none",
       lastRun: run ? { state: run.state, createdAt: run.created_at.toISOString(), endedAt: run.ended_at?.toISOString() ?? null } : null,
       missingTargets: run && targetForRun.has(run.id) ? [targetForRun.get(run.id)!] : [],
     };

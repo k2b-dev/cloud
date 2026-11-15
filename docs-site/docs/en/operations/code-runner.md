@@ -593,3 +593,9 @@ calls. It resolves their display names on each authorized history read.
 Forward migrations add these snapshots and activation/pause projections;
 older calls without forms keep counted Action wording, and older pauses with
 no timestamp remain undated. No runner configuration change is needed.
+
+Provider result forms may include the optional translated `countText` label
+for confirmed weekly effects. Upgrade Core before deploying an application
+that publishes this field: older Core readers reject unknown result-form
+keys and may drop that Action's translation. Existing effect snapshots
+without the label use the explicit Action/count fallback.

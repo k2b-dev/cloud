@@ -7,7 +7,12 @@ const storedText = z
   .string()
   .refine((value) => !/[\u0000]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value));
 const ref = z.strictObject({ type: storedText, id: storedText });
-const form = z.strictObject({ text: storedText.max(200), kind: storedText.min(1).max(80), targetType: storedText });
+const form = z.strictObject({
+  text: storedText.max(200),
+  kind: storedText.min(1).max(80),
+  targetType: storedText,
+  countText: storedText.min(1).max(200).optional(),
+});
 export const CodeEffectEvidenceSchema = z.strictObject({
   forms: z.strictObject({ de: form.optional(), en: form.optional() }),
   refs: z.array(ref).max(50),
@@ -45,6 +50,13 @@ export function presentEffect(
     ...(target?.readable && target.href ? { href: target.href } : {}),
     state: "succeeded" as const,
   };
+}
+
+/** A counter describes only confirmed effects with persisted provider wording. */
+export function presentEffectCount(evidence: unknown, locale: string, action: string, count: number): string {
+  const parsed = CodeEffectEvidenceSchema.safeParse(evidence);
+  const label = parsed.success ? parsed.data.forms[locale.startsWith("de") ? "de" : "en"]?.countText : undefined;
+  return label && !/[{}]/.test(label) ? label : codeReadModelMessages.resolve([locale]).t.times({ action, count });
 }
 
 /** Recent activity defers names and links to independent, permission-aware reader calls at its consumer. */
