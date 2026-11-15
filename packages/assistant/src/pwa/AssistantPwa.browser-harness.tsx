@@ -552,6 +552,48 @@ const answer = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
                   }
                 : CODE_VERSION,
     });
+  // The review as the person sees it and the version in words, both fictional.
+  if (url.pathname === "/api/code/review")
+    return json({
+      data: {
+        status: params.get("code") === "pending" ? "pending" : params.get("code") === "rejected" ? "rejected" : "not_required",
+        origin: { kind: "ai_chat", conversationId: "pflege", automaticAfterReview: false },
+        decidedBy: params.get("code") === "rejected" ? { id: "u-jana", name: "Jana Probe", avatarHash: null } : null,
+        decidedAt: params.get("code") === "rejected" ? ago(30) : null,
+        message: params.get("code") === "rejected" ? "Rechnungen bitte weiter von Hand ablegen." : null,
+        comments: [],
+        commentCount: 0,
+        activeVersion: { id: "v2", number: 2 },
+      },
+    });
+  if (url.pathname === "/api/capabilities/v1/queries/core/code.version.words")
+    return json({
+      data: {
+        versionId: "33333333-3333-4333-8333-333333333333",
+        number: 3,
+        submittedAt: ago(60),
+        locale: "de",
+        description: { state: "visible", text: "Legt Rechnungen ab.", modelLabel: "✦" },
+        assurance: "Cloud begrenzt die Zugriffe auf die Apps und Ziele dieser Version.",
+        mayDo: { items: [], more: 0, moreText: null },
+        timing: { items: [], more: 0, moreText: null },
+        changes: {
+          state: "changed",
+          text: "Zugriffe oder Auslöser geändert",
+          rows: {
+            items: [
+              { kind: "add", text: "Darf neu Dateien importieren im Ordner Rechnungen" },
+              { kind: "same", text: "1 weiteres bleibt gleich" },
+            ],
+            more: 0,
+            moreText: null,
+          },
+          assurance: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+        },
+        examples: { state: "passed", passed: 3, total: 3, summary: "3 von 3 Beispielen erfolgreich", explanation: "", items: [] },
+        notices: { items: [], more: 0, moreText: null },
+      },
+    });
   if (url.pathname === "/api/capabilities/v1/queries/core/code.automation.list")
     return json({
       data: {

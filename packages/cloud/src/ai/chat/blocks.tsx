@@ -569,8 +569,11 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           : null;
     return outcome ?? toolSubject(props.block, locale(), timeZone);
   };
+  // A lasting Code step names no file: the person does not read the source.
   const detail = () =>
-    sentence() ? undefined : [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");
+    sentence() || hasCodeStepView(props.block.name)
+      ? undefined
+      : [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");
   const waiting = () => props.block.status === "awaiting_client" || props.block.status === "awaiting_approval";
   const state = () =>
     waiting() ? t().stepWaiting : props.block.status === "rejected" ? t().stepRejected : isFailedTool(props.block) ? t().stepFailed : "";

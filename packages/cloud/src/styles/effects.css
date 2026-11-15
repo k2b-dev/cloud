@@ -1718,8 +1718,10 @@ dialog:has(.launchpad-panel)::backdrop {
 .k2b-ui .ai-code-examples__status {
   grid-column: 3;
   grid-row: 1;
-  justify-self: end;
+  min-width: 7.5rem;
+  text-align: end;
   color: var(--k2b-success-text);
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
