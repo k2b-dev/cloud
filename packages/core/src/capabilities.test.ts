@@ -791,7 +791,6 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.version.list",
     "code.version.origin",
     "code.version.read",
-    "code.version.words",
     "code.version.review",
     "code.version.words",
     "entities.search",

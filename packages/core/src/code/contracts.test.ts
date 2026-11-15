@@ -99,7 +99,6 @@ describe("Core Code data contracts", () => {
       "code.version.list",
       "code.version.origin",
       "code.version.read",
-      "code.version.words",
       "code.version.review",
       "code.version.words",
     ]);
