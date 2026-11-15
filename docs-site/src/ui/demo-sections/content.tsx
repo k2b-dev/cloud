@@ -3,8 +3,6 @@ import {
   BalanceSummary,
   Button,
   Chart,
-  CodeDiff,
-  type CodeDiffFile,
   CodeDisplay,
   createDataTableView,
   DataTable,
@@ -86,6 +84,7 @@ import {
   type VirtualFeedController,
   ZoomPanViewport,
 } from "@k2b/ui";
+import { CodeDiff, type CodeDiffFile } from "@k2b/ui/code-diff";
 import { batch, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import { DemoCard } from "../DemoCard";
@@ -732,7 +731,7 @@ const CodeDiffDemo = () => {
   return (
     <DemoCard
       id="code-diff"
-      chip={{ kind: "component", name: "CodeDiff", from: "@k2b/ui" }}
+      chip={{ kind: "component", name: "CodeDiff", from: "@k2b/ui/code-diff" }}
       description="A change between two versions, line by line: file tabs, folded unchanged lines, a marked line, whole code for a first version, loading, and error with retry."
       code={`<CodeDiff files={files} mark={{ path: "index.ts", line: 13 }} />
 <CodeDiff files={[]} status="error" errorDescription="Nothing was decided." onRetry={reload} />`}
