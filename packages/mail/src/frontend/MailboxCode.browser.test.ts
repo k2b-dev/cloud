@@ -233,7 +233,8 @@ describe("Mailbox Code page in a browser", () => {
             height: Math.round(row.getBoundingClientRect().height),
           })),
         );
-        expect(rows.find((row) => row.text === "Aufgabe „Lieferung Polsterei Weber“ angelegt")?.href).toBe("/app/spaces/Lg8x2q");
+        // Only the name is the link; the quotation marks around it go (v12 picture 19).
+        expect(rows.find((row) => row.text === "Aufgabe Lieferung Polsterei Weber angelegt")?.href).toBe("/app/spaces/Lg8x2q");
         expect(rows.find((row) => row.text === "Aufgabe angelegt")).toMatchObject({ href: null });
         expect(JSON.stringify(rows)).not.toMatch(/Hd7q2w|\{name\}/);
         // 6b: every row keeps one height, named or not.

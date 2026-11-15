@@ -259,7 +259,9 @@ test.skipIf(isServer)("a new result after a live run is named only where the rea
     await tick();
     expect(reads.sort()).toEqual(["spaces/item.read/HidN3x", "spaces/item.read/UxrUVC"]);
     const rows = [...page.dom.document.querySelectorAll(".cloud-code__feed li .cloud-code__feed-text")];
-    const named = rows.find((row) => row.textContent === "Created task “Delivery Weber”");
+    // The link marks the name, so the quotation marks around it go.
+    const named = rows.find((row) => row.textContent === "Created task Delivery Weber");
+    expect(named?.querySelector("a")?.textContent).toBe("Delivery Weber");
     expect(named?.querySelector("a")?.getAttribute("href")).toBe("/app/spaces/GPzX93/UxrUVC");
     const hidden = rows.find((row) => row.textContent === "Created task");
     expect(hidden).toBeDefined();
@@ -272,9 +274,9 @@ test.skipIf(isServer)("a new result after a live run is named only where the rea
   }
 });
 
-// #77 in the browser: "What it may do" links a target only where the server read its name as the person; a target
-// they may not read keeps Core's type-only words, without link or reference.
-test.skipIf(isServer)("what it may do links only targets named for the person", () => {
+// #77 in the browser: "What it may do" names a target only where the server read its name as the person; a target
+// they may not read keeps Core's type-only words, without reference. Places are text, never links.
+test.skipIf(isServer)("what it may do shows its places as text, named only for the person", () => {
   const data = codePageFixture("overview", "en");
   const current = data.state.kind === "ready" ? data.state.words?.current : null;
   if (!current) throw new Error("Expected ready fixture with version words");
@@ -293,8 +295,9 @@ test.skipIf(isServer)("what it may do links only targets named for the person", 
   const page = mount(data);
   try {
     const list = page.dom.document.querySelector(".cloud-code__rows[data-plain]");
-    expect(list?.querySelector('a[href="/app/spaces/GPzX93"]')?.textContent).toBe("Space “Logistics”");
-    expect(list?.querySelectorAll("a")).toHaveLength(1);
+    // The place is quiet text, named only where the server could read it, and never a link (v12 picture 19).
+    expect(list?.textContent).toContain("Spaces · Space “Logistics”");
+    expect(list?.querySelectorAll("a")).toHaveLength(0);
     expect(list?.textContent).toContain("a target of type Space");
     expect(page.dom.root.innerHTML).not.toMatch(/HidN3x|\{name\}/);
   } finally {

@@ -173,6 +173,16 @@ export function CodeLiveStrip(props: {
   );
 }
 
+/** Quotation marks that frame a name: German, English, typewriter, single. */
+const QUOTE_PAIRS = [
+  ["„", "“"],
+  ["“", "”"],
+  ['"', '"'],
+  ["‚", "‘"],
+  ["‘", "’"],
+  ["'", "'"],
+] as const;
+
 /**
  * Core's sentence around the name the reader could read, split at its `{name}` slot: only the name becomes the link.
  * Null when the result has no checked link or its sentence does not frame the name exactly.
@@ -183,7 +193,13 @@ export const linkedName = (effect: CodeLiveEffect) => {
   if (before === undefined || after === undefined || extra.length > 0) return null;
   const { text } = effect;
   if (text.length <= before.length + after.length || !text.startsWith(before) || !text.endsWith(after)) return null;
-  return { before, name: text.slice(before.length, text.length - after.length), after, href: effect.href };
+  const name = text.slice(before.length, text.length - after.length);
+  // The link marks the name, so one pair of quotation marks right around it goes (v12 picture 19); Core's sentence and
+  // the sentence without a link keep them.
+  const pair = QUOTE_PAIRS.find(([open, close]) => before.endsWith(open) && after.startsWith(close));
+  return pair
+    ? { before: before.slice(0, -pair[0].length), name, after: after.slice(pair[1].length), href: effect.href }
+    : { before, name, after, href: effect.href };
 };
 
 /** The effects list keeps its rows in a fixed number of fixed slots, so a new effect never moves what is below. */
