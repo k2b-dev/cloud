@@ -982,7 +982,11 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                     renderCodeAuthoringStop: (state, continuable) => <AssistantAuthoringStop state={state} continuable={continuable} />,
                     renderCodeVersion: (version) => (
                       <AssistantLiveProvider value={liveHub}>
-                        <AssistantCodeVersionCard {...version} timeZone={props.timeZone} />
+                        <AssistantCodeVersionCard
+                          {...version}
+                          timeZone={props.timeZone}
+                          onAsk={(text) => void send({ intent: "send", text, attachments: [] }, false)}
+                        />
                       </AssistantLiveProvider>
                     ),
                     actionDisabled: () => chat.runStatus() === "stopping",

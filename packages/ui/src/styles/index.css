@@ -15051,6 +15051,36 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Cloud works on the given answer for an unknown time: a shimmer runs over the filled button, never a fill level. */
+.k2b-ui .k2b-button.k2b-chat-decision__answer[data-busy] {
+  cursor: progress;
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, white 34%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  background-repeat: no-repeat;
+  animation: k2b-chat-decision-busy 1.3s linear infinite;
+}
+
+@keyframes k2b-chat-decision-busy {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-button.k2b-chat-decision__answer[data-busy] {
+    animation: none;
+    background-image: none;
+  }
+}
+
 /* The outcome of a decided question sits under its head; the head already
    carries the state, so the line needs no icon of its own. */
 .k2b-ui .k2b-chat-decision .k2b-chat-outcome {

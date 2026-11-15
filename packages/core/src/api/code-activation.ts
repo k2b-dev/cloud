@@ -4,9 +4,11 @@ import { ZodError } from "zod";
 import { type CodeContext, CodeDataError } from "../code/access";
 import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, readCodeActivation } from "../code/activation";
 import { codeActivationContracts } from "../code/activation-contracts";
+import { codeAuthoringContracts } from "../code/authoring-contracts";
 import { listCodeCleanupJobs } from "../code/lifecycle";
 import { codeLifecycleContracts } from "../code/lifecycle-contracts";
-import { CodeVersionError } from "../code/versions";
+import { readCodeReview } from "../code/review";
+import { CodeVersionError, withdrawCodeVersion } from "../code/versions";
 
 /** Interactive credentials enter only Core. Invocation, sandbox, API-key and phone identities cannot activate. */
 export const createCodeActivationRoutes = () => {
@@ -60,6 +62,22 @@ export const createCodeActivationRoutes = () => {
       middleware.openapi({ tags: ["Code"], summary: "Read a durable Code activation" }),
       v("json", codeActivationContracts.read.input),
       (c) => run(context(c), (ctx) => readCodeActivation(c.req.valid("json"), ctx)),
+    )
+    // The version card in the chat reads the review as the person sees it: who decided, the message, and the comments
+    // as text. File and line stay out of this answer; an editor reads them with `cld code review show`.
+    .post(
+      "/review",
+      auth.readOnly,
+      middleware.openapi({ tags: ["Code"], summary: "Read the review of a Code version without its places in the source" }),
+      v("json", codeAuthoringContracts.review.input),
+      (c) => run(context(c), (ctx) => readCodeReview(c.req.valid("json"), ctx, { anchors: false })),
+    )
+    .post(
+      "/withdraw",
+      auth.requireOAuthScope("write", "admin"),
+      middleware.openapi({ tags: ["Code"], summary: "Withdraw a Code version that still waits for an administrator" }),
+      v("json", codeAuthoringContracts.withdraw.input),
+      (c) => run(context(c), (ctx) => withdrawCodeVersion(c.req.valid("json"), ctx)),
     )
     .post(
       "/activation/cancel",

@@ -41,7 +41,10 @@ export type ChatDecisionProps = {
   kind: { label: string; icon: string };
   /** Who asks: the app's name and icon, its icon tile in `accent`. */
   source: { name: string; icon: string; accent?: string };
-  /** The state as a word with its icon at the end of the head, for every state but an open question. */
+  /**
+   * The state as a word with its icon at the end of the head. A closed question always has one; an open one has one when
+   * the question itself has a state, such as a version that waits for an administrator.
+   */
   status?: { label: string; icon: string; tone: ChatOutcomeTone };
   /** The question as one sentence, usually with `ReferenceChip`s. */
   sentence: JSX.Element;
@@ -187,6 +190,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   );
 
   const confirm = () => {
+    if (props.confirm?.busy) return;
     const chosen = props.remember && remembered() && !editing() ? props.remember : props.confirm;
     if (chosen) answer(chosen, !confirmOff());
   };
@@ -213,7 +217,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
           </span>
           {props.source.name}
         </span>
-        <Show when={!open() && props.status}>
+        <Show when={props.status}>
           {(status) => (
             <span class="k2b-chat-decision__status" data-tone={status().tone}>
               <i class={status().icon} aria-hidden="true" />
@@ -373,6 +377,9 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                     wrap
                     variant={editing() ? "secondary" : "ai"}
                     disabled={confirmOff()}
+                    aria-disabled={confirmAnswer().busy ? "true" : undefined}
+                    aria-busy={confirmAnswer().busy ? "true" : undefined}
+                    data-busy={confirmAnswer().busy ? "" : undefined}
                     onClick={confirm}
                   >
                     <Show when={confirmAnswer().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
