@@ -1,3 +1,4 @@
+import { isUnknownActionOutcome } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
@@ -68,12 +69,6 @@ const failureCode = (tool: ToolBlock): string | null => {
 };
 
 /**
- * Codes that say Cloud could not see whether an Action happened; nothing may repeat it blindly. Core rewrites a failure
- * after it reached the app to ACTION_OUTCOME_UNKNOWN.
- */
-export const OUTCOME_UNKNOWN_CODES = new Set(["ACTION_OUTCOME_UNKNOWN", "IDEMPOTENCY_UNCERTAIN", "IDEMPOTENCY_IN_PROGRESS"]);
-
-/**
  * Why a failed call did not go through, as a kind the chat words itself; codes and messages never reach the person.
  * `unknown`: Cloud could not see whether it happened.
  */
@@ -81,8 +76,8 @@ export type AiStepFailure = "denied" | "not_found" | "timeout" | "unknown" | "ot
 
 export const stepFailure = (tool: ToolBlock): AiStepFailure | null => {
   if (!isFailedTool(tool)) return null;
+  if (isUnknownActionOutcome(tool.result)) return "unknown";
   const code = failureCode(tool) ?? "";
-  if (OUTCOME_UNKNOWN_CODES.has(code)) return "unknown";
   if (/^(?:FORBIDDEN|UNAUTHORIZED|ACCESS_DENIED|PERMISSION_DENIED)$/.test(code)) return "denied";
   if (/^(?:NOT_FOUND|GONE)$/.test(code)) return "not_found";
   if (/TIMEOUT|DEADLINE/.test(code)) return "timeout";
@@ -143,7 +138,12 @@ export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: stri
   const t = aiChatMessages(locale);
   const thoughts = blocks.filter((block) => block.kind === "thinking" && block.text.trim()).length;
   const calls = tools(blocks);
-  const failures = calls.map(stepFailure);
+  // A check that settled an unclear outcome counts as what it found: done went through, not done failed.
+  const failures = calls.map((tool) => {
+    const kind = stepFailure(tool);
+    if (kind !== "unknown") return kind;
+    return tool.check?.state === "done" ? null : tool.check?.state === "not_done" ? "other" : kind;
+  });
   const denied = failures.filter((kind) => kind === "denied").length;
   const unclear = failures.filter((kind) => kind === "unknown").length;
   const failed = failures.filter((kind) => kind !== null).length - denied - unclear;

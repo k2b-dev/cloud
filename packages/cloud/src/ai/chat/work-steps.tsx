@@ -1,11 +1,13 @@
 import { Button, Chat, type ChatActivityInfo, type ChatActivityMetaTone, useLocale } from "@k2b/ui";
 import { children, createContext, createMemo, createSignal, For, type JSX, Show, useContext } from "solid-js";
+import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import { useAiChatActions } from "./message-actions";
 import { aiToolIcon, displayToolName, isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { useToolActionCard } from "./tool-action";
+import { waitsForUser } from "./turn-layout";
 import { WebsiteReceipts, websiteReceipts } from "./web-tools";
 import { stepFailure } from "./work-summary";
 
@@ -57,11 +59,21 @@ export const AiWorkContext = createContext<AiWorkContextValue>({
 /** A step's outcome as one word in the meta column, in its colour. A step that went through says nothing there. */
 export type AiStepOutcome = { word: string; tone?: ChatActivityMetaTone };
 
-export const stepOutcome = (block: ToolBlock, t: Messages, ending: "stopped" | "failed" | null): AiStepOutcome | null => {
-  if (block.status === "awaiting_approval" || block.status === "awaiting_client") return { word: t.stepOutcomeWaiting, tone: "ai" };
+export const stepOutcome = (
+  block: ToolBlock,
+  t: Messages,
+  ending: "stopped" | "failed" | null,
+  check: AiActionCheck | undefined,
+): AiStepOutcome | null => {
+  if (waitsForUser(block)) return { word: t.stepOutcomeWaiting, tone: "ai" };
   if (block.status === "rejected") return { word: t.stepOutcomeRejected };
-  if (block.status === "running") return ending ? { word: ending === "stopped" ? t.stepOutcomeStopped : t.stepOutcomeCancelled } : null;
+  // A call still running or running in the browser on its own when the turn ended was stopped or cut off with it.
+  if (block.status === "running" || block.status === "awaiting_client")
+    return ending ? { word: ending === "stopped" ? t.stepOutcomeStopped : t.stepOutcomeCancelled } : null;
   const failure = stepFailure(block);
+  // A check settles an unclear outcome: done went through, not done did not happen.
+  if (failure === "unknown" && check?.state === "done") return null;
+  if (failure === "unknown" && check?.state === "not_done") return { word: t.stepOutcomeNotDone, tone: "danger" };
   if (failure === "unknown") return { word: t.stepOutcomeUnclear, tone: "warning" };
   if (failure === "denied") return { word: t.stepOutcomeNoAccess, tone: "warning" };
   return failure ? { word: t.stepOutcomeFailed, tone: "danger" } : null;
@@ -82,7 +94,7 @@ const target = (block: ToolBlock): string => {
  * "Check status" in the card of a step whose outcome Cloud could not see. It asks the app once per press, like the
  * question's own check; Gustav never repeats the step on its own. Only an app that declares a check offers it.
  */
-function StepCheck(props: { block: ToolBlock; turnId: string }): JSX.Element {
+function StepCheck(props: { block: ToolBlock; turnId: string; onChecked: (check: AiActionCheck) => void }): JSX.Element {
   const locale = useLocale();
   const actions = useAiChatActions();
   const card = useToolActionCard(() => props.block);
@@ -93,7 +105,9 @@ function StepCheck(props: { block: ToolBlock; turnId: string }): JSX.Element {
     setChecking(true);
     setFailed(false);
     try {
-      await actions.onCheckAction({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
+      const check = await actions.onCheckAction({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
+      props.onChecked(check);
+      if (check.state === "failed") setFailed(true);
     } catch {
       setFailed(true);
     } finally {
@@ -142,11 +156,23 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
     return outcome ?? toolSubject(props.block, locale(), timeZone);
   };
   const label = () => sentence() ?? doneQuery() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
-  const outcome = () => stepOutcome(props.block, t(), props.busy ? null : work.ending());
-  const duration = () => (props.busy && props.block.status === "running" ? work.liveDuration() : undefined);
+  // The check this window asked for, until the stored one is as new or settled; the same rule as the question's card.
+  const [checked, setChecked] = createSignal<AiActionCheck | null>(null);
+  const check = () => {
+    const local = checked();
+    return local ? preferredActionCheck(props.block.check, local) : props.block.check;
+  };
+  const settled = () => check()?.state === "done" || check()?.state === "not_done";
+  const outcome = () => stepOutcome(props.block, t(), props.busy ? null : work.ending(), check());
+  // A call the browser runs on its own works like a running one; only a question or approval waits for the person.
+  const working = () => props.block.status === "running" || (props.block.status === "awaiting_client" && !waitsForUser(props.block));
+  const duration = () => (props.busy && working() ? work.liveDuration() : undefined);
   const lines = createMemo(() => {
     const kind = failure();
-    if (kind === "unknown") return [t().stepUnclearDetail];
+    if (kind === "unknown")
+      return [
+        check()?.state === "done" ? t().stepCheckedDone : check()?.state === "not_done" ? t().stepCheckedNotDone : t().stepUnclearDetail,
+      ];
     if (kind)
       return [failureReason(props.block, t()), work.followed(props.block.id) ? t().stepConsequence({ consequence: t().stepWentOn }) : ""];
     return [
@@ -156,11 +182,13 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
     ];
   });
   const shown = () => lines().filter(Boolean);
-  const checkable = () => failure() === "unknown" && work.turnId() !== undefined;
+  const checkable = () => failure() === "unknown" && !settled() && work.turnId() !== undefined;
   // Built once: the card keeps its content and its check button while the step updates around them.
   const content = <For each={shown()}>{(line) => <p class="ai-step-card__line">{line}</p>}</For>;
   const actions = (
-    <Show when={checkable() ? work.turnId() : undefined}>{(turnId) => <StepCheck block={props.block} turnId={turnId()} />}</Show>
+    <Show when={checkable() ? work.turnId() : undefined}>
+      {(turnId) => <StepCheck block={props.block} turnId={turnId()} onChecked={setChecked} />}
+    </Show>
   );
   const info = createMemo((): ChatActivityInfo | undefined =>
     shown().length > 0 || checkable()
@@ -184,7 +212,7 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
         metaTone={outcome()?.tone}
         duration={duration()}
         info={info()}
-        busy={props.busy && props.block.status === "running"}
+        busy={props.busy && working()}
       />
       <Show when={websiteReceipts(props.block).length > 0}>
         <WebsiteReceipts block={props.block} />

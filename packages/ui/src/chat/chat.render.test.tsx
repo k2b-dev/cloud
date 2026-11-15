@@ -1045,7 +1045,9 @@ test("activity rows put meta, duration, and the ⓘ in their own columns; a row 
       info: { label: "Details: Read the file “Sales.csv”", title: "Read the file", content: "37 rows" },
     }),
   );
-  expect(step).toMatch(/class="k2b-chat-activity__meta" data-tone="danger"[^>]*>Failed</);
+  expect(step).toMatch(
+    /class="k2b-chat-activity__meta" data-tone="danger"[^>]*><span class="k2b-chat-activity__meta-text k2b-truncate-fade"[^>]*>Failed</,
+  );
   expect(step).toMatch(/class="k2b-chat-activity__duration" title="2 seconds"[^>]*>2 s</);
   expect(step).toContain('aria-label="Details: Read the file “Sales.csv”"');
   expect(step).toContain("ti-info-circle");

@@ -397,7 +397,9 @@ const ActivityContent = (props: ChatActivityProps & { label: JSX.Element; disclo
     </span>
     <Show when={props.meta || props.trailing}>
       <span class="k2b-chat-activity__meta" data-tone={props.metaTone}>
-        {props.meta}
+        <Show when={props.meta}>
+          <span class="k2b-chat-activity__meta-text k2b-truncate-fade">{props.meta}</span>
+        </Show>
         <Show when={props.trailing}>
           <span class="k2b-chat-activity__trailing">{props.trailing}</span>
         </Show>

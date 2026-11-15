@@ -97,6 +97,17 @@ export const formatWorkDuration = (ms: number, t: Messages, long = false): strin
   return long ? t.durationHoursLong({ hours, minutes: minutes % 60 }) : t.durationHours({ hours, minutes: minutes % 60 });
 };
 
+/**
+ * A duration in the activity grid's fixed column: "12 s", from 60 s "2 min", from 60 min whole hours "1 h". The column
+ * fits it on a phone; `formatWorkDuration(…, true)` spells it out in its title.
+ */
+export const formatStepDuration = (ms: number, t: Messages): string => {
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  if (seconds < 60) return t.durationSeconds({ seconds });
+  const minutes = Math.floor(seconds / 60);
+  return minutes < 60 ? t.durationMinutes({ minutes }) : t.durationHours({ hours: Math.floor(minutes / 60), minutes: 0 });
+};
+
 /** Identity of the current step: it changes when another block becomes current or the current call changes state. */
 const stepKey = (block: AiTurnBlock | null): string =>
   !block ? "start" : `${block.id}:${block.kind === "tool" || block.kind === "compaction" ? block.status : block.kind}`;
@@ -230,19 +241,30 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   };
   const work: AiWorkContextValue = {
     followed,
-    ending,
-    liveDuration: () => (working() ? formatWorkDuration(Math.max(1000, stepMs()), t()) : undefined),
+    // Steps read how the turn ended from its phase, also when a failure notice words the line itself.
+    ending: () => (segment().phase === "stopped" ? "stopped" : segment().phase === "failed" ? "failed" : null),
+    liveDuration: () => (working() ? formatStepDuration(Math.max(1000, stepMs()), t()) : undefined),
     turnId: () => segment().turnId,
   };
   const steps = () => <AiWorkSteps blocks={layout().work} active={working()} work={work} />;
   /** The time beside the sentence, in tabular figures: the work time while it runs, how long it waits, or the total. */
-  const time = () => {
+  const timeMs = (): number | null => {
     const duration = segment().duration();
-    if ((working() || reconnecting()) && duration) return formatWorkDuration(Math.max(1000, duration.workedMs), t());
-    if (waiting() && duration?.waitingMs !== null && duration?.waitingMs !== undefined)
-      return t().waitingSince({ duration: formatWorkDuration(duration.waitingMs, t()) });
+    if ((working() || reconnecting()) && duration) return Math.max(1000, duration.workedMs);
+    if (waiting() && duration?.waitingMs !== null && duration?.waitingMs !== undefined) return duration.waitingMs;
     const total = worked();
-    return summary() && total !== null ? formatWorkDuration(total, t()) : "";
+    return summary() && total !== null ? total : null;
+  };
+  // The column holds the short form; its title spells it out, "for 12 minutes" while the turn waits.
+  const time = () => {
+    const ms = timeMs();
+    return ms === null ? undefined : formatStepDuration(ms, t());
+  };
+  const timeTitle = () => {
+    const ms = timeMs();
+    if (ms === null) return undefined;
+    const long = formatWorkDuration(ms, t(), true);
+    return waiting() ? t().waitingSince({ duration: long }) : long;
   };
   return (
     <AiToolActivity
@@ -277,7 +299,8 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
           )}
         </Show>
       }
-      duration={time() || undefined}
+      duration={time()}
+      durationTitle={timeTitle()}
       bodyInset={false}
       // Nothing to open before the first step, so no chevron yet. Read through a memo, so the open list is built once
       // and never rebuilt while the turn updates.
@@ -507,11 +530,10 @@ function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; work: AiWo
     return new Map(work.map((item) => [workItemKey(item), item]));
   });
   const keys = createMemo(() => [...items().keys()]);
-  // Counted once, when the list opens.
-  const earlier = untrack(() => Math.max(0, keys().length - AI_WORK_SHOWN_ROWS));
-  const row = (key: string, index: () => number) => (
-    <WorkItemRow item={items().get(key)} active={props.active && index() === keys().length - 1} />
-  );
+  // Taken once, when the list opens, by identity: a row that joins the list later never hides among them.
+  const hidden = new Set(untrack(() => keys().slice(0, Math.max(0, keys().length - AI_WORK_SHOWN_ROWS))));
+  const earlier = hidden.size;
+  const row = (key: string) => <WorkItemRow item={items().get(key)} active={props.active && key === keys().at(-1)} />;
   return (
     <AiWorkContext.Provider value={props.work}>
       <div class="ai-turn-steps">
@@ -523,12 +545,12 @@ function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; work: AiWo
             bodyInset={false}
             renderBody={() => (
               <div class="ai-turn-steps">
-                <For each={keys().slice(0, earlier)}>{(key, index) => row(key, index)}</For>
+                <For each={keys().filter((key) => hidden.has(key))}>{row}</For>
               </div>
             )}
           />
         </Show>
-        <For each={keys().slice(earlier)}>{(key, index) => row(key, () => index() + earlier)}</For>
+        <For each={keys().filter((key) => !hidden.has(key))}>{row}</For>
       </div>
     </AiWorkContext.Provider>
   );

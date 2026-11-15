@@ -447,7 +447,9 @@ for (const view of [
         const steps = (await page.locator(".ai-turn-work .ai-turn-work__steps").innerText()).replace(/\s+/g, " ").trim();
         if (failureCode === "tool_failed") {
           expect(sentence).toContain(de ? "4 Min. gearbeitet" : "Worked 4 min");
-          expect(steps).toBe(de ? "2 Schritte · 1 fehlgeschlagen" : "2 steps · 1 failed");
+          // On a phone the plain count gives way beside a status.
+          const failed = de ? "1 fehlgeschlagen" : "1 failed";
+          expect(steps).toBe(view.width < 768 ? failed : `${de ? "2 Schritte" : "2 steps"} · ${failed}`);
         } else {
           expect(sentence).toContain(de ? "Dateien gelesen" : "Read files");
           expect(steps).toBe(de ? "2 Schritte" : "2 steps");
@@ -1867,7 +1869,8 @@ test("a long list opens on its newest six steps, and while it is open a new step
     await page.locator(".ai-turn-work > summary").click();
     await page.locator(".ai-turn-steps").waitFor();
     const earlier = page.locator(".ai-turn-steps__earlier > summary");
-    const shown = () => page.locator(".ai-turn-work > .k2b-chat-activity__body > .ai-turn-steps > .k2b-chat-activity:not(.ai-turn-steps__earlier)");
+    const shown = () =>
+      page.locator(".ai-turn-work > .k2b-chat-activity__body > .ai-turn-steps > .k2b-chat-activity:not(.ai-turn-steps__earlier)");
     expect(await earlier.innerText()).toBe("Show 3 earlier steps");
     expect(await shown().count()).toBe(6);
     const rows = () =>

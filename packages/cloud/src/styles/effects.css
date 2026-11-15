@@ -47,8 +47,13 @@
   color: var(--k2b-text-muted);
 }
 
-/* On a phone the sentence may use two lines of 18 px; the plain step count gives way when a status stands beside it. */
+/* On a phone the sentence may use two lines of 18 px, which fit the 44 px row with 4 px above and below; the plain step
+   count gives way when a status stands beside it. */
 @media (max-width: 47.999rem) {
+  .k2b-ui .ai-turn-work > .k2b-chat-activity__row {
+    padding-block: 0.25rem;
+  }
+
   .k2b-ui .ai-turn-work > .k2b-chat-activity__row .k2b-chat-activity__copy {
     display: -webkit-box;
     overflow: hidden;

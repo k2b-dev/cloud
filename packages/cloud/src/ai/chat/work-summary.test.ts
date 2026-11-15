@@ -36,3 +36,21 @@ test("beside other work, the code is named", () => {
   expect(workSummary(mixed, "de")).toBe("Im Web gesucht, Code geschrieben und eingereicht");
   expect(workApps(mixed).map((app) => app.key)).toEqual(["web", "code"]);
 });
+
+test("an outcome Cloud could not see counts as unclear in warning, until a check settles it", async () => {
+  const { workStepParts } = await import("./work-summary");
+  const unclear = (check?: "done" | "not_done"): AiTurnBlock => ({
+    ...call("send", "mail__action__send"),
+    status: "failed",
+    isError: true,
+    result: "ACTION_OUTCOME_UNKNOWN: The Action response was lost.",
+    ...(check ? { check: { state: check, at: "2026-11-15T10:00:00.000Z" } } : {}),
+  });
+  const denied: AiTurnBlock = { ...call("read", "files__query__read"), status: "failed", isError: true, result: "FORBIDDEN: no" };
+  expect(workStepParts([unclear(), denied], 2, "de").issues).toEqual([
+    { text: "1 unklar", tone: "warning" },
+    { text: "1 ohne Zugriff", tone: "warning" },
+  ]);
+  expect(workStepParts([unclear("done")], 1, "de").issues).toEqual([]);
+  expect(workStepParts([unclear("not_done")], 1, "en").issues).toEqual([{ text: "1 failed", tone: "danger" }]);
+});

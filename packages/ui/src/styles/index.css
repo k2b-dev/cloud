@@ -14748,7 +14748,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: grid;
   width: calc(100% + 0.75rem);
   min-height: 2rem;
-  grid-template-columns: 1.125rem minmax(0, 1fr) auto 3.5rem 1.125rem;
+  grid-template-columns: 1.125rem minmax(0, 1fr) minmax(0, auto) 3.5rem 1.125rem;
   align-items: center;
   column-gap: 0.5rem;
   margin-inline: -0.375rem;
@@ -14762,7 +14762,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-chat-activity__row {
     min-height: 2.75rem;
-    grid-template-columns: 1.125rem minmax(0, 1fr) auto 3rem 1.125rem;
+    grid-template-columns: 1.125rem minmax(0, 1fr) minmax(0, auto) 3rem 1.125rem;
   }
 }
 
@@ -14923,9 +14923,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Status words and counts, and a host's controls after them, end on the meta column's right edge. A part of the meta
-   can carry its own tone, such as "1 failed" in "6 steps · 1 failed". */
+   can carry its own tone, such as "1 failed" in "6 steps · 1 failed". Where the row is too narrow for a long meta, it
+   gives way after the text has, fading at its end. */
 .k2b-ui .k2b-chat-activity__meta {
   display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
   grid-column: 3;
   justify-self: end;
   align-items: center;
@@ -14950,8 +14953,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-ai-accent);
 }
 
+.k2b-ui .k2b-chat-activity__meta-text {
+  flex: 0 1 auto;
+}
+
 .k2b-ui .k2b-chat-activity__trailing {
   display: inline-flex;
+  flex: none;
   align-items: center;
 }
 
@@ -14981,10 +14989,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   transform: rotate(90deg);
 }
 
-.k2b-ui .k2b-chat-activity__info {
+/* Beats the plain `HoverCard.Trigger` look, which the feedback stylesheet loads later. */
+.k2b-ui .k2b-chat-activity .k2b-chat-activity__info {
   position: relative;
   display: inline-grid;
   width: 1.5rem;
+  max-width: none;
   height: 1.5rem;
   grid-column: 5;
   justify-self: end;
@@ -14999,20 +15009,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   cursor: pointer;
 }
 
-.k2b-ui .k2b-chat-activity__info:hover,
-.k2b-ui .k2b-chat-activity__info[aria-expanded="true"] {
+.k2b-ui .k2b-chat-activity .k2b-chat-activity__info:hover,
+.k2b-ui .k2b-chat-activity .k2b-chat-activity__info[aria-expanded="true"] {
   background: var(--k2b-edge-hover-bg);
   color: var(--k2b-text);
 }
 
-.k2b-ui .k2b-chat-activity__info:focus-visible {
+.k2b-ui .k2b-chat-activity .k2b-chat-activity__info:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: var(--k2b-focus-offset);
 }
 
 /* Touch: 44px to hit, 16px to see. */
 @media (any-pointer: coarse) {
-  .k2b-ui .k2b-chat-activity__info::after {
+  .k2b-ui .k2b-chat-activity .k2b-chat-activity__info::after {
     position: absolute;
     inset: -0.625rem;
     content: "";
