@@ -766,7 +766,7 @@ describe("Waiting for you", () => {
     }, 60_000);
 
   for (const view of [desktop, phone])
-    test(`"To the newest message" keeps its place in front of the waiting row, never behind it, at ${view.name}`, async () => {
+    test(`"To the newest message" stands at a fixed place above the waiting row and covers no chip, at ${view.name}`, async () => {
       const { page, errors, unrouted, close } = await open(view, { locale: "de", scenario: "three" });
       try {
         await strip(page).waitFor();
@@ -775,19 +775,35 @@ describe("Waiting for you", () => {
         await pill.waitFor();
         await settled(page);
         const withRow = await rect(page, ".k2b-chat-timeline__latest");
-        // v12: the pill is in front (it may cover the row there); nothing lies over its centre.
-        const topmost = () =>
-          page.evaluate(
-            ([x, y]) => document.elementFromPoint(x!, y!)?.closest(".k2b-chat-timeline__latest") !== null,
-            [(withRow.left + withRow.right) / 2, withRow.top + withRow.height / 2],
+        // Nothing covers the pill, and it covers no chip and no "+n" (a deliberate deviation from v12, finding 81).
+        const topmost = await page.evaluate(
+          ([x, y]) => document.elementFromPoint(x!, y!)?.closest(".k2b-chat-timeline__latest") !== null,
+          [(withRow.left + withRow.right) / 2, withRow.top + withRow.height / 2],
+        );
+        expect(topmost).toBe(true);
+        const controls = await strip(page)
+          .locator(".assistant-waiting__entry, .assistant-waiting__more")
+          .evaluateAll((nodes) =>
+            nodes
+              .filter((node) => node.getClientRects().length > 0)
+              .map((node) => {
+                const box = node.getBoundingClientRect();
+                return { top: box.top, bottom: box.bottom, left: box.left, right: box.right };
+              }),
           );
-        expect(await topmost()).toBe(true);
+        expect(controls.length).toBeGreaterThan(0);
+        for (const control of controls) {
+          const overlaps =
+            control.left < withRow.right && control.right > withRow.left && control.top < withRow.bottom && control.bottom > withRow.top;
+          expect(overlaps).toBe(false);
+        }
         mkdirSync("/tmp/assistant-latest-over-waiting", { recursive: true });
         await page.screenshot({ path: `/tmp/assistant-latest-over-waiting/nachher-${view.name}.png` });
-        // It keeps its place whether the row is there or not: a floating control never jumps with another one.
+        // The same place without a row: a floating control never jumps with another one.
         await page.evaluate(() => document.querySelector("nav.assistant-waiting")?.remove());
         await settled(page);
         expect(await rect(page, ".k2b-chat-timeline__latest")).toEqual(withRow);
+        await page.screenshot({ path: `/tmp/assistant-latest-over-waiting/ohne-zeile-${view.name}.png` });
         expect(errors).toEqual([]);
         expect(unrouted).toEqual([]);
       } finally {
