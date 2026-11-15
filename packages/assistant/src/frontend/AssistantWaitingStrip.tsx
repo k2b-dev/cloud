@@ -43,7 +43,9 @@ export function AssistantWaitingStrip(props: {
     <nav class="assistant-waiting" aria-label={t().needsAttention} data-quiet={props.quiet ? "" : undefined} inert={props.quiet}>
       <i class={`assistant-waiting__mark ${KIND_ICON[(count() === 1 ? first()?.kind : undefined) ?? "approval"]}`} aria-hidden="true" />
       <p class="assistant-waiting__text">
-        <Show when={count() === 1 ? first() : undefined} fallback={
+        <Show
+          when={count() === 1 ? first() : undefined}
+          fallback={
             props.view.entries.every((entry) => entry.kind === "approval")
               ? t().waitingForApprovals({ count: count() })
               : t().waitingThings({ count: count() })

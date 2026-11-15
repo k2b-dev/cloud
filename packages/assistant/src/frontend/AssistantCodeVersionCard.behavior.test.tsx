@@ -617,14 +617,26 @@ test("asking again after the request expired follows the new version under the c
 
 test("waiting for admin names why exactly this version, marks the row, and offers to build without that access", async () => {
   const asked: string[] = [];
-  const approval = { count: 1, reason: "It stores files in a folder others see.", accessLabel: "storing files", withoutLabel: "Build without storing files" };
+  const approval = {
+    count: 1,
+    reason: "It stores files in a folder others see.",
+    accessLabel: "storing files",
+    withoutLabel: "Build without storing files",
+  };
   const rows = [...words().changes.rows.items];
-  rows[1] = { ...rows[1]!, requiresApproval: true, approvalReason: approval.reason, accessLabel: approval.accessLabel } as (typeof rows)[number];
+  rows[1] = {
+    ...rows[1]!,
+    requiresApproval: true,
+    approvalReason: approval.reason,
+    accessLabel: approval.accessLabel,
+  } as (typeof rows)[number];
   const { dom } = await mount(
     {
       "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending" } }) } }),
       review: () => ({ json: { data: review({ status: "pending" }) } }),
-      [WORDS]: () => ({ json: { data: words({ changes: { ...words().changes, approval, rows: { ...words().changes.rows, items: rows } } }) } }),
+      [WORDS]: () => ({
+        json: { data: words({ changes: { ...words().changes, approval, rows: { ...words().changes.rows, items: rows } } }) },
+      }),
     },
     { onAsk: (value) => asked.push(value) },
   );
@@ -638,7 +650,10 @@ test("waiting for admin names why exactly this version, marks the row, and offer
 });
 
 test("a version submitted moments ago appears once; history stays still", async () => {
-  const fresh = await mount({ [WORDS]: () => ({ json: { data: words({ submittedAt: new Date().toISOString() }) } }), "activation/preview": () => ({ json: { data: preview() } }) });
+  const fresh = await mount({
+    [WORDS]: () => ({ json: { data: words({ submittedAt: new Date().toISOString() }) } }),
+    "activation/preview": () => ({ json: { data: preview() } }),
+  });
   expect(fresh.dom.root.querySelector(".assistant-code-version")?.hasAttribute("data-appear")).toBe(true);
   for (const undo of restore.splice(0)) undo();
   const old = await mount({ "activation/preview": () => ({ json: { data: preview() } }) });

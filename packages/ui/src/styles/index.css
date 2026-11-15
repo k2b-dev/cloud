@@ -15050,6 +15050,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-decision__fact[data-tone="ai"] > .ti-loader-2 {
+  animation: none;
+}
+
 /* A head keeps one line in every state, so a longer state word never moves the card: the source gives way first. */
 .k2b-ui .k2b-chat-decision__head {
   flex-wrap: nowrap;
@@ -15135,6 +15139,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-button.k2b-chat-decision__answer[data-busy] {
+  animation: none;
+  background-image: none;
+}
+
 /* The outcome of a decided question sits under its head; the head already
    carries the state, so the line needs no icon of its own. */
 .k2b-ui .k2b-chat-decision .k2b-chat-outcome {
@@ -15170,6 +15179,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     white-space: normal;
     -webkit-mask-image: none;
     mask-image: none;
+  }
+
+  /* Facts that change while the question stays open keep their two lines, so the question keeps its height. */
+  .k2b-ui .k2b-chat-decision[data-fact-lines="2"] .k2b-chat-decision__meta {
+    align-items: flex-start;
+    min-height: 2.5rem;
+    line-height: 1.25rem;
   }
 
   .k2b-ui .k2b-chat-decision__fact {

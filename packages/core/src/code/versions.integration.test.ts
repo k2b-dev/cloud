@@ -274,6 +274,8 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
           submittedNumber: 2,
         });
       }
+    }
+  });
 
   test("the shared version read marks the changed access that needs approval without extra SQL", async () => {
     const code = await newCode();

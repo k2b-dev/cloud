@@ -85,6 +85,11 @@ export type ChatDecisionProps = {
   outcome?: JSX.Element;
   /** Receives a rejected promise from an answer's `onSelect`. */
   onAnswerError?: (error: unknown) => void;
+  /**
+   * Lines the facts keep where they wrap under the answers, for a question whose facts change while it stays open, such
+   * as work that waits, runs and stops: the question then keeps its height between those states.
+   */
+  factLines?: 1 | 2;
   anchorId?: string | number;
   class?: string;
 };
@@ -202,6 +207,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
       data-state={props.state}
       data-mode={open() && editing() ? "edit" : "approve"}
       data-k2b-primary="ai"
+      data-fact-lines={props.factLines === 2 ? "2" : undefined}
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
       aria-labelledby={open() ? sentenceId : undefined}
       aria-describedby={open() ? reasonId : undefined}

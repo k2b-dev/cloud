@@ -575,7 +575,8 @@ export default function AssistantCodeVersionCard(props: {
         if (revision?.state === "queued") return [{ text: words.reworkQueued, icon: "ti ti-clock", tone: "ai" }];
         if (revision?.state === "running") return [{ text: words.reworkRunning, icon: "ti ti-loader-2", tone: "ai" }];
         if (second) return [{ text: words.secondTimeFoot, icon: "ti ti-info-circle" }];
-        if (revision?.state === "stopped" || revision?.reason === "stopped") return [{ text: words.reworkStopped, icon: "ti ti-player-stop" }];
+        if (revision?.state === "stopped" || revision?.reason === "stopped")
+          return [{ text: words.reworkStopped, icon: "ti ti-player-stop" }];
         if (revision?.state === "skipped") {
           const reason = revision.reason;
           const text =
@@ -598,9 +599,16 @@ export default function AssistantCodeVersionCard(props: {
         reason: { text: words.reasonChanges({ name: decider, keep: keep() }), icon: "ti ti-history" },
         details: reviewDetails(words.messageFrom),
         meta: foot(),
+        factLines: 2,
         // The same place for the one answer in every sub-state, so the card never moves: stop it, or ask for it.
         more: automatic
-          ? [{ label: revision?.state === "queued" ? words.dontStart : words.stop, icon: "ti ti-player-stop", onSelect: () => stopRevision() }]
+          ? [
+              {
+                label: revision?.state === "queued" ? words.dontStart : words.stop,
+                icon: "ti ti-player-stop",
+                onSelect: () => stopRevision(),
+              },
+            ]
           : undefined,
         confirm:
           !automatic && props.onAsk
@@ -713,8 +721,7 @@ export default function AssistantCodeVersionCard(props: {
         : undefined,
       meta: approved ? facts : [...facts, keepFact()],
       link: noExamples ? undefined : seeAll(),
-      more:
-        noExamples && props.onAsk ? [{ label: words.tryExamples, onSelect: ask(words.askExamples({ version: number() })) }] : undefined,
+      more: noExamples && props.onAsk ? [{ label: words.tryExamples, onSelect: ask(words.askExamples({ version: number() })) }] : undefined,
       confirm: {
         label: act.kind === "progress" ? words.switching : noExamples ? words.switchAnyway : words.switchOn({ version: number() }),
         icon: "ti ti-power",
@@ -727,7 +734,13 @@ export default function AssistantCodeVersionCard(props: {
   });
 
   return (
-    <div ref={root} class="assistant-code-version" data-version={number()} data-appear={appear() ? "" : undefined}>
+    <div
+      ref={root}
+      class="assistant-code-version"
+      data-version={number()}
+      data-review={current()?.review?.status}
+      data-appear={appear() ? "" : undefined}
+    >
       <ApprovalFrame
         locale={frame().locale}
         state={frame().state}
@@ -748,6 +761,7 @@ export default function AssistantCodeVersionCard(props: {
         unavailable={frame().unavailable}
         waiting={frame().waiting}
         outcome={frame().outcome}
+        factLines={frame().factLines}
         anchorId={frame().anchorId}
       />
     </div>
