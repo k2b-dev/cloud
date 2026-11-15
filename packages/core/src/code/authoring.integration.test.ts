@@ -31,6 +31,7 @@ import {
   type CodeAuthoringData,
   CodeAuthoringErrorSchema,
   CodeChatCheckDataSchema,
+  CodeChatTestDataSchema,
   CodeChatDraftSummarySchema,
   codeAuthoringContracts,
 } from "./authoring-contracts";
@@ -279,8 +280,8 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
         const hash2 = CodeChatCheckDataSchema.parse(await invoke("code_check", { codeId })).manifest?.hashes.source;
         expect(hash2).toBeTruthy();
         expect(hash2).not.toBe(hash1);
-        expect(codeAuthoringContracts.test.data.parse(await invoke("code_test", { codeId })).cases).toHaveLength(1);
-        expect(codeAuthoringContracts.simulate.data.parse(await invoke("code_simulate", { codeId, fixture })).ok).toBe(true);
+        expect(CodeChatTestDataSchema.parse(await invoke("code_test", { codeId })).cases).toHaveLength(1);
+        expect(CodeChatTestDataSchema.parse(await invoke("code_simulate", { codeId, fixture })).ok).toBe(true);
         const submitted = codeAuthoringContracts.submit.data.parse(await invoke("code_submit", { codeId }));
         const [version] = await sql<
           { source_hash: string; source_files: Record<string, string> }[]
@@ -754,7 +755,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
             expect(check.manifest?.policyRows).toEqual(["silent_shared"]);
           }
           if (event.name === "code_test" || event.name === "code_simulate")
-            expect(codeAuthoringContracts.test.data.parse(event.result).ok).toBe(true);
+            expect(CodeChatTestDataSchema.parse(event.result).ok).toBe(true);
           if (event.name === "code_submit") versionId = codeAuthoringContracts.submit.data.parse(event.result).submission.version.id;
           if (event.name === "code_diff") expect(codeAuthoringContracts.diff.data.safeParse(event.result).success).toBe(true);
         }
