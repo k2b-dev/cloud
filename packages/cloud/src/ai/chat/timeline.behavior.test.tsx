@@ -1,4 +1,4 @@
-import { expect, jest, test } from "bun:test";
+import { expect, jest, setSystemTime, test } from "bun:test";
 import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
@@ -508,7 +508,8 @@ const renderTimeline = async (
   const [state, setState] = createStore(emptyProjection());
   const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
   // The page was rendered an hour ago; this timeline is built now, such as for another chat.
-  const renderedAt = new Date(Date.now() - 3_600_000).toISOString();
+  setSystemTime(new Date("2026-11-15T12:00:00.000Z"));
+  const renderedAt = "2026-11-15T11:00:00.000Z";
   const dispose = render(
     () => (
       <AiChatActionsProvider actions={{}}>
@@ -534,6 +535,7 @@ const renderTimeline = async (
     dispose();
     dom.cleanup();
     jest.useRealTimers();
+    setSystemTime();
   }
 });
 
