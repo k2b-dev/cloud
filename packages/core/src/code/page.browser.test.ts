@@ -1328,14 +1328,23 @@ describe("the feat/code label of a Code page", () => {
           expect(empty!.width).toBe(480);
           await shoot(page, "89-seite-melden-leer-light-1440");
         }
-        // Buttons are 36px high in this dialog, as decided for Gustav and Code (Rundgang #44).
-        expect(
-          await page.evaluate(() =>
-            Array.from(document.querySelectorAll(".code-page-report__actions button")).map((button) =>
+        // The dialog's buttons keep @k2b/ui's regular button height; no dialog sets its own (Rundgang #44).
+        const heights = await page.evaluate(() => {
+          const reference = document.createElement("button");
+          reference.className = "k2b-button";
+          reference.dataset.size = "md";
+          reference.textContent = "Melden";
+          document.querySelector(".code-page-report__actions")!.after(reference);
+          const regular = Math.round(reference.getBoundingClientRect().height);
+          reference.remove();
+          return {
+            regular,
+            dialog: Array.from(document.querySelectorAll(".code-page-report__actions button")).map((button) =>
               Math.round(button.getBoundingClientRect().height),
             ),
-          ),
-        ).toEqual([36, 36]);
+          };
+        });
+        expect(heights.dialog).toEqual([heights.regular, heights.regular]);
         // A reason is optional, one at most, and a second press takes it back.
         const reason = (label: string) => page.getByRole("button", { name: label, exact: true });
         await reason("Verdächtige Aktivität").click();

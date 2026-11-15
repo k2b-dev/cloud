@@ -553,10 +553,8 @@ main > .code-page-host {
   justify-content: flex-end;
   gap: 0.5rem;
 }
-/* Title and buttons share one style in this dialog (6d): 14/600. Buttons are 36px high as decided for Gustav and
-   Code (6c); @k2b/ui's regular button is 32px. */
+/* Title and buttons share one style in this dialog (6d): 14/600. Their height is @k2b/ui's regular button. */
 .k2b-ui .code-page-report__actions .k2b-button {
-  min-height: 2.25rem;
   font-size: 0.875rem;
 }
 .code-page-report__arrived {
