@@ -364,7 +364,8 @@ describe("Code pages in the Cloud layout", () => {
         [true, "plain"],
       ] as const) {
         const html = await (await host(signedIn, layout).request("https://cloud.test/code/c_page/")).text();
-        expectLabelOutsideTree(html);
+        // A member reads whose page it is (F26); a visitor without an account only that someone built it.
+        expectLabelOutsideTree(html, signedIn ? "Page of " : "Self-built page");
       }
       const german = await (await host(false).request("https://cloud.test/code/c_page/", { headers: { "Accept-Language": "de" } })).text();
       expectLabelOutsideTree(german, "Selbst gebaute Seite", "Erstellt mit");

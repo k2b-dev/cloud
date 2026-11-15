@@ -238,6 +238,7 @@ const notices = (rows: string[][], form = false, weeks = 1) =>
     subtitle: "Jeden Morgen um 8 aktualisiert",
     icon: "ti ti-truck-delivery",
     color: "blue",
+    follow: ["grids.record.changed"],
     children: [
       {
         kind: "Stats",
@@ -1234,6 +1235,7 @@ describe("the feat/code label of a Code page", () => {
     const { page, errors, close } = await open(1440, { frame: "workspace", path: "/week/form", facts: facts.member });
     try {
       await settled(page);
+      const footer = await rectOf(page, "[data-code-provenance]");
       await openCard(page);
       await pill(page).click();
       await card(page).waitFor({ state: "hidden" });
@@ -1245,9 +1247,21 @@ describe("the feat/code label of a Code page", () => {
       await settled(page);
       // The no-passwords part left with the form; the footer stays.
       expect(await page.evaluate(() => getComputedStyle(document.querySelector("[data-code-provenance-warning]")!).display)).toBe("none");
+      expect(await rectOf(page, "[data-code-provenance]")).toEqual(footer);
       await openCard(page);
       expect(state.reads).toHaveLength(2);
       expect(state.reads[1]).toEqual({ codeId, path: "/week/form", version: versionValue });
+      await pill(page).click();
+      await card(page).waitFor({ state: "hidden" });
+      // A followed event loads the tree again: the facts go as well, and the footer stays where it is.
+      const loads = state.treeLoads;
+      await page.evaluate(() => (window as unknown as { emit: () => void }).emit());
+      await page.waitForFunction(() => !document.querySelector("[data-code-page][aria-busy]"));
+      expect(state.treeLoads).toBe(loads + 1);
+      await settled(page);
+      expect(await rectOf(page, "[data-code-provenance]")).toEqual(footer);
+      await openCard(page);
+      expect(state.reads).toHaveLength(3);
       expect(errors).toEqual([]);
     } finally {
       await close();
