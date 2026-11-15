@@ -1082,7 +1082,6 @@ describe("the feat/code label of a Code page", () => {
         }
         // Only in the low window there is too little room: the body scrolls between title and last line.
         expect(place.scrolls).toBe(height <= 420);
-        if (width === 1280 && height === 420) await shoot(page, "84-seite-karte-niedrig-light-1280");
         expect(errors).toEqual([]);
       } finally {
         await close();
@@ -1184,7 +1183,6 @@ describe("the feat/code label of a Code page", () => {
       );
       expect(rows).toEqual([20, 20]);
       expect(await card(page).innerText()).toContain("Checked by Cloud:");
-      await shoot(page, "seite-karte-laedt-light-1440");
       await page.getByText("Lea Muster", { exact: true }).waitFor();
       const loaded = await page.evaluate(() =>
         Array.from(document.querySelectorAll(".code-page-provenance__facts dd")).map((dd) => Math.round(dd.getBoundingClientRect().height)),
@@ -1204,7 +1202,6 @@ describe("the feat/code label of a Code page", () => {
         state.readReplies.push({ response: () => failure(503, "code_request_failed") });
         await openCard(page);
         expect(await card(page).innerText()).toContain("Who owns this page cannot be loaded right now. Try again");
-        await shoot(page, "seite-karte-fehler-light-1440");
         await card(page).getByRole("button", { name: "Try again" }).click();
         await page.getByText("Lea Muster", { exact: true }).waitFor();
         expect(state.reads).toHaveLength(2);
@@ -1222,7 +1219,6 @@ describe("the feat/code label of a Code page", () => {
         const text = await card(page).innerText();
         expect(text).toContain("The page has changed in the meantime. Reload, then the details are right.");
         expect(text).not.toContain("Report page");
-        await shoot(page, "seite-karte-veraltet-light-1440");
         await Promise.all([page.waitForEvent("load"), card(page).getByRole("button", { name: "Reload" }).click()]);
         expect(errors).toEqual([]);
       } finally {
@@ -1499,5 +1495,44 @@ describe("the feat/code label of a Code page", () => {
         await close();
       }
     }
-  }, 180_000);
+    // The card's own states, in German like the concept: low window, loading, not loadable, changed meanwhile.
+    const cardStates: [string, number, number, CodePageProvenance, Reply | null, boolean][] = [
+      ["84-seite-karte-niedrig-light-1280", 1280, 420, facts.reader, null, true],
+      [
+        "seite-karte-laedt-light-1440",
+        1440,
+        900,
+        facts.member,
+        { delay: 2000, response: () => Response.json({ data: facts.member }) },
+        false,
+      ],
+      ["seite-karte-fehler-light-1440", 1440, 900, facts.member, { response: () => failure(503, "code_request_failed") }, true],
+      ["seite-karte-veraltet-light-1440", 1440, 900, facts.reader, { response: () => failure(409, "code_page_changed") }, true],
+    ];
+    for (const [name, width, height, cardFacts, reply, settle] of cardStates) {
+      const { page, errors, close } = await open(width, {
+        frame: "workspace",
+        path: "/week",
+        facts: cardFacts,
+        height,
+        locale: "de",
+        reducedMotion: true,
+      });
+      try {
+        await settled(page);
+        if (reply) state.readReplies.push(reply);
+        await pill(page).click();
+        await card(page).waitFor({ state: "visible" });
+        if (settle) {
+          await page.waitForFunction(() => !document.querySelector(".code-page-provenance__card [aria-busy='true']"));
+          await settled(page);
+        } else await card(page).locator("[aria-busy='true']").waitFor();
+        await shoot(page, name);
+        if (!settle) await page.getByText("Lea Muster", { exact: true }).waitFor();
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 240_000);
 });

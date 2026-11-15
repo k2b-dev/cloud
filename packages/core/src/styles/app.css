@@ -510,6 +510,8 @@ main > .code-page-host {
 }
 .k2b-ui .code-page-report .k2b-text-input__textarea {
   font-size: 0.8125rem;
+  /* The dialog keeps one size in every state; the field does not grow by hand either. */
+  resize: none;
 }
 /* Always there and one line high, so the dialog keeps its size while it is empty, filled, sending, or failed. */
 .code-page-report__status {
