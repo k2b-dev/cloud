@@ -55,6 +55,13 @@ const start = async (phone: boolean, locale: string, path = "/app/chat") => {
   }
 };
 const visible = (page: Page) => page.locator(".chat-list-page:visible, .k2b-app-workspace__sidebar-desktop:visible");
+/** The list's filter beside the search: "All" (the active list) or "Unread". */
+const filterTrigger = (page: Page) => visible(page).locator(".chat-list-filter");
+const chooseFilter = async (page: Page, name: string) => {
+  await filterTrigger(page).and(page.locator(":not([disabled])")).click();
+  await page.getByRole("menuitemradio", { name, exact: true }).click();
+};
+const unreadFilterOn = async (page: Page) => (await filterTrigger(page).getAttribute("data-active")) === "true";
 const actions = async (page: Page, title: string, locale: string) => {
   const t = chatMessages.resolve([locale]).t;
   const row = visible(page).locator(".k2b-app-workspace__sidebar-item", { has: page.getByText(title, { exact: true }) });
@@ -88,7 +95,7 @@ for (const phone of [false, true]) {
         await actions(page, "Design room", locale);
         await page.getByRole("menuitem", { name: t.restoreChat, exact: true }).click();
         await visible(page).getByText("Design room", { exact: true }).waitFor({ state: "hidden" });
-        await visible(page).getByRole("button", { name: t.allChats, exact: true }).click();
+        await chooseFilter(page, t.allChats);
         await visible(page).getByText("Design room", { exact: true }).waitFor();
         expect(await order(page)).toEqual(["Design room", "Delivery room"]);
         expect(errors).toEqual([]);
@@ -130,7 +137,7 @@ for (const phone of [false, true]) {
       add("Already read");
       const { page, context, errors } = await start(phone, locale);
       try {
-        await visible(page).getByRole("button", { name: t.unreadChats, exact: true }).click();
+        await chooseFilter(page, t.unreadChats);
         await page.waitForURL("**?filter=unread");
         await visible(page).getByText("Unread design", { exact: true }).waitFor();
         expect(await visible(page).getByText("Already read", { exact: true }).count()).toBe(0);
@@ -139,14 +146,14 @@ for (const phone of [false, true]) {
           () => ![...document.querySelectorAll(".chat-list__unread")].some((element) => element.textContent?.trim()),
         );
         expect(await visible(page).getByText("Unread design", { exact: true }).count()).toBe(1);
-        await visible(page).getByRole("button", { name: t.allChats, exact: true }).click();
+        await chooseFilter(page, t.allChats);
         await page.waitForURL("**/app/chat");
-        await visible(page).getByRole("button", { name: t.unreadChats, exact: true }).click();
+        await chooseFilter(page, t.unreadChats);
         await page.waitForURL("**?filter=unread");
         await visible(page).getByText(t.noUnreadChats, { exact: true }).waitFor();
         await page.reload();
         await visible(page).getByText(t.noUnreadChats, { exact: true }).waitFor();
-        expect(await visible(page).getByRole("button", { name: t.unreadChats, exact: true }).getAttribute("aria-pressed")).toBe("true");
+        expect(await unreadFilterOn(page)).toBe(true);
         await page.goBack();
         await page.waitForURL("**/app/chat");
         await visible(page).getByText("Already read", { exact: true }).waitFor();
@@ -373,7 +380,7 @@ test("Back supersedes a pending filter switch and leaves URL and list in the arc
   const { page, context, errors } = await start(false, "en", "/app/chat/archive");
   let release: (() => void) | undefined;
   try {
-    await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+    await chooseFilter(page, "Unread");
     await page.waitForURL("**/app/chat/archive?filter=unread");
     const pending = new Promise<void>((resolve) => {
       release = resolve;
@@ -390,13 +397,13 @@ test("Back supersedes a pending filter switch and leaves URL and list in the arc
       }
       await route.continue();
     });
-    await visible(page).getByRole("button", { name: "All", exact: true }).click();
+    await chooseFilter(page, "All");
     await started;
     await page.goBack();
     await page.waitForURL("**/app/chat/archive");
     release?.();
     await visible(page).getByText("Archived design", { exact: true }).waitFor();
-    await visible(page).getByRole("button", { name: "All", exact: true }).and(page.locator(":not([disabled])")).waitFor();
+    await filterTrigger(page).and(page.locator(":not([disabled])")).waitFor();
     expect(new URL(page.url()).pathname).toBe("/app/chat/archive");
     expect(new URL(page.url()).search).toBe("");
     expect(await visible(page).getByText("Unread design", { exact: true }).count()).toBe(0);
@@ -407,22 +414,24 @@ test("Back supersedes a pending filter switch and leaves URL and list in the arc
   }
 }, 30_000);
 
-test("active filters add no duplicate history and the archive unread chip toggles in place", async () => {
+test("the active filter adds no duplicate history, and the archive link clears Unread in the archive", async () => {
   add("Unread design", 2);
   const { page, context, errors } = await start(false, "en");
   try {
     const initial = await page.evaluate(() => history.length);
-    await visible(page).getByRole("button", { name: "All", exact: true }).click();
+    await chooseFilter(page, "All");
     expect(await page.evaluate(() => history.length)).toBe(initial);
-    await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+    await chooseFilter(page, "Unread");
     await page.waitForURL("**?filter=unread");
     const filtered = await page.evaluate(() => history.length);
-    await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+    await chooseFilter(page, "Unread");
     expect(await page.evaluate(() => history.length)).toBe(filtered);
     await page.goto(new URL("/app/chat/archive?filter=unread", harness.url).href);
-    await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+    expect(await unreadFilterOn(page)).toBe(true);
+    // The archive link shows the whole archive; "All" would leave it for the active list.
+    await page.getByRole("link", { name: "Archive", exact: true }).filter({ visible: true }).click();
     await page.waitForURL("**/app/chat/archive");
-    expect(await visible(page).getByRole("button", { name: "Unread", exact: true }).getAttribute("aria-pressed")).toBe("false");
+    expect(await unreadFilterOn(page)).toBe(false);
     expect(errors).toEqual([]);
   } finally {
     await context.close();
@@ -475,7 +484,7 @@ for (const failRefresh of [false, true, "position", "position-target"] as const)
         }
         await route.continue();
       });
-      await visible(page).getByRole("button", { name: "All", exact: true }).click();
+      await chooseFilter(page, "All");
       await started;
       await page.getByRole("button", { name: "New chat", exact: true }).filter({ visible: true }).click();
       const dialog = page.getByRole("dialog", { name: "New chat", exact: true });
@@ -512,17 +521,13 @@ for (const failRefresh of [false, true, "position", "position-target"] as const)
         expect(unreadReads).toBe(readsBeforeRetry + (stayOnTarget ? 0 : 1));
         expect(allReads).toBe(allBeforeRetry + (stayOnTarget ? 1 : 0));
         expect(await page.evaluate(() => history.length)).toBe(entries);
-        expect(
-          await visible(page)
-            .getByRole("button", { name: stayOnTarget ? "All" : "Unread", exact: true })
-            .getAttribute("aria-pressed"),
-        ).toBe("true");
-        await visible(page).getByRole("button", { name: "All", exact: true }).click();
+        expect(await unreadFilterOn(page)).toBe(!stayOnTarget);
+        await chooseFilter(page, "All");
         await page.waitForURL(`**/app/chat/c/${stayOnTarget ? existing : other}`);
       }
-      await visible(page).getByRole("button", { name: "All", exact: true }).and(page.locator(":not([disabled])")).waitFor();
-      expect(await visible(page).locator(".chat-list-status").textContent()).toBe("");
-      await visible(page).getByRole("button", { name: "Unread", exact: true }).click();
+      await filterTrigger(page).and(page.locator(":not([disabled])")).waitFor();
+      expect(await visible(page).locator(".chat-list-feedback [role=status]").textContent()).toBe("");
+      await chooseFilter(page, "Unread");
       await page.waitForURL(`**/app/chat/c/${failRefresh && !stayOnTarget ? other : existing}?filter=unread`);
       expect(errors).toEqual([]);
     } finally {
@@ -553,15 +558,15 @@ test("opening a visible row supersedes a pending filter without changing its lis
       }
       await route.continue();
     });
-    await visible(page).getByRole("button", { name: "All", exact: true }).click();
+    await chooseFilter(page, "All");
     await started;
     await visible(page).getByText("Visible unread", { exact: true }).click();
     await page.waitForURL(`**/app/chat/c/${chat}?filter=unread`);
     const entries = await page.evaluate(() => history.length);
     release?.();
-    await visible(page).getByRole("button", { name: "All", exact: true }).and(page.locator(":not([disabled])")).waitFor();
+    await filterTrigger(page).and(page.locator(":not([disabled])")).waitFor();
     expect(new URL(page.url()).searchParams.get("filter")).toBe("unread");
-    expect(await visible(page).getByRole("button", { name: "Unread", exact: true }).getAttribute("aria-pressed")).toBe("true");
+    expect(await unreadFilterOn(page)).toBe(true);
     expect(await page.evaluate(() => history.length)).toBe(entries);
     const opened = page.waitForResponse((response) => new URL(response.url()).pathname === `/api/chat/conversations/${chat}/snapshot`);
     await visible(page).getByText("Visible unread", { exact: true }).click();

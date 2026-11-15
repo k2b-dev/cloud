@@ -1,6 +1,6 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { AppWorkspace, Button, InlineGuidance, Skeleton, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { AppWorkspace, Button, InlineGuidance, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { chatMessages } from "../messages";
 import ChatList, { IncompleteUnread } from "./ChatList";
 import { loadSystemChats, type SystemChatPage } from "./system-chats";
@@ -64,54 +64,61 @@ export default function ChatSystemChats(props: {
     if (props.unavailableId) rows.delete(props.unavailableId);
     return [...rows.values()];
   });
+  /** A failed or partial load says so with a retry, also before any discussion is known. */
+  const trouble = () =>
+    props.state.status() === "failed" || (props.state.status() === "ready" && Boolean(props.state.page()?.skipped.length));
+  // Without known discussions, trouble opens the section, so its notice and retry are seen.
+  createEffect(
+    on(
+      () => trouble() && rows().length === 0,
+      (failed) => {
+        if (failed) props.onExpanded(true);
+      },
+    ),
+  );
   const unread = () => rows().reduce((sum, row) => sum + row.unread, 0);
   const incomplete = () => rows().some((row) => row.summaryCursor != null || row.incomplete);
+  // Without discussions the section is gone, without a placeholder; trouble stays visible with its retry.
   return (
-    <AppWorkspace.SidebarSection
-      class={`chat-system-chats${unread() === 0 && !incomplete() ? " chat-system-chats--read" : ""}`}
-      title={t().systemChats}
-      count={incomplete() ? undefined : unread()}
-      actions={
-        <Show when={incomplete()}>
-          <IncompleteUnread count={unread()} />
-        </Show>
-      }
-      collapsible
-      open={props.expanded}
-      onOpenChange={props.onExpanded}
-    >
-      <Show when={props.expanded}>
-        <Show when={props.state.status() === "loading" && !props.state.page()}>
-          <div class="chat-system-chats__loading" aria-busy="true">
-            <For each={[0, 1, 2]}>{() => <Skeleton class="chat-system-chats__skeleton" />}</For>
-          </div>
-        </Show>
-        <ChatList system {...props.list} rows={rows()} onOpen={props.onOpen} hasMore={false} onMore={() => {}} />
-        <Show when={props.state.status() === "failed"}>
-          <InlineGuidance tone="danger" role="status">
-            {t().systemChatsFailed}{" "}
-            <Button variant="text" size="xs" onClick={() => void props.state.load(props.state.more())}>
-              {t().retry}
+    <Show when={rows().length > 0 || trouble()}>
+      <AppWorkspace.SidebarSection
+        class={`chat-system-chats${unread() === 0 && !incomplete() ? " chat-system-chats--read" : ""}`}
+        title={t().systemChats}
+        count={incomplete() ? undefined : unread()}
+        actions={
+          <Show when={incomplete()}>
+            <IncompleteUnread count={unread()} />
+          </Show>
+        }
+        collapsible
+        open={props.expanded}
+        onOpenChange={props.onExpanded}
+      >
+        <Show when={props.expanded}>
+          <ChatList system {...props.list} rows={rows()} onOpen={props.onOpen} hasMore={false} onMore={() => {}} />
+          <Show when={props.state.status() === "failed"}>
+            <InlineGuidance tone="danger" role="status">
+              {t().systemChatsFailed}{" "}
+              <Button variant="text" size="xs" onClick={() => void props.state.load(props.state.more())}>
+                {t().retry}
+              </Button>
+            </InlineGuidance>
+          </Show>
+          <Show when={props.state.status() === "ready" && props.state.page()?.skipped.length}>
+            <InlineGuidance tone="warning" role="status">
+              {t().systemChatsPartial}{" "}
+              <Button variant="text" size="xs" onClick={() => void props.state.load(false)}>
+                {t().retry}
+              </Button>
+            </InlineGuidance>
+          </Show>
+          <Show when={Object.values(props.state.page()?.cursors ?? {}).some(Boolean)}>
+            <Button variant="ghost" size="sm" loading={props.state.status() === "loading"} onClick={() => void props.state.load(true)}>
+              {t().showMoreChats}
             </Button>
-          </InlineGuidance>
+          </Show>
         </Show>
-        <Show when={props.state.status() === "ready" && props.state.page()?.skipped.length}>
-          <InlineGuidance tone="warning" role="status">
-            {t().systemChatsPartial}{" "}
-            <Button variant="text" size="xs" onClick={() => void props.state.load(false)}>
-              {t().retry}
-            </Button>
-          </InlineGuidance>
-        </Show>
-        <Show when={props.state.status() === "ready" && rows().length === 0}>
-          <p class="chat-system-chats__empty">{t().systemChatsEmpty}</p>
-        </Show>
-        <Show when={Object.values(props.state.page()?.cursors ?? {}).some(Boolean)}>
-          <Button variant="ghost" size="sm" loading={props.state.status() === "loading"} onClick={() => void props.state.load(true)}>
-            {t().showMoreChats}
-          </Button>
-        </Show>
-      </Show>
-    </AppWorkspace.SidebarSection>
+      </AppWorkspace.SidebarSection>
+    </Show>
   );
 }

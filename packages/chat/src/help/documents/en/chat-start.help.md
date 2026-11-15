@@ -47,13 +47,13 @@ Press `Escape` or empty the field to see the list again.
 ## Discover channels {icon="compass"}
 
 :::steps
-1. Choose **Discover channels** below **Channels**.
+1. Choose **Discover channels** beside the **Channels** heading.
 2. Use **Search channels** to find a channel by name or purpose.
-3. Choose **Subscribe** beside a channel.
-4. Choose **Subscribed** to open it.
+3. Choose a channel to read it.
+4. Below its messages, choose **Subscribe**.
 :::
 
-The channel appears under **Channels**, with its purpose below its name.
+The channel appears under **Channels**, with its purpose below its name. A check marks channels you already subscribed to.
 Use **Show more** to load more search results. If loading fails, choose **Try again**.
 With **Read** access, you see **Only the editors write here.** instead of the message field.
 Channels have no threads.

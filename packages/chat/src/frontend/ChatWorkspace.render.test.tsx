@@ -203,7 +203,8 @@ test("SSR retains personal archive and Unread navigation and saved collapsed sta
     sidebar: { items: [{ ...conversation, archived: true }], nextCursor: null },
   });
   expect(html).toContain(`/app/chat/archive?filter=unread`);
-  expect(html).toContain('aria-pressed="true"');
+  // The filter beside the search shows the chosen view.
+  expect(html).toMatch(/<button data-active="true"[^>]*aria-label="Filter chats: Unread"[^>]*chat-list-filter/);
   const collapsed = render("en", {
     ...props(),
     collapsed: ["pinned"],

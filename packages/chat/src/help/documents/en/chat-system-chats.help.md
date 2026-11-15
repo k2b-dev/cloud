@@ -17,7 +17,7 @@ A resource discussion brings its messages together. Each item has its own thread
 3. Choose a thread to read just that item's messages.
 :::
 
-Only discussions with a chat appear here. An empty section explains when a chat appears. If the section cannot load, choose **Try again** beside the error.
+Only discussions with a chat appear here. Without any, the section does not appear. If the section cannot load, it opens with the error; choose **Try again** beside it.
 
 The short list shows recent threads, unread threads, and the open thread within one page. Choose **All N threads** or **Browse all threads** to browse more. Use **Search threads** and the **Open**, **Done**, or **Unread** filters. Choose **Show more threads** for the next page.
 
