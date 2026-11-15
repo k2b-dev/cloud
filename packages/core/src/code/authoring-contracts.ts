@@ -1,5 +1,10 @@
 import { CODE_CHECK_LIMITS, CodeCheckResultSchema, CodeTestCaseSchema, CodeTestMockSchema, CodeTestResultSchema } from "@k2b/cloud/code";
-import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import {
+  CODE_READ_MODEL_LIST_LIMIT,
+  CodeCheckedVersionManifestSchema,
+  CodeReadModelExampleSchema,
+  CodeReadModelNoticeSchema,
+} from "@k2b/cloud/contracts";
 import { AppEventEnvelopeSchema } from "@k2b/cloud/events";
 import { z } from "zod";
 import { codeActivationContracts } from "./activation-contracts";
@@ -294,9 +299,33 @@ export const CodeChatDraftSummarySchema = z
  * Chat check result: the CLI contract without the checked bundle, which only costs the model tokens. The bundle's hash
  * stays in `manifest.hashes.bundle`; submit checks the same draft again and stores its own bundle.
  */
+/**
+ * What the chat shows of a check, a test or a simulation: Cloud's sentences beside the exact data for the model. The
+ * person reads notices with their consequence, what the Code may do, and tried examples; never source, a file, a line,
+ * a diagnostic code or an ID.
+ */
+export const CodeChatStepWordsSchema = z.strictObject({
+  notices: z.array(CodeReadModelNoticeSchema).max(CODE_READ_MODEL_LIST_LIMIT),
+  mayDo: z
+    .array(z.strictObject({ text: z.string(), isNew: z.boolean() }))
+    .max(CODE_READ_MODEL_LIST_LIMIT)
+    .optional(),
+  examples: z
+    .strictObject({
+      passed: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+      summary: z.string(),
+      explanation: z.string(),
+      items: z.array(CodeReadModelExampleSchema).max(CODE_READ_MODEL_LIST_LIMIT),
+    })
+    .optional(),
+});
 export const CodeChatCheckDataSchema = check.extend({
   result: z.discriminatedUnion("ok", [CodeCheckResultSchema.options[0], CodeCheckResultSchema.options[1].omit({ bundle: true })]),
+  words: CodeChatStepWordsSchema,
 });
+/** The chat's test and simulation result: the exact `cld code test` JSON for the model, and its words for the person. */
+export const CodeChatTestDataSchema = CodeTestResultSchema.extend({ words: CodeChatStepWordsSchema });
 
 /** Chat-only additive inputs. HTTP and CLI continue to require their complete source contracts. */
 export const codeChatAuthoringInputs = {

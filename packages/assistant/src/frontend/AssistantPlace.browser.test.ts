@@ -703,8 +703,11 @@ describe("Gustav at a place", () => {
           "Offene Belege zusammenfassen",
         ]);
         expect(await bar(h.page).getByText("Kundenkontakt", { exact: true }).count()).toBe(1);
-        expect(await bar(h.page).getByText("Antwort setzen").count()).toBe(1);
-        expect(await bar(h.page).getByText("Skill Kundenkontakt").count()).toBe(1);
+        // One sentence instead of marks (F5 B); the list of what Gustav can do here is a click away.
+        expect((await bar(h.page).locator(".assistant-place-bar__sentence").innerText()).replace(/\s+/g, " ")).toMatch(
+          /^Gustav liest mit und kann hier \d+ Dinge? tun\.$/,
+        );
+        expect(await bar(h.page).getByText("Antwort setzen").count()).toBe(0);
         // A Gustav place replaces "Attach current view".
         expect(await h.page.getByRole("button", { name: "Aktuelle Ansicht anhängen" }).count()).toBe(0);
         // The first paint already knew the place; nothing loads it again.
@@ -810,7 +813,7 @@ describe("Gustav at a place", () => {
       { theme: "dark" },
     );
     try {
-      await bar(h.page).getByText("Antwort setzen").waitFor();
+      await bar(h.page).locator(".assistant-place-bar__things").waitFor();
       await shot(h.page, "02-panel-ort-chat-dark-1440");
       expect(h.errors).toEqual([]);
     } finally {
@@ -852,7 +855,7 @@ describe("Gustav at a place", () => {
       await shot(h.page, "04-anderer-chat-wechseln-light-1440");
       await switchTo.click();
       await h.page.getByText("Erledigt. Die Antwort hat jetzt 2 Sätze").waitFor();
-      expect(await bar(h.page).getByText("Antwort setzen").count()).toBe(1);
+      expect(await bar(h.page).locator(".assistant-place-bar__things").count()).toBe(1);
       expect(h.errors).toEqual([]);
     } finally {
       await h.close();
@@ -894,7 +897,7 @@ describe("Gustav at a place", () => {
       try {
         await h.page.getByText("Erledigt. Die Antwort hat jetzt 2 Sätze").waitFor();
         const gone = await bar(h.page).getByText("Kein Zugriff mehr", { exact: false }).count();
-        const tools = await bar(h.page).getByText("Antwort setzen").count();
+        const tools = await bar(h.page).locator(".assistant-place-bar__things").count();
         const ask = await bar(h.page).getByRole("button", { name: "Kontext teilen …" }).count();
         const bars = await bar(h.page).count();
         expect({ name, bars, gone, tools, ask }).toEqual({
@@ -909,7 +912,7 @@ describe("Gustav at a place", () => {
           // Once the person allows it in the shell, the shell sends the context again and the place loads.
           await h.setAnswer("u_marta", available("u_marta", "Pmarta"));
           await h.navigateHost(2, "u_marta");
-          await bar(h.page).getByText("Antwort setzen").waitFor();
+          await bar(h.page).locator(".assistant-place-bar__things").waitFor();
           expect(await bar(h.page).getByText("Kein Zugriff mehr", { exact: false }).count()).toBe(0);
         }
         expect(h.errors).toEqual([]);

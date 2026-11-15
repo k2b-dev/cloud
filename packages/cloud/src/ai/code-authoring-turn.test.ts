@@ -6,7 +6,9 @@ import { z } from "zod";
 import authoringSkill from "../../../assistant/src/skills/code-authoring/SKILL.md" with { type: "text" };
 import { codeChatSdkView } from "../../../core/src/code/chat-sdk";
 import { createCodeAuthoringChatTools } from "../../../core/src/code/chat-tools";
+import { describeCodeTestWords } from "../../../core/src/code/read-model/chat-words";
 import { capabilityToolInputSchema } from "../capabilities/calls";
+import type { CodeTestResult } from "../code/test-contract";
 import type { CapabilityDefinitions } from "../contracts/capabilities";
 import { aiCapabilityInputSchema } from "./capabilities";
 import {
@@ -290,7 +292,7 @@ test("a representative authoring loop pins per-step context and releases SDK evi
   const base = provider(requests);
   const store = memoryStore();
   for (const message of messages) await store.append(message);
-  const success = {
+  const result: CodeTestResult = {
     version: 1,
     mode: "test",
     ok: true,
@@ -305,6 +307,8 @@ test("a representative authoring loop pins per-step context and releases SDK evi
       },
     ],
   };
+  // Core's chat test answers with its words for the person beside the exact result, as the real tool does.
+  const success = { ...result, words: describeCodeTestWords(result, "en") };
   const loop = nessi({
     systemPrompt,
     store,

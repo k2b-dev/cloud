@@ -56,6 +56,8 @@ credential.
 | `POST /api/code/activation/preview` | `{ codeId, versionId }` | Version, approval and credential state |
 | `POST /api/code/activation/read` | `{ codeId, activationId }` | Current activation status |
 | `POST /api/code/activation/cancel` | `{ codeId, activationId }` | Status after recording cancellation |
+| `POST /api/code/review` | `{ codeId, versionId }` | The review as the person sees it |
+| `POST /api/code/withdraw` | `{ codeId, versionId }` | `{ withdrawn: true }` |
 
 Generate `activationId` as a UUID once and reuse it after a lost response. Core
 returns the same process. Reusing it for a different Code, version or person
@@ -63,7 +65,18 @@ returns a conflict. After a terminal failure, resolve the cause and start with
 a new UUID. Status reads require access to the Code; mutation routes retain the
 credential's write scope.
 
-The chat version card and `cld code activate` use the preview. It contains the
+`/api/code/review` returns the `review` contract of
+[Code versions](/en/docs/platform/code-versions) for the person who edits the
+Code, without the `path` and `line` of comments: the browser shows a decision,
+its message and the comments as text, never a place in the source. Editors read
+the places with `cld code review show`. `/api/code/withdraw` withdraws a version
+that still waits for an administrator; it answers only that it worked, and the
+version stays unable to switch on.
+
+The chat version card reads the preview, the review and `core.code.version.words`
+together and shows one approval frame: what changes against the running version,
+the examples, what holds until a decision, and at most the answers its state
+allows. `cld code activate` uses the preview. It contains the
 version's `number`, `running`, `latest`, optional `automations`, and
 `readiness`: `ready`, `approval_pending`, or `refused` with a stable code and
 message. A version that a Cloud administrator rejected is `refused` with
