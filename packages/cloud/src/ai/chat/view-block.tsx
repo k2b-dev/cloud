@@ -1,5 +1,5 @@
 import { DescriptionList, StatCell, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { type Accessor, createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { CloudChartGroupView, CloudChartView, CloudExplorerView } from "#chat-charts";
 import { importOnDemand } from "../../browser/reload";
 import {
@@ -201,26 +201,41 @@ function CloudDetailsView(props: { summary: DetailsSummary; input: CloudDetailsD
  * with the viewer's access; a missing file or one that no longer matches its summary shows the unavailable state in
  * the same frame.
  */
-export function CloudViewBlock(props: {
-  path: string;
-  summary: CloudAiViewSummary;
-  /** Inside an island, which is already the frame: a table drops its own. */
-  island?: boolean;
-}) {
+/**
+ * Loads a presented view file once, with the viewer's access: undefined while it loads, null when it is unavailable.
+ * The view in the chat and its large view share it, so "Open large" never loads the file again.
+ */
+export function createCloudViewFile(path: string, summary: CloudAiViewSummary): Accessor<CloudViewDescription | null | undefined> {
   const actions = useAiChatActions();
-  // undefined while loading, null when unavailable.
   const [view, setView] = createSignal<CloudViewDescription | null | undefined>(undefined);
   onMount(() => {
-    const url = actions.fileUrl?.(props.path);
+    const url = actions.fileUrl?.(path);
     if (!url) return setView(null);
     const abort = new AbortController();
     onCleanup(() => abort.abort());
     void importOnDemand(() => import("./view-file")).then(async (reader) => {
       if (abort.signal.aborted) return;
-      const loaded = reader ? await reader.loadView(url, props.path, props.summary, abort.signal) : null;
+      const loaded = reader ? await reader.loadView(url, path, summary, abort.signal) : null;
       if (!abort.signal.aborted) setView(loaded);
     });
   });
+  return view;
+}
+
+export function CloudViewBlock(props: {
+  path: string;
+  summary: CloudAiViewSummary;
+  /** Inside an island, which is already the frame: a table drops its own. */
+  island?: boolean;
+  /** The file as the chat already loaded it (`createCloudViewFile`); without it the block loads the file itself. */
+  file?: Accessor<CloudViewDescription | null | undefined>;
+}) {
+  const view =
+    untrack(() => props.file) ??
+    createCloudViewFile(
+      untrack(() => props.path),
+      untrack(() => props.summary),
+    );
   const chartSummary = (): ChartSummary | undefined => (props.summary.view === "chart" ? props.summary : undefined);
   const tableSummary = (): TableSummary | undefined => (props.summary.view === "table" ? props.summary : undefined);
   const groupSummary = (): GroupSummary | undefined => (props.summary.view === "group" ? props.summary : undefined);

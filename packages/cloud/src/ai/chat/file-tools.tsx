@@ -8,7 +8,7 @@ import { ViewFrame } from "./capability-view";
 import { useAiChatActions } from "./message-actions";
 import { aiToolIcon, isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
-import { CloudViewBlock } from "./view-block";
+import { CloudViewBlock, createCloudViewFile } from "./view-block";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type PresentResult = { path: string; size: number; mediaType: string };
@@ -59,25 +59,29 @@ export function PresentToolBlock(props: { block: ToolBlock }) {
         </Show>
       }
     >
-      {(view) => (
-        // Gustav's view file stands under the same head as an app's result; the file still loads on demand and keeps
-        // its history, only its frame is the shared one.
-        <ViewFrame
-          origin={{ name: "Gustav", icon: "ti ti-moustache", accent: "var(--k2b-ai-accent)" }}
-          title={aiChatMessages(locale()).viewKind({ view: view.summary.view })}
-          at={props.block.at}
-          large={() => <CloudViewBlock path={view.path} summary={view.summary} />}
-          data={props.block.result}
-        >
-          {/* A chart, table, group or explorer is an island, as in an app's view; the island is the table's frame, so the
+      {(view) => {
+        // Loaded once: the view in the chat and its large view in the Lightbox draw the same file.
+        const file = createCloudViewFile(view.path, view.summary);
+        return (
+          // Gustav's view file stands under the same head as an app's result; the file still loads on demand and keeps
+          // its history, only its frame is the shared one.
+          <ViewFrame
+            origin={{ name: "Gustav", icon: "ti ti-moustache", accent: "var(--k2b-ai-accent)" }}
+            title={aiChatMessages(locale()).viewKind({ view: view.summary.view })}
+            at={props.block.at}
+            large={() => <CloudViewBlock path={view.path} summary={view.summary} file={file} />}
+            data={props.block.result}
+          >
+            {/* A chart, table, group or explorer is an island, as in an app's view; the island is the table's frame, so the
               table drops its own. Key figures and details stay flat. */}
-          <Show when={ISLANDS.has(view.summary.view)} fallback={<CloudViewBlock path={view.path} summary={view.summary} />}>
-            <Paper class="k2b-dashboard-frame">
-              <CloudViewBlock path={view.path} summary={view.summary} island />
-            </Paper>
-          </Show>
-        </ViewFrame>
-      )}
+            <Show when={ISLANDS.has(view.summary.view)} fallback={<CloudViewBlock path={view.path} summary={view.summary} file={file} />}>
+              <Paper class="k2b-dashboard-frame">
+                <CloudViewBlock path={view.path} summary={view.summary} island file={file} />
+              </Paper>
+            </Show>
+          </ViewFrame>
+        );
+      }}
     </Show>
   );
 }

@@ -5157,6 +5157,23 @@
   flex: 1;
   min-height: 0;
 }
+/* Content the page already holds, such as a chart or table, stands on its own surface in the middle of the stage. */
+.k2b-ui .k2b-lightbox__view {
+  box-sizing: border-box;
+  width: min(72rem, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 1.25rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-island-shadow);
+}
+/* The view's surface is the island: a frame inside it drops its own edge, so there is no box in a box. */
+.k2b-ui .k2b-lightbox__view .k2b-dashboard-frame {
+  padding: 0;
+  border-color: transparent;
+  box-shadow: none;
+}
 .k2b-ui .k2b-lightbox__stage {
   container-type: size;
   position: absolute;

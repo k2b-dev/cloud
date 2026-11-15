@@ -2111,3 +2111,43 @@ for (const width of [1440, 390])
       await context.close();
     }
   });
+
+test('"Open large" shows a view file\'s table in the Lightbox from the file the chat loaded, and gives the focus back', async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    const loads: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/files") loads.push(url.searchParams.get("path") ?? "");
+    });
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+    await page.evaluate(
+      (value) => window.show(value),
+      [
+        present("/views/stock-2b3c4d5e.view.json", {
+          view: "table",
+          title: stock.title,
+          subtitle: stock.subtitle,
+          rows: 2,
+          columns: 2,
+          footer: false,
+        }),
+      ],
+    );
+    await page.waitForSelector("[data-view-path] tbody tr");
+    const opener = page.getByRole("button", { name: "Open large" });
+    await opener.click();
+    const lightbox = page.locator(".k2b-lightbox[open]");
+    await lightbox.locator(".k2b-lightbox__view tbody tr").first().waitFor();
+    expect(await lightbox.locator(".k2b-lightbox__view tbody tr").count()).toBe(2);
+    expect(await lightbox.textContent()).not.toContain("no longer available");
+    // The chat's file, not a second load.
+    expect(loads).toEqual(["/views/stock-2b3c4d5e.view.json"]);
+    await page.keyboard.press("Escape");
+    await lightbox.waitFor({ state: "detached" });
+    expect(await opener.evaluate((button) => button === document.activeElement)).toBe(true);
+  } finally {
+    await context.close();
+  }
+});

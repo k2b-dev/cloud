@@ -226,6 +226,30 @@ describe("Approval scenes", () => {
       }
     });
 
+  // "Open large" shows the same view in the Lightbox from the data the chat holds; closing returns to the button.
+  for (const [scene, content] of [
+    ["gustav", ".k2b-chart svg path"],
+    ["kennzahlen", ".k2b-stat-cell"],
+  ] as const)
+    test(`"Open large" shows the ${scene} view itself in the Lightbox, and closing gives the focus back`, async () => {
+      const page = await open(scene, 1440);
+      try {
+        const opener = page.getByRole("button", { name: "Groß öffnen" }).first();
+        await opener.click();
+        const lightbox = page.locator(".k2b-lightbox[open]");
+        await lightbox.locator(`.k2b-lightbox__view ${content}`).first().waitFor();
+        await settled(page);
+        expect(await lightbox.textContent()).not.toContain("nicht mehr verfügbar");
+        if (scene === "gustav" && process.env.CAPBLOCKS_SHOTS)
+          await page.screenshot({ path: resolve(process.env.CAPBLOCKS_SHOTS, "lightbox-diagramm-light-1440.png") });
+        await page.keyboard.press("Escape");
+        await lightbox.waitFor({ state: "detached" });
+        expect(await opener.evaluate((button) => button === document.activeElement)).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+
   for (const width of [1440, 390])
     test(`Gustav's survey at ${width} px is a flat choice: no hull, flat cards, the chosen one tinted`, async () => {
       const page = await open("survey", width);

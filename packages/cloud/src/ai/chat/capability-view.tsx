@@ -1,14 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import {
-  dialogCore,
-  IconButton,
-  isStructuredDataValue,
-  LocaleProvider,
-  PanelDialog,
-  panelDialogOptions,
-  StructuredDataPreview,
-  useLocale,
-} from "@k2b/ui";
+import { IconButton, isStructuredDataValue, Lightbox, StructuredDataPreview, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import { type BlockChoiceState, BlockTree } from "../../blocks/BlockTree";
 import { blockWords } from "../../blocks/messages";
@@ -72,7 +63,7 @@ export function ViewFrame(props: {
   title: string;
   /** When the view was made, read as day and minute in the reader's time zone. */
   at?: string;
-  /** What "Open large" shows in a panel. */
+  /** What "Open large" shows in the Lightbox: the same view from the data the chat already holds. */
   large: () => JSX.Element;
   /** What "Data" shows instead of the view. */
   data: unknown;
@@ -95,24 +86,9 @@ export function ViewFrame(props: {
     }).format(at);
     return words().asOf({ time });
   };
-  const openLarge = () =>
-    void dialogCore.open<void>(
-      (close) => (
-        <LocaleProvider locale={locale()}>
-          <PanelDialog>
-            <PanelDialog.Header
-              icon={props.origin.icon}
-              title={props.title}
-              subtitle={props.origin.name}
-              close={close}
-              closeLabel={words().close}
-            />
-            <PanelDialog.Body>{props.large()}</PanelDialog.Body>
-          </PanelDialog>
-        </LocaleProvider>
-      ),
-      { ...panelDialogOptions, history: true, ariaLabel: props.title },
-    );
+  // The Lightbox opens inside this view, not in a root of its own: the large view keeps the chat's context (its files,
+  // the reader's time zone) and draws from the data the chat already holds, so nothing loads a second time.
+  const [large, setLarge] = createSignal(false);
   return (
     <section class="cloud-capability-view" aria-label={props.title}>
       <div class="cloud-capability-view__head">
@@ -127,7 +103,7 @@ export function ViewFrame(props: {
           </span>
         </Show>
         <span class="cloud-capability-view__tools">
-          <IconButton label={words().openLarge} size="sm" variant="ghost" onClick={openLarge}>
+          <IconButton label={words().openLarge} size="sm" variant="ghost" onClick={() => setLarge(true)}>
             <i class="ti ti-arrows-diagonal" aria-hidden="true" />
           </IconButton>
           <IconButton label={words().showData} size="sm" variant="ghost" aria-pressed={data()} onClick={() => setData(!data())}>
@@ -137,6 +113,14 @@ export function ViewFrame(props: {
       </div>
       <Show when={data() && isStructuredDataValue(props.data) ? props.data : undefined} fallback={props.children}>
         {(value) => <StructuredDataPreview data={value()} />}
+      </Show>
+      <Show when={large()}>
+        <Lightbox
+          items={[{ name: props.title, meta: props.origin.name, content: props.large }]}
+          index={0}
+          onIndexChange={() => undefined}
+          onClose={() => setLarge(false)}
+        />
       </Show>
     </section>
   );
