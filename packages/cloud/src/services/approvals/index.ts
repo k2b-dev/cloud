@@ -21,7 +21,7 @@ import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "../s
 import { approvalAdminActor, hasApprovalRoleAccess } from "./authority";
 import { compactApprovalDetailsSql } from "./content";
 import { approvalDecisionHints } from "./hints";
-import { hasOtherApprovalAdmin, lockCodeAdminPopulation } from "./policy";
+import { hasOtherApprovalAdmin, listApprovalAdminRecipients, lockCodeAdminPopulation } from "./policy";
 
 export type { ApprovalRoleContext } from "./authority";
 export { readApprovalContent } from "./content";
@@ -153,9 +153,15 @@ export const codeVersionSoleAdminNotice = async (
   userId: string,
   authority: RequestAuthority,
   locale = "en",
+  db: SQL = sql,
 ): Promise<string | null> => {
-  if (request.kind !== "code_version" || request.authorUserId !== userId || !approvalAdminActor(userId, authority)) return null;
-  return !(await hasOtherApprovalAdmin(sql, userId)) ? approvalMessages.resolve([locale]).t.soleAdminNotice : null;
+  const actor = approvalAdminActor(userId, authority);
+  if (request.kind !== "code_version" || request.authorUserId !== userId || actor?.kind !== "user" || !actor.user.roles.includes("admin"))
+    return null;
+  return transaction(db, async (tx) => {
+    if (!(await listApprovalAdminRecipients(tx, { userId, limit: 1 })).length) return null;
+    return !(await hasOtherApprovalAdmin(tx, userId)) ? approvalMessages.resolve([locale]).t.soleAdminNotice : null;
+  });
 };
 
 const transaction = <T>(db: SQL | undefined, run: (tx: SQL) => Promise<T>): Promise<T> => (db && db !== sql ? run(db) : sql.begin(run));

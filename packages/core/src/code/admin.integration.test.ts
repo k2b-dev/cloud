@@ -4,7 +4,11 @@ import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CloudResourceReaderViewSchema, type User } from "@k2b/cloud/contracts";
 import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
+import type { AuthContext } from "@k2b/cloud/server";
 import { countPending } from "@k2b/cloud/services/approvals";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
+import { preloadAdminCodeApprovals } from "@k2b/cloud/ssr/admin-status";
+import { Hono } from "hono";
 import { z } from "zod";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
@@ -126,8 +130,8 @@ const submission = (codeId: string, source: string, baseVersionId: string | null
   return { codeId, sourceFiles, bundle, manifest, baseVersionId };
 };
 
+let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
 databaseSuite()("C22 Administration › Code read model", () => {
-  let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
   let dispose: (() => void) | undefined;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   let catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
@@ -161,7 +165,6 @@ databaseSuite()("C22 Administration › Code read model", () => {
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     serverCheck?.mockRestore();
-    await database?.drop();
     setSystemTime();
   });
 
@@ -544,4 +547,41 @@ databaseSuite()("C22 Administration › Code read model", () => {
       await sql`UPDATE auth.users SET uid=id::text,account_expires=NULL WHERE id IN (${authorId}::uuid,${reviewerId}::uuid)`;
     }
   });
+  test("both navigation badges count the sole author's open request, excluding reports and expired requests", async () => {
+    await sql`UPDATE approvals.requests SET expires_at=created_at-interval '1 second' WHERE status='pending'`;
+    await sql`UPDATE auth.users SET admin=false WHERE id<>${authorId}::uuid`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at)
+      VALUES('c_count1','person',${authorId}::uuid,'Sole admin count',${authorId}::uuid,${fixed})`;
+    const pending = await submitCodeVersion(submission("c_count1", "export const count = 1;\nexample.item.change();", null), author);
+    await sql`INSERT INTO code.page_reports(code_id,reporter_id,path,text,locale,idempotency_key)
+      VALUES('c_count1',${strangerId}::uuid,'/','Check this page','en',gen_random_uuid())`;
+    const app = new Hono<AuthContext & { Variables: { adminCodeApprovals?: number } }>().get("/admin/code", async (c) => {
+      if (author.authority.actor.kind !== "user") throw new Error("Expected person");
+      c.set("user", author.authority.actor.user);
+      c.set("actor", author.authority.actor);
+      c.set("accessSubject", author.authority.accessSubject);
+      c.set("credentialKind", "session");
+      await preloadAdminCodeApprovals(c);
+      return c.json({ sidebar: c.get("adminCodeApprovals"), area: (await readCodeAdminSummary(author)).approvals });
+    });
+    expect(await (await app.request("/admin/code")).json()).toEqual({ sidebar: 1, area: 1 });
+    const signIn = await createTestBrowserSignIn(authorId);
+    await decideCodeVersion(
+      pending.binding,
+      { outcome: "approved" },
+      {
+        ...author,
+        authority: {
+          ...author.authority,
+          credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+        },
+      },
+    );
+    expect(await (await app.request("/admin/code")).json()).toEqual({ sidebar: 0, area: 0 });
+  });
+});
+
+// Imported session-fixture cleanup runs at file scope; keep its database until it has finished.
+afterAll(async () => {
+  await database?.drop();
 });

@@ -9,7 +9,6 @@ import * as server from "@k2b/cloud/server";
 import * as settingsMiddleware from "@k2b/cloud/server/middleware/settings";
 import * as railSnapshot from "@k2b/cloud/services/rail-snapshot";
 import * as adminStatus from "@k2b/cloud/ssr/admin-status";
-import { countOpenCodePageReports } from "@k2b/cloud/ssr/code-page-reports-count";
 import * as layoutHelp from "@k2b/cloud/ssr/help";
 import * as panelConsent from "@k2b/cloud/ssr/panel-consent";
 import { createConfig } from "@k2b/ssr";
@@ -254,7 +253,6 @@ databaseSuite()("Code page label card and page reports", () => {
       body: { code: "code_report_members_only" },
     });
     expect((await post(jana, "provenance", page("/"))).body.data?.report).toEqual({ reportedAt });
-    expect(await countOpenCodePageReports(250)).toBe(1);
 
     // One page of admins, then one notice per admin; the person who reported is not among them.
     await outbox.reconcile();
@@ -317,11 +315,21 @@ databaseSuite()("Code page label card and page reports", () => {
     expect(notices).toEqual([
       { kind: "resolved", userId: reporterId, locale: expect.any(String), key: expect.stringContaining(":resolved:"), codeId, path: "/" },
     ]);
-    expect(await countOpenCodePageReports(250)).toBe(0);
     expect((await listCodePageReports({ codeId, state: "resolved" }, context(ben))).items).toHaveLength(1);
     expect((await post(jana, "provenance", page("/"))).body.data?.report).toEqual({ reportedAt: null });
     expect((await post(jana, "report", { ...page("/"), reason: null, text: "Wieder da.", key: crypto.randomUUID() })).status).toBe(200);
-    expect(await countOpenCodePageReports(250)).toBe(1);
+  });
+
+  test("the only emergency admin receives page reports", async () => {
+    notices.splice(0);
+    try {
+      await sql`UPDATE auth.users SET uid='admin' WHERE id=${adminId}::uuid`;
+      // The preceding report is still open and its recipient page has not been expanded.
+      await outbox.reconcile();
+      expect(notices).toEqual([expect.objectContaining({ kind: "reported", userId: adminId, codeId })]);
+    } finally {
+      await sql`UPDATE auth.users SET uid=${ben.uid} WHERE id=${adminId}::uuid`;
+    }
   });
 
   test("resolved reports leave with the automation's history; open ones stay; the Code takes them all", async () => {

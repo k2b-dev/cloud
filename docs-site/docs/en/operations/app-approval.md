@@ -987,3 +987,10 @@ bootstrap account such as `dev-admin` counts even without a previous sign-in.
 Locked, expired, or category-disabled accounts and service accounts do not count.
 Review and demote or expire unused ordinary admin accounts when the installation
 no longer needs them; an unused active human admin still prevents self-approval.
+
+Self-approval can return `BUSY` (HTTP 503) during a running FreeIPA sync because
+the NOWAIT population lock includes `auth.user_ipa_data`; retry after the sync finishes.
+
+The emergency admin still receives submitted-version and page-report notifications
+and may read Code decision events; locked FreeIPA accounts are excluded from
+these recipients and readers as well as from independent reviewers.

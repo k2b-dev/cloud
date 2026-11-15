@@ -540,6 +540,46 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     expect(next.version.number).toBe(submitted.version.number + 1);
     expect(next.approvalId).not.toBe(submitted.approvalId);
   });
+  test("the only emergency admin receives submitted review notices and can read the decided event", async () => {
+    await sql`DELETE FROM code.review_notification_outbox`;
+    const code = await newCode();
+    const submitted = await submitCodeVersion(input(code, "emergency notification"), author);
+    const sent: Parameters<CoreNotificationSender["sendCodeReview"]>[0][] = [];
+    const outbox = createCodeReviewNotificationOutbox({
+      sendCodeReview: async (notice) => {
+        sent.push(notice);
+      },
+    });
+    try {
+      await sql`UPDATE auth.users SET admin=false WHERE id<>${reviewerId}::uuid`;
+      await sql`UPDATE auth.users SET uid='admin' WHERE id=${reviewerId}::uuid`;
+      await outbox.reconcile();
+      expect(sent.map((notice) => [notice.userId, notice.kind, notice.versionId])).toEqual([
+        [reviewerId, "submitted", submitted.version.id],
+      ]);
+      await decideCodeVersion(submitted.binding, { outcome: "approved" }, reviewer);
+      const [event] = await sql<{ payload: { place: { type: string; id: string } } }[]>`SELECT payload FROM events.outbox
+        WHERE payload->>'type'='core.code.version.decided' AND payload->'data'->>'versionId'=${submitted.version.id}`;
+      expect(event?.payload.place).toEqual({ type: "core.code", id: code.id });
+      // The event's place reader must allow an admin with no ownership or share on this Code.
+      const principals = [{ type: "user" as const, userId: reviewerId }];
+      const appContext: CapabilityAppExecutionContext = {
+        actor: { kind: "app", appId: "core" },
+        accessSubject: { type: "none" },
+        user: null,
+        locale: "en",
+        origin: "app",
+        requestId: "emergency-event-reader",
+        signal: new AbortController().signal,
+      };
+      const readable = aiCapabilities.types.code.access.readable;
+      expect(await readable({ id: code.id, principals }, appContext)).toEqual(principals);
+      await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
+      expect(await readable({ id: code.id, principals }, appContext)).toEqual([]);
+    } finally {
+      await sql`UPDATE auth.users SET uid=${reviewerId} WHERE id=${reviewerId}::uuid`;
+    }
+  });
   test("notification effects commit with evidence, resolve active admins, and use each recipient's locale and current rights", async () => {
     // Other tests intentionally leave durable effects without running a worker. Isolate this worker fixture.
     await sql`DELETE FROM code.review_notification_outbox`;

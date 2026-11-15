@@ -8,6 +8,7 @@ import { resolveProviderProfile } from "../accounts/base-user";
 import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../accounts/email-write";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { logger } from "../logging";
+import { EMERGENCY_ADMIN_UID } from "../providers/local/constants";
 import { session } from "../session";
 import * as settings from "../settings";
 import { ensureFreeIpaMutationAvailable, getIpaUrl } from "./guard";
@@ -198,7 +199,7 @@ const uidExists = async (uid: string): Promise<boolean> => {
 export const generateUniqueAbbreviation = async (length: number, maxAttempts = 100): Promise<string> => {
   for (let i = 0; i < maxAttempts; i++) {
     const abbr = generateAbbreviation(length);
-    if (!(await uidExists(abbr))) {
+    if (abbr !== EMERGENCY_ADMIN_UID && !(await uidExists(abbr))) {
       return abbr;
     }
   }

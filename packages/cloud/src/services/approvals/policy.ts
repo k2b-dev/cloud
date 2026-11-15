@@ -1,21 +1,23 @@
 import type { SQL } from "bun";
+import { sql } from "../../runtime/clients";
 import { isAccountCategoryAllowed } from "../account-category-policy";
+import { accountLockedSql } from "../account-lock";
 import { getFreeIpaAdminGroups } from "../freeipa-config";
 import { toPgTextArray } from "../postgres";
-import { EMERGENCY_ADMIN_UID } from "../providers/local/users";
+import { EMERGENCY_ADMIN_UID } from "../providers/local/constants";
 
-/** Active human administrators, resolved from the same local/IPA policy as deciding. Never exposed to ordinary users. */
+/** Active admin recipients/readers, including the emergency identity unless selecting independent reviewers. Never exposed to ordinary users. */
 export const listApprovalAdminRecipients = async (
   db: SQL,
-  page: { after?: string; userId?: string; excludeUserId?: string; limit?: number } = {},
+  page: { after?: string; userId?: string; excludeUserId?: string; limit?: number; independentReviewer?: boolean } = {},
 ): Promise<string[]> => {
   const local = await isAccountCategoryAllowed({ provider: "local", profile: "user" }, db);
   const ipa = await isAccountCategoryAllowed({ provider: "ipa", profile: "user" }, db);
   const groups = await getFreeIpaAdminGroups(db);
   const rows = await db<{ id: string }[]>`SELECT u.id
     FROM auth.users u WHERE u.profile='user' AND (${page.after ?? null}::uuid IS NULL OR u.id>${page.after ?? null}::uuid)
-      AND NOT (u.provider='local' AND u.uid=${EMERGENCY_ADMIN_UID})
-      AND NOT EXISTS (SELECT 1 FROM auth.user_ipa_data ipa WHERE ipa.user_id=u.id AND ipa.locked_at IS NOT NULL)
+      AND (NOT ${page.independentReviewer ?? false} OR NOT (u.provider='local' AND u.uid=${EMERGENCY_ADMIN_UID}))
+      AND NOT ${accountLockedSql(sql`u.id`)}
       AND (${page.excludeUserId ?? null}::uuid IS NULL OR u.id<>${page.excludeUserId ?? null}::uuid)
       AND (${page.userId ?? null}::uuid IS NULL OR u.id=${page.userId ?? null}::uuid)
       AND (u.account_expires IS NULL OR u.account_expires > statement_timestamp())
@@ -27,7 +29,7 @@ export const listApprovalAdminRecipients = async (
 };
 /** The caller's admin authority is checked separately; the emergency identity never counts as another reviewer. */
 export const hasOtherApprovalAdmin = async (db: SQL, authorUserId: string): Promise<boolean> =>
-  (await listApprovalAdminRecipients(db, { excludeUserId: authorUserId, limit: 1 })).length > 0;
+  (await listApprovalAdminRecipients(db, { excludeUserId: authorUserId, limit: 1, independentReviewer: true })).length > 0;
 
 /**
  * Retain the sole-admin population through the decision. An in-flight account, category or IPA writer wins:

@@ -1,4 +1,5 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { AssistantLiveProvider, createAssistantLiveHub } from "./assistant-live";
@@ -31,7 +32,7 @@ afterEach(() => {
 
 /** Mounts the card with Core's routes answered by `routes`; a missing route is an outage. */
 type Answer = { status?: number; json?: unknown };
-const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<Answer>>) => {
+const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<Answer>>, locale = "en") => {
   const dom = createDomTestHarness();
   const calls: Array<{ route: string; body: unknown }> = [];
   const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (url: string, init?: RequestInit) => {
@@ -47,9 +48,11 @@ const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<
   const live = createAssistantLiveHub();
   const dispose = render(
     () => (
-      <AssistantLiveProvider value={live}>
-        <Card codeId={codeId} versionId={versionId} number={5} timeZone="UTC" onActivated={() => activated.push(1)} />
-      </AssistantLiveProvider>
+      <LocaleProvider locale={locale}>
+        <AssistantLiveProvider value={live}>
+          <Card codeId={codeId} versionId={versionId} number={5} timeZone="UTC" onActivated={() => activated.push(1)} />
+        </AssistantLiveProvider>
+      </LocaleProvider>
     ),
     dom.root,
   );
@@ -236,6 +239,25 @@ test("a phone sees why it cannot switch on; waiting for approval offers no switc
   expect(pending.dom.root.textContent).toContain("A Cloud administrator must approve this version first.");
   expect(button(pending.dom.root, "Switch on")).toBeUndefined();
 });
+
+for (const [locale, selfText, otherText] of [
+  ["de", "Du kannst sie selbst freigeben.", "Diese Version muss erst ein Cloud-Admin freigeben."],
+  ["en", "You can approve it yourself.", "A Cloud administrator must approve this version first."],
+] as const) {
+  for (const selfApproval of [true, false]) {
+    test(`pending version addresses its server-selected approver (${locale}, self=${selfApproval})`, async () => {
+      const card = await mount(
+        {
+          "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending", selfApproval } }) } }),
+        },
+        locale,
+      );
+      expect(card.dom.root.textContent).toContain(selfApproval ? selfText : otherText);
+      expect(card.dom.root.textContent).not.toContain(selfApproval ? otherText : selfText);
+      expect(button(card.dom.root, "Switch on")).toBeUndefined();
+    });
+  }
+}
 
 test("an older version, no access and an outage each say so; the outage retries", async () => {
   const older = await mount({ "activation/preview": () => ({ json: { data: preview({ latest: 6 }) } }) });

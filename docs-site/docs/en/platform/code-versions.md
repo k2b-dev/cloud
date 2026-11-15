@@ -213,6 +213,19 @@ your own version.” / “Du bist der einzige Admin und gibst deine eigene Versi
 frei.” and enables approval. When another reviewer exists, the author's
 “Another admin approves it” hint stays and approval remains unavailable.
 
+The Code sidebar badge and **Approvals** tab count the same open version
+requests, including your own submission; expired requests and page reports do
+not increase these approval counts. Page reports still reach admins through
+notifications and remain available on the Code's administration page.
+
+When you can approve your own pending version, Gustav's submission handover
+and version card say “You can approve it yourself.” / “Du kannst sie selbst
+freigeben.” The server selects this wording for the submitting person; with
+another human reviewer, the administrator-approval wording stays. The submit
+result identifies this next step as `admin_approval` with `who: "you"`, rather
+than `who: "cloud_admin"`; the version preview carries `readiness.selfApproval`.
+This is an advisory next step: the decision checks eligibility again.
+
 Machine accounts, expired or locked administrators, disabled account categories,
 and the local emergency `admin` identity do not count as other reviewers.
 The emergency admin may approve its own version only when no active human

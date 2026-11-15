@@ -90,8 +90,8 @@ async function submissionNextStep(
 ): Promise<NonNullable<CodeAuthoringData<"submit">["nextStep"]>> {
   try {
     const { code } = await readCode(codeId, context);
-    const readiness = await codeVersionReadiness(code, versionId, sql);
-    if (readiness.state === "approval_pending") return { next: "admin_approval", who: "cloud_admin" };
+    const readiness = await codeVersionReadiness(code, versionId, sql, context);
+    if (readiness.state === "approval_pending") return { next: "admin_approval", who: readiness.selfApproval ? "you" : "cloud_admin" };
     if (readiness.state === "refused") return { next: "revise", who: "code_editor" };
     return { next: "switch_on", who: code.owner.kind === "person" ? "personal_owner" : "owner_manager" };
   } catch {

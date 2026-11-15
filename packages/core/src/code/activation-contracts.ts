@@ -110,7 +110,7 @@ export const CodeActivationPreviewSchema = z
     /** `ready`, or what must happen first; `refused` carries Core's own reason for a version that can never switch on as it is. */
     readiness: z.discriminatedUnion("state", [
       z.object({ state: z.literal("ready") }).strict(),
-      z.object({ state: z.literal("approval_pending") }).strict(),
+      z.object({ state: z.literal("approval_pending"), selfApproval: z.boolean().optional() }).strict(),
       z.object({ state: z.literal("refused"), code: z.string(), message: z.string() }).strict(),
     ]),
     /** The resource that holds this Code, as far as this person may read it; null otherwise and for personal Code. */

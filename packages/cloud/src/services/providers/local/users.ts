@@ -10,6 +10,9 @@ import type { AuditActor } from "../../audit";
 import { generateUniqueAbbreviation } from "../../ipa/users";
 import { isUniqueViolation } from "../../postgres";
 import * as settings from "../../settings";
+import { EMERGENCY_ADMIN_UID } from "./constants";
+
+export { EMERGENCY_ADMIN_UID } from "./constants";
 
 type DbRow = Record<string, unknown>;
 
@@ -20,9 +23,6 @@ export type LocalUserCreateData = {
   sn?: string;
   displayName?: string;
 };
-
-/** Created and repaired by the emergency admin login; it never needs an email address. */
-export const EMERGENCY_ADMIN_UID = "admin";
 
 /**
  * A local account may lack an email only as a full account while

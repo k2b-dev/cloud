@@ -18,7 +18,7 @@ import {
   registerApprovalDecisionHandler,
 } from ".";
 import { readApprovalContent } from "./content";
-import { hasOtherApprovalAdmin } from "./policy";
+import { hasOtherApprovalAdmin, listApprovalAdminRecipients } from "./policy";
 
 // Each suite receives an isolated test database from the shared infrastructure gate.
 databaseSuite()("independent Code-version approvals", () => {
@@ -169,6 +169,11 @@ databaseSuite()("independent Code-version approvals", () => {
       await tx`INSERT INTO auth.ipa_user_effective_groups VALUES(${outsider}::uuid,'code-review-admins')`;
       await tx`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
         ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+      expect(await listApprovalAdminRecipients(tx, { userId: outsider })).toEqual([outsider]);
+      await tx`INSERT INTO auth.user_ipa_data(user_id,locked_at) VALUES(${outsider}::uuid,now())`;
+      expect(await listApprovalAdminRecipients(tx, { userId: outsider })).toEqual([]);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
+      await tx`UPDATE auth.user_ipa_data SET locked_at=NULL WHERE user_id=${outsider}::uuid`;
       expect(await hasOtherApprovalAdmin(tx, author)).toBe(true);
       expect(await selfDecide(id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "SELF_APPROVAL" });
     });
@@ -214,6 +219,19 @@ databaseSuite()("independent Code-version approvals", () => {
       expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toMatchObject({ ok: true });
       await tx`UPDATE auth.users SET admin=false WHERE id=${author}::uuid`;
       expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+  });
+
+  test("a stale admin claim cannot self-approve an open request after database demotion", async () => {
+    const { id } = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    await withSoleAdmin(async (tx) => {
+      const authority = await signedAuthor(signIn.sid, tx);
+      expect(authority.actor.kind === "user" && authority.actor.user.roles.includes("admin")).toBe(true);
+      await tx`UPDATE auth.users SET admin=false WHERE id=${author}::uuid`;
+      expect(await approvals.get(id, tx)).toMatchObject({ status: "pending", soleAdmin: false });
+      expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "NOT_FOUND" });
+      expect(await approvals.get(id, tx)).toMatchObject({ status: "pending", soleAdmin: false, decidedByUserId: null });
     });
   });
 
