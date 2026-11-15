@@ -476,6 +476,26 @@ describe("Core AI capabilities", () => {
     }
   });
 
+  test("chat readers retain an empty automatic stop with its machine-readable reason", async () => {
+    spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+    spyOn(aiConversations, "listMessagesPage").mockResolvedValue({
+      hasMore: false,
+      messages: [
+        storedMessage(1, { role: "assistant", content: [] }, { meta: { automationTurnStop: { reason: "model_calls" } } }),
+        storedMessage(2, { role: "assistant", content: [] }),
+      ],
+    });
+    const result = await aiCapabilities.queries["ai.chat.read"].run({ id: chat.shortId, limit: 20 }, context);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { data: { messages: [{ seq: 1, text: "", automationStop: { reason: "model_calls" } }] } },
+    });
+    if (result.ok) {
+      expect(result.data.data.messages).toHaveLength(1);
+      expect(aiCapabilities.queries["ai.chat.read"].data.safeParse(result.data.data).success).toBe(true);
+    }
+  });
+
   test("searches visible messages in one explicitly owned chat", async () => {
     spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
     const search = spyOn(aiConversations, "searchConversationMessages").mockResolvedValue({

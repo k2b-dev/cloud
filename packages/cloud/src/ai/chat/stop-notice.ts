@@ -2,6 +2,7 @@ import type { AiCodeAuthoringStop, AiStoredMessage } from "../types";
 
 export type AiStopNotice =
   | { kind: "code_authoring"; state: AiCodeAuthoringStop }
+  | { kind: "automation" }
   | { kind: "output_limit"; reasoning: boolean }
   | { kind: "stopped" };
 
@@ -9,6 +10,7 @@ export type AiStopNotice =
 export function aiMessageStopNotice(entry: AiStoredMessage): AiStopNotice | null {
   if (entry.message.role !== "assistant") return null;
   if (entry.meta?.codeAuthoringStop) return { kind: "code_authoring", state: entry.meta.codeAuthoringStop };
+  if (entry.meta?.automationTurnStop) return { kind: "automation" };
   const reason = entry.stopReason ?? entry.message.stopReason;
   if (!reason || reason === "stop" || reason === "tool_use") return null;
   if (reason === "max_tokens" || reason === "length") {

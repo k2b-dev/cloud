@@ -291,6 +291,8 @@ export type AiConversationProjectUpdateResult =
 
 export type AiCodeOrigin = { codeId: string; title: string; runId: string; requestId: string; label: string };
 
+export type AiAutomationTurnStop = { reason: "model_calls" | "input_tokens" };
+
 /** Receipt-based snapshot at an authoring stop; deliberately contains no source or paths. */
 export type AiCodeAuthoringStop = {
   reason: "model_calls" | "input_tokens" | "repeated_error";
@@ -331,6 +333,7 @@ export type AiStoredMessage = {
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
     codeAuthoringStop?: AiCodeAuthoringStop;
+    automationTurnStop?: AiAutomationTurnStop;
     codeOrigin?: AiCodeOrigin;
     /** Cloud's visible start of its one scoped automatic revision. */
     codeReviewStart?: { codeId: string; versionId: string };
@@ -1168,6 +1171,7 @@ export type AiConversationService = {
     leaseOwner?: string | null;
     /** Read only for the terminal assistant append, persisted with the message. */
     codeAuthoringStop?: () => AiCodeAuthoringStop | null;
+    automationTurnStop?: () => AiAutomationTurnStop | null;
     /** Ephemeral provider input for this turn; user-message persistence remains reference-only. */
     turnInput?: Input;
     /** Mutable snapshot map read only when an assistant tool-call message is persisted. */

@@ -103,6 +103,7 @@ export type KnownCodeErrorCode =
   | "code_capability_undeclared"
   | "code_chat_call_limit"
   | "code_chat_invalid_value"
+  | "code_chat_text_fixed"
   | "code_check_cancelled"
   | "code_check_failed"
   | "code_check_memory_limit"

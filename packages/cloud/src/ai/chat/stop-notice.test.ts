@@ -29,3 +29,10 @@ test("reasoning clause uses this message's measured output, including the 80 per
     });
   expect(aiMessageStopNotice({ ...truncatedAnswer, usage: null })).toEqual({ kind: "output_limit", reasoning: false });
 });
+
+test("automatic input and call bounds are visible even on an empty normal terminal answer", () => {
+  for (const reason of ["model_calls", "input_tokens"] as const)
+    expect(aiMessageStopNotice({ ...truncatedAnswer, stopReason: "stop", meta: { automationTurnStop: { reason } } })).toEqual({
+      kind: "automation",
+    });
+});

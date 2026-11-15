@@ -95,3 +95,18 @@ test("a turn the person stopped shows only the quiet stopped line, never the abo
   // Cloud's own end of an answer keeps its notice: here the output limit, with continuing as a button.
   expect(renderHistory([truncatedAnswer])).toContain("Weiterschreiben");
 });
+
+test("an automatic budget stop survives reload and offers only explicit continuation", () => {
+  const html = renderHistory([
+    {
+      ...truncatedAnswer,
+      stopReason: "stop",
+      message: { role: "assistant", content: [] },
+      meta: { automationTurnStop: { reason: "model_calls" } },
+    },
+  ]);
+  expect(html).toContain("Die Arbeit pausiert, weil die Grenze für diesen Lauf erreicht ist.");
+  expect(html).toContain("Was bis hier steht, bleibt erhalten.");
+  expect(html).toContain("Weiterschreiben");
+  expect(html).not.toContain("code_authoring");
+});

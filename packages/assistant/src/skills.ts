@@ -34,6 +34,7 @@ import codeAuthoringSchedules from "./skills/code-authoring/references/schedules
 import codeAuthoringTesting from "./skills/code-authoring/references/testing.md" with { type: "text" };
 import codeAuthoringTroubleshooting from "./skills/code-authoring/references/troubleshooting.md" with { type: "text" };
 import codeAuthoring from "./skills/code-authoring/SKILL.md" with { type: "text" };
+import codeAuthoringTemplateBriefing from "./skills/code-authoring/templates/briefing.md" with { type: "text" };
 import codeAuthoringTemplateDashboardPage from "./skills/code-authoring/templates/dashboard-page.md" with { type: "text" };
 import codeAuthoringTemplateDatabase from "./skills/code-authoring/templates/database.md" with { type: "text" };
 import codeAuthoringTemplateEventToChat from "./skills/code-authoring/templates/event-to-chat.md" with { type: "text" };
@@ -41,6 +42,7 @@ import codeAuthoringTemplateFormApp from "./skills/code-authoring/templates/form
 import codeAuthoringTemplateGeneratedFile from "./skills/code-authoring/templates/generated-file.md" with { type: "text" };
 import codeAuthoringTemplateMailAutomation from "./skills/code-authoring/templates/mail-automation.md" with { type: "text" };
 import codeAuthoringTemplateMailInvoices from "./skills/code-authoring/templates/mail-invoices.md" with { type: "text" };
+import codeAuthoringTemplateReminder from "./skills/code-authoring/templates/reminder.md" with { type: "text" };
 import codeAuthoringTemplateSurvey from "./skills/code-authoring/templates/survey.md" with { type: "text" };
 import codeAuthoringTemplateTaskDueTomorrow from "./skills/code-authoring/templates/task-due-tomorrow.md" with { type: "text" };
 import codeAuthoringTemplateWeeklyReport from "./skills/code-authoring/templates/weekly-report.md" with { type: "text" };
@@ -63,6 +65,8 @@ export const SKILLS = [
       "references/schedules.md": codeAuthoringSchedules,
       "references/testing.md": codeAuthoringTesting,
       "references/troubleshooting.md": codeAuthoringTroubleshooting,
+      "references/template-briefing.md": codeAuthoringTemplateBriefing,
+      "references/template-reminder.md": codeAuthoringTemplateReminder,
       "references/template-database.md": codeAuthoringTemplateDatabase,
       "references/template-dashboard-page.md": codeAuthoringTemplateDashboardPage,
       "references/template-event-to-chat.md": codeAuthoringTemplateEventToChat,

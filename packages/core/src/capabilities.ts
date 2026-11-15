@@ -288,7 +288,11 @@ const VisibleMessageSchema = z
     id: ChatIdSchema,
     seq: z.number().int().min(1),
     role: z.enum(["user", "assistant", "summary"]),
-    text: z.string().min(1).max(MAX_MESSAGE_TEXT_CHARS),
+    text: z.string().max(MAX_MESSAGE_TEXT_CHARS),
+    automationStop: z
+      .object({ reason: z.enum(["model_calls", "input_tokens"]) })
+      .strict()
+      .optional(),
     truncated: z.boolean(),
     origin: AiChatOriginSchema.optional(),
     createdAt: z.string(),
@@ -553,13 +557,15 @@ const visibleMessage = (stored: AiStoredMessage) => {
     })
     .join("")
     .trim();
-  if (!text) return null;
+  const automationStop = message.role === "assistant" ? stored.meta?.automationTurnStop : undefined;
+  if (!text && !automationStop) return null;
   return {
     id: stored.shortId,
     seq: stored.seq,
     role: stored.kind === "summary" ? ("summary" as const) : message.role,
     text: text.slice(0, MAX_MESSAGE_TEXT_CHARS),
     truncated: text.length > MAX_MESSAGE_TEXT_CHARS,
+    ...(automationStop ? { automationStop } : {}),
     ...(stored.meta?.writerOrigin ? { origin: stored.meta.writerOrigin } : {}),
     createdAt: stored.createdAt,
   };
