@@ -79,6 +79,11 @@ export function AssistantWaitingStrip(props: {
   const hidden = (visible: number) => Math.max(0, entries().length - visible) + props.view.more;
   const menu = (): DropdownItem[] => {
     const item = (entry: Entry) => ({
+      // The kind's colour, as on the chip: the menu renders in its own layer, so the entry carries it.
+      class:
+        entry.kind === "approval"
+          ? "assistant-waiting__menu-entry"
+          : "assistant-waiting__menu-entry assistant-waiting__menu-entry--attention",
       icon: KIND_ICON[entry.kind],
       label: entry.short,
       description: entry.where ?? undefined,

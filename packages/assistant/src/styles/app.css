@@ -589,6 +589,8 @@
 .k2b-ui .assistant-waiting__more:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
 .k2b-ui .assistant-waiting__icon { flex: none; color: var(--k2b-ai-accent); font-size: .875rem; }
 .k2b-ui .assistant-waiting__entry:is([data-kind="routine"], [data-kind="app_run"]) .assistant-waiting__icon { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-dropdown__item.assistant-waiting__menu-entry > i { color: var(--k2b-ai-accent); }
+.k2b-ui .k2b-dropdown__item.assistant-waiting__menu-entry--attention > i { color: var(--k2b-warning-text); }
 /* The last text of a chip ends on the chip's padding, where its fade ends, so a sentence that fits stays whole. */
 .k2b-ui .assistant-waiting__entry > :last-child { padding-inline-end: .625rem; --k2b-truncate-fade-length: .625rem; }
 .k2b-ui .assistant-waiting__short { min-inline-size: 0; }

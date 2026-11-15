@@ -569,6 +569,17 @@ describe("Waiting for you", () => {
             await strip(page).locator(".assistant-waiting__more:visible").click();
             await page.getByRole("menuitem").first().waitFor();
             await settled(page);
+            // The list shows each entry's kind in the chip's colour.
+            const colors = await page.evaluate(() => {
+              const probe = document.createElement("i");
+              probe.style.color = "var(--k2b-ai-accent)";
+              document.querySelector(".k2b-ui")?.append(probe);
+              const accent = getComputedStyle(probe).color;
+              probe.remove();
+              const icon = document.querySelector(".assistant-waiting__menu-entry:not(.assistant-waiting__menu-entry--attention) > i");
+              return { accent, icon: icon ? getComputedStyle(icon).color : null };
+            });
+            expect(colors.icon).toBe(colors.accent);
             await page.screenshot({ path: `/tmp/assistant-waiting-shots/liste-${theme}-${view.name}.png` });
             await page.keyboard.press("Escape");
             await page.getByRole("menuitem").first().waitFor({ state: "detached" });
