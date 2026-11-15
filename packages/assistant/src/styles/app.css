@@ -858,7 +858,7 @@
 }
 .k2b-ui .assistant-waiting[data-quiet] { visibility: hidden; }
 /* The slash list opens over the row's place: the row steps back, keeping its place, until the list closes. */
-.k2b-ui .assistant-chat-composer__column:has(.k2b-chat-composer-accessory[data-commands]) > .assistant-waiting { visibility: hidden; }
+.k2b-ui .assistant-chat-composer__column:has(.k2b-chat-composer-accessory[data-commands]) > :is(.assistant-waiting, .assistant-queue) { visibility: hidden; }
 .k2b-ui .assistant-waiting__label { display: inline-flex; flex: none; align-items: center; gap: .3125rem; color: var(--k2b-text-secondary); font-size: .75rem; font-weight: 600; line-height: 1rem; white-space: nowrap; }
 .k2b-ui .assistant-waiting__label > i { color: var(--k2b-ai-accent); font-size: .875rem; }
 /* Chips shrink sideways; nothing is cut above or below, so focus rings and the touch areas of coarse pointers stay whole. */
