@@ -113,7 +113,11 @@ export function CloudTableView(props: {
                 // Row keys are row indexes, so a reference cell finds its object in the loaded view.
                 const cells = props.input?.rows[Number(row.key)];
                 const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
-                return cell && typeof cell === "object" ? <ReferenceText text={String(text)} reference={cell} /> : render(text);
+                return cell && typeof cell === "object" && cell.title?.trim() ? (
+                  <ReferenceText text={String(text)} reference={cell} />
+                ) : (
+                  render(text)
+                );
               }}
               getRowId={(row) => row.key}
               sort={sort()}
@@ -126,7 +130,11 @@ export function CloudTableView(props: {
                         const text = typeof value === "string" ? value : "";
                         const cells = props.input?.footer;
                         const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
-                        return cell && typeof cell === "object" ? <ReferenceText text={text} reference={cell} /> : text;
+                        return cell && typeof cell === "object" && cell.title?.trim() ? (
+                          <ReferenceText text={text} reference={cell} />
+                        ) : (
+                          text
+                        );
                       },
                     }
                   : undefined

@@ -138,9 +138,10 @@ Explicit types are `text`, `number`, `date`, `datetime` and `ref`. Dates are
 an offset. Dates supplied as `Date` become wall-clock strings in `cloud.timeZone`.
 Missing and undefined cells become null; objects other than Cloud references,
 booleans and non-finite numbers must be converted to text or numbers. A reference
-cell shows its `title` and opens the thing; without a title it shows its bare
-id, which no person recognizes. Results that carry `ref` and `title` side by
-side pass both: `{ ...item.ref, title: item.title }`. The optional footer uses the
+cell shows its `title` and opens the thing. Pass the title you have: results
+that carry `ref` and `title` side by side pass both, `{ ...item.ref, title: item.title }`.
+Without one, Cloud asks the thing's app for each reader, and a thing that reader
+may not see shows as not available. The optional footer uses the
 same columns. `sort: {column: "id", direction: "asc" | "desc"}` sets the initial
 order; the reader can sort again. `search: true` adds a search field above the
 table that matches the shown cells. `groupBy: [{id, label?}]` lets the reader

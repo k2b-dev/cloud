@@ -42,6 +42,15 @@ export const CLOUD_AI_DETAILS_VIEWPORT_ITEMS = 12;
 // the viewport at any width and its length counts no further.
 export const CLOUD_AI_DETAILS_MAX_CHARS = 4096;
 
+/**
+ * A reference without its title stands as this neutral word, never as its bare id: Cloud names references for the
+ * reading person when the chat reads the view, so a reference left untitled is one this person may not read or one
+ * that is gone. It opens nothing.
+ */
+export const cloudAiReferenceUnavailable = (locale: string) =>
+  locale.toLowerCase().startsWith("de") ? "Nicht verfügbar" : "Not available";
+const titleOf = (ref: { title?: string }, locale: string) => ref.title?.trim() || cloudAiReferenceUnavailable(locale);
+
 const referenceSchema = () => CloudResourceReferenceSchema.pick({ type: true, id: true, title: true, context: true, status: true });
 const ReferenceSchema = /* @__PURE__ */ referenceSchema();
 export type CloudAiViewReference = z.output<typeof ReferenceSchema>;
@@ -773,7 +782,7 @@ export function cloudAiDetailsRows(
   return view.items.map((item) => {
     const value = item.value;
     if (value === null) return { label: item.label, text: "" };
-    if (typeof value === "object") return { label: item.label, text: value.title ?? value.id, ref: value };
+    if (typeof value === "object") return { label: item.label, text: titleOf(value, locale), ref: value };
     // A number in a text field stays as written, as in a table's text column.
     const text =
       item.type === "number" && typeof value === "number"
@@ -809,7 +818,7 @@ export function cloudAiViewCellFormatter(columns: CloudAiTableView["columns"], l
     column: CloudAiTableView["columns"][number],
     cell: Exclude<CloudAiTableView["rows"][number][string], null>,
   ): string => {
-    if (typeof cell === "object") return cell.title ?? cell.id;
+    if (typeof cell === "object") return titleOf(cell, locale);
     if (column.type === "number" && typeof cell === "number") return numberFormats.get(column.id)!(cell);
     if ((column.type === "date" || column.type === "datetime") && typeof cell === "string") return date(column.type, cell);
     return String(cell);
@@ -832,7 +841,7 @@ export function cloudAiViewTable(
     values: Object.fromEntries(
       view.columns.flatMap((column) => {
         const cell = cellOf(cells, column.id);
-        return cell == null ? [] : [[column.id, typeof cell === "object" ? (cell.title ?? cell.id) : cell]];
+        return cell == null ? [] : [[column.id, typeof cell === "object" ? titleOf(cell, locale) : cell]];
       }),
     ),
   });

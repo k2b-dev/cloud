@@ -181,7 +181,7 @@ function CloudDetailsView(props: { summary: DetailsSummary; input: CloudDetailsD
                 layout="rows"
                 items={value().map((row) => ({
                   term: row.label,
-                  description: row.ref ? (
+                  description: row.ref?.title?.trim() ? (
                     <ReferenceText text={row.text} reference={row.ref} />
                   ) : (
                     row.text || <span class="text-dimmed">—</span>

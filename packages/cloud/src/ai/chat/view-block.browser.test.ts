@@ -2151,3 +2151,51 @@ test('"Open large" shows a view file\'s table in the Lightbox from the file the 
     await context.close();
   }
 });
+
+// #84: Cloud names a view's references for the reader as the chat reads it (`view=1`, `view-names.ts`). What it could
+// not name, because the reader may not read it or it is gone, stands as "Not available": never its id, never a link.
+const tasks = {
+  view: "table",
+  title: "Logistics: tasks with a due date",
+  columns: [
+    { id: "task", type: "ref" },
+    { id: "due", type: "date" },
+  ],
+  rows: [
+    { task: { type: "spaces.item", id: "ZK3qUf", title: "Agree the tour plan for week 47" }, due: "2026-11-16" },
+    { task: { type: "spaces.item", id: "zgDSTy" }, due: "2026-11-17" },
+  ],
+};
+files["/views/tasks-with-due-date-5e6f7a8b.view.json"] = tasks;
+test("a table names a reference by its title and shows one it cannot name as not available, never its id", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    const reads: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/files") reads.push(url.searchParams.get("view") ?? "");
+    });
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+    await page.evaluate(
+      (value) => window.show(value),
+      [present("/views/tasks-with-due-date-5e6f7a8b.view.json", { view: "table", title: tasks.title, rows: 2, columns: 2, footer: false })],
+    );
+    await page.waitForSelector("[data-view-path] tbody tr");
+    const cells = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("[data-view-path] tbody tr")).map((row) => {
+        const cell = row.querySelector("td")!;
+        return { text: cell.textContent?.trim(), link: cell.querySelector("button.k2b-reference") !== null };
+      }),
+    );
+    expect(reads).toEqual(["1"]);
+    expect(cells).toEqual([
+      { text: "Agree the tour plan for week 47", link: true },
+      { text: "Not available", link: false },
+    ]);
+    expect(await page.locator("[data-view-path]").textContent()).not.toContain("zgDSTy");
+    if (process.env.VIEW_SHOTS) await page.screenshot({ path: `${process.env.VIEW_SHOTS}/84-tabelle-light-1440.png`, fullPage: true });
+  } finally {
+    await context.close();
+  }
+});

@@ -18,7 +18,8 @@ export async function loadView(
   signal: AbortSignal,
 ): Promise<CloudViewDescription | null> {
   try {
-    const response = await fetch(url, { signal });
+    // `view=1`: Cloud names the view's references for this reader as it reads the file (`view-names.ts`).
+    const response = await fetch(`${url}${url.includes("?") ? "&" : "?"}view=1`, { signal });
     if (!response.ok || !isAiViewFile({ path, origin: response.headers.get("X-Cloud-Ai-File-Origin") ?? "" })) return null;
     const blob = await response.blob();
     if (blob.size > CLOUD_AI_VIEW_MAX_BYTES) return null;
