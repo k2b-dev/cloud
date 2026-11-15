@@ -158,19 +158,18 @@ export default function AssistantCodeDecisionLine(props: {
   );
 }
 
-/** The visible start of Gustav's one automatic revision: Cloud's sentence and the mark that he starts by himself. */
-export function AssistantCodeReviewStartLine(props: { text: string }): JSX.Element {
+/**
+ * The visible start of Gustav's one automatic revision, right under the decision line that already says who asked
+ * for which changes and that Gustav starts by himself: it names only that his turn begins now, never the decision again.
+ */
+export function AssistantCodeReviewStartLine(props: { number: number | null }): JSX.Element {
   const locale = useLocale();
   const t = createMemo(() => codeVersionCardMessages.resolve([locale()]).t);
   return (
-    <div class="assistant-code-decision" data-tone="warning" data-outcome="review_start">
-      <i class="assistant-code-decision__icon ti ti-message-2" aria-hidden="true" />
+    <div class="assistant-code-decision" data-tone="ai" data-outcome="review_start">
+      <i class="assistant-code-decision__icon ti ti-sparkles" aria-hidden="true" />
       <p class="assistant-code-decision__text">
-        {props.text}{" "}
-        <span class="assistant-code-decision__tag">
-          <i class="ti ti-sparkles" aria-hidden="true" />
-          {t().eventAutomatic}
-        </span>
+        {props.number === null ? t().reviewStartPlain : t().reviewStart({ version: props.number })}
       </p>
     </div>
   );

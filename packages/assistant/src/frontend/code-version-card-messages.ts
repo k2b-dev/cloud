@@ -138,6 +138,8 @@ export const codeVersionCardMessages = i18n.define({
       eventReason: "See the reason",
       eventNextRun: ({ when }: { when: string }) => `next run ${when}`,
       eventAutomatic: "Gustav starts by himself, once",
+      reviewStart: ({ version }: V) => `Gustav revises version ${version} now, once by himself.`,
+      reviewStartPlain: "Gustav revises the version now, once by himself.",
       eventGone: "The card is further up in this chat; load the earlier messages to reach it.",
     },
     de: {
@@ -269,6 +271,8 @@ export const codeVersionCardMessages = i18n.define({
       eventReason: "Begründung ansehen",
       eventNextRun: ({ when }) => `nächster Lauf ${when}`,
       eventAutomatic: "Gustav startet von selbst, einmal",
+      reviewStart: ({ version }) => `Gustav überarbeitet Version ${version} jetzt, einmal von selbst.`,
+      reviewStartPlain: "Gustav überarbeitet die Version jetzt, einmal von selbst.",
       eventGone: "Die Karte steht weiter oben in diesem Chat; lade die früheren Nachrichten, um sie zu erreichen.",
     },
   },
