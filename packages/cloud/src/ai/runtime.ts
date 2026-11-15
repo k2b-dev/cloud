@@ -177,6 +177,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     : requested;
   const { resolved } = await validateAiTurnRequest(
     {
+      ...(input.locale ? { locale: input.locale } : {}),
       input: canonicalInput,
       hasImageAttachments,
       canInspectAttachedImages,

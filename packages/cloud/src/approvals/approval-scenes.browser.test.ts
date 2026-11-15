@@ -101,7 +101,7 @@ const open = async (scene: string, width: number, theme: "light" | "dark" = "lig
     });
   });
   await page.goto(`${origin}/?scene=${scene}`);
-  await page.locator(".k2b-chat-decision").first().waitFor();
+  await page.locator(".k2b-chat-decision, .cloud-blocks__choice").first().waitFor();
   await settled(page);
   return page;
 };
@@ -122,6 +122,43 @@ const shot = async (page: Page, name: string) => {
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 describe("Approval scenes", () => {
+  for (const width of [1440, 390])
+    test(`Gustav's survey at ${width} px is a flat choice: no hull, flat cards, the chosen one tinted`, async () => {
+      const page = await open("survey", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        await page.getByRole("radio", { name: "Jana Berger" }).click();
+        await settled(page);
+        const look = await page.evaluate(() => {
+          const root = document.querySelector<HTMLElement>(".cloud-blocks__choice")!;
+          const options = [...root.querySelectorAll<HTMLElement>(".k2b-choice-list__option")];
+          const style = getComputedStyle(root);
+          return {
+            hull: [style.borderTopWidth, style.backgroundColor],
+            ai: root.getAttribute("data-k2b-primary"),
+            edges: options.map((option) =>
+              [getComputedStyle(option).borderTopWidth, getComputedStyle(option).boxShadow, getComputedStyle(option).outlineWidth].join(
+                "|",
+              ),
+            ),
+            chosen: options.map((option) => getComputedStyle(option).backgroundColor),
+            state: root.querySelector(".cloud-blocks__choice-state")?.textContent,
+            answer: root.querySelector(".cloud-blocks__choice-foot .k2b-button")?.getAttribute("data-variant"),
+          };
+        });
+        await shot(page, `07-auswahl-light-${width}`);
+        expect(look.hull).toEqual(["0px", "rgba(0, 0, 0, 0)"]);
+        // Flat cards: the shared 2 px edge drawn inside, no outer border; the chosen one in the AI colour.
+        for (const edge of look.edges) expect(edge).toMatch(/^0px\|.* 0px 0px 0px 2px inset\|/);
+        expect(look.ai).toBe("ai");
+        expect(look.chosen[0]).not.toBe(look.chosen[1]);
+        expect(look.state).toBe("1 gewählt");
+        expect(look.answer).toBe("secondary");
+      } finally {
+        await page.close();
+      }
+    });
+
   for (const width of [1440, 390])
     test(`the approval frame a Code version fills at ${width} px draws the same card from data`, async () => {
       const page = await open("frame", width);
@@ -147,33 +184,72 @@ describe("Approval scenes", () => {
               ]),
               sticky: answers ? getComputedStyle(answers).position : null,
               status: node.querySelector(".k2b-chat-decision__status")?.textContent ?? null,
+              // A text action reads the same wherever the card shows it: among the answers or under a decided outcome.
+              textAction: (() => {
+                const action = node.querySelector<HTMLElement>(
+                  '.k2b-chat-decision__buttons > [data-variant="text"], .k2b-chat-outcome__actions > *',
+                );
+                if (!action) return null;
+                const style = getComputedStyle(action);
+                return { text: action.textContent?.trim(), color: style.color, weight: style.fontWeight, fill: style.backgroundColor };
+              })(),
               busy: node.querySelector("[aria-busy='true']") !== null,
+              origin: node.querySelector(".k2b-chat-decision__details-label strong")
+                ? getComputedStyle(node.querySelector(".k2b-chat-decision__details-label strong")!).fontWeight
+                : null,
+              edges: [...node.querySelectorAll<HTMLElement>('.k2b-chat-decision__buttons [data-variant="secondary"]')].map(
+                (button) => getComputedStyle(button).borderTopColor,
+              ),
+              // Facts and answers share one line when they fit: the first fact's middle lies within the buttons' line.
+              oneLine: (() => {
+                const fact = node.querySelector(".k2b-chat-decision__fact")?.getBoundingClientRect();
+                const button = node.querySelector(".k2b-chat-decision__buttons > *")?.getBoundingClientRect();
+                return fact && button ? Math.abs(fact.top + fact.height / 2 - (button.top + button.height / 2)) < 4 : null;
+              })(),
             };
           }),
         );
+        await shot(page, `40-freigabe-rahmen-light-${width}`);
         expect(frames.map((frame) => [frame.primary, frame.radius, frame.shadow])).toEqual(
-          Array.from({ length: 3 }, () => ["ai", "12px", "none"]),
+          Array.from({ length: 5 }, () => ["ai", "12px", "none"]),
         );
+        // The answers come first and "See everything" last; side answers are white without an edge.
         expect(frames[0]).toMatchObject({
           sentence: "18px",
           note: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+          origin: "600",
           facts: ["success", "neutral"],
           answers: [
-            ["Alles ansehen", "text"],
             ["Version 5 einschalten", "ai"],
+            ["Alles ansehen", "text"],
           ],
           sticky: "sticky",
         });
         expect(frames[1]).toMatchObject({
           notes: 2,
-          facts: ["warning"],
+          facts: ["success"],
           answers: [
-            ["Alles ansehen", "text"],
             ["Zurückziehen", "secondary"],
+            ["Ohne Dateien ablegen bauen", "secondary"],
+            ["Alles ansehen", "text"],
+          ],
+          edges: ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"],
+        });
+        expect(frames[2]).toMatchObject({
+          facts: ["warning", "neutral"],
+          answers: [
+            ["Erst Beispiele ausprobieren", "secondary"],
+            ["Trotzdem einschalten", "ai"],
           ],
         });
-        expect(frames[2]).toMatchObject({ status: "Lädt", busy: true, sentence: null });
-        await shot(page, `40-freigabe-rahmen-light-${width}`);
+        // On a wide card the short fact stands left in the answer row, not on a line of its own.
+        if (width === 1440) expect(frames[1]!.oneLine).toBe(true);
+        // On the Code page a waiting version's "See everything" sits under its outcome: the same text action in the
+        // place's colour as among the answers, not black text.
+        expect(frames[3]!.status).toBe("Wartet auf Admin");
+        expect(frames[3]!.textAction).toEqual(frames[0]!.textAction);
+        expect(frames[0]!.textAction).toMatchObject({ text: "Alles ansehen", weight: "600", fill: "rgba(0, 0, 0, 0)" });
+        expect(frames[4]).toMatchObject({ status: "Lädt", busy: true, sentence: null });
       } finally {
         await page.context().close();
       }

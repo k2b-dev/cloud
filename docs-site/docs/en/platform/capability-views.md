@@ -100,6 +100,7 @@ New and changed blocks:
 
 | Block | Fields |
 | --- | --- |
+| `Text` | `text`, `format?: "markdown"`: Markdown draws through Cloud's safe renderer (no raw HTML, no remote images); terminals and the model read the source |
 | `Cards` | `title`, `items`, `card: { id, title, subtitle?, image?, imageAlt?, badges?, facts?, rating?, price?, href? }`, `choose?` (the `id` of the tree's `Choice`), `empty?`, `width?` |
 | `Image` | `src`, `alt`, `ratio?`, `caption?` |
 | `Detail` | Each item may add `before` (the old value, shown struck through) and `type: "status"` with `states` as in `Table` |

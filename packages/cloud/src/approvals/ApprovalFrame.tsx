@@ -39,8 +39,11 @@ export type ApprovalFrameProps = {
   sentence?: ActionText;
   /** Why it is asked, in the platform's words. */
   reason: ChatDecisionReason;
-  /** The thing itself under its label, such as "Details from Mail"; `note` is one quiet line under it. */
-  details?: { label: string; content: JSX.Element; note?: { text: string; icon?: string } };
+  /**
+   * The thing itself under its label, such as "Details from Code" in bold; `context` follows quietly, such as
+   * "compared with version 4"; `note` is one quiet line under it.
+   */
+  details?: { label: string; context?: string; content: JSX.Element; note?: { text: string; icon?: string } };
   /** Lines after the details, such as what happens now and what holds until then. */
   notes?: readonly ChatDecisionReason[];
   /** Quiet facts at the start of the answer row; `success` and `warning` colour a result such as tried examples. */

@@ -130,7 +130,7 @@ test("an expired outcome action reopens and focuses the question sentence", asyn
 });
 
 for (const width of [1440, 390])
-  test(`question alignment, spacing, typography and 36 px answers at ${width}px`, async () => {
+  test(`question alignment, spacing, typography and normal-size answers at ${width}px`, async () => {
     const page = await open(width);
     try {
       const metrics = await page.evaluate(() => {
@@ -165,10 +165,10 @@ for (const width of [1440, 390])
       for (const indent of metrics.indent) expect(Math.abs(indent - 24)).toBeLessThanOrEqual(0.5);
       for (const left of metrics.flush) expect(Math.abs(left)).toBeLessThanOrEqual(0.5);
       for (const [index, expected] of [2, 14, 14].entries()) expect(Math.abs(metrics.gaps[index]! - expected)).toBeLessThanOrEqual(0.5);
-      // Answers are 36 px high like every button; a touch screen gives them a 44 px hit area (touch-targets test).
-      // A long label wraps inside its button and makes it taller; a one-line answer is exactly 36 px.
-      for (const height of metrics.heights) expect(height).toBeGreaterThanOrEqual(36);
-      expect(metrics.heights.slice(0, 2)).toEqual([36, 36]);
+      // Answers are the library's normal button (32 px); a touch screen gives them a 44 px hit area (touch-targets test).
+      // A long label wraps inside its button and makes it taller; a one-line answer is exactly 32 px.
+      for (const height of metrics.heights) expect(height).toBeGreaterThanOrEqual(32);
+      expect(metrics.heights.slice(0, 2)).toEqual([32, 32]);
       expect(metrics.size).toBe("18px");
       expect(metrics.weight).toBe("400");
       // The AI tint carries the question; the details lie on the surface colour.
@@ -399,7 +399,7 @@ for (const width of [1440, 390])
       expect(metrics.metaHeight).toBeLessThanOrEqual(20);
       expect(metrics.metaSize).toBe("12px");
       expect(metrics.answersInside).toBe(true);
-      for (const height of metrics.heights) expect(height).toBe(36);
+      for (const height of metrics.heights) expect(height).toBe(32);
       expect(metrics.badge).toBe("12px");
       expect(metrics.overflow).toBeLessThanOrEqual(0);
     } finally {
