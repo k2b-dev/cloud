@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, setDefaultTimeout } from "bun:test";
+import { afterAll, beforeAll, setDefaultTimeout, spyOn } from "bun:test";
 import { resolve } from "node:path";
 import { Hono } from "hono";
 import {
@@ -15,6 +15,10 @@ const appRoot = resolve(import.meta.dir, "../..");
 // Page modules render island wrappers with the ids the harness builds.
 installSsrTransform(appRoot);
 const { createToolsPageRoutes } = await import("./index");
+const { app: tools } = await import("../config");
+// The speed test page reads its server from the app's settings; the harness has no database.
+const settings = spyOn(tools.settings, "get").mockImplementation((async (key: string) =>
+  key === "tools.speedtest_enabled" ? true : "https://speed.example.test") as typeof tools.settings.get);
 const failurePath = "/tools/page-swap-failure";
 let app: PageSwapApp;
 
@@ -36,12 +40,20 @@ beforeAll(async () => {
   });
 }, 180_000);
 afterAll(async () => {
+  settings.mockRestore();
   await app?.close();
 });
 
 const ready = async (page: Page, path: string) => {
-  if (path === "/tools") await page.getByRole("searchbox").waitFor();
-  else await page.locator("[data-nav-root] .tools-tool-header h1", { hasText: "Checksum" }).waitFor();
+  const url = new URL(path, "http://tools.test");
+  if (url.pathname === "/tools") {
+    await page.getByRole("searchbox").waitFor();
+    // Back must bring the search the URL names, not an empty one.
+    await page.waitForFunction(
+      (query) => document.querySelector<HTMLInputElement>("[data-nav-root] input[type=search]")?.value === query,
+      url.searchParams.get("q") ?? "",
+    );
+  } else await page.locator(`[data-nav-root] a[aria-current="page"][href="${url.pathname}"]`).first().waitFor({ state: "attached" });
 };
 
 pageSwapContract(
@@ -53,6 +65,10 @@ pageSwapContract(
     toSecond: '[data-nav-root] a[href="/tools/hash"]',
     toFirst: '[data-nav-root] a[href="/tools"]',
     ready,
+    withState: "/tools?q=hash",
+    // The tools that hold listeners, intervals, workers, sockets and object URLs while they show.
+    tour: ["/tools", "/tools/speedtest", "/tools/image", "/tools/webhooks", "/tools/image-converter", "/tools/markdown-pdf", "/tools/hash"],
+    regions: [".tools-tool-header"],
   },
   failurePath,
 );

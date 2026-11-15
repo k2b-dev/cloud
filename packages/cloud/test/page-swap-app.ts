@@ -60,6 +60,8 @@ export type PageSwapApp = {
   browser: Browser;
   /** Fallbacks the pages reported to Core, in order. */
   fallbacks: unknown[];
+  /** Resolves with the next reported fallback. */
+  nextFallback: () => Promise<unknown>;
   close: () => Promise<void>;
 };
 
@@ -105,6 +107,8 @@ export async function startPageSwapApp(options: PageSwapAppOptions): Promise<Pag
     .route("/", options.routes);
   const output = mkdtempSync(join(tmpdir(), "cloud-page-swap-app-"));
   const fallbacks: unknown[] = [];
+  let arrived = Promise.withResolvers<unknown>();
+  const nextFallback = () => arrived.promise;
   let served: ReturnType<typeof Bun.serve> | undefined;
   let browser: Browser | undefined;
   const close = async () => {
@@ -141,7 +145,10 @@ export async function startPageSwapApp(options: PageSwapAppOptions): Promise<Pag
       async fetch(request) {
         const url = new URL(request.url);
         if (url.pathname === "/api/me/page-swap-fallbacks") {
-          fallbacks.push({ ...(await request.json()), referer: request.headers.get("referer") });
+          const report = { ...(await request.json()), referer: request.headers.get("referer") };
+          fallbacks.push(report);
+          arrived.resolve(report);
+          arrived = Promise.withResolvers<unknown>();
           return new Response(null, { status: 204 });
         }
         if (url.pathname === "/harness.css") return new Response(css.join("\n"), { headers: { "content-type": "text/css" } });
@@ -165,7 +172,7 @@ export async function startPageSwapApp(options: PageSwapAppOptions): Promise<Pag
       },
     });
     browser = await launchBrowser();
-    return { origin: `http://127.0.0.1:${served.port}`, browser, fallbacks, close };
+    return { origin: `http://127.0.0.1:${served.port}`, browser, fallbacks, nextFallback, close };
   } catch (error) {
     await close();
     throw error;
@@ -173,8 +180,9 @@ export async function startPageSwapApp(options: PageSwapAppOptions): Promise<Pag
 }
 
 /**
- * Counts what islands must give back on disposal: window and document listeners, intervals, open sockets and
- * event sources, plus the head and the swap's live region.
+ * Counts what islands must give back on disposal: listeners on the window, the document, `<html>`, `<body>`, media
+ * queries and broadcast channels, intervals, open sockets and event sources, workers, object URLs, plus the head and
+ * the swap's live region. Listeners on column elements leave with the column and are not counted.
  */
 const footprintScript = () => {
   const ids = new WeakMap<object, number>();
@@ -183,18 +191,24 @@ const footprintScript = () => {
     if (!ids.has(value)) ids.set(value, ++next);
     return ids.get(value);
   };
+  const kept = (target: EventTarget) =>
+    target === window ||
+    target === document ||
+    target === document.documentElement ||
+    target === document.body ||
+    target instanceof MediaQueryList ||
+    target instanceof BroadcastChannel;
   const listeners = new Set<string>();
   const key = (target: EventTarget, type: string, listener: object, options?: boolean | EventListenerOptions) =>
-    `${target === window ? "window" : "document"}:${type}:${id(listener)}:${typeof options === "boolean" ? options : Boolean(options?.capture)}`;
+    `${id(target)}:${type}:${id(listener)}:${typeof options === "boolean" ? options : Boolean(options?.capture)}`;
   const add = EventTarget.prototype.addEventListener;
   const remove = EventTarget.prototype.removeEventListener;
   EventTarget.prototype.addEventListener = function (type, listener, options) {
-    if ((this === window || this === document) && listener && !(typeof options === "object" && options?.once))
-      listeners.add(key(this, type, listener, options));
+    if (kept(this) && listener && !(typeof options === "object" && options?.once)) listeners.add(key(this, type, listener, options));
     return add.call(this, type, listener, options);
   };
   EventTarget.prototype.removeEventListener = function (type, listener, options) {
-    if ((this === window || this === document) && listener) listeners.delete(key(this, type, listener, options));
+    if (listener) listeners.delete(key(this, type, listener, options));
     return remove.call(this, type, listener, options);
   };
   const intervals = new Set<unknown>();
@@ -225,33 +239,99 @@ const footprintScript = () => {
     });
     Object.defineProperty(window, Kind.name, { value: Tracked, configurable: true, writable: true });
   }
+  const workers = new Set<Worker>();
+  const TrackedWorker = new Proxy(Worker, {
+    construct(target, args) {
+      const instance = Reflect.construct(target, args) as Worker;
+      workers.add(instance);
+      const terminate = instance.terminate.bind(instance);
+      instance.terminate = () => {
+        workers.delete(instance);
+        terminate();
+      };
+      return instance;
+    },
+  });
+  Object.defineProperty(window, "Worker", { value: TrackedWorker, configurable: true, writable: true });
+  const urls = new Set<string>();
+  const createObjectURL = URL.createObjectURL.bind(URL);
+  const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+  URL.createObjectURL = (object: Blob | MediaSource) => {
+    const url = createObjectURL(object);
+    urls.add(url);
+    return url;
+  };
+  URL.revokeObjectURL = (url: string) => {
+    urls.delete(url);
+    revokeObjectURL(url);
+  };
   Object.assign(window, {
     pageSwapFootprint: () => ({
       listeners: listeners.size,
       intervals: intervals.size,
       sockets: sockets.size,
+      workers: workers.size,
+      objectUrls: urls.size,
       head: document.head.children.length,
       announcers: document.querySelectorAll("[data-nav-announcer]").length,
     }),
   });
 };
-/** Boxes of the kept shell and of the column's first two levels, after two frames. */
-const geometry = (page: Page) =>
-  page.evaluate(async () => {
+/** Every island of the column mounted, read from the framework's island registry (test-only knowledge). */
+const columnMounted = (page: Page) =>
+  page.waitForFunction(() => {
+    const registry = (globalThis as Record<symbol, { mounted?: WeakMap<Element, unknown> } | undefined>)[Symbol.for("@k2b/ssr/islands")];
+    const wrappers = document.querySelectorAll("[data-nav-root] solid-island, [data-nav-root] solid-client");
+    return Array.from(wrappers).every((wrapper) => registry?.mounted?.has(wrapper));
+  });
+/** Boxes of the kept shell, the column's first two levels, every sidebar with its scroll and the app's regions. */
+const geometry = (page: Page, regions: readonly string[]) =>
+  page.evaluate(async (selectors) => {
     await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
     const root = document.querySelector("[data-nav-root]");
     const column = root ? [...root.children].flatMap((child) => [child, ...child.children]).slice(0, 40) : [];
     const shell = [".cloud-app-canvas", ".layout-rail", ".layout-shell-content", "main.layout-content-main", "#cloud-panel"].map(
       (selector) => document.querySelector(selector),
     );
-    return [...shell, ...column].map((element) => {
+    const named = [".k2b-app-workspace__sidebar-body", "[data-nav-root] [aria-current='page']", ...selectors].flatMap((selector) =>
+      Array.from(document.querySelectorAll(selector)),
+    );
+    return [...shell, ...column, ...named].map((element) => {
       if (!element) return null;
       const { x, y, width, height } = element.getBoundingClientRect();
-      return [element.tagName, element.checkVisibility(), Math.round(x), Math.round(y), Math.round(width), Math.round(height)];
+      return [
+        element.tagName,
+        element.checkVisibility(),
+        Math.round(x),
+        Math.round(y),
+        Math.round(width),
+        Math.round(height),
+        Math.round(element.scrollTop),
+      ];
     });
+  }, regions);
+/** Where focus and the sidebar's current item stand after a swap. */
+const arrival = (page: Page) =>
+  page.evaluate(() => {
+    const focused = document.activeElement;
+    const sidebars = Array.from(document.querySelectorAll<HTMLElement>("[data-nav-root] .k2b-app-workspace__sidebar-body"));
+    return {
+      // A person, and a screen reader, land on a heading they can see.
+      focusOnVisibleHeading: !!focused && /^H[1-6]$/.test(focused.tagName) && focused.getClientRects().length > 0,
+      currentItemsInView: sidebars.every((body) => {
+        const current = body.querySelector<HTMLElement>("[aria-current='page']");
+        if (!current || !body.checkVisibility()) return true;
+        const box = body.getBoundingClientRect();
+        const item = current.getBoundingClientRect();
+        return item.top >= box.top - 1 && item.bottom <= box.bottom + 1;
+      }),
+    };
   });
-const footprint = (page: Page) =>
-  page.evaluate(() => (window as unknown as { pageSwapFootprint: () => Record<string, number> }).pageSwapFootprint());
+const footprint = async (page: Page) => {
+  // fixed wait: short-lived object URLs (a finished download) are revoked within a second, and nothing signals it.
+  await page.waitForTimeout(1_500);
+  return page.evaluate(() => (window as unknown as { pageSwapFootprint: () => Record<string, number> }).pageSwapFootprint());
+};
 
 export type PageSwapContract = {
   /** Two pages of the app that link to each other. */
@@ -260,8 +340,14 @@ export type PageSwapContract = {
   /** Selectors of the in-column links: on `first` to `second`, and on `second` to `first`. */
   toSecond: string;
   toFirst: string;
-  /** Resolves once the page at `path` is mounted and ready for input. */
+  /** Resolves once the page at `path` shows its content; the harness also waits for every column island. */
   ready: (page: Page, path: string) => Promise<void>;
+  /** A page with URL state (such as `?q=`) that Back must restore; `ready` checks the state. */
+  withState?: string;
+  /** Pages visited in a loop for the 50-swap footprint, each linked from the one before; defaults to first and second. */
+  tour?: readonly string[];
+  /** Extra regions whose boxes and scroll a swap must lay out as a reload does. */
+  regions?: readonly string[];
 };
 
 /** Registers the platform contract's tests for an application. `app` is read lazily after `beforeAll`. */
@@ -282,6 +368,7 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(`${app().origin}${path}`);
     await contract.ready(page, path);
+    await columnMounted(page);
     await page.waitForFunction(() => document.querySelector("[data-nav-announcer]") !== null);
     // A document load replaces window: the mark survives only swaps.
     await page.evaluate(() => Object.assign(window, { pageSwapMark: "kept" }));
@@ -302,8 +389,11 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
   };
   /** Clicks the first visible match: a phone hides the workspace sidebar's copy of a link. */
   const click = (page: Page, selector: string) => page.locator(`${selector} >> visible=true`).first().click();
-  const at = (page: Page, path: string) =>
-    page.waitForFunction((target) => `${location.pathname}${location.search}` === target, path).then(() => contract.ready(page, path));
+  const at = async (page: Page, path: string) => {
+    await page.waitForFunction((target) => `${location.pathname}${location.search}` === target, path);
+    await contract.ready(page, path);
+    await columnMounted(page);
+  };
 
   test(`${name}: a direct visit renders the page on the server`, async () => {
     const response = await fetch(`${app().origin}${contract.second}`);
@@ -319,10 +409,10 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
       try {
         await click(tab.page, contract.toSecond);
         await at(tab.page, contract.second);
-        const swapped = await geometry(tab.page);
+        const swapped = await geometry(tab.page, contract.regions ?? []);
         const fresh = await open(contract.second, width);
         try {
-          expect(swapped).toEqual(await geometry(fresh.page));
+          expect(swapped).toEqual(await geometry(fresh.page, contract.regions ?? []));
         } finally {
           await fresh.close();
         }
@@ -338,12 +428,14 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
     try {
       await click(tab.page, contract.toSecond);
       await at(tab.page, contract.second);
+      expect(await arrival(tab.page)).toEqual({ focusOnVisibleHeading: true, currentItemsInView: true });
       await tab.page.goBack();
       await at(tab.page, contract.first);
       await tab.page.goForward();
       await at(tab.page, contract.second);
       await click(tab.page, contract.toFirst);
       await at(tab.page, contract.first);
+      expect(await arrival(tab.page)).toEqual({ focusOnVisibleHeading: true, currentItemsInView: true });
       expect(tab.documents).toEqual([]);
       expect(await tab.marked()).toBe(true);
     } finally {
@@ -351,9 +443,26 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
     }
   });
 
+  if (contract.withState) {
+    const withState = contract.withState;
+    test(`${name}: Back returns to a page with its URL state`, async () => {
+      const tab = await open(withState);
+      try {
+        await click(tab.page, contract.toSecond);
+        await at(tab.page, contract.second);
+        await tab.page.goBack();
+        await at(tab.page, withState);
+        expect(tab.documents).toEqual([]);
+      } finally {
+        await tab.close();
+      }
+    });
+  }
+
   test(`${name}: a failing page loads the document once and reports the fallback`, async () => {
     const tab = await open(contract.first);
     app().fallbacks.length = 0;
+    const reported = app().nextFallback();
     try {
       await tab.page.evaluate((href) => {
         const link = Object.assign(document.createElement("a"), { id: "page-swap-failure", href, textContent: "Failure" });
@@ -362,7 +471,7 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
       await tab.page.click("#page-swap-failure");
       await tab.page.waitForFunction((path) => location.pathname === path && document.readyState === "complete", failurePath);
       expect(tab.documents).toEqual([failurePath]);
-      for (let attempt = 0; attempt < 50 && app().fallbacks.length === 0; attempt++) await Bun.sleep(20);
+      await reported;
       // Neither the body nor the Referer may carry the page's path or query.
       expect(app().fallbacks).toEqual([{ appId: expect.any(String), reason: "status", status: 503, referer: `${app().origin}/` }]);
     } finally {
@@ -387,21 +496,21 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
     }
   });
 
-  test(`${name}: 50 swaps give back every listener, timer and socket`, async () => {
-    const tab = await open(contract.first);
+  test(`${name}: 50 swaps give back every listener, timer, socket, worker and object URL`, async () => {
+    const tour = contract.tour ?? [contract.first, contract.second];
+    const tab = await open(tour[0]!);
+    const step = async (index: number) => {
+      const target = tour[(index + 1) % tour.length]!;
+      await click(tab.page, `[data-nav-root] a[href="${target}"]`);
+      await at(tab.page, target);
+    };
     try {
-      // The first round trip loads shared modules and shell state once.
-      await click(tab.page, contract.toSecond);
-      await at(tab.page, contract.second);
-      await click(tab.page, contract.toFirst);
-      await at(tab.page, contract.first);
+      // The first round loads shared modules and shell state once.
+      for (let index = 0; index < tour.length; index++) await step(index);
       const first = await footprint(tab.page);
-      for (let round = 0; round < 25; round++) {
-        await click(tab.page, contract.toSecond);
-        await at(tab.page, contract.second);
-        await click(tab.page, contract.toFirst);
-        await at(tab.page, contract.first);
-      }
+      // Whole rounds of at least 50 swaps end on the starting page, so both measurements see the same page.
+      const swaps = Math.ceil(50 / tour.length) * tour.length;
+      for (let index = 0; index < swaps; index++) await step(index);
       expect(await footprint(tab.page)).toEqual(first);
       expect(first.announcers).toBe(1);
       expect(tab.documents).toEqual([]);
