@@ -701,7 +701,7 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(turn);
     const notice = dom.root.querySelector(".ai-turn__notice");
     const noticeText = notice?.textContent;
-    expect(noticeText).toContain(locale === "de" ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.");
+    expect(noticeText).toContain(locale === "de" ? "Die Antwort wurde unterbrochen:" : "The answer was interrupted:");
     expect(noticeText).toContain(reason);
     expect(noticeText).toContain(locale === "de" ? "Weiterarbeiten" : "Continue");
     expect(outsideWork()).not.toContain(progress);
@@ -782,8 +782,8 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(turn);
     expect(dom.root.textContent).not.toContain("Jetzt lese ich die Daten.");
     const notice = dom.root.querySelector(".ai-turn__notice");
-    expect(notice?.textContent).toContain("Die Antwort wurde abgebrochen.");
-    expect(notice?.textContent).toContain("Der KI-Dienst hat nicht geantwortet. Die bisherigen Ergebnisse bleiben erhalten.");
+    expect(notice?.textContent).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet.");
+    expect(notice?.textContent).toContain("Was bis hier steht, bleibt erhalten.");
     expect(dom.root.querySelector(".ai-turn > :last-child")).toBe(notice);
     // The notice says why; the work line reads like any finished turn.
     expect(dom.root.querySelector(".ai-turn-work")?.textContent).not.toContain("abgebrochen");
@@ -859,7 +859,7 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(progress);
     expect(dom.root.querySelector(".ai-turn-work")).toBeNull();
     const notice = dom.root.querySelector(".ai-turn__notice");
-    expect(notice?.textContent).toContain("The answer was interrupted.");
+    expect(notice?.textContent).toContain("The answer was interrupted:");
     expect(notice?.textContent).toContain("You can continue once it resets.");
     // Another turn would meet the same limit, so the notice offers no Continue.
     expect(notice?.querySelector("button")).toBeNull();
@@ -923,7 +923,7 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(progress);
     const notice = dom.root.querySelector(".ai-turn__notice");
     expect(notice?.textContent).toContain("The model service did not answer.");
-    expect(dom.root.textContent?.indexOf("150 EUR")).toBeLessThan(dom.root.textContent?.indexOf("The answer was interrupted.") ?? -1);
+    expect(dom.root.textContent?.indexOf("150 EUR")).toBeLessThan(dom.root.textContent?.indexOf("The answer was interrupted:") ?? -1);
   } finally {
     dispose();
     dom.cleanup();

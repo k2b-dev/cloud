@@ -284,8 +284,14 @@ test("a stopped answer ends with a quiet line and Answer again; a failed one say
   for (const width of [1440, 390]) {
     const stopped = await open("gestoppt", width);
     try {
+      // The answer it had begun stays in its place, not folded into the work line.
+      expect(await stopped.page.locator(".ai-turn__text").innerText()).toContain("Jana Berger fragt zwei Dinge");
       const line = stopped.page.locator(".ai-turn__stopped");
       expect(await line.innerText()).toContain("Du hast gestoppt. Der Text bis hier bleibt.");
+      // "Answer again" follows the sentence instead of standing at the far edge.
+      const sentence = await line.locator(".k2b-chat-activity__copy").boundingBox();
+      const again = await line.getByRole("button", { name: "Neu antworten" }).boundingBox();
+      expect(again!.x - (sentence!.x + sentence!.width)).toBeLessThan(16);
       // A quiet line, not a warning: no notice card at the end of a stopped answer.
       expect(await stopped.page.locator(".ai-turn__notice").count()).toBe(0);
       await line.getByRole("button", { name: "Neu antworten" }).click();
@@ -297,8 +303,14 @@ test("a stopped answer ends with a quiet line and Answer again; a failed one say
     }
     const failed = await open("fehler", width);
     try {
+      expect(await failed.page.locator(".ai-turn__text").innerText()).toContain("Jana Berger fragt zwei Dinge");
       const notice = failed.page.locator(".ai-turn__notice");
-      expect(await notice.innerText()).toContain("Was bis hier steht, bleibt erhalten.");
+      const said = await notice.innerText();
+      expect(said).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet.");
+      expect(said).toContain("Was bis hier steht, bleibt erhalten.");
+      // Said once: the reason does not repeat what stays.
+      expect(said).not.toContain("Die bisherigen Ergebnisse bleiben erhalten.");
+      expect(await notice.locator(".ti-alert-circle").count()).toBe(1);
       // The notice ends the turn, below the text that stays.
       expect(
         await failed.page.evaluate(() => document.querySelector(".ai-turn")?.lastElementChild?.classList.contains("ai-turn__notice")),

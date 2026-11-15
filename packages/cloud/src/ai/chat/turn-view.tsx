@@ -619,9 +619,11 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean; ke
   return (
     <NoticeCard
       tone="danger"
+      icon="ti ti-alert-circle"
+      layout="card"
       class="ai-turn__notice"
-      title={t().turnErrorTitle}
-      detail={[aiTurnErrorDescription(props.error, locale()), props.kept ? t().keptSoFar : ""].filter(Boolean).join(" ")}
+      title={t().turnInterrupted({ reason: t().turnErrorReason(props.error) })}
+      detail={props.kept ? t().keptSoFar : undefined}
     >
       <Show when={canContinue()}>
         <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueTurn()}>
@@ -829,12 +831,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             class="ai-turn__stopped"
             wrap
             icon="ti ti-player-stop"
-            label={
-              // A stopped turn may fold its text into the work line; that text stays as well.
-              layout().text.length > 0 || layout().work.some((block) => block.kind === "text" && block.text.trim() !== "")
-                ? aiChatMessages(locale()).stoppedTextStays
-                : aiChatMessages(locale()).stoppedByYou
-            }
+            label={layout().text.length > 0 ? aiChatMessages(locale()).stoppedTextStays : aiChatMessages(locale()).stoppedByYou}
             trailing={
               <Show when={props.segment().answerAgain}>
                 {(again) => (

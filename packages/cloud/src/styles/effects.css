@@ -2066,7 +2066,12 @@ dialog:has(.launchpad-panel)::backdrop {
   letter-spacing: -0.005em;
 }
 
+/* "Answer again" follows the sentence, as one quiet line (v12 g-antwort/gestoppt), instead of standing at the far edge. */
+.k2b-ui .ai-turn__stopped .k2b-chat-activity__copy {
+  flex: 0 1 auto;
+}
+
 .k2b-ui .ai-turn__stopped .k2b-chat-activity__trailing {
-  margin-inline-start: 0.5rem;
+  margin-inline-start: 0.25rem;
 }
 
