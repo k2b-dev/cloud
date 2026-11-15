@@ -48,7 +48,7 @@ const sources = walk(resolve(packageRoot, "src"));
 /**
  * Class families the package renders but does not own the names of.
  * `ti`/`ti-*` come from the optional Tabler preset; `cd-*` are emitted by the
- * package's own code highlighter; `md-*` and `stdlib-chart-*` are emitted by
+ * package's own Markdown and SQL highlighters; `hl-*`, `md-*` and `stdlib-chart-*` are emitted by
  * `@k2b/stdlib` and cannot be renamed without forking it. `maplibregl-*` is the DOM
  * MapLibre builds inside MapView, styled by the package instead of MapLibre's stylesheet.
  * `cm-*` is CodeMirror's DOM, including its Yjs awareness binding.
@@ -57,6 +57,7 @@ const isForeignContract = (token: string) =>
   token === "ti" ||
   token.startsWith("ti-") ||
   token.startsWith("cd-") ||
+  token.startsWith("hl-") ||
   token.startsWith("md-") ||
   token.startsWith("stdlib-") ||
   token.startsWith("maplibregl-") ||

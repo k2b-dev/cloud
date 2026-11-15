@@ -5,7 +5,7 @@ import type axeCore from "axe-core";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
 
-// Fold and mark geometry, wrapping at the component's own width, focus after revealing rows, and contrast are results
+// Fold and mark geometry, sideways scrolling inside the component's own width, focus after revealing rows, and contrast are results
 // of layout and paint, so a real engine renders the shipped stylesheet. Fixtures are fictional.
 declare global {
   interface Window {
@@ -39,7 +39,9 @@ const files = [
 ];
 const [mark, setMark] = createSignal();
 const [shownFiles, setShownFiles] = createSignal(files);
+const [status, setStatus] = createSignal();
 window.setMark = setMark;
+window.setStatus = setStatus;
 window.setFiles = (paths) => setShownFiles(files.filter((file) => paths.includes(file.path)));
 window.changes = [];
 render(
@@ -51,6 +53,10 @@ render(
       get mark() {
         return mark();
       },
+      get status() {
+        return status();
+      },
+      onRetry: () => {},
       onFileChange: (path) => window.changes.push(path),
     }),
   document.getElementById("app"),
@@ -77,6 +83,7 @@ afterAll(async () => {
 type Fixture = {
   setMark: (mark?: { path: string; line: number; side?: "old" | "new" }) => void;
   setFiles: (paths: string[]) => void;
+  setStatus: (status?: "loading" | "error") => void;
   changes: string[];
 };
 const fixtureCall = (page: Page, call: string) => page.evaluate(`window.${call}`);
@@ -276,7 +283,7 @@ describe("CodeDiff in a browser", () => {
     }
   }, 30_000);
 
-  test("columns follow the component width and long lines wrap instead of scrolling", async () => {
+  test("columns follow the component width and long lines scroll sideways inside the code, not the page", async () => {
     for (const [width, number, sign] of [
       [560, 36, 18],
       [342, 26, 14],
@@ -289,15 +296,50 @@ describe("CodeDiff in a browser", () => {
             .map((value) => Math.round(Number.parseFloat(value))),
         );
         expect(columns.slice(0, 3)).toEqual([number, number, sign]);
-        const overflow = await page.evaluate(() => {
+        const sizes = await page.evaluate(() => {
           const body = document.querySelector(".k2b-code-diff__body")!;
-          return body.scrollWidth - body.clientWidth;
+          const rows = [...body.querySelectorAll<HTMLElement>(".k2b-code-diff__line")];
+          return {
+            overflow: body.scrollWidth - body.clientWidth,
+            component: document.querySelector(".k2b-code-diff")!.getBoundingClientRect().width,
+            page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            // Every row, the removed one included, reaches the end of the scrolled surface.
+            rowWidths: new Set(rows.map((row) => Math.round(row.getBoundingClientRect().width))).size,
+            rowWidth: Math.round(rows[0]!.getBoundingClientRect().width),
+          };
         });
-        expect(overflow).toBe(0);
-        expect((await rect(page, '[data-row="14"]')).height).toBeGreaterThan((await rect(page, '[data-row="15"]')).height);
+        expect(sizes.overflow).toBeGreaterThan(0);
+        expect(Math.round(sizes.component)).toBe(width);
+        expect(sizes.page).toBe(0);
+        expect(sizes.rowWidths).toBe(1);
+        expect(sizes.rowWidth).toBeGreaterThan(width);
+        expect((await rect(page, '[data-row="14"]')).height).toBe((await rect(page, '[data-row="15"]')).height);
       } finally {
         await page.close();
       }
+    }
+  }, 30_000);
+
+  test("a host height fixes the surface: code scrolls inside, and loading and failure keep its height", async () => {
+    const page = await open(560);
+    try {
+      await page.evaluate(() => document.getElementById("app")!.style.setProperty("--k2b-code-diff-height", "300px"));
+      await page.evaluate(() => (window as unknown as Fixture).setFiles(["reply.test.ts"]));
+      await settled(page);
+      const body = await rect(page, ".k2b-code-diff__body");
+      expect(Math.round(body.height)).toBe(300);
+      expect(await page.evaluate(() => document.querySelector(".k2b-code-diff__body")!.getAttribute("tabindex"))).toBe("0");
+      const file = await rect(page, ".k2b-code-diff__file");
+      for (const status of ["loading", "error"] as const) {
+        await page.evaluate((value) => (window as unknown as Fixture).setStatus(value), status);
+        await settled(page);
+        const surface = await rect(page, status === "loading" ? ".k2b-code-diff__body" : ".k2b-code-diff__state");
+        expect(Math.round(surface.height)).toBe(300);
+        expect(surface.top).toBe(body.top);
+        expect(await rect(page, ".k2b-code-diff__file")).toEqual(file);
+      }
+    } finally {
+      await page.close();
     }
   }, 30_000);
 

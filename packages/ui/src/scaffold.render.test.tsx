@@ -146,7 +146,7 @@ describe("@k2b/ui scaffold SSR", () => {
   test("renders code content on the server", () => {
     const code = renderToString(() => createComponent(CodeDisplay, { code: "const value = 1", language: "ts" }));
 
-    expect(code).toContain("cd-k");
+    expect(code).toContain("hl-keyword");
   });
 
   test("renders URL-first pagination", () => {
