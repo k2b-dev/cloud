@@ -8,7 +8,8 @@ import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences"
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityView } from "./capability-result";
 import { CapabilityViewBlock } from "./capability-view";
-import { CodeStepBody, hasCodeStepView } from "./code-steps";
+import { isCodeStepResult } from "./code-step-words";
+import { CodeStepBody, CodeStepResult, hasCodeStepView } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -437,6 +438,20 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         </Match>
         <Match when={props.block.name === "fetch_file" && !props.block.isError}>
           <FetchFileToolBlock block={props.block} />
+        </Match>
+        {/* A lasting Code step says in words what it did; its input and output stay with the model and `cld`. */}
+        <Match when={hasCodeStepView(props.block.name) && status() !== "running" && status() !== "awaiting_client"}>
+          <Chat.Activity
+            label={displayToolName(props.block.name, locale())}
+            icon={aiToolIcon(props.block.name)}
+            leading={isFailedTool(props.block) ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+            tone={isFailedTool(props.block) ? "danger" : undefined}
+          >
+            <CodeStepBody block={props.block} />
+          </Chat.Activity>
+          <Show when={isCodeStepResult(props.block)}>
+            <CodeStepResult block={props.block} />
+          </Show>
         </Match>
         <Match when={props.block.name === "memory"}>
           <MemoryToolView block={props.block} />
