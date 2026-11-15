@@ -297,6 +297,7 @@
    counts keep their room, so nothing moves when one is added. */
 .core-code-approvals {
   display: grid;
+  align-content: start;
   gap: 0.75rem;
   padding: 0.25rem 0.5rem 1.5rem;
 }
@@ -422,6 +423,7 @@
 
 .core-code-review {
   display: grid;
+  align-content: start;
   gap: 0.75rem;
   padding: 0 0.5rem 1.5rem;
 }
@@ -755,6 +757,7 @@
    choices per row, the rows that always need a person, and a bar that names what changes. */
 .core-code-policy {
   display: grid;
+  align-content: start;
   gap: 1rem;
   padding: 0.25rem 0.5rem 1.5rem;
 }
