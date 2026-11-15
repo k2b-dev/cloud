@@ -165,7 +165,11 @@ export function layoutAiTurn(
   return {
     work,
     steps,
-    showWork: steps > 0 || ((options.phase === "stopped" || options.phase === "failed") && work.length > 0),
+    // A running turn shows its work line from the start, "Thinking" included, until its answer starts without a step.
+    showWork:
+      steps > 0 ||
+      ((options.phase === "stopped" || options.phase === "failed") && work.length > 0) ||
+      (live(options.phase) && text.length === 0),
     results,
     text,
     textIsStatus: live(options.phase) && shownAt >= 0 && shownAt < lastStep,

@@ -2,14 +2,11 @@ import type { AiConversationSource, AiFileStat, AiProject, AiProjectFile } from 
 import { type ConversationFileSource, conversationFileSource } from "@k2b/cloud/ai/solid";
 import { SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
-  BottomSheet,
   Button,
   ButtonLink,
-  bottomSheetOptions,
   DetailPanel,
   Dropdown,
   type DropdownItem,
-  dialogCore,
   formatFileViewSize,
   IconButton,
   Lightbox,
@@ -727,6 +724,8 @@ export function AssistantChatSidebarContent(props: {
             when={!props.search.active()}
             fallback={<SidebarSearchResults snapshot={snapshot()} search={props.search} actions={props.actions} files={files()} />}
           >
+            {/* What stopped and waits for the person (routines, failed app runs) is an entry of "Waiting for you"
+                above the field, with the same targets. */}
             <Section
               title={copy().results}
               class="assistant-sidebar-results"
@@ -1235,7 +1234,8 @@ function SourcesSection(props: { snapshot: AssistantChatContextSnapshot; actions
   );
 }
 
-function ContextSection(props: {
+/** What the chat works with: Project, skills, memories, routines, and its secrets; the body of the tab "Context". */
+export function ChatContextDetails(props: {
   snapshot: AssistantChatContextSnapshot;
   project: AiProject | null;
   state: ChatSidebarState;
@@ -1246,6 +1246,109 @@ function ContextSection(props: {
     const context = props.state.projectContext();
     return context && props.project && context.projectId === props.project.id ? context : null;
   };
+  const Heading = (headingProps: { children: JSX.Element }) => <p class="assistant-sidebar-timegroup__label">{headingProps.children}</p>;
+  return (
+    <>
+      <Show when={props.project}>
+        {(project) => (
+          <div class="assistant-sidebar-timegroup">
+            <Heading>{project().name}</Heading>
+            <DetailPanel.Action
+              class="assistant-sidebar-row"
+              leading={<i class="ti ti-adjustments-horizontal" aria-hidden="true" />}
+              title={copy().projectInstructions}
+              onClick={() =>
+                void openAssistantMarkdown(
+                  copy().projectInstructions,
+                  project().instructions || copy().noProjectInstructions,
+                  "ti ti-adjustments-horizontal",
+                )
+              }
+            />
+            <Show when={projectContext()?.knowledge.length}>
+              <DetailPanel.Action
+                class="assistant-sidebar-row"
+                leading={<i class="ti ti-bulb" aria-hidden="true" />}
+                title={`${copy().projectKnowledge} · ${projectContext()!.knowledge.length}`}
+                onClick={() =>
+                  props.actions.onOpenKnowledge
+                    ? props.actions.onOpenKnowledge()
+                    : void openAssistantKnowledgeSearch(projectContext()!.knowledge)
+                }
+              />
+            </Show>
+            <For each={props.actions.onOpenProjectFile ? (projectContext()?.files ?? []) : []}>
+              {(file) => (
+                <DetailPanel.Action
+                  class="assistant-sidebar-row"
+                  leading={<i class={kindIcon[fileKind(file.mediaType, file.path)]} aria-hidden="true" />}
+                  title={fileName(file.path)}
+                  description={formatFileViewSize(file.size)}
+                  onClick={() => props.actions.onOpenProjectFile?.(file)}
+                />
+              )}
+            </For>
+            <Show when={projectContext()?.references.length && props.actions.onOpenReferences}>
+              <DetailPanel.Action
+                class="assistant-sidebar-row"
+                leading={<i class="ti ti-link" aria-hidden="true" />}
+                title={`${copy().projectReferences} · ${projectContext()!.references.length}`}
+                onClick={() => props.actions.onOpenReferences?.()}
+              />
+            </Show>
+          </div>
+        )}
+      </Show>
+      <Show when={props.snapshot.skills.length}>
+        <div class="assistant-sidebar-timegroup">
+          <Heading>{copy().skillsUsed}</Heading>
+          <ul class="assistant-sidebar-list">
+            <For each={props.snapshot.skills}>
+              {(skill) => (
+                <li class="assistant-sidebar-static" title={skill.description}>
+                  <i class="ti ti-puzzle" aria-hidden="true" />
+                  <span class="assistant-sidebar-static__text">{skill.name}</span>
+                  <span class="assistant-sidebar-count">{copy().skillTurns({ count: skill.turns })}</span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </Show>
+      <Show when={props.snapshot.memories.length}>
+        <div class="assistant-sidebar-timegroup">
+          <Heading>{copy().memoriesFromChat}</Heading>
+          <ul class="assistant-sidebar-list">
+            <For each={props.snapshot.memories}>
+              {(memory) => (
+                <li class="assistant-sidebar-static">
+                  <i class="ti ti-bulb" aria-hidden="true" />
+                  <span class="assistant-sidebar-static__text assistant-sidebar-static__text--clamp">{memory.content}</span>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
+      </Show>
+      <Show when={props.actions.onOpenSecrets}>
+        <DetailPanel.Action
+          class="assistant-sidebar-row"
+          leading={<i class="ti ti-key" aria-hidden="true" />}
+          title={copy().secrets}
+          onClick={() => props.actions.onOpenSecrets?.()}
+        />
+      </Show>
+    </>
+  );
+}
+
+function ContextSection(props: {
+  snapshot: AssistantChatContextSnapshot;
+  project: AiProject | null;
+  state: ChatSidebarState;
+  actions: ChatSidebarActions;
+}) {
+  const copy = useSidebarCopy();
   const summary = () =>
     [
       props.project ? copy().project({ name: props.project.name }) : null,
@@ -1254,101 +1357,11 @@ function ContextSection(props: {
     ]
       .filter(Boolean)
       .join(" · ") || copy().secrets;
-  const Heading = (headingProps: { children: JSX.Element }) => <p class="assistant-sidebar-timegroup__label">{headingProps.children}</p>;
   const [open, setOpen] = createSignal(false);
   return (
     <Section collapsible open={open()} onOpenChange={setOpen} title={copy().context} summary={summary()}>
       <Show when={open()}>
-        <Show when={props.project}>
-          {(project) => (
-            <div class="assistant-sidebar-timegroup">
-              <Heading>{project().name}</Heading>
-              <DetailPanel.Action
-                class="assistant-sidebar-row"
-                leading={<i class="ti ti-adjustments-horizontal" aria-hidden="true" />}
-                title={copy().projectInstructions}
-                onClick={() =>
-                  void openAssistantMarkdown(
-                    copy().projectInstructions,
-                    project().instructions || copy().noProjectInstructions,
-                    "ti ti-adjustments-horizontal",
-                  )
-                }
-              />
-              <Show when={projectContext()?.knowledge.length}>
-                <DetailPanel.Action
-                  class="assistant-sidebar-row"
-                  leading={<i class="ti ti-bulb" aria-hidden="true" />}
-                  title={`${copy().projectKnowledge} · ${projectContext()!.knowledge.length}`}
-                  onClick={() =>
-                    props.actions.onOpenKnowledge
-                      ? props.actions.onOpenKnowledge()
-                      : void openAssistantKnowledgeSearch(projectContext()!.knowledge)
-                  }
-                />
-              </Show>
-              <For each={props.actions.onOpenProjectFile ? (projectContext()?.files ?? []) : []}>
-                {(file) => (
-                  <DetailPanel.Action
-                    class="assistant-sidebar-row"
-                    leading={<i class={kindIcon[fileKind(file.mediaType, file.path)]} aria-hidden="true" />}
-                    title={fileName(file.path)}
-                    description={formatFileViewSize(file.size)}
-                    onClick={() => props.actions.onOpenProjectFile?.(file)}
-                  />
-                )}
-              </For>
-              <Show when={projectContext()?.references.length && props.actions.onOpenReferences}>
-                <DetailPanel.Action
-                  class="assistant-sidebar-row"
-                  leading={<i class="ti ti-link" aria-hidden="true" />}
-                  title={`${copy().projectReferences} · ${projectContext()!.references.length}`}
-                  onClick={() => props.actions.onOpenReferences?.()}
-                />
-              </Show>
-            </div>
-          )}
-        </Show>
-        <Show when={props.snapshot.skills.length}>
-          <div class="assistant-sidebar-timegroup">
-            <Heading>{copy().skillsUsed}</Heading>
-            <ul class="assistant-sidebar-list">
-              <For each={props.snapshot.skills}>
-                {(skill) => (
-                  <li class="assistant-sidebar-static" title={skill.description}>
-                    <i class="ti ti-puzzle" aria-hidden="true" />
-                    <span class="assistant-sidebar-static__text">{skill.name}</span>
-                    <span class="assistant-sidebar-count">{copy().skillTurns({ count: skill.turns })}</span>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </div>
-        </Show>
-        <Show when={props.snapshot.memories.length}>
-          <div class="assistant-sidebar-timegroup">
-            <Heading>{copy().memoriesFromChat}</Heading>
-            <ul class="assistant-sidebar-list">
-              <For each={props.snapshot.memories}>
-                {(memory) => (
-                  <li class="assistant-sidebar-static">
-                    <i class="ti ti-bulb" aria-hidden="true" />
-                    <span class="assistant-sidebar-static__text assistant-sidebar-static__text--clamp">{memory.content}</span>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </div>
-        </Show>
-
-        <Show when={props.actions.onOpenSecrets}>
-          <DetailPanel.Action
-            class="assistant-sidebar-row"
-            leading={<i class="ti ti-key" aria-hidden="true" />}
-            title={copy().secrets}
-            onClick={() => props.actions.onOpenSecrets?.()}
-          />
-        </Show>
+        <ChatContextDetails {...props} />
       </Show>
     </Section>
   );
@@ -1479,7 +1492,7 @@ function SidebarSearchField(props: { search: ChatSidebarSearch; onClosed: () => 
  * Pointer or keyboard focus inside the sidebar: the results stay as they are while someone reads or acts on them. A
  * touch has no hover and a tap may not focus anything, so after a touch inside the reading lasts until a touch outside.
  */
-const createReadingFreeze = () => {
+export const createReadingFreeze = () => {
   const [pointer, setPointer] = createSignal(false);
   const [focus, setFocus] = createSignal(false);
   let host: HTMLElement | undefined;
@@ -1529,170 +1542,7 @@ const createReadingFreeze = () => {
   };
 };
 
-/**
- * The sidebar as the chat's right column or as a drawer over its edge; the chat layout's CSS decides which. The close
- * button reports the presentation the CSS chose, so the host persists only the closing of the column.
- */
-export function AssistantChatSidebarPanel(props: {
-  id: string;
-  state: ChatSidebarState;
-  actions: ChatSidebarActions;
-  project?: AiProject | null;
-  runCount?: number;
-  onClose: () => void;
-  headingRef?: (element: HTMLHeadingElement) => void;
-}) {
-  const copy = useSidebarCopy();
-  const headingId = `${props.id}-title`;
-  const search = createChatSidebarSearch();
-  const freeze = createReadingFreeze();
-  let searchButton: HTMLButtonElement | undefined;
-  return (
-    <aside
-      id={props.id}
-      class="assistant-context-sidebar"
-      aria-labelledby={headingId}
-      {...freeze.handlers}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && !event.defaultPrevented && getComputedStyle(event.currentTarget).position === "absolute") {
-          event.preventDefault();
-          freeze.release();
-          props.onClose();
-        }
-      }}
-    >
-      <DetailPanel surface="plain" class="assistant-context-sidebar__panel">
-        <header class="assistant-context-sidebar__header">
-          <h2
-            id={headingId}
-            ref={props.headingRef}
-            tabIndex={-1}
-            class="assistant-context-sidebar__title"
-            classList={{ "sr-only": search.active() }}
-          >
-            {copy().title}
-          </h2>
-          <Show when={search.active()}>
-            <SidebarSearchField search={search} onClosed={() => searchButton?.focus()} />
-          </Show>
-          <div class="assistant-context-sidebar__actions">
-            <IconButton
-              ref={searchButton}
-              size="sm"
-              variant="ghost"
-              label={search.active() ? copy().clearSearch : copy().search}
-              aria-pressed={search.active()}
-              onClick={() => (search.active() ? search.close() : search.open())}
-            >
-              <i class={search.active() ? "ti ti-x" : "ti ti-search"} aria-hidden="true" />
-            </IconButton>
-            <IconButton
-              size="sm"
-              variant="ghost"
-              label={copy().close}
-              aria-expanded="true"
-              aria-controls={props.id}
-              onClick={() => {
-                freeze.release();
-                props.onClose();
-              }}
-            >
-              <i class="ti ti-layout-sidebar-right-collapse" aria-hidden="true" />
-            </IconButton>
-          </div>
-        </header>
-        <DetailPanel.Body class="assistant-context-sidebar__body">
-          <AssistantChatSidebarContent
-            state={props.state}
-            actions={props.actions}
-            project={props.project}
-            frozen={freeze.frozen}
-            search={search}
-            runCount={props.runCount}
-          />
-        </DetailPanel.Body>
-      </DetailPanel>
-    </aside>
-  );
-}
-
-/**
- * The sidebar as a bottom sheet on phones. Its Back entry closes it; an action that leaves the sheet (open, jump)
- * runs only after the sheet and its history entry are gone, so the jump's own history entry follows it.
- */
-export const openAssistantChatSidebarSheet = async (props: {
-  state: ChatSidebarState;
-  actions: ChatSidebarActions;
-  project?: AiProject | null;
-  runCount?: number;
-  wrap?: (children: () => JSX.Element) => JSX.Element;
-}) => {
-  let after: (() => void) | undefined;
-  const leave =
-    <A extends unknown[]>(close: () => void, run: (...args: A) => void) =>
-    (...args: A) => {
-      after = () => run(...args);
-      close();
-    };
-  await dialogCore.open<void>(
-    (close, context) => {
-      const copy = chatSidebarMessages.resolve([document.documentElement.lang || "en"]).t;
-      const search = createChatSidebarSearch();
-      const dismiss = () => void context.requestDismiss();
-      const actions: ChatSidebarActions = {
-        ...props.actions,
-        onOpenFile: leave(() => close(), props.actions.onOpenFile),
-        onJump: leave(() => close(), props.actions.onJump),
-
-        onOpenKnowledge: props.actions.onOpenKnowledge && leave(() => close(), props.actions.onOpenKnowledge),
-        onOpenReferences: props.actions.onOpenReferences && leave(() => close(), props.actions.onOpenReferences),
-        onOpenProjectFile: props.actions.onOpenProjectFile && leave(() => close(), props.actions.onOpenProjectFile),
-        onOpenSecrets: props.actions.onOpenSecrets && leave(() => close(), props.actions.onOpenSecrets),
-      };
-      const content = () => (
-        <BottomSheet onDismiss={dismiss}>
-          <BottomSheet.Header
-            title={copy.title}
-            close={dismiss}
-            actions={
-              <IconButton
-                size="sm"
-                variant="ghost"
-                label={search.active() ? copy.clearSearch : copy.search}
-                aria-pressed={search.active()}
-                onClick={() => (search.active() ? search.close() : search.open())}
-              >
-                <i class={search.active() ? "ti ti-x" : "ti ti-search"} aria-hidden="true" />
-              </IconButton>
-            }
-          />
-          <BottomSheet.Body>
-            <DetailPanel surface="plain" class="assistant-context-sheet">
-              <Show when={search.active()}>
-                <SidebarSearchField search={search} onClosed={() => undefined} />
-              </Show>
-              <DetailPanel.Body scrollFade={false}>
-                <AssistantChatSidebarContent
-                  state={props.state}
-                  actions={actions}
-                  project={props.project}
-                  frozen={() => true}
-                  search={search}
-                  runCount={props.runCount}
-                />
-              </DetailPanel.Body>
-            </DetailPanel>
-          </BottomSheet.Body>
-        </BottomSheet>
-      );
-      return props.wrap ? props.wrap(content) : content();
-    },
-    { ...bottomSheetOptions, history: true },
-  );
-  after?.();
-};
-
-/** The same list as a workspace tab ("Files"), with the search field always at hand. */
+/** The whole list as the workspace tab "In this chat", with the search field always at hand. */
 export function AssistantChatSidebarTab(props: {
   state: ChatSidebarState;
   actions: ChatSidebarActions;

@@ -237,3 +237,35 @@ test("a press that catches a glide and lifts off the handle without a click lets
     await tab.context().close();
   }
 });
+
+test("an owner that sets the detent while the sheet glides takes over: the sheet glides there without a jump", async () => {
+  const tab = await open({ reducedMotion: "no-preference" });
+  try {
+    await settled(tab);
+    // settled: every frame of the glide and the owner's change are the subject.
+    const samples = await tab.evaluate(
+      () =>
+        new Promise<number[]>((resolve) => {
+          const sheet = document.querySelector<HTMLElement>("#sheet")!;
+          const out: number[] = [];
+          document.querySelector<HTMLElement>("#handle")!.click();
+          const sample = () => {
+            out.push(Math.round(innerHeight - sheet.getBoundingClientRect().top));
+            // A few frames into the glide to full height, the owner asks for half height, as a picked place does.
+            if (out.length === 3) sheet.dataset.sheetDetent = "half";
+            if (out.length < 40) requestAnimationFrame(sample);
+            else resolve(out);
+          };
+          requestAnimationFrame(sample);
+        }),
+    );
+    // The sheet turns around where it is: it never reaches full height, and no frame drops it the way landing on the
+    // old detent and then jumping to the new one would (about 400 px at once).
+    expect(Math.max(...samples)).toBeLessThan(700);
+    for (const [index, value] of samples.entries()) if (index > 0) expect(samples[index - 1]! - value).toBeLessThan(300);
+    await settled(tab);
+    expect(await place(tab)).toEqual({ layout: 300, visible: 300, detent: "half", inline: "" });
+  } finally {
+    await tab.context().close();
+  }
+});
