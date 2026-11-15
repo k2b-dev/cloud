@@ -8,6 +8,14 @@ import { type AiStreamEvent, type AiTurnBlock, type AiWireEvent, steerAppliedBlo
 import type { AiStoredMessage } from "../types";
 import { aiTurnErrorText } from "./turn-error";
 
+/** The text a reader sees: without the screen-reader announcement and the resting word that only reduced motion shows. */
+const visibleText = (node: Element | null | undefined) => {
+  if (!node) return undefined;
+  const copy = node.cloneNode(true) as Element;
+  for (const hidden of copy.querySelectorAll(".k2b-sr-only, .k2b-chat-activity__word-rest")) hidden.remove();
+  return copy.textContent?.trim();
+};
+
 (isServer ? test.skip : test)("streamed text and tool updates render each block exactly once", async () => {
   const dom = createDomTestHarness();
   // The expanded work line shows every folded text; the newest stays below it.
@@ -225,7 +233,7 @@ import { aiTurnErrorText } from "./turn-error";
     expect(rows().some((row) => row?.includes("Reconnecting"))).toBe(false);
     const before = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
     const workLine = () => dom.root.querySelector(".ai-turn-work");
-    const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+    const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
 
     emit({ ...base, seq: 5, type: "provider_retry" });
     await settle();
@@ -517,7 +525,7 @@ const renderTimeline = async (
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
-  const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+  const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
   const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {
@@ -577,7 +585,7 @@ const renderTimeline = async (
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
-  const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+  const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
   const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
   const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/a.csv" } };
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };

@@ -1,4 +1,33 @@
-/** The words a thinking phase shows after its first word, by kind (Feinschliff v3, section 1). */
+import { i18n } from "@k2b/stdlib";
+
+/**
+ * The words a thinking phase shows after its first word ("Thinking", `stepThinking` in the chat catalog), and the one
+ * sentence screen readers hear (Feinschliff v3, section 1: 19 words, approved by Valentin on 15.11.). English uses the
+ * -ing form like the rest of the chat. A catalog holds texts, so each list is one text with "|" between its words.
+ */
+const thinkingMessages = /* @__PURE__ */ i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      plain:
+        "Pondering|Tinkering|Puzzling it out|Weighing it up|Putting two and two together|Sorting things out|Sifting through|Piecing it together|Tidying up|Connecting the dots|Double-checking the sums",
+      wink: "Sharpening the pencil|Polishing the glasses|Furrowing the brow|Rolling up the sleeves|Reading the small print|Bringing order to the chaos",
+      moustache: "Twirling the moustache|Consulting the moustache",
+      announcement: ({ assistant }: { assistant: string }) => `${assistant} is thinking`,
+    },
+    de: {
+      plain: "Grübelt|Tüftelt|Knobelt|Wägt ab|Kombiniert|Sortiert|Sichtet|Puzzelt|Ordnet|Verknüpft|Rechnet nach",
+      wink: "Spitzt den Bleistift|Putzt die Brille|Legt die Stirn in Falten|Krempelt die Ärmel hoch|Liest das Kleingedruckte|Bringt Ordnung ins Chaos",
+      moustache: "Zwirbelt den Schnurrbart|Hält Rücksprache mit dem Schnurrbart",
+      announcement: ({ assistant }) => `${assistant} denkt nach`,
+    },
+  },
+});
+
+/** The thinking words and the announcement in the reader's language. */
+export const aiThinkingMessages = (locale: string) => thinkingMessages.resolve([locale]).t;
+
+/** The words of one language by kind. */
 export type AiThinkingWords = {
   plain: readonly string[];
   wink: readonly string[];
@@ -53,4 +82,11 @@ export const aiThinkingWordRound = (id: string, words: AiThinkingWords): string[
     if (verb) round.push(verb);
   }
   return round;
+};
+
+/** The words of a language, ready for `aiThinkingWordRound`. */
+export const aiThinkingWords = (locale: string): AiThinkingWords => {
+  const t = aiThinkingMessages(locale);
+  const list = (words: string) => words.split("|");
+  return { plain: list(t.plain), wink: list(t.wink), moustache: list(t.moustache) };
 };

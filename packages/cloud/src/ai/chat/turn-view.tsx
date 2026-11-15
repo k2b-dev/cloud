@@ -31,7 +31,7 @@ import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord,
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import type { AiStopNotice } from "./stop-notice";
-import { aiThinkingWordRound } from "./thinking-words";
+import { aiThinkingMessages, aiThinkingWordRound, aiThinkingWords } from "./thinking-words";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, useAiToolDisclosure } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
@@ -197,8 +197,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1).
   const thinkingPhase = () =>
     working() && stepPhrase(layout().current, t(), false) === t().stepThinking ? `${segment().id}:${currentStep() ?? "start"}` : null;
-  const thinkingWords = (phase: string) =>
-    aiThinkingWordRound(phase, { plain: t().thinkingWords, wink: t().thinkingWordsWink, moustache: t().thinkingWordsMoustache });
+  const thinkingWords = (phase: string) => aiThinkingWordRound(phase, aiThinkingWords(locale()));
   const sentence = () => {
     if (reconnecting()) return t().reconnecting;
     if (working()) return liveStepLabel(layout().current, t(), stepMs());
@@ -258,7 +257,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
                   first={t().thinking}
                   words={thinkingWords(phase)}
                   elapsedMs={stepMs()}
-                  announce={t().thinkingAnnouncement({ assistant: t().assistant })}
+                  announce={aiThinkingMessages(locale()).announcement({ assistant: t().assistant })}
                 />
               )}
             </Show>

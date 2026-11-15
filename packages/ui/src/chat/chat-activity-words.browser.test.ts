@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
@@ -14,6 +14,17 @@ const fonts = ["plex.css", "tabler.css"]
   .map((file) => readFileSync(resolve(ui, "dist", file), "utf8").replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, `url($1${assets}`))
   .join("\n");
 const TEST_TIMEOUT = 30_000;
+// Set K2B_UI_SHOTS to a directory to keep a picture of the first word and of a changed word at each width.
+const shots = process.env.K2B_UI_SHOTS;
+const shoot = async (page: Page, name: string) => {
+  if (!shots) return;
+  mkdirSync(shots, { recursive: true });
+  const box = (await page.locator(".k2b-chat-activity").boundingBox())!;
+  await page.screenshot({
+    path: resolve(shots, `${name}.png`),
+    clip: { x: box.x - 16, y: box.y - 16, width: box.width + 32, height: box.height + 32 },
+  });
+};
 const FIRST = "Denkt nach";
 // The longest approved word must fit a phone line too.
 const WORDS = ["Grübelt", "Hält Rücksprache mit dem Schnurrbart", "Wägt ab", "Spitzt den Bleistift", "Sichtet", "Putzt die Brille"];
@@ -94,6 +105,7 @@ describe("Chat.Activity.Words in the browser", () => {
         try {
           const start = await sample(page);
           expect(start.words.map((word) => word.text)).toEqual([FIRST]);
+          await shoot(page, `words-${width}-first`);
           await page.clock.runFor(2_900);
           expect((await sample(page)).words.map((word) => word.text)).toEqual([FIRST]);
           const seen: string[] = [];
@@ -111,6 +123,7 @@ describe("Chat.Activity.Words in the browser", () => {
               expect(now.row, `change ${change}, +${step} ms`).toEqual(start.row);
             }
             seen.push((await sample(page)).words[0]!.text ?? "");
+            if (change === 1) await shoot(page, `words-${width}-changed`);
           }
           // The words follow the host's order, round after round.
           expect(seen).toEqual(Array.from({ length: 10 }, (_, index) => WORDS[index % WORDS.length]!));
