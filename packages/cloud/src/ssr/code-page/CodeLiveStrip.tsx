@@ -3,6 +3,7 @@ import { createSignal, For, type JSX, Show } from "solid-js";
 import type { CodeActivityReadModel } from "../../contracts/code-read-model";
 import type { CodePageData, CodePageReady, CodePageRun } from "./data";
 import { iconClass, type PageText, runStatus, Status, withQuery } from "./page-kit";
+import { recentResultKey } from "./recent-names";
 
 /** At most this many runs fit the strip; older ones drop off the left. */
 export const CODE_STRIP_RUNS = 30;
@@ -38,10 +39,9 @@ export function createCodeLive(state: CodePageReady) {
       if (run.state !== "running" && run.state !== "queued") setFresh((current) => ({ ...current, run: run.id }));
     },
     effect: (effect) => {
-      setEffects((current) =>
-        [effect, ...current.filter((item) => !(item.runId === effect.runId && item.text === effect.text))].slice(0, CODE_RECENT_ROWS),
-      );
-      setFresh((current) => ({ ...current, effect: `${effect.runId}:${effect.text}` }));
+      const key = recentResultKey(effect);
+      setEffects((current) => [effect, ...current.filter((item) => recentResultKey(item) !== key)].slice(0, CODE_RECENT_ROWS));
+      setFresh((current) => ({ ...current, effect: key }));
     },
   };
   return { runs, effects, fresh, feed };
@@ -179,7 +179,7 @@ export function EffectRows(props: { live: CodeLive; text: PageText }) {
     <ul class="cloud-code__feed" aria-label={props.text.t().didRecent}>
       <For each={props.live.effects().slice(0, CODE_RECENT_ROWS)}>
         {(effect) => (
-          <li data-fresh={props.live.fresh().effect === `${effect.runId}:${effect.text}` ? "" : undefined}>
+          <li data-fresh={props.live.fresh().effect === recentResultKey(effect) ? "" : undefined}>
             <span class="cloud-code__tile k2b-icon-tile" data-tile={effect.icon ? "app" : "neutral"} data-size="sm" aria-hidden="true">
               <i class={iconClass(effect.icon, "ti ti-circle-check")} />
             </span>

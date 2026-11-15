@@ -357,13 +357,14 @@ const activity = (): CodeActivityReadModel => ({
       at: minutesAgo(4),
       runId: id(2, 1),
     },
+    // A task in a list the reader may not open: Core's sentence without name or link, as the page leaves it.
     {
       app: "Spaces",
       icon: "tabler:layout-kanban",
-      text: L("Aufgabe „Lieferung Stoffe Nord“ angelegt", "Created task “Delivery Stoffe Nord”"),
+      text: L("Aufgabe angelegt", "Created task"),
       at: minutesAgo(19),
-      href: "/app/spaces/Lg8x2q",
       runId: id(2, 2),
+      target: { ref: { type: "spaces.item", id: "Hd7q2w" }, text: L("Aufgabe „{name}“ angelegt", "Created task “{name}”") },
     },
     {
       app: "Mail",

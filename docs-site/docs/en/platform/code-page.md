@@ -35,7 +35,9 @@ their type ("a space you cannot see").
 - **Overview:** the description Gustav wrote for the version, marked as not
   checked by Cloud; the situation (next run, last run and a strip of the last
   30 runs, each a link to its run); **What it did for you** this week, with
-  counts and the last effects (resource Code only); **When it runs** with
+  counts and the last effects (resource Code only; the page reads each
+  effect's target with the reader's own rights, at most six, and names and
+  links only what they may open); **When it runs** with
   **Run now**; and **What it may do** (apps, internet and its own data in one
   list). A newer version that waits shows the shared approval frame above the
   situation. When the last run failed, a notice says what happened and what

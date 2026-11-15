@@ -2,18 +2,20 @@ import { expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
+import { capabilityResultSchema } from "../../contracts/capabilities";
 import type { CodeLiveFeed } from "./CodeLiveStrip";
 import { codePageFixture } from "./code-page.fixture";
 
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    const [{ default: CodePage }, { LocaleProvider, toast, prompts }, client] = await Promise.all([
+    const [{ default: CodePage }, { LocaleProvider, toast, prompts }, client, codeLive] = await Promise.all([
       import("./CodePage"),
       import("@k2b/ui"),
       import("../../capabilities/client"),
+      import("./code-live"),
     ]);
-    return { CodePage, LocaleProvider, toast, prompts, client };
+    return { CodePage, LocaleProvider, toast, prompts, client, codeLive };
   } finally {
     dom.cleanup();
   }
@@ -211,3 +213,61 @@ test.skipIf(isServer)(
     }
   },
 );
+
+// #65 in the browser: a finished run reads the week's results once; each new result is named by its target's reader
+// with the person's session. A target they may not read keeps the kind-only sentence, without link or ID.
+test.skipIf(isServer)("a new result after a live run is named only where the reader may read its target", async () => {
+  const { client, codeLive } = modules!;
+  let onRun: Parameters<typeof codeLive.followCodeRuns>[1] | undefined;
+  const follow = spyOn(codeLive, "followCodeRuns").mockImplementation((_codeId, run) => {
+    onRun = run;
+    return () => {};
+  });
+  const runId = "44444444-4444-4444-8444-444444444499";
+  const result = (id: string) => ({
+    text: "Created task",
+    app: "Spaces",
+    state: "succeeded",
+    at: "2026-11-14T10:00:00.000Z",
+    runId,
+    target: { ref: { type: "spaces.item", id }, text: "Created task “{name}”" },
+  });
+  const reads: string[] = [];
+  const invoke = spyOn(client, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
+    const parse = (body: unknown) => ({ ok: true as const, data: capabilityResultSchema(schema).parse(body) });
+    if (invocation.capabilityId === "code.activity.words") {
+      const fixture = codePageFixture("overview", "en");
+      if (fixture.state.kind !== "ready" || !fixture.state.words?.activity) throw new Error("Expected ready fixture");
+      return parse({ data: { ...fixture.state.words.activity, recent: [result("UxrUVC"), result("HidN3x")] } });
+    }
+    reads.push(`${invocation.appId}/${invocation.capabilityId}/${(invocation.input as { id: string }).id}`);
+    if ((invocation.input as { id: string }).id === "HidN3x")
+      return { ok: false as const, error: { code: "FORBIDDEN", message: "Hidden", status: 403 as const } };
+    return parse({
+      data: { view: { title: "Delivery Weber", permission: "read" } },
+      links: [{ rel: "open", href: "/app/spaces/GPzX93/UxrUVC" }],
+    });
+  });
+  const data = codePageFixture("overview", "en");
+  if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
+  data.state.recentReaders = { "spaces.item": "item.read" };
+  const page = mount(data);
+  try {
+    expect(onRun).toBeDefined();
+    onRun!({ runId, state: "succeeded", at: "2026-11-14T10:00:00.000Z" });
+    for (let index = 0; index < 20 && reads.length < 2; index++) await tick();
+    await tick();
+    expect(reads.sort()).toEqual(["spaces/item.read/HidN3x", "spaces/item.read/UxrUVC"]);
+    const rows = [...page.dom.document.querySelectorAll(".cloud-code__feed li .cloud-code__feed-text")];
+    const named = rows.find((row) => row.textContent === "Created task “Delivery Weber”");
+    expect(named?.querySelector("a")?.getAttribute("href")).toBe("/app/spaces/GPzX93/UxrUVC");
+    const hidden = rows.find((row) => row.textContent === "Created task");
+    expect(hidden).toBeDefined();
+    expect(hidden?.querySelector("a")).toBeNull();
+    expect(page.dom.root.innerHTML).not.toMatch(/HidN3x|\{name\}/);
+  } finally {
+    page.dispose();
+    follow.mockRestore();
+    invoke.mockRestore();
+  }
+});

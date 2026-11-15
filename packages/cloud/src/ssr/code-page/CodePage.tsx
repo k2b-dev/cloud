@@ -14,9 +14,10 @@ import { CodeSecretsTab } from "./CodeSecrets";
 import { CodeSourceTab } from "./CodeSourceTab";
 import { CodeVersions } from "./CodeVersions";
 import { followCodeRuns } from "./code-live";
-import type { CodePageData, CodePageReady } from "./data";
+import type { CodePageData, CodePageInvoke, CodePageReady } from "./data";
 import type { CodePageMessages } from "./messages";
 import { Island, type PageText, personal, type Tone, usePageText, withQuery } from "./page-kit";
+import { nameRecentResults, recentResultKey } from "./recent-names";
 
 export { switchOnReady } from "./CodeActivation";
 export { CodeDatabaseDelete, CodeDatabaseStatus } from "./CodeDatabaseStatus";
@@ -182,6 +183,8 @@ const bigState = (state: CodePageReady, t: CodePageMessages): { tone: Tone; icon
  */
 /** At most one read of the week's effects per page in this window. */
 const EFFECT_REFRESH_GAP_MS = 30_000;
+/** The browser reads with the person's own session, the same rights the server used for the first names. */
+const browserInvoke: CodePageInvoke = (invocation, schema) => invokeCapabilityWithDataSchema(invocation, schema);
 const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (() => void) => {
   const feed = live.feed;
   const timeZone = data.dates.timeZone ?? "UTC";
@@ -192,10 +195,13 @@ const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (
       { appId: "core", capabilityId: "code.activity.words", kind: "query", input: { codeId: state.code.id, day, timeZone } },
       CodeActivityReadModelSchema,
     ).catch(() => null);
-    // Oldest first, so the newest effect ends on top.
     if (!read?.ok) return;
-    const known = new Set(live.effects().map((effect) => `${effect.runId}:${effect.text}`));
-    for (const effect of [...read.data.data.recent].reverse()) if (!known.has(`${effect.runId}:${effect.text}`)) feed.effect(effect);
+    const known = new Set(live.effects().map(recentResultKey));
+    const fresh = read.data.data.recent.filter((effect) => !known.has(recentResultKey(effect)));
+    // Only the new results are named, each by its target's reader with this person's rights.
+    const named = await nameRecentResults(fresh, browserInvoke, (type) => state.recentReaders?.[type] ?? null);
+    // Oldest first, so the newest effect ends on top.
+    for (const effect of named.reverse()) feed.effect(effect);
   };
   // Coalesced: the first finished run reads at once, every further one within the window joins one trailing read, so a
   // busy automation costs one read per window and page, never one per run (DATA-13).

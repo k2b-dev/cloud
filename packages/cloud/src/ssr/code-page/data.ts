@@ -387,6 +387,11 @@ export type CodePageReady = {
   kind: "ready";
   /** Core's live position read before this snapshot, so the browser replays runs that finished in between; null: unknown. */
   liveCursor?: string | null;
+  /**
+   * Reader Queries by resource type for the apps this Code acts in, so the browser names a new recent result the same
+   * way the server named the first ones; a type without an entry stays unnamed.
+   */
+  recentReaders?: Record<string, string>;
   code: z.infer<typeof CodeSchema>;
   permission: "editor" | "reader";
   versions: CodePageVersion[];

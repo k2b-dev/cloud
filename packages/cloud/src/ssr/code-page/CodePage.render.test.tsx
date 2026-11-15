@@ -17,6 +17,7 @@ import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { CODE_PAGE_FIXTURE_STATES, type CodePageFixtureState, codePageFixture } from "./code-page.fixture";
 import type { CodePageInvoke } from "./data";
 import { codePageMessages } from "./messages";
+import { nameRecentResults } from "./recent-names";
 import { describeCodeSchedule } from "./schedule";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-code-page-render-"));
@@ -1068,4 +1069,43 @@ test("every word for a missing next run fits the situation's first column", () =
     const t = codePageMessages.resolve([locale]).t;
     for (const word of [t.nextNone, t.nextUnknown, t.nextPaused]) expect(word.length).toBeLessThanOrEqual(14);
   }
+});
+
+// #65: Core names a recent result by kind only; the page reads each target with the reader's rights. A target the
+// reader may open shows its name and link; one they may not keeps the kind-only sentence, without link or ID.
+test("what it did for you names only the results the reader may read", async () => {
+  const fixture = codePageFixture("overview");
+  if (fixture.state.kind !== "ready" || !fixture.state.words?.activity) throw new Error("Expected ready fixture");
+  const result = (id: string) => ({
+    text: "Aufgabe angelegt",
+    app: "Spaces",
+    icon: "tabler:layout-kanban",
+    state: "succeeded" as const,
+    at: "2026-11-14T10:00:00.000Z",
+    runId: "44444444-4444-4444-8444-444444444444",
+    target: { ref: { type: "spaces.item", id }, text: "Aufgabe „{name}“ angelegt" },
+  });
+  const invoke: CodePageInvoke = async (invocation, schema) =>
+    (invocation.input as { id: string }).id === "UxrUVC"
+      ? {
+          ok: true,
+          data: capabilityResultSchema(schema).parse({
+            data: { view: { title: "Lieferung Polsterei Weber", permission: "read" } },
+            links: [{ rel: "open", href: "/app/spaces/GPzX93/UxrUVC" }],
+          }),
+        }
+      : { ok: false, error: { code: "FORBIDDEN", message: "Hidden", status: 403 } };
+  fixture.state.words.activity.recent = await nameRecentResults([result("UxrUVC"), result("HidN3x")], invoke, () => "item.read");
+  const markup = renderMarkup(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CodePage, { data: fixture });
+      },
+    }),
+  );
+  expect(markup).toContain('<a href="/app/spaces/GPzX93/UxrUVC">Aufgabe „Lieferung Polsterei Weber“ angelegt</a>');
+  const feed = markup.slice(markup.indexOf("cloud-code__feed"));
+  expect(feed).toMatch(/<span class="cloud-code__feed-text">Aufgabe angelegt<\/span>/);
+  expect(markup).not.toMatch(/HidN3x|\{name\}/);
 });
