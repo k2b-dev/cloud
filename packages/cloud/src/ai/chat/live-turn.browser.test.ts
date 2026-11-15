@@ -1012,6 +1012,8 @@ for (const view of [
       // text that replaces it line up instead of jumping by a few pixels at every switch.
       await page.locator(".ai-turn-work > summary").click();
       await page.locator(".ai-turn-steps__text").first().waitFor();
+      // The text stays at its step as a note that opens in place.
+      await page.locator(".ai-turn-note__toggle").first().click();
       const stepStyle = await style(".ai-turn-steps__text");
       expect([stepStyle.color, stepStyle.fontSize]).toEqual([statusStyle.color, statusStyle.fontSize]);
       // 12 px at line height 1.55; WebKit reports it as 18.599998px.
@@ -1828,6 +1830,12 @@ test("each text in the expanded work shows three lines with its own chevron, and
     await page.locator(".ai-turn-work > summary").click();
     const text = page.locator(".ai-turn-steps__text").first();
     await text.waitFor();
+    // Each text is a note at its step: a quiet line that opens the text in place, which then shows three lines.
+    const note = text.locator(".ai-turn-note__toggle");
+    expect(await note.getAttribute("aria-expanded")).toBe("false");
+    expect(await note.innerText()).toBe("Note on this step");
+    await note.click();
+    expect(await note.getAttribute("aria-expanded")).toBe("true");
     await settled(page, ".ai-turn-steps");
     const closed = await clampState(page, ".ai-turn-steps__text");
     expect(closed.height).toBeCloseTo(3 * closed.lineHeight, 0);
@@ -1843,6 +1851,13 @@ test("each text in the expanded work shows three lines with its own chevron, and
     expect(await viewportBox(page, ".ai-turn-work > summary")).toEqual(summary);
     // The quiet status that fits in three lines has no chevron.
     expect(await page.locator(".ai-turn__text .ai-turn-clamp__toggle").count()).toBe(0);
+
+    // The opened note stays open when the work line closes and opens again, as the reader left it.
+    await page.locator(".ai-turn-work > summary").click();
+    await page.locator(".ai-turn-steps").waitFor({ state: "detached" });
+    await page.locator(".ai-turn-work > summary").click();
+    await text.waitFor();
+    expect(await text.locator(".ai-turn-note__toggle").getAttribute("aria-expanded")).toBe("true");
   } finally {
     await context.close();
   }
