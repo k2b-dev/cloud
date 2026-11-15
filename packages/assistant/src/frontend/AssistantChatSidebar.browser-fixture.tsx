@@ -91,6 +91,7 @@ export function SidebarHarness(props: {
               chatId={props.snapshot().chatId}
               state={state}
               actions={boxActions}
+              title="Quartalszahlen auswerten"
               onSheet={() => props.onSheet?.()}
             />
           </div>
