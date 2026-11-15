@@ -36,7 +36,7 @@ test("a swapped sidebar shows its current item without moving the page, and stor
         contentType: "text/html",
         body:
           `<!doctype html><html><body style="margin:0"><div style="height:2000px">` +
-          `<nav class="k2b-app-workspace__sidebar-body" data-scroll-preserve="tools-sidebar" style="position:sticky;top:0;height:120px;overflow:auto">${items}</nav>` +
+          `<nav class="k2b-app-workspace__sidebar-body" data-scroll-preserve="tools-sidebar" data-scroll-fade-mode="both" style="position:sticky;top:0;height:120px;overflow:auto">${items}</nav>` +
           `</div></body></html>`,
       }),
     );
