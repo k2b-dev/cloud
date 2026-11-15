@@ -109,6 +109,7 @@ const layout = (page: Page) =>
       text: box(textarea),
       tools: box(tools),
       lineHeight: Number.parseFloat(style.lineHeight),
+      pad: { start: style.paddingLeft, end: style.paddingRight, bottom: style.paddingBottom },
       scroll: { height: textarea.scrollHeight, client: textarea.clientHeight },
     };
   });
@@ -161,6 +162,9 @@ describe("Chat.Composer conversation field", () => {
           // The whole width for typing: the text field reaches the pill's inner right edge, where its scrollbar sits.
           expect(Math.abs(long.text.right - long.inner.right)).toBeLessThan(0.5);
           expect(Math.abs(long.text.left - long.inner.left)).toBeLessThan(0.5);
+          // The text keeps the same inset from the pill's end as from its start; below it is only the tools' row.
+          expect(long.pad.end).toBe(long.pad.start);
+          expect(long.pad.bottom).toBe("0px");
           // The tools stand at the bottom right, over a row of their own: the text ends above them.
           expect(long.tools.top).toBeGreaterThanOrEqual(long.text.bottom - 0.5);
           expect(Math.abs(long.tools.right - long.inner.right)).toBeLessThan(0.5);
@@ -260,12 +264,12 @@ describe("Chat.Composer conversation field", () => {
       async () => {
         const page = await open(width, context);
         try {
-          await type(page, "Erste Zeile");
-          const one = await layout(page);
+          await type(page, "Erste Zeile\nZweite Zeile");
+          const two = await layout(page);
           await type(page, "Erste Zeile\nZweite Zeile\nDritte Zeile");
           const three = await layout(page);
           // Each further line adds exactly one line height: no gap between typed lines comes from the layout.
-          expect(three.scroll.height - one.scroll.height).toBe(2 * three.lineHeight);
+          expect(three.scroll.height - two.scroll.height).toBe(three.lineHeight);
           // The measuring copy and the field agree: the field shows all of its text and no empty space below it.
           expect(three.scroll.height).toBe(three.scroll.client);
           // Blank lines typed on purpose are kept as they are: each one adds one line height too.

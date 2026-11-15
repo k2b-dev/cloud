@@ -16598,6 +16598,23 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   bottom: 0;
 }
 
+/* With the whole width the text keeps the same inset from the pill's end as from its start, and the scrollbar its own
+   gutter, so the text never rewraps when the field reaches its cap. The space above the tools is the tools' row alone.
+   The measuring copy takes this layout only while it measures the height of several rows. */
+.k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__input :is(textarea:not(.k2b-chat-composer__measure), .k2b-chat-composer__highlight),
+.k2b-ui .k2b-chat-composer .k2b-chat-composer__input textarea.k2b-chat-composer__measure[data-mode="many"] {
+  padding-right: calc(0.875rem - 1px);
+  padding-bottom: 0;
+  scrollbar-gutter: stable;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__input :is(textarea:not(.k2b-chat-composer__measure), .k2b-chat-composer__highlight),
+  .k2b-ui .k2b-chat-composer .k2b-chat-composer__input textarea.k2b-chat-composer__measure[data-mode="many"] {
+    padding-right: calc(1rem - 1px);
+  }
+}
+
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__input {
   flex: 1 1 0;
 }

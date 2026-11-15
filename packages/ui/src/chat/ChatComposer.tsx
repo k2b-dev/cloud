@@ -1311,12 +1311,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       // whole width never makes the text fit again and flip back.
       const input = measureRef.parentElement;
       const beside = (input?.clientWidth ?? 0) - (fieldLines() === "many" ? (fieldToolsRef?.offsetWidth ?? 0) : 0);
+      measureRef.dataset.mode = "one";
       measureRef.style.width = `${Math.max(0, beside)}px`;
       measureRef.value = "";
       const oneRow = measureRef.scrollHeight;
       measureRef.value = textareaRef.value;
       const many = measureRef.scrollHeight > oneRow;
       setFieldLines(many ? "many" : "one");
+      // The height is measured in the layout the field now has.
+      measureRef.dataset.mode = many ? "many" : "one";
       measureRef.style.width = "";
       height = measureRef.scrollHeight;
     } else {
