@@ -118,6 +118,11 @@ export const chatMessages = i18n.define({
       steerResponse: "Steer response",
       stopResponse: "Stop response",
       stopping: "Stopping",
+      suggestionKeyHint: "accept",
+      suggestionAccept: "Accept",
+      suggestionAcceptLabel: ({ text }: { text: string }) => `Accept suggestion: ${text}`,
+      suggestionAnnouncement: ({ text }: { text: string }) => `Suggested next message: ${text}. Tab accepts, Escape dismisses.`,
+      suggestionAnnouncementTouch: ({ text }: { text: string }) => `Suggested next message: ${text}. Accept takes it into the field.`,
     },
     de: {
       commandFailed: "Das hat nicht geklappt.",
@@ -231,6 +236,11 @@ export const chatMessages = i18n.define({
       steerResponse: "Antwort steuern",
       stopResponse: "Antwort stoppen",
       stopping: "Wird gestoppt",
+      suggestionKeyHint: "übernehmen",
+      suggestionAccept: "Übernehmen",
+      suggestionAcceptLabel: ({ text }) => `Vorschlag übernehmen: ${text}`,
+      suggestionAnnouncement: ({ text }) => `Vorgeschlagene Nachricht: ${text}. Tab übernimmt, Escape verwirft.`,
+      suggestionAnnouncementTouch: ({ text }) => `Vorgeschlagene Nachricht: ${text}. Übernehmen setzt sie ins Feld.`,
     },
   },
 });

@@ -1,6 +1,6 @@
-### A sheet's detent changed before the sheet came to rest
+### An owner's detent change landed after the glide it interrupted
 
-- **What happened:** After #3360 a sheet with a handle sets `data-sheet-detent` when a move starts and glides there by transform. The map dialog's phone test read the handle's box right after waiting for the attribute, while the list still glided, and its hit test landed on the map instead of the handle (#3335, CI only). In the product, the map dialog sets the detent itself when a place is picked; a glide still in flight then landed on the old height and jumped to the new one.
-- **Root cause:** The attribute became the sheet's goal, not its resting state, but tests and owners still treated it as the rest. `attachSheetHandle` ignored detent changes it had not made itself while it moved.
-- **Error class:** State that announces a motion's target read as if the motion had ended, by a test or by a second writer of the same attribute.
-- **Guard:** `sheet-handle.browser.test.ts` pins an owner that sets the detent mid-glide (the sheet turns around without a jump); browser tests read geometry only after `settled(page)` (rule `settle-reads`), and the map dialog test now does before its hit test.
+- **What happened:** The map dialog raises its phone sheet to half height when a place is picked, by setting `data-sheet-detent` itself. When a glide from the handle was still in flight, the sheet first landed on the glide's old detent and then jumped to the new one; the same timing made the map dialog's grip test read the sheet mid-move (see the lesson for #3391).
+- **Root cause:** Since #3360 `attachSheetHandle` sets the detent when a move starts and pins the layout height until the glide lands. It ignored detent changes it had not made itself while it moved, so the pinned glide finished on its own target.
+- **Error class:** A second writer of the same state while a motion owns it, without the motion taking the new target.
+- **Guard:** `sheet-handle.browser.test.ts` sets the detent mid-glide and samples every frame: the sheet never reaches the old target, no frame drops by a jump, and it rests on the new detent.

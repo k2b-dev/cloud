@@ -290,7 +290,7 @@ test("on a phone the map fills the screen and the list is a sheet with three hei
       const name = document.querySelector(".k2b-map-dialog__detail h3");
       return name?.textContent === "Restaurierung Sedlmayr" && name.getBoundingClientRect().top >= body.top;
     });
-    // The 22 px grip has a 44 px target, measured at rest: the sheet glides to its detent by transform.
+    // The 22 px grip has a 44 px target. The sheet moves to its new height by transform; read the grip once it stands.
     await settled(page);
     const grip = (await handle.boundingBox())!;
     const targets = await page.evaluate(
