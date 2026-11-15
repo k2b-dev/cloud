@@ -43,10 +43,11 @@ const start = async (phone: boolean, locale: string, path = "/app/chat") => {
   );
   try {
     await page.goto(new URL(path, harness.url).href);
-    await page
-      .getByRole("button", { name: chatMessages.resolve([locale]).t.newChat, exact: true })
-      .filter({ visible: true })
-      .waitFor();
+    // The panel starts no chats, so it has no "New chat"; its mounted list stands for the started workspace.
+    await (path.startsWith("/app/chat/panel")
+      ? visible(page).first()
+      : page.getByRole("button", { name: chatMessages.resolve([locale]).t.newChat, exact: true }).filter({ visible: true })
+    ).waitFor();
     return { page, context, errors };
   } catch (error) {
     console.error("Chat startup failed", { url: page.url(), errors });

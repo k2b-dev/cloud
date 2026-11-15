@@ -172,6 +172,7 @@ export const chatMessages = i18n.define({
       chatAboutResource: ({ title }: { title: string }) => `Chat about ${title}`,
       aboutResource: ({ title }: { title: string }) => `About ${title}`,
       resourceChatEmpty: "Nobody has written here yet.",
+      attachAfterFirstMessage: "Attach files after the first message",
       resourceChatReadOnly: "Nobody has written here yet. People who may edit it can start the discussion.",
       draftChangedElsewhere: "Another view changed this draft",
       draftChangedElsewhereDescription:
@@ -676,6 +677,7 @@ export const chatMessages = i18n.define({
       chatAboutResource: ({ title }: { title: string }) => `Über ${title} chatten`,
       aboutResource: ({ title }: { title: string }) => `Über ${title}`,
       resourceChatEmpty: "Hier hat noch niemand geschrieben.",
+      attachAfterFirstMessage: "Anhänge nach der ersten Nachricht",
       resourceChatReadOnly: "Hier hat noch niemand geschrieben. Wer die Ressource bearbeiten darf, kann die Diskussion beginnen.",
       draftChangedElsewhere: "Eine andere Ansicht hat diesen Entwurf geändert",
       draftChangedElsewhereDescription:

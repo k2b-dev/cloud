@@ -271,6 +271,9 @@ for (const width of [1440, 390]) {
           animations: "disabled",
         });
       }
+      // Files wait for the discussion: "+" is in its place, says so in its tooltip, and is not available yet.
+      const attach = start.getByRole("button", { name: "Attach files after the first message", exact: true });
+      expect(await attach.isDisabled()).toBe(true);
       const composer = start.locator('textarea:not([aria-hidden="true"])');
       const before = await composer.boundingBox();
       await composer.fill("Wer prüft die Anlieferung?");
@@ -278,8 +281,9 @@ for (const width of [1440, 390]) {
       await panel.locator('[data-status="sent"]').filter({ hasText: "Wer prüft die Anlieferung?" }).waitFor();
       expect(starts()).toBe(1);
       expect(new URL(frame().url()).pathname).toMatch(/^\/app\/chat\/panel\/c\/[^/]+$/);
-      // The composer keeps its place from the ready start into the started discussion.
+      // The composer keeps its place from the ready start into the started discussion: same left edge, same bottom.
       const after = await panel.locator('.chat-conversation textarea:not([aria-hidden="true"])').boundingBox();
+      expect(Math.abs(after!.x - before!.x)).toBeLessThanOrEqual(1);
       expect(Math.abs(after!.y + after!.height - (before!.y + before!.height))).toBeLessThanOrEqual(1);
     } finally {
       fixture.allowChatContext(false);

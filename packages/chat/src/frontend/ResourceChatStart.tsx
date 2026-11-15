@@ -1,5 +1,5 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { Chat, IconButtonLink, PageTitle, Placeholder, useLocale } from "@k2b/ui";
+import { Chat, EmojiPicker, IconButtonLink, PageTitle, Placeholder, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, Show } from "solid-js";
 import { chatMessages } from "../messages";
 
@@ -20,6 +20,8 @@ export default function ResourceChatStart(props: {
   const about = () => t().aboutResource({ title: props.title });
   const [draft, setDraft] = createSignal("");
   const [starting, setStarting] = createSignal(false);
+  // The same controls as an existing chat's composer, in the same places, so the first message moves nothing.
+  const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
   return (
     <section class="chat-conversation chat-resource-start" aria-label={about()}>
       <header class="chat-conversation__header">
@@ -42,6 +44,10 @@ export default function ResourceChatStart(props: {
         <div class="chat-conversation__composer" data-k2b-shell-bottom>
           <Chat.Composer
             variant="conversation"
+            formatting
+            emoji={{ onOpen: setEmojiTarget }}
+            // Files need the discussion; they can be added once the first message started it.
+            fileSelection={{ onSelect: () => {}, disabled: true, label: t().attachAfterFirstMessage }}
             value={draft()}
             onValueChange={setDraft}
             placeholder={t().composerPlaceholder({ title: props.title })}
@@ -57,6 +63,11 @@ export default function ResourceChatStart(props: {
                 setStarting(false);
               }
             }}
+          />
+          <EmojiPicker.Popover
+            anchor={emojiTarget()?.anchor}
+            onPick={(emoji) => emojiTarget()?.insert(emoji)}
+            onClose={() => setEmojiTarget(undefined)}
           />
         </div>
       </Show>
