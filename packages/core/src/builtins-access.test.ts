@@ -98,6 +98,7 @@ const service = (
 const publicPaths: Record<string, string[]> = {
   core: [
     "/code/c_fixture/",
+    "/api/code/pages/provenance",
     "/_internal/apps/bootstrap",
     "/_internal/code/runner/call",
     "/_internal/code/runner/config",
@@ -267,6 +268,10 @@ const publicPaths: Record<string, string[]> = {
 const protectedPaths: Record<string, string[]> = {
   core: [
     "/code-other/c_fixture/",
+    "/api/code/pages/provenance/extra",
+    "/api/code/pages/report",
+    "/api/code/pages",
+    "/api/code/admin/reports/list",
     "/_internal/apps/bootstrap/private",
     "/_internal/code/runner/call/private",
     "/me",
