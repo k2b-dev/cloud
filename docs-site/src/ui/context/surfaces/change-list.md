@@ -29,7 +29,8 @@ words at the end of a line, such as "needs approval" with `ti ti-eye`, "new"
 (`tone: "new"`, in the action colour) or "dropped" (`tone: "gone"`, an
 outline). `detail` stays one quiet 12px line on the same edge. Marks use the
 12px meta step at regular weight, so a line keeps at most three text styles.
-The bare sign is hidden from assistive technology; screen readers hear "New",
+A link in a line, such as "Show", reads as text with an underline in the link
+accent. The bare sign is hidden from assistive technology; screen readers hear "New",
 "Dropped", or "Unchanged" before the line instead (localized).
 
 ## Import

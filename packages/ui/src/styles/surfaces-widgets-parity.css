@@ -704,6 +704,13 @@
 .k2b-ui .k2b-change-list__item[data-tone="remove"] > .k2b-change-list__icon { background: var(--k2b-danger-surface); color: var(--k2b-danger-text); }
 .k2b-ui .k2b-change-list__text { display: block; min-width: 0; overflow-wrap: anywhere; }
 .k2b-ui .k2b-change-list__text b { font-weight: 600; }
+/* A link in a line, such as "Show" after "5 more stay the same.", reads as text; its underline carries the link accent. */
+.k2b-ui .k2b-change-list__text a {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: var(--k2b-link-accent);
+  text-underline-offset: 0.15em;
+}
 .k2b-ui .k2b-change-list__detail { display: block; font-size: 0.78125rem; line-height: 1.25; color: var(--k2b-text-muted); }
 .k2b-ui .k2b-change-list__item[data-tone="same"] > .k2b-change-list__icon { color: var(--k2b-text-muted); }
 /* A quiet word at the end of the line; it wraps with the text and never takes a row of its own. */
