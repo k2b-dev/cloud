@@ -40,14 +40,17 @@ const sameHeading = (a: Heading, b: Heading | undefined) => a.title === b?.title
 const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
   if (view.view === "table") return summary.view === "table" && sameHeading(view, summary);
   const loaded = cloudAiViewSummary(view);
-  // A record must keep the field count and the labels and value lengths that sized its viewport.
-  if (loaded.view === "details")
+  // A record must keep the field count and the labels and value lengths that sized its viewport. A reference's text is
+  // its title for this reader, named as the file is read (`view=1`), so only its label and kind are reserved.
+  if (loaded.view === "details") {
+    const reserved = (fields: typeof loaded.fields) => JSON.stringify(fields.map((field) => (field.ref ? { ...field, chars: 0 } : field)));
     return (
       summary.view === "details" &&
       sameHeading(loaded, summary) &&
       loaded.items === summary.items &&
-      JSON.stringify(loaded.fields) === JSON.stringify(summary.fields)
+      reserved(loaded.fields) === reserved(summary.fields)
     );
+  }
   // A stats file must keep every tile's label and parts, which set the tile heights its summary reserved.
   if (loaded.view === "stats")
     return summary.view === "stats" && sameHeading(loaded, summary) && JSON.stringify(loaded.items) === JSON.stringify(summary.items);
