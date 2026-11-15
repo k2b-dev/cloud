@@ -7,7 +7,7 @@ import { chatCodeApi } from "../chat-code/api";
 import { loadAssistantChatContextSnapshot, loadAssistantChatSources } from "../chat-context";
 import { catalogPerApp } from "../code-place";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
-import { loadAssistantSidebarSnapshot, placeAppsFromCatalog } from "../sidebar";
+import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
 import { loadAssistantSidebarPreview } from "../sidebar-preview";
 
 const actorUser = (c: Context<AuthContext>) => {
@@ -47,7 +47,7 @@ const app = new Hono<AuthContext>()
       ok(
         await loadAssistantSidebarSnapshot(
           { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
-          { locale: getLocale(c), timeZone: getTimeZone(c), authority: auth.getAuthority(c) },
+          { locale: getLocale(c), timeZone: getTimeZone(c), caller: openQuestionsCaller(c) },
           placeAppsFromCatalog(catalogPerApp(getLocale(c), auth.getAuthority(c))),
         ),
       ),
