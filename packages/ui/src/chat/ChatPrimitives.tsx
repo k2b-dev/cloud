@@ -406,7 +406,8 @@ const ActivityContent = (props: ChatActivityProps & { label: JSX.Element; disclo
       </span>
     </Show>
     <Show when={props.duration}>
-      <span class="k2b-chat-activity__duration" title={props.durationTitle}>
+      {/* A running row's clock ticks silently; the row says once what it does. */}
+      <span class="k2b-chat-activity__duration" title={props.durationTitle} aria-hidden={props.busy ? "true" : undefined}>
         {props.duration}
       </span>
     </Show>

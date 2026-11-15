@@ -1,4 +1,4 @@
-import { expect, jest, test } from "bun:test";
+import { expect, jest, setSystemTime, test } from "bun:test";
 import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
@@ -7,6 +7,14 @@ import { emptyProjection, mergeActiveTurn, reduceProjection, visibleMessages } f
 import { type AiStreamEvent, type AiTurnBlock, type AiWireEvent, steerAppliedBlockId, steerMessageBlockId } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { aiTurnErrorText } from "./turn-error";
+
+/** The text a reader sees: without the screen-reader announcement and the resting word that only reduced motion shows. */
+const visibleText = (node: Element | null | undefined) => {
+  if (!node) return undefined;
+  const copy = node.cloneNode(true) as Element;
+  for (const hidden of copy.querySelectorAll(".k2b-sr-only, .k2b-chat-activity__word-rest")) hidden.remove();
+  return copy.textContent?.trim();
+};
 
 (isServer ? test.skip : test)("streamed text and tool updates render each block exactly once", async () => {
   const dom = createDomTestHarness();
@@ -223,7 +231,7 @@ import { aiTurnErrorText } from "./turn-error";
     expect(rows().some((row) => row?.includes("Reconnecting"))).toBe(false);
     const before = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
     const workLine = () => dom.root.querySelector(".ai-turn-work");
-    const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+    const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
 
     emit({ ...base, seq: 5, type: "provider_retry" });
     await settle();
@@ -490,6 +498,45 @@ const renderTimeline = async (
   }
 });
 
+(isServer ? test.skip : test)("a timeline built after the page was rendered times its turn by the real clock", async () => {
+  jest.useFakeTimers();
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  // The page was rendered an hour ago; this timeline is built now, such as for another chat.
+  setSystemTime(new Date("2026-11-15T12:00:00.000Z"));
+  const renderedAt = "2026-11-15T11:00:00.000Z";
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider actions={{}}>
+        {(() => {
+          const items = createAiChatTimeline({
+            messages: createMemo(() => visibleMessages(state)),
+            activeTurn: () => state.activeTurn,
+            renderedAt,
+          });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const clock = () => dom.root.querySelector(".ai-turn-work .k2b-chat-activity__duration")?.textContent?.trim();
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+    jest.advanceTimersByTime(5_000);
+    expect(clock()).toBe("5 s");
+  } finally {
+    dispose();
+    dom.cleanup();
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});
+
 (isServer ? test.skip : test)("the work line says that the stream reconnects and how long a long step runs", async () => {
   jest.useFakeTimers();
   const dom = createDomTestHarness();
@@ -515,7 +562,7 @@ const renderTimeline = async (
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
-  const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+  const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
   const clock = () => workLine()?.querySelector(".k2b-chat-activity__duration")?.textContent?.trim();
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {
@@ -575,7 +622,7 @@ const renderTimeline = async (
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
-  const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+  const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
   const clock = () => workLine()?.querySelector(".k2b-chat-activity__duration")?.textContent?.trim();
   const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/a.csv" } };
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };

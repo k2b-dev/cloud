@@ -11,7 +11,9 @@ import {
   onCleanup,
   type Setter,
   Show,
+  sharedConfig,
 } from "solid-js";
+import { isServer } from "solid-js/web";
 import type { AiActiveTurn } from "../client/projection";
 import { aiModelChooserMessages } from "../model-chooser-messages";
 import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
@@ -468,7 +470,11 @@ const activeItems = (
  * running, so a step that starts right after the pause is timed from the true work time.
  */
 const createActiveTurnClock = (source: AiChatTimelineSource, paused: Accessor<boolean>): Accessor<AiTurnDuration | null> => {
-  const [now, setNow] = createSignal(Date.now());
+  // The server's render time seeds the clock only for the server render and the hydration that adopts it, so both show
+  // the same time and word. A timeline built later, such as for another chat, starts from the real clock: an old render
+  // time would otherwise become the start of a newer turn.
+  const rendered = source.renderedAt && (isServer || sharedConfig.context) ? Date.parse(source.renderedAt) : Number.NaN;
+  const [now, setNow] = createSignal(Number.isFinite(rendered) ? rendered : Date.now());
   const running = createMemo(() => source.activeTurn() !== null);
   createEffect(() => {
     if (!running() || typeof window === "undefined") return;
@@ -527,6 +533,12 @@ export type AiChatTimelineSource = {
    * browser. Defaults to the browser's own zone, and to UTC outside a browser.
    */
   timeZone?: string;
+  /**
+   * When the server rendered the page, such as the island's `renderedAt`. The work clock starts there, so the server
+   * output and the first browser frame show the same time and the same thinking word; the browser counts on from its
+   * own clock after that frame.
+   */
+  renderedAt?: string;
 };
 
 /**

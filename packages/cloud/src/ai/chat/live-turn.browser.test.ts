@@ -1490,7 +1490,7 @@ for (const view of [
         // The counts of the folded rows are never cut, also where a phone cuts the target short.
         const counts = await page.evaluate(() =>
           Array.from(document.querySelectorAll(".ai-turn-work .ai-turn-steps > details > summary")).flatMap((summary) => {
-            const count = summary.querySelector(".k2b-chat-activity__trailing");
+            const count = summary.querySelector(".k2b-chat-activity__meta");
             const target = summary.querySelector(".k2b-chat-activity__copy small");
             if (!count) return [];
             const row = summary.getBoundingClientRect();

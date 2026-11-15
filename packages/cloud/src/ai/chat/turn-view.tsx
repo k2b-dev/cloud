@@ -31,6 +31,7 @@ import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord,
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import type { AiStopNotice } from "./stop-notice";
+import { aiThinkingMessages, aiThinkingWordRound, aiThinkingWords } from "./thinking-words";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, useAiToolDisclosure } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
@@ -203,6 +204,10 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const phase = segment().phase;
     return phase === "stopped" ? "stopped" : phase === "failed" && !segment().error ? "failed" : null;
   };
+  // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1).
+  const thinkingPhase = () =>
+    working() && stepPhrase(layout().current, t(), false) === t().stepThinking ? `${segment().id}:${currentStep() ?? "start"}` : null;
+  const thinkingWords = (phase: string) => aiThinkingWordRound(phase, aiThinkingWords(locale()));
   const sentence = () => {
     if (reconnecting()) return t().reconnecting;
     if (working()) return liveStepLabel(layout().current, t(), stepMs());
@@ -271,8 +276,17 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
       blockId={`work:${segment().id}`}
       class="ai-turn-work"
       label={
-        <span class="ai-turn-work__sentence" title={sentence()}>
-          {sentence()}
+        <span class="ai-turn-work__sentence" title={thinkingPhase() ? undefined : sentence()}>
+          <Show when={thinkingPhase()} keyed fallback={sentence()}>
+            {(phase) => (
+              <Chat.Activity.Words
+                first={t().thinking}
+                words={thinkingWords(phase)}
+                elapsedMs={stepMs()}
+                announce={aiThinkingMessages(locale()).announcement({ assistant: t().assistant })}
+              />
+            )}
+          </Show>
         </span>
       }
       ariaLabel={ariaLabel()}
