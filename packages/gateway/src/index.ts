@@ -8,6 +8,7 @@
 import { servePublicStorage } from "@k2b/cloud/server/public-storage.ts";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { logger } from "@k2b/cloud/services";
+import { availability } from "./availability";
 import { resolveClientAddress } from "./client-address";
 import { gatewayRouter } from "./config";
 import { appEnv } from "./env";
@@ -52,6 +53,8 @@ const health = (): Response => {
       requests: stats.totalRequests,
       unmatchedRequests: stats.noRouteCount,
     },
+    // Health stays 200 during maintenance so nothing restarts the gateway; it only reports the mode.
+    ...(availability.maintenance() ? { maintenance: { active: true } } : {}),
   });
 };
 
@@ -62,6 +65,7 @@ const handleRequest = createGatewayHandler({
   log: (message, meta) => log.info(message, meta),
   health,
   storage: servePublicStorage,
+  availability,
 });
 const ingressServer = Bun.serve({
   port: appEnv.GATEWAY_INGRESS_PORT,

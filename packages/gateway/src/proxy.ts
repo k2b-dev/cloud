@@ -3,6 +3,7 @@ import { PUBLIC_HOST_HEADER, PUBLIC_SURFACE_PREFIX } from "@k2b/cloud/contracts/
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { publishRequestTelemetry, ROUTE_TEMPLATE_HEADER } from "@k2b/cloud/services";
 import type { PublicTarget } from "./app-domains";
+import type { AppUnavailableReason } from "./availability";
 import type { ClientAddress } from "./client-address";
 import { compressBody } from "./compression";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
@@ -100,6 +101,13 @@ const fallbackPathTemplate = (appId: string, pathname: string): string => boundT
 
 // ─── Request proxying ────────────────────────────────────────────────────────
 
+/** How the proxy answers for an app that restarts or cannot be reached; the handler binds it per host. */
+export type ProxyAvailability = {
+  /** The recently vanished app that owned a longer prefix of the path than the live match, if any. */
+  vanishedOwner: (pathname: string, matchedPrefix: string | null) => { appId: string; reason: AppUnavailableReason } | null;
+  answer: (req: Request, appId: string, reason?: AppUnavailableReason) => Response;
+};
+
 /** Whether a request path lies in the mobile app's scope, segment-wise like the route trie. */
 const isPwaPath = (pathname: string): boolean => pathname.split("/").find(Boolean) === "pwa";
 
@@ -111,6 +119,7 @@ export const proxyRequest = async (
   client: ClientAddress | null,
   timeout: (req: Request, seconds: number) => void,
   publicTarget?: PublicTarget,
+  availability?: ProxyAvailability,
 ): Promise<Response> => {
   const url = new URL(req.url);
   if (isInternalPath(url.pathname, !!publicTarget) && !(publicTarget && isDomainCheckPath(url.pathname)))
@@ -119,6 +128,22 @@ export const proxyRequest = async (
   stats.totalRequests++;
 
   const match = publicTarget ? { ...publicTarget, matchedPrefix: "/" } : matchRoute(table, url.pathname);
+
+  // A path a recently vanished app owned answers as that app, not as a fallback route such as Core's 404.
+  const vanished = publicTarget ? null : availability?.vanishedOwner(url.pathname, match?.matchedPrefix ?? null);
+  if (vanished && availability) {
+    stats.noRouteCount++;
+    publishRequestTelemetry({
+      appId: vanished.appId,
+      routePrefix: "(unavailable)",
+      pathTemplate: fallbackPathTemplate(vanished.appId, url.pathname),
+      method: req.method,
+      status: 503,
+      durationMs: performance.now() - start,
+      errorKind: "upstream_unavailable",
+    });
+    return availability.answer(req, vanished.appId, vanished.reason);
+  }
 
   if (!match) {
     stats.noRouteCount++;
@@ -276,7 +301,7 @@ export const proxyRequest = async (
       // No response to read a template off — the request died in flight.
       pathTemplate,
       method: req.method,
-      status: disconnected ? 499 : publicTarget ? 503 : 502,
+      status: disconnected ? 499 : publicTarget || availability ? 503 : 502,
       durationMs: ms,
       errorKind: disconnected ? null : "upstream_unavailable",
     });
@@ -293,6 +318,7 @@ export const proxyRequest = async (
       });
     }
 
+    if (availability) return availability.answer(req, match.appId, "unavailable");
     const headers = new Headers({ "Retry-After": "3" });
     if (publicTarget) publicResponseHeaders(headers);
     return new Response("Bad Gateway — upstream unavailable", { status: publicTarget ? 503 : 502, headers });
