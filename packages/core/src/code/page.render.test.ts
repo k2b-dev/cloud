@@ -9,8 +9,8 @@ import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import type { CodePageLabel } from "./page-provenance-contracts";
 import { stubConnections } from "../../../../scripts/fixtures/platform";
+import type { CodePageLabel } from "./page-provenance-contracts";
 
 const root = mkdtempSync(join(tmpdir(), "core-code-page-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
