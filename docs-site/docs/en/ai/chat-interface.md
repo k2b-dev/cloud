@@ -525,6 +525,22 @@ actions are keyed by their call. When the turn ends, the work line changes its
 text and the message actions appear; nothing else moves, and host views such as
 a running Studio session keep their state. Copy copies only the final message.
 
+Under the final answer sit quiet icons: Copy, Answer again, Helpful, Needs
+improvement, and More with More detailed, More concise, Continue in a new chat,
+and Response details. Answering again and its variants retry the person's message
+the answer belongs to; the person's own message offers Copy and Edit and try again.
+
+### Sources
+
+Gustav cites a Cloud resource or web page right after the statement that relies
+on it, as a numbered Markdown link to its exact href: `[1](/open/mail.thread/~…)`.
+The answer shows the number as a small grey chip that opens the link, and a
+"Sources" row under the finished answer lists each cited source once, in number
+order, as a pill with its number, the owning app's icon tile, and its title. The
+title and app come from the turn's own tool results; a source no result names
+keeps its number with the app's name or the web page's host. Only completed calls
+name sources, and the chat never builds a link the answer did not cite.
+
 Turns with a work line, results, actions, or a failure notice span the full
 message column, so disclosure chevrons share one right edge. Plain prose keeps
 the reading width.
@@ -1332,10 +1348,11 @@ replaying an uncertain operation.
 Assistant shows the current working plan above its composer. The collapsible
 list uses the portable, controlled `Chat.Tasks` component from `@k2b/ui`.
 Applications supply items, disclosure state, localized labels and progress text.
-One segment per task shows completed work in green, the current step in the
-accent color, pending work in gray, and cancelled work with a striped segment.
-Symbols and text provide the same information without color. Cancelled tasks
-are counted separately. The current step remains visible after stopping; it is
+A progress ring and the count sit in the header at the composer; the list opens
+upwards with a check for completed work, a turning ring on a white highlight for
+the current step, a circle for open work, and a struck-through cross for
+cancelled work. Symbols and status words provide the same information without
+color. Cancelled tasks are counted separately. The current step remains visible after stopping; it is
 only described as in progress while its turn is actually running.
 
 Compact context entries use one line and consistent icon alignment. One-off

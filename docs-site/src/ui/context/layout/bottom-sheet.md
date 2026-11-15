@@ -70,8 +70,11 @@ animates. It slides up from below the edge and lands directly on its rest,
 without overshoot or settle: 280 ms with `--k2b-ease-out`, 220 ms to close,
 instant with reduced motion. The frame clips with `overflow: clip`, never
 `hidden`, because a hidden box still scrolls and focus scrolling it would
-cancel the slide. Behind a sheet the page only dims, without blur, and the dim
-follows the sheet below its rest; a centred dialog keeps its blur.
+cancel the slide. Pulled past its highest rest, the sheet gives like a rubber
+band and lifts off the edge by a few pixels; an apron in its own colour fills
+the gap, and the release returns it. Behind a sheet the page only dims, without
+blur, and the dim follows the sheet below its rest; a centred dialog keeps its
+blur.
 
 ## Detents
 
@@ -130,21 +133,29 @@ alone. List `detents` from the lowest height to the highest.
 - A press, by pointer, Enter, or Space, moves the sheet to the next detent up,
   and from the highest back to the lowest. The handle stays a button in the
   tab order; rename it in `onChange` so its name says which way it goes.
-- A drag follows the pointer with an inline height and sets
-  `data-sheet-dragging` on the sheet. On release the sheet snaps to the
-  nearest detent, taking the pointer's speed into account; a pointer that
-  rested before it lifted carries no speed. The click after a drag does not
-  move the sheet again.
+- A drag follows the pointer and sets `data-sheet-dragging` on the sheet. On
+  release the sheet glides to the nearest detent, taking the pointer's speed
+  into account; a pointer that rested before it lifted carries no speed. The
+  click after a drag does not move the sheet again, and a press during a
+  glide catches the sheet where it is.
 - Without `onDismiss`, the drag stops at the lowest detent. With it, a release
-  well below the lowest detent calls `onDismiss` instead; keep the sheet's
-  own close path behind it, including its guards.
+  well below the lowest detent slides the sheet out and then calls
+  `onDismiss`; keep the sheet's own close path behind it, including its
+  guards. When the sheet is still shown afterwards, it returns to the lowest
+  detent.
 - The handle gets `touch-action: none`, so a drag on a touch screen moves the
   sheet and never scrolls the page.
 
-Give the sheet a `height` transition with `--k2b-motion-sheet`: the snap uses
-it, a drag turns it off with an inline style, and reduced motion, from the
-system or `data-k2b-motion="reduced"`, makes the snap instant. The function
-returns a disposer that removes its listeners and inline styles.
+The sheet moves by transform only, like `BottomSheet`. When a drag or a glide
+starts, its layout height is pinned at the highest detent and a transform
+shows the visible part, so its content does not lay out again on every frame.
+When the sheet lands, the stylesheet's height for the detent takes over in one
+step that looks the same. Anchor the sheet at the bottom edge, give it no
+`height` transition, and clip its container with `overflow: clip` rather than
+`hidden`: a hidden box still scrolls, and focus would scroll the slid part back
+into view. Reduced motion, from the system or `data-k2b-motion="reduced"`,
+makes every glide instant. The function returns a disposer that removes its
+listeners and inline styles.
 
 ## Accessibility
 
