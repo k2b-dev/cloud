@@ -227,16 +227,20 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     return fold?.type === "fold" ? fold.start : undefined;
   });
   // Items keep their identity while they stay, so a row and the content below it are not rebuilt when a fold opens or a
-  // slot comes or goes elsewhere.
+  // slot comes or goes elsewhere. A line renders the row it was built for, so this holds only while the rows stay the
+  // same: another file or another comparison of the same file builds its lines anew.
   let itemCache = new Map<string, Item>();
+  let cacheRows: readonly Row[] = [];
   const items = createMemo(() => {
-    const path = currentPath() ?? "";
-    const open = new Set(opened().get(path));
+    const all = rows();
+    if (all !== cacheRows) itemCache = new Map();
+    cacheRows = all;
+    const open = new Set(opened().get(currentPath() ?? ""));
     const fold = markFold();
     if (fold !== undefined) open.add(fold);
     const next = new Map<string, Item>();
-    const result = itemsOf(rows(), open, whole(), keep()).map((item) => {
-      const key = `${path}\u0000${item.type === "row" ? `r${item.index}` : item.type === "fold" ? `f${item.start}:${item.count}` : "n"}`;
+    const result = itemsOf(all, open, whole(), keep()).map((item) => {
+      const key = item.type === "row" ? `r${item.index}` : item.type === "fold" ? `f${item.start}:${item.count}` : "n";
       const kept = itemCache.get(key) ?? item;
       next.set(key, kept);
       return kept;
