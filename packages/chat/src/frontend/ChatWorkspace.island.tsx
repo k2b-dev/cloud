@@ -2199,34 +2199,55 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     });
     if (props.embedded) {
       // The host page changed its place: the panel follows to that resource's discussion only while it shows the
-      // previous one, also when a follow is still on its way there. Each change invalidates every earlier one, also a
-      // return to the shown place; a chat the reader chose meanwhile wins, and a later follow's open supersedes an
-      // earlier one. The shown resource changes only once its discussion is in place, so the next change compares
-      // against what the reader sees.
+      // previous one. Every change invalidates the earlier ones. An open the reader starts meanwhile (`openToken`)
+      // wins over following. A follow whose open is still loading is superseded by the next follow's open, or, when
+      // the host returns or shares no place, by reopening where the follow started. The shown resource changes only
+      // once its discussion is in place, so the next change compares against what the reader sees.
       let scopeToken = 0;
+      let inflight: { start: Route } | null = null;
       let followedRoute: Route | undefined;
+      const returnFromFollow = () => {
+        const start = inflight?.start;
+        inflight = null;
+        if (start)
+          void open(start).then((result) => {
+            if (result === "applied" && !disposed) navigate(viewHref(routeAddress(start, basePath)), { replace: true, scroll: "preserve" });
+          });
+      };
       const follow = (context: ReturnType<typeof getContext>) => {
         const scope = context?.scope;
         const shown = resourceChat();
         const token = ++scopeToken;
-        if (scope && shown && scope.type === shown.ref.type && scope.id === shown.ref.id) return;
-        if (!scope) return void setResourceChat(null);
-        const start = route();
-        const following = atResource() || start === followedRoute;
+        if (scope && shown && scope.type === shown.ref.type && scope.id === shown.ref.id) return void returnFromFollow();
+        if (!scope) {
+          setResourceChat(null);
+          return void returnFromFollow();
+        }
+        const start = inflight?.start ?? route();
+        const shownRoute = route();
+        const following = atResource() || inflight !== null;
+        const opens = openToken;
         locateResource(scope)
           .then(async (found) => {
             if (disposed || token !== scopeToken) return;
             const { conversation, ...location } = found;
             const next: ResourceChat = { ...location, id: conversation, ref: scope };
-            if (!following || (route() !== start && route() !== followedRoute)) return void setResourceChat(next);
+            // A chat the reader opened meanwhile, even one still loading, wins; a route an earlier follow put in place
+            // does not count as the reader's choice.
+            const moved = route() !== shownRoute && route() !== followedRoute;
+            if (!following || openToken !== opens || moved) return void setResourceChat(next);
             const target = resourceChatExists(next) ? chatRoute(next.id, next.thread ?? "all") : chatRoute(null, "all", { resource: true });
+            inflight = { start };
             const result = await open(target);
             if (disposed) return;
+            // An applied open keeps its address in step, also when a newer place already waits for its own.
             if (result === "applied") {
               navigate(viewHref(resourceChatPath(next, basePath)), { replace: true, scroll: "preserve" });
               followedRoute = route();
             }
-            if (token === scopeToken) setResourceChat(next);
+            if (token !== scopeToken) return;
+            inflight = null;
+            setResourceChat(next);
           })
           .catch(() => {
             if (token === scopeToken) setResourceChat(null);
@@ -2240,7 +2261,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       try {
         const selected = props.chatId ?? savedDrafts?.selection();
         if (props.chatId) savedDrafts?.select(props.chatId);
-        else if (selected) {
+        // Only the list's start restores the last chat; the resource's ready discussion stays where the server put it.
+        else if (selected && !props.resourcePage) {
           void open(chatRoute(selected)).then((result) => {
             if (result === "applied") navigate(listHref(panelHref(selected, null)), { replace: true, scroll: "manual" });
           });
@@ -2445,23 +2467,28 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     setListPredecessor(fromList);
     navigation.push(viewHref(resourceChatPath(target, basePath)), { scroll: "preserve", state: { chatFromList: fromList } });
   };
-  /** The first message starts the discussion: the server opens it with the same checks, then the message goes in. */
+  /**
+   * The first message starts the discussion: the server opens it with the same checks, then the message goes in. The
+   * text moves into the new chat's draft before the ready start leaves, so a failed open or send keeps it there.
+   */
   const startResourceChat = async (text: string) => {
     const target = resourceChat();
     if (!target || resourceChatExists(target)) return false;
+    let found: Awaited<ReturnType<typeof openResourceDiscussion>>;
     try {
-      const found = await openResourceDiscussion(target.ref);
-      store?.includeSystemChats([found.conversation]);
-      const next = { ...target, id: found.conversation.id, thread: found.thread };
-      if (resourceChat() === target) setResourceChat(next);
-      const view = next.thread ?? "all";
-      if ((await open(chatRoute(next.id, view))) !== "applied") return false;
-      navigate(viewHref(threadHref(next.id, view)), { replace: true, scroll: "preserve" });
-      return await send(text);
+      found = await openResourceDiscussion(target.ref);
     } catch {
       toast.error(t().requestFailed);
       return false;
     }
+    store?.includeSystemChats([found.conversation]);
+    const view = found.thread ?? "all";
+    if ((await open(chatRoute(found.conversation.id, view))) !== "applied") return false;
+    navigate(viewHref(threadHref(found.conversation.id, view)), { replace: true, scroll: "preserve" });
+    if (resourceChat() === target) setResourceChat({ ...target, id: found.conversation.id, thread: found.thread });
+    changeDraft(text);
+    if (await send(text)) changeDraft("");
+    return true;
   };
   /** In the panel: back to the discussion about the host page's resource, wherever the reader went from there. */
   const resourceChatButton = () => (

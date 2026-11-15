@@ -228,6 +228,8 @@ for (const width of [1440, 390]) {
     fixture.backend.reset();
     fixture.allowChatContext(true);
     fixture.backend.emptyContainer({ type: "inventory.collection", id: "Bay-9" }, "Halle Süd");
+    const shelf = fixture.backend.addChat({ members: [viewer, nora], name: "Lager Ost", count: 1, end: fixture.backend.now() });
+    fixture.backend.setSystem(shelf, { type: "inventory.collection", id: "Shelf-7" });
     const context = await newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     const page = await context.newPage();
     page.setDefaultTimeout(8_000);
@@ -237,11 +239,21 @@ for (const width of [1440, 390]) {
         (request) => request.path === "/api/chat/system-chats/for-resource" && !("type" in request.query),
       ).length;
     try {
-      await page.goto(fixture.url + "app/fixture/board/Bay-9");
+      // A chat opened in the panel before is remembered; the ready start of another resource must not give way to it.
+      await page.goto(fixture.url + "app/fixture/board/Shelf-7");
       await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
       await page.locator("#open-chat").click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
+      await panel.locator(".chat-conversation__header").getByText("Lager Ost", { exact: true }).waitFor();
+      await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      await page.goto(fixture.url + "app/fixture/board/Bay-9");
+      await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
       const start = panel.getByRole("region", { name: "About Halle Süd", exact: true });
+      await start.getByText("Nobody has written here yet.", { exact: true }).waitFor();
+      await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      await frame().evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      expect(new URL(frame().url()).pathname).toBe("/app/chat/panel/resource");
+      await frame().goto(frame().url());
       await start.getByText("Nobody has written here yet.", { exact: true }).waitFor();
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
       expect(new URL(frame().url()).pathname).toBe("/app/chat/panel/resource");
@@ -292,9 +304,9 @@ test("Chat follows only the latest host place when earlier places answer late", 
       gates.set(place, resolve);
     });
   const held = new Map<string, Promise<void>>();
-  await page.route("**/api/chat/system-chats/for-resource", async (route) => {
-    const place = (JSON.parse(route.request().postData() ?? "{}") as { ref?: { id?: string } }).ref?.id ?? "";
-    await held.get(place);
+  // The panel follows by locating the new place; that read is what the test holds back.
+  await page.route("**/api/chat/system-chats/for-resource?**", async (route) => {
+    await held.get(new URL(route.request().url()).searchParams.get("id") ?? "");
     await route.continue();
   });
   try {

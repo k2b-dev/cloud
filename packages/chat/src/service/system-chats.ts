@@ -45,7 +45,7 @@ const open = async (input: ChatContext & { resourceType: string; resourceId: str
  * Where the discussion about one resource is, as the panel beside it shows it. It creates nothing: someone who only
  * looks leaves no conversation behind; the first message opens it through `openFor`. The ref is a selector only.
  */
-const locate = async (input: ChatContext & { ref: { type: string; id: string } }) => {
+const locate = async (input: ChatContext & { ref: { type: string; id: string }; credentialWrites: boolean }) => {
   const missing = () => fail({ code: "NOT_FOUND", status: 404, message: messages(input).notFound });
   const parsed = SystemChatParamSchema.safeParse({ resourceType: input.ref.type, resourceId: input.ref.id });
   if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
@@ -86,7 +86,7 @@ const locate = async (input: ChatContext & { ref: { type: string; id: string } }
     thread: thread?.short_id ?? null,
     item,
     title,
-    canWrite: permission !== "read",
+    canWrite: permission !== "read" && input.credentialWrites,
   });
 };
 /**

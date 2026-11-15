@@ -4,7 +4,7 @@ import { Layout, PanelLayout } from "@k2b/cloud/ssr";
 import { getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { chatMessages } from "../messages";
-import { chatRequestContext } from "../request-context";
+import { chatRequestContext, oauthAllowsWrites } from "../request-context";
 import { chatService, loadChatView } from "../service";
 
 import ChatWorkspace from "./ChatWorkspace.island";
@@ -26,7 +26,7 @@ export default ssr<AuthContext>(async (c) => {
   if (accessSubject.type !== "user") return ssr.error(c, 403);
   const { resourceChat, redirect, scope } = embedded
     ? await panelResourceChat(c, async (ref) => {
-        const found = await chatService.systemChats.locate({ ...chatRequestContext(c), ref });
+        const found = await chatService.systemChats.locate({ ...chatRequestContext(c), ref, credentialWrites: oauthAllowsWrites(c) });
         if (!found.ok) return null;
         const { conversation, ...location } = found.data;
         return { ...location, id: conversation };

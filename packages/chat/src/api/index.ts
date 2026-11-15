@@ -19,7 +19,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ChatComposeInputSchema } from "../commands";
 import { chatMessages } from "../messages";
-import { chatRequestContext as context } from "../request-context";
+import { chatRequestContext as context, oauthAllowsWrites } from "../request-context";
 import { ChatHealthSchema, chatService } from "../service";
 import { attachmentHeaders } from "../service/attachment-content";
 import { BadgeSchema, badgeCount } from "../service/badge";
@@ -301,7 +301,8 @@ const app = new Hono<AuthContext>()
       },
     }),
     validator("query", ResourceLocationQuerySchema, invalidInput),
-    async (c) => respond(c, chatService.systemChats.locate({ ...context(c), ref: c.req.valid("query") })),
+    async (c) =>
+      respond(c, chatService.systemChats.locate({ ...context(c), ref: c.req.valid("query"), credentialWrites: oauthAllowsWrites(c) })),
   )
   .post(
     "/system-chats/for-resource",
