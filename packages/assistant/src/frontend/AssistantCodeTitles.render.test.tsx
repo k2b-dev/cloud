@@ -18,7 +18,7 @@ afterAll(() => {
 const [{ default: CodeView }, { default: CodeBlock }, { automationTiming }, { LocaleProvider }] = await Promise.all([
   import("./AssistantCodeView"),
   import("./AssistantCodeBlock"),
-  import("./code-overview"),
+  import("./automation-timing"),
   import("@k2b/ui"),
 ]);
 const automation = (title?: string): CodeAutomation => ({
