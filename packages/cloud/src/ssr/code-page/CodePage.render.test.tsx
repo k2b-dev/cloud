@@ -1211,3 +1211,28 @@ test("the page reads the registry catalog with the person's authority", async ()
     catalog.mockRestore();
   }
 });
+
+// #76: the actions under a decided or waiting version are the shared text actions, which carry the primary colour,
+// never bare elements with a class nothing styles.
+test("the approval's text actions are shared buttons, not bare links", () => {
+  for (const state of ["new-version", "changes-requested", "needs-you"] as const) {
+    const markup = renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data: codePageFixture(state) });
+        },
+      }),
+    );
+    expect({ state, bare: /class="link"/.test(markup) }).toEqual({ state, bare: false });
+  }
+  const markup = renderMarkup(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CodePage, { data: codePageFixture("changes-requested") });
+      },
+    }),
+  );
+  expect(markup).toMatch(/<a[^>]*class="[^"]*k2b-button[^"]*"[^>]*data-variant="text"[^>]*>[\s\S]*?Alles ansehen/);
+});
