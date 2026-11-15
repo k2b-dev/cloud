@@ -96,6 +96,7 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
 
 /** Only checked facts enter this projection. Model titles and explanations are deliberately absent from facts(). */
 export function presentCodeVersion(input: {
+  personal: boolean;
   versionId: string;
   number: number;
   submittedAt: string;
@@ -108,6 +109,7 @@ export function presentCodeVersion(input: {
   locale: string;
   limits: Pick<CodeTestLimits, "cases">;
   policy?: Partial<Record<CodePolicyRow, CodePolicyValue>>;
+  boundChat?: { type: string; id: string } | null;
 }): CodeVersionReadModel {
   const { t, locale } = codeReadModelMessages.resolve([input.locale]);
   const { manifest, names } = input;
@@ -125,6 +127,17 @@ export function presentCodeVersion(input: {
     ...new Map(
       manifest.permissions.map(({ operation, target }) => {
         const action = names.operation(operation);
+        if (input.personal && operation === "core.ai.chat.send" && target?.type === "core.ai.chat" && target.id === null)
+          return [
+            stable({ operation, target }),
+            {
+              text: t.chatSend,
+              note: t.chatSendNote,
+              ...(input.boundChat ? { target: { ref: input.boundChat, text: t.chatSendNamed({ name: "{name}" }) } } : {}),
+              ...(action.app ? { app: action.app } : {}),
+              ...(action.icon ? { icon: action.icon } : {}),
+            },
+          ];
         const place = names.target(target ?? { type: "app", id: operation.split(".")[0]! });
         const deferredRef =
           place.unavailable && target && target.id !== null && !/[{}]/.test(action.title) ? { type: target.type, id: target.id } : null;

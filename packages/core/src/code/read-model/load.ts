@@ -2,7 +2,7 @@ import { sql } from "@k2b/cloud";
 import { CodeCheckedVersionManifestSchema, type CodeVersionReadModel, codeReadModelContracts } from "@k2b/cloud/contracts";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError } from "../access";
-import { codeChatMissing } from "../chat-binding";
+import { codeChatReadModelState } from "../chat-binding";
 import { codePolicyGroupRowsQuery, codePolicyGroupsFromRows, codePolicySnapshotFromRow, codePolicySnapshotQuery } from "../policy";
 import { effective } from "../policy-effective";
 import { codeSettings } from "../settings";
@@ -50,7 +50,9 @@ export async function loadCodeVersionReadModel(
   const evidence = CodeVersionEvidenceSchema.safeParse(row.evidence);
   const policy = row.policy ? codePolicySnapshotFromRow({ ...row.policy, updated_at: new Date(row.policy.updated_at) }) : null;
   const membership = codePolicyGroupsFromRows(row.memberships);
+  const chatBinding = await codeChatReadModelState(code.id);
   const result = presentCodeVersion({
+    personal: code.owner.kind === "person",
     versionId: input.versionId,
     number: row.number,
     submittedAt: row.created_at.toISOString(),
@@ -70,8 +72,9 @@ export async function loadCodeVersionReadModel(
     names: await readModelNames([manifest, ...(comparison.success ? [comparison.data] : [])], context),
     locale,
     limits: { cases: await codeSettings.get("core.code.test_cases") },
+    boundChat: chatBinding.target,
   });
-  if (await codeChatMissing(code.id))
+  if (chatBinding.missing)
     result.notices = readModelList(
       [{ ...describeCodeNotices([{ code: "chat_missing" }], locale)[0]!, code: "chat_missing" as const }, ...result.notices.items],
       locale,

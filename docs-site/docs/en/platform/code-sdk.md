@@ -892,7 +892,8 @@ The Action returns `{ id, chatId, status, reason, origin }` promptly. Status is
 `queued`, `running`, `waiting`, `done`, `failed` or `cancelled`. A busy chat keeps
 the message in its existing queue, without consuming the person's draft. Read
 one later snapshot with `core.ai.chat.read({ id: "Chat23", message: sent.id })`;
-the Query returns `{ data: { chat, messages, message } }`. Finish the Code run
+the Query returns `{ data: { chat, view, messages, message } }`. The canonical
+reader's `view` supplies the authorized title and permission. Finish the Code run
 when a person must answer; do not poll for approval.
 
 One required key identifies the intended message across Code runs for the same

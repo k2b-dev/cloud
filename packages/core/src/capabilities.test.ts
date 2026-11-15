@@ -676,6 +676,11 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     expect(fixture.reader).toBe(type.reader);
     const result = await fixture.read();
     if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+    if (typeId === "ai.chat") {
+      expect(aiCapabilities.queries["ai.chat.read"].data.parse(result.data.data)).toMatchObject({
+        view: { title: chat.title, permission: "write" },
+      });
+    }
     assertResourceOpenLink(result.data);
   }
 });

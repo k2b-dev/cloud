@@ -58,6 +58,20 @@ export async function codeChatMissing(codeId: string, db: SQL = sql): Promise<bo
   const [row] = await db<{ missing: boolean }[]>`SELECT ${condition} AS missing FROM code.codes c WHERE c.id=${codeId}`;
   return row?.missing === true;
 }
+/** Internal projection after Code read authorization. Names remain the viewer's canonical reader's responsibility. */
+export async function codeChatReadModelState(codeId: string, db: SQL = sql) {
+  const destination = (await codeChatSchemaAvailable(db))
+    ? db`(SELECT chat.short_id FROM ai.conversations chat WHERE chat.id=c.chat_conversation_id
+        AND chat.created_by_user_id=c.owner_user_id AND chat.archived_at IS NULL)`
+    : db`NULL::text`;
+  const [row] = await db<{ bound: boolean; short_id: string | null }[]>`
+    SELECT c.chat_conversation_id IS NOT NULL AS bound,${destination} AS short_id
+    FROM code.codes c WHERE c.id=${codeId} AND c.owner_kind='person'`;
+  return {
+    missing: row?.bound === true && !row.short_id,
+    target: row?.short_id ? { type: "core.ai.chat", id: row.short_id } : null,
+  };
+}
 async function bindingRow(codeId: string, context: CodeContext, db: SQL, lock = false) {
   const [row] = await db<BindingRow[]>`SELECT * FROM code.codes WHERE id=${codeId} ${lock ? db`FOR UPDATE` : db``}`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code not found.");

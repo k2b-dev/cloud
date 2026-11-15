@@ -1065,7 +1065,7 @@ export const aiCapabilities = defineCapabilities({
       description:
         "Read visible text from one core.ai.chat ref returned by ai.chats.search or a Core Action. Use ai.chat.search for text lookup inside the known chat and ai.chat.resources for referenced Cloud resources.",
       input: ChatReadInputSchema.extend({ message: z.uuid().optional().describe("Message ID returned by ai.chat.send.") }),
-      data: ChatMessagesDataSchema,
+      data: ChatMessagesDataSchema.extend({ view: CloudResourceReaderViewSchema }),
       openWorld: false,
       async run(input, context) {
         if (!context.user) return fail(err.forbidden("AI conversations require a user-backed actor"));
@@ -1085,6 +1085,7 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: {
               chat: chatSummary(chat),
+              view: { title: chat.title, permission: "write" as const },
               message: sent.data.data,
               messages: messages.flatMap((message) => visibleMessage(message) ?? []).slice(-input.limit),
             },
@@ -1097,7 +1098,11 @@ export const aiCapabilities = defineCapabilities({
         const page = await aiConversations.listMessagesPage({ conversationId: chat.id, beforeSeq, limit: input.limit });
         const oldestSeq = page.messages[0]?.seq;
         return ok({
-          data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message) ?? []) },
+          data: {
+            chat: chatSummary(chat),
+            view: { title: chat.title, permission: "write" as const },
+            messages: page.messages.flatMap((message) => visibleMessage(message) ?? []),
+          },
           summary: coreCapabilityMessages(context.locale).t.chatRead({ title: chat.title }),
           refs: [chatReference(chat)],
           links: [{ rel: "open", href: chatHref(chat.shortId) }],

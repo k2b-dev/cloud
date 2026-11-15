@@ -158,6 +158,53 @@ databaseSuite()("personal Code chat binding", () => {
     });
   });
 
+  test("version words expose only a live chat naming hint to Code readers and never change version permissions", async () => {
+    const destination = await chat("Wrd433");
+    const item = await code("Words fixture", destination);
+    const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${editor}::uuid,'read') RETURNING id`;
+    if (!grant) throw new Error("Missing reader grant");
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${item.id},${grant.id}::uuid)`;
+    const version = await createCodeVersion(
+      {
+        codeId: item.id,
+        sourceFiles: { "code.ts": "export {};" },
+        bundle: "export {};",
+        manifest: {
+          ...codeReadModelFixtureManifest,
+          permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null } }],
+          policyRows: ["ai"],
+        },
+        baseVersionId: null,
+      },
+      context(),
+    );
+    const words = (viewer = owner) => loadCodeVersionReadModel({ codeId: item.id, versionId: version.id }, context(viewer));
+    for (const viewer of [owner, editor]) {
+      const model = await words(viewer);
+      expect(model.mayDo.items[0]).toMatchObject({
+        text: "In einen Chat schreiben, Gustav antwortet",
+        note: "KI · mit deinen Rechten, zählt auf dein Kontingent",
+        target: { ref: { type: "core.ai.chat", id: "Wrd433" }, text: "In den Chat „{name}“ schreiben, Gustav antwortet" },
+      });
+      expect(JSON.stringify(model.mayDo)).not.toContain("Chat Wrd433");
+    }
+    const changes = (await words()).changes;
+    await chat("Rbd433");
+    await setCodeChatBinding({ codeId: item.id, chatId: "Rbd433", revision: 1 }, context());
+    expect((await words()).mayDo.items[0]?.target?.ref.id).toBe("Rbd433");
+    expect((await words()).changes).toEqual(changes);
+    const [bound] = await sql<{ chat_conversation_id: string }[]>`SELECT chat_conversation_id FROM code.codes WHERE id=${item.id}`;
+    if (!bound) throw new Error("Missing bound fixture");
+    await sql`UPDATE ai.conversations SET archived_at=${fixed} WHERE id=${bound.chat_conversation_id}::uuid`;
+    expect((await words()).mayDo.items[0]).not.toHaveProperty("target");
+    await sql`DELETE FROM ai.conversations WHERE id=${bound.chat_conversation_id}::uuid`;
+    expect((await words()).mayDo.items[0]).not.toHaveProperty("target");
+    await setCodeChatBinding({ codeId: item.id, chatId: "Wrd433", revision: 2 }, context());
+    expect((await words()).mayDo.items[0]?.target?.ref.id).toBe("Wrd433");
+    await sql`UPDATE code.codes SET owner_user_id=${editor}::uuid WHERE id=${item.id}`;
+    expect((await words(editor)).mayDo.items[0]).not.toHaveProperty("target");
+  });
+
   test("archived and deleted chats fail before dispatch and supply one recoverable waiting entry plus live attention", async () => {
     const destination = await chat("Missing433");
     const item = await code("Morning report", destination);

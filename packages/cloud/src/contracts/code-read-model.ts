@@ -47,7 +47,7 @@ export const CodeVersionReadModelSchema = z.strictObject({
   assurance: text,
   mayDo: list(
     CodeReadModelRowSchema.extend({
-      /** Resolve an unavailable static target with an independent canonical reader as the viewer. */
+      /** Resolve a static target or current bound chat with an independent canonical reader as the viewer. */
       target: z.strictObject({ ref: z.strictObject({ type: text, id: text }), text }).optional(),
     }),
   ),
