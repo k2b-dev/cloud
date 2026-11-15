@@ -58,7 +58,7 @@ Do not retry a refused decision without resolving its cause.
 
 | Code | Cause | Next step |
 | --- | --- | --- |
-| `SELF_APPROVAL` | The author is not the only active Cloud administrator | Ask another admin to approve; the author can still reject |
+| `SELF_APPROVAL` | Another active human Cloud admin can review this version (the emergency admin never counts as another reviewer) | Ask another admin to approve; the author can still reject |
 | `REAUTHENTICATE` | Sole-admin self-approval lacks a full browser sign-in from the last ten minutes | Use the review's sign-in link with the same account; emergency admins must sign out first, then sign in again with the admin token. Return to the review and approve, or decide through Cloud Login |
 | `REJECT_ONLY` | The connection permits rejection only | Open the review in Cloud in the browser to approve |
 | `NOT_FOUND` from a decision | The approval is unavailable to this account | Open the current approvals list or ask a Cloud admin to review |

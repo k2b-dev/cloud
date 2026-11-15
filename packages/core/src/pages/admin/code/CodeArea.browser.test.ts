@@ -167,7 +167,7 @@ test("an outdated, own or unloaded version cannot be approved and says why", asy
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).count()).toBe(0);
 
   await goto(`${review}&state=sole`);
-  await page.getByText("Es gibt keinen zweiten Cloud-Admin", { exact: false }).waitFor();
+  await page.getByText("Du bist der einzige Admin und gibst deine eigene Version frei.").waitFor();
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).isEnabled()).toBe(true);
 
   await goto(`${review}&state=difffail`);

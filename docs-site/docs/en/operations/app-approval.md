@@ -973,13 +973,17 @@ Review authenticator dependencies and service-worker updates as credential
 handling code. Do not add analytics, remote scripts, exported private-key
 backups or a shared cross-Cloud key as incidental integration work.
 
-Code-version role reviews use the same signed device confirmation. The sole
-active human Cloud admin may review their own version with the explicit
+Code-version role reviews use the same signed device confirmation. An admin
+without another active human reviewer may approve their own version with the explicit
 self-approval notice in the signed question. A second active human admin
 blocks new self-approvals; it does not revoke earlier decisions. See
 [Code-version approvals](/en/docs/identity/approvals#code-version-approvals)
 for eligibility and decision evidence.
 
-An active bootstrap admin counts even if that person has never signed in.
-Review and demote or expire unused admin accounts when the installation no
-longer needs them; an unused active admin still prevents sole-admin self-approval.
+The local emergency `admin` identity never counts as another reviewer. It
+may self-approve only when no active human admin exists, with recent sign-in
+and the same visible self-approval audit and history. An active ordinary
+bootstrap account such as `dev-admin` counts even without a previous sign-in.
+Locked, expired, or category-disabled accounts and service accounts do not count.
+Review and demote or expire unused ordinary admin accounts when the installation
+no longer needs them; an unused active human admin still prevents self-approval.

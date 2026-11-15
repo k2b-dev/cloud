@@ -523,4 +523,25 @@ databaseSuite()("C22 Administration › Code read model", () => {
     // Keep this fixture out of later unfiltered list/count assertions.
     await decideCodeVersion(next.binding, { outcome: "rejected", comment: "Fixture complete." }, reviewer);
   });
+  test("review SSR uses the common human population for ordinary and emergency authors", async () => {
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at)
+      VALUES('c_sole1','person',${authorId}::uuid,'Only admin review',${authorId}::uuid,${fixed})`;
+    const pending = await submitCodeVersion(submission("c_sole1", "export const one = 1;\nexample.item.change();", null), author);
+    const review = () => readCodeAdminApproval(pending.version.id, author);
+    const allowed = { own: true, canApprove: true, soleAdminNotice: expect.any(String) };
+    const denied = { own: true, canApprove: false, soleAdminNotice: null };
+    try {
+      expect(await review()).toMatchObject(denied);
+      // The emergency identity never provides an independent human reviewer.
+      await sql`UPDATE auth.users SET uid='admin' WHERE id=${reviewerId}::uuid`;
+      expect(await review()).toMatchObject(allowed);
+      await sql`UPDATE auth.users SET uid='dev-admin' WHERE id=${reviewerId}::uuid`;
+      await sql`UPDATE auth.users SET uid='admin' WHERE id=${authorId}::uuid`;
+      expect(await review()).toMatchObject(denied);
+      await sql`UPDATE auth.users SET account_expires='2000-01-01' WHERE id=${reviewerId}::uuid`;
+      expect(await review()).toMatchObject(allowed);
+    } finally {
+      await sql`UPDATE auth.users SET uid=id::text,account_expires=NULL WHERE id IN (${authorId}::uuid,${reviewerId}::uuid)`;
+    }
+  });
 });

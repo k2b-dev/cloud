@@ -202,12 +202,23 @@ unchanged comparison.
 
 An author cannot approve their own version when another active human Cloud
 administrator exists. The platform's sole-admin rule is the only exception:
-a sole active human Cloud administrator can approve their own version after
-recent full browser sign-in or through Cloud Login. The shared question shows:
+an administrator with no other active human reviewer can approve their own
+version after recent full browser sign-in or through Cloud Login. The shared
+question shows:
 
 > Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft.
 
-Machine accounts and expired administrators do not count as a second person.
+The Administration → Code review shows “You are the only admin and approve
+your own version.” / “Du bist der einzige Admin und gibst deine eigene Version
+frei.” and enables approval. When another reviewer exists, the author's
+“Another admin approves it” hint stays and approval remains unavailable.
+
+Machine accounts, expired or locked administrators, disabled account categories,
+and the local emergency `admin` identity do not count as other reviewers.
+The emergency admin may approve its own version only when no active human
+admin exists, with the same recent sign-in requirement and audit evidence.
+An active ordinary account such as `dev-admin` counts as a human reviewer,
+even without a previous sign-in.
 The platform counts and locks the administrator population in the decision
 transaction. Adding a second administrator blocks new self-approvals immediately;
 an earlier approval stays valid.

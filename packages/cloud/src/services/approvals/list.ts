@@ -14,7 +14,7 @@ import type { ApprovalAssurance, ApprovalKind } from ".";
 import type { ApprovalRoleContext } from "./authority";
 import { compactApprovalDetailsSql, openRecipientRequests } from "./content";
 import { decodeApprovalCursor, encodeApprovalCursor } from "./cursor";
-import { soleCodeAdmin } from "./policy";
+import { hasOtherApprovalAdmin } from "./policy";
 
 export type PendingApprovalRow = {
   id: string;
@@ -66,7 +66,7 @@ export const listPending = async (input: {
     const cursor = input.cursor ? decodeApprovalCursor(input.cursor) : null;
     if (input.cursor && !cursor) throw new RangeError("Invalid approval cursor.");
     const open = await openRecipientRequests(input.approverUserId, input.id, input.roleContext, tx);
-    const soleAdmin = open.admin && (await soleCodeAdmin(tx)) === input.approverUserId;
+    const soleAdmin = open.admin && !(await hasOtherApprovalAdmin(tx, input.approverUserId));
     const [counts] = await tx<{ count: number; elsewhere: number }[]>`WITH open AS (${open.query})
     SELECT count(*) FILTER (WHERE ${matches(input.appId, input.link)})::int AS count,
       count(*) FILTER (WHERE NOT (${matches(input.appId, input.link)}))::int AS elsewhere FROM open r`;

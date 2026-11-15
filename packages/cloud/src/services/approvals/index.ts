@@ -21,7 +21,7 @@ import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "../s
 import { approvalAdminActor, hasApprovalRoleAccess } from "./authority";
 import { compactApprovalDetailsSql } from "./content";
 import { approvalDecisionHints } from "./hints";
-import { lockCodeAdminPopulation, soleCodeAdmin } from "./policy";
+import { hasOtherApprovalAdmin, lockCodeAdminPopulation } from "./policy";
 
 export type { ApprovalRoleContext } from "./authority";
 export { readApprovalContent } from "./content";
@@ -155,7 +155,7 @@ export const codeVersionSoleAdminNotice = async (
   locale = "en",
 ): Promise<string | null> => {
   if (request.kind !== "code_version" || request.authorUserId !== userId || !approvalAdminActor(userId, authority)) return null;
-  return (await soleCodeAdmin(sql)) === userId ? approvalMessages.resolve([locale]).t.soleAdminNotice : null;
+  return !(await hasOtherApprovalAdmin(sql, userId)) ? approvalMessages.resolve([locale]).t.soleAdminNotice : null;
 };
 
 const transaction = <T>(db: SQL | undefined, run: (tx: SQL) => Promise<T>): Promise<T> => (db && db !== sql ? run(db) : sql.begin(run));
@@ -344,7 +344,7 @@ export const decide = async (
     if (role) {
       if (decision.remember) return { ok: false, code: "NOT_REMEMBERABLE" };
       if (decision.approved && row.authorUserId === actor.userId && row.status === "pending") {
-        if (!selfApproval || (await soleCodeAdmin(tx)) !== actor.userId) return { ok: false, code: "SELF_APPROVAL" };
+        if (!selfApproval || (await hasOtherApprovalAdmin(tx, actor.userId))) return { ok: false, code: "SELF_APPROVAL" };
         if (actor.via !== "cloud_login") {
           const proof = actor.authority?.credentialProof;
           if (proof?.kind !== "session" || proof.userId !== actor.userId) return { ok: false, code: "REAUTHENTICATE" };

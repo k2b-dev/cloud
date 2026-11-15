@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +26,9 @@ const [
   import("./CodeArea.fixture-data"),
   import("./CodeArea.fixture-data"),
 ]);
+
+beforeAll(() => setSystemTime(new Date("2026-11-01T12:10:00.000Z")));
+afterAll(() => setSystemTime());
 
 type State = Parameters<typeof codeFixtureData>[0];
 const render = (query: Record<string, string>, state: State = "normal", locale = "de") =>
@@ -121,7 +124,7 @@ test("approvals render list, review, decided, empty, error and missing states", 
 
   expect(render(review, "newer")).toContain("Version 3 ist überholt");
   expect(render(review, "own")).toContain("Du hast diese Version geschrieben.");
-  expect(render(review, "sole")).toContain("Du gibst deinen eigenen Code frei");
+  expect(render(review, "sole")).toContain("Du bist der einzige Admin und gibst deine eigene Version frei.");
   expect(render(review, "difffail")).toContain("Code nicht geladen");
   const approved = render(review, "approved");
   expect(approved).toContain("Version 3 ist freigegeben.");
@@ -365,3 +368,19 @@ test("unused databases show a bounded page with deadline, access and incarnation
   expect(renderedText(render({ sec: "databases" }, "empty"))).toContain("Keine ungenutzten Datenbanken");
   expect(renderedText(render({ sec: "databases" }, "fail"))).toContain("Erneut versuchen");
 });
+
+for (const locale of ["de", "en"]) {
+  test(`author review uses server eligibility for hints and buttons (${locale})`, () => {
+    const t = codeAdminMessages.resolve([locale]).t;
+    const own = render(review, "own", locale);
+    const sole = render(review, "sole", locale);
+    expect(own).toContain(t.ownSub);
+    expect(own).not.toContain(t.soleTitle);
+    expect(sole).toContain(t.soleTitle);
+    expect(sole).not.toContain(t.ownSub);
+    expect(sole).not.toContain(t.ownTitle);
+    const label = locale === "de" ? "Version 3 freigeben" : "Approve version 3";
+    expect(own).not.toContain(label);
+    expect(sole).toContain(label);
+  });
+}

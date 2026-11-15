@@ -1,0 +1,6 @@
+### Count available human reviewers before allowing Code self-approval
+
+- **What happened:** The Code review told a lone human admin to ask another admin, even when the other account was the emergency identity or a locked FreeIPA user.
+- **Root cause:** The shared population query included the local emergency account and ignored mirrored FreeIPA locks. Excluding the emergency identity also requires checking for other reviewers so emergency authors retain their existing operator exception. Core already delegated its decisions and review permissions to that platform policy.
+- **Error class:** Approval population differs from the identities that can provide an independent review.
+- **Guard:** `versions.integration.test.ts` covers emergency authors with and without an active human `dev-admin`, ordinary authors with emergency, locked or disabled reviewers, recent sign-in, audit and version-history evidence. `code-version.integration.test.ts` covers transactional population locks, machines and role changes. `CodeArea.render.test.tsx` and `CodeArea.browser.test.ts` check the own-author and sole-admin hints and controls.

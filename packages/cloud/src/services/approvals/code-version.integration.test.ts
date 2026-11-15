@@ -18,7 +18,7 @@ import {
   registerApprovalDecisionHandler,
 } from ".";
 import { readApprovalContent } from "./content";
-import { soleCodeAdmin } from "./policy";
+import { hasOtherApprovalAdmin } from "./policy";
 
 // Each suite receives an isolated test database from the shared infrastructure gate.
 databaseSuite()("independent Code-version approvals", () => {
@@ -121,7 +121,7 @@ databaseSuite()("independent Code-version approvals", () => {
     const { id } = await ask();
     const signIn = await createTestBrowserSignIn(author);
     await withSoleAdmin(async (tx) => {
-      expect(await soleCodeAdmin(tx)).toBe(author);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
       expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toEqual({ ok: true, status: "approved", replay: false });
       expect(transitionSoleAdmin).toBe(true);
       expect(await approvals.get(id, tx)).toMatchObject({ status: "approved", soleAdmin: true, decidedByUserId: author });
@@ -157,7 +157,7 @@ databaseSuite()("independent Code-version approvals", () => {
         ('freeipa.groups.admin',${await encryptValue(["code-review-admins"])}),
         ('user.category.freeipa.enabled',${await encryptValue(false)})
         ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
-      expect(await soleCodeAdmin(tx)).toBe(author);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
       expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toMatchObject({ ok: true });
     });
   });
@@ -169,7 +169,7 @@ databaseSuite()("independent Code-version approvals", () => {
       await tx`INSERT INTO auth.ipa_user_effective_groups VALUES(${outsider}::uuid,'code-review-admins')`;
       await tx`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
         ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
-      expect(await soleCodeAdmin(tx)).toBeNull();
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(true);
       expect(await selfDecide(id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "SELF_APPROVAL" });
     });
   });
@@ -210,10 +210,10 @@ databaseSuite()("independent Code-version approvals", () => {
           code: "NOT_FOUND",
         });
       }
-      expect(await soleCodeAdmin(tx)).toBe(author);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
       expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toMatchObject({ ok: true });
       await tx`UPDATE auth.users SET admin=false WHERE id=${author}::uuid`;
-      expect(await soleCodeAdmin(tx)).toBeNull();
+      expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toEqual({ ok: false, code: "NOT_FOUND" });
     });
   });
 
@@ -241,52 +241,57 @@ databaseSuite()("independent Code-version approvals", () => {
       sql.begin(async (tx) => {
         await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
         await tx`UPDATE auth.users SET admin=false WHERE admin AND id<>${author}::uuid`;
-        expect(await soleCodeAdmin(tx)).toBe(author);
+        expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
         expect(await selfDecide(id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "SELF_APPROVAL" });
         throw rollback;
       }),
     ).rejects.toBe(rollback);
   });
 
-  test("an in-flight second-admin promotion wins without aborting or stalling the decision transaction", async () => {
-    const { id } = await ask();
-    const authority = await authorityFor(author);
-    await withSoleAdmin(async (tx) => {
-      let promoted!: () => void, release!: () => void;
-      const ready = new Promise<void>((resolve) => {
-        promoted = resolve;
-      });
-      const released = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const rollback = new Error("promotion rollback");
-      const promotion = sql
-        .begin(async (writer) => {
-          await writer`UPDATE auth.users SET admin=true WHERE id=${outsider}::uuid`;
-          promoted();
-          await released;
-          throw rollback;
-        })
-        .catch((error: unknown) => {
-          if (error !== rollback) throw error;
+  for (const writerKind of ["promotion", "ipa_lock"] as const) {
+    test(`an in-flight population change (${writerKind}) wins without aborting or stalling the decision transaction`, async () => {
+      const { id } = await ask();
+      const authority = await authorityFor(author);
+      await withSoleAdmin(async (tx) => {
+        let promoted!: () => void, release!: () => void;
+        const ready = new Promise<void>((resolve) => {
+          promoted = resolve;
         });
-      try {
-        await Promise.race([
-          ready,
-          promotion.then(() => {
-            throw new Error("Promotion never acquired its lock");
-          }),
-        ]);
-        expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "BUSY" });
-        expect(await approvals.get(id, tx)).toMatchObject({ status: "pending" });
-        // A denied NOWAIT lock is contained in a savepoint, so this transaction remains usable.
-        expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
-      } finally {
-        release();
-        await promotion;
-      }
+        const released = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const rollback = new Error("promotion rollback");
+        const promotion = sql
+          .begin(async (writer) => {
+            if (writerKind === "promotion") await writer`UPDATE auth.users SET admin=true WHERE id=${outsider}::uuid`;
+            else
+              await writer`INSERT INTO auth.user_ipa_data(user_id,locked_at) VALUES(${outsider}::uuid,now())
+            ON CONFLICT(user_id) DO UPDATE SET locked_at=EXCLUDED.locked_at`;
+            promoted();
+            await released;
+            throw rollback;
+          })
+          .catch((error: unknown) => {
+            if (error !== rollback) throw error;
+          });
+        try {
+          await Promise.race([
+            ready,
+            promotion.then(() => {
+              throw new Error("Promotion never acquired its lock");
+            }),
+          ]);
+          expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "BUSY" });
+          expect(await approvals.get(id, tx)).toMatchObject({ status: "pending" });
+          // A denied NOWAIT lock is contained in a savepoint, so this transaction remains usable.
+          expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
+        } finally {
+          release();
+          await promotion;
+        }
+      });
     });
-  });
+  }
 
   test("an author row lock fails busy before a waiting writer can cause a lock upgrade deadlock", async () => {
     const { id } = await ask();

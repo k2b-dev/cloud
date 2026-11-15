@@ -106,13 +106,18 @@ cannot. App invocations cannot act as role approvers, even when their
 originating person is an admin. Omitting the context preserves personal Action reads only.
 
 A Cloud admin can approve another author's version or reject any version.
-An author can approve their own version only when they are the sole active
-human Cloud admin. Service and agent accounts, guests, expired accounts, and
-disabled account categories do not count. Cloud counts local and FreeIPA
-admins in the decision transaction. An in-flight account or role change blocks
-self-approval with retryable `BUSY` (HTTP 503); otherwise the population stays
-locked until the decision commits. Self-approvals serialize through this lock,
-including handlers that update accounts. Keep handlers short and free of external effects.
+An author can approve their own version only when no other active human
+Cloud admin can review it. Service and agent accounts, guests, expired or
+locked accounts, disabled account categories, and the local emergency
+`admin` identity do not count as other reviewers. The emergency admin may
+approve its own version when no active human admin exists; an active human
+admin must review it otherwise. An active ordinary account such as
+`dev-admin` counts even if it has never signed in. Cloud counts local and
+FreeIPA admins in the decision transaction. An in-flight account or role
+change blocks self-approval with retryable `BUSY` (HTTP 503); otherwise the
+population stays locked until the decision commits, including FreeIPA account lock state.
+Self-approvals serialize through this lock, including handlers that update
+accounts. Keep handlers short and free of external effects.
 Adding a second admin blocks new self-approvals and leaves existing approvals valid.
 
 The shared question always uses `ask: changes_access`. For an eligible
