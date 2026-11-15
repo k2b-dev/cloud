@@ -2,11 +2,13 @@ import { type Accessor, batch, createEffect, createMemo, createSignal, onCleanup
 import { createStore, reconcile } from "solid-js/store";
 import { z } from "zod";
 import { beginAppAction, fetchAppAction } from "../../browser/app-actions";
+import type { ApprovalDraftResult } from "../../contracts/approvals";
 import { CapabilityActionReceiptSchema, type CloudResourceRef } from "../../contracts/capabilities";
 import type { AiModelRequest } from "../../shared/ai-models";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
+import { reconcileProjectedAiChoices } from "../choice-state";
 import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
@@ -571,7 +573,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       // (same rule as the SSE state snapshot) so the scrollback never shrinks.
       const windowOldest = detail.messages[0]?.seq;
       const preservedOlder = cached && windowOldest !== undefined ? cached.messages.filter((message) => message.seq < windowOldest) : [];
-      setProjection({ ...detailToProjection(viewedDetail), messages: [...preservedOlder, ...detail.messages] }, conversationId);
+      setProjection(
+        { ...detailToProjection(viewedDetail), messages: reconcileProjectedAiChoices([...preservedOlder, ...detail.messages]) },
+        conversationId,
+      );
       if (preservedOlder.length === 0) setHasMore(conversationId, detail.hasMoreMessages ?? false);
       if (detail.timeline) setTimeline(conversationId, detail.timeline);
       runFrontendTools();
@@ -612,7 +617,10 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     if (currentDraft && currentDraft.revision > detail.conversation.draft.revision) detail.conversation.draft = currentDraft;
     const windowOldest = detail.messages[0]?.seq;
     const preservedOlder = windowOldest === undefined ? [] : state.messages.filter((message) => message.seq < windowOldest);
-    setProjection({ ...detailToProjection(detail), messages: [...preservedOlder, ...detail.messages] }, conversationId);
+    setProjection(
+      { ...detailToProjection(detail), messages: reconcileProjectedAiChoices([...preservedOlder, ...detail.messages]) },
+      conversationId,
+    );
     if (preservedOlder.length === 0) setHasMore(conversationId, detail.hasMoreMessages ?? false);
     if (detail.timeline) setTimeline(conversationId, detail.timeline);
     setRunError(conversationRunError(detail.conversation));
@@ -1425,7 +1433,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     conversationId: string,
     turnId: string,
     callId: string,
-    action: { type: "approval_response"; approved: boolean; remember?: "chat" | "always" } | { type: "tool_result"; result: unknown },
+    action:
+      | { type: "approval_response"; approved: boolean; remember?: "chat" | "always"; digest?: string }
+      | { type: "tool_result"; result: unknown },
   ) => {
     if (isActiveConversation(conversationId) && runStatus() === "stopping") return false;
     try {
@@ -1466,7 +1476,9 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
   const submitTurnAction = (
     turnId: string,
     callId: string,
-    action: { type: "approval_response"; approved: boolean; remember?: "chat" | "always" } | { type: "tool_result"; result: unknown },
+    action:
+      | { type: "approval_response"; approved: boolean; remember?: "chat" | "always"; digest?: string }
+      | { type: "tool_result"; result: unknown },
   ) => {
     const conversationId = activeConversationId();
     if (!conversationId) return Promise.resolve(false);
@@ -1476,7 +1488,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   const respondToApproval = async (
     request: { turnId: string; callId: string },
-    input: { approved: boolean; remember?: "chat" | "always" },
+    input: { approved: boolean; remember?: "chat" | "always"; digest?: string },
   ) => {
     const conversationId = activeConversationId();
     if (!conversationId) return false;
@@ -1484,10 +1496,72 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
       type: "approval_response",
       approved: input.approved,
       remember: input.remember,
+      digest: input.digest,
     });
     if (submitted)
       showActionResolved(conversationId, request.turnId, { type: "approval_response", callId: request.callId, approved: input.approved });
     return submitted;
+  };
+
+  const submitChoice = async (requestInput: { turnId: string; toolCallId: string }, blockId: string, ids: string[]): Promise<boolean> => {
+    const conversationId = activeConversationId();
+    if (!conversationId || state.activeTurn || Boolean(pendingSends()[conversationId])) return false;
+    clearErrors();
+    try {
+      await request<SubmitTurnResult>(
+        `/conversations/${encodeURIComponent(conversationId)}/choices`,
+        {
+          method: "POST",
+          body: JSON.stringify({ ...requestInput, blockId, ids }),
+        },
+        "Failed to submit choice",
+      );
+      if (isActiveConversation(conversationId)) await refreshActiveConversation();
+      else cache.delete(conversationId);
+      return true;
+    } catch (choiceError) {
+      if (isActiveConversation(conversationId))
+        setActiveError(choiceError instanceof Error ? choiceError.message : "Failed to submit choice");
+      return false;
+    }
+  };
+
+  const editDraft = async (
+    requestInput: { turnId: string; callId: string; requestId: string },
+    values: Record<string, string>,
+    digest: string,
+  ): Promise<ApprovalDraftResult> => {
+    const conversationId = activeConversationId();
+    if (!conversationId) throw new Error("No active conversation.");
+    // Only sending an edited draft needs this code, so it loads when a person sends one; a failed load fails the send,
+    // which the card shows with its own way to try again.
+    const draft = await import("../../approvals/draft");
+    const result = await draft.editApprovalDraft(requestInput.requestId, values, digest);
+    const projection = isActiveConversation(conversationId) ? state : cache.get(conversationId);
+    if (projection && "sentence" in result.review) {
+      const review = result.review;
+      const parent = requestInput.callId.replace(/-approval-[0-9]+$/, "");
+      const messages = projection.messages.map((message) =>
+        message.loopId === requestInput.turnId && message.meta?.toolReviews?.[parent]
+          ? { ...message, meta: { ...message.meta, toolReviews: { ...message.meta.toolReviews, [parent]: review } } }
+          : message,
+      );
+      const activeTurn =
+        projection.activeTurn?.turnId === requestInput.turnId
+          ? {
+              ...projection.activeTurn,
+              blocks: projection.activeTurn.blocks.map((block) =>
+                block.kind === "tool" && block.callId === requestInput.callId
+                  ? { ...block, review, approval: block.approval ? { ...block.approval, review, digest: result.digest } : undefined }
+                  : block,
+              ),
+            }
+          : projection.activeTurn;
+      const next = { ...projection, messages, activeTurn };
+      cache.set(conversationId, next);
+      if (isActiveConversation(conversationId)) setState(reconcile(next));
+    }
+    return result;
   };
 
   const checkAction = async (requestInput: { turnId: string; callId: string }): Promise<AiActionCheck> => {
@@ -1622,6 +1696,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     clearMessageFeedback,
     submitTurnAction,
     respondToApproval,
+    editDraft,
+    submitChoice,
     checkAction,
     submitFrontendToolResult,
     fileContentUrl,

@@ -70,12 +70,14 @@ test(`the index plus the declarations of any ${CODE_CHAT_SDK_APPS} apps fit the 
   const shared = size(codeChatSdkView(manifests, { mode: "personal" }, []));
   // Each further app adds its own declarations on top of the shared ones.
   const largest = shared + largestApps.reduce((sum, value) => sum + value.size - shared, 0);
+  console.log("SDK tool result budget", size(index) + largest, "/", budget);
   expect(size(index) + largest).toBeLessThanOrEqual(budget);
   const combined = codeChatSdkView(
     manifests,
     { mode: "personal" },
     largestApps.map((app) => app.appId),
   );
+  console.log("SDK combined tool result budget", size(index) + size(combined), "/", budget);
   expect(size(index) + size(combined)).toBeLessThanOrEqual(budget);
 });
 
@@ -126,4 +128,17 @@ test("the SDK index classifies inference queries as AI and keeps non-inference q
   for (const capability of ["ai.generate", "ai.decide", "ai.chat.run"]) expect(policy(capability)).toBe("ai");
   for (const capability of ["ai.chat.run.read", "code.list"]) expect(policy(capability)).toBe("read");
   expect(policy("ai.chat.deliver")).toBe("silent_you");
+});
+
+test("declaration selection resolves custom and reserved export names without generating unselected apps", () => {
+  const custom = compileCapabilityManifest("example", { protocolVersion: 2, sdkExportName: "installed", queries: {}, actions: {} });
+  const reserved = compileCapabilityManifest("atob", { protocolVersion: 2, queries: {}, actions: {} });
+  for (const [name, appId] of [
+    ["installed", "example"],
+    ["_atob", "atob"],
+  ] as const) {
+    const result = codeChatSdkView([custom, reserved], { mode: "personal" }, [name]);
+    expect(result.kind === "declarations" && result.apps).toEqual([appId]);
+    expect(result.kind === "declarations" && result.declarations).toContain(`export declare const ${name}:`);
+  }
 });

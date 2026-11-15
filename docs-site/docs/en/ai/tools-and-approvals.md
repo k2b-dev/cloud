@@ -15,10 +15,11 @@ A tool gives the model a named action with validated input and output.
 The model may request the action. Cloud still controls where it runs, whether
 approval is required, and which actor reaches the implementation.
 
-Capability results can include optional [table presentation metadata](/en/docs/platform/capabilities#optional-table-previews).
-Assistant displays the referenced canonical values directly; the model does not
-generate a separate table payload. This metadata grants no authority and remains
-optional for CLI and programmatic clients.
+Capability results can include a [view](/en/docs/platform/capability-views)
+of declarative blocks. Assistant shows the referenced canonical values directly;
+the model reads `data` and a short description of the view and does not generate
+a separate table payload. A view grants no authority; the CLI and MCP receive it
+as text.
 
 Applications can also restrict launched conversations through
 [`allowedTools`](/en/docs/ai/chat-runtime-and-streaming). The stored ceiling applies
@@ -723,11 +724,44 @@ The stream exposes pending actions. The shared controller provides:
 - `submitFrontendToolResult({ turnId, callId }, result)`;
 - `checkAction({ turnId, callId })`, returning the latest outcome check.
 
-Use the shared question card for the sentence, reason, preview, two answers,
-and outcome. Where remembering for this chat is allowed, show the quiet
-**Yes, and don't ask again in this chat** link (`remember: "chat"`). A chat
-choice ends when the chat is deleted. The API still accepts `remember: "always"`
-and applies earlier choices, but the browser no longer offers it. A pending
+### One approval card
+
+Approvals look the same in every place, so a person always recognises one.
+Cloud's one approval card draws every approval: in the Assistant chat, the side
+panel, the **Approvals** list, Code pages, other apps through the `Approvals`
+component from `@k2b/cloud/approvals/ui`, and on phones. Only its width follows
+the place.
+
+- Cloud draws the head "Approval · App" with the app's icon, the state at the
+  end of the head, the sentence with its chips, the reason, the expiry, and the
+  answers. The app supplies only its sentence templates and the details as
+  [`review.view`](/en/docs/platform/capability-views#approvals), shown under
+  "Details from App" on the surface colour.
+- The card has a tinted ground in the AI colour (`--k2b-ai-surface`) in every
+  place, with no rules and no shadow, and sets its own AI primary scope. The
+  approve answer is the only filled button.
+- The states are one component: waiting, running, done, declined, expired,
+  failed, and unclear. After an answer the card keeps its ground and head, shows
+  the state as a word with its icon, and collapses to one outcome line with at
+  most one button.
+- Where remembering for this chat is allowed, the answer row shows the checkbox
+  **Don't ask again in this chat** (`remember: "chat"`); otherwise it says
+  **Asks every time**. A chat choice ends when the chat is deleted.
+- A place passes data and answers, never a class, a style, or a variant. The
+  `approval-card-calls` rule fails on look props, on `Chat.Decision` outside
+  `ApprovalCard`, and on other stylesheets that style the card.
+- When an app confirms an Action itself before it runs it, `ApprovalDetails`
+  from `@k2b/cloud/approvals/ui` draws the review's details exactly as the
+  card does.
+- In a conversation, a view's tables and key figures load their code after the
+  first frame. Each holds its room until then, so nothing moves.
+
+The **Approvals** list no longer has a band layout. A list scoped to one
+resource with `link` shows nothing until a request for it waits, then the same
+card.
+
+The API still accepts `remember: "always"` and applies earlier choices, but the
+browser no longer offers it. A pending
 approval retains `allowChat` and `allowAlways`; a website request also carries
 `website`, its exact origin.
 

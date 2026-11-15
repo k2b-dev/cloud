@@ -93,7 +93,7 @@ export async function admitCodeEvent(
       ));
     if (recoverRun) {
       // Only a never-started run can be explicitly rebound. Completed or attempted runs retain their receipt and effects.
-      await db`UPDATE code.runs SET version_id=${code.activeVersionId}::uuid,entrypoint=${entry.entrypoint},state='queued',outcome=NULL,ended_at=NULL
+      await db`UPDATE code.runs SET version_id=${code.activeVersionId}::uuid,entrypoint=${entry.entrypoint},state='queued',outcome=NULL,ended_at=NULL,effects_recorded=FALSE,confirmed_effects='{}'::jsonb
         WHERE id=${runId}::uuid`;
       await db`INSERT INTO code.run_outbox(run_id) VALUES(${runId}::uuid) ON CONFLICT DO NOTHING`;
     } else await db`INSERT INTO code.run_requests(code_id,request_key,run_id) VALUES(${code.id},${requestKey},${runId}::uuid)`;

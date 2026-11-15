@@ -1,4 +1,5 @@
 export { type CodeRoute, CodeRouteSchema, codeOwnPath, matchCodeRoute } from "../contracts/code-routes";
+export { visitCronDaySlots } from "../shared/cron-schedule";
 export { codeAiToolCovered, createCodeAiTools } from "./ai-tools";
 export type {
   CodeContext,
@@ -49,6 +50,7 @@ export {
   type CodeChartDescription,
   CodeChartDescriptionSchema,
   type CodePageField,
+  CodePageFieldSchema,
   type CodePageNode,
   CodePageNodeSchema,
   type CodePageTree,
@@ -63,6 +65,7 @@ export {
   CodeRouteResponseSchema,
 } from "./request-contract";
 export { codeSdkHash } from "./sdk-hash";
+export { codeSdkExportName } from "./sdk-names";
 export { createCodeTestBridge } from "./test-bridge";
 export type {
   CodeTestCall,
@@ -80,12 +83,14 @@ export {
   CODE_TEST_RESULT_JSON_SCHEMA,
   CodeTestCallSchema,
   CodeTestCaseSchema,
+  CodeTestDifferenceSchema,
   CodeTestExecutionCaseSchema,
   CodeTestFixtureDetailSchema,
   CodeTestLimitsSchema,
   CodeTestMockSchema,
   CodeTestResultSchema,
   CodeTestRunSchema,
+  codeTestDifference,
   codeTestFailure,
   codeTestFixtureDetail,
 } from "./test-contract";

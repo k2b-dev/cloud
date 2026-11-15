@@ -156,7 +156,7 @@ databaseSuite()("open questions", () => {
         review: { ...review, sentence: { ...review.sentence, short: "Send Meeting.pdf" } },
       }),
     });
-    const action = await f.ask({ callId: "action", block: tool("action", { review: { ...review, preview: undefined } }) });
+    const action = await f.ask({ callId: "action", block: tool("action", { review: { ...review, view: undefined } }) });
     const custom = await f.ask({
       callId: "parent-approval-1",
       kind: "custom_approval",

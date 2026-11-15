@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CapabilityOriginSchema } from "../../contracts/capabilities";
 import type { RequestCredentialProof } from "../../server/middleware/auth";
 import { resolveOAuthTokenActor } from "../oauth-tokens";
 import { requestCacheRedis } from "../request-cache-redis";
@@ -31,12 +32,14 @@ const LeaseSchema = z
   .object({
     appId: z.string(),
     deadline: z.number().int().positive(),
-    origin: z.enum(["http", "app", "assistant", "mcp"]),
+    origin: CapabilityOriginSchema,
     proof: ProofSchema.optional(),
     assistantTurn: z.object({ conversationId: z.uuid(), turnId: z.uuid() }).strict().optional(),
   })
   .strict()
-  .refine((lease) => (lease.origin === "assistant") === !!lease.assistantTurn, { message: "Turn authority requires the Assistant origin" });
+  .refine((lease) => (lease.origin === "assistant" || lease.origin === "choice") === !!lease.assistantTurn, {
+    message: "Turn authority requires the Assistant or choice origin",
+  });
 export type NestedInvocationLease = z.infer<typeof LeaseSchema>;
 
 const key = (id: string) => `identity:nested:v1:${id}`;

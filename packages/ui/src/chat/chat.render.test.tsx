@@ -48,8 +48,6 @@ describe("@k2b/ui portable chat family", () => {
       "ContextPanel",
       "Decision",
       "Outcome",
-      "Preview",
-      "Mark",
     ]);
     for (const legacyExport of ["ChatTimeline", "ChatMessage", "ChatActivity", "ChatComposer", "ChatContextUsage"]) {
       expect(legacyExport in publicUi).toBe(false);

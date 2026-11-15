@@ -180,10 +180,11 @@ databaseSuite()("Code page label card and page reports", () => {
           status = (await router.request(`https://cloud.test/code/${codeId}/open`)).status;
         });
         expect(status).toBe(200);
-        const codeStatements = statements.filter((statement) => /\bcode\.|auth\.users/.test(statement));
-        console.log("SQL BUDGET Code page with label", user ? "member" : "visitor", statements.length, statements);
-        expect(codeStatements).toHaveLength(1);
-        expect(codeStatements[0]).toStartWith("SELECT v.manifest,c.active_version_id,c.owner_kind");
+        // The meter keeps only the start of each statement, so the whole page is pinned: the version statement, which
+        // already joins the owner's name, and for a signed-in person the layout's own screen preference, label or not.
+        expect(statements).toHaveLength(user ? 2 : 1);
+        expect(statements[0]).toStartWith("SELECT v.manifest,c.active_version_id,c.owner_kind");
+        if (user) expect(statements[1]).toStartWith("SELECT privacy_timer_seconds AS seconds FROM auth.screen_preferences");
       }
     } finally {
       await meter.close();
@@ -288,15 +289,13 @@ databaseSuite()("Code page label card and page reports", () => {
         resolvedAt: null,
       }),
     ]);
-    const admin = new Hono<server.AuthContext>()
-      .use("*", async (c, next) => {
-        c.set("user", ben);
-        c.set("actor", { kind: "user", user: ben });
-        c.set("accessSubject", { type: "user", userId: ben.id });
-        c.set("credentialKind", "session");
-        await next();
-      })
-      .route("/api/code/admin", createCodeAdminRoutes());
+    // The admin routes as Administration › Code calls them; role and scope checks are the platform's own tests.
+    const adminAuth = [
+      spyOn(server.auth, "requireRole").mockReturnValue(async (_c, next) => next()),
+      spyOn(server.auth, "requireOAuthScope").mockReturnValue(async (_c, next) => next()),
+      spyOn(server.auth, "getAuthority").mockReturnValue(context(ben).authority),
+    ];
+    const admin = new Hono().route("/api/code/admin", createCodeAdminRoutes());
     const call = (path: string, body: unknown) =>
       admin.request(`/api/code/admin/${path}`, {
         method: "POST",
@@ -309,6 +308,7 @@ databaseSuite()("Code page label card and page reports", () => {
     const resolved = await call("reports/resolve", { codeId, reportId });
     expect(resolved.status).toBe(200);
     const { data } = (await resolved.json()) as { data: { state: string; resolvedAt: string } };
+    for (const spy of adminAuth) spy.mockRestore();
     expect(data.state).toBe("resolved");
     // Resolving again changes nothing and tells nobody twice.
     expect(await resolveCodePageReport({ codeId, reportId }, context(ben))).toEqual({ state: "resolved", resolvedAt: data.resolvedAt });

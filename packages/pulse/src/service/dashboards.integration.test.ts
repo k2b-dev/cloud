@@ -149,7 +149,10 @@ suiteFor("database")("SQL dashboard permissions, publication and durable runs", 
     const { assertCapabilityReview, assertResourceOpenLink } = await import("@k2b/cloud/capabilities/testing");
     assertCapabilityReview(publicationReview.data, { policy: { ask: "changes_access" }, queries: [], validateQueryInput: () => false });
     assertCapabilityReview(changed.data, { policy: { silent: "shared" }, queries: [], validateQueryInput: () => false });
-    expect(publicationReview.data).toMatchObject({ content: { kind: "page", baseRevision: 2, body: expect.stringContaining('"visits"') } });
+    // The approved view names the revision and the public columns, so the approval binds exactly what goes public.
+    expect(publicationReview.data).toMatchObject({
+      view: { version: 1, blocks: [{ kind: "Text", text: expect.stringMatching(/"revision": 2,[\s\S]*"visits"/) }] },
+    });
     const read = dashboardCapabilities.queries["dashboard.read"];
     const resource = await read.run({ id: dashboard.id }, context);
     expect(resource).toMatchObject({ ok: true, data: { data: { id: dashboard.id, baseId: "Dash01" } } });

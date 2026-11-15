@@ -59,6 +59,7 @@ import { generatedFileQueries } from "./code/files/capabilities";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./code/policy";
 import { CODE_POLICY_ROWS, codePolicyContracts } from "./code/policy-contracts";
 import { runCodeQuery } from "./code/queries";
+import { codeReadModelQueries } from "./code/read-model/capabilities";
 import { readCodeReview } from "./code/review";
 import { CodeReviewInputSchema, CodeReviewSchema } from "./code/review-contracts";
 import { codeReviewEvents, readableCodePrincipals } from "./code/review-events";
@@ -110,11 +111,9 @@ const reviewCodeOperation = async (
           : { reach: "you" as const }),
       ...(input.entrypoint
         ? {
-            content: {
-              kind: "page" as const,
-              title: t.codeOperationConfirm({ operation }),
-              format: "plain" as const,
-              body: input.entrypoint,
+            view: {
+              version: 1 as const,
+              blocks: [{ kind: "Text" as const, text: t.codeOperationConfirm({ operation }) + "\n\n" + input.entrypoint }],
             },
           }
         : {}),
@@ -625,6 +624,7 @@ export const aiCapabilities = defineCapabilities({
   },
   queries: {
     ...generatedFileQueries,
+    ...codeReadModelQueries,
     "code.event.catchup.read": {
       title: "Read Code catch-up",
       description: "Read durable catch-up admission progress for one operation. Execution outcomes appear in Code runs.",
@@ -683,21 +683,21 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.version.diff.read": {
       title: "Read complete Code comparison",
-      description: "Read bounded chunks of complete CodeDiff JSON for two immutable versions. Assemble all chunks before rendering.",
+      description: "Editors read complete CodeDiff JSON in chunks; assemble before rendering.",
       ...codeVersionContracts.diffRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersionDiff(input, ctx)),
     },
     "code.version.diff": {
       title: "Compare Code version",
-      description: "Read full file rows against the last approved or activated version, with exact decision binding.",
+      description: "Editors compare files against the approved or active version, bound to its decision.",
       ...codeVersionContracts.diff,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => diffCodeVersion(input, ctx)),
     },
     "code.version.list": {
       title: "List Code versions",
-      description: "Read version submission and approval receipts, including sole-admin decisions.",
+      description: "Read submission and approval receipts, including sole-admin decisions.",
       ...codeVersionContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeVersions(input, ctx)),
@@ -711,30 +711,28 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.policy.effective": {
       title: "Resolve Code policy",
-      description:
-        "Resolve current classification rules for the personal owner, or a resource/app author. Other views require Cloud administration.",
+      description: "Resolve owner/author classification rules. Other views require Cloud administration.",
       ...codePolicyContracts.effective,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => effectiveCodePolicy(input, ctx)),
     },
     "code.policy.preview": {
       title: "Preview Code policy",
-      description: "Preview an exact pause count and a page of affected active Code without writing. Cloud administrators only.",
+      description: "Admins preview pause count and affected active Code without writing.",
       ...codePolicyContracts.preview,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => previewCodePolicy(input, ctx)),
     },
     "code.attention": {
       title: "Check Code attention",
-      description:
-        "For one exact owner, list the readable Code that needs someone: a failed latest run, access removed at a target, or a version waiting for approval.",
+      description: "List readable Code for one owner needing attention: latest run failed, target access missing or approval pending.",
       ...codeAttentionContracts.attention,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeAttention(input, ctx)),
     },
     "code.summary": {
       title: "Summarize an owner's Code",
-      description: "For one exact owner, count the automations and the targets with access of the readable Code. No names and no contents.",
+      description: "Count readable automations and accessible targets for one exact owner. No names or contents.",
       ...codeAttentionContracts.summary,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeSummary(input, ctx)),
@@ -742,22 +740,21 @@ export const aiCapabilities = defineCapabilities({
     "code.list": {
       title: "List Code",
       description:
-        "List personal and explicitly shared Code; Cloud admins list all. Supply an exact owner to also list the Code of an object you manage. Follow nextCursor even on empty pages.",
+        "List personal/shared Code; admins list all. An exact owner includes Code of objects you manage. Follow nextCursor even on empty pages.",
       ...codeQueryContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodes(input, ctx)),
     },
     "code.read": {
       title: "Read Code",
-      description: "Read one Code identity, owner and current permission using its stable codeId.",
+      description: "Read Code identity, owner and current permission by codeId.",
       ...codeQueryContracts.read,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeDetails(input.codeId, ctx)),
     },
     "code.version.read": {
       title: "Read a Code version",
-      description:
-        "Read immutable version metadata or a source, bundle or manifest text chunk. Follow nextOffset to obtain the full content.",
+      description: "Version metadata or manifest; source and bundle require editor rights. Follow nextOffset for all text.",
       ...codeQueryContracts.versionRead,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersion(input, ctx)),
@@ -780,22 +777,21 @@ export const aiCapabilities = defineCapabilities({
     "code.attention.list": {
       title: "List Code that needs you",
       description:
-        "Across owners, list Code of a resource or app that the caller administers and that needs them: paused, a latest run failed, access missing at a target, or a version awaiting approval. Follow nextCursor even on empty pages.",
+        "List managed resource/app Code needing attention: paused, latest run failed, target access missing or approval pending. Follow nextCursor even on empty pages.",
       ...codeAttentionContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeAttention(input, ctx)),
     },
     "code.automation.list": {
       title: "List a Code's automations",
-      description:
-        "List the running version's automations with schedule, next run and newest run, and which removed target access each one needs.",
+      description: "List active-version automations, schedules, next/latest runs and missing target access.",
       ...codeAutomationContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeAutomations(input, ctx)),
     },
     "code.run.count": {
       title: "Count own Code runs",
-      description: "Count runs and failed runs of the caller's own personal Code since a moment within the last 7 days.",
+      description: "Count own personal Code runs/failures since a moment within the last 7 days.",
       ...codeQueryContracts.runCount,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => countOwnCodeRuns(input, ctx)),
@@ -1291,11 +1287,14 @@ export const aiCapabilities = defineCapabilities({
             confirm: t.codeSecretDeleteConfirm,
             decline: t.codePolicyDecline,
           },
-          content: {
-            kind: "page" as const,
-            title: t.codeSecretDeleteConfirm,
-            format: "plain" as const,
-            body: JSON.stringify({ codeId: codeTargetId(context), ...secret }, null, 2),
+          view: {
+            version: 1 as const,
+            blocks: [
+              {
+                kind: "Text" as const,
+                text: t.codeSecretDeleteConfirm + "\n\n" + JSON.stringify({ codeId: codeTargetId(context), ...secret }, null, 2),
+              },
+            ],
           },
         });
       },
@@ -1459,21 +1458,26 @@ export const aiCapabilities = defineCapabilities({
             confirm: t.codePolicyConfirm,
             decline: t.codePolicyDecline,
           },
-          content: {
-            kind: "page" as const,
-            baseRevision: input.revision,
-            title: t.codePolicyTitle,
-            format: "plain" as const,
-            body: CODE_POLICY_ROWS.map(
-              (row) =>
-                `${t.codePolicyRow({ row })} (${row})\n${input.definition.rules
-                  .filter((rule) => rule.row === row)
-                  .map(
-                    (rule) =>
-                      `${rule.groupId ? labels.get(rule.groupId) : t.codePolicyDefault}: ${t.codePolicyValue({ value: rule.value })} (${rule.value})`,
-                  )
-                  .join("\n")}`,
-            ).join("\n\n"),
+          view: {
+            version: 1 as const,
+            blocks: [
+              {
+                kind: "Text" as const,
+                text:
+                  t.codePolicyTitle +
+                  "\n\n" +
+                  CODE_POLICY_ROWS.map(
+                    (row) =>
+                      `${t.codePolicyRow({ row })} (${row})\n${input.definition.rules
+                        .filter((rule) => rule.row === row)
+                        .map(
+                          (rule) =>
+                            `${rule.groupId ? labels.get(rule.groupId) : t.codePolicyDefault}: ${t.codePolicyValue({ value: rule.value })} (${rule.value})`,
+                        )
+                        .join("\n")}`,
+                  ).join("\n\n"),
+              },
+            ],
           },
         });
       },

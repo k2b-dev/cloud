@@ -30,7 +30,7 @@ packages/ssr/test/engine/nav-swap.engine.test.ts | 1
 packages/ui/src/actions/menu-width.browser.test.ts | 2
 packages/ui/src/actions/view-tabs.browser.test.ts | 1
 packages/ui/src/chat/chat-activity-hydration.browser.test.ts | 1
-packages/ui/src/chat/chat-decision.browser.test.ts | 2
+packages/ui/src/chat/chat-decision.browser.test.ts | 1
 packages/ui/src/content/help-blocks.browser.test.ts | 1
 packages/ui/src/content/reaction-bar.browser.test.ts | 1
 packages/ui/src/layout/workspace-head-hydration.browser.test.ts | 2

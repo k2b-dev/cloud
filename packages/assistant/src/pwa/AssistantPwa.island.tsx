@@ -983,6 +983,8 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                     ),
                     actionDisabled: () => chat.runStatus() === "stopping",
                     onCheckAction: (request) => chat.checkAction(request),
+                    onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
+                    onChoice: (request, blockId, ids) => chat.submitChoice(request, blockId, ids),
                     onApproval: async (request, input) => {
                       if (await chat.respondToApproval(request, input)) return;
                       // The card says itself that the answer is not confirmed; the field's hint line stays free.
@@ -1114,6 +1116,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       toast.success(t().archived({ title: conversation.title }), {
         action: {
           label: t().undo,
+          variant: "ghost",
           onClick: () =>
             void mutate(t().restore, async () => {
               await assistantApi.restoreConversation(id);

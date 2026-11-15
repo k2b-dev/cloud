@@ -33,6 +33,8 @@ import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscri
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
+import { storeCodeVersionExplanation } from "./read-model/explanation";
+import { readModelNames } from "./read-model/names";
 import {
   CODE_REVIEW_MAX_WAIT_MS,
   type CodeReviewDecision,
@@ -44,6 +46,7 @@ import { codeReviewEventPublisher } from "./review-events";
 import { createRunnerCodeTestingHost } from "./runner-jobs";
 import { validateCodeSecretBindings } from "./secrets";
 import { codeSettings } from "./settings";
+import { requireCodeSourcePermission } from "./source-access";
 import {
   codeAuthor,
   codeBundleHash,
@@ -167,15 +170,21 @@ function reviewFor(
     ask: "changes_access",
     // Plain JSON is a passive complete snapshot, readable in every existing approval surface.
     // C22 additionally renders these same full rows through CodeDiff.
-    content: {
-      kind: "page",
-      title: t.content,
-      format: "plain",
-      body: JSON.stringify({
-        binding,
-        manifest: version.manifest,
-        files: codeVersionDiff(comparison?.source_files ?? {}, version.source_files),
-      }),
+    view: {
+      version: 1 as const,
+      blocks: [
+        {
+          kind: "Text" as const,
+          text:
+            t.content +
+            "\n\n" +
+            JSON.stringify({
+              binding,
+              manifest: version.manifest,
+              files: codeVersionDiff(comparison?.source_files ?? {}, version.source_files),
+            }),
+        },
+      ],
     },
   };
 }
@@ -247,18 +256,24 @@ export async function reviewCodeVersionSubmission(
     slots: { code: codeReviewSlot(code) },
     sentence: { action: t.submitAction, running: t.submitRunning, done: t.submitDone, confirm: t.submitConfirm, decline: t.cancel },
     consequences: [{ text: t.submitEffect }],
-    content: {
-      kind: "page",
-      title: t.content,
-      format: "plain",
-      body: JSON.stringify({
-        codeId: code.id,
-        baseVersionId: input.baseVersionId,
-        activeVersionId: code.activeVersionId,
-        manifest: input.manifest,
-        bundle: input.bundle,
-        files: codeVersionDiff(comparison?.source_files ?? {}, input.sourceFiles, "replacement"),
-      }),
+    view: {
+      version: 1 as const,
+      blocks: [
+        {
+          kind: "Text" as const,
+          text:
+            t.content +
+            "\n\n" +
+            JSON.stringify({
+              codeId: code.id,
+              baseVersionId: input.baseVersionId,
+              activeVersionId: code.activeVersionId,
+              manifest: input.manifest,
+              bundle: input.bundle,
+              files: codeVersionDiff(comparison?.source_files ?? {}, input.sourceFiles, "replacement"),
+            }),
+        },
+      ],
     },
   };
   if (!CapabilityActionCallReviewSchema.safeParse(review).success)
@@ -281,8 +296,14 @@ async function submissionEvidence(
   const bounded: CodeContext = { ...context, signal: context.signal ? AbortSignal.any([context.signal, budget]) : budget };
   try {
     const request = await createCodeCheckRequest(input.codeId, input.sourceFiles, input.manifest.entry, bounded);
+    const manifest = CodeCheckedVersionManifestSchema.parse(input.manifest);
+    const [deNames, enNames] = await Promise.all([
+      readModelNames([manifest], { ...bounded, locale: "de" }),
+      readModelNames([manifest], { ...bounded, locale: "en" }),
+    ]);
     return codeVersionEvidence(
       await testCode({ code: request, tests: input.tests }, await createRunnerCodeTestingHost(bounded), bounded.signal),
+      (id, locale) => (locale === "de" ? deNames : enNames).operation(id).title,
     );
   } catch (error) {
     if (context.signal?.aborted) throw error;
@@ -299,12 +320,13 @@ export async function submitCodeVersion(
   const author = codePerson(context, true);
   const { code: authorizedCode } = await readCode(input.codeId, context);
   await validateOperationRows(input.manifest, context, authorizedCode.owner.kind);
-  await verifyCodeSubmission(input, context);
+  const notices = await verifyCodeSubmission(input, context);
   const evidence: CodeVersionEvidence = {
     ...(await submissionEvidence(input, context, startedAt)),
+    notices: (notices ?? []).map(({ code, message, file, line, column }) => ({ code, message, file, line, column })),
     ...(input.manifest.database ? { database: true } : {}),
   };
-  return sql.begin(async (tx) => {
+  const submitted = await sql.begin(async (tx) => {
     // Match C5's request-before-policy-before-Code order. Never wait on a request while holding Code.
     const superseded = await tx<{ id: string }[]>`SELECT r.id FROM approvals.requests r
       JOIN code.version_submissions s ON s.approval_id=r.id
@@ -389,15 +411,29 @@ export async function submitCodeVersion(
       version,
       binding,
       approvalId,
-      status: approvalId ? "pending" : "submitted",
+      status: approvalId ? ("pending" as const) : ("submitted" as const),
       decision: null,
       origin: CodeSubmissionOriginSchema.parse(context.submissionOrigin ?? { kind: "cli" }),
     };
   });
+  // The immutable version is already committed; missing model text never invalidates a submission.
+  try {
+    await storeCodeVersionExplanation(submitted.version.id, {
+      ...context,
+      signal: AbortSignal.any([
+        ...(context.signal ? [context.signal] : []),
+        AbortSignal.timeout(Math.max(1, SUBMISSION_BUDGET_MS - (performance.now() - startedAt))),
+      ]),
+    });
+  } catch {
+    /* The section remains absent when generation is unavailable. */
+  }
+  return submitted;
 }
 /** Compare against the last approved or successfully activated version, including every row of every file. */
 export async function diffCodeVersion(input: z.infer<typeof codeVersionContracts.diff.input>, context: CodeContext) {
-  await readCode(input.codeId, context);
+  const { code: sourceCode } = await readCode(input.codeId, context);
+  await requireCodeSourcePermission(sourceCode, context);
   return sql.begin(async (tx) => {
     await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
     const code = await findCode(input.codeId, tx);
@@ -427,7 +463,8 @@ export async function diffCodeVersion(input: z.infer<typeof codeVersionContracts
  * Assemble all chunks before rendering. Changed files use full replacement rows so immutable inputs always yield identical chunks.
  */
 export async function readCodeVersionDiff(input: z.infer<typeof codeVersionContracts.diffRead.input>, context: CodeContext) {
-  await readCode(input.codeId, context);
+  const { code: sourceCode } = await readCode(input.codeId, context);
+  await requireCodeSourcePermission(sourceCode, context);
   return sql.begin(async (tx) => {
     await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`;
     const version = await versionSnapshot(input.codeId, input.versionId, tx);
@@ -788,19 +825,25 @@ export async function reviewCodeExecutionChange(
       },
       ...(paused ? {} : { ask: "keeps_working" as const }),
       consequences: [{ text: paused ? t.pauseEffect : t.resumeEffect }],
-      content: {
-        kind: "page",
-        title: code.title,
-        format: "plain",
-        body: JSON.stringify({
-          codeId,
-          activeVersionId: code.activeVersionId,
-          sourceHash: version.source_hash,
-          bundleHash: version.bundle_hash,
-          before: code.state,
-          after: paused ? "paused" : "active",
-          approval,
-        }),
+      view: {
+        version: 1 as const,
+        blocks: [
+          {
+            kind: "Text" as const,
+            text:
+              code.title +
+              "\n\n" +
+              JSON.stringify({
+                codeId,
+                activeVersionId: code.activeVersionId,
+                sourceHash: version.source_hash,
+                bundleHash: version.bundle_hash,
+                before: code.state,
+                after: paused ? "paused" : "active",
+                approval,
+              }),
+          },
+        ],
       },
     };
   });

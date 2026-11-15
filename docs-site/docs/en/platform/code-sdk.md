@@ -60,6 +60,12 @@ while earlier replicas still run and renew its registration.
 SDK generation repeats this validation.
 The checker and runtime share these generated paths.
 
+SDK declarations keep operation titles on their input aliases without repeating
+those titles on result aliases. The chat generates declarations only for the
+selected apps; `codeSdkExportName` from `@k2b/cloud/code` resolves default export
+names with the same reserved-name rules as the generator. Custom
+`sdkExportName` values take precedence.
+
 `http.fetch()` returns `status`, `headers`, `bodyBase64`, `text()` and `json()`.
 Use `await response.text()` for UTF-8 or `await response.json()` for JSON;
 `bodyBase64` preserves binary bytes. Invalid JSON rejects `json()`.
@@ -355,12 +361,17 @@ route builds the page. Parts may come from data, such as
 `{statuses.map(status => <Option value={status} label={status} />)}`. Only
 pages built from blocks reach `c.page`; a hand-written object does not.
 
+Code pages share these blocks, their limits, and their renderer with
+[capability views](/en/docs/platform/capability-views), the results, approval
+details, and search previews of applications. Choices, drafts, cards, and images
+belong to those views; forms and buttons belong to Code pages.
+
 | Block | Props | Children |
 | --- | --- | --- |
 | `Page` | `title`, optional `eyebrow`, `subtitle`, `asOf`, `icon`, `color`, `follow`; the root of every page | blocks |
 | `Section` | `title`, optional `description`, `icon`, `color` | blocks |
 | `Stats` | none | 1–6 `Stat` |
-| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `icon`, `tone`, `delta`, `compare`, `trend` | none |
+| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `icon`, `tone`, `delta`, `compare`, `note`, `trend` | none |
 | `Text` | none | text |
 | `Heading` | optional `level: 2 \| 3 \| 4` | text |
 | `Table` | `title`, `rows` of scalar values, optional `subtitle`, `search`, `empty` text and `width` | 1–20 `Column` |
@@ -414,8 +425,10 @@ the whole row.
 a `delta` with the change since the comparison (`value` is a share,
 `0.082` for 8.2 %; with `unit: "points"` it is percentage points), its
 `better` direction (`up` or `down`, which colours the change), a `compare`
-with `label` and `value`, and a `trend` of up to 60 numbers. `icon` sits in a
-chip of its `tone` colour.
+with `label` and `value`, a `note` (one quiet line under the figure, up to 80
+characters), and a `trend` of up to 60 numbers. `icon` sits in a chip of its
+`tone` colour. In a capability view the key figures stand flat, without tiles,
+and a negative figure reads in the danger colour.
 
 A `Column`'s `type` says what it holds: `text`, `number`, `date`, `status`,
 `bar`, `amount`, `flow` or `delta`. It decides alignment, the shown text and

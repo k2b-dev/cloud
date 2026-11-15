@@ -30,8 +30,10 @@ import {
   CodeVersionManifestSchema,
   type codeQueryContracts,
 } from "./contracts";
+import { type CodeEffectEvidence, CodeEffectEvidenceSchema } from "./read-model/effects";
 import { createCodeServiceAccount } from "./service-account";
 import { CODE_SETTINGS, codeSettings } from "./settings";
+import { requireCodeSourcePermission } from "./source-access";
 import { codeVersionMessages } from "./version-messages";
 
 /** C8/C13 pass their transaction for domain-row operations; admission settings use the registered settings API. */
@@ -51,6 +53,10 @@ export type CodeRow = {
   pause_reason?: string | null;
   pause_rows?: string[];
   pause_policy_revision?: number | null;
+  activated_at?: Date | null;
+  activated_by?: string | null;
+  activated_by_name?: string | null;
+  paused_at?: Date | null;
   created_by: string | null;
   created_at: Date;
 };
@@ -65,7 +71,7 @@ export const codeRowOwner = (row: Pick<CodeRow, "owner_kind" | "owner_user_id" |
   const owner = CodeOwnerSchema.safeParse(ownerOfRow(row));
   return owner.success ? owner.data : null;
 };
-export const mapCode = (row: CodeRow): Code => ({
+export const mapCode = (row: CodeRow, viewer?: { id: string; roles: readonly string[] }): Code => ({
   id: row.id,
   owner: CodeOwnerSchema.parse(ownerOfRow(row)),
   title: row.title,
@@ -73,6 +79,12 @@ export const mapCode = (row: CodeRow): Code => ({
   serviceAccountHandle: row.service_account_handle ?? null,
   state: row.state,
   activeVersionId: row.active_version_id,
+  activatedAt: row.activated_at?.toISOString() ?? null,
+  activatedBy:
+    row.activated_by_name && viewer && (viewer.roles.includes("user") || viewer.id === row.activated_by)
+      ? { name: row.activated_by_name }
+      : null,
+  pausedAt: row.state === "paused" ? (row.paused_at?.toISOString() ?? null) : null,
   pauseReason: row.pause_reason ?? null,
   pauseRows: row.pause_rows ?? [],
   pausePolicyRevision: row.pause_policy_revision ?? null,
@@ -80,14 +92,20 @@ export const mapCode = (row: CodeRow): Code => ({
   createdAt: row.created_at.toISOString(),
 });
 /** Internal row lookup; public callers must use readCode, which authorizes before returning data. */
-export const findCode = async (codeId: string, db: CodeDb = sql): Promise<Code | null> => {
-  const [row] = await db<CodeRow[]>`SELECT c.*, sa.handle AS service_account_handle FROM code.codes c
-    LEFT JOIN auth.service_accounts sa ON sa.id=c.service_account_id WHERE c.id = ${codeId}`;
-  return row ? mapCode(row) : null;
+export const findCode = async (
+  codeId: string,
+  db: CodeDb = sql,
+  viewer?: { id: string; roles: readonly string[] },
+): Promise<Code | null> => {
+  const [row] = await db<CodeRow[]>`SELECT c.*, sa.handle AS service_account_handle,
+    COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),'')) AS activated_by_name FROM code.codes c
+    LEFT JOIN auth.service_accounts sa ON sa.id=c.service_account_id
+    LEFT JOIN auth.users u ON u.id=c.activated_by WHERE c.id = ${codeId}`;
+  return row ? mapCode(row, viewer) : null;
 };
 export const readCode = async (codeId: string, context: CodeContext) => {
-  codePerson(context);
-  const code = await findCode(codeId);
+  const viewer = codePerson(context);
+  const code = await findCode(codeId, sql, viewer);
   if (!code) throw new CodeDataError("NOT_FOUND", "Code not found.");
   const permission = await requireCodePermission(code, context);
   // Detail reads refresh presentation separately; permission checks and previews stay read-only.
@@ -129,8 +147,10 @@ export const listCodes = async (
   const type = owner?.kind === "resource" ? owner.ref.type : null;
   const id = owner?.kind === "resource" ? owner.ref.id : null;
   const appId = owner?.kind === "app" ? owner.appId : null;
-  const rows = await sql<CodeRow[]>`SELECT c.*, sa.handle AS service_account_handle FROM code.codes c
-    LEFT JOIN auth.service_accounts sa ON sa.id=c.service_account_id WHERE
+  const rows = await sql<CodeRow[]>`SELECT c.*, sa.handle AS service_account_handle,
+    COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),'')) AS activated_by_name FROM code.codes c
+    LEFT JOIN auth.service_accounts sa ON sa.id=c.service_account_id
+    LEFT JOIN auth.users u ON u.id=c.activated_by WHERE
     (${kind}::text IS NULL OR owner_kind = ${kind}) AND (${userId}::uuid IS NULL OR owner_user_id = ${userId}::uuid)
     AND (${type}::text IS NULL OR owner_type = ${type}) AND (${id}::text IS NULL OR owner_id = ${id})
     AND (${appId}::text IS NULL OR owner_app_id = ${appId})
@@ -141,7 +161,7 @@ export const listCodes = async (
     ORDER BY c.id LIMIT ${input.limit + 1}`;
   const items = [];
   for (const row of rows.slice(0, input.limit)) {
-    const code = mapCode(row);
+    const code = mapCode(row, user);
     const permission = await codePermission(code, context, sql, input.owner ? "read" : "skip");
     if (permission) items.push({ code, permission });
   }
@@ -392,7 +412,8 @@ export const readCodeVersion = async (
   },
   context: CodeContext,
 ) => {
-  await readCode(input.codeId, context);
+  const { code } = await readCode(input.codeId, context);
+  if (input.content?.kind === "source" || input.content?.kind === "bundle") await requireCodeSourcePermission(code, context);
   const [row] = await sql<VersionRow[]>`SELECT * FROM code.versions WHERE code_id = ${input.codeId} AND id = ${input.versionId}::uuid`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code version not found.");
   let text: string | undefined;
@@ -619,6 +640,9 @@ export const finishCodeCall = async (
     state: "succeeded" | "failed";
     result: CodeCall["result"];
     refusalKind?: CodeCallRefusalKind | null;
+    replayed?: boolean;
+    confirmedEffect?: boolean;
+    effect?: CodeEffectEvidence;
     endedAt: Date;
     receiptTransactionId?: string;
   },
@@ -626,15 +650,29 @@ export const finishCodeCall = async (
 ): Promise<void> => {
   // Match settlement's run-before-call lock order, including late authoritative results.
   let encoded: string;
+  let storable = true;
   try {
     encoded = jsonText(input.result);
   } catch (error) {
     if (!(error instanceof CodeDataError)) throw error;
+    storable = false;
     encoded = jsonText({ code: "code_result_not_storable", message: error.message });
   }
   // Postgres json preserves exact text, including numeric exponents and escaped NUL.
   const size = bytes(encoded);
   const stored = size > CODE_RESULT_STORAGE_BYTES ? jsonText({ code: "code_result_exceeds_capability_contract", bytes: size }) : encoded;
+  const confirmed =
+    input.confirmedEffect === true &&
+    input.state === "succeeded" &&
+    !input.replayed &&
+    storable &&
+    size <= CODE_RESULT_STORAGE_BYTES &&
+    input.result !== null &&
+    typeof input.result === "object" &&
+    !Array.isArray(input.result) &&
+    input.result.ok === true;
+  const evidence = CodeEffectEvidenceSchema.safeParse(input.effect);
+  const effect = confirmed && evidence.success ? jsonText(evidence.data, true) : null;
   const refusalKind = input.state === "failed" ? (input.refusalKind ?? null) : null;
   const [result] = await db<{ count: number; receipt_committed: boolean }[]>`
     WITH run AS MATERIALIZED (SELECT id FROM code.runs WHERE id=${input.runId}::uuid FOR UPDATE),
@@ -642,12 +680,16 @@ export const finishCodeCall = async (
       SELECT ${input.receiptTransactionId ?? null}::xid8 IS NULL
         OR pg_xact_status(${input.receiptTransactionId ?? null}::xid8)='committed' AS committed
     ), completed AS (
-      UPDATE code.calls SET refusal_kind=${refusalKind},state=${input.state},result=${stored}::text::json,ended_at=${input.endedAt}
+      UPDATE code.calls SET refusal_kind=${refusalKind},state=${input.state},result=${stored}::text::json,ended_at=${input.endedAt},
+        replayed=${input.replayed ?? false},confirmed_effect=${confirmed} AND kind='action',
+        effect=CASE WHEN ${confirmed} AND kind='action' THEN ${effect}::text::jsonb ELSE NULL END
       FROM run,receipt WHERE receipt.committed AND run_id=run.id AND ordinal=${input.ordinal} AND state IN ('running','uncertain')
       RETURNING run_id,ordinal
     ), refused AS (
-      UPDATE code.runs SET first_refused_call_ordinal=LEAST(COALESCE(first_refused_call_ordinal,completed.ordinal),completed.ordinal)
-      FROM completed WHERE code.runs.id=completed.run_id AND ${refusalKind}::text='target_refused'
+      UPDATE code.runs SET first_refused_call_ordinal=CASE WHEN ${refusalKind}::text='target_refused'
+          THEN LEAST(COALESCE(first_refused_call_ordinal,completed.ordinal),completed.ordinal) ELSE first_refused_call_ordinal END,
+        effects_recorded=CASE WHEN ${confirmed} AND ended_at IS NOT NULL THEN FALSE ELSE effects_recorded END
+      FROM completed WHERE code.runs.id=completed.run_id AND (${refusalKind}::text='target_refused' OR (${confirmed} AND ended_at IS NOT NULL))
     ) SELECT count(*)::int AS count,(SELECT committed FROM receipt) AS receipt_committed FROM completed`;
   if (result && !result.receipt_committed) throw new CodeReceiptNotCommittedError();
   if (result?.count !== 1) throw new CodeDataError("CONFLICT", "Call is missing or already finished.");

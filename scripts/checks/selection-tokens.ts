@@ -11,6 +11,12 @@ export type SelectionAllowance = { file: string; subject: string; reason: string
 /** CSS subjects match exactly; TS/TSX subjects match a substring of the trimmed source line. */
 export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
   {
+    file: "packages/cloud/src/styles/blocks.css",
+    subject: ".k2b-ui .cloud-blocks__card[data-selected] { background }",
+    reason:
+      "Option: a card that is an option of a capability view's Choice is a radio or checkbox label, the same control state as ChoiceList and CheckboxCard, not a selected object row.",
+  },
+  {
     file: "packages/core/src/pages/admin/apps/view.tsx",
     subject: 'variant={text().primary ? "primary" : "secondary"}',
     reason: "Action: a notice's way out is the app page's one filled action when the app has no valid key.",
@@ -40,6 +46,23 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     file: "packages/cloud/src/styles/tokens.css",
     subject: ":root { --ui-pagination-current-surface }",
     reason: "Token owner: Cloud defines the platform pagination role here.",
+  },
+  {
+    file: "packages/cloud/src/styles/tokens.css",
+    subject: '[data-k2b-primary="ai"], [data-k2b-primary="ai"] .k2b-ui { --ui-selected }',
+    reason: "Token owner: the AI primary scope maps Cloud's control selection fill to the UI primary token.",
+  },
+  {
+    file: "packages/cloud/src/styles/tokens.css",
+    subject:
+      '[data-k2b-primary="ai"] :is(.cloud-app-canvas, .app-accent-scope), :is(.cloud-app-canvas, .app-accent-scope)[data-k2b-primary="ai"], .dark [data-k2b-primary="ai"] :is(.cloud-app-canvas, .app-accent-scope), .dark :is(.cloud-app-canvas, .app-accent-scope)[data-k2b-primary="ai"] { --k2b-row-selected }',
+    reason: "Token owner: AI app scopes use the primary selection fill for rows in both themes.",
+  },
+  {
+    file: "packages/cloud/src/styles/tokens.css",
+    subject:
+      '[data-k2b-primary="ai"] :is(.cloud-app-canvas, .app-accent-scope), :is(.cloud-app-canvas, .app-accent-scope)[data-k2b-primary="ai"], .dark [data-k2b-primary="ai"] :is(.cloud-app-canvas, .app-accent-scope), .dark :is(.cloud-app-canvas, .app-accent-scope)[data-k2b-primary="ai"] { --k2b-app-workspace-selected }',
+    reason: "Token owner: AI app scopes use the primary selection fill for workspace navigation in both themes.",
   },
   {
     file: "packages/cloud/src/styles/tokens.css",

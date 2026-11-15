@@ -301,6 +301,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
       },
       () => {
         if (signal.aborted || !uploads.has(id)) return;
+        // The chip shows the failure and its Try again in place; a short notice, not an error that stays over the composer.
         toast(`${t().uploadFailed}: ${entry.file.name}`, { iconClass: "ti ti-alert-circle" });
         updateChip(id, {
           icon: "ti ti-alert-circle",

@@ -126,3 +126,11 @@ export const codePageFixture = {
     { kind: "Link", label: "All items", href: "/items" },
   ],
 };
+
+/** The label hosting hands a page for a visitor without an account, with an invented opaque version value. */
+export const codePageProvenanceSeedFixture = {
+  label: { kind: "anonymous" },
+  version: "fixture-version-value-0123456789abcdefghijk",
+  path: "/",
+  cloudName: "Probe Cloud",
+} as const satisfies import("./page-provenance-contracts").CodePageProvenanceSeed;

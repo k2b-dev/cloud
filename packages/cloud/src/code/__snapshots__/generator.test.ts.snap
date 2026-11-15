@@ -760,37 +760,30 @@ export type CodeGenerationOutput<Input> = Input extends { output: infer Output }
   : unknown;
 /** Catalog input. */
 export type Work$hshop_Catalog_ListInput = Record<string, never>;
-/** Catalog result. */
 export type Work$hshop_Catalog_ListData = Array<string>;
 /** Export input. */
 export type Work$hshop_Stock_ExportInput = Work$hshop_Catalog_ListInput;
-/** Export result. */
 export type Work$hshop_Stock_ExportData = Work$hshop_Catalog_ListInput;
 type S617d671a6f11 = { id: string; state: (("ready" | "empty")) & (string) };
 /** Stock input. */
 export type Work$hshop_Stock_ListInput = { /** Page cursor. */ cursor?: string };
-/** Stock result. */
 export type Work$hshop_Stock_ListData = { next: (string | null); rows: Array<S617d671a6f11> };
 type Sf404a16e7971 = { /** Stable app-owned resource identifier. */ id: string; /** Namespaced resource type declared by… */ type: string };
 type S47a5d34bde7f = { ref: Sf404a16e7971; title: string };
 type Se47ab38f12fe = { container?: S47a5d34bde7f; /** One line in the caller's locale that… */ context?: string; done?: boolean; permission: (("read" | "write" | "admin")) & (string); /** The resource's current state as a… */ status?: string; title: string };
 /** Read workshop input. */
 export type Work$hshop_Workshop_ReadInput = { /** Workshop ID. */ id: string };
-/** Read workshop result. */
 export type Work$hshop_Workshop_ReadData = { view: Se47ab38f12fe };
 type S2f2db2f4d25b = { /** Detail kind. */ kind: ("note") & (string); /** Note text. */ text: string; [key: string]: unknown };
 type S43be3d11d6c4 = { /** Item count. */ count: number; /** Detail kind. */ kind: ("count") & (string); [key: string]: unknown };
 /** Create item input. */
 export type Work$hshop_Item_CreateInput = { /** Item details. */ details?: (S2f2db2f4d25b | S43be3d11d6c4); /** Item title. */ title: string; idempotencyKey: string };
-/** Create item result. */
 export type Work$hshop_Item_CreateData = { id: string };
 /** Inspect input. */
 export type Work$hshop_Item_InspectInput = { idempotencyKey?: never };
-/** Inspect result. */
 export type Work$hshop_Item_InspectData = { ok: boolean };
 /** Move item input. */
 export type Work$hshop_Item_MoveInput = { /** Item to move. */ itemId: string; destination: CodeHandle<"work-shop.workshop">; idempotencyKey?: never };
-/** Move item result. */
 export type Work$hshop_Item_MoveData = { moved: boolean };
 type Handle0<Id extends string = string> = CodeHandle<"cloud.app", Id> & { readonly "catalog": { readonly "list": ((((input?: Work$hshop_Catalog_ListInput) => Promise<CodeQueryResult<Work$hshop_Catalog_ListData>>) & CodeAiTool)) }; readonly "workshop": { readonly "read": ((((input: Work$hshop_Workshop_ReadInput) => Promise<CodeQueryResult<Work$hshop_Workshop_ReadData>>) & CodeAiTool)) } };
 type Handle1<Id extends string = string> = CodeHandle<"work-shop.item", Id> & { readonly "inspect": ((((input?: Work$hshop_Item_InspectInput) => Promise<Work$hshop_Item_InspectData>) & CodeAiTool)) };
@@ -894,14 +887,14 @@ type S157e289ca076 = { data: Array<number>; label: string };
 type Sbd866db8dbab = { axes: Array<string>; format?: Sf7b8d4eb1c3f; kind: ("radar") & (string); legend?: boolean; locale?: string; max: number; series: Array<S157e289ca076>; /** All kinds and groups: unit, period… */ subtitle?: string; /** All kinds and groups: chart title. */ title: string; /** All kinds: what tooltips and the… */ tooltip?: Saab559c4e37d; unit?: string };
 type S7f379fbbf736 = { description?: (Sc731f500124b | S9c03cb5a3302 | Sdda147b6785c | S1b69bf224ffe | Se91e56a2986c | Sfcc114f6af45 | S2aa515990a9c | S8d14adeeaf74 | S9b9c7678925c | Sc05000fd895c | Sdf289439ae47 | Sdb5c57fbbc5a | (Sde04f7de3f13 | Sb1dc445a76e2) | S2b209d7c7a8a | S597064cf2f55 | Se434e8daea47 | Scb1d604e2024 | S2e4574ad6b22 | S7405123d54ef | Sfbe43f3b3ef2 | Sbd866db8dbab); empty?: string; height?: (("sm" | "md" | "lg")) & (string); kind: ("Chart") & (string); title?: string; width?: (("third" | "half" | "twoThirds" | "full")) & (string) };
 type S79ac9957d107 = { better?: (("up" | "down")) & (string); unit?: ("points") & (string); value: number };
-type Sd6268941be95 = { compare?: S802d0c3f7382; delta?: S79ac9957d107; format?: Sf7b8d4eb1c3f; icon?: string; label: string; tone?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); trend?: Array<number>; value: (number | string | null) };
-type Sf5fe7857efc4 = { items: Array<Sd6268941be95>; kind: ("Stats") & (string) };
+type S8568cc68b6c8 = { compare?: S802d0c3f7382; delta?: S79ac9957d107; format?: Sf7b8d4eb1c3f; icon?: string; label: string; note?: string; tone?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); trend?: Array<number>; value: (number | string | null) };
+type S59cb1e6bee7e = { items: Array<S8568cc68b6c8>; kind: ("Stats") & (string) };
 type S51ee6e3b75b5 = { href: string; kind: ("Link") & (string); label: string };
 type Sd3722946df20 = { [key: string]: string };
 type See970d23b441 = { action: string; kind: ("Button") & (string); label: string; values?: Sd3722946df20 };
 type S0538ad0c0f7b = { kind: ("Notice") & (string); text?: string; title: string; tone: (("info" | "success" | "warning" | "danger")) & (string) };
 type Sa0d669cd1ca9 = { children: Array<CodePageRef0>; color?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); description?: string; icon?: string; kind: ("Section") & (string); title: string };
-type CodePageRef0 = ((Sfec6469122ed | S3d52bedc5066 | Sfd63ba3e49b7 | S34c2f1d4e95e | S98f112b66964 | S7f379fbbf736 | Sf5fe7857efc4 | S51ee6e3b75b5 | See970d23b441 | S0538ad0c0f7b) | Sa0d669cd1ca9);
+type CodePageRef0 = ((Sfec6469122ed | S3d52bedc5066 | Sfd63ba3e49b7 | S34c2f1d4e95e | S98f112b66964 | S7f379fbbf736 | S59cb1e6bee7e | S51ee6e3b75b5 | See970d23b441 | S0538ad0c0f7b) | Sa0d669cd1ca9);
 export type CodePageTree = { asOf?: string; children: Array<CodePageRef0>; color?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); eyebrow?: string; follow?: Array<string>; icon?: string; kind: ("Page") & (string); subtitle?: string; title: string; version: (1) & (number) };
 export type CodeChartDescription = (Sc731f500124b | S9c03cb5a3302 | Sdda147b6785c | S1b69bf224ffe | Se91e56a2986c | Sfcc114f6af45 | S2aa515990a9c | S8d14adeeaf74 | S9b9c7678925c | Sc05000fd895c | Sdf289439ae47 | Sdb5c57fbbc5a | (Sde04f7de3f13 | Sb1dc445a76e2) | S2b209d7c7a8a | S597064cf2f55 | Se434e8daea47 | Scb1d604e2024 | S2e4574ad6b22 | S7405123d54ef | Sfbe43f3b3ef2 | Sbd866db8dbab);
 /**

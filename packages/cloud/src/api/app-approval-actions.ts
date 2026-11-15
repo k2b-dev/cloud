@@ -16,14 +16,20 @@ import { appActionOffered, appActionSummary, appActionView } from "../services/a
 const INBOX_PAGES = 5;
 
 export const createDeviceActions = (appName: (appId: string, locale: string) => string): AppDeviceActions => {
-  const view: AppDeviceActions["view"] = async ({ userId, issuer, actionId }) => {
+  const loadView = async ({ userId, issuer, actionId }: Parameters<AppDeviceActions["view"]>[0]) => {
     const { items } = await listPending({ roleContext: { kind: "cloud_login" }, approverUserId: userId, id: actionId, limit: 1 });
     const row = items[0];
     if (!row) return null;
     const policy = (await loadApprovalActionPolicies([row]))(row);
     const mapped = await appActionView(row, { issuer, appName, policy });
     if (row.kind === "code_version" && (mapped.truncated || !row.canApprove)) return null;
-    return appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy) ? mapped : null;
+    return appActionOffered(mapped, pendingApprovalCard(row, appName, policy), policy)
+      ? { view: mapped, reviewDigest: row.reviewDigest }
+      : null;
+  };
+  const view: AppDeviceActions["view"] = async (input) => {
+    const loaded = await loadView(input);
+    return loaded?.view ?? null;
   };
   return {
     inbox: async ({ userId, issuer }) => {
@@ -58,7 +64,8 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
     },
     view,
     decide: async ({ userId, deviceId, issuer, actionId, digest, approved }) => {
-      const current = await view({ userId, issuer, actionId });
+      const loaded = await loadView({ userId, issuer, actionId });
+      const current = loaded?.view;
       if (!current || current.digest !== digest) return false;
       const record = await approvals.get(actionId, undefined, true);
       if (record?.kind === "code_version") {
@@ -75,7 +82,7 @@ export const createDeviceActions = (appName: (appId: string, locale: string) => 
         conversationId: pending.conversationId,
         turnId: pending.turnId,
         callId: pending.callId,
-        action: { type: "approval_response", approved },
+        action: { type: "approval_response", approved, digest: loaded?.reviewDigest },
         decidedBy: { userId, via: "cloud_login", deviceId },
         signedInSession: false,
       });

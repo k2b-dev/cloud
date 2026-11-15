@@ -31,7 +31,8 @@ export const attachSpotlightPosition = (
 ) => {
   const { dialog } = context;
   const desktop = window.matchMedia("(min-width: 64rem) and (hover: hover) and (pointer: fine)");
-  const enabled = () => desktop.matches && navigator.maxTouchPoints === 0;
+  // A maximized search fills the window; it has no other place to move to.
+  const enabled = () => desktop.matches && navigator.maxTouchPoints === 0 && host.dataset.maximized !== "true";
   const active = () => host.parentElement?.style.display !== "none" && dialog.classList.contains("cloud-search-dialog");
   let stored: SpotlightPosition | null = null;
   try {
@@ -208,11 +209,14 @@ export const attachSpotlightPosition = (
   const frame = requestAnimationFrame(layout);
   const observer = new MutationObserver(layout);
   observer.observe(dialog, { attributes: true, attributeFilter: ["class"] });
+  const maximized = new MutationObserver(resize);
+  maximized.observe(host, { attributes: true, attributeFilter: ["data-maximized"] });
   const sizeObserver = new ResizeObserver(renderPosition);
   sizeObserver.observe(dialog);
   return () => {
     cancelAnimationFrame(frame);
     observer.disconnect();
+    maximized.disconnect();
     sizeObserver.disconnect();
     home.remove();
     chip.remove();

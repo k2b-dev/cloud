@@ -67,7 +67,11 @@
   --k2b-hover: var(--k2b-accent-50);
   --k2b-selected: var(--k2b-accent-100);
   --k2b-action: var(--k2b-accent-700);
-  --k2b-action-hover: var(--k2b-accent-800);
+  /* Hovered blue text: only a darker blue, never the body ink and never an
+     added underline. Text links, link and text buttons, and the text actions
+     of headings share it; text in an app accent reads the optional host hook
+     `--k2b-detail-panel-accent-hover` beside `--k2b-detail-panel-accent`. */
+  --k2b-action-hover: var(--k2b-accent-900);
   /* Kind colours of icon chips (LinkCard, ResourceCard); each keeps 3:1 on its own chip. */
   --k2b-tint-blue: var(--k2b-accent-600);
   --k2b-tint-emerald: #047857;
@@ -105,9 +109,7 @@
   /* Underline and arrow of web and mail links in content. An optional host
      hook, as for the workspace accent; Cloud maps it to the app accent. */
   --k2b-link-accent: var(--k2b-action);
-  /* Chat questions: the type step of the question sentence (smaller on
-     phones). Marks of new words read the optional host hook
-     `--k2b-mark-accent`, which defaults to the AI accent. */
+  /* Chat questions: the type step of the question sentence. */
   --k2b-chat-decision-size: 1.125rem;
   /* Reference pills: a neutral fill that follows any surface below it, and
      one icon colour per type. Icons keep at least 3:1 on the hover fill. */
@@ -167,6 +169,7 @@
   /* The grey track of a segmented control, and an option hovered on it. */
   --k2b-tray: #ececef;
   --k2b-tray-hover: rgb(9 9 11 / 0.06);
+  --k2b-info-mark: var(--k2b-accent-500);
   --k2b-info-surface: var(--k2b-accent-50);
   --k2b-info-text: var(--k2b-accent-700);
   --k2b-success-surface: #ecfdf5;
@@ -226,14 +229,11 @@
   --k2b-surface-raised: var(--k2b-surface);
   /* A floating pill or toolbar that stays open: softer than a menu that opens for a moment. */
   --k2b-shadow-toolbar: 0 1px 2px rgb(9 9 11 / 0.06), 0 6px 18px -8px rgb(9 9 11 / 0.16);
-  /* A floating pill of small round controls, such as an editor's formatting or a viewer's zoom: the control size and
-     the space inside the pill's 1 px edge, the same on every side. The pill is the control plus that space, 38 px. */
+  /* A floating pill of small round controls (`k2b-pill`), such as an editor's formatting, a viewer's zoom, or a
+     selection's actions: the control size and the space inside the pill's 1 px edge, the same on every side. The pill
+     is the control plus that space, 38 px. */
   --k2b-pill-control: 1.5rem;
   --k2b-pill-inset: 0.375rem;
-  /* The controls of a floating Toolbar and the space around them: 44 px by default. A host with lower pills sets both
-     on its own element, such as to the pill tokens above. */
-  --k2b-toolbar-control: 2.75rem;
-  --k2b-toolbar-inset: 0.25rem;
 
   --stdlib-chart-c1: var(--k2b-accent-500);
   --stdlib-chart-c2: var(--k2b-success-500);
@@ -331,7 +331,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-hover: #252c35;
   --k2b-selected: var(--k2b-accent-950);
   --k2b-action: var(--k2b-accent-300);
-  --k2b-action-hover: var(--k2b-accent-200);
+  --k2b-action-hover: var(--k2b-accent-100);
   --k2b-tint-blue: var(--k2b-accent-400);
   --k2b-tint-emerald: #34d399;
   --k2b-tint-violet: #a78bfa;
@@ -379,6 +379,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-rail-hover: #8d8d98;
   --k2b-tray: #1a2028;
   --k2b-tray-hover: rgb(255 255 255 / 0.08);
+  --k2b-info-mark: var(--k2b-accent-500);
   --k2b-info-surface: var(--k2b-accent-950);
   --k2b-info-text: var(--k2b-accent-300);
   --k2b-success-surface: #052e26;
@@ -2450,9 +2451,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-button[data-variant="link"]:not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-action);
+  color: var(--k2b-action-hover);
   background: transparent;
-  text-decoration: underline;
 }
 
 /* A destructive text action, such as Remove at the foot of a menu, takes the
@@ -2615,6 +2615,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-icon-button[data-size="lg"] {
   width: 2.5rem;
+}
+
+/* Optical centring: a lone chevron in an icon button sits in the middle of its
+   box, yet reads as off-centre toward its open side, most of all in a round
+   button. It moves a sixteenth of its size toward its point. */
+.k2b-ui :is(.k2b-icon-button > .k2b-button__label, .k2b-lightbox__edge) > .ti-chevron-left:only-child {
+  translate: -0.0625em 0;
+}
+.k2b-ui :is(.k2b-icon-button > .k2b-button__label, .k2b-lightbox__edge) > .ti-chevron-right:only-child {
+  translate: 0.0625em 0;
 }
 
 /* A split button is one body: the segments touch, only the outer corners
@@ -4003,11 +4013,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-inline-end: -0.375rem;
 }
 
-/* A collapsible section's whole heading row is one disclosure button. Flat,
-   hover only colours its text, and the row starts where the other headings
-   start. In a card it fills the card's top on hover and focus. The chevron
-   and the summary keep their places in both states, so opening moves only
-   what lies below. */
+/* A collapsible section's whole heading row is one disclosure button. It
+   never draws a fill, not on hover, open, or with focus: hover only colours
+   the title and the chevron in the accent, and keyboard focus draws the ring
+   around the row. The row keeps the heading's place, so the gaps are those of
+   a fixed section. The chevron and the summary keep their places in both
+   states, so opening moves only what lies below. */
 .k2b-ui .k2b-section__toggle {
   padding: 0;
   border: 0;
@@ -4017,7 +4028,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font: inherit;
   cursor: pointer;
   user-select: none;
-  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui .k2b-section__toggle:disabled {
@@ -4025,7 +4035,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section__toggle:not(:disabled):hover :is(.k2b-section__title, .k2b-section__chevron) {
-  color: var(--k2b-text);
+  color: var(--k2b-detail-panel-accent, var(--k2b-action));
 }
 
 .k2b-ui .k2b-section__toggle:focus-visible {
@@ -4039,46 +4049,37 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 2.75rem;
 }
 
+/* In a card the whole top of the card opens it: an invisible hit area reaches
+   over the card's padding, and open down to the content. */
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: calc(100% + 1.75rem);
-  margin: -0.75rem -0.875rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: calc(var(--k2b-radius-surface) - 1px);
+  position: relative;
 }
 
-.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  width: calc(100% + 2.25rem);
-  margin: -1rem -1.125rem;
-  padding: 1rem 1.125rem;
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle::before {
+  content: "";
+  position: absolute;
+  inset: -0.75rem -0.875rem;
 }
 
-.k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle {
-  margin-bottom: -0.375rem;
-  padding-bottom: 0.375rem;
-  border-end-start-radius: 0;
-  border-end-end-radius: 0;
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle::before {
+  inset: -1rem -1.125rem;
 }
 
-.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:not(:disabled):hover {
-  background: var(--k2b-hover);
+.k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle::before {
+  bottom: -0.375rem;
 }
 
-.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:focus-visible {
-  outline-offset: calc(-1 * var(--k2b-focus-width));
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle::before {
+  bottom: -0.5rem;
 }
 
-/* A card that stands flat inside another frame is a flat row again. */
+/* A card that stands flat inside another frame has no padding to reach over. */
 .k2b-ui
   :is(.k2b-section, .k2b-detail-panel__group, .k2b-detail-panel__summary, .k2b-paper, .k2b-panel-dialog, .k2b-settings-section)
   .k2b-section[data-frame="line"]
   > .k2b-section__header
-  > .k2b-section__toggle {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  border-radius: var(--k2b-radius-control);
-  background: transparent;
-  outline-offset: var(--k2b-focus-offset);
+  > .k2b-section__toggle::before {
+  content: none;
 }
 
 .k2b-ui .k2b-section__chevron {
@@ -4656,6 +4657,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-section__actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 9%, transparent);
+}
+
+/* Blue text stays blue on hover: a darker blue, not the body ink. */
+.k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover,
+.k2b-ui .k2b-section__actions .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-detail-panel-accent-hover, var(--k2b-action-hover));
 }
 
 /* A titled group: a quiet title over secondary sections that stand flush as
@@ -11893,6 +11900,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* A bar column: the value, then a short track filled to its share of the column's largest value. */
+/* A negative amount in an amount column: money going out, in the danger ink. */
+.k2b-ui .k2b-data-table__amount[data-negative] {
+  color: var(--k2b-danger-text);
+}
+
 .k2b-ui .k2b-data-table__bar {
   display: inline-flex;
   align-items: center;
@@ -14196,7 +14208,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__bubble {
   padding: 0.625rem 0.75rem;
   border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-selected);
+  /* The person's own words stay neutral grey in every primary scope. */
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-chat-message[data-role="system"],
@@ -14683,16 +14696,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-/* A preview in an activity body, such as a task list, keeps the step's small scale instead of the question's 14.5px. */
-.k2b-ui .k2b-chat-activity__body .k2b-chat-preview,
-.k2b-ui .k2b-chat-activity__body .k2b-chat-preview :is(.k2b-chat-preview__meta, .k2b-chat-preview__line[data-tone="warning"]) {
-  font-size: 0.8125rem;
-}
-
-/* Chat questions (`Chat.Decision`), their outcome line (`Chat.Outcome`), and
-   the thing they are about (`Chat.Preview`). No surface, no border, no
-   column: sentence, reason, preview, answers, and the conversation share one
-   left edge. A line led by an icon starts its text 1.5rem from that edge, the
+/* Chat questions (`Chat.Decision`) and their outcome line (`Chat.Outcome`):
+   sentence, reason, details, answers, and the conversation share one left edge. A line led by an icon starts its text 1.5rem from that edge, the
    same inset as activity bodies. */
 .k2b-ui .k2b-chat-line {
   display: grid;
@@ -14713,17 +14718,104 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-wrap: anywhere;
 }
 
+/* A decision has one look in every place (chat, side panel, approvals page,
+   Code pages, phone): a tinted ground in the AI colour, no shadow, no rules.
+   The head, sentence, and reason sit on the tint, the details on the surface
+   colour, the answer row on the tint again. While the person still edits
+   (`data-mode="edit"`) the same box is a raised island; switching changes
+   only ground, edge, and shadow, so nothing moves. */
 .k2b-ui .k2b-chat-decision {
+  container-type: inline-size;
+  min-width: 0;
+  margin-block: 0.875rem 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  background: var(--k2b-ai-surface);
+  scroll-margin-block: 1.5rem;
+  transition:
+    background-color 200ms var(--k2b-ease-out),
+    border-color 200ms var(--k2b-ease-out),
+    box-shadow 200ms var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-chat-decision[data-mode="edit"] {
+  border-color: var(--k2b-border);
+  background: var(--k2b-surface);
+  box-shadow: var(--k2b-shadow-surface);
+}
+
+.k2b-ui .k2b-chat-decision:not([data-state="open"]) {
+  padding-block: 0.625rem 0.75rem;
+}
+
+.k2b-ui .k2b-chat-decision__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4375rem;
+  margin-bottom: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.k2b-ui .k2b-chat-decision:not([data-state="open"]) .k2b-chat-decision__head {
+  margin-bottom: 0.25rem;
+}
+
+.k2b-ui .k2b-chat-decision__kind-icon {
+  color: var(--k2b-text-secondary);
+  font-size: 0.9375rem;
+}
+
+.k2b-ui .k2b-chat-decision__kind {
+  color: var(--k2b-text-secondary);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-chat-decision__source,
+.k2b-ui .k2b-chat-decision__details-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
   min-width: 0;
 }
 
-.k2b-ui .k2b-chat-decision__card {
-  padding-block: 0.375rem 0.125rem;
-  scroll-margin-block: 1.5rem;
+.k2b-ui .k2b-chat-decision__tile {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-chat-decision__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  margin-inline-start: auto;
+  color: var(--k2b-text-secondary);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-chat-decision__status[data-tone="done"] {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-chat-decision__status[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-chat-decision__status[data-tone="error"] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-chat-decision__status[data-tone="running"] i {
+  animation: k2b-spin 1s linear infinite;
 }
 
 .k2b-ui .k2b-chat-decision__sentence {
-  margin: 0;
+  margin: 0 0 0.125rem;
   border-radius: 0.375rem;
   color: var(--k2b-text);
   font-size: var(--k2b-chat-decision-size);
@@ -14757,9 +14849,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-chat-decision__reason {
-  margin-top: 0.25rem;
+  margin: 0;
   color: var(--k2b-text-muted);
-  font-size: 0.84375rem;
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
 
@@ -14771,25 +14863,244 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-warning-text);
 }
 
-.k2b-ui .k2b-chat-decision__card > .k2b-chat-preview {
-  margin-top: 1.25rem;
+.k2b-ui .k2b-chat-decision__details {
+  display: grid;
+  gap: 0.625rem;
+  margin-top: 0.875rem;
+  padding: 0.75rem 0.875rem 0.875rem;
+  border-radius: 0.625rem;
+  background: var(--k2b-surface);
+  transition: background-color 200ms var(--k2b-ease-out);
 }
 
+.k2b-ui .k2b-chat-decision__details-label {
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+/* One quiet line under the details that holds for every such question. */
+.k2b-ui .k2b-chat-decision__details-note {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.k2b-ui .k2b-chat-decision__notes {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.k2b-ui .k2b-chat-decision__note {
+  margin: 0;
+}
+
+.k2b-ui .k2b-chat-decision__note[data-tone="danger"] .k2b-chat-line__icon {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .k2b-chat-decision__note[data-tone="warning"] .k2b-chat-line__icon {
+  color: var(--k2b-warning-text);
+}
+
+/* The answer row stays at the bottom of the view while a tall question is in
+   view. It takes the ground of the card, and its padding replaces part of its
+   margin, so sticking moves nothing. */
 .k2b-ui .k2b-chat-decision__answers {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: 0.625rem;
+  margin-top: 0.375rem;
+  margin-bottom: -0.5rem;
+  padding-block: 0.5rem;
+  background: var(--k2b-ai-surface);
+  transition: background-color 200ms var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-chat-decision[data-mode="edit"] .k2b-chat-decision__answers {
+  background: var(--k2b-surface);
+}
+
+/* The facts are short and always stay whole, such as "Applies to exactly
+   version 3": they are never cut or faded. When facts and answers do not fit
+   one line, the answers move together to a line of their own, right-aligned. */
+.k2b-ui .k2b-chat-decision__meta {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  max-width: 100%;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-chat-decision__fact {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3125rem;
+}
+
+.k2b-ui .k2b-chat-decision__fact[data-tone="success"] i {
+  color: var(--k2b-success-text);
+}
+
+.k2b-ui .k2b-chat-decision__fact[data-tone="warning"] {
+  color: var(--k2b-warning-text);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-chat-decision__fact[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+  font-weight: 600;
+}
+
+/* The remember checkbox is one of the quiet facts: same size and ink, its box keeps the 3:1 edge. */
+.k2b-ui .k2b-chat-decision__meta .k2b-check__label {
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+/* An outcome's action is a small button on the tint, never a coloured text link. */
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-outcome__link {
+  min-height: 1.875rem;
+  margin-inline-start: 0.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: var(--k2b-surface);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-text);
+  background: var(--k2b-edge-hover-bg);
+}
+
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover > .k2b-button__label {
+  text-decoration: none;
+}
+
+.k2b-ui .k2b-chat-decision__remember {
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .k2b-chat-decision__buttons {
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.5rem;
-  margin-top: 1.25rem;
+  max-width: 100%;
+  margin-inline-start: auto;
+}
+
+/* Inside a decision, status chips keep the smallest step of its type scale (12 px). */
+.k2b-ui .k2b-chat-decision .k2b-status-badge,
+.k2b-ui .k2b-chat-decision .k2b-status-badge > i {
+  font-size: 0.75rem;
+}
+
+/* On the tint every button but the one filled answer takes the surface
+   colour, so no two accent grounds touch. */
+.k2b-ui .k2b-chat-decision:not([data-mode="edit"]) .k2b-chat-decision__buttons .k2b-button:not([data-variant="ai"], [data-variant="text"]),
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions .k2b-button {
+  background: var(--k2b-surface);
+}
+
+/* Quiet answers such as "Change" and "Discard" are text in the AI colour. */
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"] {
+  padding-inline: 0.5rem;
+  color: var(--k2b-ai-accent);
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+  color: var(--k2b-ai-accent-hover);
+  background: transparent;
 }
 
 /* An answer keeps its label on one line while it fits the row, and wraps it
-   only when the label alone is wider than the row. */
+   only when the label alone is wider than the row. It is 36 px high like any
+   button; on touch screens the button's own hit area reaches 44 px. */
 .k2b-ui .k2b-button.k2b-chat-decision__answer {
   min-width: fit-content;
-  min-height: 2.75rem;
-  padding: 0 1.125rem;
+  min-height: 2.25rem;
+  padding: 0 1rem;
   font-size: 0.875rem;
+}
+
+/* Answers that wrap to a second line stay far enough apart that their 44 px
+   hit areas do not overlap. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-decision__buttons {
+    row-gap: 0.625rem;
+  }
+}
+
+/* The outcome of a decided question sits under its head; the head already
+   carries the state, so the line needs no icon of its own. */
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome {
+  grid-template-columns: 0 minmax(0, 1fr);
+  min-height: 2.125rem;
+  align-items: center;
+}
+
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__icon {
+  visibility: hidden;
+}
+
+/* The decision fits its own width, not the window: in a side panel as on a
+   phone the answers take the full row first and the facts sit under them. */
+@container (max-width: 32.5rem) {
+  .k2b-ui .k2b-chat-decision__buttons {
+    order: 1;
+    flex-basis: 100%;
+    margin-inline-start: 0;
+  }
+
+  .k2b-ui .k2b-chat-decision__buttons .k2b-button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  /* Under the full-width answers the facts wrap at the text edge instead of fading out at both ends. */
+  .k2b-ui .k2b-chat-decision__meta {
+    order: 2;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    white-space: normal;
+  }
+
+  .k2b-ui .k2b-chat-decision__fact {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-chat-decision,
+  .k2b-ui .k2b-chat-decision__details,
+  .k2b-ui .k2b-chat-decision__answers {
+    transition: none;
+  }
 }
 
 .k2b-ui .k2b-chat-decision__answer > .k2b-button__label {
@@ -14800,7 +15111,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 1rem;
 }
 
-.k2b-ui .k2b-button.k2b-chat-decision__remember,
 .k2b-ui .k2b-button.k2b-chat-outcome__link {
   min-height: 0;
   padding-block: 0.125rem;
@@ -14809,49 +15119,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 500;
 }
 
-.k2b-ui .k2b-button.k2b-chat-decision__remember:not(:disabled, [aria-disabled="true"]):hover,
 .k2b-ui .k2b-button.k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-action);
-}
-
-.k2b-ui :is(.k2b-chat-decision__remember, .k2b-chat-outcome__link):not(:disabled, [aria-disabled="true"]):hover > .k2b-button__label,
-.k2b-ui .k2b-chat-preview__more:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* Touch targets: the quiet answer often wraps under the two answers, closer
-   than its hit area reaches. On a coarse pointer it is a full 2.75rem row, so
-   its hit area stays inside it and a low tap on an answer stays an answer. */
-@media (any-pointer: coarse) {
-  .k2b-ui .k2b-button.k2b-chat-decision__remember {
-    min-height: 2.75rem;
-  }
-
-  .k2b-ui .k2b-button.k2b-chat-decision__remember::after {
-    inset-block: 0;
-  }
-}
-
-@media (max-width: 47.999rem) {
-  .k2b-ui {
-    --k2b-chat-decision-size: 1.0625rem;
-  }
-
-  .k2b-ui .k2b-button.k2b-chat-decision__answer {
-    flex: 1 1 9.5rem;
-  }
-}
-
-/* The same rules on a narrow chat surface, such as the panel beside an app on a wide window. */
-@container k2b-chat (max-width: 47.999rem) {
-  .k2b-ui .k2b-chat-decision {
-    --k2b-chat-decision-size: 1.0625rem;
-  }
-
-  .k2b-ui .k2b-button.k2b-chat-decision__answer {
-    flex: 1 1 9.5rem;
-  }
+  color: var(--k2b-action-hover);
 }
 
 /* The outcome line. Every text of one flow sits in the same grid cell; only
@@ -14974,187 +15243,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     row-gap: 0.625rem;
     margin-top: 0.625rem;
   }
-}
-
-/* The preview: calm text in one column, no display face. */
-.k2b-ui .k2b-chat-preview {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 0.25rem;
-  color: var(--k2b-text-secondary);
-  font-size: 0.90625rem;
-  line-height: 1.55;
-}
-
-.k2b-ui .k2b-chat-preview p {
-  margin: 0;
-}
-
-.k2b-ui .k2b-chat-preview b {
-  color: var(--k2b-text);
-  font-weight: 500;
-}
-
-/* Header fields as real rows: the quiet label right before its value. */
-.k2b-ui .k2b-chat-preview__header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  margin-bottom: 0.5rem;
-  color: var(--k2b-text-muted);
-  font-size: 0.84375rem;
-  line-height: 1.5;
-}
-
-.k2b-ui .k2b-chat-preview__header dl {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  margin: 0;
-}
-
-.k2b-ui .k2b-chat-preview__header dl > div {
-  overflow-wrap: anywhere;
-}
-
-.k2b-ui .k2b-chat-preview__header dt,
-.k2b-ui .k2b-chat-preview__header dd {
-  display: inline;
-  margin: 0;
-}
-
-.k2b-ui .k2b-chat-preview__header dt {
-  margin-inline-end: 0.35em;
-}
-
-.k2b-ui .k2b-chat-preview__header [data-emphasis="true"] dt {
-  color: var(--k2b-text-secondary);
-  font-weight: 500;
-}
-
-.k2b-ui .k2b-chat-preview__person {
-  overflow-wrap: anywhere;
-}
-
-.k2b-ui .k2b-chat-preview__address {
-  margin-inline-start: 0.3em;
-}
-
-.k2b-ui .k2b-chat-preview__address[data-alone="true"] {
-  margin-inline-start: 0;
-}
-
-.k2b-ui .k2b-chat-preview__title-line {
-  overflow-wrap: anywhere;
-}
-
-.k2b-ui .k2b-chat-preview__title {
-  color: var(--k2b-text);
-  font-weight: 500;
-}
-
-.k2b-ui .k2b-chat-preview__meta {
-  color: var(--k2b-text-muted);
-  font-size: 0.84375rem;
-}
-
-.k2b-ui .k2b-chat-preview__sentence {
-  color: var(--k2b-text);
-  font-size: 0.9375rem;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-
-/* About three lines that fade out; the card never scrolls inside itself. */
-.k2b-ui .k2b-chat-preview__excerpt {
-  max-height: 4.65em;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  white-space: pre-line;
-  -webkit-mask-image: linear-gradient(#000 1.86em, transparent 4.65em);
-  mask-image: linear-gradient(#000 1.86em, transparent 4.65em);
-}
-
-.k2b-ui .k2b-chat-preview__excerpt[data-expanded="true"] {
-  max-height: none;
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-.k2b-ui button.k2b-chat-preview__more {
-  margin: 0;
-  border: 0;
-  padding-inline: 0;
-  background: none;
-  font-family: inherit;
-  line-height: inherit;
-  cursor: pointer;
-}
-
-.k2b-ui .k2b-chat-preview__more {
-  align-self: flex-start;
-  padding-block: 0.125rem;
-  border-radius: 0.25rem;
-  color: var(--k2b-action);
-  font-size: 0.84375rem;
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.k2b-ui .k2b-chat-preview__more:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
-}
-
-.k2b-ui .k2b-chat-preview__lines {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin: 0.25rem 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.k2b-ui .k2b-chat-preview__line[data-tone="muted"] {
-  color: var(--k2b-text-muted);
-}
-
-.k2b-ui .k2b-chat-preview__line[data-tone="warning"] {
-  font-size: 0.84375rem;
-}
-
-.k2b-ui .k2b-chat-preview__line[data-tone="warning"] .k2b-chat-line__icon {
-  color: var(--k2b-warning-text);
-}
-
-.k2b-ui .k2b-chat-preview__people {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.k2b-ui .k2b-chat-preview__faces {
-  --k2b-faces-size: 1.5rem;
-  --k2b-faces-overlap: 0.1875rem;
-  display: inline-flex;
-  flex: none;
-}
-
-/* New and removed words. The fill follows the host's `--k2b-mark-accent`. */
-.k2b-ui .k2b-chat-mark[data-change="added"] {
-  padding: 0 0.125rem;
-  border-radius: 0.1875rem;
-  color: inherit;
-  background: color-mix(in srgb, var(--k2b-mark-accent, var(--k2b-ai-accent)) 22%, transparent);
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
-
-.k2b-ui .k2b-chat-mark[data-change="removed"] {
-  color: var(--k2b-text-muted);
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
 }
 
 .k2b-ui .k2b-chat-timeline__retry,
@@ -18247,44 +18335,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-toolbar-dock > .k2b-toolbar-float:last-child:not(:first-child) {
   justify-content: flex-end;
 }
-/* A floating toolbar is a pill on layer 3 that stays open: the toolbar shadow,
-   softer than a menu's, and a light 1 px edge. It is solid, never glass, so
-   text scrolling beneath it never shows through. */
-/* `--k2b-toolbar-control` sizes every control of a floating toolbar and
-   `--k2b-toolbar-inset` the space around them, the same above, below, and at
-   the sides, so the pill is its controls plus that space. A host with lower
-   pills sets both once, such as to `--k2b-pill-control` and `--k2b-pill-inset`,
-   so its stopped state (tone="danger") has exactly their height. */
+/* A floating toolbar is a pill of small controls (`k2b-pill`) on layer 3 that
+   stays open; its stopped state (tone="danger") has exactly that height. */
 .k2b-ui .k2b-toolbar[data-variant="floating"] {
   position: relative;
   pointer-events: auto;
   max-inline-size: 100%;
-  /* 44 px controls with room for their key hints, the inset on both sides, and the 1 px edge on each side. */
-  block-size: calc(var(--k2b-toolbar-control, 2.75rem) + 2 * var(--k2b-toolbar-inset, 0.25rem) + 2px);
-  padding: var(--k2b-toolbar-inset, 0.25rem);
-  gap: 0.125rem;
-  border: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
-  border-radius: 999px;
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-toolbar);
-}
-/* Every control in the pill has the same round size, also one an application
-   wraps (a tooltip anchor, its own toggle), so no small icon sits at the edge.
-   Buttons inside its menus and other popovers keep their own size. */
-.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-button:not(:is([popover], [role="menu"], [role="dialog"]) .k2b-button),
-.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__more .k2b-dropdown__trigger {
-  min-inline-size: var(--k2b-toolbar-control, 2.75rem);
-  min-block-size: var(--k2b-toolbar-control, 2.75rem);
-  block-size: var(--k2b-toolbar-control, 2.75rem);
-  border-radius: 999px;
-  flex: none;
-}
-.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-button i {
-  font-size: 1.25rem;
-  line-height: 1;
 }
 .k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-toolbar__separator {
-  height: 1.5rem;
+  height: var(--k2b-pill-control);
 }
 /* An action with `text` shows its label beside the icon while there is room;
    a compact toolbar keeps only the icon, at the same height. */
@@ -18303,6 +18362,63 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 .k2b-ui .k2b-toolbar[data-compact] .k2b-toolbar__text {
   display: none;
+}
+/* A floating pill of small controls (`k2b-pill`): an editor's formatting, a
+   viewer's zoom, a selection's actions, the floating Toolbar. Every pill has
+   the size of the others: 24 px controls 6 px inside a 1 px edge, so 38 px high
+   with the same 7 px between the edge and each control above, below, and at
+   the sides. Its controls are round, so their hover and focus ring keep that
+   space too: the inner radius is the outer radius minus the space. Icons are
+   14 px and text 12 px. Touch screens keep the 44 px hit area through the
+   buttons' own coarse-pointer rule, without growing the pill. Solid with the
+   toolbar shadow; over a picture, `k2b-overlay-surface` makes it glass. */
+.k2b-ui .k2b-pill {
+  display: flex;
+  box-sizing: border-box;
+  block-size: calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px);
+  align-items: center;
+  gap: 0.125rem;
+  padding: var(--k2b-pill-inset);
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 999px;
+}
+/* The look has no weight of its own, so a glass or danger surface replaces it. */
+.k2b-ui :where(.k2b-pill) {
+  border-color: color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  background: var(--k2b-surface-elevated);
+  box-shadow: var(--k2b-shadow-toolbar);
+}
+.k2b-ui :where(.k2b-pill.k2b-overlay-surface) {
+  border-color: transparent;
+}
+/* Every control has the round control height, also one an application wraps
+   (a tooltip anchor, its own toggle); buttons inside its menus and other
+   popovers keep their own size. */
+.k2b-ui .k2b-pill .k2b-button:not(.k2b-pill :is([popover], [role="menu"], [role="dialog"]) .k2b-button) {
+  min-inline-size: var(--k2b-pill-control);
+  min-block-size: var(--k2b-pill-control);
+  block-size: var(--k2b-pill-control);
+  padding-block: 0;
+  border-radius: 999px;
+  flex: none;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+.k2b-ui .k2b-pill .k2b-icon-button:not([data-text], .k2b-pill :is([popover], [role="menu"], [role="dialog"]) .k2b-button) {
+  min-inline-size: var(--k2b-pill-control);
+  inline-size: var(--k2b-pill-control);
+  padding-inline: 0;
+}
+/* In the components layer, so a utility on one icon still wins. */
+@layer components {
+  .k2b-ui .k2b-pill .k2b-button:not(.k2b-pill :is([popover], [role="menu"], [role="dialog"]) .k2b-button) i {
+    font-size: 0.875rem;
+    line-height: 1;
+  }
+}
+.k2b-ui .k2b-pill .k2b-toolbar__text {
+  font-size: inherit;
 }
 /* A toolbar at a text selection (SelectionToolbar): in the top layer, so no scroll container clips it. */
 .k2b-ui .k2b-selection-toolbar {
@@ -19324,6 +19440,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion] {
   animation-name: none;
 }
+/* Pulled past full height, a sheet gives like a rubber band and lifts off the
+ * edge; an apron in its own colour fills the gap below it. */
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion] {
+  box-shadow: 0 6rem 0 0 var(--k2b-surface), var(--k2b-shadow-sheet);
+}
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion][data-sheet-dragging] {
   user-select: none;
   -webkit-user-select: none;
@@ -19340,7 +19461,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-bottom-sheet-frame[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
   position: relative;
   z-index: 1;
-  background: var(--k2b-surface-elevated);
+  background: var(--k2b-surface);
   transform: translate3d(0, var(--k2b-sheet-footer-y, 0px), 0);
 }
 /* A sheet only dims what lies behind it, without blur, so a drag stays
@@ -19409,6 +19530,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     max-height: min(86dvh, var(--k2b-dialog-available-height));
     border-bottom: 1px solid var(--k2b-border-strong);
     border-radius: var(--k2b-radius-dialog);
+    box-shadow: var(--k2b-shadow-float);
     animation-name: k2b-sheet-dialog-enter;
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive > .k2b-bottom-sheet-viewport {

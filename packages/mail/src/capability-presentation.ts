@@ -2,6 +2,9 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
+  results: {
+    "draft.update": { targetType: "draft", kind: "draft", text: "Updated {target}" },
+  },
   translations: {
     de: {
       events: {
@@ -773,6 +776,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
+            subject: "Ersetzender Betreff, geprüft gegen den Ausgangsentwurf.",
+            body: "Ersetzender Text im aktuellen Format des Entwurfs.",
             expectedContentHash: "Inhaltsfingerabdruck contentHash aus draft.send.review unter demselben Ausführungsakteur.",
             senderIdentityId: "Verifizierte Absenderidentität ID.",
             scheduledAt: "Optionale zukünftige Lieferzeit.",
@@ -784,6 +789,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "draft.update": {
+          result: { targetType: "draft", kind: "Entwurf", text: "{target} geändert" },
           title: "Entwurf aktualisieren",
           description:
             "Ersetzt alle bearbeitbaren Entwurfsfelder mit expectedRevision. Nur vollständige Snapshots (editableSnapshotComplete) verwenden; für einzelne Änderungen oder gekürzte Antworten draft.patch nutzen.",

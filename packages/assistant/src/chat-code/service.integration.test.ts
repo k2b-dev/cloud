@@ -588,7 +588,7 @@ databaseSuite()("Assistant chat runner persistence", () => {
         locale: "en",
         sentence: { action: "Write item", running: "Writing item", done: "Wrote item", confirm: "Write item", decline: "Do not write" },
         slots: {},
-        content: { kind: "page" as const, title: "Draft", body: `${"x".repeat(65_536)}\u0000\ud800END\udc00`, format: "plain" as const },
+        view: { version: 1 as const, blocks: [{ kind: "Text" as const, text: `Draft\n\n${"x".repeat(65_536)}\u0000\ud800END\udc00` }] },
       };
       catalog.mockResolvedValueOnce({
         ok: true,

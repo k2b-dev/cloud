@@ -1,4 +1,5 @@
 import { getK2bPortalRoot } from "../internal/portal";
+import { inheritUiScope } from "../internal/portal-scope";
 import { resolveUiMessages } from "../intl/messages";
 import { announce, ensureLiveRegions } from "./announce";
 import { createSuccessCheck } from "./success-check";
@@ -47,7 +48,11 @@ export type ToastOptions = {
 
 export type ToastHandle = {
   dismiss: () => void;
-  update: (description: string, options?: ToastOptions) => void;
+  /**
+   * Changes the toast in place. Returns `false` when the toast is already gone, closed by the person or a timer, so the
+   * caller can still report a result, such as a failure, with a new toast. (`void` keeps existing test doubles valid.)
+   */
+  update: (description: string, options?: ToastOptions) => boolean | void;
 };
 
 export type ToastSlotOptions = {
@@ -320,7 +325,8 @@ const ensureContainer = (): HTMLElement | null => {
   // The shared live regions exist before the first toast's text arrives.
   ensureLiveRegions(document);
   wireDocument(document);
-  const root = getK2bPortalRoot();
+  // One rail for the document: each card carries its opener's scope, so a lookup ignores portal scopes.
+  const root = document.documentElement;
   let container = root.querySelector<HTMLElement>(`[${CONTAINER_ATTRIBUTE}]`);
   if (container) return container;
 
@@ -347,7 +353,7 @@ const ensureContainer = (): HTMLElement | null => {
     "height:0px;max-width:100vw;max-height:none;" +
     "margin:0;padding:var(--k2b-toast-rail-padding,0.75rem 1rem 1rem);border:0;background:transparent;overflow:visible;" +
     "pointer-events:none;";
-  root.appendChild(container);
+  getK2bPortalRoot(undefined, document.body).appendChild(container);
   return container;
 };
 
@@ -730,6 +736,14 @@ function enforceCap(): void {
   }
 }
 
+const createToastCard = (doc: Document): HTMLDivElement => {
+  const element = doc.createElement("div");
+  element.className = "k2b-toast";
+  element.dataset.k2bToast = "";
+  inheritUiScope(element);
+  return element;
+};
+
 /** The kind of button an action becomes in its place. */
 const actionVariant = (action: ToastAction, paired: boolean, first: boolean): "primary" | "secondary" | "ghost" =>
   paired ? (first ? "primary" : "secondary") : (action.variant ?? "secondary");
@@ -737,8 +751,7 @@ const actionVariant = (action: ToastAction, paired: boolean, first: boolean): "p
 const showToast = (description: string, options?: ToastOptions): ToastHandle => {
   const initialContainer = ensureContainer();
   if (!initialContainer) {
-    const noop = () => {};
-    return { dismiss: noop, update: noop };
+    return { dismiss: () => {}, update: () => false };
   }
   const toastMessages = resolveToastMessages();
   const doc = initialContainer.ownerDocument;
@@ -762,10 +775,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
   let timerStartedAt = 0;
   let lastAnnouncement = "";
 
-  const toastElement = doc.createElement("div");
-  toastElement.className = "k2b-toast";
+  const toastElement = createToastCard(doc);
   toastElement.dataset.tone = VARIANT_STYLES[currentVariant].tone;
-  toastElement.dataset.k2bToast = "";
 
   // The first control in the toast: a round button over its top-left corner.
   const closeButton = doc.createElement("button");
@@ -974,8 +985,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     contentElement.dataset.swap = "true";
   };
 
-  const update = (nextDescription: string, nextOptions?: ToastOptions) => {
-    if (dismissed) return;
+  const update = (nextDescription: string, nextOptions?: ToastOptions): boolean => {
+    if (dismissed) return false;
     const has = (key: keyof ToastOptions) => nextOptions !== undefined && Object.prototype.hasOwnProperty.call(nextOptions, key);
     const previousProgress = currentProgress;
     currentDescription = nextDescription;
@@ -1014,6 +1025,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     if ((!ticking || halfway || variantChanged) && spoken() !== lastAnnouncement) say();
     // Finished progress or a new duration can make this toast one the rail limit removes.
     enforceCap();
+    return true;
   };
 
   closeButton.addEventListener("click", () => dismiss());
@@ -1056,9 +1068,7 @@ const showCustom = (content: HTMLElement, options?: ToastSlotOptions): ToastSlot
   let dismissed = false;
   let label = options?.label;
   let closable = options?.closable === true;
-  const slotElement = doc.createElement("div");
-  slotElement.className = "k2b-toast";
-  slotElement.dataset.k2bToast = "";
+  const slotElement = createToastCard(doc);
   slotElement.dataset.custom = "true";
   // It stays until the application removes it, like a toast without a timer.
   slotElement.dataset.persistent = "true";

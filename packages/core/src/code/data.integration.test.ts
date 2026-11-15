@@ -1,19 +1,28 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import * as cloudRuntime from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
+import * as catalog from "@k2b/cloud/capabilities/server";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import type { RequestAuthority } from "@k2b/cloud/server";
+import { coreSettings } from "@k2b/cloud/services";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateActivation } from "../migrate/core/code-activation";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import * as access from "./access";
+import { readCodeAdminVersionSource } from "./admin";
 import { clearCodeAttentionCache, readCodeAttention } from "./attention";
+import { codeAuthoringServices } from "./authoring";
 import { type Code, codeQueryContracts } from "./contracts";
+import { loadCodeActivityReadModel, readCodeActivityData } from "./read-model/activity";
+import { loadCodeRunReadModel } from "./read-model/run";
 import { CODE_SETTINGS, codeSettings } from "./settings";
+import { loadCodeSourceTab } from "./source-tab";
 import {
   addCodeShare,
   appendCodeCall,
@@ -31,6 +40,7 @@ import {
   readCodeVersion,
   removeCodeShare,
 } from "./store";
+import { diffCodeVersion, readCodeVersionDiff } from "./versions";
 
 const ids = {
   owner: "11111111-1111-4111-8111-111111111111",
@@ -94,7 +104,8 @@ databaseSuite()("Core Code data and Query authorization", () => {
     await migrateAuth();
     await migrateEvents();
     await migrateAppEvents();
-    await migrateCode(); // Forward on an empty identity database.
+    await migrateCode();
+    await migrateActivation(); // Forward on an empty identity database.
     for (const [name, id] of Object.entries(ids))
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;
     // Forward migration over an already populated identity database.
@@ -155,6 +166,238 @@ databaseSuite()("Core Code data and Query authorization", () => {
     setSystemTime();
   });
 
+  test("activation attribution and pause dates are transactional read/list data with directory visibility", async () => {
+    const automation = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Dates" }, ctx(ids.owner));
+    const version = await createCodeVersion(
+      { codeId: automation.id, sourceFiles: { "code.ts": "export default 1" }, bundle: "1", manifest: {}, baseVersionId: null },
+      ctx(ids.owner),
+    );
+    await addCodeShare(automation.id, { type: "user", userId: ids.reader }, "reader", ctx(ids.owner));
+    const at = new Date("2026-10-30T09:00:00Z");
+    await sql`UPDATE auth.users SET display_name='Visible activator' WHERE id=${ids.owner}::uuid`;
+    await sql.begin(async (tx) => {
+      await tx`UPDATE code.codes SET state='active',active_version_id=${version.id}::uuid WHERE id=${automation.id}`;
+      await tx`INSERT INTO code.activations(id,code_id,version_id,activating_person,locale,cloud_admin,state,updated_at)
+        VALUES(gen_random_uuid(),${automation.id},${version.id}::uuid,${ids.owner}::uuid,'en',false,'active',${at})`;
+    });
+    expect((await readCode(automation.id, ctx(ids.reader))).code).toMatchObject({
+      activatedAt: at.toISOString(),
+      activatedBy: { name: "Visible activator" },
+      pausedAt: null,
+    });
+    const guest = ctx(ids.reader);
+    if (guest.authority.actor.kind === "user") guest.authority.actor.user.roles = [];
+    expect((await readCode(automation.id, guest)).code.activatedBy).toBeNull();
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${automation.id}`;
+    const paused = (await readCode(automation.id, ctx(ids.owner))).code.pausedAt;
+    expect(paused).not.toBeNull();
+    await sql`UPDATE code.codes SET title='Still paused' WHERE id=${automation.id}`;
+    expect((await listCodes({ limit: 20 }, ctx(ids.owner))).items.find((item) => item.id === automation.id)?.pausedAt).toBe(paused);
+    await sql`UPDATE code.codes SET state='active' WHERE id=${automation.id}`;
+    expect((await readCode(automation.id, ctx(ids.owner))).code.pausedAt).toBeNull();
+    await sql`DELETE FROM code.codes WHERE id=${automation.id}`;
+  });
+  test("confirmed result evidence is stored with the call and reader names never leak through effects", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "effect-words", input: null });
+    await sql`UPDATE code.runs SET created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    const target = { type: "fictional.task", id: "private-task-id" };
+    const effect = {
+      forms: {
+        de: { text: "{target} angelegt", kind: "Aufgabe", targetType: target.type },
+        en: { text: "Created {target}", kind: "task", targetType: target.type },
+      },
+      refs: [target],
+    };
+    const ordinal = await sql.begin((tx) =>
+      appendCodeCall({ runId: id, kind: "action", call: { capability: "fictional.create", target: null, refs: {}, input: {} } }, tx),
+    );
+    await expect(
+      sql.begin(async (tx) => {
+        await finishCodeCall(
+          { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, effect, endedAt: fixed },
+          tx,
+        );
+        throw new Error("rollback effect");
+      }),
+    ).rejects.toThrow("rollback effect");
+    expect((await sql`SELECT effect FROM code.calls WHERE run_id=${id}::uuid`)[0]?.effect).toBeNull();
+    await sql.begin((tx) =>
+      finishCodeCall(
+        { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, effect, endedAt: fixed },
+        tx,
+      ),
+    );
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+    const timeZone = spyOn(coreSettings, "get").mockResolvedValue("UTC");
+    const original = catalog.getCapabilityCatalogApp;
+    const provider = spyOn(catalog, "getCapabilityCatalogApp").mockImplementation(async (app, ...rest) =>
+      app === "fictional"
+        ? {
+            ok: true as const,
+            data: {
+              appId: app,
+              appName: "Fictional",
+              appIcon: "ti ti-list",
+              appDescription: "Fixture",
+              manifest: {
+                protocolVersion: 2,
+                appId: app,
+                manifestHash: "a".repeat(64),
+                types: [{ localId: "task", title: "Task", description: "Task", reader: "read" }],
+                queries: [
+                  {
+                    localId: "read",
+                    title: "Read task",
+                    description: "Read task",
+                    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+                    dataSchema: { type: "object" },
+                    schemaHash: "a".repeat(64),
+                    openWorld: false,
+                  },
+                ],
+                actions: [
+                  {
+                    localId: "create",
+                    title: "Create task",
+                    description: "Create task",
+                    inputSchema: { type: "object" },
+                    dataSchema: { type: "object" },
+                    schemaHash: "a".repeat(64),
+                    openWorld: false,
+                    destructive: false,
+                    idempotency: "none",
+                  },
+                ],
+                commands: [],
+              },
+            },
+          }
+        : original(app, ...rest),
+    );
+    const reader = spyOn(catalog, "invokeCapabilityWithDataSchema").mockImplementation(async (_invocation, schema) => ({
+      ok: true as const,
+      data: {
+        data: schema.parse({ view: { title: "Private delivery", permission: "read" } }),
+        links: [{ rel: "open" as const, href: "/fictional/task" }],
+      },
+    }));
+    try {
+      const runWords = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
+      expect(runWords.title).toBe("Created task “Private delivery”");
+      expect(runWords.untilThen.items.map((item) => item.text)).toEqual(["Created task “Private delivery”"]);
+      const named = await loadCodeActivityReadModel({ codeId: code.id, day: "2026-10-31", timeZone: "UTC" }, ctx(ids.reader));
+      expect(named.recent.find((item) => item.runId === id)).toMatchObject({
+        text: "Created task “Private delivery”",
+        href: "/fictional/task",
+        app: "Fictional",
+        at: fixed.toISOString(),
+      });
+      reader.mockImplementation(async () => ({ ok: false as const, error: { code: "FORBIDDEN", message: "Hidden", status: 403 } }));
+      const hidden = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
+      expect(hidden.title).toBe("Created task");
+      expect(JSON.stringify(hidden)).not.toMatch(/Private delivery|private-task-id|fictional\/task/);
+    } finally {
+      timeZone.mockRestore();
+      reader.mockRestore();
+      provider.mockRestore();
+      await sql`DELETE FROM code.runs WHERE id=${id}::uuid`;
+    }
+  });
+
+  test("large runs bound effect rows without misreporting sampled fallback counts", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "many-effects", input: null });
+    await sql`UPDATE code.runs SET created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    await sql.begin(async (tx) => {
+      for (let index = 0; index < 120; index++) {
+        const ordinal = await appendCodeCall(
+          { runId: id, kind: "action", call: { capability: "fictional.unknown", target: null, refs: {}, input: {} } },
+          tx,
+        );
+        await finishCodeCall(
+          { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, endedAt: fixed },
+          tx,
+        );
+      }
+    });
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+    const timeZone = spyOn(coreSettings, "get").mockResolvedValue("UTC");
+    try {
+      const words = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
+      expect(words.untilThen.items).toHaveLength(50);
+      expect(words.untilThen.items.every((item) => item.text === "Unavailable action · 1 time")).toBe(true);
+      expect(words.untilThen.more).toBe(70);
+    } finally {
+      timeZone.mockRestore();
+      await sql`DELETE FROM code.runs WHERE id=${id}::uuid`;
+    }
+  });
+
+  test("confirmed weekly effects settle atomically once per run, excluding replays and unknown results", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "activity", input: null });
+    await sql`UPDATE code.runs SET state='running',created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    await sql.begin(async (tx) => {
+      for (const replayed of [false, true]) {
+        const ordinal = await appendCodeCall(
+          { runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: { requested: 900 } } },
+          tx,
+        );
+        await finishCodeCall(
+          { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, replayed, endedAt: fixed },
+          tx,
+        );
+      }
+      const ordinal = await appendCodeCall(
+        { runId: id, kind: "query", call: { capability: "example.item.read", target: null, refs: {}, input: {} } },
+        tx,
+      );
+      await finishCodeCall(
+        { runId: id, ordinal, state: "succeeded", result: { ok: true, data: null }, confirmedEffect: true, endedAt: fixed },
+        tx,
+      );
+    });
+    // An aborted settlement must not leave a weekly counter behind.
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+        throw new Error("rollback settlement");
+      }),
+    ).rejects.toThrow("rollback settlement");
+    expect(await sql`SELECT 1 FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='activity'`).toHaveLength(0);
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=${fixed} WHERE id=${id}::uuid`;
+    await sql`UPDATE code.runs SET outcome=NULL WHERE id=${id}::uuid`;
+    const [counter] = await sql<
+      { counts: Record<string, number> }[]
+    >`SELECT counts FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='activity'`;
+    expect(counter?.counts).toEqual({ "example.item.update": 1 });
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(async () => {
+        const data = await readCodeActivityData({ codeId: code.id, day: "2026-10-31", timeZone: "Europe/Berlin" });
+        expect(data.recent.length).toBeLessThanOrEqual(6);
+        expect(data.counters.find((row) => row.automationKey === "activity")?.count).toBe(1);
+        expect(data.marks.length).toBeLessThanOrEqual(200);
+      });
+      expect(statements).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
+  });
+
+  test("the complete Code activity loader has three statements for a personal Code, independent of run volume", async () => {
+    const empty = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Meter fixture" }, ctx(ids.owner));
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(() =>
+        loadCodeActivityReadModel({ codeId: empty.id, day: "2026-11-16", timeZone: "Europe/Berlin" }, ctx(ids.owner)),
+      );
+      expect(statements).toHaveLength(3);
+      const monday = await readCodeActivityData({ codeId: empty.id, day: "2026-11-16", timeZone: "Europe/Berlin" });
+      expect(monday.week.toISOString()).toBe("2026-11-16T00:00:00.000Z");
+    } finally {
+      await meter.close();
+      await sql`DELETE FROM code.codes WHERE id=${empty.id}`;
+    }
+  });
   test("forward migration is idempotent on a filled DB and preserves pre-existing accounts", async () => {
     const before = await sql`SELECT * FROM code.codes ORDER BY id`;
     // Upgrade a database that already applied the earlier pre-release four-kind constraint.
@@ -186,7 +429,8 @@ databaseSuite()("Core Code data and Query authorization", () => {
       );
       const runs = await aiCapabilities.queries["code.run.list"].run({ codeId: code.id, limit: 20 }, c);
       const run = await aiCapabilities.queries["code.run.read"].run({ codeId: code.id, runId, cursor: 0, offset: 0, length: 16384 }, c);
-      for (const response of [read, version, runs, run]) expect(response.ok).toBe(allowed);
+      for (const response of [read, runs, run]) expect(response.ok).toBe(allowed);
+      expect(version.ok).toBe(id === ids.owner || id === ids.editor);
       if (run.ok) {
         expect(codeQueryContracts.runRead.data.safeParse(run.data.data).success).toBe(true);
         if (id === ids.reader || id === ids.admin) {
@@ -209,6 +453,94 @@ databaseSuite()("Core Code data and Query authorization", () => {
       context(ids.owner),
     );
     expect(second.ok && second.data.data.contents?.calls[0]?.ordinal).toBe(2);
+  });
+  test("source, bundles, diffs and CLI pulls require editorship; only the admin review source reader is exempt", async () => {
+    for (const viewer of [ctx(ids.reader), ctx(ids.admin, true)]) {
+      expect((await readCode(code.id, viewer)).permission).toBe("reader");
+      for (const content of [{ kind: "source" as const, path: "code.ts" }, { kind: "bundle" as const }])
+        await expect(readCodeVersion({ codeId: code.id, versionId, content, offset: 0, length: 100 }, viewer)).rejects.toMatchObject({
+          code: "NOT_FOUND",
+        });
+      await expect(diffCodeVersion({ codeId: code.id, versionId }, viewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(
+        readCodeVersionDiff({ codeId: code.id, versionId, comparisonVersionId: null, offset: 0, length: 100 }, viewer),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(codeAuthoringServices.pull({ codeId: code.id }, viewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(loadCodeSourceTab({ codeId: code.id }, viewer)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      const show = await codeAuthoringServices.show({ codeId: code.id }, viewer);
+      expect(JSON.stringify(show)).not.toContain("export default");
+    }
+    await expect(readCodeAdminVersionSource(code.id, versionId, ctx(ids.reader))).rejects.toThrow();
+    expect((await readCodeAdminVersionSource(code.id, versionId, ctx(ids.admin, true))).files[0]?.lines[0]?.text).toContain(
+      "export default",
+    );
+    const readScopedEditor = {
+      ...ctx(ids.editor),
+      authority: { ...ctx(ids.editor).authority, credentialKind: "oauth" as const, scopes: ["core:read"] },
+    };
+    expect(
+      (
+        await readCodeVersion(
+          { codeId: code.id, versionId, content: { kind: "source", path: "code.ts" }, offset: 0, length: 100 },
+          readScopedEditor,
+        )
+      ).content?.text,
+    ).toContain("export default");
+  });
+  test("confirmed NUL results finish, late confirmations update the same weekly snapshot once", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "late-effect", input: null });
+    await sql`UPDATE code.runs SET state='running',created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    const ordinal = await sql.begin(async (tx) =>
+      appendCodeCall({ runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: {} } }, tx),
+    );
+    await sql`UPDATE code.calls SET state='uncertain',ended_at=${fixed} WHERE run_id=${id}::uuid`;
+    await sql`UPDATE code.runs SET state='failed',ended_at=${fixed} WHERE id=${id}::uuid`;
+    await finishCodeCall(
+      {
+        runId: id,
+        ordinal,
+        state: "succeeded",
+        result: { ok: true, data: "\u0000" },
+        confirmedEffect: true,
+        effect: { forms: {}, refs: [{ type: "example.item", id: "\u0000" }] },
+        endedAt: fixed,
+      },
+      sql,
+    );
+    await sql`UPDATE code.runs SET outcome='late' WHERE id=${id}::uuid`;
+    const [row] = await sql<
+      { counts: Record<string, number> }[]
+    >`SELECT counts FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='late-effect'`;
+    expect(row?.counts).toEqual({ "example.item.update": 1 });
+    const [call] = await sql`SELECT state,confirmed_effect FROM code.calls WHERE run_id=${id}::uuid`;
+    expect(call).toEqual({ state: "succeeded", confirmed_effect: true });
+  });
+  test("real structured application failures distinguish refusal from unknown and hide both counts from readers", async () => {
+    const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "failure-words", input: null });
+    await sql`UPDATE code.runs SET state='running',created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+    await sql.begin(async (tx) => {
+      for (const error of [
+        { code: "CONFLICT", status: 409 },
+        { code: "code_result_unknown", status: 503 },
+      ]) {
+        const ordinal = await appendCodeCall(
+          { runId: id, kind: "action", call: { capability: "example.item.update", target: null, refs: {}, input: {} } },
+          tx,
+        );
+        await finishCodeCall({ runId: id, ordinal, state: "failed", result: { ok: false, error }, endedAt: fixed }, tx);
+      }
+    });
+    await sql`UPDATE code.runs SET state='failed',ended_at=${fixed} WHERE id=${id}::uuid`;
+    const timeZone = spyOn(coreSettings, "get").mockResolvedValue("Europe/Berlin");
+    try {
+      const editor = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.owner));
+      expect(editor.untilThen.items.map((row) => row.text)).toEqual(["1 call refused", "1 call with an unknown outcome"]);
+      const reader = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
+      expect(JSON.stringify(reader.untilThen)).not.toContain("call refused");
+      expect(JSON.stringify(reader.untilThen)).not.toContain("unknown outcome");
+    } finally {
+      timeZone.mockRestore();
+    }
   });
   test("A3a commits the first target refusal with its call and restricts target coordinates to editors", async () => {
     const refusedRun = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "weekly", input: null });
@@ -390,7 +722,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
   test("versions preserve exact UTF-8 source/bundle and hashes, reject stale base and in-place changes", async () => {
     const version = await readCodeVersion(
       { codeId: code.id, versionId, offset: 0, length: 100, content: { kind: "bundle" } },
-      ctx(ids.reader),
+      ctx(ids.editor),
     );
     expect(version.content?.text).toBe("export default 'bundle';");
     expect(version.version.sourceHash).toBe(codeSourceHash({ "code.ts": "export default 'source';" }));

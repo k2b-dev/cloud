@@ -17,26 +17,24 @@ export const CodeEventDeliverySchema = z
 export const CodeIdSchema = z
   .string()
   .regex(/^c_[a-z0-9]{4,16}$/)
-  .describe("Stable Code ID returned by core.code.list or core.code.read.");
+  .describe("Code ID from code.list/read.");
 /** Exactly one owner. Resource identity is the platform's opaque { type, id } pair. */
 export const CodeOwnerSchema = z.discriminatedUnion("kind", [
-  z
-    .object({ kind: z.literal("person").describe("Personal Code owner."), userId: z.uuid().describe("UUID of the owning person.") })
-    .strict(),
+  z.object({ kind: z.literal("person").describe("Personal owner."), userId: z.uuid().describe("Owner UUID.") }).strict(),
   z
     .object({
-      kind: z.literal("resource").describe("Resource Code owner."),
-      ref: CloudResourceRefSchema.describe("Exact resource owning the Code."),
+      kind: z.literal("resource").describe("Resource owner."),
+      ref: CloudResourceRefSchema.describe("Exact owner resource."),
     })
     .strict(),
   z
     .object({
-      kind: z.literal("app").describe("Application Code owner."),
+      kind: z.literal("app").describe("App owner."),
       appId: z
         .string()
         .regex(/^[a-z][a-z0-9-]*$/)
         .max(80)
-        .describe("Registered owner application ID."),
+        .describe("Owner app ID."),
     })
     .strict(),
 ]);
@@ -116,6 +114,9 @@ export const CodeSchema = z
     serviceAccountHandle: z.string().nullable(),
     state: z.enum(["draft", "active", "paused", "deleting"]),
     activeVersionId: z.uuid().nullable(),
+    activatedAt: timestamp.nullable().optional(),
+    activatedBy: z.object({ name: z.string() }).strict().nullable().optional(),
+    pausedAt: timestamp.nullable().optional(),
     needsReconfirmation: z.boolean().optional(),
     pauseReason: z.string().nullable(),
     pauseRows: z.array(z.string()),

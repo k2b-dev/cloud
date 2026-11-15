@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import type { SQL } from "bun";
+import { migrateCodeActivity } from "./code-activity";
 import { migrateUnusedCodeDatabases } from "./code-unused-databases";
 
 /** Additive Core migration. Existing AI/Assistant and workflow data are untouched. */
@@ -137,6 +138,8 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     DECLARE run code.runs;
     BEGIN
       SELECT * INTO run FROM code.runs WHERE id = NEW.run_id FOR UPDATE;
+      -- The owning run is authoritative; this projection indexes recent confirmed effects per Code.
+      NEW.code_id := run.code_id;
       IF NEW.ordinal > run.calls_limit OR octet_length(NEW.call::text) > run.payload_bytes OR COALESCE(octet_length(NEW.result::text),0) > 262144 THEN
         RAISE EXCEPTION 'code call storage limit' USING ERRCODE = '23514';
       END IF;
@@ -188,6 +191,20 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         CREATE OR REPLACE TRIGGER bounded_call BEFORE INSERT OR UPDATE ON code.calls FOR EACH ROW EXECUTE FUNCTION code.guard_call();
         CREATE OR REPLACE TRIGGER immutable_version_delete BEFORE DELETE ON code.versions FOR EACH ROW EXECUTE FUNCTION code.guard_version_delete();
     `.simple();
+    await tx`ALTER TABLE code.codes ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS activated_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS activated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
+    await tx`CREATE OR REPLACE FUNCTION code.record_pause_time() RETURNS TRIGGER AS $$
+    BEGIN
+      IF NEW.state='paused' AND OLD.state IS DISTINCT FROM 'paused' THEN NEW.paused_at := now();
+      ELSIF NEW.state<>'paused' THEN NEW.paused_at := NULL;
+      ELSE NEW.paused_at := OLD.paused_at;
+      END IF;
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql`.simple();
+    await tx`CREATE OR REPLACE TRIGGER record_pause_time BEFORE UPDATE ON code.codes
+      FOR EACH ROW EXECUTE FUNCTION code.record_pause_time()`.simple();
     await migrateUnusedCodeDatabases(tx);
+    await migrateCodeActivity(tx);
   });
 };

@@ -254,9 +254,12 @@ if (!isServer) {
     const requests: Array<{ url: string; signal?: AbortSignal | null; resolve: (value: Response) => void }> = [];
     globalThis.fetch = Object.assign(
       (url: string | URL | Request, init?: RequestInit) =>
-        new Promise<Response>((resolve) => {
-          requests.push({ url: String(url), signal: init?.signal, resolve });
-        }),
+        // The preview of the hit the person rests on asks its reader; without a view the facts stay.
+        String(url).includes("/api/search/preview")
+          ? Promise.resolve(Response.json({ view: null }))
+          : new Promise<Response>((resolve) => {
+              requests.push({ url: String(url), signal: init?.signal, resolve });
+            }),
       { preconnect: originalFetch.preconnect },
     );
     const { default: Search } = await import("./CloudResourceSearch");
@@ -344,6 +347,8 @@ test("resource context stays visible, preserves ID casing, and can be removed wi
   const originalFetch = globalThis.fetch;
   const requests: URL[] = [];
   globalThis.fetch = (async (input) => {
+    // The preview of the active hit asks its reader; without a view the search facts stay.
+    if (String(input).includes("/api/search/preview")) return Response.json({ view: null });
     requests.push(new URL(String(input), "http://localhost"));
     return Response.json({ query: "", count: 1, apps: [], items: [item("result")] });
   }) as typeof fetch;
