@@ -1,11 +1,18 @@
 import { CODE_REQUEST_LIMITS, CodeRouteRequestSchema, codeOwnPath, matchCodeRoute, validateCodePage } from "@k2b/cloud/code";
-import { auth, clientIp, clientIpBucket, getEffectiveGroups, middleware, ratelimit } from "@k2b/cloud/server";
-import { createLoginRedirectUrl } from "@k2b/cloud/shared";
+import type { CodeCheckedVersionManifest } from "@k2b/cloud/contracts";
+import { auth, getEffectiveGroups, getLocale, middleware } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { admitCodePage } from "./page-admission";
+import { codePageLabel } from "./page-provenance";
+import type { CodePageProvenanceSeed } from "./page-provenance-contracts";
 import { type CodePageHostingContext, codePageHandlers } from "./render-page";
 import { waitCodeRequest } from "./request-deadline";
 import { CodeRequestError, codeRequestVersion, requestCodeRoute } from "./requests";
-import { checkCodeCsrf, codeCsrf } from "./route-security";
+import { checkCodeCsrf, codeCsrf, codePageVersionValue } from "./route-security";
+
+/** The route a request opens: the first route entrypoint that matches its method and path. */
+export const selectCodePageRoute = (manifest: CodeCheckedVersionManifest, method: string, path: string) =>
+  manifest.entrypoints.find((entry) => entry.kind === "route" && entry.route && matchCodeRoute(entry.route, method, path));
 
 /** Stream into the budget, including chunked bodies; Content-Length alone is never sufficient. */
 export async function readCodeRequestBody(request: Request, maxBytes: number, signal: AbortSignal): Promise<string> {
@@ -54,45 +61,19 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
         if (!["GET", "HEAD", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"].includes(c.req.method))
           return c.json({ code: "code_request_method" }, 405);
         if (Buffer.byteLength(c.req.url) > CODE_REQUEST_LIMITS.urlBytes) return c.json({ code: "code_request_size_limit" }, 413);
-        const version = await waitCodeRequest(deps.version(codeId), signal);
         const path = new URL(c.req.url).pathname.slice(`/code/${codeId}`.length) || "/";
-        const selected = version.manifest.entrypoints.find(
-          (entry) => entry.kind === "route" && entry.route && matchCodeRoute(entry.route, c.req.method, path),
-        );
-        if (!selected?.route) return c.json({ code: "code_route_not_found" }, 404);
-        const isPublic = selected.route.public;
+        const admission = await admitCodePage(c, {
+          codeId,
+          path,
+          signal,
+          version: deps.version,
+          select: (manifest) => selectCodePageRoute(manifest, c.req.method, path),
+          limits: { member: "code-visitor-requests", public: "code-public-requests" },
+        });
+        if (admission instanceof Response) return admission;
+        const { version, selected, isPublic } = admission;
         const actor = c.get("actor");
         const subject = c.get("accessSubject");
-        // Interactive pages require a signed-in person. Workload credentials never impersonate a visitor.
-        if (
-          !isPublic &&
-          (c.get("credentialKind") !== "session" || actor?.kind !== "user" || subject?.type !== "user" || subject.userId !== actor.user.id)
-        ) {
-          // A visitor who opens the page goes to sign-in and comes back to it, as on every Cloud page.
-          if (!actor && c.req.method === "GET" && c.req.header("Accept")?.includes("text/html") && c.req.header("X-Code-Page") !== "tree")
-            return c.redirect(createLoginRedirectUrl(c.req.url));
-          return c.json({ code: "code_sign_in_required" }, 401);
-        }
-        // Pages that are not public belong to the Cloud's members, whoever owns the Code: they run with the owner's
-        // rights, which no guest account was given. A guest is refused before the Code is asked.
-        if (!isPublic && actor?.kind === "user" && actor.user.profile === "guest") return c.json({ code: "code_members_only" }, 403);
-        if (!isPublic && actor?.kind === "user") {
-          const limiter = ratelimit({ id: "code-visitor-requests", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
-          if ((await waitCodeRequest(limiter.check(`user:${actor.user.id}`), signal)).limited) {
-            c.header("Retry-After", "60");
-            return c.json({ code: "code_request_rate_limit" }, 429);
-          }
-        }
-        if (isPublic) {
-          const limiter = ratelimit({ id: "code-public-requests", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
-          if (
-            (await waitCodeRequest(limiter.check(`ip:${clientIpBucket(clientIp(c))}`), signal)).limited ||
-            (await waitCodeRequest(limiter.check(`code:${codeId}`), signal)).limited
-          ) {
-            c.header("Retry-After", "60");
-            return c.json({ code: "code_request_rate_limit" }, 429);
-          }
-        }
         const contentType = c.req.header("Content-Type")?.split(";", 1)[0]?.trim() ?? "text/plain";
         if (!["text/plain", "application/json", "application/x-www-form-urlencoded"].includes(contentType))
           return c.json({ code: "code_request_content_type" }, 415);
@@ -149,10 +130,21 @@ export function createCodeHostingRoutes(deps = { version: codeRequestVersion, re
           signal,
         );
         if (response.kind === "page") {
-          const page = { tree: validateCodePage(response.tree, codeId), codeId, csrf };
+          const tree = validateCodePage(response.tree, codeId);
           // The page's own island asks for the checked tree alone after a submit or a followed event.
           // Code responses cannot set headers, so this marker tells the island the tree passed validation.
-          if (c.req.header("X-Code-Page") === "tree") return c.json({ tree: page.tree, csrf: page.csrf }, 200, { "X-Code-Page": "tree" });
+          if (c.req.header("X-Code-Page") === "tree") return c.json({ tree, csrf }, 200, { "X-Code-Page": "tree" });
+          // The label beside the tree, reduced to this viewer; the card asks for the rest when it opens.
+          const provenance: CodePageProvenanceSeed = {
+            label: await waitCodeRequest(
+              codePageLabel(version.owner, { actor, accessSubject: subject, credentialKind: c.get("credentialKind") }, getLocale(c)),
+              signal,
+            ),
+            version: codePageVersionValue(codeId, version.versionId),
+            path,
+            cloudName: c.get("settings")?.app?.name || "Cloud",
+          };
+          const page = { tree, codeId, csrf, provenance };
           c.set("hostedCodePage", selected.route.layout === "plain" ? { ...page, layout: "plain" } : page);
           await waitCodeRequest(next(), signal);
           if (c.req.method === "HEAD") c.res = c.newResponse(null, c.res);

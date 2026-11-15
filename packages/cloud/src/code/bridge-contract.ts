@@ -1,5 +1,10 @@
 import type { CapabilityDispatchDependencies } from "../api/capabilities";
-import { CAPABILITY_FRAMEWORK_ERROR_CODES, type CapabilityActionPolicy, type NormalizedCapabilityCall } from "../contracts/capabilities";
+import {
+  CAPABILITY_FRAMEWORK_ERROR_CODES,
+  type CapabilityActionPolicy,
+  type CapabilityActionResultForm,
+  type NormalizedCapabilityCall,
+} from "../contracts/capabilities";
 import type { CodeBridgeRefusalKind } from "../contracts/code-call";
 
 export { CODE_BRIDGE_REFUSAL_KINDS, type CodeBridgeRefusalKind } from "../contracts/code-call";
@@ -119,6 +124,8 @@ export type CodeBridgeAuthority = {
   onFailure?: (error: unknown) => void;
   /** Internal receipt observation: a replay never confirms a second effect. */
   onReplay?: () => void;
+  /** Provider-authored result forms and canonical identities; no response titles are retained. */
+  onEffect?: (evidence: { forms: Partial<Record<"de" | "en", CapabilityActionResultForm>>; refs: { type: string; id: string }[] }) => void;
   mandateId: string;
   mandateRevision: number;
   ownerAppId: "core";

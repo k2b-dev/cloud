@@ -33,6 +33,7 @@ import type {
 import type { CodeOwner } from "../../../code/contracts";
 import type { UnusedCodeDatabase } from "../../../code/database-retention";
 import type { CodeCleanupJob } from "../../../code/lifecycle-contracts";
+import type { CodePageReportPage } from "../../../code/page-report-contracts";
 import type { CodeRunnerMetrics } from "../../../code/scheduling-contracts";
 import CoreSettingsForm, { type SettingFieldDef } from "../settings/_components/CoreSettingsForm.island";
 import { CODE_POLICY_ROW_GROUPS, type CodeAreaQuery, type CodeAreaSection, codeAreaHref, codeAreaLevel, isWideCodeSection } from "./area";
@@ -40,6 +41,7 @@ import CodeAccountHandle from "./CodeAccountHandle.island";
 import CodeApprovalReview, { type CodeApprovalCheck, type CodeApprovalReviewProps } from "./CodeApprovalReview.island";
 import CodeDatabaseControls from "./CodeDatabaseControls.island";
 import CodeListFilters from "./CodeListFilters.island";
+import CodePageReports from "./CodePageReports";
 import CodePauseAction from "./CodePauseAction.island";
 import CodePolicyEditor from "./CodePolicyEditor.island";
 import CodePolicyPicker from "./CodePolicyPicker.island";
@@ -57,6 +59,8 @@ export type CodeAreaData = {
   approval: Loaded<CodeAdminApprovalDetail>;
   codes: Loaded<{ items: CodeAdminCode[]; total: number; owners: number; nextCursor: string | null }>;
   code: Loaded<CodeAdminCodeDetail>;
+  /** Open reports on the selected automation's pages. */
+  reports?: Loaded<CodePageReportPage>;
   /** One version's source, read-only, when the URL selects it. */
   source: Loaded<CodeAdminVersionSource>;
   policy: Loaded<CodeAdminPolicy>;
@@ -669,6 +673,7 @@ export function CodeAreaView(props: Props) {
             />
           )}
         </Show>
+        <CodePageReports reports={data.reports} code={code} locale={props.locale} dateConfig={props.dateConfig} />
         <dl class="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-2 text-sm">
           <dt class="text-(--k2b-text-muted)">{t.owner}</dt>
           <dd>{ownerLabel(t, code.owner, code.ownerName, props.appNames)}</dd>

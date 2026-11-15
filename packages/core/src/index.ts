@@ -27,6 +27,7 @@ import { managesAiPrincipalSearchTarget } from "./api/ai-principal-search-target
 import { createCodeActivationRoutes } from "./api/code-activation";
 import { createCodeAdminRoutes } from "./api/code-admin";
 import { createCodeAuthoringRoutes } from "./api/code-authoring";
+import { createCodePageRoutes } from "./api/code-pages";
 import { createAnonymousGeoRoutes } from "./api/geo-anonymous";
 import identityInvocationRoutes from "./api/identity-invocation";
 import identityMandateRoutes from "./api/identity-mandates";
@@ -63,6 +64,8 @@ const identityPublicRoutes = createIdentityPublicRoutes();
 // and non-user Skills readers cannot pass the Task router's user requirement.
 const coreApi = new Hono()
   .route("/code/admin", createCodeAdminRoutes())
+  // Before `/code`, whose routes require a signed-in person: a page's label also answers visitors of public pages.
+  .route("/code/pages", createCodePageRoutes())
   .route("/code", createCodeActivationRoutes())
   .route("/code/authoring", createCodeAuthoringRoutes())
   .route("/admin/apps", createAdminAppListingRoutes())

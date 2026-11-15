@@ -49,11 +49,11 @@ export async function readCodePolicySnapshot(db: SQL = sql): Promise<CodePolicy>
   return codePolicySnapshotFromRow(row);
 }
 /** Current same-provider ancestry, using UNION to terminate cycles. IPA effective memberships are peers. */
-export const codePolicyGroupRowsQuery = (userId: string | null, db: SQL) => db<CodePolicyGroupRow[]>`
+export const codePolicyGroupRowsQuery = (userId: string | null, db: SQL, authorVersionId?: string) => db<CodePolicyGroupRow[]>`
     WITH RECURSIVE members(id) AS (
-      SELECT group_id FROM auth.user_groups_v2 WHERE user_id=${userId}::uuid
+      SELECT group_id FROM auth.user_groups_v2 WHERE user_id=COALESCE(${userId}::uuid,(SELECT created_by FROM code.versions WHERE id=${authorVersionId ?? null}::uuid))
       UNION SELECT g.id FROM auth.ipa_user_effective_groups m JOIN auth.groups g ON g.provider='ipa' AND g.name=m.group_name
-        WHERE m.user_id=${userId}::uuid
+        WHERE m.user_id=COALESCE(${userId}::uuid,(SELECT created_by FROM code.versions WHERE id=${authorVersionId ?? null}::uuid))
       UNION SELECT edge.parent_group_id FROM members m JOIN auth.groups child ON child.id=m.id
         JOIN auth.group_groups_v2 edge ON edge.child_group_id=m.id
         JOIN auth.groups parent ON parent.id=edge.parent_group_id AND parent.provider=child.provider

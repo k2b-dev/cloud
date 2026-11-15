@@ -3,6 +3,7 @@ import type {
   CapabilityActionCallReview,
   CapabilityActionOutcome,
   CapabilityActionReceipt,
+  CapabilityActionResultForm,
   CapabilityActionSentences,
   CapabilityAskReason,
   CapabilityPerson,
@@ -75,6 +76,7 @@ export type CapabilitySentenceField = {
 
 /** Everything a reader needs to word one Action call, resolved for one locale. */
 export type CapabilityActionWording = {
+  result?: CapabilityActionResultForm;
   title: string;
   sentences?: CapabilityActionSentences;
   fields?: readonly CapabilitySentenceField[];

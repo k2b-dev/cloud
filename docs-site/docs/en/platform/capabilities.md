@@ -1411,6 +1411,39 @@ surfaces that still read the legacy shape, available from
 The former resolves a rememberable scope and the latter supplies legacy
 message, detail, and link fields; both will be removed with the next major.
 
+#### Result forms for automation history
+
+An app can word confirmed automation effects with `presentation.results`, keyed
+by Action local ID. A form has `text` (up to 200 characters), an app-local
+`targetType`, and `kind`, the localized resource noun (up to 80 characters).
+Only the optional `{target}` token is supported. Core replaces it with
+that noun and the current authorized title, or the noun alone when the reader
+cannot see the target. Raw input, response titles and identifiers never fill it.
+
+```ts
+presentation: {
+  baseLocale: "en",
+  results: {
+    create: { text: "Created {target}", targetType: "task", kind: "task" },
+  },
+  translations: {
+    de: { actions: {
+      create: { result: { text: "{target} angelegt", targetType: "task", kind: "Aufgabe" } },
+    } },
+  },
+},
+```
+
+The target must be unambiguous among the successful result's `refs` and the
+call's target, matching the declared Type. Translations retain that Type.
+Core snapshots the forms and identities in the call's settlement write; it
+resolves names and open links through the reader's identity each time history
+is read. Use a result form only when a successful call proves that outcome.
+Queued or scheduled work must say that, rather than claim completion. Missing
+forms or ambiguous targets produce the Action title and its invocation count.
+This metadata does not change approvals, authority, or the result envelope.
+Third-party applications use the same contract as built-in applications.
+
 #### Receipts and outcome checks
 
 An Action result may return `receipt: { text, slots? }`, reusing the same slot

@@ -1,5 +1,6 @@
 import { logger } from "@k2b/cloud/services";
 import { expireCodeChatDrafts } from "./chat-drafts";
+import { expireCodePageReports } from "./page-reports";
 import { expireCodeRuns } from "./store";
 
 /** Core lifecycle owns one bounded batch per minute; replicas skip each other's locked rows. Stop drains the in-flight batch. */
@@ -9,6 +10,7 @@ export const startCodeRunRetention = (): (() => Promise<void>) => {
     if (pending) return;
     pending = expireCodeRuns({ now: new Date(), limit: 1000 })
       .then(() => expireCodeChatDrafts({ now: new Date(), limit: 1000 }))
+      .then(() => expireCodePageReports({ now: new Date(), limit: 1000 }))
       .then(() => undefined)
       .catch((error) => {
         logger("core:code-retention").error("Code run retention failed; the next sweep will retry", {

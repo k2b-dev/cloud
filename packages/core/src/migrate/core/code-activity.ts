@@ -4,6 +4,7 @@ import type { SQL } from "bun";
 export async function migrateCodeActivity(tx: SQL): Promise<void> {
   await tx`ALTER TABLE code.calls ADD COLUMN IF NOT EXISTS replayed BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS confirmed_effect BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS effect JSONB,
     ADD COLUMN IF NOT EXISTS code_id TEXT`.simple();
   await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS effects_recorded BOOLEAN NOT NULL DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS confirmed_effects JSONB NOT NULL DEFAULT '{}'::jsonb`.simple();

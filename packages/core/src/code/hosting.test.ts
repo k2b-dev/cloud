@@ -89,7 +89,13 @@ function hosting(
   router.route(
     "/",
     createCodeHostingRoutes({
-      version: async () => ({ versionId: "version", manifest, personalOwner }),
+      version: async () => ({
+        versionId: "version",
+        manifest,
+        owner: personalOwner
+          ? { kind: "person" as const, userId: personalOwner, name: "Lea Muster" }
+          : { kind: "app" as const, appId: "probe" },
+      }),
       request: async (input) => {
         calls.push(input);
         return typeof response === "function" ? response(input) : response;
