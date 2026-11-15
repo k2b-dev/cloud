@@ -49,7 +49,7 @@ export function legacyReviewView(value: unknown): unknown {
       const moreAttachments = "moreAttachments" in p ? p.moreAttachments : 0;
       if (moreAttachments) attachments.push(de ? `und ${moreAttachments} weitere` : `and ${moreAttachments} more`);
       add("Attachments", "Anhänge", attachments.join(", "));
-      if (p.sendAt) add("Send at", "Sendezeit", legacyTime(p.sendAt, locale));
+      if (p.sendAt) add("Send at", "Sendezeit", legacyTime(p.sendAt, locale) ?? p.sendAt);
       blocks.push({
         kind: "Draft",
         context,
