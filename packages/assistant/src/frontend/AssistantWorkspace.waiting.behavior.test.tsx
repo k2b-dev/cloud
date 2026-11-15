@@ -4,7 +4,6 @@ import type { LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { WaitingQuestionsView } from "./waiting-questions";
-import { WAITING_NOW, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
 
 // The live socket is the test's, so a question that opens or is decided elsewhere arrives as it does from Core.
 const subscriptions: LiveSubscriptionHandlers<unknown>[] = [];
