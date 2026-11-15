@@ -1840,6 +1840,13 @@ test("each text in the expanded work shows three lines with its own chevron, and
     expect(await viewportBox(page, ".ai-turn-work > summary")).toEqual(summary);
     // The quiet status that fits in three lines has no chevron.
     expect(await page.locator(".ai-turn__text .ai-turn-clamp__toggle").count()).toBe(0);
+
+    // The opened note stays open when the work line closes and opens again, as the reader left it.
+    await page.locator(".ai-turn-work > summary").click();
+    await page.locator(".ai-turn-steps").waitFor({ state: "detached" });
+    await page.locator(".ai-turn-work > summary").click();
+    await text.waitFor();
+    expect(await text.locator(".ai-turn-note__toggle").getAttribute("aria-expanded")).toBe("true");
   } finally {
     await context.close();
   }

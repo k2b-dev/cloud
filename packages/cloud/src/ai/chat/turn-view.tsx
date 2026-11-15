@@ -31,7 +31,7 @@ import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import type { AiStopNotice } from "./stop-notice";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
-import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
+import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, useAiToolDisclosure } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
 import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
 import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
@@ -422,10 +422,12 @@ function AiClampedText(props: { html: string; clamp: boolean; reset?: unknown })
  * opens the text in place, again at most three lines with its chevron for the rest (Bauplan 3o). Nothing is lost, and
  * the opened work stays a list of steps.
  */
-function WorkText(props: { text: string }) {
+function WorkText(props: { text: string; noteId: string }) {
   const locale = useLocale();
   const id = createUniqueId();
-  const [open, setOpen] = createSignal(false);
+  // The reader's choice survives the work line closing and a reload, like every other disclosure in the turn.
+  const disclosure = useAiToolDisclosure(() => props.noteId);
+  const open = () => disclosure.open() === true;
   // Render Markdown only when the text itself changes, not on every update of the turn around it.
   const text = createMemo(() => props.text);
   const html = createMemo(() => markdown.renderSync(text(), { locale: locale() }));
@@ -436,7 +438,7 @@ function WorkText(props: { text: string }) {
         class="ai-turn-note__toggle"
         aria-expanded={open() ? "true" : "false"}
         aria-controls={id}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => disclosure.onOpenChange(!open())}
       >
         <i class="ti ti-chevron-right" aria-hidden="true" />
         {aiChatMessages(locale()).stepNote}
@@ -497,7 +499,7 @@ function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
           const active = () => props.active && index() === keys().length - 1;
           return (
             <Switch>
-              <Match when={text()}>{(value) => <WorkText text={value()} />}</Match>
+              <Match when={text()}>{(value) => <WorkText text={value()} noteId={`note:${key}`} />}</Match>
               <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={active()} />}</Match>
               <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={active()} />}</Match>
               <Match when={repeat()}>
