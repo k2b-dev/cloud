@@ -7,6 +7,7 @@ export type { ChatTask, ChatTaskListProps, ChatTasksProps } from "./ChatTasks";
 
 import { ChatComposer } from "./ChatComposer";
 import { ChatDecision, ChatMark, ChatOutcome, ChatPreview } from "./ChatDecision";
+import { ChatActivityWords } from "./ChatActivityWords";
 import { ChatActivity, ChatActivityToggle, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
 import { ChatRoot } from "./ChatRoot";
 import { ChatTimeline } from "./ChatTimeline";
@@ -41,6 +42,12 @@ export type {
   ChatPreviewShowAllProps,
   ChatPreviewTitleProps,
 } from "./ChatDecision";
+export {
+  CHAT_ACTIVITY_WORDS_HOLD_MS,
+  CHAT_ACTIVITY_WORDS_START_MS,
+  type ChatActivityWordsProps,
+  chatActivityWordAt,
+} from "./ChatActivityWords";
 export type { ChatActivityProps, ChatActivityToggleProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
 export { formatChatTokens } from "./ChatPrimitives";
 export type { ChatRootProps } from "./ChatRoot";
@@ -80,7 +87,7 @@ export const Chat = Object.assign(ChatRoot, {
   TaskList: ChatTaskList,
   Timeline: ChatTimeline,
   Message: ChatMessage,
-  Activity: Object.assign(ChatActivity, { Toggle: ChatActivityToggle }),
+  Activity: Object.assign(ChatActivity, { Toggle: ChatActivityToggle, Words: ChatActivityWords }),
   Composer: ChatComposer,
   ContextUsage: ChatContextUsage,
   ContextPopup: ChatContextPopup,
