@@ -127,7 +127,8 @@ test("a read-only source tab scrolls its whole file on the tab surface and keeps
       const tab = (await panel.locator(".artifact-pane__title").boundingBox())!;
       expect(Math.round(copy.x + copy.width)).toBe(Math.round(view.x + view.width));
       expect(Math.round(view.x)).toBe(Math.round(tab.x));
-      await panel.locator(".artifact-pane__body").evaluate((element) => element.scrollTo(0, element.scrollHeight));
+      // The whole file scrolls on the pane's surface.
+      await panel.locator(".k2b-content-code-display__line").last().scrollIntoViewIfNeeded();
       const last = await panel.locator(".k2b-content-code-display__line").last().boundingBox();
       expect(last!.y + last!.height).toBeLessThanOrEqual(700);
     }

@@ -88,7 +88,7 @@ const openPage = async (width = 1440, path = "/") => {
   });
   page.setDefaultTimeout(5000);
   const errors = pageErrors(page);
-  await page.goto(new URL(path, server.url).href);
+  await page.goto(new URL(path, server.url).href, { waitUntil: "domcontentloaded" });
   await page.locator("#root > *").first().waitFor();
   return { page, errors };
 };
@@ -215,7 +215,7 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
       expect(stored.state.tabs).toHaveLength(2);
       expect(new URL(page.url()).searchParams.get("workspace")).toContain("Lieferavis");
       // Another device: the same chat opens with the same tabs and the same front tab.
-      await page.goto(new URL("/", server.url).href);
+      await page.goto(new URL("/", server.url).href, { waitUntil: "domcontentloaded" });
       await page.getByRole("tab", { name: /Offene Rückfragen/ }).waitFor();
       expect(await page.getByRole("tab", { name: /Lieferavis/ }).getAttribute("aria-selected")).toBe("true");
     } finally {
