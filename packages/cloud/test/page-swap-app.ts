@@ -265,7 +265,17 @@ const footprintScript = () => {
     urls.delete(url);
     revokeObjectURL(url);
   };
+  // Every history write, nav's own included: nav keeps the prototype methods it finds at install.
+  const writes: number[] = [];
+  for (const name of ["pushState", "replaceState"] as const) {
+    const original = History.prototype[name];
+    History.prototype[name] = function (...args: Parameters<History["pushState"]>) {
+      writes.push(performance.now());
+      return original.apply(this, args);
+    };
+  }
   Object.assign(window, {
+    recentHistoryWrites: () => writes.filter((time) => performance.now() - time < 10_000).length,
     pageSwapFootprint: () => ({
       listeners: listeners.size,
       intervals: intervals.size,
@@ -501,6 +511,13 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
     const tab = await open(tour[0]!);
     const step = async (index: number) => {
       const target = tour[(index + 1) % tour.length]!;
+      // Measure leaks, not the browser's history budget (WebKit: 100 writes per 10 s): stay below it, paced by the
+      // writes that really happened, islands' own URL updates included.
+      await tab.page.waitForFunction(
+        () => (window as unknown as { recentHistoryWrites: () => number }).recentHistoryWrites() < 40,
+        undefined,
+        { timeout: 15_000 },
+      );
       await click(tab.page, `[data-nav-root] a[href="${target}"]`);
       await at(tab.page, target);
     };
