@@ -372,6 +372,11 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
     // Without it, the shell stores the browser's time zone and reloads the page once.
     await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: app().origin }]);
     await context.addInitScript(footprintScript);
+    // The contract runs offline: a provider image or tile would make layout and timing depend on the network.
+    await context.route(
+      (url) => url.origin !== app().origin,
+      (route) => route.abort(),
+    );
     const page = await context.newPage();
     page.setDefaultTimeout(10_000);
     const errors: string[] = [];
