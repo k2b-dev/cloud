@@ -1997,6 +1997,10 @@ describe("turn places in the reader's language", () => {
     for (const label of ["Girokonto", "Tagesgeld", "Kreditkarte"]) expect(html).toContain(`>${label}</span>`);
     expect(html).toContain('data-kind="Chart"');
     expect(html).not.toContain("ti ti-mood");
+    // The head reads its time in the reader's zone, as every time in the chat does: 10:47 UTC is 11:47 in Berlin.
+    const berlin = renderPlaces([{ ...chart, at: "2026-11-15T10:47:00.000Z" }], { locale: "de", timeZone: "Europe/Berlin" });
+    expect(berlin).toContain("Stand 15.11., 11:47");
+    expect(berlin).not.toContain("10:47");
     // An older stored card or chart without a view keeps the tool's own drawing.
     const old = renderPlaces([card("o1", { title: "Girokonto", value: "2.481,20 €" }, false)], { locale: "de" });
     expect(old).not.toContain("cloud-capability-view");
@@ -2427,6 +2431,8 @@ test("a view file stands under Gustav's head like an app's result, and still loa
   expect(html).toContain('aria-label="Open large"');
   expect(html).toContain(`data-view-path="${path}"`);
   expect(html).toContain("Loading");
+  // A table, chart or explorer from a file is an island like an app's.
+  expect(html).toMatch(/class="k2b-paper k2b-dashboard-frame\s*"[^>]*><div data-view-path/);
 });
 
 test("present without a valid view reference stays a file chip", () => {

@@ -1,5 +1,5 @@
 import { fileIcons } from "@k2b/stdlib";
-import { Chat, useLocale } from "@k2b/ui";
+import { Chat, Paper, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import { formatAiFileSize } from "../attachments";
 import type { AiTurnBlock } from "../protocol";
@@ -43,6 +43,8 @@ const preparingView = (block: ToolBlock) =>
     : false;
 
 /** A presented file: a view file shows as its chart or table, every other file as a chip to open and download. */
+const ISLANDS: ReadonlySet<string> = new Set(["chart", "table", "group", "explorer"]);
+
 export function PresentToolBlock(props: { block: ToolBlock }) {
   const locale = useLocale();
   // Live updates replace the block with an equal result; only a different view loads again.
@@ -67,7 +69,12 @@ export function PresentToolBlock(props: { block: ToolBlock }) {
           large={() => <CloudViewBlock path={view.path} summary={view.summary} />}
           data={props.block.result}
         >
-          <CloudViewBlock path={view.path} summary={view.summary} />
+          {/* A chart, table or explorer is an island, as in an app's view; key figures and details stay flat. */}
+          <Show when={ISLANDS.has(view.summary.view)} fallback={<CloudViewBlock path={view.path} summary={view.summary} />}>
+            <Paper class="k2b-dashboard-frame">
+              <CloudViewBlock path={view.path} summary={view.summary} />
+            </Paper>
+          </Show>
         </ViewFrame>
       )}
     </Show>

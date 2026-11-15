@@ -31,8 +31,16 @@ function ChartFrame(props: Parameters<typeof SharedChartFrame>[0]) {
   );
 }
 
+/**
+ * Gustav's lines are drawn straight unless his description asks for a smooth curve: the shared curve can swing past
+ * its values, so a run of zeros would dip below zero.
+ */
+const straight = (input: CloudAiChartInput): CloudAiChartInput =>
+  input.kind === "line" && input.smooth === undefined ? { ...input, smooth: false } : input;
+
 /** Draws a chart for display and fills its table from that drawing; null when nothing can be drawn. */
-const drawChart = (input: CloudAiChartInput, locale: string): DrawnChart | null => {
+const drawChart = (described: CloudAiChartInput, locale: string): DrawnChart | null => {
+  const input = straight(described);
   try {
     const rows = cloudAiChartRows(input, locale);
     // The chat lays the legend out in HTML: the renderer's single SVG row runs out of a phone-wide column.
