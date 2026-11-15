@@ -288,7 +288,7 @@ Navigation behavior:
 
 Available exports:
 
-- `Link`, `installPageSwap()`, `swapPage()`, `onBeforeLeave()`
+- `Link`, `installPageSwap()`, `swapPage()`, `onBeforeLeave()`, `protectUnsavedInput()`
 - `navigate()`, `navigateTo()`, `documentNavigate()`, `currentPathWithQuery()`, `refreshCurrentPath()`
 - `captureScroll()`, `restoreScroll()`, `listenPopState()`, `startViewTransition()`
 - `BeforeLeaveEvent`, `LinkNavigateEvent`, `LinkProps`, `EnhancedNavigateOptions`, `NavigationScrollMode`, `PopStateNavigationEvent`, `ScrollSnapshot`
@@ -338,6 +338,19 @@ links outside the scope, and hash links on the same page stay native.
 `swapPage(href, { replace })` starts the same swap from code. After a change,
 `swapPage(currentUrl, { replace: true, scroll: "preserve" })` shows the page
 again where it was: the window and keyed regions keep their scroll position.
+
+Any failure loads the requested URL once as a document and leaves the old
+column untouched until then. Right before, `window` receives `ssr:nav-fallback`
+with `detail: { reason, url, status? }`; `reason` is a stable code (`network`,
+`timeout`, `status`, `content-type`, `redirect`, `shell`, `assets`, `head`,
+`module`, `commit`, `history`, `error`) for counting fallbacks. Strip `url`
+before reporting it. `installPageSwap({ timeout })` bounds fetch and module
+loading in milliseconds; past it the document loads instead. The head stays:
+title and `<meta name="description">` follow the fetched page, while base,
+stylesheets, and `<html lang>`/`dir` must match.
+
+For unsaved input, `protectUnsavedInput({ dirty, confirm })` asks `confirm`
+before a swap and lets the browser ask before a document load.
 
 In a swap host, the loader imports modules used only outside the column
 first. A module with an instance in the column loads after them, also for its

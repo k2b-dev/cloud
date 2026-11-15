@@ -29,6 +29,7 @@ let output: string;
 let origin: string;
 let providerRequests = 0;
 let fileRequests = 0;
+const fallbackReports: unknown[] = [];
 const pending = new Set<ReturnType<typeof Promise.withResolvers<Response>>>();
 let pendingStarted = Promise.withResolvers<void>();
 const spies: { mockRestore(): void }[] = [];
@@ -88,6 +89,10 @@ beforeAll(async () => {
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
+      if (url.pathname === "/api/me/page-swap-fallbacks") {
+        fallbackReports.push(await request.json());
+        return new Response(null, { status: 204 });
+      }
       if (url.pathname === "/fixture.css") return new Response(css, { headers: { "content-type": "text/css" } });
       // The shipped loader asks for <prefix>/<entry>.js; every prefix serves this one build.
       if (url.pathname.startsWith("/_ssr/")) {
@@ -376,13 +381,16 @@ for (const [name, value] of [
   ["fixture_person", "22222222-2222-4222-8222-222222222222"],
   ["fixture_build", "2"],
 ] as const) {
-  test(`changed ${name} loads one document`, async () => {
+  test(`changed ${name} loads one document and reports the fallback without URL or person`, async () => {
     const f = await fixture();
+    fallbackReports.length = 0;
     try {
       await swapOnce(f);
       await f.context.addCookies([{ name, value, url: origin }]);
       await swapTo(f.page, "A");
       expect(f.documents).toEqual(["/app/fixture/A"]);
+      for (let attempt = 0; attempt < 50 && fallbackReports.length === 0; attempt++) await Bun.sleep(20);
+      expect(fallbackReports).toEqual([{ appId: "fixture", reason: "shell" }]);
     } finally {
       await f.close();
     }

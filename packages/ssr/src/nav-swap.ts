@@ -7,6 +7,7 @@ type SwapState = {
   document: Document;
   uninstall: () => void;
   announcer: HTMLElement;
+  timeout?: number;
   active?: AbortController;
   native?: { event: Event; controller?: AbortController };
   token: string;
@@ -264,16 +265,69 @@ const stylesheets = (doc: Document, base: string): string =>
       link.getAttribute("media"),
     ]),
   );
+/** The kept head still describes the page for sharing and search: take the fetched page's description. */
+const syncDescription = (fetched: Document): void => {
+  const arriving = fetched.querySelector('head meta[name="description"]');
+  const kept = document.querySelector('head meta[name="description"]');
+  if (!arriving) kept?.remove();
+  else if (kept) kept.setAttribute("content", arriving.getAttribute("content") ?? "");
+  else document.head.append(document.importNode(arriving));
+};
 const wrappers = (root: HTMLElement): HTMLElement[] => [
   ...(root.matches("solid-island,solid-client") ? [root] : []),
   ...root.querySelectorAll<HTMLElement>("solid-island,solid-client"),
 ];
 
 /**
- * Install opt-in server HTML page swaps before islands add raw popstate listeners.
- * listenPopState is safe in either order. Repeated calls share the same cleanup.
+ * Why a swap gave up and loaded the document instead. Stable codes for diagnostics:
+ * - `network`: the request or its body failed;
+ * - `timeout`: the page and its island modules were not ready within `installPageSwap({ timeout })`;
+ * - `status`: the response was not 200 (`status` names it);
+ * - `content-type`: the response was not HTML;
+ * - `redirect`: the final URL left the scope, or a Back/Forward target answered from another URL;
+ * - `shell`: the fetched page declared another shell signature or scope;
+ * - `assets`: the fetched page loads its islands from another asset version;
+ * - `head`: the fetched head differs from the kept one (base, stylesheets, language or direction);
+ * - `module`: an island module of the fetched column failed to load;
+ * - `commit`: the column could not be replaced, or a cleanup took it away;
+ * - `history`: history moved under the swap or its rollback, so only a document load matches the URL;
+ * - `error`: any other unexpected failure.
  */
-export function installPageSwap(): () => void {
+export type SwapFallbackReason =
+  | "network"
+  | "timeout"
+  | "status"
+  | "content-type"
+  | "redirect"
+  | "shell"
+  | "assets"
+  | "head"
+  | "module"
+  | "commit"
+  | "history"
+  | "error";
+/** `detail` of the `ssr:nav-fallback` window event. `url` is the requested URL: hosts must strip it before reporting. */
+export type SwapFallbackDetail = { reason: SwapFallbackReason; url: string; status?: number };
+/** Tells hosts right before the document load that a swap fell back, so they can count it. */
+const reportFallback = (reason: SwapFallbackReason, url: string, status?: number): void => {
+  window.dispatchEvent(
+    new CustomEvent<SwapFallbackDetail>("ssr:nav-fallback", { detail: { reason, url, ...(status === undefined ? {} : { status }) } }),
+  );
+};
+
+export type PageSwapOptions = {
+  /**
+   * Milliseconds a swap may take to fetch the page and load its island modules. After that it loads the document
+   * instead, so a hanging request never leaves the old page pending. Unset: no limit.
+   */
+  timeout?: number;
+};
+
+/**
+ * Install opt-in server HTML page swaps before islands add raw popstate listeners.
+ * listenPopState is safe in either order. Repeated calls share the first installation and its cleanup.
+ */
+export function installPageSwap(options: PageSwapOptions = {}): () => void {
   if (typeof window === "undefined") return () => {};
   if (shared[swapKey]?.document === document) return shared[swapKey].uninstall;
   shared[swapKey]?.uninstall();
@@ -317,6 +371,7 @@ export function installPageSwap(): () => void {
   const state: SwapState = {
     document,
     announcer,
+    ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
     // Only tells this document's entries apart from a reloaded one's; crypto.randomUUID needs a secure context.
     token: Math.random().toString(36).slice(2),
     counter: 0,
@@ -476,6 +531,7 @@ export function installPageSwap(): () => void {
       // Only a newer swap's commit may own the entry history ended on; the vetoed page's own writes landed on a
       // foreign position, so its column and the URL no longer match.
       if (state.currentPage !== page && marker(window.history.state)?.page === state.currentPage) return;
+      reportFallback("history", window.location.href);
       window.location.reload();
     };
     if (key === undefined || !navigation) {
@@ -526,8 +582,10 @@ export function installPageSwap(): () => void {
         // Without absolute traversal, the first arrival is best effort; a rapid second Back may need a reload.
         state.rollback = undefined;
         const entry = marker(event.state);
-        if (entry?.page !== state.currentPage || entry.position !== pending.position) window.location.reload();
-        else pending.restored();
+        if (entry?.page !== state.currentPage || entry.position !== pending.position) {
+          reportFallback("history", window.location.href);
+          window.location.reload();
+        } else pending.restored();
       }
       return "nav";
     }
@@ -646,6 +704,7 @@ export function installPageSwap(): () => void {
           console.error(
             "[@k2b/ssr/nav] A leave check wrote history during Back or Forward; wait for event.restored. Loading the document.",
           );
+          reportFallback("history", window.location.href);
           window.location.reload();
         } else rollback(delta, shown, restored, key);
         return "nav";
@@ -754,52 +813,84 @@ async function runSwap(href: string, options: SwapPageOptions, traversal?: Trave
       (!traversal || stillCurrent(state, traversal))
     );
   };
-  const fail = (error?: unknown): void => {
+  const fail = (reason: SwapFallbackReason, error?: unknown, status?: number): void => {
     if (!active()) return;
     state.active = undefined;
     if (error !== undefined) console.error("[@k2b/ssr/nav] Page swap failed; falling back to document navigation.", error);
+    reportFallback(reason, requested.href, status);
     if (traversal) window.location.reload();
     else recover(requested.href, Boolean(options.replace));
   };
+  // A hanging request or module would leave the old page pending: past the deadline, the document load takes over.
+  const deadline =
+    state.timeout === undefined
+      ? undefined
+      : setTimeout(() => {
+          if (!active()) return;
+          fail("timeout");
+          controller.abort();
+        }, state.timeout);
   let fetched: Document;
   let next: NonNullable<ReturnType<typeof shellContext>>;
   let finalUrl: URL;
   try {
-    const response = await fetch(requested.href, {
-      signal: controller.signal,
-      credentials: "same-origin",
-      headers: { Accept: "text/html" },
-    });
-    if (!active()) return;
-    finalUrl = new URL(response.url || requested.href);
-    if (
-      response.status !== 200 ||
-      response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "text/html" ||
-      !inScope(finalUrl, context.scope) ||
-      (traversal && finalUrl.href.split("#")[0] !== requested.href.split("#")[0])
-    ) {
-      // A rejected body is never read; stop its download before the document load requests the URL again.
-      response.body?.cancel().catch(() => undefined);
-      fail();
+    let response: Response;
+    try {
+      response = await fetch(requested.href, {
+        signal: controller.signal,
+        credentials: "same-origin",
+        headers: { Accept: "text/html" },
+      });
+    } catch (error) {
+      fail("network", error);
       return;
     }
-    const text = await response.text();
+    if (!active()) return;
+    finalUrl = new URL(response.url || requested.href);
+    const rejected: SwapFallbackReason | undefined =
+      response.status !== 200
+        ? "status"
+        : response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "text/html"
+          ? "content-type"
+          : !inScope(finalUrl, context.scope) || (traversal && finalUrl.href.split("#")[0] !== requested.href.split("#")[0])
+            ? "redirect"
+            : undefined;
+    if (rejected) {
+      // A rejected body is never read; stop its download before the document load requests the URL again.
+      response.body?.cancel().catch(() => undefined);
+      fail(rejected, undefined, rejected === "status" ? response.status : undefined);
+      return;
+    }
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (error) {
+      fail("network", error);
+      return;
+    }
     if (!active()) return;
     fetched = new DOMParser().parseFromString(text, "text/html");
     const parsed = shellContext(fetched);
     const loader = fetched.querySelector("script[data-ssr-assets]");
     const prefix = loader?.getAttribute("data-ssr-assets");
-    if (
+    const mismatch: SwapFallbackReason | undefined =
       !parsed ||
       parsed.shell.getAttribute("data-nav-shell") !== context.shell.getAttribute("data-nav-shell") ||
-      parsed.scope !== context.scope ||
-      prefix !== document.querySelector("script[data-ssr-assets]")?.getAttribute("data-ssr-assets") ||
-      (!prefix && wrappers(parsed.root).length > 0) ||
-      !compatibleBase(fetched, finalUrl) ||
-      stylesheets(document, document.querySelector("base[href]") ? document.baseURI : state.headBase) !==
-        stylesheets(fetched, baseOf(fetched, finalUrl))
-    ) {
-      fail();
+      parsed.scope !== context.scope
+        ? "shell"
+        : prefix !== document.querySelector("script[data-ssr-assets]")?.getAttribute("data-ssr-assets") ||
+            (!prefix && wrappers(parsed.root).length > 0)
+          ? "assets"
+          : !compatibleBase(fetched, finalUrl) ||
+              stylesheets(document, document.querySelector("base[href]") ? document.baseURI : state.headBase) !==
+                stylesheets(fetched, baseOf(fetched, finalUrl)) ||
+              // The kept <html> carries the language and direction that screen readers and text layout use.
+              fetched.documentElement.lang !== document.documentElement.lang ||
+              fetched.documentElement.dir !== document.documentElement.dir
+            ? "head"
+            : undefined;
+    if (mismatch || !parsed) {
+      fail(mismatch ?? "shell");
       return;
     }
     next = parsed;
@@ -813,12 +904,19 @@ async function runSwap(href: string, options: SwapPageOptions, traversal?: Trave
     }
     // Evaluation cannot be cancelled: an entry registers its component (and mounts wrappers already waiting for it),
     // but only an active swap inserts its column.
-    await Promise.all([...new Set(wrappers(next.root).map((element) => element.dataset.id))].map((id) => import(`${prefix}/${id}.js`)));
+    try {
+      await Promise.all([...new Set(wrappers(next.root).map((element) => element.dataset.id))].map((id) => import(`${prefix}/${id}.js`)));
+    } catch (error) {
+      fail("module", error);
+      return;
+    }
     if (!active()) return;
+    clearTimeout(deadline);
     commit(state, context, next, fetched, finalUrl, requested, options, traversal);
   } catch (error) {
-    fail(error);
+    fail("error", error);
   } finally {
+    clearTimeout(deadline);
     if (state.active === controller) state.active = undefined;
     if (!state.active) context.shell.removeAttribute("data-nav-pending");
   }
@@ -843,8 +941,10 @@ const commit = (
   state.active = undefined;
   const owned = () => shared[swapKey] === state && context.root.isConnected && context.shell.contains(context.root);
   const recoverCommit = (replace: boolean): void => {
+    if (traversal && !stillCurrent(state, traversal)) return;
+    reportFallback("commit", requested.href);
     if (!traversal) recover(requested.href, replace);
-    else if (stillCurrent(state, traversal)) window.location.reload();
+    else window.location.reload();
   };
   if (traversal && !stillCurrent(state, traversal)) return;
   // An island may have replaced the column while modules loaded; replacing a detached root would commit only history.
@@ -876,6 +976,7 @@ const commit = (
     }
     if (traversal && !stillCurrent(state, traversal)) {
       // A cleanup moved history after the old islands were disposed: only a load of where it went is safe.
+      reportFallback("history", window.location.href);
       try {
         window.location.reload();
       } catch (error) {
@@ -910,6 +1011,7 @@ const commit = (
     const root = document.adoptNode(next.root);
     context.root.replaceWith(root);
     document.title = fetched.title;
+    syncDescription(fetched);
     for (const name of context.shell.getAttribute("data-nav-attributes")?.split(/\s+/).filter(Boolean) ?? []) {
       const value = next.shell.getAttribute(name);
       if (value === null) context.shell.removeAttribute(name);

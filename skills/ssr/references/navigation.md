@@ -63,7 +63,9 @@ onMount(() => onCleanup(installPageSwap()));
 - `data-nav-scope` is a path prefix (`/demo` takes `/demo/x`, not `/demobox`); `data-nav-root` is the replaced column; `data-nav-attributes` lists shell attributes the fetched page sets or removes
 - `data-nav-document` on a link keeps document navigation; mark in-scope links to non-HTML resources with it or `download`, otherwise the server receives the request twice (the swap fetch, then the document); prevented clicks, modifier keys, `target`, `download`, `rel="external"`, other origins, and same-page hash links stay native too
 - the swap loads the new page's island modules before it disposes the old islands; then it pushes history, replaces the column, sets title and attributes, mounts, focuses the first heading, and announces the title; island cleanups should not navigate
-- the newest navigation wins (another swap, Back/Forward, a native link, a native form submission, an enhanced `Link` click, `navigate()`, `documentNavigate()`), and a swap that starts later turns a pending `Link` handler's `push`, `replaceWith`, and `fallback` into no-ops; any failure (status, not HTML, redirect out of scope, signature, module prefix, `<base>`, stylesheet set, module error) loads the requested URL as a document
+- the newest navigation wins (another swap, Back/Forward, a native link, a native form submission, an enhanced `Link` click, `navigate()`, `documentNavigate()`), and a swap that starts later turns a pending `Link` handler's `push`, `replaceWith`, and `fallback` into no-ops; any failure (request error, timeout, status, not HTML, redirect out of scope, signature, module prefix, `<base>`, stylesheet set, `<html lang>`/`dir`, module error) loads the requested URL as a document, after `window` receives `ssr:nav-fallback` with `detail: { reason, url, status? }` (stable `reason` codes: `network`, `timeout`, `status`, `content-type`, `redirect`, `shell`, `assets`, `head`, `module`, `commit`, `history`, `error`; strip `url` before reporting)
+- `installPageSwap({ timeout })` bounds fetch and module loading in milliseconds; past it the document loads instead of the old page staying pending; no limit without it
+- the head stays: title and `<meta name="description">` follow the fetched page, everything else must match
 - `swapPage(href, { replace })` swaps from code
 - `window` receives `ssr:nav-swapped` once per committed push, replace, Back or Forward, with `detail: { root }` for the inserted column, after mount, scroll, focus and announcement; failures and document loads emit nothing, and listener errors never trigger a document load
 - inline scripts in the fetched page do not run; keep page data in island props
@@ -75,6 +77,16 @@ onMount(() => onCleanup(installPageSwap()));
 - add `data-scroll-page` to a keyed `data-scroll-preserve` region to restore it on Back/Forward and reload recovery without carrying the departing page's position into push or replace swaps; those start at the top or hash target
 
 ## Protect unsaved input
+
+For a draft or form, `protectUnsavedInput()` covers both ways out: your dialog before a swap, the browser's `beforeunload` dialog before a document load. After a confirmation it does not ask again, also when the swap falls back to a document load:
+
+```tsx
+import { protectUnsavedInput } from "@k2b/ssr/nav";
+
+protectUnsavedInput({ dirty: () => dirty(), confirm: () => askToDiscardChanges() });
+```
+
+For your own decision logic, use `onBeforeLeave()` directly:
 
 ```tsx
 import { onBeforeLeave, swapPage } from "@k2b/ssr/nav";
@@ -109,4 +121,4 @@ document.
 - a vetoed click or `swapPage()` changes nothing: no fetch, no history entry, an older pending swap keeps running
 - a vetoed Back/Forward aborts a pending swap and rolls history back to the shown entry with `navigation.traverseTo()` (or `history.go()` using marker positions when the departure key is unavailable); listeners registered after nav and `ssr:nav-popstate` see neither popstate (listeners registered before nav, such as `@k2b/ui` dialog-core, still do), and traversals during a pending rollback are absorbed; a failed rollback reloads unless a newer swap committed meanwhile; an unknown or zero delta cannot be vetoed
 - document loads, island-owned navigation (`Link` with `onNavigate`, `navigate()`, same-page popstates), bfcache returns, and further traversals or fragment entries during a pending cross-page traversal are not asked
-- nav does not consult `beforeunload` during a swap; keep `beforeunload` for document loads (reload, closed tab, out-of-scope link, a swap that fails and loads the document)
+- nav does not consult `beforeunload` during a swap; `protectUnsavedInput()` registers both, otherwise keep `beforeunload` for document loads (reload, closed tab, out-of-scope link, a swap that fails and loads the document)

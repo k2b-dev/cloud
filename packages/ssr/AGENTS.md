@@ -213,8 +213,9 @@ A swap is one transaction, and its order is the contract:
    `fallback`.
 2. Fetch the target as HTML with the abort signal. Check status 200, HTML,
    final URL in scope, shell signature and scope, the loader's
-   `data-ssr-assets` prefix, the `<base>` element, and the head stylesheets
-   in order with their `media`, because the current head stays.
+   `data-ssr-assets` prefix, the `<base>` element, the head stylesheets
+   in order with their `media`, and `lang` and `dir` on `<html>`, because the
+   current head stays. Commit copies the title and `<meta name="description">`.
 3. Preload and import the island entries of the fetched column. The old
    column stays as it is until every module loaded. Evaluation cannot be
    cancelled: an entry also mounts wrappers already waiting for it in the
@@ -236,9 +237,21 @@ do not trigger document navigation.
 
 After every `await`, an aborted or replaced swap returns without a change.
 Every other failure calls `documentNavigate()` for the requested URL once;
-after a history commit it replaces the entry. The click listener sits on
-`window` in the bubble phase, so island and delegated Solid handlers can
-prevent a swap first.
+after a history commit it replaces the entry. Each failure, and each reload
+that rollback or history recovery starts, first dispatches `ssr:nav-fallback`
+on `window` with `detail: { reason, url, status? }`: one stable
+`SwapFallbackReason` per failure class. Out-of-scope targets are not failures
+and emit nothing. `installPageSwap({ timeout })` sets one deadline over fetch,
+body, and module loading; when it passes on an active swap, the swap fails
+with `timeout` and then aborts its fetch. The first installation's options
+win for the document. The click listener sits on `window` in the bubble
+phase, so island and delegated Solid handlers can prevent a swap first.
+
+`protectUnsavedInput()` in `src/nav-unsaved.ts` registers one leave check and
+one `beforeunload` listener for the same `dirty()`. A swap check vetoes, waits
+for `restored`, awaits `confirm`, then repeats Back with `history.go(delta)`
+and every other navigation with `swapPage(url)`. After a confirmation it stays
+released, so a swap that falls back to a document load does not ask twice.
 
 History has one owner while the swap is installed. The reserved state key
 `"@k2b/ssr/nav"` holds `{ page: string, position: number, scroll?: ScrollSnapshot }`.
@@ -432,13 +445,15 @@ no API to ask them, and a synthetic event shows no dialog. `onBeforeLeave` is
 the contract for swaps. Keep `beforeunload` for document loads, such as a
 reload, a closed tab, a link outside the scope, or a swap that fails after the
 checks allowed it and loads the document. Built-in applications move their
-`beforeunload` users to `onBeforeLeave` app by app; until then a swap does not
-protect their input.
+`beforeunload` users to `protectUnsavedInput()` before they enable page swaps;
+until then a swap does not protect their input.
 
 Cover every change in the unit, Happy DOM, and `test/engine` suites: history
 push and replace, Back and Forward, hash links, async fallbacks, reactive
-props, scroll snapshots, and for the swap each failure class, rapid clicks,
-and island disposal. A change to the swap contract updates this file,
+props, scroll snapshots, and for the swap each failure class with its
+reported reason, the timeout, rapid clicks, island disposal, and the 50-swap
+footprint of window and document listeners, head, and shell. A change to the
+swap contract updates this file,
 `README.md`, the `ssr` skill, and the Fibel page
 `frontend/url-state-and-navigation.md` in the same `feat(ssr)` pull request.
 
