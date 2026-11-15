@@ -101,7 +101,8 @@ const stat = z.strictObject({
   trend: z.array(z.number().finite()).max(BLOCK_LIMITS.trend).optional(),
 });
 const pageLeaf = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("Text"), text }),
+  /** `format: "markdown"` draws the text through Cloud's safe Markdown renderer: no raw HTML, no remote images. */
+  z.strictObject({ kind: z.literal("Text"), text, format: z.literal("markdown").optional() }),
   z.strictObject({ kind: z.literal("Heading"), text: label, level: z.union([z.literal(2), z.literal(3), z.literal(4)]).optional() }),
   z.strictObject({
     kind: z.literal("Table"),
