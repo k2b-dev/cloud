@@ -125,15 +125,28 @@ export const spacesActionReview = (
     locale: language,
     sentence: sentences[language][operation],
     slots: { item: { kind: "object", title } },
-    view: {
-      version: 1 as const,
-      blocks: [
-        {
-          kind: "Text" as const,
-          text: [proposal.message, ...proposal.details.map(({ label, value }) => `${label}: ${value}`)].join("\n\n"),
-        },
-      ],
-    },
+    // The question already says what happens. Short facts are rows; dates read in the reader's zone as the
+    // consequences above, never a second time as ISO text; long text such as a description reads as Markdown.
+    ...(() => {
+      // The view keeps every proposed character; only the consequences need single-line text.
+      const exact = proposal.details.map(({ label, value, display }, index) => ({
+        label,
+        value: String(value).toWellFormed(),
+        block: display === "block",
+        dated: rows[index]?.format !== undefined,
+      }));
+      const facts = exact.filter((row) => !row.dated && !row.block);
+      const texts = exact.filter((row) => !row.dated && row.block);
+      const blocks = [
+        ...(facts.length ? [{ kind: "Detail" as const, title, items: facts.map(({ label, value }) => ({ label, value })) }] : []),
+        ...texts.map(({ label, value }) => ({
+          kind: "Section" as const,
+          title: label,
+          children: [{ kind: "Text" as const, text: value, format: "markdown" as const }],
+        })),
+      ];
+      return blocks.length ? { view: { version: 1 as const, blocks } } : {};
+    })(),
     scope: proposal.scope,
     ...(proposal.ask ? { ask: proposal.ask } : {}),
     ...(proposal.links ? { links: proposal.links } : {}),
