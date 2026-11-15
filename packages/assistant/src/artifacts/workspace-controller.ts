@@ -1,12 +1,4 @@
-import {
-  activatePanesItem,
-  addPanesItem,
-  createPanesLayout,
-  isPanesItemVisible,
-  type PanesLayout,
-  reconcilePanesLayout,
-  removePanesItem,
-} from "@k2b/ui";
+import { activatePanesItem, createPanesLayout, type PanesLayout, reconcilePanesLayout } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput, SaveChatWorkspaceResult } from "../chat-workspace";
 import {
@@ -165,15 +157,8 @@ export function createArtifactWorkspace(
     update((current) => {
       const opened = openWorkspaceTab(current, tab);
       const id = workspaceTabId(tab.key);
-      const frontId = current.active ? workspaceTabId(current.active) : null;
-      let layout = current.layout;
-      if (!layout?.root) layout = createPanesLayout([id]);
-      else if (!current.tabs.some((existing) => existing.key === tab.key))
-        layout = addPanesItem(layout, {
-          itemId: id,
-          targetItemId: frontId ?? (current.tabs[0] ? workspaceTabId(current.tabs[0].key) : null),
-        });
-      layout = fitLayout(layout, opened.tabs);
+      // A new tab joins the first pane, in front; the arrangement of the others stays.
+      const layout = fitLayout(current.layout, opened.tabs);
       return { ...current, ...opened, layout: layout && activatePanesItem(layout, id) };
     });
     setMobile("workspace");
@@ -182,8 +167,7 @@ export function createArtifactWorkspace(
     dirty.delete(key);
     update((current) => {
       const closed = closeWorkspaceTab(current, key);
-      let layout = current.layout ? removePanesItem(current.layout, workspaceTabId(key)) : null;
-      layout = fitLayout(layout, closed.tabs);
+      const layout = fitLayout(current.layout, closed.tabs);
       return {
         ...current,
         ...closed,
@@ -195,7 +179,7 @@ export function createArtifactWorkspace(
   };
   const belongs = (tab: WorkspaceTab) => !("conversationId" in tab) || chatId === null || tab.conversationId === chatId;
   const select = (key: string) => {
-    if (state().active === key && state().layout && isPanesItemVisible(state().layout!, workspaceTabId(key))) return;
+    if (state().active === key) return;
     update((current) => ({
       ...current,
       active: key,
