@@ -127,6 +127,12 @@ be arranged", with an Arrange action. The application decides whether it was
 seen and stores `onDismiss`, as with every `MovedHint`. The hint steps aside
 while a tab is dragged, so it never covers a drop target.
 
+## Import
+
+Import `Panes` from `@k2b/ui` or from the separate entry `@k2b/ui/panes`. Use the separate entry in a module your
+application loads on demand, such as a workspace that appears with its first tab: a bundler then keeps `Panes` out of
+the first frame instead of holding it with the rest of the shared `@k2b/ui` entry.
+
 ## Narrow containers
 
 Below 640 px of its own width, Panes shows every open item as one row of
