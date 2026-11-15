@@ -329,6 +329,7 @@ export type CapabilityDispatchParams = {
   onUpstreamAttempt?: () => void;
   /** Internal observation of the actual provider status, before body validation or transport projection. */
   onUpstreamResponse?: (status: number) => void;
+  onReplay?: () => void;
   /** Core-only aggregate budget, charged on upstream bytes before parsing or validation. */
   consumeResponseBytes?: (bytes: number) => void;
   dependencies?: CapabilityDispatchDependencies;
@@ -1235,6 +1236,7 @@ export const dispatchCapability = async (params: CapabilityDispatchParams): Prom
         await recording;
       }
     }
+    if (outcome.replayed) params.onReplay?.();
     return capabilityJsonResponse(outcome.body, outcome.status);
   } finally {
     deadline.signal.removeEventListener("abort", onAbort);
@@ -1701,6 +1703,7 @@ export async function dispatchCodeSdkCall({
       onUpstreamResponse: (status) => {
         targetStatus = status;
       },
+      onReplay: authority.onReplay,
       workloadRun: claims.runId,
       workloadGeneration: claims.generation,
       callingAppId: "core",

@@ -117,6 +117,8 @@ export type CodeBridgeAuthority = {
   onRefusal?: (kind: CodeBridgeRefusalKind) => void;
   /** Original capability error for Core accounting, before the runner's payload-free error projection. */
   onFailure?: (error: unknown) => void;
+  /** Internal receipt observation: a replay never confirms a second effect. */
+  onReplay?: () => void;
   mandateId: string;
   mandateRevision: number;
   ownerAppId: "core";

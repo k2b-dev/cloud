@@ -75,6 +75,7 @@ describe("Core Code data contracts", () => {
         .map((query) => query.localId)
         .sort(),
     ).toEqual([
+      "code.activity.words",
       "code.attention",
       "code.attention.list",
       "code.automation.list",
@@ -89,7 +90,9 @@ describe("Core Code data contracts", () => {
       "code.run.count",
       "code.run.list",
       "code.run.read",
+      "code.run.words",
       "code.secret.list",
+      "code.source.tab",
       "code.summary",
       "code.version.diff",
       "code.version.diff.read",
@@ -97,6 +100,7 @@ describe("Core Code data contracts", () => {
       "code.version.origin",
       "code.version.read",
       "code.version.review",
+      "code.version.words",
     ]);
     expect(
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),

@@ -25,6 +25,7 @@ import { activateCodeVersion, cancelCodeActivation, previewCodeActivation, proce
 import { cleanupCodeActivation, codeActivationCleanupOutbox } from "./activation-maintenance";
 import * as authoringChecks from "./authoring-check";
 import type { Code } from "./contracts";
+import * as explanations from "./read-model/explanation";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode, insertCodeRun, readCode } from "./store";
 import { submitCodeVersion } from "./versions";
@@ -102,6 +103,7 @@ const catalog = compileCapabilityManifest("example", {
 let database: Awaited<ReturnType<typeof useFreshDatabase>>;
 databaseSuite()("durable Code activation", () => {
   let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
+  let explanation: ReturnType<typeof spyOn<typeof explanations, "storeCodeVersionExplanation">>;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>,
     readersSpy: ReturnType<typeof spyOn<typeof provider, "readResourcePrincipals">>,
     catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
@@ -181,6 +183,7 @@ databaseSuite()("durable Code activation", () => {
       await sql`UPDATE code.policy_rules SET value='admin' WHERE row='silent_draft' AND group_id IS NULL`;
       const submitted = await version(code);
       await coreSettings.get("app.timezone");
+      const generated = explanation.mock.calls.length;
       for (let load = 0; load < 3; load++) {
         const statements = await meter.during(async () => {
           expect(await previewCodeActivation({ codeId: code.id, versionId: submitted.version.id }, owner, deps)).toMatchObject({
@@ -190,6 +193,7 @@ databaseSuite()("durable Code activation", () => {
         });
         console.log("SQL BUDGET card preview", statements.length, statements);
         expect(statements).toHaveLength(10);
+        expect(explanation.mock.calls).toHaveLength(generated);
       }
     } finally {
       await meter.close();
@@ -198,7 +202,9 @@ databaseSuite()("durable Code activation", () => {
   });
   beforeAll(async () => {
     // These checked fixtures exercise activation; scheduling integration covers the binding runner check.
-    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue();
+    serverCheck = spyOn(authoringChecks, "verifyCodeSubmission").mockResolvedValue([]);
+    // Submission generates model text. Keep its provider/settings work out of this activation-only fixture.
+    explanation = spyOn(explanations, "storeCodeVersionExplanation").mockResolvedValue({ text: "Fictional automation." });
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_activation");
     await migrateAuth();
@@ -250,6 +256,7 @@ databaseSuite()("durable Code activation", () => {
   });
   afterAll(async () => {
     serverCheck?.mockRestore();
+    explanation?.mockRestore();
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();
