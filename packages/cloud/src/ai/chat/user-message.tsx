@@ -1,6 +1,6 @@
 import { mutation } from "@k2b/stdlib/solid";
 import { Button, type ChatAction, type ChatAttachment, dialogCore, PanelDialog, panelDialogOptions, TextInput } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import { createSignal, type JSX, Show } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
 import type { AiChatActions } from "./message-actions";
@@ -71,6 +71,30 @@ const openModifyRetryDialog = (
 };
 
 export const aiUserMessageText = (entry: AiStoredMessage): string => userVisibleTextFromMessage(entry.message);
+
+/**
+ * Who wrote a message the person did not type: an automation or another chat. The server sets the origin from the
+ * writer and links it only for a viewer who may open the source. The person's own messages carry none.
+ */
+export const aiUserMessageSource = (entry: AiStoredMessage, locale: string): JSX.Element | undefined => {
+  const origin = entry.meta?.origin;
+  if (!origin || origin.kind === "person") return undefined;
+  const t = aiChatMessages(locale);
+  const label = origin.kind === "automation" ? t.messageFromAutomation({ name: origin.name }) : t.messageFromChat({ name: origin.name });
+  const content = (
+    <>
+      <i class={`ai-message-source__icon ${origin.kind === "automation" ? "ti ti-app-window" : "ti ti-sparkles"}`} data-kind={origin.kind} aria-hidden="true" />
+      <span>{label}</span>
+    </>
+  );
+  return origin.href ? (
+    <a href={origin.href} title={origin.kind === "automation" ? t.openAutomation : t.openChat}>
+      {content}
+    </a>
+  ) : (
+    content
+  );
+};
 
 export const aiUserMessageAttachments = (entry: AiStoredMessage, actions: AiChatActions = {}): ChatAttachment[] => [
   ...textAttachmentSummariesFromMessage(entry.message).map((attachment, index) => ({

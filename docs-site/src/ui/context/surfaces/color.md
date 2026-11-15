@@ -281,6 +281,13 @@ colors carry no hue and are fine. Only the Assistant, the AI app itself, may
 use plum. In the Cloud repository the `ai-color` check enforces this for every
 built-in app and for the launchpad's fallback tile colors.
 
+One named case widens this to "plum means machine-written": a chat message
+that an automation or another chat wrote for the person sits on
+`--k2b-chat-machine-surface`, the AI accent mixed into `--k2b-surface-muted`
+at 8 % in light and 10 % in dark mode. Text on it keeps 15.9:1 in light and
+12.0:1 in dark mode. The tint exists only as this token; the `ai-color` check
+reports a stronger token and any other place that mixes the two by hand.
+
 ## Import
 
 ```css

@@ -80,6 +80,8 @@ export type AiTurnSegment = {
   answerAgain?: () => void | Promise<void>;
   /** The person stopped this turn: it ends with the quiet stopped line and no notice. */
   stoppedByPerson?: boolean;
+  /** "Send now" interrupted this turn for a queued message: it ends with the status word "paused" alone. */
+  queueInterrupted?: boolean;
   stopNotice?: AiStopNotice | null;
   /** The turn is the chat's newest and nothing runs, so a new message can pick up its work. */
   continuable?: boolean;
@@ -191,7 +193,8 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   const summary = createMemo(() => (isLive(segment().phase) ? "" : workSummary(layout().work, locale())));
   const ending = () => {
     const phase = segment().phase;
-    return phase === "stopped" ? "stopped" : phase === "failed" && !segment().error ? "failed" : null;
+    if (phase === "stopped") return segment().queueInterrupted ? "paused" : "stopped";
+    return phase === "failed" && !segment().error ? "failed" : null;
   };
   const sentence = () => {
     if (reconnecting()) return t().reconnecting;
@@ -201,6 +204,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const duration = worked();
     const short = duration === null ? "" : formatWorkDuration(duration, t());
     if (ending() === "stopped") return t().workedStopped({ duration: short });
+    if (ending() === "paused") return t().workedPaused({ duration: short });
     // A failed turn with a stored reason says it in its notice; the line then reads like any finished turn.
     if (ending() === "failed") return t().workedInterrupted({ duration: short });
     return short ? t().workedFor({ duration: short }) : t().worked;
@@ -209,7 +213,9 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   const stepParts = () => {
     if (isLive(segment().phase) || (!layout().steps && !summary())) return null;
     const parts = workStepParts(layout().work, layout().steps, locale());
-    const ended = summary() && ending() ? (ending() === "stopped" ? t().workEndedStopped : t().workEndedInterrupted) : "";
+    const words = { stopped: t().workEndedStopped, paused: t().workEndedPaused, failed: t().workEndedInterrupted };
+    const end = ending();
+    const ended = summary() && end ? words[end] : "";
     return { count: parts.count, issues: [...parts.issues, ended].filter(Boolean).join(", ") };
   };
   const ariaLabel = () => {
@@ -963,6 +969,10 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         <Show when={props.segment().reconnect === "row"}>
           {/* Calm by design: no busy sweep while the turn reconnects. */}
           <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
+        </Show>
+        {/* Without a work line, a turn that "Send now" interrupted still says so, quietly and without a button. */}
+        <Show when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().queueInterrupted && !layout().showWork}>
+          <Chat.Activity class="ai-turn__paused" icon="ti ti-player-pause" label={aiChatMessages(locale()).workedPaused({ duration: "" })} />
         </Show>
         <Show when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().stoppedByPerson}>
           {/* Calm by design: the person stopped it, so this is a quiet line, not a warning. */}

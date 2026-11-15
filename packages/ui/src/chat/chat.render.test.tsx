@@ -392,6 +392,25 @@ describe("@k2b/ui portable chat family", () => {
     expect(controlledClosed).not.toMatch(/<details\b[^>]*\sopen(?:=""|(?=[\s>]))/);
   });
 
+  test("names a machine-written message by its source above the bubble", () => {
+    const own = renderToString(() => createComponent(Chat.Message, { role: "user", children: "My own words" }));
+    const machine = renderToString(() =>
+      createComponent(Chat.Message, {
+        role: "user",
+        source: "From automation “Morning briefing”",
+        children: "Briefing for Monday",
+      }),
+    );
+
+    expect(own).not.toContain("data-source");
+    expect(own).not.toContain("k2b-chat-message__source");
+    expect(machine).toContain("data-source");
+    // The source line names the writer; it replaces "You:" for screen readers, so the message is never attributed to the person.
+    expect(machine).toMatch(/<div class="k2b-chat-message__source">From automation “Morning briefing”<\/div>/);
+    expect(machine).not.toContain('class="k2b-sr-only"');
+    expect(machine.indexOf("k2b-chat-message__source")).toBeLessThan(machine.indexOf("k2b-chat-message__bubble"));
+  });
+
   test("keeps visible timestamps explicit and SSR-stable", () => {
     const machineOnly = renderToString(() =>
       createComponent(Chat.Message, {

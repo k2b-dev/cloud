@@ -553,7 +553,7 @@ type ChatRootProps = {
 };
 
 type ChatMessageItem = {
-  kind: "message"; id: string; role: ChatRole; content?: JSX.Element; label?: string;
+  kind: "message"; id: string; role: ChatRole; content?: JSX.Element; label?: string; source?: JSX.Element;
   createdAt?: string | Date; timeLabel?: string; status?: ChatMessageStatus;
   attachments?: readonly ChatAttachment[]; actions?: readonly ChatAction[];
   actionDisplay?: "auto" | "inline" | "menu"; anchorId?: string | number; class?: string;
@@ -623,9 +623,9 @@ type ChatComposerEmoji = {
 
 ```ts
 type ChatMessageProps = {
-  role: ChatRole; children?: JSX.Element; label?: string; createdAt?: string | Date; timeLabel?: string;
-  status?: ChatMessageStatus; attachments?: readonly ChatAttachment[]; actions?: readonly ChatAction[];
-  actionDisplay?: "auto" | "inline" | "menu"; anchorId?: string | number;
+  role: ChatRole; children?: JSX.Element; label?: string; source?: JSX.Element; createdAt?: string | Date;
+  timeLabel?: string; status?: ChatMessageStatus; attachments?: readonly ChatAttachment[];
+  actions?: readonly ChatAction[]; actionDisplay?: "auto" | "inline" | "menu"; anchorId?: string | number;
   onActionError?: (error: unknown) => void; class?: string;
 };
 
@@ -638,6 +638,15 @@ type ChatActivityProps = {
 
 type ChatActivityToggleProps = { children: JSX.Element };
 ```
+
+`source` marks a message that the person did not type here, such as one an
+automation or another chat wrote into this conversation. It stands above the
+bubble in the meta step (12 px, muted), right-aligned for a user message, and
+names the writer for screen readers in place of the role label. Make it a link
+only when the viewer may open the source. The bubble then takes
+`--k2b-chat-machine-surface`, a faint plum in the grey of the person's own
+bubble, so it reads as machine-written without looking like the assistant's
+own cards.
 
 `Chat.Activity.Toggle` takes `ChatActivityToggleProps`. Put it in an activity's
 `label` to open only that activity's body.
