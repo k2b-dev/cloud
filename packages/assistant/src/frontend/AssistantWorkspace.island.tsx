@@ -2490,7 +2490,14 @@ export default function AssistantWorkspace(props: Props) {
                 locked={!projectComposer() && chat.running()}
                 lockedReason={t().modelLockedWhileRunning}
               />
-              <Show when={!props.status.liveDictationAvailable || dictation.busy() || dictation.pendingResult()}>
+              {/* Without live dictation or an audio model there is nothing to start, so no greyed microphone stands there. */}
+              <Show
+                when={
+                  dictation.busy() ||
+                  dictation.pendingResult() ||
+                  (!props.status.liveDictationAvailable && props.status.audioModelConfigured)
+                }
+              >
                 <dictation.Control />
               </Show>
             </>
@@ -2542,7 +2549,8 @@ export default function AssistantWorkspace(props: Props) {
                   ? "running"
                   : "idle"
           }
-          focusToken={projectComposer() ? undefined : composerFocusToken()}
+          // Only an explicit request focuses the field (a new or opened chat, a starter); a page load leaves it at rest.
+          focusToken={projectComposer() || composerFocusToken() === 0 ? undefined : composerFocusToken()}
           suggestion={nextMessage()}
           submitDisabled={aiModelBlocksSending(modelState(), selectedModelRequest())}
           runningSubmitIntent={!projectComposer() ? "queue" : undefined}
