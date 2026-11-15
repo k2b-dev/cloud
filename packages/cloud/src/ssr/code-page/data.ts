@@ -4,6 +4,8 @@ import type { CapabilityClientResult, CapabilityInvocation } from "../../capabil
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { CODE_BRIDGE_REFUSAL_KINDS, type CodeBridgeRefusalKind } from "../../contracts/code-call";
 import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
+import type { CodeActivityReadModel, CodeRunReadModel, CodeVersionReadModel } from "../../contracts/code-read-model";
+import type { CodeSourceTabInitial } from "./source-tab-load";
 import type { CodeOperationLabels } from "./targets";
 
 /**
@@ -55,7 +57,16 @@ const VersionSchema = z.object({
 const VersionReceiptSchema = z.object({
   version: VersionSchema,
   status: z.enum(["submitted", "pending", "approved", "changes_requested", "rejected", "withdrawn", "superseded", "expired", "cancelled"]),
-  decision: z.object({ approved: z.boolean(), decidedBy: z.string().nullable(), decidedAt: z.string(), label: z.string() }).nullable(),
+  decision: z
+    .object({
+      approved: z.boolean(),
+      decidedBy: z.string().nullable(),
+      decidedAt: z.string(),
+      label: z.string(),
+      /** The administrator's message with "changes requested" or "rejected"; older Cores leave it out. */
+      comment: z.string().nullable().optional(),
+    })
+    .nullable(),
 });
 export const VersionListSchema = z.object({ items: z.array(VersionReceiptSchema), nextBefore: z.number().int().nullable() });
 export const VersionReadSchema = z.object({
@@ -282,6 +293,8 @@ export type CodePageAutomation = {
   lastRun: CodePageRun | null;
   /** When the scheduler runs it next; absent when it does not or Core cannot say. */
   nextRunAt?: string | null;
+  /** When it runs, in words from the version's read model, such as "every 15 minutes" or an event as a sentence. */
+  timingText?: string;
 };
 /**
  * A refused call of a failed run, as the bridge recorded it. It is a fact, not the run's cause: the Code may have
@@ -309,6 +322,9 @@ export type CodePageVersion = {
   createdAt: string;
   decisionLabel: string | null;
   decidedBy: CodePagePerson | null;
+  /** The administrator's message with "changes requested" or "rejected". */
+  decisionComment?: string | null;
+  decidedAt?: string | null;
   active: boolean;
 };
 export type CodePageDiff = {
@@ -330,7 +346,7 @@ export type CodePageSecret = z.infer<typeof SecretSchema> & {
   unsubmitted: boolean | null;
 };
 /** What just happened on the secrets tab, from the URL, so a reload keeps it. */
-export type CodeSecretNotice = "replaced" | "submitted" | "saved" | "submit-failed";
+export type CodeSecretNotice = "replaced" | "submitted" | "saved" | "submit-failed" | "refused" | "unknown";
 export type CodePageSecrets = {
   items: CodePageSecret[];
   /** More secrets than one page loads; `cld code secret list` reads them all. */
@@ -340,9 +356,29 @@ export type CodePageSecrets = {
   /** The newest saved version, which a new destination is submitted against. */
   latest: { id: string; number: number } | null;
 };
-export type CodePageTab = "overview" | "runs" | "secrets" | "versions";
+export type CodePageTab = "overview" | "runs" | "secrets" | "versions" | "code";
+/** Which runs the runs tab lists, from `?filter=`. */
+export type CodeRunFilter = "all" | "failed" | "skipped";
+/**
+ * The Code in words, from Core's read models: no source, no identifiers. Each part is null when Core could not answer;
+ * the page then shows that part as not loaded, never as empty.
+ */
+export type CodePageWords = {
+  /** The running version, else the newest one: description, what it may do, when it runs. */
+  current: CodeVersionReadModel | null;
+  /** The version waiting for a decision or for switching on: what changes, its examples. */
+  proposal: CodeVersionReadModel | null;
+  /** The version open on the versions tab. */
+  selected: CodeVersionReadModel | null;
+  /** Counted effects this week and the latest results; null for personal Code and when unavailable. */
+  activity: CodeActivityReadModel | null;
+  /** Runs in words by run ID: the listed runs on the runs tab, the last run on the overview. */
+  runs: Record<string, CodeRunReadModel>;
+};
 export type CodePageReady = {
   kind: "ready";
+  /** Core's live position read before this snapshot, so the browser replays runs that finished in between; null: unknown. */
+  liveCursor?: string | null;
   code: z.infer<typeof CodeSchema>;
   permission: "editor" | "reader";
   versions: CodePageVersion[];
@@ -374,8 +410,25 @@ export type CodePageReady = {
   selectionFailed: boolean;
   /** Only on the secrets tab, which only editors reach; null there when Core could not list them. */
   secrets: CodePageSecrets | null;
+  /**
+   * The newest version that waits for someone: for switching on, for an administrator, or for changes after a review.
+   * Null when the running version is the newest.
+   */
+  proposal?: CodePageVersion | null;
+  words?: CodePageWords;
+  /** Secrets the running and the waiting version use, by name; the tab counts them. */
+  secretNames?: string[];
+  /** Which secret each internet address of the running version receives. */
+  secretOrigins?: Record<string, string[]>;
+  runFilter?: CodeRunFilter;
+  /** The page was opened on one run or one version; a phone then shows it instead of the list. */
+  runSelected?: boolean;
+  versionSelected?: boolean;
+  /** Only on the code tab, which only editors reach. */
+  sourceTab?: CodeSourceTabInitial | null;
 };
-export type CodePageState = { kind: "none" } | { kind: "no-access" } | { kind: "error" } | CodePageReady;
+/** `loading`: a host that fetches the page in the browser shows its placeholder in the shape of the page. */
+export type CodePageState = { kind: "none" } | { kind: "no-access" } | { kind: "error" } | { kind: "loading" } | CodePageReady;
 /** Serializable initial data from `loadCodePage`, rendered unchanged by the server and the browser. */
 export type CodePageData = {
   /**

@@ -25,6 +25,10 @@ type DotStripBase = {
   columns?: number;
   /** Names the strip and its counts, for example "Last 50 mails: 17 matched, 6 skipped, 27 not". */
   label: string;
+  /** Opens the item behind each slot, such as one run; a slot without one stays a plain mark. */
+  hrefs?: readonly (string | undefined)[];
+  /** Names each slot for a link or tooltip, such as "Run at 13:45: failed". */
+  labels?: readonly string[];
   class?: string;
 };
 

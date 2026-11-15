@@ -318,7 +318,7 @@ test("?approvals=1 renders Waiting for you without selecting a chat, and the row
   // The view replaces the chat: no chat is loaded, so the first open chat is not selected behind it.
   expect(lookup).not.toHaveBeenCalled();
   expect(html).toContain("Waiting for you");
-  expect(html).toContain("What Gustav wants to do for you.");
+  expect(html).toContain("None of it happens before you agree.");
   expect(html).toContain("Send the Q4 offer");
   expect(html).toContain('href="/app/assistant?approvals=1"');
   expect(html).toMatch(
@@ -329,7 +329,7 @@ test("?approvals=1 renders Waiting for you without selecting a chat, and the row
   pending.mockResolvedValue({ items: [], nextCursor: null, count: 0, elsewhere: 0 });
   const plain = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(plain).toContain('href="/app/assistant?approvals=1"');
-  expect(plain).not.toContain("What Gustav wants to do for you.");
+  expect(plain).not.toContain("None of it happens before you agree.");
 });
 
 const codeItem = {
@@ -389,17 +389,16 @@ test("My apps & automations shows only for a person with Code, and ?code=1 seeds
   // The server and the first client render show the loading surface; the list arrives with its code.
   expect(view).toContain(codeLoading);
   expect(view).toContain("Loading…");
-  expect(view).not.toContain("Your Code runs as you.");
+  expect(view).not.toContain("Your Code runs as you, with your rights and no more.");
   const seed = codeSeed(view);
   expect(seed).toMatchObject({ has: true, open: true, page: { items: [{ id: "c_week01", title: "Weekly sales report" }] } });
   const list = renderSeeded(AssistantCodeView, {
     userId: user.id,
     timeZone: "UTC",
     initial: seed?.page,
-    initialToday: seed?.today,
     onCreateInChat: () => {},
   });
-  expect(list).toContain("Your Code runs as you.");
+  expect(list).toContain("Your Code runs as you, with your rights and no more.");
   expect(list).toContain("Weekly sales report");
   expect(view).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
 });
@@ -424,7 +423,7 @@ test("an unknown Code answer keeps the entry, and the list shows its error with 
   // A failed list is part of the seed, so the loaded view shows the error instead of asking Core again.
   expect(seed).toMatchObject({ has: true, open: true, page: null });
   const list = renderSeeded(AssistantCodeView, { userId: user.id, timeZone: "UTC", initial: null, onCreateInChat: () => {} });
-  expect(list).toContain("Your apps and automations could not be loaded");
+  expect(list).toContain("Your automations could not be loaded.");
   expect(list).toContain("Try again");
 });
 
@@ -655,23 +654,30 @@ test("a personal Code opens at its own address with the shared Code page; a malf
   const html = await response.text();
   // A direct load shows the loading surface first; the shared Code page renders the seed once its code arrives.
   expect(html).toContain(codeLoading);
-  expect(html).not.toContain("Your Code · runs as you");
+  expect(html).not.toContain('class="cloud-code"');
   const seed = codeSeed(html);
   expect(seed).toMatchObject({ open: true, detail: { href: "/app/assistant/code/c_woche1", owner: { title: "Weekly sales report" } } });
   const detail = renderSeeded(AssistantCodeDetail, { data: seed!.detail! });
   expect(detail).toContain("Weekly sales report");
-  expect(detail).toContain("Your Code · runs as you");
+  // The shared Code page owns its words; the view hands it the seed.
+  expect(detail).toContain('class="cloud-code"');
   // The sidebar marks My apps & automations while a Code is open.
   expect(html).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
   expect((await request("https://cloud.example.test/app/assistant/code/not-a-code")).status).toBe(404);
 });
 
-test("the Code list counts today's runs from the start of the person's day", async () => {
+test("the Code list loads today's timeline for each card on the server, for the person's local day", async () => {
   quietSidebar();
+  const day = { from: "2026-11-13T23:00:00.000Z", to: "2026-11-14T23:00:00.000Z" };
   codeInvoke.mockImplementation(async (invocation, schema) => {
     const data =
-      invocation.capabilityId === "code.run.count"
-        ? { runs: 9, failed: 1 }
+      invocation.capabilityId === "code.activity.words"
+        ? {
+            week: "2026-11-09T00:00:00.000Z",
+            counters: { items: [], more: 0, moreText: null },
+            recent: [],
+            timeline: { ...day, marks: [{ at: "2026-11-14T08:00:00.000Z", state: "succeeded", count: 1 }], total: 1 },
+          }
         : invocation.capabilityId === "code.list"
           ? { items: [codeItem], nextCursor: null }
           : { items: [], nextCursor: null };
@@ -679,18 +685,17 @@ test("the Code list counts today's runs from the start of the person's day", asy
   });
   const html = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
   const seed = codeSeed(html);
-  expect(seed).toMatchObject({ today: { runs: 9, failed: 1 } });
-  const list = renderSeeded(AssistantCodeView, {
-    userId: user.id,
-    timeZone: "UTC",
-    initial: seed?.page,
-    initialToday: seed?.today,
-    onCreateInChat: () => {},
-  });
-  expect(list).toContain("Today 9 runs · 1 failed");
+  expect(seed?.page?.items[0]).toMatchObject({ id: "c_week01", extras: { activity: { timeline: { total: 1 } } } });
+  const list = renderSeeded(AssistantCodeView, { userId: user.id, timeZone: "UTC", initial: seed?.page, onCreateInChat: () => {} });
   expect(list).toContain('href="/app/assistant/code/c_week01"');
-  const count = codeInvoke.mock.calls.find(([invocation]) => invocation.capabilityId === "code.run.count");
-  expect(count?.[0].input).toEqual({ since: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:00:00\.000Z$/) });
+  const activity = codeInvoke.mock.calls.find(([invocation]) => invocation.capabilityId === "code.activity.words");
+  expect(activity?.[0].input).toEqual({
+    codeId: "c_week01",
+    day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    timeZone: expect.any(String),
+  });
+  // The old whole-day count is gone; the timeline carries the day's runs.
+  expect(codeInvoke.mock.calls.some(([invocation]) => invocation.capabilityId === "code.run.count")).toBe(false);
 });
 
 test("Waiting for you lists Code of a place the person administers when it needs them", async () => {
@@ -721,7 +726,7 @@ test("Waiting for you lists Code of a place the person administers when it needs
     };
   });
   const html = await (await request("https://cloud.example.test/app/assistant?approvals=1")).text();
-  expect(html).toContain("From your chats");
+  expect(html).toContain("None of it happens before you agree.");
   expect(html).toContain("Code you administer");
   expect(html).toContain("Code of info@example.test: last run failed, access missing");
   expect(html).toContain("“Deliveries” · you administer info@example.test");

@@ -65,8 +65,9 @@ else {
     // The shared Code page is a separate chunk; its import settles, then Solid renders it.
     await imported;
     await settle();
-    expect(heading(host)).toBe("Weekly sales report");
-    expect(host.textContent).toContain("Your Code · runs as you");
+    expect(heading(host)).toStartWith("Weekly sales report");
+    // The shared Code page owns its words; this view only has to hand it the seed.
+    expect(host.querySelector(".cloud-code")).not.toBeNull();
     expect(host.querySelector(".assistant-deferred-feedback")).toBeNull();
   });
 
@@ -87,8 +88,8 @@ else {
     retry!.click();
     await retried;
     await settle();
-    expect(heading(host)).toBe("Weekly sales report");
-    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(heading(host)).toStartWith("Weekly sales report");
+    expect(host.querySelector(".assistant-deferred-feedback")).toBeNull();
     expect(load).toHaveBeenCalledTimes(2);
   });
 

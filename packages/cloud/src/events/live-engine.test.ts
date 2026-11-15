@@ -789,6 +789,46 @@ describe("live engine", () => {
   });
 });
 
+test("event-only delivery can retain the ten-second authorization sweep for owner administration revocation", async () => {
+  engine.stop();
+  const intervals = spyOn(globalThis, "setInterval");
+  const fixed = Date.parse("2026-11-15T12:00:00Z");
+  setSystemTime(fixed);
+  try {
+    engine = createLiveEngine({
+      appId: "app",
+      topic: () => topic,
+      channels: { item: { ...channels.item!, reauthorize: true } },
+    });
+    const ada = connect();
+    ada.send({ t: "sub", id: "s", channel: "item", scope: { key: "a" } });
+    await until(() => ada.framesOf("s").length === 1);
+    expect(intervals.mock.calls.map(([, ms]) => ms)).toEqual([10_000, 30_000]);
+    const sweep = intervals.mock.calls.find(([, ms]) => ms === LIVE_LIMITS.sweepMs)?.[0];
+    if (typeof sweep !== "function") throw new Error("Missing authorization sweep");
+    authorizeCalls.length = 0;
+    setSystemTime(fixed + 60_001);
+    topic.publish(event("a", 1));
+    await until(() => ada.framesOf("s").length === 2);
+    expect(authorizeCalls).toHaveLength(0);
+    sweep();
+    await until(() => authorizeCalls.length === 1);
+    await Bun.sleep(0);
+    readers.delete("a");
+    sweep();
+    await until(() => ada.framesOf("s").some((frame) => frame.t === "revoked"));
+    expect(authorizeCalls).toHaveLength(2);
+    topic.publish(event("a", 2));
+    await until(() => topic.last() === 2);
+    await Bun.sleep(5);
+    expect(ada.framesOf("s").filter((frame) => frame.t === "event")).toHaveLength(1);
+    expect(ada.socket.closes).toEqual([]);
+  } finally {
+    setSystemTime();
+    intervals.mockRestore();
+  }
+});
+
 test("channels are periodic by default: two-second delivery cache and ten/sixty-second timers remain", async () => {
   engine.stop();
   const intervals = spyOn(globalThis, "setInterval");
