@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Button, Chat, type ChatDecisionState, type ChatOutcomeLine, ReferenceChip } from "../src/index";
+import { Button, Chat, type ChatDecisionState, type ChatOutcomeLine, ReferenceChip, StatusBadge } from "../src/index";
 
 export const fullTitle = `${"Quarterly".repeat(8)}.pdf`;
 export const runningSentence = "Sending the mail to Lea.";
@@ -51,6 +51,27 @@ function TimelineWidthFixture() {
         />
       </Chat>
     </div>
+  );
+}
+
+/** A short fact next to three answers, with a status chip in the details. */
+function FactsFixture() {
+  return (
+    <main>
+      <Chat.Decision
+        class="three-answers"
+        state="open"
+        kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+        source={{ name: "Code", icon: "ti ti-code" }}
+        sentence="Turn on version 5?"
+        reason={{ text: "It may do more than version 4." }}
+        details={{ label: "Details from Code", content: <StatusBadge label="New access" tone="warning" variant="chip" /> }}
+        meta={[{ text: "Applies to exactly version 3", icon: "ti ti-pin" }]}
+        back={{ label: "Change", onSelect: () => {} }}
+        decline={{ label: "Keep version 4", onSelect: () => {} }}
+        confirm={{ label: "Turn on version 5", onSelect: () => {} }}
+      />
+    </main>
   );
 }
 
@@ -223,6 +244,13 @@ function Fixture() {
   );
 }
 render(
-  () => (document.documentElement.hasAttribute("data-timeline-width") ? <TimelineWidthFixture /> : <Fixture />),
+  () =>
+    document.documentElement.hasAttribute("data-timeline-width") ? (
+      <TimelineWidthFixture />
+    ) : document.documentElement.hasAttribute("data-facts") ? (
+      <FactsFixture />
+    ) : (
+      <Fixture />
+    ),
   document.getElementById("root")!,
 );

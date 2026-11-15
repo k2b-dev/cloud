@@ -10,15 +10,7 @@ Cloud checks, binds, and draws them.
 ## Use the renderer
 
 Cloud mounts the renderer in its own places. Use it directly only in Cloud
-surfaces that show a view Cloud already checked and bound:
-
-```ts
-import { BlockTree } from "@k2b/cloud/blocks/ui";
-```
-
-```tsx
-<BlockTree blocks={view.blocks} host="result" locale={locale} timeZone={timeZone} />
-```
+surfaces that show a view Cloud already checked and bound. Its props:
 
 - `host`: `result` in the conversation, `review` inside an approval, `preview` in
   search. The host decides the depth of frames and which interactive blocks may
@@ -31,6 +23,29 @@ Charts, tables, and key figures load their code after the first frame. Until
 then a chart keeps the server's drawing, a table holds its frame with a hidden
 copy of every row, and each key figure waits in its own tile; a failed load
 shows **Not loaded** with **Try again**. Nothing moves when the code arrives.
+
+## Import
+
+```ts
+import { BlockTree } from "@k2b/cloud/blocks/ui";
+import { bindView, validateBlocks } from "@k2b/cloud/blocks";
+```
+
+## Runtime
+
+The renderer draws only what it is given: it fetches nothing and decides
+nothing. Cloud checks the app's view, binds it to the result data, and checks
+the bound tree for the place before it reaches the browser; server rendering
+and the first browser frame show the same blocks. An answer to a choice goes
+to Cloud through the `choice.submit` callback, which the conversation supplies.
+
+## Example
+
+Draw a result the server already bound:
+
+```tsx
+<BlockTree blocks={view.blocks} host="result" locale={locale} timeZone={timeZone} />
+```
 
 ## Depth
 

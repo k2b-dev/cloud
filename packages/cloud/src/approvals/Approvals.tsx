@@ -367,7 +367,9 @@ export default function Approvals(props: ApprovalsProps) {
             when={items().length > 0}
             fallback={<Placeholder icon="ti ti-circle-check" title={t().emptyTitle} description={t().emptyBody} variant="panel" />}
           >
-            <Show when={!props.link}>
+            {/* A single request needs no count: the card is the count, and the navigation already shows it. The row
+                depends on the shown requests, which stay in place when decided, so deciding never moves the list. */}
+            <Show when={!props.link && items().length > 1}>
               <div class="cloud-approvals__toolbar">
                 <span>{t().open({ count: openCount() })}</span>
                 <Show when={open().length > 1}>

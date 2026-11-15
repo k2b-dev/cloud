@@ -304,6 +304,9 @@ export default function AssistantCodeVersionCard(props: {
     if (!words) return [];
     const rows = words.changes.rows;
     const href = page();
+    // The access that makes an admin approve carries its mark right behind it, only while the approval is open.
+    const value = current();
+    const awaiting = value?.review?.status === "pending" || value?.preview.readiness.state === "approval_pending";
     const items: ChangeListItem[] = rows.items.map((row) => ({
       tone: row.kind === "add" ? "add" : row.kind === "remove" ? "remove" : "neutral",
       icon: row.kind === "same" ? "ti ti-equal" : undefined,
@@ -316,17 +319,18 @@ export default function AssistantCodeVersionCard(props: {
               {t().show}
             </a>
           </>
+        ) : row.requiresApproval && awaiting ? (
+          <>
+            {row.text}{" "}
+            <span class="assistant-code-version__needs">
+              <i class="ti ti-eye" aria-hidden="true" />
+              {t().needsApproval}
+            </span>
+          </>
         ) : (
           row.text
         ),
-      detail: row.requiresApproval ? (
-        <span class="assistant-code-version__needs">
-          <i class="ti ti-eye" aria-hidden="true" />
-          {t().needsApproval}
-        </span>
-      ) : (
-        row.note
-      ),
+      detail: row.note,
     }));
     if (rows.more > 0 && rows.moreText) items.push({ tone: "neutral", icon: "ti ti-dots", content: rows.moreText });
     if (items.length === 0 && words.changes.state === "same") items.push({ tone: "neutral", icon: "ti ti-equal", content: t().sameText });

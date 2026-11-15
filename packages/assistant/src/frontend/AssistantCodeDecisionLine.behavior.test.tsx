@@ -123,7 +123,7 @@ test("changes that Gustav revises by himself carry the mark and no action; a set
           at={at}
           timeZone="Europe/Berlin"
         />
-        <AssistantCodeReviewStartLine text="Jana Probe hat Änderungen an Version 5 angefordert" />
+        <AssistantCodeReviewStartLine number={5} />
       </LocaleProvider>
     ),
     dom.root,
@@ -135,5 +135,7 @@ test("changes that Gustav revises by himself carry the mark and no action; a set
   expect(rows[1]!.querySelectorAll("button").length).toBe(0);
   expect(rows[2]!.textContent).toContain("Du hast Version 5 eingeschaltet");
   expect(rows[2]!.textContent).toContain("nächster Lauf in 11 Minuten");
-  expect(rows[3]!.textContent).toBe("Jana Probe hat Änderungen an Version 5 angefordert Gustav startet von selbst, einmal");
+  // The start of Gustav's turn never repeats the decision line above it.
+  expect(rows[3]!.textContent).toBe("Gustav überarbeitet Version 5 jetzt, einmal von selbst.");
+  expect(rows[3]!.textContent).not.toContain("angefordert");
 });

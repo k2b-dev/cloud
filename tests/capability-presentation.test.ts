@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { chatCapabilities } from "../packages/chat/src/capabilities";
-import { compileCapabilities, resolveCapabilityManifestPresentation } from "../packages/cloud/src/_internal/capabilities";
+import {
+  compileCapabilities,
+  isPersonVisibleCapabilityQuery,
+  resolveCapabilityManifestPresentation,
+} from "../packages/cloud/src/_internal/capabilities";
 import type { CapabilityDefinitions, CapabilityPresentationTranslation } from "../packages/cloud/src/contracts/capabilities";
 import { contactsCapabilities } from "../packages/contacts/src/capabilities";
 import { aiCapabilities } from "../packages/core/src/capabilities";
@@ -127,4 +131,30 @@ describe("built-in Capability presentation", () => {
     expect(properties?.pronouns?.description).toBe("Bevorzugte Pronomen.");
     expect(properties?.preferredLanguage?.description).toBe("Bevorzugter Sprachcode.");
   });
+});
+
+const codeOwnerApps: ReadonlyArray<[string, CapabilityDefinitions, readonly string[]]> = [
+  ["spaces", spacesCapabilities, ["space.managers", "item.managers"]],
+  ["notebooks", notebooksCapabilities, ["notebook.managers", "note.managers"]],
+  ["contacts", contactsCapabilities, ["book.managers"]],
+  ["grids", gridsCapabilities, ["base.managers"]],
+  ["pulse", pulseCapabilities, ["base.managers"]],
+  ["venue", venueCapabilities, ["venue.managers"]],
+  ["chat", chatCapabilities, ["conversation.managers"]],
+  ["filesv2", filesCapabilities, ["storage.managers", "template.managers"]],
+];
+
+test.each(codeOwnerApps)("%s manager projections are app-only and absent from the person catalog", (appId, definitions, ids) => {
+  const manifest = compileCapabilities(appId, definitions).manifest;
+  expect(
+    manifest.queries
+      .filter((query) => query.localId.endsWith(".managers"))
+      .map((query) => query.localId)
+      .sort(),
+  ).toEqual([...ids].sort());
+  for (const id of ids) {
+    const query = manifest.queries.find((query) => query.localId === id)!;
+    expect(query.appOnly).toBe(true);
+    expect(isPersonVisibleCapabilityQuery(query)).toBe(false);
+  }
 });

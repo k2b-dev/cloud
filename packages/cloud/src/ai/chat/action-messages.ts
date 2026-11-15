@@ -1,6 +1,19 @@
 import { i18n } from "@k2b/stdlib";
 
 /**
+ * How long until an approval expires, from the exact time left, in the largest unit that fits: minutes under an
+ * hour, hours under a day, then days. Each unit rounds down, so it never says more time than is left: 59 min 1 s
+ * reads "in 59 min", 23 h 59 min 59 s "in 23 hr", and exactly 24 h "in 1 day".
+ */
+const expiryDistance = (milliseconds: number, locale: string): string => {
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: "always", style: "short" });
+  const minutes = Math.floor(milliseconds / 60_000);
+  if (minutes < 60) return format.format(minutes, "minute");
+  if (minutes < 24 * 60) return format.format(Math.floor(minutes / 60), "hour");
+  return format.format(Math.floor(minutes / (24 * 60)), "day");
+};
+
+/**
  * Cloud's own words around an Action question and its outcome line: details under the line, the preview's labels, and
  * the answers of a question that has no app sentence yet. The question, its chips, and the buttons of a new review
  * are the app's words; reasons are Cloud's reason codes (`capability-sentences.ts`).
@@ -36,7 +49,8 @@ const messages = i18n.define({
       approvalKind: "Approval",
       draftKind: "Draft",
       detailsFrom: ({ app }: { app: string }) => `Details from ${app}`,
-      expiresIn: ({ minutes }: { minutes: number }) => `Expires in ${minutes.toLocaleString("en")} min`,
+      /** `milliseconds` is the exact time left; a minute or less reads `expiresSoon`. */
+      expiresIn: ({ milliseconds }: { milliseconds: number }) => `Expires ${expiryDistance(milliseconds, "en")}`,
       expiresSoon: "Expires soon",
       asksEveryTime: "Asks every time",
       change: "Change",
@@ -93,7 +107,7 @@ const messages = i18n.define({
       approvalKind: "Freigabe",
       draftKind: "Entwurf",
       detailsFrom: ({ app }) => `Details von ${app}`,
-      expiresIn: ({ minutes }) => `Läuft ab in ${minutes.toLocaleString("de")} Min`,
+      expiresIn: ({ milliseconds }) => `Läuft ab ${expiryDistance(milliseconds, "de")}`,
       expiresSoon: "Läuft gleich ab",
       asksEveryTime: "Fragt jedes Mal",
       change: "Ändern",

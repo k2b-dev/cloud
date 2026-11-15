@@ -37,16 +37,13 @@ export function AssistantCodeDecisionEntry(props: {
     );
   const automatic = () =>
     decision?.outcome === "changes_requested" && later().some((message) => message.meta?.codeReviewStart?.versionId === decision.versionId);
-  const text = () => {
-    const content: unknown = (entry.message as { content?: unknown }).content;
-    if (typeof content === "string") return content;
-    return (Array.isArray(content) ? content : [])
-      .flatMap((part: unknown) =>
-        typeof part === "object" && part && "type" in part && part.type === "text" && "text" in part && typeof part.text === "string"
-          ? [part.text]
-          : [],
-      )
-      .join(" ");
+  // The decision line before it names the version; the start line repeats only its number.
+  const startNumber = () => {
+    if (!start) return null;
+    const all = messages();
+    const index = all.findIndex((message) => message.id === entry.id);
+    const before = index < 0 ? all : all.slice(0, index);
+    return before.findLast((message) => message.meta?.codeDecision?.versionId === start.versionId)?.meta?.codeDecision?.number ?? null;
   };
   return (
     <Show when={lines()} fallback={<div class="assistant-code-decision" aria-hidden="true" />}>
@@ -61,7 +58,7 @@ export function AssistantCodeDecisionEntry(props: {
             automatic={automatic()}
           />
         ) : start ? (
-          <Dynamic component={loaded().AssistantCodeReviewStartLine} text={text()} />
+          <Dynamic component={loaded().AssistantCodeReviewStartLine} number={startNumber()} />
         ) : null
       }
     </Show>

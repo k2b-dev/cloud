@@ -646,6 +646,9 @@
 .assistant-code-decision[data-tone="warning"] .assistant-code-decision__icon {
   color: var(--k2b-warning-text);
 }
+.assistant-code-decision[data-tone="ai"] .assistant-code-decision__icon {
+  color: var(--k2b-ai-accent);
+}
 .assistant-code-decision[data-tone="danger"] .assistant-code-decision__icon {
   color: var(--k2b-danger-text);
 }
@@ -691,12 +694,12 @@
   font-size: 0.8125rem;
 }
 
-/* The row whose access makes an admin approve: a small grey mark under it. */
+/* The row whose access makes an admin approve: a small grey mark right behind it. */
 .assistant-code-version__needs {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  margin-top: 0.125rem;
+  vertical-align: 0.0625rem;
   padding: 0 0.375rem;
   border-radius: 999px;
   background: var(--k2b-surface-muted);

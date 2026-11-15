@@ -130,6 +130,25 @@ afterAll(async () => {
   server?.stop(true);
 });
 
+/**
+ * Pins only `Date` to an instant and lets it flow from there. Playwright's `clock` would also replace timers,
+ * animation frames and `performance`, which the views' loading and settled waits rely on.
+ */
+const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now();
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0) super(RealDate.now() + offset);
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset;
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
 const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 const emit = async (page: Page, event: AiWireEvent) => {
@@ -218,7 +237,7 @@ for (const view of [
     const context = await browser.newContext({ viewport: { width: view.width, height: view.height }, reducedMotion: "reduce" });
     try {
       const page = await context.newPage();
-      await page.clock.setFixedTime(new Date("2026-11-08T10:13:00Z"));
+      await page.addInitScript(pinPageClock, Date.parse("2026-11-08T10:13:00Z"));
       await page.goto(`http://127.0.0.1:${server.port}/`);
       let seq = 1;
       await emit(page, { ...base, seq: seq++, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });

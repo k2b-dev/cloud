@@ -34,7 +34,9 @@ const scalar = (value: unknown) =>
     ? value
     : value === undefined
       ? null
-      : JSON.stringify(value);
+      : Array.isArray(value)
+        ? value.join(", ")
+        : JSON.stringify(value);
 
 /**
  * The portable description of a data block, the same JSON Chat, Pulse, Notebooks and Code pages draw: blocks add no

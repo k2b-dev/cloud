@@ -94,12 +94,14 @@ dialog, draws the review's details with `ApprovalDetails` from
 - **Details.** The app's [view blocks](/en/docs/platform/capability-views) on the
   surface colour under "Details from App". An image and the details that follow
   it stand as one row. Only the app's part comes from the app.
-- **Answer row.** Left, quiet facts: "Expires in 9 min" where Cloud knows the
-  expiry, and either the checkbox **Don't ask again in this chat** (only on
+- **Answer row.** Left, quiet facts: "Expires in 9 min." (hours under a day,
+  then days, such as "Expires in 1 day") where Cloud knows the expiry, and either the checkbox **Don't ask again in this chat** (only on
   `standard` requests that offer it) or "Asks every time". Right, **Change** for
   a draft as quiet text in the AI colour, the decline answer, and the one filled
-  approve answer. While a tall card is in view, the answer row stays at the
-  bottom of the view. Below 32.5 rem
+  approve answer. Facts are short and always stay whole; when facts and answers
+  do not fit one line, the answers move together to a line of their own.
+  Answers are 36 px high, with a 44 px hit area on touch screens. While a tall
+  card is in view, the answer row stays at the bottom of the view. Below 32.5 rem
   of the card's own width the answers take the full row and the facts sit under
   them.
 

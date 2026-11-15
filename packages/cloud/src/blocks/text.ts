@@ -3,7 +3,7 @@ import { blockDataAtPath } from "./path";
 import type { Block } from "./schema";
 
 type TextOptions = { locale?: string; timeZone?: string };
-const plain = (value: unknown): string => (value == null ? "—" : String(value));
+const plain = (value: unknown): string => (value == null ? "—" : Array.isArray(value) ? value.join(", ") : String(value));
 const quote = (value: string): string => JSON.stringify(value);
 
 /** Plain text for terminals and MCP. The caller applies terminal control-character escaping. */

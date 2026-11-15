@@ -89,6 +89,8 @@ test("the one-off SDK omits place Actions while retaining resource queries", asy
   });
   const sdk = await codeRunSdk(h.authority, "en");
   expect(sdk.declarations).not.toContain("reply");
-  expect(sdk.declarations).not.toContain("note");
+  // A view block's `note` field is no place Action; only the Action itself stays out.
+  expect(sdk.declarations).not.toContain("note.add");
+  expect(sdk.declarations).not.toMatch(/\bnote\b(?!\?: string)/);
   expect(sdk.declarations).toContain("read");
 });

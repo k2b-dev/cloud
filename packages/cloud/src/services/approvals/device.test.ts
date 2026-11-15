@@ -147,7 +147,7 @@ test("legacy reviews preserve literal questions, date hints and Markdown blocks 
   const view = await appActionView(input, options);
   expect(view.sentence).toBe("Read this letter?");
   expect(view.message).toBe(pendingApprovalCard(input, options.appName).reason.text);
-  expect(view.details).toEqual([{ label: "Text", value: "Date: 2026-10-11 Time: 2026-10-11T10:00:00+02:00 **Body** **Hello** world" }]);
+  expect(view.details).toEqual([{ label: "Text", value: "Date: Oct 11, 2026 Time: Oct 11, 2026, 08:00 **Body** **Hello** world" }]);
 });
 
 for (const kind of ["value"] as const)
