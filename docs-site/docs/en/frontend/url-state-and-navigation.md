@@ -231,7 +231,10 @@ swaps emit no event. A listener error does not trigger a document load.
 
 ## Cloud page swaps
 
-Opt in with `defineApp({ pageSwap: true, ... })`. The default is off.
+Opt in with `defineApp({ pageSwap: true, ... })`. The default is off. A list
+of paths, such as `pageSwap: ["/app/inventory/:itemId/history"]`, limits swaps
+to pages under one of them and to links within the matched path; see
+[Define an app](/en/docs/build/define-app#keep-the-shell-during-page-navigation).
 Cloud keeps the rail, panel slot, and provider document.
 It replaces the header, banners, warnings, page trail, main content, footer,
 and the page's shell data and Help ids. Regular and full-page layouts can
