@@ -523,13 +523,19 @@ describe("CodeDiff line actions in a browser", () => {
     }
   }, 30_000);
 
-  test("on touch, lines are 30 px high and the action is 32 × 28 px and always visible", async () => {
+  test("on touch, lines are 30 px high and the action is 32 × 28 px, always visible and quiet", async () => {
     const page = await openAnnotated(true);
     try {
       expect(Math.round((await box(page, '[data-row="2"]')).height)).toBe(30);
       const action = await box(page, '[data-action-row="2"]');
       expect([Math.round(action.width), Math.round(action.height)]).toEqual([32, 28]);
-      expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-action-row="2"]')!).opacity)).toBe("1");
+      // Visible without hover, but a grey sign without a fill, so it never reads as a column of buttons.
+      const look = await page.evaluate(() => {
+        const style = getComputedStyle(document.querySelector('[data-action-row="2"]')!);
+        return { opacity: Number(style.opacity), fill: style.backgroundColor };
+      });
+      expect(look.opacity).toBeGreaterThanOrEqual(0.5);
+      expect(look.fill).toBe("rgba(0, 0, 0, 0)");
     } finally {
       await page.context().close();
     }
