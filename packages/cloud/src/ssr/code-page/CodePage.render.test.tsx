@@ -1323,3 +1323,54 @@ test("?tab=code renders the code tab on the server", () => {
   expect(markup).toContain('class="k2b-code-diff__body"');
   expect(markup).toMatch(/class="k2b-code-diff__line"/);
 });
+
+// Automations v5, 4.4: personal Code names its chat in "What it may do"; only the owner may choose another one.
+describe("the chat of personal Code", () => {
+  test("names the chat and offers the owner another one", () => {
+    const page = text("personal");
+    expect(page).toContain("In den Chat „Wochenbericht“ schreiben, Gustav antwortet");
+    expect(page).toContain("KI · mit deinen Rechten, zählt auf dein Kontingent");
+    expect(page).toContain("Anderen Chat wählen");
+    expect(page).not.toContain("Chat wiederherstellen");
+  });
+
+  test("a missing chat says so above everything and offers to choose or restore one", () => {
+    const page = text("personal-chat-missing");
+    expect(page).toContain("Der Chat „Wochenbericht“ ist archiviert.");
+    expect(page).toContain("Bis du einen Chat wählst, schreibt die Automation nichts.");
+    expect(page).toContain("Chat wählen …");
+    expect(page).toContain("Chat wiederherstellen");
+    expect(page).toContain("In einen Chat schreiben, Gustav antwortet");
+    expect(page.indexOf("Der Chat „Wochenbericht“ ist archiviert.")).toBeLessThan(page.indexOf("Was sie darf"));
+  });
+
+  test("someone who does not own it learns who can choose a chat, without controls or the chat's name", () => {
+    for (const state of ["personal", "personal-chat-missing"] as const) {
+      const data = codePageFixture(state);
+      if (data.state.kind !== "ready" || !data.state.chatBinding) throw new Error("Expected a bound personal fixture");
+      data.state.chatBinding = {
+        ...data.state.chatBinding,
+        canChange: false,
+        chat: state === "personal" ? { state: "hidden" } : { state: "unavailable", reason: "archived" },
+      };
+      const page = renderedText(
+        renderMarkup(() =>
+          createComponent(LocaleProvider, {
+            locale: "de",
+            get children() {
+              return createComponent(CodePage, { data });
+            },
+          }),
+        ),
+        " ",
+      );
+      expect(page).not.toContain("Anderen Chat wählen");
+      expect(page).not.toContain("Chat wählen …");
+      expect(page).not.toContain("Chat wiederherstellen");
+      if (state === "personal-chat-missing") {
+        expect(page).toContain("Der Chat dieser Automation fehlt.");
+        expect(page).toContain("Nur die Person, der die Automation gehört, kann einen Chat wählen.");
+      }
+    }
+  });
+});
