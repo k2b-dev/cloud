@@ -17,6 +17,7 @@ import { type ComponentProps, createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import * as chatContext from "../chat-context";
+import * as chatWorkspace from "../chat-workspace-service";
 import * as projectContext from "../project-context";
 import * as sidebar from "../sidebar";
 import type AssistantWorkspace from "./AssistantWorkspace.island";
@@ -283,6 +284,9 @@ test.each(["/app/assistant", "/app/assistant/panel"])(
     spies.push(spyOn(ai.aiConversations, "markConversationViewed").mockResolvedValue(true));
     spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
     spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+    spies.push(
+      spyOn(chatWorkspace, "loadAssistantChatWorkspace").mockResolvedValue({ state: { tabs: [], layout: null, front: null }, revision: 0 }),
+    );
     const state = spyOn(ai, "loadAiStreamState").mockResolvedValue({
       type: "state",
       conversation: chat,
@@ -445,6 +449,9 @@ test("an existing chat still loads at its old address under the name Gustav", as
   spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
   spies.push(spyOn(ai, "loadAiStreamState").mockResolvedValue({ type: "state", conversation: chat, messages: [], activeTurn: null }));
   spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+  spies.push(
+    spyOn(chatWorkspace, "loadAssistantChatWorkspace").mockResolvedValue({ state: { tabs: [], layout: null, front: null }, revision: 0 }),
+  );
   const response = await request("https://cloud.example.test/app/assistant?conversation=chat1");
   // Same address, no redirect: links and bookmarks to old chats keep working.
   expect(response.status).toBe(200);

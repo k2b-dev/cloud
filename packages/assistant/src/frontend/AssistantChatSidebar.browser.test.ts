@@ -28,7 +28,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { LocaleProvider } from "@k2b/ui";
 import { SidebarHarness } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatSidebar.browser-fixture.tsx"))};
-import { openAssistantContextBoxSheet } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatContextBox.tsx"))};
+import { openAssistantContextBoxSheet } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatContextSheet.tsx"))};
 import { revealChatDelivery } from ${JSON.stringify(resolve(import.meta.dir, "chat-sidebar-layout.ts"))};
 
 const config = window.harness;
@@ -705,7 +705,7 @@ describe(`Box "In this chat" in ${browserName}`, () => {
     }
   }, 20_000);
 
-  test("the button never covers the first message: below 56 rem the timeline starts below it", async () => {
+  test("the button never covers a message: it stands in a head row, and the timeline scrolls below it", async () => {
     for (const [width, tabs] of [
       [390, false],
       [820, false],
@@ -714,18 +714,16 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       const page = await boxPage(width, sidebarSnapshot(), { tabs });
       try {
         const box = await page.evaluate(() => {
-          const content = document.querySelector(".harness-timeline")!;
-          const style = getComputedStyle(content);
-          const rect = content.getBoundingClientRect();
+          // Scrolled into the middle: what passes the top of the scrollport must still not run under the button.
+          const viewport = document.querySelector(".k2b-chat-timeline__viewport")!;
+          viewport.scrollTop = viewport.scrollHeight / 2;
           const button = document.querySelector(".assistant-context-button")!.getBoundingClientRect();
-          return {
-            top: rect.top + Number.parseFloat(style.paddingTop),
-            right: rect.right - Number.parseFloat(style.paddingRight),
-            buttonBottom: button.bottom,
-            buttonLeft: button.left,
-          };
+          return { top: viewport.getBoundingClientRect().top, buttonBottom: button.bottom, buttonHeight: button.height };
         });
-        expect(box.top >= box.buttonBottom || box.right <= box.buttonLeft).toBe(true);
+        expect(box.buttonHeight).toBeGreaterThan(0);
+        expect(box.top).toBeGreaterThanOrEqual(box.buttonBottom);
+        // On a phone the head names the chat; wider, the chat's place names it.
+        expect(await page.locator(".assistant-context-head__title").isVisible()).toBe(width < 768);
       } finally {
         await page.close();
       }
@@ -741,6 +739,21 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       expect(await sheet.getByRole("heading", { name: "In diesem Chat" }).count()).toBe(1);
       const type = await typeOf(page, ".assistant-context-sheet .assistant-context-box");
       expect(type.styles).toEqual(["12/400", "13/400", "13/600"]);
+      // As high as the box, and the chat behind it stays as bright as before (v12, picture 66).
+      const fit = await page.evaluate(() => {
+        const frame = document.querySelector(".k2b-bottom-sheet-frame")!;
+        const box = document.querySelector(".assistant-context-sheet")!.getBoundingClientRect();
+        const backdrop = getComputedStyle(frame, "::backdrop");
+        return {
+          frame: frame.getBoundingClientRect().height,
+          box: box.height,
+          dim: backdrop.backgroundColor,
+          blur: backdrop.backdropFilter,
+        };
+      });
+      expect(fit.frame - fit.box).toBeLessThan(96);
+      expect(fit.dim).toBe("rgba(0, 0, 0, 0)");
+      expect(fit.blur).toBe("none");
       await sheet.getByRole("button", { name: /^Kontext/ }).click();
       await sheet.waitFor({ state: "detached" });
       await page.waitForFunction(() => (window as unknown as HarnessWindow).sidebar.actions.length > 0);
@@ -771,6 +784,19 @@ describe(`Box "In this chat" in ${browserName}`, () => {
   }, 20_000);
 });
 
+/** Three mails among the sources, which Mail counts in its own nouns. */
+const withMails = (snapshot: AssistantChatContextSnapshot): AssistantChatContextSnapshot => ({
+  ...snapshot,
+  sources: [
+    ...["M1", "M2", "M3"].map((id) =>
+      source("resource", `mail.message:${id}`, `Lieferavis ${id}`, minutesAgo(40), { ref: { type: "mail.message", id } }),
+    ),
+    ...snapshot.sources,
+  ],
+  sourceCount: snapshot.sourceCount + 3,
+  resourceCounts: [{ type: "mail.message", count: 3, label: "3 Mails" }],
+});
+
 // Screenshots of every state of the box for the image comparison with the concept, when asked for.
 const shots = process.env.ASSISTANT_SCREENSHOT_DIR;
 test.skipIf(!shots)(
@@ -781,7 +807,7 @@ test.skipIf(!shots)(
     await (await import("../../../core/scripts/font-assets")).buildFontAssets(publicDir);
     await (await import("../../../core/scripts/tabler-assets")).buildTablerIconAssets(publicDir);
     const states: Array<[string, number, AssistantChatContextSnapshot, Omit<HarnessView, "view">, ((page: Page) => Promise<void>)?]> = [
-      ["kasten-normal", 1440, sidebarSnapshot({ groups: [automationsGroup()] }), {}],
+      ["kasten-normal", 1440, withMails(sidebarSnapshot({ groups: [automationsGroup()] })), {}],
       [
         "kasten-zeigen",
         1440,

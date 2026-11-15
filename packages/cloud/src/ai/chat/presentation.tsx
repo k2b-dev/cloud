@@ -408,6 +408,11 @@ const storedItems = (
             scheduledTask: task,
             error,
             stopNotice: error ? null : stopNotice,
+            // A stopped answer offers to answer the person's message again, where it stopped.
+            answerAgain:
+              last && segmentPhase === "stopped" && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
+                ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
+                : undefined,
             continuable:
               idle &&
               !(item.loopId && reviewLoops.has(item.loopId)) &&

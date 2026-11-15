@@ -418,7 +418,8 @@ for (const view of [
             ),
           ],
         });
-        // The work line and the result stay where they were; the status folds away and the notice ends the turn.
+        // The work line and the result stay where they were; the notice ends the turn. A text written before a step folds
+        // away; the text Gustav had begun after its last step stays where it stood.
         expect(await box(".ai-turn-work")).toEqual(workBefore);
         expect(await box(".ai-turn > :nth-child(2)")).toEqual(resultBefore);
         const notice = await box(".ai-turn__notice");
@@ -426,7 +427,7 @@ for (const view of [
         expect(notice![1]!).toBeGreaterThanOrEqual(resultBefore![1]! + resultBefore![3]!);
         expect(notice![0]! + notice![2]!).toBeLessThanOrEqual(Math.ceil(view.width));
         const text = await page.locator(".ai-turn__notice").innerText();
-        expect(text).toContain(de ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.");
+        expect(text).toContain(de ? "Die Antwort wurde unterbrochen:" : "The answer was interrupted:");
         expect(text).toContain(
           failedStep
             ? de
@@ -452,7 +453,8 @@ for (const view of [
           );
           expect(await page.locator(".ai-turn-work .ai-turn-work__meta").innerText()).toBe(de ? "4 Min." : "4 min");
         }
-        expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
+        if (failedStep) expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
+        else expect(await page.locator(".ai-turn__text").innerText()).toContain("Now I build the report.");
         expect(
           await page.evaluate(() => {
             const viewport = document.querySelector(".k2b-chat-timeline__viewport")!;
@@ -688,7 +690,9 @@ for (const view of [
         const summary = ".ai-turn-work > summary";
         const isOpen = () =>
           page.$eval(".ai-turn-work", (node) => (node as HTMLDetailsElement).open && node.querySelector(".ai-turn-steps") !== null);
-        const before = await viewportBox(page, summary);
+        // The line stays where it is; its width follows its sentence (v12), so only position and height are pinned.
+        const placeOf = (box: number[] | null) => (box ? [box[0], box[1], box[3]] : null);
+        const before = placeOf(await viewportBox(page, summary));
         // A press on the ticking clock that spans a tick still opens the line.
         // The clock re-renders every second, so its box is read in one go inside the page.
         const meta = await page.evaluate(() => {
@@ -702,7 +706,7 @@ for (const view of [
         await frames(page);
         await frames(page);
         expect(await isOpen()).toBe(true);
-        expect(await viewportBox(page, summary)).toEqual(before);
+        expect(placeOf(await viewportBox(page, summary))).toEqual(before);
         // One indent below the work line: no second summary, and steps sit at the same left edge as the texts.
         expect(await page.locator(".ai-turn-steps .ai-turn-steps").count()).toBe(0);
 
@@ -730,7 +734,7 @@ for (const view of [
         });
         await frames(page);
         expect(await isOpen()).toBe(true);
-        expect(await viewportBox(page, summary)).toEqual(before);
+        expect(placeOf(await viewportBox(page, summary))).toEqual(before);
         expect(await page.locator(".ai-turn-work > summary").innerText()).toContain(
           de ? "Wartet auf deine Freigabe" : "Waiting for your approval",
         );
@@ -742,7 +746,7 @@ for (const view of [
           await page.keyboard.press(key);
           await frames(page);
           expect(await isOpen()).toBe(!open);
-          expect(await viewportBox(page, summary)).toEqual(before);
+          expect(placeOf(await viewportBox(page, summary))).toEqual(before);
         }
         expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
       } finally {
@@ -835,9 +839,9 @@ for (const view of [
         const approveBox = (await approve.boundingBox())!;
         const declineBox = (await decline.boundingBox())!;
         expect(await approve.innerText()).toBe(de ? "E-Mail senden" : "Send email");
-        expect(approveBox.height).toBe(36);
+        expect(approveBox.height).toBe(32);
         if (view.touch) {
-          // On a phone the answer's hit area reaches 44 px around its 36 px box.
+          // On a phone the answer's hit area reaches 44 px around its 32 px box.
           const hit = await approve.evaluate((node) => parseFloat(getComputedStyle(node, "::after").height));
           expect(hit).toBe(44);
         }

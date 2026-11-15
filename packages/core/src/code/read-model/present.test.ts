@@ -186,3 +186,21 @@ test("dynamic target text remains hidden when no complete read-access proof is p
   expect(JSON.stringify(model)).not.toContain("SECRET TARGET NAME");
   expect(model.description.text).not.toContain("nicht sehen darfst");
 });
+
+test("an unavailable static grant carries an independent reader reference and localized name slot", () => {
+  for (const locale of ["de", "en"]) {
+    const model = present({ locale, names: { ...names, target: () => ({ name: "Space", readable: false, unavailable: true }) } });
+    expect(model.mayDo.items[0]).toMatchObject({
+      text: "Aufgabe erstellen · Space",
+      target: { ref: manifest.permissions[0]!.target, text: "Aufgabe erstellen · {name}" },
+    });
+    expect(CodeVersionReadModelSchema.parse(model)).toEqual(model);
+    expect(JSON.stringify(model)).not.toContain("SECRET TARGET NAME");
+  }
+  expect(present().mayDo.items[0]).not.toHaveProperty("target");
+  const dynamic = { ...manifest, permissions: [{ ...manifest.permissions[0]!, target: { type: "spaces.space", id: null } }] };
+  expect(
+    present({ manifest: dynamic, names: { ...names, target: () => ({ name: "Space", readable: false, unavailable: true }) } }).mayDo
+      .items[0],
+  ).not.toHaveProperty("target");
+});

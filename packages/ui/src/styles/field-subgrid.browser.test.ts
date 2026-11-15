@@ -91,6 +91,14 @@ describe("@k2b/ui fields with a description", () => {
           void (globalThis as unknown as { openForm: () => Promise<unknown> }).openForm();
         });
         await page.locator("dialog textarea").waitFor();
+        // On a phone the form is a sheet that slides in: measure it once the frame itself stands. The field's own focus
+        // transition may still run; it changes colours, not boxes.
+        await page.waitForFunction(() =>
+          document
+            .querySelector("dialog[open]")!
+            .getAnimations()
+            .every((animation) => animation.timeline !== document.timeline || animation.playState === "finished"),
+        );
         // The stacked field takes the dialog field's width, so its description
         // wraps the same way whatever font the browser falls back to.
         await page.evaluate(() => {
@@ -111,6 +119,21 @@ describe("@k2b/ui fields with a description", () => {
         // The actions sit below the field and inside the dialog.
         expect(layout.actions.top).toBeGreaterThanOrEqual(layout.field);
         expect(layout.actions.bottom).toBeLessThanOrEqual(layout.panel.bottom);
+        // Stacked: the label above the control, and the field as wide as the dialog's content, also as a phone sheet.
+        const stack = await page.evaluate(() => {
+          const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+          const panel = document.querySelector<HTMLElement>("dialog .k2b-dialog__panel")!;
+          const style = getComputedStyle(panel);
+          return {
+            labelAbove: box("dialog .k2b-field__label").bottom <= box("dialog .k2b-field textarea").top,
+            fieldWidth: Math.round(box("dialog .k2b-field").width),
+            contentWidth: Math.round(
+              panel.getBoundingClientRect().width - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight),
+            ),
+          };
+        });
+        expect(stack.labelAbove).toBe(true);
+        expect(stack.fieldWidth).toBe(stack.contentWidth);
       } finally {
         await page.close();
       }

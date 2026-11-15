@@ -1,6 +1,6 @@
 import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { type Accessor, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 import type { WaitingAttention, WaitingQuestionsView } from "./waiting-questions";
 
@@ -79,8 +79,36 @@ export function AssistantWaitingStrip(props: {
       equals: (a, b) => a.length === b.length && a.every((key, index) => key === b[index]),
     },
   );
+  /**
+   * Chips keep their natural width; those that do not fit beside the first leave the row and count in "+n". Measured
+   * whenever the row's width or its entries change, before the next paint.
+   */
+  let list: HTMLUListElement | undefined;
+  const [cut, setCut] = createSignal(0);
+  const measure = () => {
+    if (!list) return;
+    const items = Array.from(list.children) as HTMLElement[];
+    for (const item of items) item.removeAttribute("data-cut");
+    const limit = list.getBoundingClientRect().right + 0.5;
+    let count = 0;
+    items.forEach((item, index) => {
+      const box = item.getBoundingClientRect();
+      if (index === 0 || box.width === 0 || box.right <= limit) return;
+      item.setAttribute("data-cut", "");
+      count += 1;
+    });
+    setCut(count);
+  };
+  createEffect(on(shownKeys, () => queueMicrotask(measure)));
+  onMount(() => {
+    if (typeof ResizeObserver === "undefined" || !list?.parentElement) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(list.parentElement);
+    onCleanup(() => observer.disconnect());
+  });
   /** Behind "+n": what the row leaves out, and what the server's bounded read did not send. */
   const hidden = (visible: number) => Math.max(0, entries().length - visible) + props.view.more;
+  const hiddenWide = () => hidden(WAITING_CHIPS) + cut();
   const menu = (): DropdownItem[] => {
     const item = (entry: Entry) => ({
       // The kind's colour, as on the chip: the menu renders in its own layer, so the entry carries it.
@@ -109,7 +137,7 @@ export function AssistantWaitingStrip(props: {
         <i class="ti ti-hand-stop" />
         <span class="assistant-waiting__title">{t().needsAttention}</span>
       </span>
-      <ul class="assistant-waiting__list">
+      <ul class="assistant-waiting__list" ref={list}>
         <For each={shownKeys()}>
           {(key) => (
             <Show when={byKey().get(key)}>
@@ -127,14 +155,8 @@ export function AssistantWaitingStrip(props: {
                     >
                       <i class={`assistant-waiting__icon ${KIND_ICON[entry.kind]}`} aria-hidden="true" />
                       <span class="assistant-waiting__short k2b-truncate-fade">{entry.short}</span>
-                      <Show when={entry.where}>
-                        {(where) => (
-                          <>
-                            {/* Read as one name, "… in Team Ops"; the chip's gap sets the visible space. */}{" "}
-                            <small class="assistant-waiting__chat k2b-truncate-fade">{where()}</small>
-                          </>
-                        )}
-                      </Show>
+                      {/* The chip shows one sentence (v12 image 69); the chat it belongs to is named in the list. */}
+                      <Show when={entry.where}>{(where) => <span class="k2b-sr-only"> {where()}</span>}</Show>
                     </button>
                   </li>
                 );
@@ -149,11 +171,11 @@ export function AssistantWaitingStrip(props: {
           <Dropdown.Trigger
             appearance="plain"
             class="assistant-waiting__more"
-            data-wide={hidden(WAITING_CHIPS) > 0 ? "" : undefined}
+            data-wide={hiddenWide() > 0 ? "" : undefined}
             label={t().waitingShowAll({ count: entries().length + props.view.more })}
           >
             <span class="assistant-waiting__count" data-width="wide">
-              +{hidden(WAITING_CHIPS)}
+              +{hiddenWide()}
             </span>
             <span class="assistant-waiting__count" data-width="narrow">
               +{hidden(1)}

@@ -175,6 +175,37 @@ describe("Chat.Composer suggestion", () => {
     [390, touch],
   ] as const) {
     test(
+      `at ${width} px the hint stands small on its own line under the suggestion, where the text starts`,
+      async () => {
+        const page = await open(width, context);
+        try {
+          await suggest(page, SUGGESTION);
+          const place = await page.evaluate(() => {
+            const overlay = document.querySelector<HTMLElement>(".k2b-chat-composer__suggestion")!;
+            const text = overlay.querySelector<HTMLElement>(":scope > span[aria-hidden]")!;
+            const hint = [
+              ...overlay.querySelectorAll<HTMLElement>(".k2b-chat-composer__suggestion-key, .k2b-chat-composer__suggestion-accept"),
+            ].find((node) => node.getBoundingClientRect().width > 0)!;
+            const lines = text.getClientRects();
+            const box = hint.getBoundingClientRect();
+            const style = getComputedStyle(hint);
+            return {
+              below: box.top >= lines[lines.length - 1]!.bottom - 0.5,
+              left: Math.round(box.left - lines[0]!.left),
+              size: style.fontSize,
+              height: box.height,
+            };
+          });
+          // v12 image 12: the mark sits under the suggestion, flush with its first letter, in the 12 px meta step.
+          expect(place).toEqual({ below: true, left: 0, size: "12px", height: 20 });
+        } finally {
+          await page.context().close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+    test(
       `appearing and disappearing keep the conversation at the composer at ${width} px`,
       async () => {
         const page = await open(width, context);
@@ -186,8 +217,8 @@ describe("Chat.Composer suggestion", () => {
             const shown = await layout(page);
             // The whole suggestion grows the field like text; the conversation moves up with the composer's top.
             expect(shown.field).toBe(shown.overlay!);
-            // The short one fits one line on a desktop; the long one wraps.
-            if (text === LONG || width === 390) expect(shown.field).toBeGreaterThan(empty.field);
+            // The hint takes its own line under the text, so every suggestion grows the field.
+            expect(shown.field).toBeGreaterThan(empty.field);
             expect(shown.gap).toBe(empty.gap);
             expect(shown.bottom).toBe(empty.bottom);
             expect(shown.placeholder).toBe("");
@@ -442,7 +473,7 @@ describe("Chat.Composer suggestion", () => {
   );
 
   test(
-    "on a touch-only phone the hint is an Accept button with a 44 px touch area",
+    "on a touch-only phone the hint is a small Accept button with a 44 px touch area",
     async () => {
       const page = await open(390, touch);
       try {
@@ -454,10 +485,10 @@ describe("Chat.Composer suggestion", () => {
           const box = node.getBoundingClientRect();
           const x = box.left + box.width / 2;
           const hit = (y: number) => document.elementFromPoint(x, y)?.closest("button") === node;
-          // 28 px high, and the touch area reaches 8 px above and below it: 44 px.
-          return { height: box.height, above: hit(box.top - 7.5), below: hit(box.bottom + 7.5), outside: hit(box.bottom + 8.5) };
+          // 20 px high like the keyboard hint, and the touch area reaches 12 px above and below it: 44 px.
+          return { height: box.height, above: hit(box.top - 11.5), below: hit(box.bottom + 11.5), outside: hit(box.bottom + 12.5) };
         });
-        expect(target).toEqual({ height: 28, above: true, below: true, outside: false });
+        expect(target).toEqual({ height: 20, above: true, below: true, outside: false });
         const before = await layout(page);
         await button.tap();
         await settled(page);

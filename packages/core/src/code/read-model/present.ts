@@ -126,10 +126,13 @@ export function presentCodeVersion(input: {
       manifest.permissions.map(({ operation, target }) => {
         const action = names.operation(operation);
         const place = names.target(target ?? { type: "app", id: operation.split(".")[0]! });
+        const deferredRef =
+          place.unavailable && target && target.id !== null && !/[{}]/.test(action.title) ? { type: target.type, id: target.id } : null;
         return [
           stable({ operation, target }),
           {
             text: t.mayDo({ action: action.title, target: place.name }),
+            ...(deferredRef ? { target: { ref: deferredRef, text: t.mayDo({ action: action.title, target: "{name}" }) } } : {}),
             ...(action.app ? { app: action.app } : {}),
             ...(action.icon ? { icon: action.icon } : {}),
             ...(place.readable && place.href ? { href: place.href } : {}),

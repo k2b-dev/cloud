@@ -23,6 +23,10 @@ Use `focusMode` for a dedicated editor or pop-out window. It hides the app bar
 and header while keeping the signed-in profile available to access dialogs and
 panels, so they can identify the current person just as on a regular page.
 
+The phone header names the current app. A page that an app hosts for someone
+else, such as a Code page, passes `headTitle="page"`. The header then shows the
+page's own title, or the Cloud's name when the page has none.
+
 Application authors put objects in the sidebar and views of the open object
 in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
 quiet secondary actions share that row while the workspace width permits;
