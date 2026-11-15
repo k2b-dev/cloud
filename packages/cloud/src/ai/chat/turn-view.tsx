@@ -742,7 +742,7 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
             ? t().authoringTurnStopped
             : t().turnErrorTitle
       }
-      detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : t().turnErrorKept}
+      detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : t().keptSoFar}
       actions={
         <Show when={props.continuable && actions.onContinueTurn}>
           <Button
