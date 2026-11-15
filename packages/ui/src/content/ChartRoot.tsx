@@ -33,6 +33,7 @@ import {
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
 import { selectedChartSvg } from "./chart-svg";
+import { stretchedTickRoomsSvg } from "./chart-tick-room";
 import { useViewportMessages } from "./viewport-messages";
 
 /**
@@ -548,7 +549,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     },
   });
   const closeChartTooltip = () => inspection.close();
-  const svgMarkup = createMemo(() =>
+  const drawnSvg = createMemo(() =>
     renderChartSvg(
       props.kind === "sankey" ||
         props.kind === "bubble" ||
@@ -565,6 +566,8 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
       locale(),
     ),
   );
+  // A stretched line's dates give way in a narrow box instead of drawing over each other.
+  const svgMarkup = createMemo(() => (props.kind === "line" && props.timeAxis ? stretchedTickRoomsSvg(drawnSvg()) : drawnSvg()));
   createEffect(() => {
     svgMarkup();
     inspection.invalidate();

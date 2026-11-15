@@ -1,4 +1,4 @@
-import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiTurnBlock, AiTurnSnapshot } from "@k2b/cloud/ai";
+import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiStoredMessage, AiTurnBlock, AiTurnSnapshot } from "@k2b/cloud/ai";
 import { aiOpenQuestionFixture, aiQuestionFixtures } from "@k2b/cloud/ai/testing";
 
 /**
@@ -58,6 +58,28 @@ const turn = (open: Key[]): AiTurnSnapshot => ({
   modelId: "standard",
   createdAt: at(5),
 });
+
+/** The open chat's own history, so it shows its timeline and not the start screen, which carries no waiting row. */
+export const waitingChatHistory: AiStoredMessage[] = [
+  {
+    id: "wart-msg-1",
+    shortId: "WartM1",
+    conversationId: "Wart42",
+    seq: 1,
+    kind: "message",
+    message: { role: "user", content: [{ type: "text", text: "Plane das Wartungsfenster im Oktober." }] },
+    loopId: null,
+    modelId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    meta: {},
+    createdAt: at(6),
+  },
+];
 
 const questions = (items: AiOpenQuestion[]): AiOpenQuestions => ({
   items: [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),

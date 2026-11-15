@@ -230,7 +230,42 @@ const cutAnswer = (ending: "stopped" | "failed"): AiStoredMessage[] => {
   ];
 };
 
+/** Opened work with folded rows: housekeeping, one file read in three parts, and steps of their own. */
+const stepsChat = (): AiStoredMessage[] => {
+  seq = 0;
+  const part = (id: string, offset: number): Call => ({
+    id,
+    name: "read_file",
+    args: { path: "/Angebote/Angebot-2026-118.pdf", offset, length: 4000 },
+    result: { content: "…" },
+  });
+  return [
+    user("Was kostet uns die Beleuchtung am Messestand?"),
+    ...turn(
+      "turn-steps",
+      [
+        { id: "call-tools", name: "search_tools", args: { query: "mail" }, result: { tools: [] } },
+        { id: "call-load", name: "load_tools", args: { names: ["mail__query__search"] }, result: { loaded: 1 } },
+        {
+          id: "call-search",
+          name: "mail__query__search",
+          args: { query: "Messestand" },
+          result: { summary: "3 Unterhaltungen gefunden" },
+          presentation: mail("In Mail suchen", "In Mail gesucht"),
+        },
+        part("call-part-1", 0),
+        part("call-part-2", 4000),
+        part("call-part-3", 8000),
+      ],
+      "Die Beleuchtung ist Position 4 und kostet **480,00 €** netto.",
+      "Ich suche das Angebot und lese die Preise.",
+    ),
+  ];
+};
+
 export const galleryScenes = {
+  /** Opened work with folded rows (housekeeping, a file read in parts). */
+  schritte: () => ({ messages: stepsChat() }),
   /** `#g-antwort/gestoppt` */
   gestoppt: () => ({ messages: cutAnswer("stopped") }),
   /** `#g-antwort/fehler` */

@@ -15,7 +15,7 @@ mock.module("@k2b/cloud/browser/live", () => ({
   }),
 }));
 const bootstrap = createDomTestHarness();
-const { WAITING_NOW, waitingFixture, waitingStripSummary } = await import("./waiting-questions.fixture");
+const { WAITING_NOW, waitingChatHistory, waitingFixture, waitingStripSummary } = await import("./waiting-questions.fixture");
 const { LocaleProvider } = await import("@k2b/ui");
 const { default: Workspace } = await import("./AssistantWorkspace.island");
 bootstrap.cleanup();
@@ -115,7 +115,7 @@ const mount = (
           initialDoneCount={0}
           initialConversationId={here.id}
           initialArtifactPath={null}
-          initialDetail={{ conversation: here, messages: [], hasMoreMessages: false, activeTurn, timeline: [] }}
+          initialDetail={{ conversation: here, messages: waitingChatHistory, hasMoreMessages: false, activeTurn, timeline: [] }}
           initialContext={null}
           projects={[]}
           initialProject={null}

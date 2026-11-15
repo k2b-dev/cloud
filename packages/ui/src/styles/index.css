@@ -2133,6 +2133,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
 }
 
+/* A date label gives way in a box narrower than it needs (`--k2b-tick-room`, see chart-tick-room.ts): every second
+ * label first, then every fourth, so dates never draw over each other on a phone. The ratio of the free room to one
+ * pixel, clamped, is 1 when the label fits and 0 when it does not. */
+.k2b-ui .k2b-chart__svg[data-stretch] [data-time-tick] {
+  opacity: clamp(0, tan(atan2(calc(100cqw - var(--k2b-tick-room, 0px)), 1px)), 1);
+}
+
 /* The bottom Y label must clear the first centred date label in small cards. */
 @container (max-width: 400px) {
   .k2b-ui .k2b-chart[data-chart-kind="line"] .k2b-chart__svg[data-stretch] > svg[data-line-details="true"] > .stdlib-chart-grid:nth-child(1 of .stdlib-chart-grid) + .stdlib-chart-tick-label {

@@ -15,6 +15,24 @@ const WEB_TOOLS = new Set(["web_search", "web_fetch", "web_extract", "fetch_file
 const FILE_READ_TOOLS = new Set(["read_file", "list_files", "view_image"]);
 const FILE_WRITE_TOOLS = new Set(["write_file", "present", "markdown_to_pdf", "html_to_pdf"]);
 
+/**
+ * Cloud's own tools for building an automation (Code), by what they do; the sentence names the doing in this order, as in
+ * v12: "Written, checked, tried out and submitted". Their tile is Code's, since they belong to no app.
+ */
+const CODE_WORK: Record<string, "write" | "check" | "try" | "submit"> = {
+  code_init: "write",
+  code_pull: "write",
+  code_write: "write",
+  code_check: "check",
+  code_inspect: "check",
+  code_run: "try",
+  code_simulate: "try",
+  code_test: "try",
+  code_submit: "submit",
+};
+const CODE_ORDER = ["write", "check", "try", "submit"] as const;
+const isCodeTool = (name: string) => name.startsWith("code_");
+
 const tools = (blocks: AiTurnBlock[]): ToolBlock[] => blocks.filter((block): block is ToolBlock => block.kind === "tool");
 
 /** The apps a turn worked in, in order of first use: an app's own tile, or the web's for web tools. */
@@ -30,6 +48,7 @@ export const workApps = (blocks: AiTurnBlock[]): AiWorkApp[] => {
       const key = `app:${presentation.appId}`;
       if (!apps.has(key)) apps.set(key, { key, name: presentation.appName, icon: presentation.appIcon, accent: presentation.appAccent });
     } else if (WEB_TOOLS.has(tool.name) && !apps.has("web")) apps.set("web", { key: "web", name: "Web", icon: "ti ti-world" });
+    else if (isCodeTool(tool.name) && !apps.has("code")) apps.set("code", { key: "code", name: "Code", icon: "ti ti-code" });
   }
   return [...apps.values()];
 };
@@ -76,6 +95,7 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
   let web = false;
   let readFiles = false;
   let wroteFiles = false;
+  const code = new Set<(typeof CODE_ORDER)[number]>();
   for (const tool of tools(blocks)) {
     if (tool.status !== "completed" || isFailedTool(tool)) continue;
     const presentation = tool.presentation;
@@ -85,7 +105,10 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
     } else if (WEB_TOOLS.has(tool.name)) web = true;
     else if (FILE_READ_TOOLS.has(tool.name)) readFiles = true;
     else if (FILE_WRITE_TOOLS.has(tool.name)) wroteFiles = true;
+    else if (CODE_WORK[tool.name]) code.add(CODE_WORK[tool.name]!);
   }
+  const codeWords = { write: t.workCodeWrite, check: t.workCodeCheck, try: t.workCodeTry, submit: t.workCodeSubmit };
+  const codeWork = CODE_ORDER.filter((work) => code.has(work)).map((work) => codeWords[work]);
   const phrases = [
     looked.length > 0 ? t.workLookedIn({ apps: list(looked) }) : "",
     changed.length > 0 ? t.workChangedIn({ apps: list(changed) }) : "",
@@ -93,6 +116,8 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
     readFiles ? t.workReadFiles : "",
     wroteFiles ? t.workCreatedFiles : "",
   ].filter(Boolean);
+  // Building an automation reads as what was done with it; beside other work it names the code it was done to.
+  if (codeWork.length > 0) phrases.push(phrases.length > 0 ? t.workCodeWith({ work: list(codeWork) }) : list(codeWork));
   const sentence = phrases.join(", ");
   return sentence ? sentence.charAt(0).toLocaleUpperCase(locale) + sentence.slice(1) : "";
 };

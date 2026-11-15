@@ -42,3 +42,11 @@ export const guessAiMediaType = (path: string): string => {
 /** Image classification includes filenames when clients send a generic media type. */
 export const isAiImage = (path: string, mediaType: string): boolean =>
   mediaType.startsWith("image/") || guessAiMediaType(path).startsWith("image/");
+
+/** Browsers report ZIP with either MIME spelling, or only its filename. */
+export const normalizeAiUploadMediaType = (path: string, mediaType: string): string => {
+  const type = mediaType.split(";", 1)[0]?.trim().toLowerCase();
+  if (type === "application/zip" || type === "application/x-zip-compressed" || guessAiMediaType(path) === "application/zip")
+    return "application/zip";
+  return mediaType || guessAiMediaType(path);
+};
