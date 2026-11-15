@@ -32,7 +32,9 @@ export function AssistantCodeDecisionEntry(props: {
   // revises by himself, which a following start line says.
   const settled = () =>
     decision?.outcome === "approved" &&
-    later().some((message) => message.meta?.codeDecision?.versionId === decision.versionId && message.meta.codeDecision.outcome === "activated");
+    later().some(
+      (message) => message.meta?.codeDecision?.versionId === decision.versionId && message.meta.codeDecision.outcome === "activated",
+    );
   const automatic = () =>
     decision?.outcome === "changes_requested" && later().some((message) => message.meta?.codeReviewStart?.versionId === decision.versionId);
   const text = () => {

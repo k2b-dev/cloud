@@ -189,7 +189,17 @@ const ReviewSchema = z.object({
     .object({
       state: z.enum(["none", "queued", "running", "submitted", "completed", "stopped", "skipped"]),
       reason: z
-        .enum(["already_automatic", "superseded", "withdrawn", "conversation_gone", "access_lost", "quota", "unavailable", "stopped", "needs_person"])
+        .enum([
+          "already_automatic",
+          "superseded",
+          "withdrawn",
+          "conversation_gone",
+          "access_lost",
+          "quota",
+          "unavailable",
+          "stopped",
+          "needs_person",
+        ])
         .nullable(),
       submittedNumber: z.number().int().nullable().optional(),
     })

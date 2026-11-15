@@ -104,12 +104,12 @@ export default function AssistantCodeDecisionLine(props: {
     props.settled || props.automatic
       ? null
       : props.decision.outcome === "approved"
-      ? t().eventSwitchOn
-      : props.decision.outcome === "changes_requested"
-        ? t().eventSee
-        : props.decision.outcome === "rejected"
-          ? t().eventReason
-          : null;
+        ? t().eventSwitchOn
+        : props.decision.outcome === "changes_requested"
+          ? t().eventSee
+          : props.decision.outcome === "rejected"
+            ? t().eventReason
+            : null;
   const jump = async () => {
     setMissing(false);
     const root = line?.closest("[data-scroll-preserve]") ?? document;

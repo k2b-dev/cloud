@@ -69,6 +69,8 @@ export type ApprovalFrameProps = {
   /** The result line of every closed state, usually `Chat.Outcome`. */
   outcome?: JSX.Element;
   onAnswerError?: (error: unknown) => void;
+  /** Facts that change while the question stays open keep two lines where they wrap, so the frame never changes height. */
+  factLines?: 1 | 2;
   anchorId?: string | number;
 };
 
@@ -124,6 +126,7 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
         unavailable={props.unavailable}
         waiting={props.waiting}
         onAnswerError={props.onAnswerError}
+        factLines={props.factLines}
         outcome={
           loading() ? (
             <div class="cloud-approval-frame__loading" aria-busy="true">

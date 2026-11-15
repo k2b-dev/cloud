@@ -141,8 +141,8 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
-import { AssistantCodeDetail, AssistantCodeView } from "./code-deferred-views";
 import { AssistantCodeDecisionEntry } from "./code-decision-deferred";
+import { AssistantCodeDetail, AssistantCodeView } from "./code-deferred-views";
 import { AssistantCodeVersionCard } from "./code-version-card-deferred";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {

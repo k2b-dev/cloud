@@ -726,6 +726,26 @@ describe("Gustav", () => {
         main: "Gustav überarbeiten lassen",
       },
       {
+        name: "ueberarbeitung-wartet",
+        scenario: {
+          cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
+          cardReview: { ...changes, revision: { state: "queued", reason: null } },
+        },
+        word: "Änderungen angefordert",
+        sentence: "Version 5 von Code von info@ braucht noch Änderungen.",
+        main: null,
+      },
+      {
+        name: "ueberarbeitet-gerade",
+        scenario: {
+          cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
+          cardReview: { ...changes, revision: { state: "running", reason: null } },
+        },
+        word: "Änderungen angefordert",
+        sentence: "Version 5 von Code von info@ braucht noch Änderungen.",
+        main: null,
+      },
+      {
         name: "abgelehnt",
         scenario: {
           cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
@@ -773,6 +793,36 @@ describe("Gustav", () => {
         }
       }
   }, 240_000);
+
+  test("the changes card has one height whether Gustav's revision waits, runs or stopped", async () => {
+    const changes = { status: "changes_requested", decidedBy: JANA, decidedAt: at(10), message: "Bitte nur PDF-Anhänge ablegen." };
+    for (const view of [desktop, phone]) {
+      const heights: number[] = [];
+      for (const revision of [
+        { state: "queued", reason: null },
+        { state: "running", reason: null },
+        { state: "stopped", reason: "stopped" },
+      ]) {
+        const h = await open(
+          view,
+          {
+            cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
+            cardReview: { ...changes, revision },
+          },
+          { path: "/app/assistant/panel" },
+        );
+        try {
+          const card = h.page.locator(".assistant-code-version .k2b-chat-decision");
+          await card.locator(".k2b-chat-decision__sentence").waitFor();
+          heights.push(Math.round((await card.boundingBox())!.height));
+        } finally {
+          await h.close();
+        }
+      }
+      const first = heights[0] ?? 0;
+      expect({ view: view.name, heights }).toEqual({ view: view.name, heights: [first, first, first] });
+    }
+  }, 120_000);
 
   test("switching on keeps the card's top edge; the switch shimmers while Cloud works and the card says the result in place", async () => {
     for (const view of [desktop, phone]) {
