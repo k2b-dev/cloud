@@ -319,14 +319,15 @@ const turnAbortHandlers = new Set<(input: { conversationId: string; turnId: stri
 /** Hosts serialize their durable effects before cancellation becomes visible to the executor. */
 export const registerAiTurnAbortHandler = (handler: (input: { conversationId: string; turnId: string }) => Promise<void>) => {
   turnAbortHandlers.add(handler);
-  return () => { turnAbortHandlers.delete(handler); };
+  return () => {
+    turnAbortHandlers.delete(handler);
+  };
 };
 
 export const abortAiTurn = async (input: { conversationId: string; turnId: string }): Promise<{ ok: true }> => {
   if (turnAbortHandlers.size) {
     const config = await aiConversations.getTurnRunConfig(input);
-    if (config?.kind === "chat" && config.codeReview)
-      for (const handler of turnAbortHandlers) await handler(input);
+    if (config?.kind === "chat" && config.codeReview) for (const handler of turnAbortHandlers) await handler(input);
   }
   // Capture wire coordinates before the cancellation flag can wake its owner.
   const active = await aiConversations.getActiveTurn({ conversationId: input.conversationId }).catch(() => null);

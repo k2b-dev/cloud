@@ -1,4 +1,3 @@
-import type { RequestAuthority } from "@k2b/cloud/server";
 import {
   type AiConversation,
   type AiOpenQuestions,
@@ -9,6 +8,7 @@ import {
   listAiOpenQuestions,
 } from "@k2b/cloud/ai";
 import { cloudResourceRefAppId } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
 import type { catalogPerApp } from "./code-place";
 
 /** Names the app of a place chat's place for its row; null leaves the row with the place's title alone. */

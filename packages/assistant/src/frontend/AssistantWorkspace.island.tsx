@@ -1283,7 +1283,10 @@ export default function AssistantWorkspace(props: Props) {
       navigation === navigationRequest &&
       waitingConversationId() === question.conversationId;
     // The URL keeps the question, so a reload and Back land on it again.
-    if (question.href) { window.location.assign(question.href); return; }
+    if (question.href) {
+      window.location.assign(question.href);
+      return;
+    }
     const href = assistantQuestionHref(window.location.href, question.conversationId, question.anchor);
     if (here) {
       navigate(href, { replace: true, scroll: "manual", viewTransition: false });

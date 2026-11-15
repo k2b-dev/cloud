@@ -187,7 +187,16 @@ export const CodeWorkspaceStatusSchema = z.object({ version: z.literal(1), items
  */
 export const codeAuthoringContracts = {
   review: { input: CodeReviewInputSchema, data: CodeReviewSchema },
-  reviewStop: { input: CodeReviewInputSchema.omit({ before: true }), data: z.object({ status: z.enum(["stopped", "too_late"]), submittedVersionId: z.uuid().nullable(), submittedNumber: z.number().int().positive().nullable() }).strict() },
+  reviewStop: {
+    input: CodeReviewInputSchema.omit({ before: true }),
+    data: z
+      .object({
+        status: z.enum(["stopped", "too_late"]),
+        submittedVersionId: z.uuid().nullable(),
+        submittedNumber: z.number().int().positive().nullable(),
+      })
+      .strict(),
+  },
   reviewWait: { input: CodeReviewWaitInputSchema, data: CodeReviewSchema },
   withdraw: { input: CodeReviewInputSchema.omit({ before: true }), data: codeVersionContracts.submit.data },
   init: {

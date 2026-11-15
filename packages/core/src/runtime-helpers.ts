@@ -1,5 +1,5 @@
-import { registerAiTurnAbortHandler } from "@k2b/cloud/ai/runtime";
 import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
+import { registerAiTurnAbortHandler } from "@k2b/cloud/ai/runtime";
 import { getGeoIp } from "@k2b/cloud/server/request-context";
 import { deviceOffersApproval, logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { refreshBuiltAvatarHashes } from "@k2b/cloud/services/accounts/avatar";
@@ -249,7 +249,7 @@ export const startCoreServices = async (
         await Promise.allSettled([
           ...(status === "completed" && kind === "chat" ? [aiNotifications.notifyTurnCompleted(turnId)] : []),
           deliverPendingAiMessages(),
-          finishCodeReviewRevision(turnId,status),
+          finishCodeReviewRevision(turnId, status),
         ]);
       },
     });

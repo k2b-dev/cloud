@@ -8,6 +8,10 @@ export async function listNotebookManagers(input: { id: string; afterId?: string
         JOIN notebooks.notebooks b ON b.id=n.notebook_id JOIN notebooks.notebook_access na ON na.notebook_id=b.id WHERE n.short_id=${input.id}`
     : await sql<{ access_id: string }[]>`SELECT na.access_id FROM notebooks.notebooks b
         JOIN notebooks.notebook_access na ON na.notebook_id=b.id WHERE b.short_id=${input.id}`;
-  return listAccessRecipientUserIds({ accessIds: rows.map((row) => row.access_id),
-    afterId: input.afterId, userId: input.userId, limit: input.limit });
+  return listAccessRecipientUserIds({
+    accessIds: rows.map((row) => row.access_id),
+    afterId: input.afterId,
+    userId: input.userId,
+    limit: input.limit,
+  });
 }

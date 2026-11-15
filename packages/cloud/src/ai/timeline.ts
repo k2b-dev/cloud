@@ -89,7 +89,7 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
 
     if (entry.meta?.codeDecision || entry.meta?.codeReviewStart) {
       flushPendingSteers();
-      if (entry.meta.codeReviewStart) lastUserEntry=entry;
+      if (entry.meta.codeReviewStart) lastUserEntry = entry;
       items.push({ type: entry.meta.codeDecision ? "code-decision" : "code-review-start", id: entry.id, entry });
       index += 1;
       continue;

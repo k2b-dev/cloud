@@ -198,8 +198,14 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     const message = error instanceof Error ? error.message : String(error);
     const [schedule] = await sql<{ wake_after_ms: number }[]>`
       WITH retry AS (
-        SELECT * FROM jsonb_to_recordset(${JSON.stringify(rows.map((row) => ({ id: row.id,previous: row.attempts,
-          attempts: row.attempts + (deferred ? 0 : 1),delay: deferred ? config.reconcileIntervalMs / 1000 : Math.min(300,2 ** Math.min(row.attempts+1,8)) })))}::text::jsonb)
+        SELECT * FROM jsonb_to_recordset(${JSON.stringify(
+          rows.map((row) => ({
+            id: row.id,
+            previous: row.attempts,
+            attempts: row.attempts + (deferred ? 0 : 1),
+            delay: deferred ? config.reconcileIntervalMs / 1000 : Math.min(300, 2 ** Math.min(row.attempts + 1, 8)),
+          })),
+        )}::text::jsonb)
           AS r(id uuid,previous int,attempts int,delay double precision)
       ), updated AS (
       UPDATE ${sql.unsafe(table)} o
@@ -234,10 +240,15 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       try {
         const result = await config.publishBatch(rows);
         const deferred = new Set(result?.deferred ?? []);
-        const completed = rows.filter(row => !deferred.has(row.id));
-        if (completed.length) await sql`DELETE FROM ${sql.unsafe(table)} o USING jsonb_to_recordset(${JSON.stringify(completed.map((row) => ({ id: row.id,attempts: row.attempts })))}::text::jsonb)
+        const completed = rows.filter((row) => !deferred.has(row.id));
+        if (completed.length)
+          await sql`DELETE FROM ${sql.unsafe(table)} o USING jsonb_to_recordset(${JSON.stringify(completed.map((row) => ({ id: row.id, attempts: row.attempts })))}::text::jsonb)
           AS r(id uuid,attempts int) WHERE o.id=r.id AND o.attempts=r.attempts`;
-        if (deferred.size) await retryLater(rows.filter(row => deferred.has(row.id)), new PgOutboxDeferred("Waiting for durable work"));
+        if (deferred.size)
+          await retryLater(
+            rows.filter((row) => deferred.has(row.id)),
+            new PgOutboxDeferred("Waiting for durable work"),
+          );
       } catch (error) {
         await retryLater(rows, error);
       }

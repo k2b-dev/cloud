@@ -1,4 +1,3 @@
-import { aiCodeDecisionContext } from "./code-review-turn";
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
 import type { SQL } from "bun";
@@ -9,6 +8,7 @@ import { sql } from "../runtime/clients";
 import { logger } from "../services/logging";
 import { isUniqueViolation, toPgTextArray } from "../services/postgres";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck, type AiStoredActionReview } from "./action-review";
+import { aiCodeDecisionContext } from "./code-review-turn";
 import { AiMapSchema } from "./map-contracts";
 import { assertInteractiveChatTurn } from "./retired-routines";
 
@@ -4102,7 +4102,9 @@ export const aiConversations: AiConversationService = {
               AND ${visibleToTurn(input.turnId)}
             ORDER BY seq ASC
           `
-          ).map(rowToMessage).map(aiCodeDecisionContext)
+          )
+            .map(rowToMessage)
+            .map(aiCodeDecisionContext)
         : await aiConversations.listContextMessages({ conversationId: input.conversationId });
       return projectCalls(
         projectSettledAiToolChecks(

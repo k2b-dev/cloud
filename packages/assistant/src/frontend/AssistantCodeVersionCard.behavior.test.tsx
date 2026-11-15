@@ -581,14 +581,20 @@ test("a generic decision invalidation recovers a failed card through an authoriz
   expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
 });
 
-test("a ready card follows activation in another tab without a reload",async()=>{
-  let activated=false;
-  const card=await mount({
-    "activation/preview":()=>({json:{data:activated ? preview({running:5,activated:{at:"2026-11-14T12:00:00.000Z",byYou:true,byName:null}}) : preview()}}),
-    "/api/capabilities/v1/queries/core/code.automation.list":()=>({json:{data:{items:[],removedTargets:[]}}}),
+test("a ready card follows activation in another tab without a reload", async () => {
+  let activated = false;
+  const card = await mount({
+    "activation/preview": () => ({
+      json: {
+        data: activated ? preview({ running: 5, activated: { at: "2026-11-14T12:00:00.000Z", byYou: true, byName: null } }) : preview(),
+      },
+    }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
   });
-  expect(button(card.dom.root,"Switch on")).toBeDefined();
-  activated=true;await card.live.apply([decided()]);await tick();
-  expect(button(card.dom.root,"Switch on")).toBeUndefined();
+  expect(button(card.dom.root, "Switch on")).toBeDefined();
+  activated = true;
+  await card.live.apply([decided()]);
+  await tick();
+  expect(button(card.dom.root, "Switch on")).toBeUndefined();
   expect(card.dom.root.textContent).toContain("switched on");
 });

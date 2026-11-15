@@ -75,10 +75,13 @@ export async function deliverCodeReviewNotice(row: NoticeRow, sender: Pick<CoreN
   const locale = preference?.locale ?? (user.id === version.created_by ? version.locale : await coreSettings.get<string>("app.locale"));
   const origin = CodeSubmissionOriginSchema.parse(version.origin);
   const ownChat = row.kind === "decided" && user.id === version.created_by && origin.kind === "ai_chat" && version.chat_id;
-  const targetHref: `/${string}` | undefined = ownChat && origin.kind === "ai_chat"
-    ? `/app/assistant?conversation=${encodeURIComponent(version.chat_id!)}&question=${encodeURIComponent(origin.cardAnchor ?? `code-version-${row.version_id}`)}`
+  const targetHref: `/${string}` | undefined =
+    ownChat && origin.kind === "ai_chat"
+      ? `/app/assistant?conversation=${encodeURIComponent(version.chat_id!)}&question=${encodeURIComponent(origin.cardAnchor ?? `code-version-${row.version_id}`)}`
+      : undefined;
+  const waiting = ownChat
+    ? (await listCodeWaiting({ ownerUserId: user.id, locale, timeZone: "UTC", versionId: row.version_id }, signal)).items[0]
     : undefined;
-  const waiting = ownChat ? (await listCodeWaiting({ ownerUserId: user.id, locale, timeZone: "UTC", versionId: row.version_id },signal)).items[0] : undefined;
   await sender.sendCodeReview({
     userId: user.id,
     codeId: code.id,

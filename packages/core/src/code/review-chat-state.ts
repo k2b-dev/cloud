@@ -2,7 +2,7 @@ import { sql } from "@k2b/cloud";
 import type { SQL } from "bun";
 import { type CodeContext, CodeDataError } from "./access";
 
-/** Call inside the owning Code lock. Every write and submit rechecks the durable stop gate. */
+/** Tool entry rejects stopped work; submission repeats this check under the owning Code lock. */
 export async function assertCodeReviewTurn(codeId: string, context: CodeContext, db: SQL = sql) {
   if (!context.reviewTurn) return;
   const [work] = await db<{ state: string; turn_id: string | null }[]>`SELECT state,turn_id FROM code.review_chat_work

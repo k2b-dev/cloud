@@ -1160,4 +1160,5 @@ export const pulseCapabilities = defineCapabilities({
     },
   },
 });
+
 import { listBaseManagers } from "./service/manager-recipients";

@@ -1609,4 +1609,5 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
 });
+
 import { listNotebookManagers } from "./service/manager-recipients";

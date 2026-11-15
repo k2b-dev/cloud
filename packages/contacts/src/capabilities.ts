@@ -1543,4 +1543,5 @@ export const contactsCapabilities = defineCapabilities({
     },
   },
 });
+
 import { listBookManagers } from "./service/manager-recipients";

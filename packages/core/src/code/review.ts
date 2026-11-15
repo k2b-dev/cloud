@@ -4,8 +4,14 @@ import { approvalDecisionHints } from "@k2b/cloud/services/approvals";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError, codePermission, codePerson } from "./access";
 import { readCodeReviewComments } from "./review-comments";
-import { type CodeReview, CodeReviewInputSchema, CodeReviewWaitInputSchema, CodeSubmissionOriginSchema } from "./review-contracts";
-import { CodeReviewRevisionSchema, codeReviewFollowUp } from "./review-contracts";
+import {
+  type CodeReview,
+  CodeReviewInputSchema,
+  CodeReviewRevisionSchema,
+  CodeReviewWaitInputSchema,
+  CodeSubmissionOriginSchema,
+  codeReviewFollowUp,
+} from "./review-contracts";
 import { findCode } from "./store";
 
 /** Review messages are published by a decision, with anchors only for current editors. */
@@ -52,7 +58,15 @@ export async function readCodeReview(
     const page = row.outcome
       ? await readCodeReviewComments({ ...input, limit: 20 }, options.anchors !== false, tx)
       : { items: [], nextBefore: null, total: 0 };
-    const [revision] = await tx<{state: string; reason: string | null; turn_id: string | null; submitted_version_id: string | null; submitted_number: number | null}[]>`SELECT w.*,v.number AS submitted_number FROM code.review_chat_work w
+    const [revision] = await tx<
+      {
+        state: string;
+        reason: string | null;
+        turn_id: string | null;
+        submitted_version_id: string | null;
+        submitted_number: number | null;
+      }[]
+    >`SELECT w.*,v.number AS submitted_number FROM code.review_chat_work w
       LEFT JOIN code.versions v ON v.id=w.submitted_version_id WHERE w.version_id=${input.versionId}::uuid`;
     return {
       codeId: input.codeId,
@@ -69,7 +83,7 @@ export async function readCodeReview(
                 ? "superseded"
                 : "expired")),
       origin: CodeSubmissionOriginSchema.parse(row.origin),
-      changesRequestedEffect: codeReviewFollowUp(CodeSubmissionOriginSchema.parse(row.origin),context.locale ?? "en"),
+      changesRequestedEffect: codeReviewFollowUp(CodeSubmissionOriginSchema.parse(row.origin), context.locale ?? "en"),
       approvalId: row.approval_id,
       expiresAt: row.expires_at?.toISOString() ?? null,
       decidedBy: row.decided_at ? { id: row.decided_by, name: row.name, avatarHash: row.avatar_hash } : null,
@@ -80,7 +94,15 @@ export async function readCodeReview(
       commentCount: page.total,
       activeVersion: row.active_id && row.active_number ? { id: row.active_id, number: row.active_number } : null,
       contentTrust: "untrusted_data",
-      revision: revision ? CodeReviewRevisionSchema.parse({ state: revision.state, reason: revision.reason, turnId: revision.turn_id, submittedVersionId: revision.submitted_version_id, submittedNumber: revision.submitted_number }) : null,
+      revision: revision
+        ? CodeReviewRevisionSchema.parse({
+            state: revision.state,
+            reason: revision.reason,
+            turnId: revision.turn_id,
+            submittedVersionId: revision.submitted_version_id,
+            submittedNumber: revision.submitted_number,
+          })
+        : null,
     };
   });
 }

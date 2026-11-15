@@ -677,4 +677,5 @@ export const venueCapabilities = defineCapabilities({
     },
   },
 });
+
 import { listVenueManagers } from "./service/manager-recipients";

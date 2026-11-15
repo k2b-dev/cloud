@@ -282,8 +282,8 @@ export const NOTIFICATIONS = {
       kind: z.enum(["submitted", "decided"]),
       outcome: z.enum(["approved", "changes_requested", "rejected"]).nullable(),
       by: z.string().nullable(),
-      targetHref: z.templateLiteral(["/",z.string()]).optional(),
-      waiting: z.object({ short: z.string(), href: z.templateLiteral(["/",z.string()]) }).optional(),
+      targetHref: z.templateLiteral(["/", z.string()]).optional(),
+      waiting: z.object({ short: z.string(), href: z.templateLiteral(["/", z.string()]) }).optional(),
       automaticRevision: z.boolean().optional(),
     }),
     render: (data, { locale }) => {
@@ -306,11 +306,17 @@ export const NOTIFICATIONS = {
                 : de
                   ? `${by} hat Version ${data.number} abgelehnt`
                   : `${by} rejected version ${data.number}`,
-        body: [data.title, data.waiting?.short, data.automaticRevision ? (de ? "Gustav überarbeitet die Version." : "Gustav is revising the version.") : null].filter(Boolean).join(" · "),
+        body: [
+          data.title,
+          data.waiting?.short,
+          data.automaticRevision ? (de ? "Gustav überarbeitet die Version." : "Gustav is revising the version.") : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
         targetHref:
           data.kind === "submitted"
             ? `/admin/code?sec=approvals&id=${data.versionId}`
-            : data.waiting?.href ?? data.targetHref ?? `/app/assistant/code/${data.codeId}?tab=versions&version=${data.versionId}`,
+            : (data.waiting?.href ?? data.targetHref ?? `/app/assistant/code/${data.codeId}?tab=versions&version=${data.versionId}`),
       };
     },
   }),

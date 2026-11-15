@@ -3674,4 +3674,5 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
 });
+
 import { listSpaceManagers } from "./service/manager-recipients";

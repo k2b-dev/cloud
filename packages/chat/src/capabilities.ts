@@ -349,10 +349,16 @@ export const chatCapabilities = defineCapabilities({
           },
         },
         queries: {
-          "conversation.managers": { title: "Verwaltende einer Unterhaltung ermitteln",
+          "conversation.managers": {
+            title: "Verwaltende einer Unterhaltung ermitteln",
             description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
-            input: { id: "Öffentliche ID der Unterhaltung.", afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
-              userId: "Nur die Verwaltungsrechte dieser Person prüfen.", limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50." } },
+            input: {
+              id: "Öffentliche ID der Unterhaltung.",
+              afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+              userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+              limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+            },
+          },
           "conversation.readable": {
             title: "Leser für Chat-Unterhaltung prüfen",
             description: "Prüfen, welche aktuellen Konten diese Ressource lesen dürfen; ohne Inhaltszugriff.",
@@ -434,4 +440,5 @@ export const chatCapabilities = defineCapabilities({
     },
   },
 });
+
 import { listConversationManagers } from "./service/manager-recipients";

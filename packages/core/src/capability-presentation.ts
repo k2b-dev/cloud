@@ -394,7 +394,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "Liest Berechtigungen und deren Revision vor einer Änderung. Erfordert Verwaltungsrechte. Zugriffe auf Skills und Studio-Apps sind unabhängig.",
           input: { skillId: "ID des Skills, dessen Zugriffsrechte gelesen werden." },
         },
-        "ai.open_questions": { title: "Wartet auf dich lesen", description: "Liest deine offenen Fragen und nächsten Schritte zu Code mit aktuellen Rechten.", input: { timeZone: "Zeitzone für angezeigte Daten." } },
+        "ai.open_questions": {
+          title: "Wartet auf dich lesen",
+          description: "Liest deine offenen Fragen und nächsten Schritte zu Code mit aktuellen Rechten.",
+          input: { timeZone: "Zeitzone für angezeigte Daten." },
+        },
         "ai.chat.run.read": {
           title: "Gustav-Lauf aus Code lesen",
           description: "Liest den aktuellen Zustand eines durch Code gestarteten Laufs im eigenen Chat.",

@@ -35,6 +35,7 @@ import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
 import { storeCodeVersionExplanation } from "./read-model/explanation";
 import { readModelNames } from "./read-model/names";
+import { assertCodeReviewTurn, enqueueCodeReviewChat } from "./review-chat-state";
 import {
   CODE_REVIEW_MAX_WAIT_MS,
   type CodeReviewDecision,
@@ -42,7 +43,6 @@ import {
   type CodeSubmissionOrigin,
   CodeSubmissionOriginSchema,
 } from "./review-contracts";
-import { assertCodeReviewTurn, enqueueCodeReviewChat } from "./review-chat-state";
 import { codeReviewEventPublisher } from "./review-events";
 import { createRunnerCodeTestingHost } from "./runner-jobs";
 import { validateCodeSecretBindings } from "./secrets";

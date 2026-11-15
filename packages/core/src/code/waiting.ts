@@ -1,21 +1,39 @@
 import { sql } from "@k2b/cloud";
-import type { AiOpenQuestions, AiOpenQuestion } from "@k2b/cloud/ai";
+import type { AiOpenQuestion, AiOpenQuestions } from "@k2b/cloud/ai";
 import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
-import { CodeSubmissionOriginSchema } from "./review-contracts";
-import { currentChatManagers, type CodeManagerCandidate } from "./manager-recipients";
 import { CodeDataError } from "./access";
 import { requireCodeEventAccess } from "./event-access";
+import { type CodeManagerCandidate, currentChatManagers } from "./manager-recipients";
+import { CodeSubmissionOriginSchema } from "./review-contracts";
 import { findCode } from "./store";
 
 /** One domain source for the shared waiting list. The same read supplies badges, page and notification targets. */
-export async function listCodeWaiting(input: { ownerUserId: string; locale: string; timeZone: string; versionId?: string }, signal: AbortSignal): Promise<AiOpenQuestions> {
+export async function listCodeWaiting(
+  input: { ownerUserId: string; locale: string; timeZone: string; versionId?: string },
+  signal: AbortSignal,
+): Promise<AiOpenQuestions> {
   const items: AiOpenQuestion[] = [];
-  let count = 0, after = "00000000-0000-0000-0000-000000000000";
+  let count = 0,
+    after = "00000000-0000-0000-0000-000000000000";
   // Keyset pages bound each read and provider batch; the invoking capability's deadline bounds the whole snapshot.
   for (;;) {
     signal.throwIfAborted();
-    const rows = await sql<(CodeManagerCandidate & { origin:unknown;locale:string;number:number;title:string;outcome:string|null; chat_id: string; chat_title: string | null; created_at: Date; approval_id: string | null;
-      expired: boolean; state: string | null; failure_code: string | null; })[]>`SELECT
+    const rows = await sql<
+      (CodeManagerCandidate & {
+        origin: unknown;
+        locale: string;
+        number: number;
+        title: string;
+        outcome: string | null;
+        chat_id: string;
+        chat_title: string | null;
+        created_at: Date;
+        approval_id: string | null;
+        expired: boolean;
+        state: string | null;
+        failure_code: string | null;
+      })[]
+    >`SELECT
       s.version_id,s.code_id,(s.origin->>'conversationId')::uuid AS conversation_id,v.created_by AS user_id,v.number,c.title,
       c.owner_kind,c.owner_user_id,c.owner_app_id,c.owner_type,c.owner_id,s.origin,s.locale,s.approval_id,
       chat.short_id AS chat_id,chat.title AS chat_title,s.created_at,d.outcome,w.state,
@@ -34,44 +52,72 @@ export async function listCodeWaiting(input: { ownerUserId: string; locale: stri
         AND (${input.versionId ?? null}::uuid IS NULL OR s.version_id=${input.versionId ?? null}::uuid)
         AND s.version_id>${after}::uuid ORDER BY s.version_id LIMIT 50`;
     if (!rows.length) break;
-    const allowed = await currentChatManagers(rows,signal);
+    const allowed = await currentChatManagers(rows, signal);
     for (const row of rows) {
       if (!allowed.has(row.version_id)) continue;
       const de = input.locale.startsWith("de");
-      const kind = row.expired && !row.outcome ? "code_expired"
-        : row.outcome === "changes_requested" ? "code_changes" : "code_activate";
-      const short = kind === "code_expired" ? (de ? `Freigabe abgelaufen: ${row.title}` : `Approval expired: ${row.title}`)
-        : kind === "code_changes" ? (de ? `Änderungen an Version ${row.number} ansehen` : `View changes to version ${row.number}`)
-        : (de ? `Version ${row.number} einschalten` : `Switch on version ${row.number}`);
+      const kind = row.expired && !row.outcome ? "code_expired" : row.outcome === "changes_requested" ? "code_changes" : "code_activate";
+      const short =
+        kind === "code_expired"
+          ? de
+            ? `Freigabe abgelaufen: ${row.title}`
+            : `Approval expired: ${row.title}`
+          : kind === "code_changes"
+            ? de
+              ? `Änderungen an Version ${row.number} ansehen`
+              : `View changes to version ${row.number}`
+            : de
+              ? `Version ${row.number} einschalten`
+              : `Switch on version ${row.number}`;
       const origin = CodeSubmissionOriginSchema.parse(row.origin);
       count++;
-      items.push({ id: `code:${row.version_id}`,kind,conversationId: row.chat_id,conversationTitle: row.chat_title,
-        anchor: origin.kind === "ai_chat" ? origin.cardAnchor ?? `code-version-${row.version_id}` : `code-version-${row.version_id}`,
-        short: [...short].slice(0,160).join(""),app: { name: "Code",icon: kind === "code_activate" ? "ti ti-player-play" : "ti ti-code" },
-        createdAt: row.created_at.toISOString() });
-      items.sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      items.push({
+        id: `code:${row.version_id}`,
+        kind,
+        conversationId: row.chat_id,
+        conversationTitle: row.chat_title,
+        anchor: origin.kind === "ai_chat" ? (origin.cardAnchor ?? `code-version-${row.version_id}`) : `code-version-${row.version_id}`,
+        short: [...short].slice(0, 160).join(""),
+        app: { name: "Code", icon: kind === "code_activate" ? "ti ti-player-play" : "ti ti-code" },
+        createdAt: row.created_at.toISOString(),
+      });
+      items.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
       items.splice(20);
     }
     after = rows.at(-1)!.version_id;
-    if (rows.length<50) break;
+    if (rows.length < 50) break;
   }
-  const attention = input.versionId ? { count: 0, items: [] } : await listCodeAttentionWaiting(input,signal);
-  return { count: count + attention.count, items: [...items,...attention.items]
-    .sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).slice(0,20) };
+  const attention = input.versionId ? { count: 0, items: [] } : await listCodeAttentionWaiting(input, signal);
+  return {
+    count: count + attention.count,
+    items: [...items, ...attention.items].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).slice(0, 20),
+  };
 }
 
 /** Operational problems are actionable on the Code page, including Code created outside a chat. */
 async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: string }, signal: AbortSignal): Promise<AiOpenQuestions> {
   const items: AiOpenQuestion[] = [];
-  let count = 0, after = "";
-  const principal = buildAccessPrincipalCondition({ subject: { type: "user",userId: input.ownerUserId },columns: {
-    userId:sql`a.user_id`,groupId:sql`a.group_id`,serviceAccountId:sql`a.service_account_id`,authenticatedOnly:sql`a.authenticated_only`,
-  } });
+  let count = 0,
+    after = "";
+  const principal = buildAccessPrincipalCondition({
+    subject: { type: "user", userId: input.ownerUserId },
+    columns: {
+      userId: sql`a.user_id`,
+      groupId: sql`a.group_id`,
+      serviceAccountId: sql`a.service_account_id`,
+      authenticatedOnly: sql`a.authenticated_only`,
+    },
+  });
   for (;;) {
     signal.throwIfAborted();
-    const rows = await sql<(CodeManagerCandidate & {
-      title: string; created_at: Date; failure_code: string | null; reason: "secret"|"mandate"|"access";
-    })[]>`WITH candidates AS (
+    const rows = await sql<
+      (CodeManagerCandidate & {
+        title: string;
+        created_at: Date;
+        failure_code: string | null;
+        reason: "secret" | "mandate" | "access";
+      })[]
+    >`WITH candidates AS (
       SELECT c.*, COALESCE(c.active_version_id,a.version_id) AS version_id,a.state AS activation_state,a.failure,
         a.updated_at AS activation_at,a.mandate_id
       FROM code.codes c LEFT JOIN LATERAL (SELECT * FROM code.activations WHERE code_id=c.id ORDER BY created_at DESC,id DESC LIMIT 1) a ON true
@@ -100,28 +146,41 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
     if (!rows.length) break;
     // An unavailable owner cannot break unrelated Assistant surfaces. Direct grants remain usable;
     // a failed remote owner check contributes no actionable item in this snapshot.
-    const allowed = await currentChatManagers(rows,signal);
+    const allowed = await currentChatManagers(rows, signal);
     for (const row of rows) {
       if (!allowed.has(row.version_id)) continue;
       // A past refusal is only a candidate. A repaired event-place grant removes the item immediately.
       if (row.reason === "access" && row.failure_code === "FORBIDDEN") {
         const code = await findCode(row.code_id);
         if (!code) continue;
-        try { await requireCodeEventAccess(code,row.version_id,signal); continue; }
-        catch (error) { if (!(error instanceof CodeDataError) || !["FORBIDDEN","BAD_INPUT"].includes(error.code)) throw error; }
+        try {
+          await requireCodeEventAccess(code, row.version_id, signal);
+          continue;
+        } catch (error) {
+          if (!(error instanceof CodeDataError) || !["FORBIDDEN", "BAD_INPUT"].includes(error.code)) throw error;
+        }
       }
       const de = input.locale.startsWith("de");
-      const short = de ? `${row.title} ${row.reason === "secret" ? "braucht ein Secret" : row.reason === "mandate" ? "braucht deine Bestätigung" : "braucht Zugriff"}`
+      const short = de
+        ? `${row.title} ${row.reason === "secret" ? "braucht ein Secret" : row.reason === "mandate" ? "braucht deine Bestätigung" : "braucht Zugriff"}`
         : `${row.title} ${row.reason === "secret" ? "needs a secret" : row.reason === "mandate" ? "needs your confirmation" : "needs access"}`;
       count++;
-      items.push({ id: `code-attention:${row.code_id}`,kind:"code_attention",conversationId:"",conversationTitle:null,anchor:"",
-        short:[...short].slice(0,160).join(""),app:{name:"Code",icon:"ti ti-code"},createdAt:row.created_at.toISOString(),
-        href:`/app/assistant/code/${row.code_id}${row.reason === "secret" ? "?tab=secrets" : ""}` });
-      items.sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      items.push({
+        id: `code-attention:${row.code_id}`,
+        kind: "code_attention",
+        conversationId: "",
+        conversationTitle: null,
+        anchor: "",
+        short: [...short].slice(0, 160).join(""),
+        app: { name: "Code", icon: "ti ti-code" },
+        createdAt: row.created_at.toISOString(),
+        href: `/app/assistant/code/${row.code_id}${row.reason === "secret" ? "?tab=secrets" : ""}`,
+      });
+      items.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
       items.splice(20);
     }
-    after=rows.at(-1)!.code_id;
-    if (rows.length<50) break;
+    after = rows.at(-1)!.code_id;
+    if (rows.length < 50) break;
   }
-  return {count,items};
+  return { count, items };
 }

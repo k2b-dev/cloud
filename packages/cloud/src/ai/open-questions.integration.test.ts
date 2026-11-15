@@ -210,7 +210,7 @@ databaseSuite()("open questions", () => {
     try {
       const page = await f.read();
       expect(page.count).toBe(5);
-      expect(page.items.map(({ id,anchor,short }) => ({ id,anchor,short }))).toEqual([
+      expect(page.items.map(({ id, anchor, short }) => ({ id, anchor, short }))).toEqual([
         { id: valid.id, anchor: "tool-valid", short: "Send Meeting.pdf to Lea" },
         { id: badReview.id, anchor: "tool-bad-review", short: "Send this draft" },
         { id: badBlock.id, anchor: "tool-bad-block", short: "Send this draft" },

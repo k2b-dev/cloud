@@ -11,13 +11,23 @@ export async function listBaseManagers(input: { id: string; afterId?: string; us
   let afterId = input.afterId ?? "00000000-0000-0000-0000-000000000000";
   while (result.length < input.limit) {
     signal.throwIfAborted();
-    const candidates = await listAccessRecipientUserIds({ accessIds: access.map((row) => row.access_id),
-      afterId, userId: input.userId, limit: input.limit - result.length });
+    const candidates = await listAccessRecipientUserIds({
+      accessIds: access.map((row) => row.access_id),
+      afterId,
+      userId: input.userId,
+      limit: input.limit - result.length,
+    });
     if (!candidates.length) break;
     const projections = candidates.map((user) => {
-      const principal = buildAccessPrincipalCondition({ subject: { type: "user", userId: user }, columns: {
-        userId: sql`a.user_id`, groupId: sql`a.group_id`, serviceAccountId: sql`a.service_account_id`, authenticatedOnly: sql`a.authenticated_only`,
-      } });
+      const principal = buildAccessPrincipalCondition({
+        subject: { type: "user", userId: user },
+        columns: {
+          userId: sql`a.user_id`,
+          groupId: sql`a.group_id`,
+          serviceAccountId: sql`a.service_account_id`,
+          authenticatedOnly: sql`a.authenticated_only`,
+        },
+      });
       return sql`SELECT ${user}::uuid AS user_id,'base'::text AS "resourceType",${base.id}::uuid AS "resourceId",
         CASE WHEN a.user_id IS NOT NULL THEN 'user' WHEN a.group_id IS NOT NULL THEN 'group' ELSE 'authenticated' END AS "principalTier",
         a.permission AS level FROM grids.base_access ba JOIN auth.access a ON a.id=ba.access_id
@@ -25,7 +35,14 @@ export async function listBaseManagers(input: { id: string; afterId?: string; us
     });
     const query = projections.slice(1).reduce((all, part) => sql`${all} UNION ALL ${part}`, projections[0]!);
     const grants = await sql<(Grant & { user_id: string })[]>`${query}`;
-    for (const user of candidates) if (resolveEffectivePermission(grants.filter((grant) => grant.user_id === user), { baseId: base.id }) === "admin") result.push(user);
+    for (const user of candidates)
+      if (
+        resolveEffectivePermission(
+          grants.filter((grant) => grant.user_id === user),
+          { baseId: base.id },
+        ) === "admin"
+      )
+        result.push(user);
     afterId = candidates.at(-1)!;
   }
   return result;

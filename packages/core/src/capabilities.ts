@@ -1,4 +1,3 @@
-import { listCodeWaiting } from "./code/waiting";
 import { sql } from "@k2b/cloud";
 import {
   AI_SHORT_ID_PATTERN,
@@ -9,6 +8,7 @@ import {
   AI_SKILL_REFERENCE_PATH_PATTERN,
   type AiConversation,
   type AiConversationResourceRef,
+  AiOpenQuestionsSchema,
   AiResourceCredentialError,
   type AiSkill,
   AiSkillAppForbiddenError,
@@ -18,10 +18,9 @@ import {
   type AiStoredMessage,
   aiCapabilityId,
   aiConversations,
-  listAiOpenQuestions,
-  AiOpenQuestionsSchema,
   aiSkills,
   isConversationResourceCursor,
+  listAiOpenQuestions,
 } from "@k2b/cloud/ai";
 import { CodeEventCatchupInputSchema, CodeEventCatchupStatusSchema } from "@k2b/cloud/code";
 import {
@@ -83,6 +82,7 @@ import {
   setCodePaused,
   submitCodeVersion,
 } from "./code/versions";
+import { listCodeWaiting } from "./code/waiting";
 import { codeWorkloadReaderContract, readCodeWorkload } from "./code/workload-reader";
 import { runGeoQuery } from "./geo-capability-result";
 
@@ -647,12 +647,18 @@ export const aiCapabilities = defineCapabilities({
       input: z.object({ timeZone: z.string().max(100).describe("Reader time zone for displayed dates.") }).strict(),
       data: AiOpenQuestionsSchema,
       openWorld: false,
-      async run(input,context) {
-        const person=userFromActor(context.actor);
+      async run(input, context) {
+        const person = userFromActor(context.actor);
         if (context.accessSubject.type !== "user" || !person || person.id !== context.accessSubject.userId)
           return fail(err.forbidden("Your own waiting list requires a person"));
-        return ok({ data: await listAiOpenQuestions({ ownerUserId: context.accessSubject.userId,locale: context.locale,timeZone: input.timeZone,
-          sources: [(request) => listCodeWaiting(request,context.signal)] }) });
+        return ok({
+          data: await listAiOpenQuestions({
+            ownerUserId: context.accessSubject.userId,
+            locale: context.locale,
+            timeZone: input.timeZone,
+            sources: [(request) => listCodeWaiting(request, context.signal)],
+          }),
+        });
       },
     },
     "ai.decide": aiDecisionQuery,

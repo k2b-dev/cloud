@@ -2195,4 +2195,5 @@ export const gridsCapabilities = defineCapabilities({
     },
   },
 });
+
 import { listBaseManagers } from "./service/manager-recipients";

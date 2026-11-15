@@ -36,9 +36,9 @@ import { createCodeAuthoringChatTools } from "./chat-tools";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
 import { readCodeReview, waitCodeReview } from "./review";
-import { createCodeReviewComment, deleteCodeReviewComment, listCodeReviewComments } from "./review-comments";
 import { cancelCodeReviewRevision } from "./review-chat";
 import { stopCodeReviewTurn } from "./review-chat-state";
+import { createCodeReviewComment, deleteCodeReviewComment, listCodeReviewComments } from "./review-comments";
 import { CODE_REVIEW_COMMENT_LIMIT } from "./review-contracts";
 import { createCodeReviewNotificationOutbox, deliverCodeReviewNotice } from "./review-notifications";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -226,7 +226,9 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await sql`UPDATE auth.users SET admin=(id<>${strangerId}::uuid),account_expires=NULL,auth_epoch=0`;
     await sql`UPDATE code.policy_rules SET value=CASE WHEN row IN ('read','silent_you','silent_draft') THEN 'automatic' ELSE 'admin' END WHERE group_id IS NULL`;
   });
-  beforeAll(async () => { await ai.migrateCloudAi(); });
+  beforeAll(async () => {
+    await ai.migrateCloudAi();
+  });
   afterAll(async () => {
     dispose?.();
     hints?.mockRestore();
@@ -237,23 +239,36 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   });
 
   test("Composer stop and real submission serialize on the same review gate", async () => {
-    for (const stopped of [true,false]) {
-      const code=await newCode();
-      const original=await submitCodeVersion(input(code,"first"),author);
-      const chat=await ai.aiConversations.createConversation({ownerUserId:authorId});
-      const {turn}=await ai.aiConversations.submitChatTurn({conversationId:chat.id,modelId:"fixture",runConfig:{kind:"chat",input:"fixed",codeReview:{codeId:code.id,versionId:original.version.id}},userMessage:{role:"user",content:[{type:"text",text:"fixed"}]}});
+    for (const stopped of [true, false]) {
+      const code = await newCode();
+      const original = await submitCodeVersion(input(code, "first"), author);
+      const chat = await ai.aiConversations.createConversation({ ownerUserId: authorId });
+      const { turn } = await ai.aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "fixture",
+        runConfig: { kind: "chat", input: "fixed", codeReview: { codeId: code.id, versionId: original.version.id } },
+        userMessage: { role: "user", content: [{ type: "text", text: "fixed" }] },
+      });
       await sql`INSERT INTO code.review_chat_work(version_id,code_id,conversation_id,user_id,state,turn_id)
         VALUES(${original.version.id}::uuid,${code.id},${chat.id}::uuid,${authorId}::uuid,'running',${turn.id}::uuid)`;
-      const automatic:CodeContext={...author,submissionOrigin:{kind:"ai_chat",conversationId:chat.id,automaticAfterReview:true},reviewTurn:{versionId:original.version.id,turnId:turn.id}};
-      if(stopped) {
-        await stopCodeReviewTurn({conversationId:chat.id,turnId:turn.id});
-        await expect(submitCodeVersion(input(code,"changed",original.version.id),automatic)).rejects.toMatchObject({code:"CONFLICT"});
+      const automatic: CodeContext = {
+        ...author,
+        submissionOrigin: { kind: "ai_chat", conversationId: chat.id, automaticAfterReview: true },
+        reviewTurn: { versionId: original.version.id, turnId: turn.id },
+      };
+      if (stopped) {
+        await stopCodeReviewTurn({ conversationId: chat.id, turnId: turn.id });
+        await expect(submitCodeVersion(input(code, "changed", original.version.id), automatic)).rejects.toMatchObject({ code: "CONFLICT" });
         expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(1);
       } else {
-        const submitted=await submitCodeVersion(input(code,"changed",original.version.id),automatic);
-        await stopCodeReviewTurn({conversationId:chat.id,turnId:turn.id});
-        expect(submitted.origin).toMatchObject({automaticAfterReview:true});
-        expect(await cancelCodeReviewRevision({codeId:code.id,versionId:original.version.id},author)).toEqual({status:"too_late",submittedVersionId:submitted.version.id,submittedNumber:2});
+        const submitted = await submitCodeVersion(input(code, "changed", original.version.id), automatic);
+        await stopCodeReviewTurn({ conversationId: chat.id, turnId: turn.id });
+        expect(submitted.origin).toMatchObject({ automaticAfterReview: true });
+        expect(await cancelCodeReviewRevision({ codeId: code.id, versionId: original.version.id }, author)).toEqual({
+          status: "too_late",
+          submittedVersionId: submitted.version.id,
+          submittedNumber: 2,
+        });
       }
     }
   });
@@ -1512,13 +1527,18 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       WHERE app_id='core' AND kind='live' AND ordering_key=${`u:${authorId}`}
       AND payload->'d'->'domains' @> '["code-versions"]'::jsonb ORDER BY seq`;
     const before = await changes();
-    await expect(decideCodeVersion({ ...submitted.binding, sourceHash: "0".repeat(64) }, { outcome: "approved" }, reviewer)).rejects.toThrow();
+    await expect(
+      decideCodeVersion({ ...submitted.binding, sourceHash: "0".repeat(64) }, { outcome: "approved" }, reviewer),
+    ).rejects.toThrow();
     expect(await changes()).toEqual(before);
     await decideCodeVersion(submitted.binding, { outcome: "rejected", comment: "Please revise this version." }, reviewer);
     const after = await changes();
     expect(after).toHaveLength(before.length + 1);
     expect(after.at(-1)?.data).toMatchObject({
-      type: "ai.invalidated", conversationId: null, projectId: null, domains: ["code-versions"],
+      type: "ai.invalidated",
+      conversationId: null,
+      projectId: null,
+      domains: ["code-versions"],
     });
   });
 });

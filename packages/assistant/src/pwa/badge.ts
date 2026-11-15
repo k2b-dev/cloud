@@ -10,5 +10,8 @@ export const pwaApi = new Hono<AuthContext>()
   .use(rateLimit())
   .get("/badge", auth.requireRole("authenticated"), auth.requireUser(), async (c) => {
     const subject = c.get("accessSubject");
-    return respond(c, ok({ count: subject.type === "user" ? await countAiOpenQuestions(subject.userId, { authority: auth.getAuthority(c) }) : 0 }));
+    return respond(
+      c,
+      ok({ count: subject.type === "user" ? await countAiOpenQuestions(subject.userId, { authority: auth.getAuthority(c) }) : 0 }),
+    );
   });

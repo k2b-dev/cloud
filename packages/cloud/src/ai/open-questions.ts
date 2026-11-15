@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { invokeCapabilityWithDataSchema } from "../capabilities/server";
-import type { RequestAuthority } from "../server";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import { CapabilityActionReviewPresentationSchema, CapabilitySemanticLinkSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
+import type { RequestAuthority } from "../server";
 import { openRequests } from "../services/approvals/content";
 import { logger } from "../services/logging";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
@@ -40,9 +40,21 @@ export type AiOpenQuestions = {
 
 export const AiOpenQuestionsSchema = z.object({
   count: z.number().int().nonnegative(),
-  items: z.array(z.object({ id: z.string(), kind: z.enum(["approval","code_activate","code_changes","code_expired","code_attention"]),
-    href: z.string().startsWith("/").optional(), conversationId: z.string(), conversationTitle: z.string().nullable(), anchor: z.string(), short: z.string(),
-    app: z.object({ name: z.string(), icon: z.string(), accent: z.string().optional() }), createdAt: z.iso.datetime() })).max(APPROVALS_PAGE_SIZE),
+  items: z
+    .array(
+      z.object({
+        id: z.string(),
+        kind: z.enum(["approval", "code_activate", "code_changes", "code_expired", "code_attention"]),
+        href: z.string().startsWith("/").optional(),
+        conversationId: z.string(),
+        conversationTitle: z.string().nullable(),
+        anchor: z.string(),
+        short: z.string(),
+        app: z.object({ name: z.string(), icon: z.string(), accent: z.string().optional() }),
+        createdAt: z.iso.datetime(),
+      }),
+    )
+    .max(APPROVALS_PAGE_SIZE),
 });
 export type AiOpenQuestionSource = (input: { ownerUserId: string; locale: string; timeZone: string }) => Promise<AiOpenQuestions>;
 
@@ -84,13 +96,25 @@ const countApprovalQuestions = async (ownerUserId: string): Promise<number> => {
 
 /** One bounded, owner-scoped snapshot, using exactly the chat's stored question card. */
 export const countAiOpenQuestions = async (ownerUserId: string, options?: { authority: RequestAuthority }): Promise<number> =>
-  options ? (await listAiOpenQuestions({ ownerUserId, locale: "en", timeZone: "UTC", ...options })).count : countApprovalQuestions(ownerUserId);
+  options
+    ? (await listAiOpenQuestions({ ownerUserId, locale: "en", timeZone: "UTC", ...options })).count
+    : countApprovalQuestions(ownerUserId);
 
-export const listAiOpenQuestions = async (input: { ownerUserId: string; locale: string; timeZone: string; authority?: RequestAuthority; sources?: readonly AiOpenQuestionSource[] }): Promise<AiOpenQuestions> => {
+export const listAiOpenQuestions = async (input: {
+  ownerUserId: string;
+  locale: string;
+  timeZone: string;
+  authority?: RequestAuthority;
+  sources?: readonly AiOpenQuestionSource[];
+}): Promise<AiOpenQuestions> => {
   if (input.authority) {
-    if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.ownerUserId) throw new Error("Question owner and authority disagree");
-    const result = await invokeCapabilityWithDataSchema({ appId: "core", capabilityId: "ai.open_questions", kind: "query", input: { timeZone: input.timeZone } },
-      AiOpenQuestionsSchema, { authority: input.authority, locale: input.locale });
+    if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.ownerUserId)
+      throw new Error("Question owner and authority disagree");
+    const result = await invokeCapabilityWithDataSchema(
+      { appId: "core", capabilityId: "ai.open_questions", kind: "query", input: { timeZone: input.timeZone } },
+      AiOpenQuestionsSchema,
+      { authority: input.authority, locale: input.locale },
+    );
     if (!result.ok) throw new Error(`Open questions unavailable: ${result.error.code}`);
     return result.data.data;
   }
@@ -122,9 +146,10 @@ export const listAiOpenQuestions = async (input: { ownerUserId: string; locale: 
 
   const sources = await Promise.all((input.sources ?? []).map((source) => source(input)));
   return {
-    count: count + sources.reduce((sum,source) => sum + source.count,0),
+    count: count + sources.reduce((sum, source) => sum + source.count, 0),
     items: [...rows.map((row) => openQuestionFromRow(row, input)), ...sources.flatMap((source) => source.items)]
-      .sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).slice(0,APPROVALS_PAGE_SIZE),
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .slice(0, APPROVALS_PAGE_SIZE),
   };
 };
 

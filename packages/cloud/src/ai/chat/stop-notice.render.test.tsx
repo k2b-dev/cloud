@@ -55,15 +55,24 @@ test("an answer with no visible text still renders the truncation notice", () =>
   expect(html).toContain("Das Nachdenken hat den größten Teil davon verbraucht.");
 });
 
-
-test("an automatic review start keeps an early model failure visible without offering another automatic continuation",()=>{
-  const start:AiStoredMessage={...truncatedAnswer,id:"review-start",seq:1,message:{role:"user",content:["Gustav startet von selbst, einmal."]},stopReason:null,usage:null,
-    meta:{codeReviewStart:{codeId:"c_review",versionId:"11111111-1111-4111-8111-111111111111"},turnError:{code:"model_unavailable"}}};
-  const html=renderHistory([start]);
+test("an automatic review start keeps an early model failure visible without offering another automatic continuation", () => {
+  const start: AiStoredMessage = {
+    ...truncatedAnswer,
+    id: "review-start",
+    seq: 1,
+    message: { role: "user", content: ["Gustav startet von selbst, einmal."] },
+    stopReason: null,
+    usage: null,
+    meta: {
+      codeReviewStart: { codeId: "c_review", versionId: "11111111-1111-4111-8111-111111111111" },
+      turnError: { code: "model_unavailable" },
+    },
+  };
+  const html = renderHistory([start]);
   expect(html).toContain("Gustav startet von selbst");
   expect(html).toContain("Der KI-Dienst hat nicht geantwortet.");
   expect(html).not.toContain("Weiterschreiben");
-  const truncated=renderHistory([{...start,meta:{codeReviewStart:start.meta!.codeReviewStart}},truncatedAnswer]);
+  const truncated = renderHistory([{ ...start, meta: { codeReviewStart: start.meta!.codeReviewStart } }, truncatedAnswer]);
   expect(truncated).toContain("Die Antwort wurde abgeschnitten");
   expect(truncated).not.toContain("Weiterschreiben");
 });

@@ -22,8 +22,8 @@ import {
   updateCodeChatDraft,
 } from "./chat-drafts";
 import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, readCodeChatSdk } from "./chat-sdk";
-import { assertCodeReviewTurn } from "./review-chat-state";
 import { readCodeReview } from "./review";
+import { assertCodeReviewTurn } from "./review-chat-state";
 import { codeAuthor, readCode } from "./store";
 
 type ServerTool = Extract<AiRuntimeTool, { location: "server" }>;
@@ -48,7 +48,12 @@ export function createCodeAuthoringChatTools() {
       locale: context.locale,
       signal: context.signal,
       requestId: context.callId,
-      submissionOrigin: { kind: "ai_chat", conversationId: context.conversationId, automaticAfterReview: Boolean(run.codeReview), cardAnchor: `tool-${context.callId}` },
+      submissionOrigin: {
+        kind: "ai_chat",
+        conversationId: context.conversationId,
+        automaticAfterReview: Boolean(run.codeReview),
+        cardAnchor: `tool-${context.callId}`,
+      },
       ...(run.codeReview ? { reviewTurn: { versionId: run.codeReview.versionId, turnId: context.turnId } } : {}),
     };
     codeAuthor(result);
