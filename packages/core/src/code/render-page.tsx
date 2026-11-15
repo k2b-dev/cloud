@@ -4,13 +4,24 @@ import { Layout, MinimalLayout } from "@k2b/cloud/ssr";
 import { AppWorkspace } from "@k2b/ui";
 import { ssr } from "../config";
 import CodePageHost from "./PageHost";
+import type { CodePageProvenanceSeed } from "./page-provenance-contracts";
 
-export type HostedCodePage = { tree: CodePageTree; codeId: string; csrf: string | null; layout?: "plain" };
-export type CodePageHostingContext = AuthContext & { Variables: { hostedCodePage: HostedCodePage } };
+export type HostedCodePage = {
+  tree: CodePageTree;
+  codeId: string;
+  csrf: string | null;
+  /** The label beside the tree, already reduced to this viewer. */
+  provenance: CodePageProvenanceSeed;
+  layout?: "plain";
+};
+export type CodePageHostingContext = AuthContext & {
+  /** `settings` is the installation snapshot the settings middleware sets, as the layout reads it. */
+  Variables: { hostedCodePage: HostedCodePage; settings?: { app?: { name?: string } } };
+};
 /**
  * Hosting validates the description before this final SSR handler. Only the tree is sent to the island. A page renders
  * inside the Cloud layout, signed in or not, like Core's own pages; a route declared with `layout: "plain"` renders
- * the page alone. Every variant carries the feat/code label outside the tree.
+ * the page alone. Every variant carries the feat/code label outside the tree, from `provenance`.
  */
 export const codePageHandlers = ssr<CodePageHostingContext>((context) => {
   const { layout, ...page } = context.get("hostedCodePage");

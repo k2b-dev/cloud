@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CodePageLabel } from "./page-provenance-contracts";
+import { stubConnections } from "../../../../scripts/fixtures/platform";
 
 const root = mkdtempSync(join(tmpdir(), "core-code-page-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
@@ -27,6 +28,12 @@ const layoutHelp = await import("@k2b/cloud/ssr/help");
 const panelConsent = await import("@k2b/cloud/ssr/panel-consent");
 const adminStatus = await import("@k2b/cloud/ssr/admin-status");
 const { defaultRailPreferences } = await import("@k2b/cloud/contracts/rail-preferences");
+// Hosting derives each page's opaque version value from the installation secret.
+let secret: ReturnType<typeof stubConnections> | undefined;
+beforeAll(() => {
+  secret = stubConnections();
+});
+afterAll(() => secret?.mockRestore());
 const tree = validateCodePage(
   {
     version: 1,
@@ -163,7 +170,7 @@ test("Core hosts a complete page document and rejects invalid trees before rende
     .route(
       "/",
       createCodeHostingRoutes({
-        version: async () => ({ versionId: "version", manifest, personalOwner: null }),
+        version: async () => ({ versionId: "version", manifest, owner: { kind: "app" as const, appId: "probe" } }),
         request: async () => ({ kind: "page", status: 200, tree: returned }),
       }),
     );
@@ -303,7 +310,11 @@ describe("Code pages in the Cloud layout", () => {
       .route(
         "/",
         createCodeHostingRoutes({
-          version: async () => ({ versionId: "v_hidden", manifest, personalOwner: "owner-hidden" }),
+          version: async () => ({
+            versionId: "v_hidden",
+            manifest,
+            owner: { kind: "person" as const, userId: "22222222-2222-4222-8222-222222222222", name: "owner-hidden" },
+          }),
           request: async () => ({ kind: "page", status: 200, tree }),
         }),
       );

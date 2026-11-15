@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { type BoundNotificationMap, type NotificationDeliveryPolicy, notification } from "@k2b/cloud";
+import { codeOwnPath } from "@k2b/cloud/code";
+import { validateNotificationTargetHref } from "@k2b/cloud/contracts";
 import { APP_LOGIN_CONTEXT_BROWSERS, APP_LOGIN_CONTEXT_OSES } from "@k2b/cloud/contracts/app-approval";
 import {
   type AppDeviceEnrollmentNotice,
@@ -14,6 +16,7 @@ import type { AuthNotificationSender } from "@k2b/cloud/services/auth-flows";
 import * as settings from "@k2b/cloud/services/settings";
 import { dates, i18n } from "@k2b/stdlib";
 import { z } from "zod";
+import { type CodePageReportReason, CodePageReportReasonSchema } from "./code/page-provenance-contracts";
 
 const requiredEmail: NotificationDeliveryPolicy = { required: ["email"] };
 type PwaPlatform = PwaDevicePairedNotice["platform"];
@@ -24,6 +27,20 @@ const notificationMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      codePageReportedTitle: ({ name }: { name: string | null }) => (name ? `${name} reported a page` : "Someone reported a page"),
+      codePageReportedBody: ({ title, path, reason }: { title: string; path: string; reason: string | null }) =>
+        [`“${title}”`, path, reason].filter(Boolean).join(" · "),
+      codePageReportedEmail: ({ page, admin }: { page: string; admin: string }) => `Page: ${page}\nAutomation in Administration: ${admin}`,
+      codePageReportResolvedTitle: "Your report was handled",
+      codePageReportResolvedBody: "The admins of this Cloud have handled your report on this page.",
+      reportReason: ({ reason }: { reason: CodePageReportReason }) =>
+        ({
+          security: "Security problem",
+          suspicious: "Suspicious activity",
+          false_information: "False information",
+          illegal: "Illegal content",
+          other: "Other",
+        })[reason],
       codeDatabaseExpiryTitle: "Unused Code database",
       codeDatabaseExpiryBody: ({ title, date }: { title: string; date: string }) =>
         `The database of “${title}” will be deleted on ${date}. You can export it from the Code page first.`,
@@ -78,6 +95,19 @@ const notificationMessages = i18n.define({
       phonePairedAt: ({ url }: { url: string }) => `at ${url}`,
     },
     de: {
+      codePageReportedTitle: ({ name }) => (name ? `${name} hat eine Seite gemeldet` : "Jemand hat eine Seite gemeldet"),
+      codePageReportedBody: ({ title, path, reason }) => [`„${title}“`, path, reason].filter(Boolean).join(" · "),
+      codePageReportedEmail: ({ page, admin }) => `Seite: ${page}\nAutomation in der Administration: ${admin}`,
+      codePageReportResolvedTitle: "Deine Meldung ist erledigt",
+      codePageReportResolvedBody: "Die Admins dieser Cloud haben deine Meldung zu dieser Seite bearbeitet.",
+      reportReason: ({ reason }) =>
+        ({
+          security: "Sicherheitsproblem",
+          suspicious: "Verdächtige Aktivität",
+          false_information: "Falsche Angaben",
+          illegal: "Rechtswidrige Inhalte",
+          other: "Sonstiges",
+        })[reason],
       codeDatabaseExpiryTitle: "Ungenutzte Code-Datenbank",
       codeDatabaseExpiryBody: ({ title, date }) =>
         `Die Datenbank von „${title}“ wird am ${date} gelöscht. Du kannst sie vorher auf der Code-Seite exportieren.`,
@@ -147,6 +177,8 @@ const absoluteUrl = async (path: string): Promise<string> => {
   return `${baseUrl}${path}`;
 };
 const accountExtensionUrl = (): Promise<string> => absoluteUrl("/auth/extend");
+/** The automation in Administration › Code, where admins resolve reports. */
+const codeAdminHref = (codeId: string): `/${string}` => `/admin/code?sec=code&id=${encodeURIComponent(codeId)}`;
 
 /** A notice's time in the installation's timezone, named so that nobody has to guess it. */
 const installationTime = async (at: string, locale: string): Promise<string> => {
@@ -310,6 +342,56 @@ export const NOTIFICATIONS = {
             : `/app/assistant/code/${data.codeId}?tab=versions&version=${data.versionId}`,
       };
     },
+  }),
+  codePageReported: notification({
+    recipient: "user",
+    label: "Reported Code pages",
+    description: "For administrators: a member reported a page that an automation serves.",
+    delivery: { recommended: ["email", "browser"] },
+    presentation: presentation(
+      "Gemeldete Code-Seiten",
+      "Für Admins: Ein Mitglied hat eine Seite gemeldet, die eine Automation ausliefert.",
+    ),
+    data: z.object({
+      codeId: z.string(),
+      title: z.string(),
+      path: z.string().startsWith("/"),
+      reason: CodePageReportReasonSchema.nullable(),
+      by: z.string().nullable(),
+    }),
+    render: (data, { locale }) => ({
+      title: text(locale).codePageReportedTitle({ name: data.by }),
+      body: text(locale).codePageReportedBody({
+        title: data.title,
+        path: data.path,
+        reason: data.reason ? text(locale).reportReason({ reason: data.reason }) : null,
+      }),
+      targetHref: codeAdminHref(data.codeId),
+    }),
+    email: async (data, { locale }) => ({
+      subject: text(locale).codePageReportedTitle({ name: data.by }),
+      content: `${text(locale).codePageReportedBody({
+        title: data.title,
+        path: data.path,
+        reason: data.reason ? text(locale).reportReason({ reason: data.reason }) : null,
+      })}\n\n${text(locale).codePageReportedEmail({
+        page: await absoluteUrl(codeOwnPath(data.codeId, data.path)),
+        admin: await absoluteUrl(codeAdminHref(data.codeId)),
+      })}`,
+    }),
+  }),
+  codePageReportResolved: notification({
+    recipient: "user",
+    label: "Your page reports",
+    description: "Notice when an administrator has handled a page you reported.",
+    delivery: { recommended: ["browser"] },
+    presentation: presentation("Deine Meldungen zu Seiten", "Hinweis, wenn ein Admin eine Seite bearbeitet hat, die du gemeldet hast."),
+    data: z.object({ codeId: z.string(), path: z.string().startsWith("/") }),
+    render: (data, { locale }) => ({
+      title: text(locale).codePageReportResolvedTitle,
+      body: text(locale).codePageReportResolvedBody,
+      targetHref: validateNotificationTargetHref(codeOwnPath(data.codeId, data.path)),
+    }),
   }),
   oauthNewAccess: notification({
     recipient: "user",
@@ -523,6 +605,13 @@ export type CoreNotificationSender = AuthNotificationSender &
       key: string;
     }) => Promise<unknown>;
     sendCodeDatabaseExpiry: (notice: { userId: string; codeId: string; title: string; deleteAt: string; key: string }) => Promise<unknown>;
+    /** To one admin about a report, or back to the person who reported once an admin resolved it. */
+    sendCodePageReport: (
+      notice: { userId: string; locale: string; key: string; codeId: string; path: string } & (
+        | { kind: "reported"; title: string; reason: CodePageReportReason | null; by: string | null }
+        | { kind: "resolved" }
+      ),
+    ) => Promise<unknown>;
     sendOAuthNewAccess: (notice: OAuthNewAccessNotice) => Promise<unknown>;
     sendDeviceEnrollment: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>;
     sendAppDevicePaired: (notice: PwaDevicePairedNotice) => Promise<unknown>;
@@ -533,6 +622,26 @@ export const createCoreNotificationSender = (definitions: CoreNotificationDescri
     const result = await notifications.send(definitions.codeReview, { recipient: { userId }, data, locale, idempotencyKey: key });
     if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
       throw new Error("Code review notice could not be prepared");
+    return result;
+  },
+  sendCodePageReport: async (notice) => {
+    const { userId, locale, key, codeId, path } = notice;
+    const result =
+      notice.kind === "reported"
+        ? await notifications.send(definitions.codePageReported, {
+            recipient: { userId },
+            data: { codeId, path, title: notice.title, reason: notice.reason, by: notice.by },
+            locale,
+            idempotencyKey: key,
+          })
+        : await notifications.send(definitions.codePageReportResolved, {
+            recipient: { userId },
+            data: { codeId, path },
+            locale,
+            idempotencyKey: key,
+          });
+    if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
+      throw new Error("Code page report notice could not be prepared");
     return result;
   },
   sendCodeDatabaseExpiry: async ({ userId, codeId, title, deleteAt, key }) => {
