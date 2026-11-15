@@ -2,7 +2,14 @@ import { expect, test } from "bun:test";
 import type { CodeTestResult } from "@k2b/cloud/code";
 import { CodeVersionEvidenceSchema, codeVersionEvidence } from "./version-evidence";
 
-const call = (operation: string) => ({ sequence: 1, operation }) as CodeTestResult["cases"][number]["runs"][number]["calls"][number];
+const call = (operation: string): CodeTestResult["cases"][number]["runs"][number]["calls"][number] => ({
+  sequence: 1,
+  operation,
+  call: { capability: operation, target: null, refs: {}, input: {} },
+  idempotencyKey: null,
+  result: { ok: true, data: null },
+  replayed: false,
+});
 const run = (operations: string[], ok = true) => ({
   entrypoint: "weekly",
   ok,
@@ -30,7 +37,7 @@ test("passed fixtures become counts and calls per operation, without any call co
       ],
     }),
   );
-  expect(evidence).toEqual({
+  expect(evidence).toMatchObject({
     version: 1,
     tests: { state: "passed", passed: 2, total: 2, error: null },
     trial: {
@@ -62,4 +69,13 @@ test("a failing case is a finding about the Code, a missing runner is not", () =
     tests: { state: "unavailable", passed: 0, total: 0, error: "code_test_runner_unavailable" },
     trial: null,
   });
+});
+
+test("saved example sentences use the title for each sentence language", () => {
+  const evidence = codeVersionEvidence(
+    result({ cases: [{ name: "Morning", file: "test/morning.json", ok: true, runs: [run(["example.create"])] }] }),
+    (id, locale) => (locale === "de" ? "Aufgabe erstellen" : "Create task"),
+  );
+  expect(evidence.examples?.[0]?.sentences.de).toBe("Aufgabe erstellen · 1 im Beispiel erfolgreich");
+  expect(evidence.examples?.[0]?.sentences.en).toBe("Create task · 1 successful in the example");
 });

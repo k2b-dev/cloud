@@ -211,7 +211,6 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
       ...output.declarations,
       jsdoc(`${entry.title} input.`),
       `export type ${inputName} = ${input.type};`,
-      jsdoc(`${entry.title} result.`),
       `export type ${dataName} = ${output.type};`,
     );
     // Signatures name the exported types directly; a private alias per operation would only repeat them.
