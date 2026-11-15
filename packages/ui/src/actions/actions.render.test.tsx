@@ -125,12 +125,15 @@ describe("@k2b/ui complete action migrations", () => {
         onValueChange: () => {},
         options: [
           { value: "overview", label: "Overview" },
-          { value: "code", label: "Code", count: "3", countReserve: "99" },
+          { value: "code", label: "Code", count: "3", countReserve: "99", countLabel: "3 comments" },
           { value: "diff", label: "Diff", count: "+2 −1", countReserve: "+99 −99" },
         ],
       }),
     );
-    expect(tabs).toContain('<span class="k2b-tabs__count"><span>3</span><span aria-hidden="true">99</span></span>');
+    // The name reads "Code, 3 comments"; the drawn count is hidden when a label speaks for it.
+    expect(tabs).toContain(
+      '<span class="k2b-sr-only">, 3 comments</span><span class="k2b-tabs__count" aria-hidden="true"><span>3</span><span aria-hidden="true">99</span></span>',
+    );
     expect(tabs).toContain('<span aria-hidden="true">+99 −99</span>');
     const views = renderToString(() =>
       createComponent(ViewTabs, {

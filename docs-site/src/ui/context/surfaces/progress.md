@@ -36,23 +36,29 @@ For one bar, pass `segments` and `limit` to `ProgressBar` directly;
 
 Use `DotStrip` for a fixed window of outcomes, not for a percentage. Each dot
 is one item in order; the tone says what happened: `accent` (the app colour)
-or `success` for "it worked", `warning` for something to look at, `danger` for
-failed, `ai` for an outcome that came from AI, `muted` for "nothing to do" or
-skipped, and `running` for a run in progress (a plum ring that pulses until its
-result; still with reduced motion). The shape repeats the state, so colour is
-never the only sign: a circle when it worked, a diamond for `warning` and
-`danger`, a ring for `muted`. Still show a legend or counts next to it.
+or `success` for "it worked", `warning` for skipped or something to look at,
+`danger` for failed, `ai` for an outcome that came from AI, `muted` for
+"nothing to do", and `running` for a run in progress. The shape repeats the
+state, so colour is never the only sign: a circle when it worked, a diamond for
+`warning` and `danger`, a ring for `muted`, a ring with a core for `running`
+(it also pulses, and stands still with reduced motion), and a dashed ring for a
+place still to come. Still show a legend or counts next to it.
 
 `variant="bar"` draws upright bars on one base line, 5 × 22 px at `size="lg"`
 (4 × 14 px at `md`), 3px apart, as for the last runs beside a time: a failed
-run is red and broken in the middle, a skipped one is a short 6px bar, an
-empty place a quiet full bar. `variant="slot"` draws square places, as for the
-places of a runner: filled when taken, a square ring when free.
+run is red and broken in the middle, `warning` an amber outline, `muted` a
+short 6px bar, `running` a plum outline over a pale fill, and an empty place a
+quiet full bar. `variant="slot"` draws square places, as for the places of a
+runner: filled when taken, a square ring when free.
 
-Pass `links` (one `href` per dot, `undefined` for none) and `dotLabels` (one
-name per dot, such as "Run at 14:01: failed") to make each dot lead to what it
-stands for; the strip then becomes a list of named items, hover darkens a mark,
-and focus rings it. Pass
+Pass `links` (one `href` per dot, `undefined` for none) together with
+`dotLabels` (one name per dot, such as "Run at 14:01: failed"; the types
+require both) to make each dot lead to what it stands for. The strip is then a
+list: each item holds a real link, or a named mark where there is no link. It
+has one tab stop, on the newest run; arrow keys, Home, and End move between the
+links. The hit target fills the gap between marks and the height of a 24px
+row; hover outlines a mark and focus rings it. The selection ring of
+`selected` wins over every state's own edge. Pass
 `length` while the window is still filling: the remaining slots stay as empty
 rings, so the strip keeps its size and nothing shifts. `waiting` shows every
 slot as a quiet placeholder before anything was checked.
@@ -92,9 +98,8 @@ type DotStripTone = "accent" | "success" | "warning" | "danger" | "ai" | "muted"
 
 type DotStripProps = {
   dots: readonly DotStripTone[]; length?: number; waiting?: boolean; selected?: number | null;
-  size?: "md" | "lg"; variant?: "dot" | "bar" | "slot"; columns?: number; label: string;
-  links?: readonly (string | undefined)[]; dotLabels?: readonly string[]; class?: string;
-};
+  size?: "md" | "lg"; variant?: "dot" | "bar" | "slot"; columns?: number; label: string; class?: string;
+} & ({ links?: undefined; dotLabels?: undefined } | { links: readonly (string | undefined)[]; dotLabels: readonly string[] });
 ```
 
 `IntentTone` is defined in [shared API conventions](/en/ui/getting-started#icons-tones-and-navigation); each component accepts only the tones listed above. Defaults: `size="md"`, `tone="info"`, `showValue=false`. Finite values round to an integer and clamp to 0–100; non-finite values render 0. With `segments`, `value` is ignored: the share comes from the segments. Negative and non-finite parts count as 0, the track spans the larger of `limit` and the sum, and a `limit` of 0, below 0 or not finite is an empty budget, so any spending is over it. Without `limit` the segments fill the track. `aria-valuenow` stays within 0–100 and `aria-valuetext` says the real share ("120%") unless `valueText` replaces it. Sums within a billionth of the limit count as equal, so float residue never tips a budget over 100 % or under 80 %. In forced colours, expected spending is an outlined part and the overrun uses `Mark`. `BudgetList` formats money in the inherited locale with 0 decimals unless `decimals` says otherwise; `locale` overrides number format and words alike.
@@ -103,7 +108,8 @@ type DotStripProps = {
 
 Pass a task-specific `label`. Tone supplements the numeric value and must not carry meaning alone.
 
-Without `links`, `DotStrip` is one image with the `label` as its name. Put the counts into the
+Without `links`, `DotStrip` is one image with the `label` as its name; with
+`links`, a list named by `label` whose items carry `dotLabels`. Put the counts into the
 label ("Last 50 mails: 17 matched, 6 skipped, 27 not"); single dots are not
 announced. `selected` adds a ring around one dot for the item shown next to the
 strip. `columns` wraps long windows into rows, for example 25 per row on a phone.

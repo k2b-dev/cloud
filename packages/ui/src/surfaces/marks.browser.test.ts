@@ -23,6 +23,7 @@ mount("bars", DotStrip, { variant: "bar", size: "lg", label: "Last 5 runs: 1 fai
   dots: ["success", "danger", "muted", "success", "running"],
   links: ["#r1", "#r2", "#r3", "#r4", "#r5"], dotLabels: ["Run 1: succeeded", "Run 2: failed", "Run 3: skipped", "Run 4: succeeded", "Run 5: running"] });
 mount("dots", DotStrip, { label: "Last 3 runs", dots: ["success", "danger", "muted"], size: "lg" });
+mount("chosen", DotStrip, { label: "Two picked", dots: ["muted", "running", "success"], selected: 0, size: "lg" });
 mount("slots", DotStrip, { variant: "slot", label: "Runner: 1 of 3 places taken", dots: ["accent", "muted", "muted"], size: "lg" });
 mount("changes", ChangeList, { label: "What changes", marker: "sign", items: [
   { tone: "add", content: "Also runs Mon–Fri at 08:00" },
@@ -60,7 +61,7 @@ const open = async (width: number) => {
   await page.setContent(
     `<!doctype html><html lang="en"><head><style>${css}</style><style>${fonts}</style><style>${icons}</style>
       <style>body{margin:0} #app{display:grid;gap:24px;padding:16px;justify-items:start}</style></head>
-      <body class="k2b-ui" data-theme="light"><div id="app"><div id="bars"></div><div id="dots"></div><div id="slots"></div><div id="changes"></div><div id="tabs"></div></div></body></html>`,
+      <body class="k2b-ui" data-theme="light"><div id="app"><div id="bars"></div><div id="dots"></div><div id="slots"></div><div id="chosen"></div><div id="changes"></div><div id="tabs"></div></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.waitForSelector("#changes .k2b-change-list");
@@ -109,7 +110,15 @@ for (const width of [1440, 390]) {
         expect(failed.image).toContain("rgba(0, 0, 0, 0) 36%");
         expect(failed.fill).toBe("rgba(0, 0, 0, 0)");
         expect(await page.locator("#bars .k2b-dot-strip").getAttribute("role")).toBe("list");
-        expect(await page.getByRole("listitem", { name: "Run 2: failed" }).getAttribute("href")).toBe("#r2");
+        expect(await page.getByRole("link", { name: "Run 2: failed" }).getAttribute("href")).toBe("#r2");
+        // One tab stop on the newest run; arrows move between runs.
+        await page.locator("#bars a[tabindex='0']").focus();
+        expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Run 5: running");
+        await page.keyboard.press("ArrowLeft");
+        expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Run 4: succeeded");
+        await page.keyboard.press("Home");
+        expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Run 1: succeeded");
+        expect(await page.locator("#bars a[tabindex='0']").count()).toBe(1);
       } finally {
         await page.close();
       }
@@ -131,6 +140,13 @@ for (const width of [1440, 390]) {
         expect(shapes[0]).toEqual({ radius: "999px", rotated: false, filled: true });
         expect(shapes[1]).toEqual({ radius: "2px", rotated: true, filled: true });
         expect(shapes[2]).toEqual({ radius: "999px", rotated: false, filled: false });
+        // The selection ring wins over the ring of a dot with nothing to do.
+        expect(
+          await page
+            .locator("#chosen .k2b-dot-strip__dot")
+            .first()
+            .evaluate((node) => getComputedStyle(node).boxShadow),
+        ).toContain("3.5px");
         const places = await page
           .locator("#slots .k2b-dot-strip__dot")
           .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).borderRadius));

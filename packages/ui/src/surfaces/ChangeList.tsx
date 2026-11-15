@@ -1,4 +1,5 @@
 import { For, type JSX, Show } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 
 /**
  * `add` gains something, `change` alters it, `remove` takes it away, `same` stays as it is, `neutral` names a
@@ -50,7 +51,17 @@ const DEFAULT_ICONS: Record<ChangeTone, string> = {
 
 /** Changes, one line each, so a person can check them in one look: pending edits, or what a new version changes. */
 export function ChangeList(props: ChangeListProps): JSX.Element {
+  const messages = useUiMessages();
   const sign = () => props.marker === "sign";
+  // A bare sign is hidden from assistive technology; its meaning is read before the line instead.
+  const spoken = (tone: ChangeTone) =>
+    tone === "add"
+      ? messages().changeAdded
+      : tone === "remove"
+        ? messages().changeRemoved
+        : tone === "same"
+          ? messages().changeSame
+          : undefined;
   return (
     <ul class={`k2b-change-list ${props.class ?? ""}`} aria-label={props.label} data-marker={props.marker ?? "icon"}>
       <For each={props.items}>
@@ -62,6 +73,7 @@ export function ChangeList(props: ChangeListProps): JSX.Element {
             />
             <span class="k2b-change-list__text">
               <span>
+                <Show when={sign() && spoken(item.tone)}>{(word) => <span class="k2b-sr-only">{word()}: </span>}</Show>
                 {item.content}
                 <For each={item.marks ?? []}>
                   {(mark) => (

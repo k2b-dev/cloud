@@ -522,10 +522,13 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     });
     expect(runs).toContain('data-variant="bar"');
     expect(runs).toContain('role="list"');
-    expect(runs.match(/<a class="k2b-dot-strip__place" role="listitem"/g)).toHaveLength(3);
-    expect(runs).toContain('href="#run-2" aria-label="Run 2: failed"');
-    // A run without a link stays a named item.
-    expect(runs).toContain('<span class="k2b-dot-strip__place" role="listitem" aria-label="Run 3: skipped">');
+    // Every run is a list item; a linked one holds a real link, one tab stop on the newest.
+    expect(runs.match(/<span class="k2b-dot-strip__place" role="listitem">/g)).toHaveLength(4);
+    expect(runs.match(/<a class="k2b-dot-strip__target"/g)).toHaveLength(3);
+    expect(runs).toContain('href="#run-2" aria-label="Run 2: failed" data-dot-index="1" tabindex="-1"');
+    expect(runs).toContain('href="#run-4" aria-label="Run 4: running" data-dot-index="3" tabindex="0"');
+    // A run without a link stays a named mark.
+    expect(runs).toContain('<span class="k2b-dot-strip__target" role="img" aria-label="Run 3: skipped">');
     // The running mark draws in the AI palette, through its own `-ai` class.
     expect(runs).toContain('class="k2b-dot-strip__dot k2b-dot-strip__dot-ai" data-state="running"');
     const places = strip({ dots: ["accent", "muted"], variant: "slot", label: "Runner: 1 of 2 places taken" });
@@ -551,9 +554,14 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(version).toContain(
       '<span class="k2b-change-list__mark" data-tone="neutral"><i class="ti ti-eye" aria-hidden="true"></i>needs approval</span>',
     );
+    // The bare sign is hidden; its meaning is read first.
+    expect(version).toContain('<span class="k2b-sr-only">New: </span>');
+    expect(version).toContain('<span class="k2b-sr-only">Dropped: </span>');
+    expect(version).toContain('<span class="k2b-sr-only">Unchanged: </span>');
     const access = list({ label: "What changes", items: [{ tone: "add", icon: "ti ti-user-plus", content: "Tom gets Edit" }] });
     expect(access).toContain('data-marker="icon"');
     expect(access).toContain("ti ti-user-plus k2b-change-list__icon");
+    expect(access).not.toContain("k2b-sr-only");
   });
 
   test("progress ring draws a rounded, clamped share and marks warning and danger beyond colour", () => {

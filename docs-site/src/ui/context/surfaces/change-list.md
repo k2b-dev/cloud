@@ -27,7 +27,10 @@ what stays (often one line such as "5 more stay the same." with a link). Lines
 use the 14px step; gone and same lines are quieter. `marks` add short quiet
 words at the end of a line, such as "needs approval" with `ti ti-eye`, "new"
 (`tone: "new"`, in the action colour) or "dropped" (`tone: "gone"`, an
-outline). `detail` stays one quiet 12px line on the same edge.
+outline). `detail` stays one quiet 12px line on the same edge. Marks use the
+12px meta step at regular weight, so a line keeps at most three text styles.
+The bare sign is hidden from assistive technology; screen readers hear "New",
+"Dropped", or "Unchanged" before the line instead (localized).
 
 ## Import
 
