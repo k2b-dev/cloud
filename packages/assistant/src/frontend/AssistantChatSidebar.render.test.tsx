@@ -20,7 +20,7 @@ afterAll(() => {
   if (createdSerovalLink) unlinkSync(serovalLink);
 });
 
-const { AssistantChatSidebarPanel } = await import("./AssistantChatSidebar");
+const { AssistantChatSidebarTab } = await import("./AssistantChatSidebar");
 
 const noop = () => undefined;
 const actions = { onOpenFile: noop, onOpenApp: noop, onJump: noop, onOpenSecrets: noop };
@@ -30,35 +30,30 @@ export const renderSidebar = (snapshot: AssistantChatContextSnapshot | null, loc
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(AssistantChatSidebarPanel, {
-          id: "assistant-chat-context",
+        return createComponent(AssistantChatSidebarTab, {
           state: { snapshot: () => snapshot, projectContext: () => null, error: () => undefined, refresh: async () => undefined },
           actions,
-          onClose: noop,
         });
       },
     }),
   );
 
-describe("Assistant chat sidebar, server render", () => {
-  test("renders a labelled region with results first, cards with their description, and collapsed secondary sections", () => {
+// The whole list of a chat lives in the tab "In this chat"; the box beside the chat draws the same data (see
+// AssistantChatContextBox.render.test.tsx). Every way of the former sidebar stays reachable here.
+describe('Tab "In this chat", server render', () => {
+  test("renders results first, cards with their description, and collapsed secondary sections, with the search at hand", () => {
     const html = renderSidebar(sidebarSnapshot());
-    expect(html).toContain('<aside id="assistant-chat-context"');
-    expect(html).toContain('aria-labelledby="assistant-chat-context-title"');
-    expect(html).toContain(">In diesem Chat</h2>");
-    const order = ["Ergebnisse", "Umsatzbericht Q1-Q3.pdf", "Deine Dateien", "Quellen", "Arbeitsdateien", "Kontext"].map((label) =>
-      html.indexOf(label),
+    expect(html).toContain('placeholder="In diesem Chat suchen"');
+    const order = [">Ergebnisse<", "Umsatzbericht Q1-Q3.pdf", ">Deine Dateien<", ">Quellen<", ">Arbeitsdateien<", ">Kontext<"].map(
+      (label) => html.indexOf(label),
     );
     expect(order.every((position) => position >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(html).toContain("Der fertige Bericht: Umsatz je Quartal");
     expect(html).toContain("Interaktives Dashboard zum Filtern");
     expect(html).toContain("Herunterladen");
+    // Studio apps gave way to Code: no result carries an app link to copy.
     expect(html).not.toContain("Link kopieren");
-    // The close control is static from the server on: it closes an open sidebar.
-    expect(html).toMatch(
-      /aria-label="Seitenleiste schließen"[^>]*aria-expanded="true"|aria-expanded="true"[^>]*aria-label="Seitenleiste schließen"/,
-    );
     // Working files and sources stay one level deeper: their rows are closed and their contents not rendered.
     expect(html).toContain("2 Bilder");
     expect(html).not.toContain(">für Umsatzbericht Q1-Q3.pdf");
@@ -74,8 +69,8 @@ describe("Assistant chat sidebar, server render", () => {
     const html = renderSidebar(emptySidebarSnapshot());
     expect(html).toContain("Ergebnisse");
     expect(html).toContain("Dateien, Apps und Visualisierungen, die Gustav für dich erstellt, erscheinen hier.");
-    expect(html).not.toContain("Deine Dateien");
-    expect(html).not.toContain("Quellen");
+    expect(html).not.toContain(">Deine Dateien<");
+    expect(html).not.toContain(">Quellen<");
     expect(html).toContain("Kontext");
   });
 
@@ -113,7 +108,7 @@ describe("Assistant chat sidebar, server render", () => {
 
   test("renders English copy for an English reader", () => {
     const html = renderSidebar(sidebarSnapshot(), "en");
-    expect(html).toContain(">In this chat</h2>");
+    expect(html).toContain('placeholder="Search this chat"');
     expect(html).toContain("Results");
     expect(html).toContain("Working files");
   });

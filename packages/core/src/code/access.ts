@@ -22,6 +22,8 @@ export type CodeContext = {
   query?: CapabilityExecutionContext["query"];
   /** Authenticated submission provenance; chat tools set this from their actual conversation. */
   submissionOrigin?: import("./review-contracts").CodeSubmissionOrigin;
+  /** One read-model load may reuse its owner reader answer for the same target, never another identity or request. */
+  ownerReaderAnswer?: { ref: { type: string; id: string }; title: string; admin: boolean; href?: string } | null;
 };
 export class CodeDataError extends Error {
   constructor(
@@ -89,6 +91,9 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
     });
     return { title: app.name, admin: permission === "admin" };
   }
+  const previous = context.ownerReaderAnswer;
+  if (previous && previous.ref.type === owner.ref.type && previous.ref.id === owner.ref.id)
+    return { title: previous.title, admin: previous.admin };
   const appId = cloudResourceRefAppId(owner.ref);
   const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority);
   if (!catalog.ok) {
@@ -110,6 +115,14 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
     if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code)) return null;
     throw new CodeOwnerUnavailableError("Code owner reader unavailable");
   }
+  const href = result.data.links?.find((link) => link.rel === "open")?.href;
+  if (context.ownerReaderAnswer !== undefined)
+    context.ownerReaderAnswer = {
+      ref: owner.ref,
+      title: result.data.data.view.title,
+      admin: result.data.data.view.permission === "admin",
+      ...(href ? { href } : {}),
+    };
   return { title: result.data.data.view.title, admin: result.data.data.view.permission === "admin" };
 };
 

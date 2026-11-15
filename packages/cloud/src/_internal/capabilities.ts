@@ -431,7 +431,7 @@ const readResultForm = (value: unknown, label: string): import("../contracts/cap
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const form = value as Record<string, unknown>;
   if (
-    Object.keys(form).some((key) => key !== "text" && key !== "targetType" && key !== "kind") ||
+    Object.keys(form).some((key) => key !== "text" && key !== "targetType" && key !== "kind" && key !== "countText") ||
     typeof form.text !== "string" ||
     typeof form.targetType !== "string" ||
     typeof form.kind !== "string" ||
@@ -443,7 +443,17 @@ const readResultForm = (value: unknown, label: string): import("../contracts/cap
   assertText(form.text, `${label}.text`, 200);
   assertText(form.kind, `${label}.kind`, 80);
   if (/[{}\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.kind)) throw new Error(`${label}.kind must be plain text`);
-  return { text: form.text.trim(), targetType: form.targetType, kind: form.kind.trim() };
+  if (form.countText !== undefined) {
+    if (typeof form.countText !== "string" || /[{}\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.countText))
+      throw new Error(`${label}.countText must be plain text`);
+    assertText(form.countText, `${label}.countText`, 200);
+  }
+  return {
+    text: form.text.trim(),
+    targetType: form.targetType,
+    kind: form.kind.trim(),
+    ...(typeof form.countText === "string" ? { countText: form.countText.trim() } : {}),
+  };
 };
 
 const compileOperationPresentation = (
@@ -457,7 +467,7 @@ const compileOperationPresentation = (
   const allowed = new Set(
     "path" in operation
       ? ["title", "description", "input", "keywords"]
-      : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences", "result"] : [])],
+      : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences", "result"] : ["doneTitle"])],
   );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
   if (strict && extra) throw new Error(`${label} contains unsupported field "${extra}"`);
@@ -469,6 +479,8 @@ const compileOperationPresentation = (
     if (typeof translation.description !== "string") throw new Error(`${label}.description must be text`);
     assertText(translation.description, `${label}.description`, 1000);
   }
+  // A reader keeps the entry's other copy when only its past form is unusable.
+  const doneTitle = readDoneTitle(translation.doneTitle, `${label}.doneTitle`, strict);
   const keywords =
     "path" in operation && translation.keywords !== undefined
       ? CapabilityCommandManifestSchema.shape.keywords.parse(translation.keywords)
@@ -519,9 +531,23 @@ const compileOperationPresentation = (
     ...(input ? { input } : {}),
     ...(data ? { data } : {}),
     ...(searchTags ? { searchTags } : {}),
+    ...(doneTitle && !("path" in operation) && !isAction(operation) ? { doneTitle } : {}),
     ...(sentences ? { sentences } : {}),
     ...(translation.result !== undefined && isAction(operation) ? { result: readResultForm(translation.result, `${label}.result`) } : {}),
   };
+};
+
+/** A Query's past form: plain text like a title, so it never becomes a template. */
+const readDoneTitle = (value: unknown, label: string, strict: boolean): string | undefined => {
+  if (value === undefined) return undefined;
+  try {
+    if (typeof value !== "string") throw new Error(`${label} must be text`);
+    assertText(value, label, 120);
+    return value.trim();
+  } catch (error) {
+    if (strict) throw error;
+    return undefined;
+  }
 };
 
 /**
@@ -540,7 +566,9 @@ export const compileCapabilityPresentation = (
   const catalog = value as Record<string, unknown>;
   if (
     strict &&
-    Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "sentences" && key !== "results" && key !== "translations")
+    Object.keys(catalog).some(
+      (key) => key !== "baseLocale" && key !== "sentences" && key !== "results" && key !== "doneTitles" && key !== "translations",
+    )
   ) {
     throw new Error("Capability presentation contains unsupported fields");
   }
@@ -554,6 +582,27 @@ export const compileCapabilityPresentation = (
   const actions = new Map(manifest.actions.map((operation) => [operation.localId, operation]));
   const commands = new Map(manifest.commands.map((operation) => [operation.localId, operation]));
   const events = new Map((manifest.events ?? []).map((event) => [event.localId, event]));
+  let doneTitles: Record<string, string> | undefined;
+  if (catalog.doneTitles !== undefined) {
+    try {
+      if (!catalog.doneTitles || typeof catalog.doneTitles !== "object" || Array.isArray(catalog.doneTitles)) {
+        throw new Error("Capability presentation doneTitles must be an object");
+      }
+      doneTitles = Object.fromEntries(
+        Object.entries(catalog.doneTitles as Record<string, unknown>).flatMap(([localId, entry]) => {
+          if (!queries.has(localId)) {
+            if (strict) throw new Error(`Query doneTitles reference unknown localId "${localId}"`);
+            return [];
+          }
+          const doneTitle = readDoneTitle(entry, `Query ${localId}.doneTitle`, strict);
+          return doneTitle ? [[localId, doneTitle]] : [];
+        }),
+      );
+    } catch (error) {
+      if (strict) throw error;
+      doneTitles = undefined;
+    }
+  }
   let sentences: Record<string, CapabilityActionSentences> | undefined;
   if (catalog.sentences !== undefined) {
     if (!catalog.sentences || typeof catalog.sentences !== "object" || Array.isArray(catalog.sentences)) {
@@ -692,6 +741,7 @@ export const compileCapabilityPresentation = (
     baseLocale,
     ...(Object.keys(results).length ? { results } : {}),
     ...(sentences && Object.keys(sentences).length > 0 ? { sentences } : {}),
+    ...(doneTitles && Object.keys(doneTitles).length > 0 ? { doneTitles } : {}),
     translations,
   };
 };
@@ -1356,6 +1406,22 @@ export const resolveCapabilityOperationTitle = (
     (title, translation) => translation[group]?.[operation.localId]?.title ?? title,
     operation.title,
   );
+
+/**
+ * What a finished Query did, in the requested locale, or `undefined` when its app gives no past form there. The
+ * past form comes from the same locale as the title it stands for, so a step never mixes two languages.
+ */
+export const resolveCapabilityQueryDoneTitle = (
+  operation: Pick<CapabilityQueryManifest, "localId">,
+  catalog: CapabilityPresentationCatalog | undefined,
+  requestedLocale: string,
+): string | undefined => {
+  if (!catalog) return undefined;
+  return presentationOverlays(catalog, requestedLocale).reduce<string | undefined>((done, translation) => {
+    const copy = translation.queries?.[operation.localId];
+    return copy?.title !== undefined || copy?.doneTitle !== undefined ? copy.doneTitle : done;
+  }, catalog.doneTitles?.[operation.localId]);
+};
 
 /**
  * Everything a reader needs to word calls of one Action in the requested locale: its title, the app's

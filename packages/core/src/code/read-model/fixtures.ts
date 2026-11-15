@@ -73,7 +73,9 @@ export function codeActivityReadModelFixture(locale: "de" | "en"): import("@k2b/
   return {
     week: "2026-11-09T00:00:00.000Z",
     counters: {
-      items: [{ key: "spaces.task.create", automationKey: "daily", text: locale === "de" ? "Aufgabe erstellen" : "Create task", count: 3 }],
+      items: [
+        { key: "spaces.task.create", automationKey: "daily", text: locale === "de" ? "Aufgaben angelegt" : "Tasks created", count: 3 },
+      ],
       more: 0,
       moreText: null,
     },

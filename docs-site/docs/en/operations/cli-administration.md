@@ -135,3 +135,15 @@ Application authors must expose every administrator setting through a CLI
 command using the owning service. The repository's `admin-cli-settings` check
 guards declared settings, including custom setters; a new setting without
 CLI coverage fails the gate.
+
+## A Code write succeeds but the CLI rejects its response
+
+If Code submission succeeds on the server but the CLI reports unknown response
+fields, read the saved review or version state before repeating the write.
+The current Core CLI and authoring API share their response schemas. Check
+`cld plugins list --profile <profile>` and refresh the installed module with
+`cld plugins update --profile <profile>`. Operators must serve the CLI bundle
+built from the same application revision as the API; updating a local plugin
+cannot repair an outdated bundle on the server. A failed client parse may
+leave `code.json` at its previous base version even though the new version
+was saved.

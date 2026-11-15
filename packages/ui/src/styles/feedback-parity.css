@@ -41,8 +41,13 @@
   background: transparent;
 }
 
-.k2b-ui .k2b-dialog .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle::before {
-  content: none;
+.k2b-ui .k2b-dialog .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-dialog {
@@ -933,7 +938,8 @@
   inset: auto;
   z-index: 100;
   width: min(var(--k2b-hover-card-width, 20rem), calc(100vw - 1rem));
-  max-height: calc(100dvh - 1rem);
+  /* Never taller than the room on its side, so it never covers its control (set while open). */
+  max-height: min(var(--k2b-hover-card-room, 100dvh), calc(100dvh - 1rem));
   flex-direction: column;
   gap: 0.625rem;
   margin: 0;
@@ -1029,6 +1035,34 @@
   font-size: 0.75rem;
   line-height: 1rem;
 }
+
+/* A card with actions: one last line, actions at the start and the hint at the end. It stays put while the body scrolls. */
+.k2b-ui .k2b-hover-card__foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+.k2b-ui .k2b-hover-card__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+.k2b-ui .k2b-hover-card__foot > .k2b-hover-card__hint { margin-inline-start: auto; text-align: end; }
+/* Links in the last line read as text; only the underline carries the link accent. */
+.k2b-ui .k2b-hover-card__actions a {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: var(--k2b-link-accent);
+  text-underline-offset: 0.15em;
+}
+/* The dialog itself takes the focus only to hand it to its controls, as AnchoredPopover does. */
+.k2b-ui [popover].k2b-hover-card[role="dialog"] { outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui [popover].k2b-hover-card {

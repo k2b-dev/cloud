@@ -38,7 +38,7 @@ Pass `options` when in-page tabs come from data. Each option has the same `value
 ```ts
 type TabOption<T extends string = string> = {
   value: T; label: JSX.Element; icon?: string; disabled?: boolean; panel?: JSX.Element; onClose?: () => void;
-  closeLabel?: string;
+  closeLabel?: string; count?: JSX.Element; countReserve?: string; countLabel?: string;
 };
 
 type TabsItemProps<T extends string = string> = Omit<TabOption<T>, "panel"> & {
@@ -51,6 +51,16 @@ type TabsProps<T extends string = string> = {
   options?: readonly TabOption<T>[]; children?: JSX.Element;
 };
 ```
+
+A `count` follows the label in the quiet 12px step with tabular figures, such
+as the number of comments on "Code" or "+2 −1" on "Diff". Pass `countReserve`
+with the widest count the tab can show ("99", "+99 −99"): count and reserve
+share one cell, so the tab keeps its width and no neighbour moves when the
+number changes; the reserve is hidden from assistive technology. The tab's
+name reads "Code, 3"; pass `countLabel` ("3 comments", "2 lines added, 1
+removed") when the drawn count needs words, such as signs or coloured parts in
+JSX, and the drawn count is then hidden from assistive technology. `ViewTab`
+takes the same `countReserve` for its `count`.
 
 Defaults: `orientation="horizontal"`, `variant="line"`. Supply `options` or `Tabs.Item` children. `onClose` reports intent; the host removes the item and owns its state. `ariaLabel` is required even when labels are visible.
 

@@ -4,6 +4,7 @@ import { Button, Dropdown, FileView, Placeholder, prompts, Tabs, useLocale } fro
 import { createEffect, createSignal, ErrorBoundary, For, onCleanup, Show } from "solid-js";
 import { AssistantChatContextContent, type ContextView } from "../frontend/AssistantChatContext";
 import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
+import { chatSidebarMessages } from "../frontend/chat-sidebar-messages";
 import { artifactMessages } from "./messages";
 import {
   closeWorkspaceTab,
@@ -105,7 +106,9 @@ export function ChatWorkspace(props: {
   const locale = useLocale(),
     t = () => artifactMessages.resolve([locale()]).t;
   const state = props.controller.state;
-  const title = (tab: WorkspaceTab) => (tab.kind === "context" ? t()[tab.category] : tab.title);
+  // The chat's whole list carries the name of the box it opens from.
+  const title = (tab: WorkspaceTab) =>
+    tab.kind === "context" ? (tab.category === "files" ? chatSidebarMessages.resolve([locale()]).t.title : t()[tab.category]) : tab.title;
   async function close(key = state().active) {
     if (!key) return;
     if (props.controller.isDirty(key) && !(await prompts.confirm(t().unsavedMessage, { title: t().unsavedTitle, variant: "danger" })))

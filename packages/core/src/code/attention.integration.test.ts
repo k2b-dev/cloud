@@ -182,6 +182,7 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     const nextRun = async (_codeId: string, entrypoint: string) => (entrypoint === "sort" ? "2026-11-02T06:00:00.000Z" : null);
     clearCodeAttentionCache();
     const listed = await listCodeAutomations({ codeId: code.id }, ctx(ids.manager), nextRun);
+    expect(listed.items.map((item) => item.nextRunState)).toEqual(["planned", "unavailable", "none"]);
     expect(listed.removedTargets).toEqual([{ type: "spaces.space", id: "sp_2lg8", title: null, typeTitle: null }]);
     expect(
       listed.items.map((item) => [
@@ -205,6 +206,7 @@ databaseSuite()("Core Code that needs its administrators, and own run counts", (
     await sql`UPDATE code.codes SET state='paused' WHERE id=${code.id}`;
     const paused = await listCodeAutomations({ codeId: code.id }, ctx(ids.manager), nextRun);
     expect(paused.items[0]!.nextRunAt).toBeNull();
+    expect(paused.items[0]!.nextRunState).toBe("none");
     // Someone who may not read this Code gets no answer.
     await expect(listCodeAutomations({ codeId: code.id }, ctx(ids.other), nextRun)).rejects.toThrow();
     await sql`UPDATE code.codes SET state='deleting' WHERE id=${code.id}`;

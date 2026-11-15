@@ -45,7 +45,7 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 - **Continue:** When an answer stops because a step or the model service failed, the chat says why. **Continue** asks Gustav to resume where it stopped; the results so far are kept.
 - **Continue in a new chat:** Creates a new chat copied through the selected answer.
 - **Response details:** Shows the model, time, and token usage of one answer.
-- **Compact:** Open the context indicator beside the message input and choose **Compact context** to summarize the current chat context. You can also use `/compact`. Hover previews the details; clicking keeps them open. Press Escape or click outside to close.
+- **Compact:** Open the usage ring right of **+** in the message input. Under **This chat**, choose the summarize icon (**Summarize now**) to summarize the current chat context. While an answer runs the icon is off, and its tooltip says why. You can also use `/compact`. Hover previews the details; clicking keeps them open. Press Escape or click outside to close.
 - **Projects:** Project settings expose shared instructions and context according to your read, write, or admin permission. Project chats remain private.
 :::
 
@@ -58,14 +58,18 @@ target: one allows it and one declines. An approval applies once to what the
 card shows. If that changes before the Action runs, Gustav asks again. A
 reload keeps the reviewed sentence and preview.
 
-While questions are open, **Waiting for you** above the composer lists each one
-in its short form, also those from your other chats with the chat's name.
-Select one to go to its question; Gustav opens that chat if needed and puts
-the focus on the question's sentence. A reload returns to that question. When
-more questions wait than the row lists, its last entry opens **Approvals**.
-With a single question in the open chat, the row shows only while that
-question's buttons are out of view. There is no way to approve several
-questions at once: you answer each in its own card.
+While something waits for you, **Waiting for you** above the composer shows it
+in one row: each open question in its short form, also those from your other
+chats with the chat’s name, and in the open chat an automation that needs attention
+or an app whose last run failed. Each entry has a sign for its kind. Select one
+to go to it; for a question, Gustav opens that chat if needed and puts the
+focus on the question's sentence, and a reload returns to that question. What
+does not fit in the row is behind **+n**: it opens the whole list, grouped into
+this chat and other chats, with **See all** for **Approvals**. On a phone the
+row shows one entry and the list opens as a sheet. With a single question in the
+open chat, the row shows only while that question's buttons are out of view.
+There is no way to approve several questions at once: you answer each in its own
+card.
 
 Where offered, the quiet **Yes, and don't ask again in this chat** link remembers
 this scope until you delete the chat. **Always approve** is no longer offered;
