@@ -247,6 +247,10 @@ for (const width of [1440, 390])
       const steps = page.locator(".ai-turn-steps > .k2b-chat-activity");
       expect(await steps.count()).toBe(5);
       expect(await steps.first().innerText()).toContain("Nachgedacht");
+      // Finished reading steps say what happened, in the app's own past form (v12 image 03).
+      expect(await steps.nth(1).innerText()).toContain("In Mail gesucht");
+      expect(await steps.nth(2).innerText()).toContain("Unterhaltung gelesen");
+      expect(await steps.nth(3).innerText()).toContain("Datei gelesen");
       const axis = await steps.evaluateAll((nodes) =>
         nodes.map((node) => Math.round(node.querySelector(".ai-app-tile")!.getBoundingClientRect().left)),
       );
