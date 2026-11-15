@@ -812,7 +812,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             onSelect: () =>
               void openResourceThread(chatId, { ref: thread.ref }).then(
                 (opened) => openView(chatId, opened.id),
-                () => toast(t().requestFailed, { iconClass: "ti ti-alert-circle" }),
+                () => toast.error(t().requestFailed),
               ),
           }
         : {}),
@@ -1166,6 +1166,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       iconClass: "ti ti-mail",
       action: {
         label: t().undo,
+        variant: "ghost",
         onClick: () => {
           done.dismiss();
           void undoUnread(id, {
@@ -1923,6 +1924,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       iconClass: "ti ti-archive",
       action: {
         label: t().undo,
+        variant: "ghost",
         onClick: () => {
           done.dismiss();
           void setThreadArchived(current.id, thread.id, false).then(async (restored) => {

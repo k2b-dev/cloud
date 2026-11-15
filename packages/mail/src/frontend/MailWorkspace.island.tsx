@@ -2451,6 +2451,7 @@ function createMailboxController(props: MailboxControllerProps) {
         const notice = toast.success(t().actionMoved({ actionId, count, messages: messageRows, folder }), {
           action: {
             label: t().undo,
+            variant: "ghost",
             onClick: () => {
               notice.dismiss();
               undoNotices.delete(notice);
@@ -2662,7 +2663,10 @@ function createMailboxController(props: MailboxControllerProps) {
           },
           refresh: () => captureMailWorkspaceRefreshError(requireWorkspaceReconcile),
           success: (message, undo) =>
-            toast.success(message, undo ? { duration: 8_000, action: { label: undo.label, onClick: undo.run } } : undefined),
+            toast.success(
+              message,
+              undo ? { duration: 8_000, action: { label: undo.label, variant: "ghost", onClick: undo.run } } : undefined,
+            ),
           error: (message, title) => void toast.error(message, title ? { title } : undefined),
           refreshFailed: (error, title) => reportRefreshFailure(error, title),
           active: () => !abortSignal.aborted && !disposed,
@@ -2695,6 +2699,7 @@ function createMailboxController(props: MailboxControllerProps) {
       const notice = toast(message({ subject: item.conversation.subject }), {
         action: {
           label: automationText().redo,
+          variant: "ghost",
           onClick: () => {
             notice.dismiss();
             void automationRequest(item, "redo")
