@@ -207,7 +207,8 @@ const scenes: Record<string, () => JSX.Element> = {
     ];
     // A function: each frame draws its own list.
     const details = () => ({
-      label: "Details von Code · gegenüber Version 4",
+      label: "Details von Code",
+      context: "gegenüber Version 4",
       note: { text: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.", icon: "ti ti-info-circle" },
       content: (
         <ChangeList
@@ -249,9 +250,27 @@ const scenes: Record<string, () => JSX.Element> = {
             { text: "Die Admins wissen Bescheid. Du bekommst eine Mitteilung, sobald einer entschieden hat.", icon: "ti ti-bell" },
             { text: "Bis dahin bleibt Version 4 eingeschaltet. Du musst nichts tun.", icon: "ti ti-history" },
           ]}
-          meta={[{ text: "Keine Beispiele: Niemand hat ausprobiert, was sie tut", icon: "ti ti-alert-triangle", tone: "warning" }]}
-          more={[{ label: "Zurückziehen", onSelect: () => {} }]}
+          meta={[{ text: "3 von 3 Beispielen erfolgreich", icon: "ti ti-circle-check", tone: "success" }]}
+          more={[
+            { label: "Zurückziehen", onSelect: () => {} },
+            { label: "Ohne Dateien ablegen bauen", icon: "ti ti-git-fork", onSelect: () => {} },
+          ]}
           link={{ label: "Alles ansehen", href: "/app/code/info" }}
+        />
+        <Label>Bereit, aber ohne Beispiele</Label>
+        <ApprovalFrame
+          locale="de"
+          state="open"
+          source={code}
+          sentence={sentence}
+          reason={{ text: "Sie darf danach mehr als Version 4: Sie legt Dateien ab, die andere sehen.", icon: "ti ti-eye" }}
+          details={details()}
+          meta={[
+            { text: "Keine Beispiele: Niemand hat ausprobiert, was sie tut", icon: "ti ti-alert-triangle", tone: "warning" },
+            { text: "Bis dahin bleibt Version 4 eingeschaltet", icon: "ti ti-history" },
+          ]}
+          more={[{ label: "Erst Beispiele ausprobieren", onSelect: () => {} }]}
+          confirm={{ label: "Trotzdem einschalten", icon: "ti ti-power", onSelect: () => {} }}
         />
         <Label>Lädt</Label>
         <ApprovalFrame locale="de" state="loading" source={code} reason={{ text: "" }} />

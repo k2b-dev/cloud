@@ -88,18 +88,27 @@ describe("Chat.Decision SSR", () => {
         decline: undefined,
         link: { label: "See everything", href: "/code/1" },
         more: [{ label: "Withdraw", onSelect: noop }],
-        details: { label: "Details from Code", content: "Two changes", note: { text: "Cloud checks access, not behaviour." } },
+        details: {
+          label: "Details from Code",
+          context: "compared with version 4",
+          content: "Two changes",
+          note: { text: "Cloud checks access, not behaviour." },
+        },
         notes: [{ text: "The admins know.", icon: "ti ti-bell" }],
         meta: [{ text: "3 of 3 examples passed", icon: "ti ti-circle-check", tone: "success" }],
       }),
     );
     const answers = Array.from(body.querySelectorAll(".k2b-chat-decision__buttons > *"));
     expect(answers.map((a) => [a.tagName, a.textContent, a.getAttribute("data-variant")])).toEqual([
-      ["A", "See everything", "text"],
       ["BUTTON", "Withdraw", "secondary"],
       ["BUTTON", "Send", "ai"],
+      // Reading everything leaves the question, so it comes after the answers.
+      ["A", "See everything", "text"],
     ]);
-    expect(answers[0]!.getAttribute("href")).toBe("/code/1");
+    expect(answers[2]!.getAttribute("href")).toBe("/code/1");
+    // The origin of the details reads bold; what it is compared with follows quietly.
+    expect(body.querySelector(".k2b-chat-decision__details-label strong")!.textContent).toBe("Details from Code");
+    expect(body.querySelector(".k2b-chat-decision__details-context")!.textContent).toBe(" · compared with version 4");
     expect(body.querySelector(".k2b-chat-decision__details-note")!.textContent).toBe("Cloud checks access, not behaviour.");
     expect(body.querySelector(".k2b-chat-decision__note")!.textContent).toBe("The admins know.");
     expect(body.querySelector(".k2b-chat-decision__fact")!.getAttribute("data-tone")).toBe("success");

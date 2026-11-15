@@ -148,32 +148,57 @@ describe("Approval scenes", () => {
               sticky: answers ? getComputedStyle(answers).position : null,
               status: node.querySelector(".k2b-chat-decision__status")?.textContent ?? null,
               busy: node.querySelector("[aria-busy='true']") !== null,
+              origin: node.querySelector(".k2b-chat-decision__details-label strong")
+                ? getComputedStyle(node.querySelector(".k2b-chat-decision__details-label strong")!).fontWeight
+                : null,
+              edges: [...node.querySelectorAll<HTMLElement>('.k2b-chat-decision__buttons [data-variant="secondary"]')].map(
+                (button) => getComputedStyle(button).borderTopColor,
+              ),
+              // Facts and answers share one line when they fit: the first fact's middle lies within the buttons' line.
+              oneLine: (() => {
+                const fact = node.querySelector(".k2b-chat-decision__fact")?.getBoundingClientRect();
+                const button = node.querySelector(".k2b-chat-decision__buttons > *")?.getBoundingClientRect();
+                return fact && button ? Math.abs(fact.top + fact.height / 2 - (button.top + button.height / 2)) < 4 : null;
+              })(),
             };
           }),
         );
+        await shot(page, `40-freigabe-rahmen-light-${width}`);
         expect(frames.map((frame) => [frame.primary, frame.radius, frame.shadow])).toEqual(
-          Array.from({ length: 3 }, () => ["ai", "12px", "none"]),
+          Array.from({ length: 4 }, () => ["ai", "12px", "none"]),
         );
+        // The answers come first and "See everything" last; side answers are white without an edge.
         expect(frames[0]).toMatchObject({
           sentence: "18px",
           note: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+          origin: "600",
           facts: ["success", "neutral"],
           answers: [
-            ["Alles ansehen", "text"],
             ["Version 5 einschalten", "ai"],
+            ["Alles ansehen", "text"],
           ],
           sticky: "sticky",
         });
         expect(frames[1]).toMatchObject({
           notes: 2,
-          facts: ["warning"],
+          facts: ["success"],
           answers: [
-            ["Alles ansehen", "text"],
             ["Zurückziehen", "secondary"],
+            ["Ohne Dateien ablegen bauen", "secondary"],
+            ["Alles ansehen", "text"],
+          ],
+          edges: ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"],
+        });
+        expect(frames[2]).toMatchObject({
+          facts: ["warning", "neutral"],
+          answers: [
+            ["Erst Beispiele ausprobieren", "secondary"],
+            ["Trotzdem einschalten", "ai"],
           ],
         });
-        expect(frames[2]).toMatchObject({ status: "Lädt", busy: true, sentence: null });
-        await shot(page, `40-freigabe-rahmen-light-${width}`);
+        // On a wide card the short fact stands left in the answer row, not on a line of its own.
+        if (width === 1440) expect(frames[1]!.oneLine).toBe(true);
+        expect(frames[3]).toMatchObject({ status: "Lädt", busy: true, sentence: null });
       } finally {
         await page.context().close();
       }
