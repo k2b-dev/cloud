@@ -159,6 +159,12 @@ export const requestQueuedMessageSendNow = async (conversationId: string, id: st
     return { interrupt: active && interrupt ? { turnId: active.id, request: interrupt, waitingForClient: Boolean(client) } : null };
   });
 
+/** Composer retries acknowledge the original entry even after promotion. */
+export const queuedMessageAccepted = async (conversationId: string, id: string) => {
+  const [row] = await sql`SELECT id FROM ai.queued_messages WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid`;
+  return Boolean(row);
+};
+
 export const assertQueuedMessageQuota = async (conversationId: string, id: string): Promise<void> => {
   const [row] = await sql<{ submission: Submission }[]>`SELECT submission FROM ai.queued_messages
     WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid AND status IN ('pending','failed')`;
