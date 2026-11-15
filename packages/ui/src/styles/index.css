@@ -16635,11 +16635,42 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The pill carries the shared field edge (see `.k2b-chat-composer__field` above). */
 .k2b-ui .k2b-chat-composer__field {
+  position: relative;
   display: flex;
   flex: 1 1 0;
   min-width: 0;
   align-items: flex-end;
   border-radius: 1.125rem;
+}
+
+/* Text that does not fit one row beside the tools takes the pill's whole width, so its scrollbar sits at the pill's
+   edge. The tools stand over a row of their own below the text, at the bottom right, and the text always ends above
+   them. Whether it fits is measured at the one-row width, so the layout never flips back while the text stays. */
+.k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__input {
+  padding-bottom: calc(var(--k2b-chat-composer-control) - 2 * var(--k2b-edge-width));
+}
+
+.k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__field-tools {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
+
+/* With the whole width the text keeps the same inset from the pill's end as from its start, and the scrollbar its own
+   gutter, so the text never rewraps when the field reaches its cap. The space above the tools is the tools' row alone.
+   The measuring copy takes this layout only while it measures the height of several rows. */
+.k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__input :is(textarea:not(.k2b-chat-composer__measure), .k2b-chat-composer__highlight),
+.k2b-ui .k2b-chat-composer .k2b-chat-composer__input textarea.k2b-chat-composer__measure[data-mode="many"] {
+  padding-right: calc(0.875rem - 1px);
+  padding-bottom: 0;
+  scrollbar-gutter: stable;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__input :is(textarea:not(.k2b-chat-composer__measure), .k2b-chat-composer__highlight),
+  .k2b-ui .k2b-chat-composer .k2b-chat-composer__input textarea.k2b-chat-composer__measure[data-mode="many"] {
+    padding-right: calc(1rem - 1px);
+  }
 }
 
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__input {
@@ -19890,7 +19921,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1rem;
   cursor: pointer;
 }
-.k2b-ui .k2b-app-workspace__sidebar-section-toggle > i { margin-inline-start: auto; }
+.k2b-ui .k2b-app-workspace__sidebar-section-chevron {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  width: 1.25rem;
+  align-self: stretch;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
 .k2b-ui .k2b-app-workspace__sidebar-section-toggle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 .k2b-ui .k2b-app-workspace__sidebar-preview-body {
   max-height: min(calc(32rem - 2px), calc(100dvh - 1rem - 2px));

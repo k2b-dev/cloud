@@ -16,7 +16,6 @@ import {
   ButtonLink,
   Dropdown,
   dialogCore,
-  FilterToggle,
   IconButton,
   IconButtonLink,
   InlineGuidance,
@@ -31,6 +30,7 @@ import {
   type VirtualFeedController,
 } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import {
@@ -1754,9 +1754,6 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const showForYou = async (navigation: LinkNavigateEvent) => {
     if ((await open(chatRoute(null, "all", { forYou: true }))) === "applied") navigation.push(listHref(`${basePath}/for-you`));
   };
-  const discover = async (navigation: LinkNavigateEvent) => {
-    if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
-  };
   const subscribe = async (id: string) => {
     const api = await channelApi();
     if (!api) return;
@@ -2334,9 +2331,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       );
     if (current.channel && !current.member)
       return (
-        <Button loading={subscribing()} onClick={() => void subscribeOpen(current.id)}>
-          {t().subscribe}
-        </Button>
+        <>
+          <span>{t().subscribeQuestion}</span>
+          <Button loading={subscribing()} onClick={() => void subscribeOpen(current.id)}>
+            {t().subscribe}
+          </Button>
+        </>
       );
     if (current.permission === "read")
       return (
@@ -2773,6 +2773,46 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     </div>
   );
 
+  // "Discover channels" opens the catalog beside the Channels section; its code loads with the first opening.
+  // The catalog stays mounted once loaded; it is open while its anchor is set, as the shared popover expects.
+  const [catalogView, setCatalogView] = createSignal<typeof import("./ChannelCatalog").default>();
+  const [catalogAnchor, setCatalogAnchor] = createSignal<HTMLElement>();
+  const toggleCatalog = async (anchor: HTMLElement) => {
+    if (catalogAnchor()) return void setCatalogAnchor(undefined);
+    if (!catalogView()) {
+      const module = await importOnDemand(() => import("./ChannelCatalog"));
+      if (!module) return;
+      setCatalogView(() => module.default);
+    }
+    if (anchor.isConnected) setCatalogAnchor(anchor);
+  };
+  const discoverButton = () => (
+    <>
+      <IconButton
+        size="xs"
+        variant="ghost"
+        label={t().browseChannels}
+        aria-haspopup="dialog"
+        aria-expanded={catalogAnchor() ? "true" : "false"}
+        onClick={(event) => void toggleCatalog(event.currentTarget)}
+      >
+        <i class="ti ti-info-circle text-xs" aria-hidden="true" />
+      </IconButton>
+    </>
+  );
+  // Section actions render once per sidebar form; the catalog lives once, beside the workspace.
+  const catalogPopover = () => (
+    <Show when={catalogView()}>
+      {(view) => (
+        <Dynamic
+          component={view()}
+          anchor={catalogAnchor()}
+          onClose={() => setCatalogAnchor(undefined)}
+          onOpen={(id: string) => void openChosen(id)}
+        />
+      )}
+    </Show>
+  );
   const archiveLink = () => (
     <AppWorkspace.SidebarItem
       href={`${basePath}/archive`}
@@ -2784,6 +2824,45 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       {t().archive}
     </AppWorkspace.SidebarItem>
   );
+  /** The list's view: all chats by default, or only unread ones, also in the archive; the order stays by recent activity. */
+  const filterMenu = () => {
+    const label = () => (filter() === "unread" ? t().filterChatsActive({ name: t().unreadChats }) : t().filterChats);
+    return (
+      <Dropdown.Root
+        position="bottom-right"
+        label={t().filterChats}
+        items={[
+          {
+            choice: "radio" as const,
+            label: t().allChats,
+            icon: "ti ti-messages",
+            // "All" is the active list, also from the archive, as the list's way back there.
+            checked: () => !archived() && filter() === "all",
+            action: () => void (!archived() && filter() === "all" ? undefined : changeList("all")),
+          },
+          {
+            choice: "radio" as const,
+            label: t().unreadChats,
+            icon: "ti ti-mail",
+            checked: () => filter() === "unread",
+            action: () => void (filter() === "unread" ? undefined : changeList("unread")),
+          },
+        ]}
+      >
+        <Dropdown.Trigger
+          iconOnly
+          variant="ghost"
+          class="chat-list-filter"
+          label={label()}
+          tooltip={label()}
+          disabled={listLoading() || listPending()}
+          data-active={filter() === "unread" ? "true" : undefined}
+        >
+          <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
+        </Dropdown.Trigger>
+      </Dropdown.Root>
+    );
+  };
   const searchField = () => (
     <div class="chat-list-search">
       <TextInput
@@ -2800,6 +2879,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           setSearchQuery("");
         }}
       />
+      {filterMenu()}
     </div>
   );
   const listErrorLine = () => (
@@ -2887,24 +2967,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             {t().forYou}
           </AppWorkspace.SidebarItem>
         </Show>
-        <div class="chat-list-filters" role="group" aria-label={t().chats}>
-          <FilterToggle
-            label={t().allChats}
-            icon="ti ti-messages"
-            active={!archived() && filter() === "all"}
-            disabled={listLoading() || listPending()}
-            onClick={() => void changeList("all")}
-          />
-          <FilterToggle
-            label={t().unreadChats}
-            icon="ti ti-mail"
-            active={filter() === "unread"}
-            disabled={listLoading() || listPending()}
-            onClick={() => void changeList("unread")}
-          />
-        </div>
         <div class="chat-list-feedback">
-          <p role="status" aria-live="polite" class="chat-list-status">
+          {/* Loading is quiet: the list keeps its rows and place, and only screen readers hear the progress. */}
+          <p role="status" aria-live="polite" class="sr-only">
             {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
           </p>
           {listErrorLine()}
@@ -2945,20 +3010,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               </AppWorkspace.SidebarSection>
               <AppWorkspace.SidebarSection
                 title={t().channels}
+                actions={discoverButton()}
                 collapsible
                 open={!collapsed().includes("channels")}
                 onOpenChange={(open) => void collapse("channels", open)}
               >
                 {list(() => listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system"))}
-                <AppWorkspace.SidebarItem
-                  href={listHref(`${basePath}/channels`)}
-                  navigation="enhanced"
-                  onNavigate={discover}
-                  active={route().channels}
-                  icon="ti ti-compass"
-                >
-                  {t().browseChannels}
-                </AppWorkspace.SidebarItem>
               </AppWorkspace.SidebarSection>
             </>
           }
@@ -2981,6 +3038,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
   return (
     <>
+      {catalogPopover()}
       <Show when={!openChat()}>{draftNotice()}</Show>
       <Show when={props.embedded && !openChat() && !atResource() && resourceChat()}>
         <div class="flex shrink-0 justify-end p-1">{resourceChatButton()}</div>

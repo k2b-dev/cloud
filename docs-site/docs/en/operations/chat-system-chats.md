@@ -18,12 +18,21 @@ page and below `/app/chat/panel`. Providers can also offer an activity feed.
 Existing comments stay in their owning application.
 
 Built-in providers include Spaces (`item` in `space`), Notebooks (`note` in
-`notebook`), and Files (`entry` in `folder`). Files containers are storage roots
-and folders, with files discussed in their current parent folder. Deploy the
-updated Files application after Core supports the discussions role; no new
-configuration is required. Files does not yet offer discussion activity or
-reader checks for push notifications. Its interactive readers and container
-list use the same current storage permissions as Files.
+`notebook`), Contacts (`contact` in `book`), and Files (`entry` in `folder`).
+No new configuration is required; deploy the updated applications after Core
+supports the discussions role.
+
+Contacts offers address books as containers and contacts as items. On an
+address-book page, the Chat panel follows the book; selecting a contact opens
+its item thread. Closing the contact returns the panel to the book. Contacts
+checks current book grants and credential limits for each reader and container
+list. It provides no activity feed or resource reader checks for push
+notifications in this release.
+
+Files containers are storage roots and folders, with files discussed in their
+current parent folder. Files does not yet offer discussion activity or reader
+checks for push notifications. Its interactive readers and container list use
+the same current storage permissions as Files.
 
 The [item discussion capabilities](/en/docs/platform/chat-discussions) expose
 only provider-backed item threads. Keep the item and container types' declared

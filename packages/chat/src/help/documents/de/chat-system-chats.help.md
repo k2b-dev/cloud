@@ -17,7 +17,7 @@ Der Chat eines Bereichs bringt seine Nachrichten zusammen. Jedes Element hat ein
 3. Wähle einen Thread, um nur die Nachrichten zu diesem Element zu lesen.
 :::
 
-Hier erscheinen nur Diskussionen, die bereits einen Chat haben. Ein leerer Abschnitt erklärt, wann ein Chat erscheint. Falls der Abschnitt nicht lädt, wähle **Erneut versuchen** neben dem Fehler.
+Hier erscheinen nur Diskussionen, die bereits einen Chat haben. Gibt es keine, fehlt der Abschnitt. Falls er nicht lädt, öffnet er sich mit dem Fehler; wähle daneben **Erneut versuchen**.
 
 Die Kurzliste zeigt zuletzt aktive, ungelesene und den offenen Thread innerhalb einer Seite. Wähle **Alle N Threads** oder **Alle Threads durchsuchen**, um weitere zu finden. Nutze **Threads suchen** und die Filter **Offen**, **Erledigt** oder **Ungelesen**. **Weitere Threads anzeigen** lädt die nächste Seite.
 

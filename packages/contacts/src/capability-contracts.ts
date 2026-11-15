@@ -1,4 +1,4 @@
-import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
+import { CapabilitySemanticLinkSchema, CloudResourceReaderViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 const NullableTextSchema = z.string().nullable();
@@ -170,6 +170,10 @@ export const ContactDetailDataSchema = ContactSummaryDataSchema.extend({
   createdAt: TimestampSchema,
 }).strict();
 
+export const ContactReaderDataSchema = ContactDetailDataSchema.extend({
+  view: CloudResourceReaderViewSchema.required({ container: true }),
+}).strict();
+
 export const ContactListInputSchema = z
   .object({
     bookId: ResourceShortIdSchema.describe("Address-book ID returned by List address books or a contacts.book resource ref."),
@@ -207,6 +211,9 @@ export const ContactBookDataSchema = z
     updatedAt: TimestampSchema.nullable(),
   })
   .strict();
+export const ContactBookReaderDataSchema = ContactBookDataSchema.extend({
+  view: CloudResourceReaderViewSchema,
+}).strict();
 const ContactBookListItemDataSchema = ContactBookDataSchema.extend({ ref: resourceRef("contacts.book") }).strict();
 export const ContactBookListDataSchema = z.array(ContactBookListItemDataSchema).max(100);
 export const ContactBookListInputSchema = z

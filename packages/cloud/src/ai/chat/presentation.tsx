@@ -23,7 +23,7 @@ import { AiReaderTimeZoneProvider } from "./action-sentences";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
-import { aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
+import { type AiStopNotice, aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
@@ -347,7 +347,19 @@ const storedItems = (
       const lastMessage = item.entries.findLast((entry) => entry.message.role === "assistant");
       // One ending, never two: the person's stop is the quiet line; only a turn Cloud ended explains itself in a notice.
       const byPerson = last && segmentPhase === "stopped" && stoppedByPerson(item.entries);
-      const stopNotice = index === lastAssistant && lastMessage && !byPerson ? aiMessageStopNotice(lastMessage) : null;
+      const storedNotice = index === lastAssistant && lastMessage && !byPerson ? aiMessageStopNotice(lastMessage) : null;
+      // A finished turn whose steps leave nothing to read, act on, or explain ends visibly, never in silence.
+      const silent =
+        last &&
+        segmentPhase === "completed" &&
+        !error &&
+        !storedNotice &&
+        !task &&
+        layout.steps > 0 &&
+        layout.text.length === 0 &&
+        layout.results.length === 0 &&
+        layout.actions.length === 0;
+      const stopNotice: AiStopNotice | null = storedNotice ?? (silent ? { kind: "no_answer" } : null);
       if (isEmptyLayout(layout) && !messageActions && !task && !error && !stopNotice) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
       return [
@@ -370,7 +382,7 @@ const storedItems = (
             stopNotice: error ? null : stopNotice,
             // A stopped answer offers to answer the person's message again, where it stopped.
             answerAgain:
-              last && segmentPhase === "stopped" && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
+              last && (segmentPhase === "stopped" || silent) && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
                 ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
                 : undefined,
             continuable: idle && (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),

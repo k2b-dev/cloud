@@ -5,7 +5,7 @@ section: Platform services
 order: 564
 description: Declare resource containment, a standard reader presentation, and a discussions provider without application-specific consumers.
 tags: [capabilities, resources, discussions, authorization]
-updated: 2026-10-29
+updated: 2026-11-15
 ---
 
 # Resource types and discussions
@@ -250,8 +250,13 @@ expected container.
 ## Built-in providers
 
 Spaces declares `item` inside `space`; Notebooks declares `note` inside
-`notebook`. Both Types in each pair expose `access.readable` and a standard
-reader view. Spaces task views include the current column or localized Done
+`notebook`; Contacts declares `contact` inside `book`. Contacts uses
+`book.containers` and standard reader views, without activity or
+`access.readable` checks. Its discussion messages work through current reader
+permissions; resource discussion push is not configured for Contacts.
+
+Both Types in the Spaces and Notebooks pairs expose `access.readable` and a
+standard reader view. Spaces task views include the current column or localized Done
 status, completion flag, and a due date when relevant. Event views include the
 localized schedule and completion flag. Notebook and note views describe
 their resource without a task status or completion flag.
