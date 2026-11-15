@@ -23,6 +23,20 @@ mock.module("./service", () => ({
       return { base, entry: saved };
     },
     capabilityUploadStatus: async () => ({ state: "completed", entry: saved }),
+    // The canonical reader names the entry's folder; this stub stands for the same path authority.
+    resourceEntry: async (_call: unknown, id: string) => {
+      const ref = await resolveEntryRefId(id);
+      if (ref?.baseId !== base.id || ref.path !== saved.path) throw new FilesError("not_found", 404);
+      return {
+        base,
+        entry: saved,
+        view: {
+          title: saved.name,
+          permission: "read" as const,
+          container: { ref: { type: "filesv2.folder", id: `p:${"0".repeat(64)}` }, title: base.name },
+        },
+      };
+    },
     entryById: async (_actor: unknown, id: string) => {
       const ref = await resolveEntryRefId(id);
       if (ref?.baseId !== base.id || ref.path !== saved.path) throw new FilesError("not_found", 404);
