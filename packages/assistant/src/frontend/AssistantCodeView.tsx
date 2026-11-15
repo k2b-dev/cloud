@@ -1,4 +1,5 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
+import { followCodeRuns } from "@k2b/cloud/ssr/code-live";
 import {
   AppOverview,
   Button,
@@ -12,7 +13,7 @@ import {
   Skeleton,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { nextCodeRun } from "../code-summary";
 import { browserCodeInvoke } from "./code-client";
@@ -26,6 +27,7 @@ import {
   type DayLine,
   type DayMark,
   dayLine,
+  loadCodeCardExtras,
   loadCodeOverview,
   localDay,
   needsPerson,
@@ -430,6 +432,43 @@ export default function AssistantCodeView(props: {
   onMount(() => {
     if (props.initial === undefined) void load();
     else void completeExtras();
+  });
+  // Runs move live (6a): a card says "Running" when its run starts and reads its last result once it ends. One
+  // subscription per listed Code on the shared live socket; nothing polls (#59).
+  const followed = new Map<string, () => void>();
+  const changeRun = (codeId: string, event: { runId: string; state: CodeCardRun["state"]; at: string }) => {
+    const current = page();
+    if (!current) return;
+    setPage({
+      ...current,
+      items: current.items.map((item) => {
+        if (item.id !== codeId || !item.extras) return item;
+        const runs = item.extras.runs ?? [];
+        const known = runs.some((run) => run.id === event.runId);
+        const next = known
+          ? runs.map((run) => (run.id === event.runId ? { ...run, state: event.state } : run))
+          : [{ id: event.runId, state: event.state, createdAt: event.at, startedAt: event.at, endedAt: null }, ...runs];
+        return { ...item, extras: { ...item.extras, runs: next } };
+      }),
+    });
+    if (event.state === "succeeded" || event.state === "failed" || event.state === "skipped") {
+      void loadCodeCardExtras(browserCodeInvoke, codeId, day()).then((extras) => {
+        const latest = page();
+        if (latest) setPage({ ...latest, items: latest.items.map((item) => (item.id === codeId ? { ...item, extras } : item)) });
+      });
+    }
+  };
+  createEffect(() => {
+    for (const item of page()?.items ?? []) {
+      if (followed.has(item.id) || item.state !== "active") continue;
+      followed.set(
+        item.id,
+        followCodeRuns(item.id, (event) => changeRun(item.id, event)),
+      );
+    }
+  });
+  onCleanup(() => {
+    for (const stop of followed.values()) stop();
   });
 
   const items = () => page()?.items ?? [];
