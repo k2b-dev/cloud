@@ -154,6 +154,7 @@ suiteFor(
       runConfig: {
         kind: "chat",
         writerOrigin: input.writerOrigin,
+        turnTrigger: input.turnTrigger,
         send: input.send,
         codeOrigin: input.codeOrigin,
         assistantChat: true,
@@ -176,6 +177,8 @@ suiteFor(
     await setup();
     const sent = await start(personContext());
     expect(sent.origin).toEqual({ kind: "person", id: owner });
+    const [entry] = await sql<{ author_user_id: string | null }[]>`SELECT author_user_id FROM ai.queued_messages WHERE id=${sent.id}::uuid`;
+    expect(entry?.author_user_id).toBe(owner);
   });
   test.each(["Gustav", "code_run"])("%s keeps the verified source turn through its invocation lease", async () => {
     await setup();
@@ -184,7 +187,13 @@ suiteFor(
       conversationId: source.id,
       modelId: "fixture",
       userMessage: { role: "user", content: [{ type: "text", text: "Delegate" }] },
-      runConfig: { kind: "chat", input: "Delegate", writerOrigin: { kind: "person", id: owner }, actor: { kind: "user", user } },
+      runConfig: {
+        kind: "chat",
+        input: "Delegate",
+        writerOrigin: { kind: "person", id: owner },
+        turnTrigger: { kind: "person", id: owner },
+        actor: { kind: "user", user },
+      },
     });
     await sql`UPDATE ai.turns SET status='running' WHERE id=${submitted.turn.id}::uuid`;
     spyOn(nestedInvocationLeases, "read").mockResolvedValue({
@@ -211,17 +220,17 @@ suiteFor(
       },
     });
     for (const kind of ["automation", "chat"] as const) {
-      await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{writerOrigin}',${JSON.stringify(
-        kind === "chat" ? { kind, id: source.shortId, turnId: submitted.turn.shortId } : { kind, id: codeId },
+      await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{turnTrigger}',${JSON.stringify(
+        kind === "chat" ? { kind, id: source.shortId } : { kind, id: codeId },
       )}::text::jsonb) WHERE id=${submitted.turn.id}::uuid`;
       expect(await invoke(chat.shortId, { ...context, idempotencyKey: kind })).toMatchObject({
         ok: false,
         error: { code: "chat_chain_forbidden" },
       });
     }
-    await sql`UPDATE ai.turns SET run_config=run_config-'writerOrigin' WHERE id=${submitted.turn.id}::uuid`;
+    await sql`UPDATE ai.turns SET run_config=run_config-'turnTrigger' WHERE id=${submitted.turn.id}::uuid`;
     expect(await invoke(chat.shortId, context)).toMatchObject({ ok: false, error: { code: "chat_chain_forbidden" } });
-    await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{writerOrigin}',${JSON.stringify({ kind: "person", id: owner })}::text::jsonb) WHERE id=${submitted.turn.id}::uuid`;
+    await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{turnTrigger}',${JSON.stringify({ kind: "person", id: owner })}::text::jsonb) WHERE id=${submitted.turn.id}::uuid`;
     await sql`UPDATE ai.conversations SET allowed_tools=ARRAY[]::text[] WHERE id=${source.id}::uuid`;
     expect(await invoke(chat.shortId, context)).toMatchObject({ ok: false, error: { code: "source_restricted" } });
     await sql`UPDATE ai.conversations SET allowed_tools=NULL WHERE id=${source.id}::uuid`;
@@ -255,10 +264,17 @@ suiteFor(
       modelId: "fixture",
       retrySourceTurnId: original.id,
       userMessage: { role: "user", content: [{ type: "text", text: "Try again" }] },
-      runConfig: { kind: "chat", input: "Try again", actor: { kind: "user", user }, writerOrigin: { kind: "person", id: owner } },
+      runConfig: {
+        kind: "chat",
+        input: "Try again",
+        actor: { kind: "user", user },
+        writerOrigin: { kind: "person", id: owner },
+        turnTrigger: { kind: "person", id: owner },
+      },
     });
     expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: retry.turn.id })).toMatchObject({
       writerOrigin: sent.origin,
+      turnTrigger: { kind: "automation", id: codeId },
       send: { id: sent.id },
       sourceRestricted: true,
     });
@@ -319,6 +335,7 @@ suiteFor(
       actor: { kind: "user", user: { id: owner } },
       toolSource: { kind: "default", appTools: true },
       toolApprovalContext: { actorUserId: owner },
+      turnTrigger: { kind: "automation", id: codeId },
     });
     expect(config && "mandate" in config ? config.mandate : undefined).toBeUndefined();
     expect(config && "background" in config ? config.background : undefined).toBeUndefined();
@@ -335,7 +352,7 @@ suiteFor(
   test("an accepted key survives a new Code run while another account has an independent key scope", async () => {
     await setup();
     const first = await start();
-    await sql`UPDATE code.runs SET state='completed',ended_at=clock_timestamp() WHERE id=${runId}::uuid`;
+    await sql`UPDATE code.runs SET state='succeeded',ended_at=clock_timestamp() WHERE id=${runId}::uuid`;
     runId = `4f000000-0000-4000-8000-${String(++ordinal).padStart(12, "0")}`;
     await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
       VALUES(${runId}::uuid,${codeId},${versionId}::uuid,'schedule','morning','running',32768,10)`;
@@ -360,12 +377,18 @@ suiteFor(
     expect(second.origin).toEqual({ kind: "person", id: other });
   });
 
-  test("queue admission keeps only its receipt after promotion and maps removed turns and retryable quota", async () => {
+  test("queue admission retains its receipt and trigger after promotion and maps removed turns and retryable quota", async () => {
     await setup();
     const sent = await start();
-    const [entry] = await sql<{ submission: unknown }[]>`SELECT submission FROM ai.queued_messages WHERE id=${sent.id}::uuid`;
+    const [entry] = await sql<
+      { submission: unknown; author_user_id: string | null }[]
+    >`SELECT submission,author_user_id FROM ai.queued_messages WHERE id=${sent.id}::uuid`;
+    expect(entry?.author_user_id).toBeNull();
     expect(entry?.submission).toEqual({
-      runConfig: { send: expect.objectContaining({ id: sent.id, keyHash: expect.any(String), requestHash: expect.any(String) }) },
+      runConfig: {
+        send: expect.objectContaining({ id: sent.id, accountId: owner, keyHash: expect.any(String), requestHash: expect.any(String) }),
+        turnTrigger: { kind: "automation", id: codeId },
+      },
     });
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     await sql`DELETE FROM ai.turns WHERE id=${turn!.id}::uuid`;

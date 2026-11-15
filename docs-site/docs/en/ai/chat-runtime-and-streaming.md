@@ -1127,12 +1127,17 @@ Trusted hosts may pass their open database transaction as the second argument
 to `aiConversations.submitChatTurn(input, db)` to commit a turn and a
 host-owned receipt together. Hold the authorized conversation lock first and
 enqueue with `enqueueExistingAiTurn` only after committing. Core uses this seam
-for queue promotion. `runConfig.writerOrigin` is the immutable initiator (`person`,
-`automation` or `chat`, plus stable ID). The trusted host sets it, and
-`submitChatTurn` copies it from the original turn on retry. Queue promotion,
-resume and `code_run` retain the same source coordinates. Missing origin is
-never treated as a person-initiated turn. `sourceRestricted` retains a limited
-entry point; app sessions and source chats with `allowedTools` cannot use
-`send` to widen authority. `runConfig.send` identifies the accepted queue entry.
+for queue promotion. `runConfig.writerOrigin` attributes the writer; names and
+links are resolved when displaying it. It grants no authority. The separate
+`runConfig.turnTrigger` records the immutable initiator (`person`, `automation`
+or `chat`, plus stable ID). The trusted host sets both fields, and
+`submitChatTurn` copies them from the original turn on retry. Queue promotion,
+resume and `code_run` retain the trigger. The chain rule reads only
+`turnTrigger`; neither writer attribution nor the current actor supplies a
+missing trigger. Missing triggers are never treated as person-initiated turns.
+`sourceRestricted` retains a limited entry point; app sessions and source chats with `allowedTools` cannot use
+`send` to widen authority. `runConfig.send` identifies the accepted queue entry
+and its account-scoped idempotency key, independently of the queue's personal
+author field.
 The optional host-owned `runConfig.codeOrigin` is copied to the user message
 and turn record for attribution; it grants no tool authority.

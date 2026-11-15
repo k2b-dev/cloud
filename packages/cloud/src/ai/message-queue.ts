@@ -37,7 +37,7 @@ export const migrateAiMessageQueue = async () => {
         AND COALESCE(q.submission#>>'{runConfig,actor,user,id}',c.created_by_user_id::text) IS NOT NULL`.simple();
   });
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_queued_messages_send_key
-    ON ai.queued_messages(author_user_id,(submission#>>'{runConfig,send,keyHash}'))
+    ON ai.queued_messages((submission#>>'{runConfig,send,accountId}'),(submission#>>'{runConfig,send,keyHash}'))
     WHERE submission#>>'{runConfig,send,keyHash}' IS NOT NULL`.simple();
   await sql`ALTER TABLE ai.queued_messages ADD COLUMN IF NOT EXISTS quota_checked_at TIMESTAMPTZ`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_pending ON ai.queued_messages(conversation_id, position) WHERE status IN ('pending','failed')`.simple();
@@ -93,8 +93,8 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
     )
       throw new AiMessageQueueConflict("Queued attachments exceed the conversation file budget.");
     const { expectedDraftRevision, ...submission } = input;
-    const author = input.runConfig.actor?.kind === "user" ? input.runConfig.actor.user.id : conversation.created_by_user_id;
     const origin = input.runConfig.writerOrigin ?? null;
+    const author = origin?.kind === "person" ? origin.id : null;
     await tx`INSERT INTO ai.queued_messages(id, conversation_id, submission, content, origin, author_user_id)
       VALUES (${id}::uuid, ${input.conversationId}::uuid, (${JSON.stringify(submission)}::text)::jsonb,
         (${JSON.stringify(content)}::text)::jsonb, (${JSON.stringify(origin)}::text)::jsonb, ${author}::uuid)`;
@@ -121,7 +121,7 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
     WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND status IN ('pending','failed') RETURNING id`;
     if (action === "cancel" && changed.length) {
       await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${id}::uuid`;
-      await tx`UPDATE ai.queued_messages SET submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}')) ELSE '{}'::jsonb END,
+      await tx`UPDATE ai.queued_messages SET submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
         content = '[]'::jsonb WHERE id = ${id}::uuid`;
     }
     return Boolean(changed.length);

@@ -638,7 +638,8 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
   'toolChecks', ${todoMetaJson()}->'toolChecks',
   'codeDecision', ${todoMetaJson()}->'codeDecision',
   'codeReviewStart', ${todoMetaJson()}->'codeReviewStart',
-  'writerOrigin', ${todoMetaJson()}->'writerOrigin'
+  'writerOrigin', ${todoMetaJson()}->'writerOrigin',
+  'turnTrigger', ${todoMetaJson()}->'turnTrigger'
 )), '{}'::jsonb)`;
 
 // A background result arriving during an interactive turn becomes context on the next turn.
@@ -3182,6 +3183,7 @@ export const aiConversations: AiConversationService = {
           runConfig: {
             ...input.runConfig,
             writerOrigin: config?.kind !== "compact" ? config?.writerOrigin : undefined,
+            turnTrigger: config?.kind !== "compact" ? config?.turnTrigger : undefined,
             send: config?.kind !== "compact" ? config?.send : undefined,
             codeOrigin: config?.kind !== "compact" ? config?.codeOrigin : undefined,
             ...(config?.kind !== "compact" && config?.sourceRestricted ? { sourceRestricted: true as const } : {}),
@@ -3310,6 +3312,7 @@ export const aiConversations: AiConversationService = {
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
             ...(input.runConfig.codeOrigin ? { codeOrigin: input.runConfig.codeOrigin } : {}),
             ...(input.runConfig.writerOrigin ? { writerOrigin: input.runConfig.writerOrigin } : {}),
+            ...(input.runConfig.turnTrigger ? { turnTrigger: input.runConfig.turnTrigger } : {}),
             ...(choice ? { choice: choice.provenance } : {}),
             ...(input.runConfig.codeReview ? { codeReviewStart: input.runConfig.codeReview } : {}),
             modelRequest: input.runConfig.model,
@@ -3380,7 +3383,7 @@ export const aiConversations: AiConversationService = {
       }
       if (input.queuedMessageId) {
         await tx`UPDATE ai.queued_messages SET status = 'submitted',
-          submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}')) ELSE '{}'::jsonb END,
+          submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
           content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
         await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${input.queuedMessageId}::uuid`;
       }

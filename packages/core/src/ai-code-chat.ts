@@ -1,4 +1,4 @@
-import { type AiChatOrigin, aiConversations } from "@k2b/cloud/ai";
+import { type AiChatOrigin, type AiChatTurnTrigger, aiConversations } from "@k2b/cloud/ai";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
 import { err, fail, ok } from "@k2b/stdlib";
@@ -66,20 +66,32 @@ export const chatWriteAuthority = async (context: CapabilityExecutionContext, db
         AND code.owner_kind='person' AND code.owner_user_id=${actor.user.id}::uuid AND code.state='active'
         AND code.active_version_id=run.version_id AND run.state='running'`;
     return code
-      ? ok({ origin: { kind: "automation", id: code.id, runId: run.runId } satisfies AiChatOrigin, code: { ...code, ...run } })
+      ? ok({
+          origin: { kind: "automation", id: code.id, runId: run.runId } satisfies AiChatOrigin,
+          turnTrigger: { kind: "automation", id: code.id } satisfies AiChatTurnTrigger,
+          code: { ...code, ...run },
+        })
       : fail(err.notFound("Code"));
   }
   const delegation = actor.delegation;
   if (!delegation)
     return authority.credentialKind === "session" && context.origin === "http"
-      ? ok({ origin: { kind: "person", id: actor.user.id } satisfies AiChatOrigin, code: null })
+      ? ok({
+          origin: { kind: "person", id: actor.user.id } satisfies AiChatOrigin,
+          turnTrigger: { kind: "person", id: actor.user.id } satisfies AiChatTurnTrigger,
+          code: null,
+        })
       : restricted();
   if (delegation.credentialKind !== "session") return restricted();
   const lease = await nestedInvocationLeases.read(delegation.invocationId);
   if (!lease) return restricted();
   if (!lease.assistantTurn)
     return lease.proof?.kind === "session" && lease.proof.userId === actor.user.id
-      ? ok({ origin: { kind: "person", id: actor.user.id } satisfies AiChatOrigin, code: null })
+      ? ok({
+          origin: { kind: "person", id: actor.user.id } satisfies AiChatOrigin,
+          turnTrigger: { kind: "person", id: actor.user.id } satisfies AiChatTurnTrigger,
+          code: null,
+        })
       : restricted();
   const source = lease.assistantTurn;
   const [chat, config, turn] = await Promise.all([
@@ -103,7 +115,7 @@ export const chatWriteAuthority = async (context: CapabilityExecutionContext, db
     (config.actor?.kind === "user" && config.actor.sessionKind === "app")
   )
     return restricted();
-  if (config.writerOrigin?.kind !== "person" || config.writerOrigin.id !== actor.user.id)
+  if (config.turnTrigger?.kind !== "person" || config.turnTrigger.id !== actor.user.id)
     return fail({
       code: "chat_chain_forbidden",
       message: de
@@ -111,5 +123,9 @@ export const chatWriteAuthority = async (context: CapabilityExecutionContext, db
         : "A turn not initiated by the person cannot write to or create another chat.",
       status: 403 as const,
     });
-  return ok({ origin: { kind: "chat", id: chat.shortId, turnId: turn.shortId } satisfies AiChatOrigin, code: null });
+  return ok({
+    origin: { kind: "chat", id: chat.shortId, turnId: turn.shortId } satisfies AiChatOrigin,
+    turnTrigger: { kind: "chat", id: chat.shortId } satisfies AiChatTurnTrigger,
+    code: null,
+  });
 };

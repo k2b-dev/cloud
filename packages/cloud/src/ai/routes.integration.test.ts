@@ -302,6 +302,7 @@ suite("global AI conversation boundaries", () => {
           kind: "chat",
           input: submission.input,
           writerOrigin: submission.writerOrigin,
+          turnTrigger: submission.turnTrigger,
           send: submission.send,
           codeOrigin: submission.codeOrigin,
           sourceRestricted: submission.sourceRestricted,
@@ -313,8 +314,9 @@ suite("global AI conversation boundaries", () => {
       }),
     );
     const provenance = {
-      writerOrigin: { kind: "automation" as const, id: "c_report", runId: "run" },
-      send: { id: "11111111-1111-4111-8111-111111111112", keyHash: "a".repeat(64), requestHash: "b".repeat(64) },
+      writerOrigin: { kind: "person" as const, id: userId },
+      turnTrigger: { kind: "automation" as const, id: "c_report" },
+      send: { id: "11111111-1111-4111-8111-111111111112", accountId: userId, keyHash: "a".repeat(64), requestHash: "b".repeat(64) },
       codeOrigin: { codeId: "c_report", runId: "run", title: "Report", requestId: "request", label: "Started by Code Report" },
       sourceRestricted: true as const,
     };

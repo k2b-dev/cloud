@@ -108,6 +108,7 @@ export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enq
 
 export type SubmitAiChatTurnInput = {
   writerOrigin?: AiChatTurnRunConfig["writerOrigin"];
+  turnTrigger?: AiChatTurnRunConfig["turnTrigger"];
   sourceRestricted?: true;
   send?: AiChatTurnRunConfig["send"];
   codeOrigin?: AiChatTurnRunConfig["codeOrigin"];
@@ -200,6 +201,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
     writerOrigin: input.writerOrigin,
+    turnTrigger: input.turnTrigger,
     sourceRestricted: input.sourceRestricted,
     send: input.send,
     codeOrigin: input.codeOrigin,
@@ -277,6 +279,7 @@ export const deliverAiInterChatMessage = async (input: {
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
     writerOrigin: { kind: "chat", id: input.message.sourceChatId, turnId: input.message.sourceTurnShortId },
+    turnTrigger: { kind: "chat", id: input.message.sourceChatId },
     input: text,
     chatId: input.chatId,
     actor: input.actor,

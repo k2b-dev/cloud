@@ -133,9 +133,10 @@ test.each([
 test("preparation carries server-authored initiator, restriction and send identity unchanged", async () => {
   setup();
   const metadata = {
-    writerOrigin: { kind: "chat" as const, id: "Source", turnId: "Turn01" },
+    writerOrigin: { kind: "person" as const, id: user.id },
+    turnTrigger: { kind: "chat" as const, id: "Source" },
     sourceRestricted: true as const,
-    send: { id: "11111111-1111-4111-8111-111111111112", keyHash: "a".repeat(64), requestHash: "b".repeat(64) },
+    send: { id: "11111111-1111-4111-8111-111111111112", accountId: user.id, keyHash: "a".repeat(64), requestHash: "b".repeat(64) },
     codeOrigin: { codeId: "c_report", runId: "run", title: "Report", requestId: "request", label: "Started by Code Report" },
   };
   const prepared = await prepareAiChatTurn({

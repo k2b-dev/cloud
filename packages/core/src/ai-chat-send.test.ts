@@ -153,19 +153,28 @@ test("Gustav and code_run use verified turn coordinates, and absent or foreign i
     kind: "chat",
     input: "Hi",
     writerOrigin: { kind: "person", id: user.id },
+    turnTrigger: { kind: "person", id: user.id },
   });
   expect(await chatAuthority.chatWriteAuthority(fromTurn(), sql)).toMatchObject({
     ok: true,
     data: { origin: { kind: "chat", id: "Source" } },
   });
-  for (const origin of [
+  for (const turnTrigger of [
     undefined,
     { kind: "automation" as const, id: "c_brief" },
-    { kind: "chat" as const, id: "Source", turnId: "Turn23" },
+    { kind: "chat" as const, id: "Source" },
+    { kind: "person" as const, id: "someone-else" },
   ]) {
-    config.mockResolvedValue({ kind: "chat", input: "Hi", writerOrigin: origin });
+    config.mockResolvedValue({ kind: "chat", input: "Hi", writerOrigin: { kind: "person", id: user.id }, turnTrigger });
     expect(await chatAuthority.chatWriteAuthority(fromTurn(), sql)).toMatchObject({ ok: false, error: { code: "chat_chain_forbidden" } });
   }
+  config.mockResolvedValue({
+    kind: "chat",
+    input: "Hi",
+    turnTrigger: { kind: "person", id: user.id },
+    writerOrigin: { kind: "chat", id: "Other", turnId: "OtherTurn" },
+  });
+  expect(await chatAuthority.chatWriteAuthority(fromTurn(), sql)).toMatchObject({ ok: true });
 });
 test("app-source turns and every tool boundary, including an empty list, cannot widen their authority", async () => {
   spyOn(aiConversations, "getTurn").mockResolvedValue(sourceTurn);
@@ -180,6 +189,7 @@ test("app-source turns and every tool boundary, including an empty list, cannot 
     kind: "chat",
     input: "Hi",
     writerOrigin: { kind: "person", id: user.id },
+    turnTrigger: { kind: "person", id: user.id },
   });
   for (const allowedTools of [[], ["core.ai.chat.send"]]) {
     chat.mockResolvedValue({ ...sourceChat, allowedTools });
@@ -190,6 +200,7 @@ test("app-source turns and every tool boundary, including an empty list, cannot 
     kind: "chat",
     input: "Hi",
     writerOrigin: { kind: "person", id: user.id },
+    turnTrigger: { kind: "person", id: user.id },
     actor: { kind: "user", user, sessionKind: "app" },
   });
   expect(await chatAuthority.chatWriteAuthority(fromTurn(), sql)).toMatchObject({ ok: false, error: { code: "source_restricted" } });

@@ -134,7 +134,7 @@ export const aiChatSendAction = {
     const existing = async (db = sql) => {
       const [row] = await db<{ id: string; hash: string; conversation_id: string }[]>`
         SELECT id,submission->'runConfig'->'send'->>'requestHash' AS hash,conversation_id FROM ai.queued_messages
-        WHERE author_user_id=${owner}::uuid AND submission#>>'{runConfig,send,keyHash}'=${keyHash}`;
+        WHERE submission#>>'{runConfig,send,accountId}'=${owner} AND submission#>>'{runConfig,send,keyHash}'=${keyHash}`;
       if (!row) return null;
       return row.hash === hash && row.conversation_id === chat.id
         ? result(chat.id, chat.short_id, row.id)
@@ -165,7 +165,8 @@ export const aiChatSendAction = {
         actor,
         locale: context.locale,
         writerOrigin: source.data.origin,
-        send: { id, keyHash, requestHash: hash },
+        turnTrigger: source.data.turnTrigger,
+        send: { id, accountId: owner, keyHash, requestHash: hash },
         ...(code
           ? {
               codeOrigin: {

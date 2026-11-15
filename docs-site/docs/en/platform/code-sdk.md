@@ -867,7 +867,7 @@ Code may send to that person's active chat. App sessions and source chats with
 an `allowedTools` ceiling return `source_restricted`. Service accounts and other
 people's chats are refused. A turn initiated by Code or another chat cannot send
 again (`chat_chain_forbidden`). Retry, resume and queue promotion preserve the
-original initiator; missing origin never grants chaining authority.
+original initiator; missing trigger information never grants chaining authority.
 
 Only `ai.generate`, `ai.decide` and `ai.chat.send` count as Code AI operations.
 Chat reads use the `read` policy. Send currently uses the `ai` row, including its
