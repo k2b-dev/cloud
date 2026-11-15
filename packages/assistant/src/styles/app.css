@@ -58,8 +58,16 @@
   outline: none;
 }
 
+/* The floating stack over the field: "Waiting for you" lies on the timeline's free end, and "To the newest message" stands
+   above it, never behind it (finding 81). The row reserves its height plus a gap while it shows; the pill keeps its own
+   distance on top, so it moves only when the row comes or goes. */
+.k2b-ui .assistant-chat-layout { --assistant-waiting-reserve: 0px; }
+.k2b-ui .assistant-chat-layout:has(.assistant-chat-composer__column > .assistant-waiting:not([data-quiet])) {
+  --assistant-waiting-reserve: 2.5rem;
+}
 .k2b-ui .assistant-chat-layout .k2b-chat-timeline__latest {
   left: calc((100% - var(--assistant-chat-context-width)) / 2);
+  bottom: calc(max(0.5rem, env(safe-area-inset-bottom)) + var(--assistant-waiting-reserve));
 }
 
 /* Measure the chat pane, including its sidebar column, independently of the

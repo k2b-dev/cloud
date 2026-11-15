@@ -765,6 +765,35 @@ describe("Waiting for you", () => {
       }
     }, 60_000);
 
+  for (const view of [desktop, phone])
+    test(`"To the newest message" stands above the waiting row, never behind it, at ${view.name}`, async () => {
+      const { page, errors, unrouted, close } = await open(view, { locale: "de", scenario: "three" });
+      try {
+        await strip(page).waitFor();
+        await scrollTimeline(page, "top");
+        const pill = page.getByRole("button", { name: "Zur neuesten Nachricht" });
+        await pill.waitFor();
+        await settled(page);
+        const row = await rect(page, "nav.assistant-waiting");
+        const button = await rect(page, ".k2b-chat-timeline__latest");
+        // Fully above the row, with a gap, and still in the timeline's free end over the field.
+        expect(button.bottom).toBeLessThanOrEqual(row.top - 4);
+        expect(button.bottom).toBeGreaterThan(row.top - 48);
+        // Nothing covers it: its centre is the topmost element there.
+        const hit = await page.evaluate(
+          ([x, y]) => document.elementFromPoint(x!, y!)?.closest(".k2b-chat-timeline__latest") !== null,
+          [(button.left + button.right) / 2, button.top + button.height / 2],
+        );
+        expect(hit).toBe(true);
+        mkdirSync("/tmp/assistant-latest-over-waiting", { recursive: true });
+        await page.screenshot({ path: `/tmp/assistant-latest-over-waiting/nachher-${view.name}.png` });
+        expect(errors).toEqual([]);
+        expect(unrouted).toEqual([]);
+      } finally {
+        await close();
+      }
+    }, 60_000);
+
   test("a second press while the other chat opens keeps the chat it started from in the history", async () => {
     // Two entries, so the other chat's chip stands in the row beside this chat's one.
     const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "two" }, { slowChat: "Tops42" });
