@@ -1,4 +1,4 @@
-import type { ChatCommand, ChatDictationState, ChatMention } from "@k2b/ui";
+import type { ChatCommand, ChatDictationState, ChatMention, ChatTask } from "@k2b/ui";
 import {
   Button,
   Chat,
@@ -141,7 +141,7 @@ const ChatDemo = () => {
     onValueChange={setDraft}
     mentions={mentions()}
     onMentionsChange={setMentions}
-    accessory={<Chat.Tasks items={tasks} open={tasksOpen()} onOpenChange={setTasksOpen} />}
+    accessory={<Chat.Tasks items={tasks} open={tasksOpen()} onOpenChange={setTasksOpen} label="Tasks" progressLabel="0 of 1" statusLabels={taskLabels} />}
     placeholder="Write a message…"
     onSubmit={sendMessage}
     models={models}
@@ -171,7 +171,7 @@ const ChatDemo = () => {
               open={tasksOpen()}
               onOpenChange={setTasksOpen}
               label="Tasks"
-              progressLabel="0/1"
+              progressLabel="0 of 1"
               statusLabels={{ pending: "Pending", in_progress: "In progress", completed: "Completed", cancelled: "Cancelled" }}
             />
           }
@@ -871,6 +871,86 @@ const ReferenceChipsDemo = () => (
   </DemoCard>
 );
 
+const taskLabels = { pending: "Open", in_progress: "In progress", completed: "Done", cancelled: "Dropped" };
+const taskPlan = (current: number): ChatTask[] =>
+  ["Write the change", "Check what it may do", "Try the examples", "Submit the version"].map((content, index) => ({
+    id: `step-${index}`,
+    content,
+    status: index < current ? "completed" : index === current ? "in_progress" : "pending",
+  }));
+
+const WorkingPlanDemo = () => {
+  const [current, setCurrent] = createSignal(1);
+  const [open, setOpen] = createSignal(true);
+  const items = () => taskPlan(current());
+  const done = () => Math.min(current(), 4);
+  return (
+    <DemoCard
+      id="chat-tasks"
+      chip={[
+        { kind: "component", name: "Chat.Tasks", from: "@k2b/ui" },
+        { kind: "component", name: "Chat.TaskList", from: "@k2b/ui" },
+      ]}
+      description="The working plan above the composer: a plum tray, a progress ring, 32 px rows, and a white highlight that glides to the current step. The header stays at the composer; folding moves only the list's height. A still list shows a stopped plan with the same marks."
+      code={`<Chat.Tasks
+  items={items()}
+  open={open()}
+  onOpenChange={setOpen}
+  label={allDone() ? "All tasks done" : "Tasks"}
+  progressLabel={\`\${done()} of \${counted()}\`}
+  statusLabels={{ pending: "Open", in_progress: "In progress", completed: "Done", cancelled: "Dropped" }}
+/>
+
+<Chat.TaskList aria-label="Done so far" items={stopped} statusLabels={labels} />`}
+    >
+      <div style={{ display: "grid", gap: "1rem", "max-width": "47.75rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <Button size="sm" variant="secondary" disabled={current() >= 4} onClick={() => setCurrent((step) => step + 1)}>
+            Finish step
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setCurrent(0)}>
+            Start over
+          </Button>
+        </div>
+        <Chat.Tasks
+          items={items()}
+          open={open()}
+          onOpenChange={setOpen}
+          label={done() === 4 ? "All tasks done" : "Tasks"}
+          progressLabel={`${done()} of 4`}
+          statusLabels={taskLabels}
+        />
+        <Chat.Tasks
+          items={taskPlan(1)}
+          open={false}
+          onOpenChange={() => {}}
+          label="Tasks"
+          progressLabel="1 of 4"
+          statusLabels={taskLabels}
+        />
+        <Chat.Tasks
+          items={taskPlan(4)}
+          open={false}
+          onOpenChange={() => {}}
+          label="All tasks done"
+          progressLabel="4 of 4"
+          statusLabels={taskLabels}
+        />
+        <Chat.TaskList
+          aria-label="Done so far"
+          statusLabels={taskLabels}
+          items={[
+            { id: "a", content: "Wrote the change", status: "completed" },
+            { id: "b", content: "Checked what it may do", status: "completed" },
+            { id: "c", content: "Try the examples", status: "pending" },
+            { id: "d", content: "Export as PDF", status: "cancelled" },
+          ]}
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
 const demos: DemoSection = {
   chat: () => (
     <DemoGrid columns="one">
@@ -879,6 +959,7 @@ const demos: DemoSection = {
       <DecisionPoliciesDemo />
       <OutcomeStatesDemo />
       <ReferenceChipsDemo />
+      <WorkingPlanDemo />
       <ChatDemo />
       <ConversationComposerDemo />
     </DemoGrid>
