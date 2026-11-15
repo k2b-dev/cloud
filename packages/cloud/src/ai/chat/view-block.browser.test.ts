@@ -1132,11 +1132,12 @@ test("a reference in a table or a record opens through the host with its title a
     await page.goto(`http://127.0.0.1:${server.port}/`);
     await page.evaluate((value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value), widgets.slice(1));
     await page.getByRole("button", { name: "Office chairs for the second floor" }).click();
-    // Without a title the reference shows its id.
-    await page.getByRole("button", { name: "item-3" }).click();
+    // A reference Cloud could not name for this reader is not available: no id, nothing to open (#84).
+    await page.getByText("Not available").first().waitFor();
+    expect(await page.getByRole("button", { name: "item-3" }).count()).toBe(0);
+    expect(await page.locator("main").textContent()).not.toContain("item-3");
     expect(await page.evaluate(() => (window as unknown as { opened: unknown[] }).opened)).toEqual([
       { title: "Office chairs for the second floor", ref: { type: "spaces.item", id: "item-42" } },
-      { title: "item-3", ref: { type: "spaces.item", id: "item-3" } },
     ]);
   } finally {
     await context.close();
@@ -2154,7 +2155,7 @@ test('"Open large" shows a view file\'s table in the Lightbox from the file the 
 
 // #84: Cloud names a view's references for the reader as the chat reads it (`view=1`, `view-names.ts`). What it could
 // not name, because the reader may not read it or it is gone, stands as "Not available": never its id, never a link.
-const tasks = {
+const dueTasks = {
   view: "table",
   title: "Logistics: tasks with a due date",
   columns: [
@@ -2166,7 +2167,7 @@ const tasks = {
     { task: { type: "spaces.item", id: "zgDSTy" }, due: "2026-11-17" },
   ],
 };
-files["/views/tasks-with-due-date-5e6f7a8b.view.json"] = tasks;
+files["/views/tasks-with-due-date-5e6f7a8b.view.json"] = dueTasks;
 test("a table names a reference by its title and shows one it cannot name as not available, never its id", async () => {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
   try {
@@ -2179,7 +2180,15 @@ test("a table names a reference by its title and shows one it cannot name as not
     await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
     await page.evaluate(
       (value) => window.show(value),
-      [present("/views/tasks-with-due-date-5e6f7a8b.view.json", { view: "table", title: tasks.title, rows: 2, columns: 2, footer: false })],
+      [
+        present("/views/tasks-with-due-date-5e6f7a8b.view.json", {
+          view: "table",
+          title: dueTasks.title,
+          rows: 2,
+          columns: 2,
+          footer: false,
+        }),
+      ],
     );
     await page.waitForSelector("[data-view-path] tbody tr");
     const cells = await page.evaluate(() =>

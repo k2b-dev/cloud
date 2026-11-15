@@ -27,7 +27,8 @@ export type AiResourceReaderDependencies = {
 
 export type AiResourceReading = {
   app: CapabilityRegistryEntry;
-  ref: z.output<typeof LinkedCloudResourceReferenceSchema>;
+  /** The reader's own reference, always with its title. */
+  ref: z.output<typeof LinkedCloudResourceReferenceSchema> & { title: string };
 };
 
 const ReaderResult = capabilityResultSchema(z.unknown(), { consumer: true });
@@ -92,7 +93,7 @@ export const readAiResource = async (input: {
     const matched = answer.refs?.find((entry) => entry.type === ref.type && entry.id === ref.id);
     const own = matched ? LinkedCloudResourceReferenceSchema.parse(matched) : undefined;
     if (!own?.title?.trim()) return null;
-    return { app, ref: own };
+    return { app, ref: { ...own, title: own.title } };
   } catch {
     return null;
   }
