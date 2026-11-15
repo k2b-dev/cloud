@@ -39,20 +39,23 @@ export async function fileCodePageReport(input: {
   locale: string;
 }): Promise<{ reportedAt: string }> {
   return sql.begin(async (tx) => {
-    const [created] = await tx<{ id: string; created_at: Date }[]>`INSERT INTO code.page_reports
-      (code_id,reporter_id,path,reason,text,locale,idempotency_key)
-      VALUES(${input.codeId},${input.reporterId}::uuid,${input.path},${input.reason},${input.text},${input.locale},${input.key}::uuid)
-      ON CONFLICT DO NOTHING RETURNING id,created_at`;
-    if (created) {
-      await tx`INSERT INTO code.page_report_outbox(report_id,kind) VALUES(${created.id}::uuid,'reported')`;
-      return { reportedAt: created.created_at.toISOString() };
+    // Two tries: an admin may resolve the conflicting open report between this insert and the lookup below.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const [created] = await tx<{ id: string; created_at: Date }[]>`INSERT INTO code.page_reports
+        (code_id,reporter_id,path,reason,text,locale,idempotency_key)
+        VALUES(${input.codeId},${input.reporterId}::uuid,${input.path},${input.reason},${input.text},${input.locale},${input.key}::uuid)
+        ON CONFLICT DO NOTHING RETURNING id,created_at`;
+      if (created) {
+        await tx`INSERT INTO code.page_report_outbox(report_id,kind) VALUES(${created.id}::uuid,'reported')`;
+        return { reportedAt: created.created_at.toISOString() };
+      }
+      const [existing] = await tx<{ created_at: Date }[]>`SELECT created_at FROM code.page_reports
+        WHERE reporter_id=${input.reporterId}::uuid
+          AND (idempotency_key=${input.key}::uuid OR (code_id=${input.codeId} AND path=${input.path} AND state='open'))
+        ORDER BY idempotency_key=${input.key}::uuid DESC LIMIT 1`;
+      if (existing) return { reportedAt: existing.created_at.toISOString() };
     }
-    const [existing] = await tx<{ created_at: Date }[]>`SELECT created_at FROM code.page_reports
-      WHERE reporter_id=${input.reporterId}::uuid
-        AND (idempotency_key=${input.key}::uuid OR (code_id=${input.codeId} AND path=${input.path} AND state='open'))
-      ORDER BY idempotency_key=${input.key}::uuid DESC LIMIT 1`;
-    if (!existing) throw new Error("Code page report conflict without a stored report");
-    return { reportedAt: existing.created_at.toISOString() };
+    throw new Error("Code page report conflict without a stored report");
   });
 }
 

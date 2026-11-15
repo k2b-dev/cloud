@@ -1,6 +1,6 @@
 import { CODE_REQUEST_LIMITS, codeOwnPath, matchCodeRoute } from "@k2b/cloud/code";
 import { type CodeCheckedVersionManifest, isSafeNotificationTargetHref } from "@k2b/cloud/contracts";
-import { type AuthContext, auth, getLocale, middleware, ratelimit, v } from "@k2b/cloud/server";
+import { type AuthContext, auth, clientIp, clientIpBucket, getLocale, middleware, ratelimit, v } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { isCodePageMember } from "../code/access";
 import { admitCodePage } from "../code/page-admission";
@@ -52,6 +52,14 @@ export function createCodePageRoutes(deps = { version: codeRequestVersion }) {
     const signal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(CODE_REQUEST_LIMITS.timeoutMs)]);
     try {
       if (!isPagePath(input.codeId, input.path)) return c.json(badInput(), 400);
+      // A budget per caller before anything is read, so unknown pages and refused callers cannot ask without bound.
+      const actor = c.get("actor");
+      const callers = ratelimit({ id: "code-page-label-callers", windowSecs: 60, limit: CODE_REQUEST_LIMITS.publicPerMinute });
+      const caller = actor?.kind === "user" ? `user:${actor.user.id}` : `ip:${clientIpBucket(clientIp(c))}`;
+      if ((await waitCodeRequest(callers.check(caller), signal)).limited) {
+        c.header("Retry-After", "60");
+        return c.json({ code: "code_request_rate_limit" }, 429);
+      }
       const admission = await admitCodePage(c, {
         codeId: input.codeId,
         path: input.path,
@@ -60,7 +68,9 @@ export function createCodePageRoutes(deps = { version: codeRequestVersion }) {
         select: selectLabelRoute,
         limits: { member: "code-page-label-member", public: "code-page-label-public" },
       });
-      if (admission instanceof Response) return admission;
+      // The card says nothing the page would not: a page the caller may not open answers like a missing one.
+      if (admission instanceof Response)
+        return admission.status === 401 || admission.status === 403 ? c.json({ code: "code_route_not_found" }, 404) : admission;
       // Rights are checked again on every request; only then may a stale page learn that it is stale.
       if (!checkCodePageVersionValue(input.codeId, admission.version.versionId, input.version))
         return c.json({ code: "code_page_changed" }, 409);

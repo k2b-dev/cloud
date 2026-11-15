@@ -176,12 +176,13 @@ test("the card admits like the page: missing and inaccessible Code answer alike,
   expect(await (await routes({ user: person }).post("provenance", { codeId, path: "/elsewhere", version: current() })).json()).toEqual({
     code: "code_route_not_found",
   });
+  // A member page asked by a visitor or a guest answers like a missing one: the card tells nobody that it exists.
   const visitor = await routes().post("provenance", { codeId, path: "/", version: current() });
-  expect(visitor.status).toBe(401);
-  expect(await visitor.json()).toEqual({ code: "code_sign_in_required" });
+  expect(visitor.status).toBe(404);
+  expect(await visitor.json()).toEqual({ code: "code_route_not_found" });
   const signedInGuest = await routes({ user: guest }).post("provenance", { codeId, path: "/", version: current() });
-  expect(signedInGuest.status).toBe(403);
-  expect(await signedInGuest.json()).toEqual({ code: "code_members_only" });
+  expect(signedInGuest.status).toBe(404);
+  expect(await signedInGuest.json()).toEqual({ code: "code_route_not_found" });
 });
 
 test("visitors of a public page, signed in as a guest or not, learn nothing; the budget is the page's under its own IDs", async () => {
@@ -190,7 +191,9 @@ test("visitors of a public page, signed in as a guest or not, learn nothing; the
     const response = await post("provenance", { codeId, path: "/open", version: current() });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ data: { viewer: "visitor", owner: null, automation: null, gives: "nothing", report: null } });
-    expect(checks.every((check) => check.startsWith("code-page-label-public:"))).toBe(true);
+    // One budget per caller before anything is read, then the page's budget under the label's own IDs.
+    expect(checks[0]).toStartWith("code-page-label-callers:");
+    expect(checks.slice(1).every((check) => check.startsWith("code-page-label-public:"))).toBe(true);
     expect(checks.some((check) => check.endsWith(`code:${codeId}`))).toBe(true);
   }
   const busy = routes();
@@ -200,15 +203,27 @@ test("visitors of a public page, signed in as a guest or not, learn nothing; the
   expect(await limited.json()).toEqual({ code: "code_request_rate_limit" });
 });
 
+test("a caller over the label's own budget is refused before any version is read", async () => {
+  let reads = 0;
+  const busy = routes({ user: person }, async () => {
+    reads++;
+    return { versionId, manifest: pages, owner: lea };
+  });
+  busy.limited.add("code-page-label-callers");
+  const response = await busy.post("provenance", { codeId, path: "/elsewhere", version: current() });
+  expect(response.status).toBe(429);
+  expect(reads).toBe(0);
+});
+
 test("a page delivered with another version answers code_page_changed, but only after the rights were checked", async () => {
   const stale = codePageVersionValue(codeId, "44444444-4444-4444-8444-444444444444");
   const changed = await routes().post("provenance", { codeId, path: "/open", version: stale });
   expect(changed.status).toBe(409);
   expect(await changed.json()).toEqual({ code: "code_page_changed" });
-  // A member page asked by a visitor still says sign in, never that the page changed.
-  expect((await routes().post("provenance", { codeId, path: "/", version: stale })).status).toBe(401);
+  // A member page asked by a visitor answers like a missing one, never that the page changed.
+  expect((await routes().post("provenance", { codeId, path: "/", version: stale })).status).toBe(404);
   // The answer to a form sent without scripts has its own route; the card asks about it like the page.
-  expect((await routes().post("provenance", { codeId, path: "/receive", version: stale })).status).toBe(401);
+  expect((await routes().post("provenance", { codeId, path: "/receive", version: stale })).status).toBe(404);
 });
 
 test("paths with a query, a fragment or another Code, and malformed input, are refused as bad input", async () => {
