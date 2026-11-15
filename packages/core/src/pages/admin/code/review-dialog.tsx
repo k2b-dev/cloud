@@ -70,7 +70,7 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
         return t.changesTextChat({ who: input.recipient, keep: input.keep });
       };
       return (
-        <form class="k2b-dialog__panel" onSubmit={(event) => void submit(event)} data-code-review-dialog={input.kind}>
+        <form class="k2b-dialog__panel" noValidate onSubmit={(event) => void submit(event)} data-code-review-dialog={input.kind}>
           <DialogHeader title={changes ? t.changesTitle({ n: input.number }) : t.rejectTitle({ n: input.number })} close={leave} />
           <div class="k2b-dialog__body core-code-review-dialog">
             <p class="core-code-review-dialog__lead">{lead()}</p>

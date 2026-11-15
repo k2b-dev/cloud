@@ -80,6 +80,13 @@ type Arrival = { versionId: string; kind: "decided" | "conflict" | "withdrawn" |
 const RESULT_ID = "code-review-result";
 const FAILURE_ID = "code-review-failure";
 
+/** The result in the visible tab, or a notice about it: every tab draws the approval, only one is shown. */
+const focusResult = () => {
+  const target = [...document.querySelectorAll<HTMLElement>(`#${RESULT_ID}, [data-review-result]`)].find(
+    (element) => element.offsetParent !== null,
+  );
+  target?.focus({ preventScroll: false });
+};
 const readArrival = (versionId: string): Arrival | null => {
   try {
     const raw = sessionStorage.getItem(DECIDED_KEY);
@@ -197,7 +204,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     if (!arrived) return;
     if (arrived.kind === "unknown" && pending()) setUnknown({ outcome: arrived.outcome ?? "approved", text: arrived.text ?? null });
     else setArrival(arrived);
-    queueMicrotask(() => document.getElementById(RESULT_ID)?.focus({ preventScroll: false }));
+    queueMicrotask(focusResult);
   });
 
   const signInHref = (admin = false) => {
@@ -233,7 +240,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           ? ta().decideReauthenticate
           : code === "REJECT_ONLY"
             ? ta().decideRejectOnly
-            : code === "BUSY"
+            : code === "NOT_FOUND"
+              ? ta().decideNotFound
+              : code === "BUSY"
               ? ta().decideBusy
               : code === "UNAVAILABLE"
                 ? ta().decideUnavailable
@@ -260,11 +269,13 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         // The answer was lost: the decision may be saved. Only "Check state" stays until the page reads it.
         setUnknown({ outcome, text: comment ?? null });
         writeArrival({ versionId: props.versionId, kind: "unknown", outcome, text: comment });
-        queueMicrotask(() => document.getElementById(RESULT_ID)?.focus());
+        queueMicrotask(focusResult);
         return;
       }
-      if (status === 409 || status === 404) {
-        writeArrival({ versionId: props.versionId, kind: status === 404 ? "withdrawn" : "conflict" });
+      // Withdrawn meanwhile, or another admin decided first: the reloaded page shows the saved state and says why.
+      const code = refused.code ?? "";
+      if (status === 409 && !["BUSY", "UNAVAILABLE", "REJECT_ONLY", "SELF_APPROVAL", "REAUTHENTICATE"].includes(code)) {
+        writeArrival({ versionId: props.versionId, kind: code === "code_approval_revoked" ? "withdrawn" : "conflict" });
         reloadCodeArea();
         return;
       }
@@ -537,7 +548,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     confirm: { label: t().approve({ n: props.number }), icon: "ti ti-check", onSelect: approve },
     unavailable:
       !mayDecide() || blocked()
-        ? { text: blocked() ?? (props.staleComparison ? ta().staleTitle : props.own ? ta().ownTitle : ta().decideForbidden), icon: "ti ti-lock" }
+        ? { text: blocked() ?? (props.staleComparison ? ta().staleTitle : props.own ? ta().ownSub : ta().decideForbidden), icon: "ti ti-lock" }
         : undefined,
   });
   const openFrame = (short: boolean) => (
@@ -610,7 +621,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         status={status()}
         reason={{ text: why().text }}
         outcome={
-          <div id={RESULT_ID} tabIndex={-1} class="core-code-review__closed">
+          <div tabIndex={-1} class="core-code-review__closed" data-review-result>
             <p class="k2b-chat-decision__sentence">
               <For each={chipParts(sentence())}>
                 {(part, index) => (index() % 2 === 1 ? <span class="core-code-review__chip">{part}</span> : part)}
@@ -802,6 +813,11 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
                     {ta().signInAdmin}
                   </Button>
                 </Show>
+                <Show when={failureCode() === "NOT_FOUND"}>
+                  <ButtonLink size="sm" variant="secondary" href={props.listHref}>
+                    {t().backToList}
+                  </ButtonLink>
+                </Show>
                 <Show when={failureCode() !== "REAUTHENTICATE"}>
                   <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
                     <i class="ti ti-refresh" aria-hidden="true" />
@@ -957,7 +973,6 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
 
   const overview = () => (
     <div class="core-code-review__panel">
-      {notices()}
       {frame(false)}
       <div class="core-code-review__columns">
         <div class="core-code-review__column">
@@ -974,7 +989,6 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
 
   const codeView = (view: "code" | "diff") => (
     <div class="core-code-review__panel">
-      {notices()}
       {frame(true)}
       {codeField(view)}
     </div>
@@ -998,6 +1012,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
 
   return (
     <div class="core-code-review">
+      <div class="core-code-review__notices">{notices()}</div>
       <Tabs
         ariaLabel={t().tabsLabel}
         value={tab}

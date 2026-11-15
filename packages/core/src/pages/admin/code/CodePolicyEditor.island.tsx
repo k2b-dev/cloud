@@ -286,7 +286,7 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
                   {(row) => {
                     const changed = () => changedRows().includes(row);
                     return (
-                      <tr data-row={row} data-changed={changed() ? "true" : undefined}>
+                      <tr role="radiogroup" aria-label={t().rowLabel({ row })} data-row={row} data-changed={changed() ? "true" : undefined}>
                         <th scope="row">
                           <span class="core-code-policy__row">
                             {t().rowLabel({ row })}
@@ -302,13 +302,13 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
                           {(cell) => {
                             const on = () => cellOf(draft(), props.groupId, row) === cell;
                             return (
-                              <td>
+                              <td data-label={cellLabel(cell)}>
                                 <span
                                   role="radio"
                                   class="core-code-policy__radio"
                                   data-value={cell}
                                   aria-checked={on() ? "true" : "false"}
-                                  aria-label={`${t().rowLabel({ row })}: ${cellLabel(cell)}`}
+                                  aria-label={cellLabel(cell)}
                                   aria-disabled={saving() ? "true" : undefined}
                                   tabIndex={on() ? 0 : -1}
                                   onClick={() => {
