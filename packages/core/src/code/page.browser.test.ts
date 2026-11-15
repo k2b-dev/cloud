@@ -813,6 +813,11 @@ const rectOf = (page: Page, selector: string) =>
     const box = element.getBoundingClientRect();
     return { x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height) };
   }, selector);
+/**
+ * Moves the pointer off every control before the page settles: a click leaves it resting on a button, whose hover
+ * transition can start while `settled` waits (#3465).
+ */
+const restPointer = (page: Page) => page.mouse.move(1, 1);
 const pill = (page: Page) => page.locator(".code-page-provenance__pill");
 const card = (page: Page) => page.locator(".code-page-provenance__card");
 /** Opens the card with a press and waits for its facts (or its failure) to show. */
@@ -1329,6 +1334,8 @@ describe("the feat/code label of a Code page", () => {
         await card(page).getByRole("button", { name: "Seite melden" }).click();
         const dialog = page.locator(".code-page-report");
         await dialog.waitFor();
+        await page.getByText("Schreib einen Satz dazu. Dann kannst du melden.").waitFor();
+        await restPointer(page);
         await settled(page);
         const frame = () => rectOf(page, ".code-page-report-frame");
         const send = page.locator(".code-page-report__actions button").last();
@@ -1369,6 +1376,7 @@ describe("the feat/code label of a Code page", () => {
         await page.locator(".code-page-report textarea").fill("Die Seite fragt nach meinen Zugangsdaten zum Lieferantenportal.");
         expect(await send.isEnabled()).toBe(true);
         expect(await status.innerText()).toBe("Geht an die Admins dieser Cloud.");
+        await restPointer(page);
         await settled(page);
         expect(await frame()).toEqual(empty);
         if (width >= 768) await shoot(page, "75-seite-melden-light-1440");
@@ -1434,6 +1442,7 @@ describe("the feat/code label of a Code page", () => {
         expect(type.offSizes).toEqual([]);
         await send.click();
         await page.getByText("Deine Meldung ist angekommen.").waitFor();
+        await restPointer(page);
         await settled(page);
         if (width >= 768) await shoot(page, "90-seite-melden-gesendet-light-1440");
         expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Fertig");
