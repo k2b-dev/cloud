@@ -15,7 +15,6 @@ import {
   NoticeCard,
   Placeholder,
   Section,
-  Skeleton,
   StatusBadge,
   type StatusTone,
   ViewTabs,
@@ -463,7 +462,12 @@ export function CodeAreaView(props: Props) {
                     ownerName: entry.ownerName,
                     change: entry.mainChange,
                     tag: entry.reason ? (
-                      <StatusBadge tone="neutral" variant="chip" icon={reasonIcon(entry.reason.row)} label={t.rowLabel({ row: entry.reason.row })} />
+                      <StatusBadge
+                        tone="neutral"
+                        variant="chip"
+                        icon={reasonIcon(entry.reason.row)}
+                        label={t.rowLabel({ row: entry.reason.row })}
+                      />
                     ) : (
                       <span />
                     ),
@@ -957,7 +961,10 @@ export function CodeAreaView(props: Props) {
     );
     return (
       <div class="grid content-start gap-4 px-2 pt-1 pb-6">
-        <Show when={entries.length} fallback={<Placeholder icon="ti ti-history-off" title={t.historyEmpty} description={t.historyEmptySub} />}>
+        <Show
+          when={entries.length}
+          fallback={<Placeholder icon="ti ti-history-off" title={t.historyEmpty} description={t.historyEmptySub} />}
+        >
           <Section frame="line" title={t.history}>
             <ol class="core-code-history">
               <For each={entries}>
@@ -1117,7 +1124,12 @@ export function CodeAreaView(props: Props) {
           <NoticeCard tone="danger" icon="ti ti-plug-off" title={t.noRunners} detail={t.noRunnersSub} />
         </Show>
         <Show when={behind}>
-          <NoticeCard tone="warning" icon="ti ti-alert-triangle" title={t.queueGrows} detail={t.queueGrowsSub({ wait: waitText(metrics.oldestWaitingMs) })} />
+          <NoticeCard
+            tone="warning"
+            icon="ti ti-alert-triangle"
+            title={t.queueGrows}
+            detail={t.queueGrowsSub({ wait: waitText(metrics.oldestWaitingMs) })}
+          />
         </Show>
         <Section frame="line" title={t.runnersNow}>
           <p class="core-code-runners__figures">
@@ -1125,7 +1137,11 @@ export function CodeAreaView(props: Props) {
             <Show when={!none}>
               {figure(t.slotsOf({ free: metrics.freeSlots, total: slots }), t.slotsFree, behind ? "warning" : undefined)}
             </Show>
-            {figure(String(metrics.queued), t.runsWaiting({ n: metrics.queued }), metrics.queued > 0 && (behind || none) ? "warning" : undefined)}
+            {figure(
+              String(metrics.queued),
+              t.runsWaiting({ n: metrics.queued }),
+              metrics.queued > 0 && (behind || none) ? "warning" : undefined,
+            )}
             {figure(waitText(metrics.oldestWaitingMs), t.longestWait, behind || none ? "warning" : undefined)}
           </p>
         </Section>
@@ -1222,32 +1238,32 @@ export function CodeAreaView(props: Props) {
         ? approvalDetail()
         : approvalsList()
       : section === "databases"
-      ? databasesSection()
-      : section === "policy"
-        ? policyStandard()
-        : section === "history"
-          ? historySection()
-          : section === "cleanup"
-            ? cleanupSection()
-            : section === "runners"
-              ? runnersSection()
-              : limitsSection();
+        ? databasesSection()
+        : section === "policy"
+          ? policyStandard()
+          : section === "history"
+            ? historySection()
+            : section === "cleanup"
+              ? cleanupSection()
+              : section === "runners"
+                ? runnersSection()
+                : limitsSection();
   const secondColumn = (): JSX.Element =>
     section === "code"
-        ? codeList()
-        : section === "groups"
-          ? groupsList()
-          : section === "effective"
-            ? effectiveList()
-            : hint("ti ti-code", t.areaSub);
+      ? codeList()
+      : section === "groups"
+        ? groupsList()
+        : section === "effective"
+          ? effectiveList()
+          : hint("ti ti-code", t.areaSub);
   const detailColumn = (): JSX.Element =>
     section === "code"
-        ? codeDetail()
-        : section === "groups"
-          ? groupDetail()
-          : section === "effective"
-            ? effectiveDetail()
-            : hint("ti ti-code", t.areaSub);
+      ? codeDetail()
+      : section === "groups"
+        ? groupDetail()
+        : section === "effective"
+          ? effectiveDetail()
+          : hint("ti ti-code", t.areaSub);
   const detailLabel = (): string => {
     if (section === "code" && ok(data.code)) return data.code.code.title;
     if (section === "groups") return selectedGroupName() ?? t.groups;

@@ -2,6 +2,7 @@ import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { ApprovalFrame, type ApprovalFrameProps } from "@k2b/cloud/approvals/ui";
 import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
 import { formatRelative } from "@k2b/cloud/shared";
+import type { DateContext } from "@k2b/stdlib";
 import {
   Button,
   ButtonLink,
@@ -20,7 +21,6 @@ import {
   Tabs,
   useLocale,
 } from "@k2b/ui";
-import type { DateContext } from "@k2b/stdlib";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { type CodeReviewComment, CodeReviewCommentSchema, codeReviewCommentContracts } from "../../../code/review-contracts";
@@ -243,12 +243,12 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
             : code === "NOT_FOUND"
               ? ta().decideNotFound
               : code === "BUSY"
-              ? ta().decideBusy
-              : code === "UNAVAILABLE"
-                ? ta().decideUnavailable
-                : error.status === 403
-                  ? ta().decideForbidden
-                  : t().dialogFailed;
+                ? ta().decideBusy
+                : code === "UNAVAILABLE"
+                  ? ta().decideUnavailable
+                  : error.status === 403
+                    ? ta().decideForbidden
+                    : t().dialogFailed;
     return { code, text };
   };
 
@@ -381,7 +381,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     return (
       <Discussion.Item
         author={name}
-        avatar={<CloudAvatar username={comment.author.name ?? name} userId={comment.author.id} avatarHash={comment.author.avatarHash} size="xs" />}
+        avatar={
+          <CloudAvatar username={comment.author.name ?? name} userId={comment.author.id} avatarHash={comment.author.avatarHash} size="xs" />
+        }
         meta={mine ? undefined : t().cloudAdmin}
         timestamp={<time dateTime={comment.createdAt}>{when(comment.createdAt)}</time>}
         actions={
@@ -548,7 +550,10 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     confirm: { label: t().approve({ n: props.number }), icon: "ti ti-check", onSelect: approve },
     unavailable:
       !mayDecide() || blocked()
-        ? { text: blocked() ?? (props.staleComparison ? ta().staleTitle : props.own ? ta().ownSub : ta().decideForbidden), icon: "ti ti-lock" }
+        ? {
+            text: blocked() ?? (props.staleComparison ? ta().staleTitle : props.own ? ta().ownSub : ta().decideForbidden),
+            icon: "ti ti-lock",
+          }
         : undefined,
   });
   const openFrame = (short: boolean) => (
@@ -559,11 +564,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       sentence={sentenceOf(t().question({ n: props.number, title: props.title }))}
       reason={short ? { text: t().commentsGo({ n: total() }), icon: "ti ti-message-2" } : { text: props.reason, icon: "ti ti-eye" }}
       details={short ? undefined : changesDetails()}
-      meta={
-        short
-          ? []
-          : [...(examplesFact() ? [examplesFact()!] : []), { text: t().boundTo({ n: props.number }), icon: "ti ti-lock" }]
-      }
+      meta={short ? [] : [...(examplesFact() ? [examplesFact()!] : []), { text: t().boundTo({ n: props.number }), icon: "ti ti-lock" }]}
       {...answers()}
     />
   );
@@ -586,7 +587,8 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       if (pendingUnknown) return t().unknownSentence({ n: props.number });
       if (decision) {
         const who = decision.by;
-        if (decision.outcome === "approved") return mine ? t().youApproved({ n: props.number }) : t().otherApproved({ who, n: props.number });
+        if (decision.outcome === "approved")
+          return mine ? t().youApproved({ n: props.number }) : t().otherApproved({ who, n: props.number });
         if (decision.outcome === "changes_requested")
           return mine ? t().youChanges({ n: props.number }) : t().otherChanges({ who, n: props.number });
         return mine ? t().youRejected({ n: props.number }) : t().otherRejected({ who, n: props.number });
@@ -597,21 +599,32 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     const why = (): { text: string; icon: string } => {
       if (pendingUnknown) return { text: t().unknownWhy, icon: "ti ti-alert-triangle" };
       if (decision?.outcome === "approved") return { text: t().afterApproved({ who: props.recipient }), icon: "ti ti-bell" };
-      if (decision?.outcome === "changes_requested") return { text: t().afterChanges({ who: props.recipient, keep: keep() }), icon: "ti ti-bell" };
+      if (decision?.outcome === "changes_requested")
+        return { text: t().afterChanges({ who: props.recipient, keep: keep() }), icon: "ti ti-bell" };
       if (decision?.outcome === "rejected")
         return { text: t().afterRejected({ who: props.recipient, n: props.number, keep: keep() }), icon: "ti ti-bell" };
       return { text: props.status === "withdrawn" ? keep() : t().closedWhy, icon: "ti ti-info-circle" };
     };
     const message = (): { label: string; text: string; who: string; avatar: string; avatarId: string | null; at: string | null } | null => {
       if (pendingUnknown?.text)
-        return { label: t().unconfirmedMessage, text: pendingUnknown.text, who: t().youCap, avatar: t().youCap, avatarId: props.viewerId, at: null };
+        return {
+          label: t().unconfirmedMessage,
+          text: pendingUnknown.text,
+          who: t().youCap,
+          avatar: t().youCap,
+          avatarId: props.viewerId,
+          at: null,
+        };
       if (!decision?.comment) return null;
-      const label = mine
-        ? decision.outcome === "rejected"
-          ? t().yourReason
-          : t().yourMessage
-        : t().theirMessage({ who: decision.by });
-      return { label, text: decision.comment, who: mine ? t().youCap : decision.by, avatar: decision.by, avatarId: decision.byId, at: decision.at };
+      const label = mine ? (decision.outcome === "rejected" ? t().yourReason : t().yourMessage) : t().theirMessage({ who: decision.by });
+      return {
+        label,
+        text: decision.comment,
+        who: mine ? t().youCap : decision.by,
+        avatar: decision.by,
+        avatarId: decision.byId,
+        at: decision.at,
+      };
     };
     return (
       <ApprovalFrame
@@ -957,12 +970,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
                   <strong>{example.name}</strong>
                   <span class="core-code-review__muted">{example.sentence}</span>
                 </span>
-                <StatusBadge
-                  tone={example.state === "succeeded" ? "ok" : "error"}
-                  variant="text"
-                  icon={null}
-                  label={example.status}
-                />
+                <StatusBadge tone={example.state === "succeeded" ? "ok" : "error"} variant="text" icon={null} label={example.status} />
               </li>
             )}
           </For>

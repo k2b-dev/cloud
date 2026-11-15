@@ -288,8 +288,7 @@ export const codeReviewMessages = i18n.define({
       afterApproved: ({ who }) => `${who} bekommt eine Mitteilung und kann die Version einschalten.`,
       afterChanges: ({ who, keep }) =>
         `${who} bekommt eine Mitteilung. ${keep} Reicht sie eine neue Version ein, steht sie wieder unter „Offen“.`,
-      afterRejected: ({ who, n, keep }) =>
-        `${who} bekommt eine Mitteilung. Version ${n} lässt sich nicht mehr einschalten. ${keep}`,
+      afterRejected: ({ who, n, keep }) => `${who} bekommt eine Mitteilung. Version ${n} lässt sich nicht mehr einschalten. ${keep}`,
       keepOn: ({ n }) => `Version ${n} bleibt eingeschaltet.`,
       keepOff: "Die Automation bleibt aus.",
       yourMessage: "Deine Nachricht",
@@ -324,7 +323,8 @@ export const codeReviewMessages = i18n.define({
       examples: "Beispiele",
       codeLabel: "Code",
       keysHint: "Tastatur: Tab in den Code, ↑ ↓ wählt die Zeile, Enter kommentiert",
-      footOpen: "Genau der Stand, den du freigibst. Nur lesen. Wer die Automation verwaltet, sieht keinen Code, aber deine Kommentare als Text.",
+      footOpen:
+        "Genau der Stand, den du freigibst. Nur lesen. Wer die Automation verwaltet, sieht keinen Code, aber deine Kommentare als Text.",
       footDecided: "Der entschiedene Stand. Kommentare gehören zur Entscheidung und lassen sich nicht mehr ändern.",
       codeFailed: "Die Übersicht ist davon nicht betroffen. Du kannst weiter entscheiden.",
       commentOnLine: ({ n }) => `Kommentar zu Zeile ${n}`,
@@ -344,7 +344,8 @@ export const codeReviewMessages = i18n.define({
       cloudAdmin: "Cloud-Admin",
       changesTitle: ({ n }) => `Änderungen an Version ${n} anfordern`,
       rejectTitle: ({ n }) => `Version ${n} ablehnen`,
-      changesTextChat: ({ who, keep }) => `${who} bekommt deine Nachricht. Gustav überarbeitet die Version danach einmal von selbst. ${keep}`,
+      changesTextChat: ({ who, keep }) =>
+        `${who} bekommt deine Nachricht. Gustav überarbeitet die Version danach einmal von selbst. ${keep}`,
       changesTextButton: ({ who, keep }) => `${who} bekommt deine Nachricht und kann Gustav bitten, die Version zu überarbeiten. ${keep}`,
       changesTextCli: ({ who, keep }) =>
         `${who} bekommt deine Nachricht in der Kommandozeile, mit den Kommentaren an ihren Zeilen. ${keep}`,

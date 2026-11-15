@@ -1,5 +1,6 @@
 /** Fictional data for render tests, browser tests and screenshots of Administration › Code. */
 
+import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
 import { CORE_SETTINGS } from "../../../_settings";
 import type {
   CodeAdminApproval,
@@ -12,7 +13,6 @@ import type {
   CodeAdminPolicyChange,
   CodeAdminSummary,
 } from "../../../code/admin";
-import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
 import type { CodeCleanupJob } from "../../../code/lifecycle-contracts";
 import { codePolicyPreset } from "../../../code/policy-contracts";
 import type { CodeReviewComment } from "../../../code/review-contracts";
@@ -262,7 +262,7 @@ export const fixtureComments = (): CodeReviewComment[] => [
   },
 ];
 
-const list = <T,>(items: T[]) => ({ items, more: 0, moreText: null });
+const list = <T>(items: T[]) => ({ items, more: 0, moreText: null });
 /** The version in words, as Core presents it, for "Rückruf bestätigen" version 3. */
 export const fixtureReadModel = (noExamples = false): CodeVersionReadModel => ({
   versionId: V.rueckruf3,
@@ -336,7 +336,11 @@ const fixtureReadModelFirst = (): CodeVersionReadModel => ({
   ...fixtureReadModel(),
   versionId: V.lieferzeit1,
   number: 1,
-  description: { state: "visible", text: "Weist jede neue Mail mit „Lieferzeit“ im Betreff der Logistik zu.", modelLabel: "KI-Erklärung, nicht von Cloud geprüft" },
+  description: {
+    state: "visible",
+    text: "Weist jede neue Mail mit „Lieferzeit“ im Betreff der Logistik zu.",
+    modelLabel: "KI-Erklärung, nicht von Cloud geprüft",
+  },
   mayDo: list([{ text: "Mail: Unterhaltungen lesen und zuweisen" }]),
   timing: list([{ text: "wenn eine Mail im Postfach von Tom Beispiel ankommt" }]),
   changes: {
@@ -358,9 +362,7 @@ const fixtureReadModelFirst = (): CodeVersionReadModel => ({
   },
 });
 
-export const fixtureApprovalDetail = (
-  variant: FixtureReviewVariant = "normal",
-): CodeAdminApprovalDetail => {
+export const fixtureApprovalDetail = (variant: FixtureReviewVariant = "normal"): CodeAdminApprovalDetail => {
   const first = variant === "first";
   const decided = variant === "approved" || variant === "rejected" || variant === "changes";
   return {
@@ -375,9 +377,16 @@ export const fixtureApprovalDetail = (
             : variant === "withdrawn"
               ? "withdrawn"
               : "pending",
-    origin: variant === "cli" ? { kind: "cli" } : { kind: "ai_chat", conversationId: "c0ffee00-0000-4000-8000-000000000001", automaticAfterReview: false },
+    origin:
+      variant === "cli"
+        ? { kind: "cli" }
+        : { kind: "ai_chat", conversationId: "c0ffee00-0000-4000-8000-000000000001", automaticAfterReview: false },
     activeVersion: first ? null : { id: V.rueckruf2, number: 2 },
-    comments: { items: variant === "nocomments" || first ? [] : fixtureComments(), nextBefore: variant === "long" ? FIXTURE_COMMENT_IDS.first : null, total: variant === "nocomments" || first ? 0 : variant === "long" ? 23 : 3 },
+    comments: {
+      items: variant === "nocomments" || first ? [] : fixtureComments(),
+      nextBefore: variant === "long" ? FIXTURE_COMMENT_IDS.first : null,
+      total: variant === "nocomments" || first ? 0 : variant === "long" ? 23 : 3,
+    },
     previousChangesRequest:
       variant === "followup"
         ? {
@@ -851,9 +860,24 @@ export const fixtureRunners = (empty = false): CodeRunnerMetrics =>
         instances: 3,
         freeSlots: 5,
         runners: [
-          { instanceId: "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60", freeSlots: 1, busySlots: 3, lastSeenAt: new Date(Date.now() - 8_000).toISOString() },
-          { instanceId: "9b4d2f31-6e2c-4d30-8b21-2c3d4e5f6071", freeSlots: 0, busySlots: 4, lastSeenAt: new Date(Date.now() - 5_000).toISOString() },
-          { instanceId: "ac5e3042-7f3d-4e41-9c32-3d4e5f607182", freeSlots: 4, busySlots: 0, lastSeenAt: new Date(Date.now() - 2_000).toISOString() },
+          {
+            instanceId: "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60",
+            freeSlots: 1,
+            busySlots: 3,
+            lastSeenAt: new Date(Date.now() - 8_000).toISOString(),
+          },
+          {
+            instanceId: "9b4d2f31-6e2c-4d30-8b21-2c3d4e5f6071",
+            freeSlots: 0,
+            busySlots: 4,
+            lastSeenAt: new Date(Date.now() - 5_000).toISOString(),
+          },
+          {
+            instanceId: "ac5e3042-7f3d-4e41-9c32-3d4e5f607182",
+            freeSlots: 4,
+            busySlots: 0,
+            lastSeenAt: new Date(Date.now() - 2_000).toISOString(),
+          },
         ],
         nextCursor: null,
       };
@@ -1005,9 +1029,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       history: "failed",
       runners: "failed",
       limits: "failed",
-      ...(query.sec === "code" && query.id
-        ? { code: fixtureCodeDetail(query.id) }
-        : {}),
+      ...(query.sec === "code" && query.id ? { code: fixtureCodeDetail(query.id) } : {}),
     };
   if (query.sec === "approvals" && query.id) {
     const variant = query.id === FIXTURE_VERSIONS.lieferzeit1 ? "first" : state;
@@ -1027,8 +1049,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       "followup",
       "long",
     ];
-    data.approval =
-      state === "missing" ? "missing" : fixtureApprovalDetail(variants.find((entry) => entry === variant) ?? "normal");
+    data.approval = state === "missing" ? "missing" : fixtureApprovalDetail(variants.find((entry) => entry === variant) ?? "normal");
   }
   if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
   if (query.sec === "code" && query.status) {

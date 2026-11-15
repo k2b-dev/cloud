@@ -29,11 +29,11 @@ import { storeCodeVersionExplanation } from "./read-model/explanation";
 import { codeReadModelMessages } from "./read-model/messages";
 import { readModelNames } from "./read-model/names";
 import { canReadVersionText, presentCodeVersion, restrictVersionEvidence } from "./read-model/present";
-import { codeSettings } from "./settings";
 import { readCodeReviewComments } from "./review-comments";
 import type { CodeReviewComment, CodeSubmissionOrigin } from "./review-contracts";
 import { readCodeRunnerMetrics } from "./scheduling";
 import type { CodeRunnerMetrics } from "./scheduling-contracts";
+import { codeSettings } from "./settings";
 import { listCodeRuns, readCodeRun } from "./store";
 import {
   type CodeCheckedVersionManifest,

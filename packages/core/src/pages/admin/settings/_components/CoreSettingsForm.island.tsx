@@ -1166,7 +1166,8 @@ function FieldRow(props: {
             {e().description}
           </p>
           <p class="mt-1 text-[11px] text-dimmed">
-            {t().useDefaultPreview} <span class="font-medium text-secondary">{formatSettingPreview(e(), e().resetValue, t(), locale())}</span>
+            {t().useDefaultPreview}{" "}
+            <span class="font-medium text-secondary">{formatSettingPreview(e(), e().resetValue, t(), locale())}</span>
             <span class="text-dimmed"> ({sourceLabel(e().resetValueSource, t()).toLowerCase()})</span>
           </p>
         </div>

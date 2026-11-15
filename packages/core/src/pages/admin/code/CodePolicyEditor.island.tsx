@@ -26,7 +26,6 @@ export type CodePolicyEditorProps = {
 
 type Cell = CodePolicyValue | "inherit";
 const VALUES: CodePolicyValue[] = ["automatic", "admin", "never"];
-const VALUE_ICON: Record<CodePolicyValue, string> = { automatic: "ti ti-circle-check", admin: "ti ti-user-shield", never: "ti ti-ban" };
 const PreviewSchema = codePolicyContracts.preview.data.extend({ owners: z.record(z.string(), z.string().nullable()) });
 type Preview = z.infer<typeof PreviewSchema>;
 type Status = { kind: "idle" } | { kind: "saved"; paused: number } | { kind: "failed" } | { kind: "unknown" } | { kind: "conflict" };
@@ -76,11 +75,6 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
   const changedRows = createMemo(() =>
     CODE_POLICY_ROWS.filter((row) => cellOf(draft(), props.groupId, row) !== cellOf(baseline(), props.groupId, row)),
   );
-  const changeCount = createMemo(() => {
-    const before = new Map(baseline().rules.map((rule) => [keyOf(rule), rule.value]));
-    const after = new Map(draft().rules.map((rule) => [keyOf(rule), rule.value]));
-    return [...new Set([...before.keys(), ...after.keys()])].filter((key) => before.get(key) !== after.get(key)).length;
-  });
 
   // Ask the server what the draft would pause; the newest draft wins.
   let controller: AbortController | undefined;
@@ -209,7 +203,8 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
     const step = keys[event.key];
     const list = columns();
     const at = list.indexOf(cellOf(draft(), props.groupId, row));
-    const next = event.key === "Home" ? 0 : event.key === "End" ? list.length - 1 : step === undefined ? -1 : (at + step + list.length) % list.length;
+    const next =
+      event.key === "Home" ? 0 : event.key === "End" ? list.length - 1 : step === undefined ? -1 : (at + step + list.length) % list.length;
     if (next < 0) return;
     event.preventDefault();
     const value = list[next]!;
@@ -424,7 +419,11 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
                 {(result) => (
                   <Show when={result().total} fallback={t().pausesNone}>
                     <i class="ti ti-player-pause" aria-hidden="true" /> {t().pausesNamed({ n: result().total })}{" "}
-                    <strong>{result().items.map((item) => item.title).join(", ")}</strong>
+                    <strong>
+                      {result()
+                        .items.map((item) => item.title)
+                        .join(", ")}
+                    </strong>
                     <Show when={result().total > result().items.length}>
                       {" "}
                       {t().confirmMore({ n: result().total - result().items.length })}

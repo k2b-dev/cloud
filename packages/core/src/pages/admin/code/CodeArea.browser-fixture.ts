@@ -123,8 +123,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     const data = state === "noperm" ? null : codeFixtureData(state, c.req.query(), locale);
     // A decision persists until reset, so the reloaded page shows its result and the sidebar count drops.
     const decision = query.id ? decisions.get(query.id) : undefined;
-    if (data && decision !== undefined)
-      data.approval = fixtureApprovalDetail(decision === "changes_requested" ? "changes" : decision);
+    if (data && decision !== undefined) data.approval = fixtureApprovalDetail(decision === "changes_requested" ? "changes" : decision);
     if (data?.approvals && typeof data.approvals === "object")
       data.approvals = { ...data.approvals, items: data.approvals.items.filter((item) => !decisions.has(item.versionId)) };
     const waiting = 4 - decisions.size;

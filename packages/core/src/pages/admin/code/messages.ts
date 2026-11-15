@@ -224,7 +224,8 @@ export const codeAdminMessages = i18n.define({
       saveAndPause: ({ n }: N) => `Save and pause ${n}`,
       // Policy
       unattendedUnavailable: "This release does not run this unattended.",
-      policyLead: "What automations may do without a person. The policy never extends permissions: an automation may do at most what its person may.",
+      policyLead:
+        "What automations may do without a person. The policy never extends permissions: an automation may do at most what its person may.",
       appliesToAll: "Applies to everyone without a group rule",
       lastChange: ({ who, when }: { who: string; when: string }) => `Last changed by ${who}, ${when}`,
       presetOff: "Off",
@@ -613,10 +614,13 @@ export const codeAdminMessages = i18n.define({
       whatChanges: "Was sich ändert",
       pausesNone: "Keine Automation wird pausiert.",
       pausesNamed: ({ n }) =>
-        n === 1 ? "1 Automation wird pausiert, bis du ihre Version freigibst:" : `${n} Automationen werden pausiert, bis du ihre Version freigibst:`,
+        n === 1
+          ? "1 Automation wird pausiert, bis du ihre Version freigibst:"
+          : `${n} Automationen werden pausiert, bis du ihre Version freigibst:`,
       saveAndPause: ({ n }) => `Speichern und ${n} pausieren`,
       unattendedUnavailable: "In diesem Release läuft das nicht unbeaufsichtigt.",
-      policyLead: "Was Automationen ohne Menschen tun dürfen. Die Richtlinie erweitert nie Rechte: Eine Automation darf höchstens, was ihre Person darf.",
+      policyLead:
+        "Was Automationen ohne Menschen tun dürfen. Die Richtlinie erweitert nie Rechte: Eine Automation darf höchstens, was ihre Person darf.",
       appliesToAll: "Gilt für alle, die keine Gruppenregel haben",
       lastChange: ({ who, when }: { who: string; when: string }) => `Zuletzt geändert von ${who}, ${when}`,
       presetOff: "Aus",

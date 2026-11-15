@@ -141,7 +141,9 @@ test("a reply goes under its thread flush, a failed save keeps the text with Try
   // Ben wrote the first comment ("Du"), Jana the reply: only Ben's own entry offers deleting.
   expect(await thread.getByRole("button", { name: "Kommentar löschen" }).count()).toBe(1);
   // Every entry is flush: the avatars share one left edge.
-  const edges = await thread.locator(".k2b-discussion__avatar").evaluateAll((list) => list.map((item) => Math.round(item.getBoundingClientRect().left)));
+  const edges = await thread
+    .locator(".k2b-discussion__avatar")
+    .evaluateAll((list) => list.map((item) => Math.round(item.getBoundingClientRect().left)));
   expect(new Set(edges).size).toBe(1);
 }, 30_000);
 
@@ -160,7 +162,11 @@ test("requesting changes asks for a text in a dialog that names who gets it, kee
   await settled(page);
   await page.getByRole("button", { name: "Änderungen anfordern …" }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByText("Lea Muster bekommt deine Nachricht. Gustav überarbeitet die Version danach einmal von selbst. Version 2 bleibt eingeschaltet.").waitFor();
+  await dialog
+    .getByText(
+      "Lea Muster bekommt deine Nachricht. Gustav überarbeitet die Version danach einmal von selbst. Version 2 bleibt eingeschaltet.",
+    )
+    .waitFor();
   await dialog.getByText("3 Kommentare am Code gehen mit.").waitFor();
   const buttons = await dialog.getByRole("button", { name: "Änderungen anfordern" }).boundingBox();
   await dialog.getByRole("button", { name: "Änderungen anfordern" }).click();
@@ -180,7 +186,12 @@ test("requesting changes asks for a text in a dialog that names who gets it, kee
   expect(fixture.requests).toEqual([
     {
       path: "decide",
-      body: { binding: fixtureApprovalDetail().binding, approved: false, outcome: "changes_requested", comment: "Bitte nur Rückrufwünsche." },
+      body: {
+        binding: fixtureApprovalDetail().binding,
+        approved: false,
+        outcome: "changes_requested",
+        comment: "Bitte nur Rückrufwünsche.",
+      },
     },
   ]);
   // Decided: comments are frozen, no "+" and no "Reply".

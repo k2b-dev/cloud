@@ -58,7 +58,6 @@ test("approval says in words what the version may do, its internet addresses inc
 });
 
 const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };
-const t = codeAdminMessages.resolve(["de"]).t;
 
 test("the area column names every section with waiting counts", () => {
   const html = render({});
@@ -272,7 +271,15 @@ test("limits and runners render their data, empty and error states", () => {
   const runners = render({ sec: "runners" });
   expect(runners).toContain('data-section="code-runners"');
   const runnerText = renderedText(runners, " ").replaceAll(/\s+/g, " ");
-  for (const label of ["3 Runner", "5 von 12 Plätzen frei", "5 Läufe warten", "4 s längste Wartezeit", "Runner 1 · 8a3c", "1 von 4 Plätzen frei", "Verbunden"])
+  for (const label of [
+    "3 Runner",
+    "5 von 12 Plätzen frei",
+    "5 Läufe warten",
+    "4 s längste Wartezeit",
+    "Runner 1 · 8a3c",
+    "1 von 4 Plätzen frei",
+    "Verbunden",
+  ])
     expect(runnerText).toContain(label);
   expect(runners).not.toContain("8a3c1e20");
   const none = renderedText(render({ sec: "runners" }, "empty"), " ");
