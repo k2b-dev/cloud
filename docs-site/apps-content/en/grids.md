@@ -24,13 +24,13 @@ Open the base name in the sidebar or phone menu to switch bases. Signed-in
 users can choose **New base** to create and open a blank base; **All bases**
 opens the overview. Use the overview to start from a template.
 
-## Discuss a Base or Record
+## Discuss a base or record
 
-Open Chat in the panel beside a Base to discuss that Base. Opening a Record's
-detail selects its thread in the Base's discussion; closing the detail returns
-to the Base. Reading needs Base Read access, and posting needs Base Write or
-Manage access. Sharing a published App alone does not grant access to its Base
-discussions. Existing Record comments stay separate.
+Open Chat in the panel beside a base to discuss that base. Opening a record's
+detail selects its thread in the base's discussion; closing the detail returns
+to the base. Reading needs read access to the base, and posting needs write or
+manage access. Sharing a published app alone does not grant access to its base
+discussions. Existing record comments stay separate.
 
 ## Use Grids
 
@@ -900,9 +900,9 @@ Use the existing authorized UI or CLI for those tasks.
 The catalog declares `base`, `table`, `view`, and `record` Types alongside
 documents and workflow runs. The `discussions` role uses `record` as its item
 and `base` as its container, with the `base.containers` Query for readable
-Bases and opaque pagination. `base.read` and `record.read` retain their domain
-metadata and add a standard `view`; the Record view identifies its current
-Base by public ref. See [Resource types and discussions](/en/docs/platform/resource-types-and-discussions)
+bases and opaque pagination. `base.read` and `record.read` retain their domain
+metadata and add a standard `view`; the record view identifies its current
+base by public ref. See [Resource types and discussions](/en/docs/platform/resource-types-and-discussions)
 for the provider contract. Grids does not offer discussion activity or account
 reader checks for push notifications.
 
