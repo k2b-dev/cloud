@@ -492,7 +492,7 @@ for (const view of [
         const diagnostics = [{ code: "TS2339", message: "Property does not exist.", file: "code.ts", line: 4, column: 1 }];
         await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, { ...base, seq: 2, type: "block_set", block: { ...check, status: "running" } });
-        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft den Code" : "Checking the Code");
+        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft" : "Checking");
         await page.locator(".ai-turn-work > summary").click();
         await frames(page);
         // Without its shimmer, a busy label keeps a visible text colour, in the work line and in the steps below it.
@@ -517,7 +517,7 @@ for (const view of [
         const checked = await layout(page);
         expect(checked.nodes.map(({ box }) => box)).toEqual(before.nodes.map(({ box }) => box));
         const row = page.locator(".ai-turn-steps .k2b-chat-activity").first();
-        expect(await row.innerText()).toContain(de ? "Prüft den Code" : "Checks the Code");
+        expect(await row.innerText()).toContain(de ? "Prüft" : "Checks");
         expect(await row.innerText()).toContain(de ? "1 Befund" : "1 finding");
         expect(await row.locator(".ti-alert-triangle").count()).toBe(1);
         expect(checked.overflowX).toBeLessThanOrEqual(0);
@@ -1607,81 +1607,61 @@ for (const view of [
     }, 60_000);
 
 for (const width of [1440, 390])
-  test(`a Code file grows in its step while Gustav writes it and keeps its place when written (${width})`, async () => {
-    const context = await browser.newContext({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+  test(`a decision line at the end of the chat is one row with its action as a real small button at the right (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     try {
       const page = await context.newPage();
       await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
       await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
-      const source = Array.from({ length: 40 }, (_, index) =>
-        index === 0 ? 'import { app, spaces } from "@sdk";' : `  await spaces.space("sp_team").task.create({ title: "Aufgabe ${index}" });`,
-      ).join("\n");
-      const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "code_write" };
-      const live = (lines: number) => ({
-        ...write,
-        status: "running" as const,
-        args: { path: "code.ts", content: source.split("\n").slice(0, lines).join("\n") },
-        liveArgs: { omittedLines: { path: 0, content: 0 } },
-      });
-      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
-      await emit(page, { ...base, seq: 2, type: "block_set", block: live(6) });
-      // The path is known while Gustav writes, so the work line names the file.
-      expect(await page.locator(".ai-turn-work > summary").innerText()).toContain("code.ts");
-      await page.locator(".ai-turn-work > summary").click();
-      await frames(page);
-      await page.locator(".ai-turn-steps .k2b-chat-activity").first().locator("summary").first().click();
-      await frames(page);
-      const sourceView = page.locator(".ai-code-step__source").first();
-      expect(await sourceView.innerText()).toContain("code.ts · Zeile 6");
-      // The file name carries the AI colour while it is written.
-      const title = sourceView.locator(".k2b-content-code-display__title");
-      await settled(page, ".ai-turn-work");
-      expect(await title.evaluate((node) => getComputedStyle(node).color)).toBe("rgb(142, 27, 111)");
-      await emit(page, { ...base, seq: 3, type: "block_set", block: live(30) });
-      await settled(page, ".ai-turn-work");
-      const box = () => sourceView.evaluate((node) => node.getBoundingClientRect().toJSON() as DOMRect);
-      const growing = await box();
-      expect(await sourceView.innerText()).toContain("code.ts · Zeile 30");
-      // Only the newest lines show while written, numbered like the whole file.
-      expect(await sourceView.locator(".k2b-content-code-display__number").first().innerText()).toBe("17");
-      mkdirSync("/tmp/l28-gustav-live", { recursive: true });
-      await page.screenshot({ path: `/tmp/l28-gustav-live/code-write-live-light-${width}.png` });
-      // A line longer than the streamed end hides the lines before it; the step still keeps the written height.
-      await emit(page, {
-        ...base,
-        seq: 4,
-        type: "block_set",
-        block: {
-          ...live(30),
-          args: { path: "code.ts", content: `const data = "${"x".repeat(5000)}` },
-          liveArgs: { omittedLines: { path: 0, content: 30 } },
+      const decision = storedMessage(
+        1,
+        "decision",
+        { role: "assistant", content: [{ type: "text", text: "Jana Probe hat Version 5 freigegeben." }] },
+        {
+          loopId: null,
+          meta: {
+            codeDecision: {
+              codeId: "c_info01",
+              versionId: "66666666-6666-4666-8666-666666666666",
+              number: 5,
+              outcome: "approved",
+              person: { id: null, name: "Jana Probe" },
+              anchor: "code-version-66666666-6666-4666-8666-666666666666",
+            },
+          },
         },
+      );
+      // Cloud writes the line outside any turn; the projection takes it like a finished turn's saved message.
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      await emit(page, { ...base, seq: 2, type: "turn_finished", status: "completed", error: null, messages: [decision] });
+      const line = page.locator(".ai-code-decision-line");
+      await line.waitFor();
+      // The activity lends only its place: no second sign, the line fills the row.
+      expect(await line.locator(".k2b-chat-activity__leading").isVisible()).toBe(false);
+      const action = line.getByRole("button", { name: "Einschalten …" });
+      const look = await action.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { border: style.borderTopWidth, background: style.backgroundColor, height: Math.round(node.getBoundingClientRect().height) };
       });
-      await settled(page, ".ai-turn-work");
-      expect((await box()).height).toBe(growing.height);
-      // The written file keeps the live height and stays at its end, so nothing moves under the reader.
-      await emit(page, {
-        ...base,
-        seq: 5,
-        type: "block_set",
-        block: { ...write, status: "completed", args: { codeId: "c_1234", path: "code.ts", content: source }, result: { version: 1 } },
+      expect(look.border).not.toBe("0px");
+      expect(look.background).not.toBe("rgba(0, 0, 0, 0)");
+      expect(look.height).toBeGreaterThanOrEqual(28);
+      const right = await page.evaluate(() => {
+        const row = document.querySelector(".ai-code-decision-line")!.getBoundingClientRect();
+        const button = document.querySelector(".ai-code-decision-line .k2b-button")!.getBoundingClientRect();
+        return Math.round(row.right - button.right);
       });
-      await settled(page, ".ai-turn-work");
-      const written = await box();
-      expect([written.top, written.height]).toEqual([growing.top, growing.height]);
-      expect(await sourceView.locator(".k2b-content-code-display__body").evaluate((node) => node.scrollTop > 0)).toBe(true);
-      expect(await sourceView.innerText()).not.toContain("Zeile 30");
-      expect(await title.evaluate((node) => getComputedStyle(node).color)).not.toBe("rgb(142, 27, 111)");
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      await page.screenshot({ path: `/tmp/l28-gustav-live/code-write-written-light-${width}.png` });
+      expect(right).toBeLessThanOrEqual(8);
+      mkdirSync("/tmp/gustav-code-chat-shots-8", { recursive: true });
+      await page.screenshot({ path: `/tmp/gustav-code-chat-shots-8/ereigniszeile-chat-light-${width}.png` });
     } finally {
       await context.close();
     }
   }, 60_000);
 
 for (const width of [1440, 390])
-  test(`a written Code file, its check and its tests read as source and rows, not JSON (${width})`, async () => {
-    const context = await browser.newContext({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+  test(`Gustav writing Code shows no source, no file name and no line, and the work line keeps its height (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     try {
       const page = await context.newPage();
       await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
@@ -1695,12 +1675,53 @@ for (const width of [1440, 390])
         ...base,
         seq: 2,
         type: "block_set",
-        block: { ...write, status: "completed", args: { codeId: "c_1234", path: "code.ts", content: source }, result: { version: 1 } },
+        block: {
+          ...write,
+          status: "running",
+          args: { path: "code.ts", content: source },
+          liveArgs: { omittedLines: { path: 0, content: 0 } },
+        },
       });
-      const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { codeId: "c_1234" } };
+      await settled(page, ".ai-turn-work");
+      const work = page.locator(".ai-turn-work > summary");
+      expect(await work.innerText()).toContain("Schreibt die Änderung");
+      expect(await work.innerText()).not.toContain("code.ts");
+      const running = await work.evaluate((node) => node.getBoundingClientRect().height);
+      await work.click();
+      await frames(page);
+      await page.locator(".ai-turn-steps .k2b-chat-activity").first().locator("summary").first().click();
+      await frames(page);
+      expect(await page.locator(".ai-code-step__source, .k2b-content-code-display, details.ai-code-step__raw").count()).toBe(0);
       await emit(page, {
         ...base,
         seq: 3,
+        type: "block_set",
+        block: { ...write, status: "completed", args: { codeId: "c_1234", path: "code.ts", content: source }, result: { version: 1 } },
+      });
+      await settled(page, ".ai-turn-work");
+      // The work line is as high running as finished: the building blocks below it never move.
+      expect(await work.evaluate((node) => node.getBoundingClientRect().height)).toBe(running);
+      const shown = await page.locator(".ai-turn").first().innerText();
+      for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /sp_team/, /spaces\.task\.create/, /"version"/])
+        expect(shown).not.toMatch(pattern);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+for (const width of [1440, 390])
+  test(`a check's notices and the tried examples stand in the conversation as words, with a result word of fixed width (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 1100 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      const check = { id: "tool-check", kind: "tool" as const, callId: "check", name: "code_check", args: { codeId: "c_1234" } };
+      await emit(page, {
+        ...base,
+        seq: 2,
         type: "block_set",
         block: {
           ...check,
@@ -1727,13 +1748,33 @@ for (const width of [1440, 390])
                 status: "new",
               },
             ],
+            words: {
+              notices: [
+                {
+                  severity: "warning",
+                  text: "Die Seite „Rückruf bestätigen“ ist für alle Angemeldeten offen.",
+                  consequence: "Jede Person in eurer Cloud kann sie aufrufen, nicht nur dein Team.",
+                },
+              ],
+              mayDo: [{ text: "Aufgabe anlegen · Space", isNew: true }],
+            },
           },
         },
+      });
+      const example = (name: string, ok: boolean) => ({
+        name,
+        modelLabel: "✦",
+        state: ok ? "succeeded" : "failed",
+        status: ok ? "Erfolgreich" : "Fehlgeschlagen",
+        sentence: ok ? "Aufgabe anlegen · 1 im Beispiel erfolgreich" : "Weicht von der Erwartung ab",
+        differences: ok
+          ? []
+          : [{ subject: "Aufrufe", expected: "Keine Aufrufe aufgezeichnet", actual: "Datei ablegen · 1 im Beispiel erfolgreich" }],
       });
       const test = { id: "tool-test", kind: "tool" as const, callId: "test", name: "code_test", args: { codeId: "c_1234" } };
       await emit(page, {
         ...base,
-        seq: 4,
+        seq: 3,
         type: "block_set",
         block: {
           ...test,
@@ -1746,41 +1787,50 @@ for (const width of [1440, 390])
             diagnostics: [],
             cases: [
               { name: "Montag", file: "test/montag.json", ok: true, runs: [] },
-              {
-                name: "Leere Woche",
-                file: "test/leer.json",
-                ok: false,
-                runs: [
-                  { entrypoint: "monday", ok: false, error: "code_assertion_failed", value: null, calls: [], failures: ["$.calls[0]"] },
-                ],
-              },
+              { name: "Leere Woche", file: "test/leer.json", ok: false, runs: [] },
             ],
+            words: {
+              notices: [],
+              examples: {
+                passed: 1,
+                total: 2,
+                summary: "1 von 2 Beispielen erfolgreich",
+                explanation: "Erfolgreich heißt: Die Automation hat getan, was Gustav für den Fall erwartet hat.",
+                items: [example("Lieferavis mit Lieferschein im Anhang", true), example("Lieferavis ohne Anhang", false)],
+              },
+            },
           },
         },
       });
+      await settled(page, ".ai-turn-work");
+      const turn = page.locator(".ai-turn").first();
+      // Both stand in the conversation without opening anything.
+      expect(await turn.locator(".k2b-notice-card").count()).toBe(1);
+      expect(await turn.locator(".k2b-notice-card").innerText()).toContain("Folge: Jede Person in eurer Cloud");
+      const examples = turn.locator(".ai-code-examples");
+      expect(await examples.innerText()).toContain("1 von 2 erfolgreich");
+      expect(await examples.innerText()).toContain("Erwartet");
+      // The result word has the width of the longest one, so the text beside it starts and ends at one edge.
+      const statuses = await examples
+        .locator(".ai-code-examples__status")
+        .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().width));
+      expect(Math.min(...statuses)).toBeGreaterThanOrEqual(120);
+      const names = await examples
+        .locator(".ai-code-examples__name")
+        .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().right)));
+      expect(new Set(names).size).toBe(1);
+      const shown = await turn.innerText();
+      for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /sp_team/, /code_[a-z_]+/, /test\/\S+\.json/, /\$\.calls/])
+        expect(shown).not.toMatch(pattern);
       await page.locator(".ai-turn-work > summary").click();
       await frames(page);
-      for (const label of ["Bearbeitet eine Code-Datei", "Prüft den Code", "Testet mit erfundenen Daten"]) {
-        await page.locator(".ai-turn-steps .k2b-chat-activity", { hasText: label }).last().locator("summary").first().click();
-        await frames(page);
-      }
-      const steps = await page.locator(".ai-turn-steps").first().innerText();
-      expect(steps).toContain("Was der Code darf");
-      expect(steps).toContain("spaces.task.create");
-      expect(steps).toContain("1 von 2 Testfällen bestanden");
-      // The written file scrolls inside its step at a fixed height; the exact input and result stay one click away.
-      const sourceView = page.locator(".ai-code-step__source").first();
-      await settled(page, ".ai-turn-work");
-      const body = await sourceView
-        .locator(".k2b-content-code-display__body")
-        .evaluate((node) => ({ client: node.clientHeight, scroll: node.scrollHeight }));
-      expect(body.scroll).toBeGreaterThan(body.client);
-      expect(await page.locator(".ai-code-step__raw").count()).toBe(3);
-      expect(steps).not.toContain('"version"');
-      await settled(page, ".ai-turn-work");
+      await page.locator(".ai-turn-steps .k2b-chat-activity", { hasText: "Prüft" }).last().locator("summary").first().click();
+      await frames(page);
+      expect(await page.locator(".ai-turn-steps").first().innerText()).toContain("Aufgabe anlegen · Space");
+      expect(await page.locator("details.ai-code-step__raw").count()).toBe(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      mkdirSync("/tmp/l23-code-steps-a", { recursive: true });
-      await page.screenshot({ path: `/tmp/l23-code-steps-a/code-steps-light-${width}.png`, fullPage: true });
+      mkdirSync("/tmp/gustav-code-chat-shots", { recursive: true });
+      await page.screenshot({ path: `/tmp/gustav-code-chat-shots/code-steps-light-${width}.png`, fullPage: true });
     } finally {
       await context.close();
     }

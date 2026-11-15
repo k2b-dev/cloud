@@ -1,4 +1,4 @@
-import { Chat } from "@k2b/ui";
+import { Button, Chat } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { render } from "solid-js/web";
@@ -47,6 +47,19 @@ render(
         onRevokeWebsite: async (origin) => void revoked.push(origin),
         fileUrl: (path) => `/files?path=${encodeURIComponent(path)}`,
         onOpenFile: (path) => void opened.push(path),
+        // A host's decision line as Gustav draws it: sign, sentence, one small secondary action at the end.
+        renderCodeDecision: (entry) => (
+          <div
+            class="harness-decision"
+            style="display:grid;grid-template-columns:1rem minmax(0,1fr) auto;align-items:center;gap:.5rem;width:100%"
+          >
+            <i class="ti ti-circle-check" aria-hidden="true" />
+            <p style="margin:0">Jana Probe hat Version {entry.meta?.codeDecision?.number} freigegeben</p>
+            <Button type="button" size="sm" variant="secondary">
+              Einschalten …
+            </Button>
+          </div>
+        ),
       }}
     >
       {(() => {

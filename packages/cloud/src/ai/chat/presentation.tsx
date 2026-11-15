@@ -315,14 +315,11 @@ const storedItems = (
     }
 
     if (item.type === "code-decision" || item.type === "code-review-start") {
-      const activity: ChatTimelineItem = {
-        kind: "activity",
-        id: item.id,
-        label: textFromMessage(item.entry.message),
-        icon: "ti ti-shield-check",
-        tone: "ai",
-        content: actions.renderCodeDecision?.(item.entry),
-      };
+      // A host that draws the decision gets the whole line: its sentence, time and the one jump to the card.
+      const line = actions.renderCodeDecision?.(item.entry);
+      const activity: ChatTimelineItem = line
+        ? { kind: "activity", id: item.id, label: line, class: "ai-code-decision-line" }
+        : { kind: "activity", id: item.id, label: textFromMessage(item.entry.message), icon: "ti ti-shield-check", tone: "ai" };
       return item.type === "code-review-start" ? [activity, ...unansweredNotice(item.entry, itemIndex)] : activity;
     }
 
@@ -407,7 +404,9 @@ const storedItems = (
             duration: last ? () => ({ workedMs: item.workedMs, waitingMs: null }) : () => null,
             scheduledTask: task,
             error,
-            stopNotice: error ? null : stopNotice,
+            // The person stopped it: the turn's own quiet line says so. The notice speaks only when Cloud ended the
+            // answer itself (output limit, Code authoring budget, an interruption the person did not ask for).
+            stopNotice: error || (stopNotice?.kind === "stopped" && segmentPhase === "stopped") ? null : stopNotice,
             // A stopped answer offers to answer the person's message again, where it stopped.
             answerAgain:
               last && segmentPhase === "stopped" && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
