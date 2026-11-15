@@ -99,7 +99,9 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
     expect(await context.getByText("Recent one-off runs").count()).toBe(0);
     await page.locator(".assistant-studio-card").waitFor();
     expect(await page.locator(".assistant-studio-card").count()).toBe(1);
-    expect(await page.locator(".artifact-workspace").getByRole("heading", { name: "Studio", exact: true }).count()).toBe(0);
+    // The pane's head names Studio once; its content repeats no heading.
+    expect(await page.locator(".artifact-pane__head").getByRole("heading", { name: "Studio", exact: true }).count()).toBe(1);
+    expect(await page.locator(".artifact-pane__body").getByRole("heading", { name: "Studio", exact: true }).count()).toBe(0);
     expect(await page.getByRole("table").getByText("Succeeded").count()).toBe(1);
     expect(requests.some((path) => path.endsWith("/app-assets"))).toBe(false);
     const card = page.locator(".assistant-studio-card");
