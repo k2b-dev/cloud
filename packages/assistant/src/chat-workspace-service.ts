@@ -44,7 +44,7 @@ export const saveAssistantChatWorkspace = async (
   const { state, revision } = SaveChatWorkspaceSchema.parse(input);
   // An empty state stays a row, so its revision keeps counting and an older device cannot bring closed tabs back.
   const [saved] = await sql<{ revision: number }[]>`INSERT INTO assistant.chat_workspaces(conversation_id,user_id,state)
-    VALUES(${chat.conversationId}::uuid,${chat.userId}::uuid,${JSON.stringify(state)}::jsonb)
+    VALUES(${chat.conversationId}::uuid,${chat.userId}::uuid,(${JSON.stringify(state)}::text)::jsonb)
     ON CONFLICT(conversation_id,user_id) DO UPDATE SET state=EXCLUDED.state,
       revision=chat_workspaces.revision+1,updated_at=now()
     WHERE chat_workspaces.revision=${revision} RETURNING revision::float8 AS revision`;

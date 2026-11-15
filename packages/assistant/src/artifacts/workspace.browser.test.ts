@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
+import { chromium } from "playwright";
 
 // Use the monorepo's existing UI test compiler; this does not change the app build.
 const ui = new URL("../../../ui/", import.meta.url).pathname;
@@ -38,7 +38,7 @@ test("source tabs preserve drafts and history, guard closing, and fill the works
       );
     },
   });
-  const browser = await launchBrowser();
+  const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1300, height: 900 } });
     page.on("pageerror", (error) => console.error(error));
@@ -109,7 +109,7 @@ test("a read-only source tab scrolls its whole file on the tab surface and keeps
       );
     },
   });
-  const browser = await launchBrowser();
+  const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1300, height: 700 } });
     page.on("pageerror", (error) => console.error(error));

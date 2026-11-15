@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { launchBrowser } from "../../../ui/test/browser";
+import { chromium } from "playwright";
 
 test("compact context hides runs; Studio reuses cards, menus and explicit panel starts", async () => {
   const build = Bun.spawn(["bun", new URL("./workspace-browser-build.ts", import.meta.url).pathname, "./context-browser-harness.tsx"], {
@@ -80,7 +80,7 @@ test("compact context hides runs; Studio reuses cards, menus and explicit panel 
       );
     },
   });
-  const browser = await launchBrowser();
+  const browser = await chromium.launch({ headless: true, channel: "chrome" });
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     page.setDefaultTimeout(3000);
