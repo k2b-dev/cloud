@@ -20,7 +20,7 @@ A separator groups clusters with space, not a drawn line, and keeps `role="separ
 
 ## Floating variant
 
-Use `variant="floating"` for selection actions at the bottom of a column. It is always horizontal and never wraps. Every button in it is round with a 44 × 44 px target, also one you wrap in your own element or a tooltip anchor, so no small control sits at the pill's edge. Buttons inside its menus keep their own size. The space between the pill's edge and the round background of its buttons is the same above, below, and at the sides. A host whose own pills are lower sets `--k2b-toolbar-control` and `--k2b-toolbar-inset` once; the controls and the pill follow them, and touch screens keep the 44 px hit area. For a pill of small controls, such as an editor's formatting pill, a viewer's zoom pill, or a reader's reply pill with short labels, use `--k2b-pill-control` (24 px) and `--k2b-pill-inset` (6 px inside the 1 px edge): the pill is 38 px high, the size of the `PdfViewer` bar.
+Use `variant="floating"` for selection actions at the bottom of a column. It is always horizontal and never wraps. It is a pill of small controls (`k2b-pill`, see [Layers and shadows](/en/ui/surfaces/elevation#floating-pills)): every button in it is round and 24 px high, also one you wrap in your own element or a tooltip anchor, with 14 px icons and 12 px text. The pill is 38 px high, with the same 7 px between its edge and each button above, below, and at the sides. Touch screens keep the 44 px hit area through the buttons' own touch rule; the pill does not grow. Buttons inside its menus keep their own size.
 
 The floating toolbar is a pill on layer 3 of [Layers and shadows](/en/ui/surfaces/elevation): fully rounded, a light 1 px edge, a solid elevated surface, and `--k2b-shadow-toolbar`. A toolbar that stays open is softer than a menu that opens for a moment, so it never uses the menu shadow. Apps do not add a shadow of their own.
 
@@ -47,7 +47,7 @@ For two pills at the start and end edge of one column, wrap both in `ToolbarDock
 </ToolbarDock>
 ```
 
-Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min-height: 0`, then the toolbar. The column reserves the toolbar's height, keeping the final row clear. It can also be the last child inside a scroll container: the strip sticks to the bottom and reserves its own height after the rows. It never leaves its column: when the column is taller than the screen, the toolbar stays at the bottom of the visible part of the column.
+Place it last in a flex column: a heading, a scroll area with `flex: 1` and `min-height: 0`, then the toolbar. The column reserves the toolbar's height, keeping the final row clear. It can also be the last child inside a scroll container that is a flex column: the strip stands at the container's end however few rows there are, sticks to the bottom while the rows scroll beneath, and reserves its own height after them. In a block container it would follow the last row instead. A pill that comes and goes with a selection stays rendered and is only hidden without one, so its reserved height never changes and no row moves when it appears or goes. It never leaves its column: when the column is taller than the screen, the toolbar stays at the bottom of the visible part of the column.
 
 Render it in an island. The browser measures it before its first paint, so it never rearranges after it appears; until then it is invisible but keeps its space. A toolbar under a hidden ancestor waits until it is shown. Without scripting, the server layout stays visible.
 
@@ -94,8 +94,8 @@ container clips it.
   icon commands and a `size="sm"` ghost `Button` for a text command such as
   Comment. On touch screens every button keeps a 44 px hit area through the
   buttons' own touch rule; the bar does not grow. Shortcuts from `keys` show in
-  the tooltips only: the hints under the icons that the floating variant has do
-  not fit.
+  the tooltips only: hints under the icons do not fit, as in a floating
+  toolbar.
 - Pressing its buttons keeps the selection, so actions apply to it.
 - Escape inside the toolbar calls `onEscape`; close the toolbar there and
   return focus to the text. Keyboard navigation is the `Toolbar` roving group.
@@ -118,7 +118,7 @@ In a floating toolbar, `priority` lets an action move into More when the column 
 
 Pass rarer commands that belong in More at every width, such as Copy to or Move to trash for a selection, as the floating toolbar's `moreItems` (`DropdownItem`s). More then always shows and its room is always counted; actions that move there on a narrow row come first in a group of their own, the `moreItems` follow. Do not add a second "…" menu of your own beside More.
 
-`keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon (not in `SelectionToolbar`), the platform shortcut to the tooltip, and `aria-keyshortcuts`. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
+`keys` uses the `Kbd` format, such as `"e"`, `"mod+j"`, or `"shift+arrowdown"`. It adds a hint under the icon of an inline toolbar's action, the platform shortcut to the tooltip, and `aria-keyshortcuts`. A floating toolbar and `SelectionToolbar` show the shortcut in the tooltip only: their small buttons leave no room below the icon. Hints appear with the [keyboard input flag](/en/ui/input-mode) and never move icons or resize buttons. The application still owns shortcut handlers.
 
 `pressed` makes an action a toggle and exposes its state as `aria-pressed`, such as Bold over bold text. Leave it out for a plain command.
 

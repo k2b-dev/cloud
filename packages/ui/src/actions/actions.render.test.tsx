@@ -1030,7 +1030,7 @@ describe("@k2b/ui action geometry parity", () => {
   });
 });
 
-test("floating Toolbar renders a space-keeping pending pill with every action and keyboard hint", () => {
+test("floating Toolbar renders a space-keeping pending pill with every action and its shortcuts in the tooltips", () => {
   const html = renderToString(() =>
     createComponent(Toolbar, {
       label: "Selection actions",
@@ -1048,13 +1048,14 @@ test("floating Toolbar renders a space-keeping pending pill with every action an
       },
     }),
   );
-  expect(html).toMatch(/<div class="k2b-toolbar-float"><div[^>]*class="k2b-toolbar selection-tools"[^>]*role="toolbar"/);
+  expect(html).toMatch(/<div class="k2b-toolbar-float"><div[^>]*class="k2b-toolbar k2b-pill selection-tools"[^>]*role="toolbar"/);
   expect(html).toContain('data-variant="floating"');
   expect(html).toContain("data-overflow-pending");
   expect(html).toContain('data-orientation="horizontal"');
   expect(html).not.toContain('data-wrap="true"');
   expect(html.match(/<button[^>]*k2b-toolbar__action/g)).toHaveLength(3);
-  expect(html).toContain('class="k2b-kbd k2b-kbd-hint k2b-toolbar__hint"');
+  // The pill's small controls leave no room for a hint below the icon.
+  expect(html).not.toContain("k2b-toolbar__hint");
   expect(html).toContain('aria-label="Archive"');
   expect(html).toContain('title="Archive (E)"');
   expect(html).toContain('aria-keyshortcuts="E"');
