@@ -8170,7 +8170,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The letter that chooses an entry, at the row's end; a phone sheet has no keys. */
 .k2b-ui .k2b-dropdown__key {
   flex: none;
+  /* The cap is taller than the row's text line; it keeps the 32 px row of the menu. */
+  margin-block: -0.125rem;
   margin-inline-start: auto;
+}
+
+/* A menu that is chosen from by letter shows its signs at 16 px, as its rows carry a key cap at the end. */
+.k2b-ui .k2b-dropdown__item:has(> .k2b-dropdown__key) > i:first-child {
+  font-size: 1rem;
 }
 
 .k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__key {
@@ -8184,6 +8191,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
   line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-dropdown__heading--sheet {
+  padding: 0 0.25rem 0.25rem;
 }
 
 /* How the keys work, as a quiet foot: its start and its end. */

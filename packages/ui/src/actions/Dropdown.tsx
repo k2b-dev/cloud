@@ -840,7 +840,10 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
           items: props.items,
           label: props.heading ?? props.label ?? messages().dropdownMenu,
           locale: locale(),
-          top: props.sheetTop,
+          // Without its own top, a sheet shows the menu's heading there, as the menu does above its entries.
+          top:
+            props.sheetTop ??
+            (props.heading ? () => <p class="k2b-dropdown__heading k2b-dropdown__heading--sheet">{props.heading}</p> : undefined),
           search: props.search,
           icons: props.icons,
           note: props.note,

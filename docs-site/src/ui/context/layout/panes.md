@@ -86,7 +86,7 @@ See `PanesItem` in the [API reference](#api-reference).
 
 The presence of `onClose` enables the close control. Its callback only reports intent; the application updates its domain state and layout. The close control is available on hover or keyboard focus and does not start a drag.
 
-An empty workspace shows a round mark and "No pane is open." without a box. Pass `onAddItem` to show a plus control in every group and below that sentence. It receives an item id from the target group, or `null` for an empty workspace, and the plus that was used. The application chooses or creates the item, then updates the layout with `addPanesItem`. To offer a choice, open a `Dropdown` beside that plus with `openAt(from, from)`, set `addOpensMenu` so the plus says it opens a menu (`aria-haspopup`), and set its `aria-expanded` while the menu is open. `addShortcut`, such as `"mod+shift+1"`, shows the application's key for it as a `Kbd` in the plus's tooltip and names it in `aria-keyshortcuts`; the application listens for the key itself.
+An empty workspace shows a round mark and "No pane is open." without a box. Pass `onAddItem` to show a plus control in every group and below that sentence. It receives an item id from the target group, or `null` for an empty workspace, and the plus that was used. The application chooses or creates the item, then updates the layout with `addPanesItem`. To offer a choice, open a `Dropdown` beside that plus with `openAt(from, from)`, set `addOpensMenu` so the plus says it opens a menu (`aria-haspopup`), and pass `addMenuOpenFor` (the `targetItemId` the menu was opened for, `undefined` once it closed): the plus of that group reads as expanded, also when Panes draws it anew. Each group's plus carries its item id as `data-target`, so a key that opens the same menu can find it. `addShortcut`, such as `"mod+shift+1"`, shows the application's key for it as a `Kbd` in the plus's tooltip and names it in `aria-keyshortcuts`; the application listens for the key itself.
 
 ## Interaction
 
@@ -195,7 +195,7 @@ type PanesItem = {
 type PanesProps = {
   layout: PanesLayout; onLayoutChange: (layout: PanesLayout) => void; items: readonly PanesItem[];
   movable?: boolean; resizable?: boolean; split?: false | "horizontal" | "vertical" | "both";
-  onAddItem?: (targetItemId: string | null, from: HTMLElement) => void; addOpensMenu?: boolean; addShortcut?: string;
+  onAddItem?: (targetItemId: string | null, from: HTMLElement) => void; addOpensMenu?: boolean; addMenuOpenFor?: string | null; addShortcut?: string;
   onActivate?: (itemId: string) => void;
   defaultLayout?: PanesLayout; arrangeHint?: { open: boolean; onDismiss: () => void };
   ariaLabel?: string; class?: string;

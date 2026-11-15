@@ -20,7 +20,7 @@ export const isAddMenuShortcut = (event: KeyboardEvent): boolean => {
  * Listens for the key on this page and opens the menu beside the + that shows: the row of tabs first, then the box,
  * then the chat's head row. Returns the function that stops listening.
  */
-export const bindAddMenuShortcut = (open: (from: HTMLElement) => void): (() => void) => {
+export const bindAddMenuShortcut = (open: (from: HTMLElement, beside: string | null) => void): (() => void) => {
   const onKey = (event: KeyboardEvent) => {
     if (!isAddMenuShortcut(event)) return;
     const shown = [".k2b-panes__add--tab", ".assistant-context-box__add", ".assistant-context-head__add"]
@@ -28,7 +28,8 @@ export const bindAddMenuShortcut = (open: (from: HTMLElement) => void): (() => v
       .find((element) => element.getClientRects().length > 0);
     if (!shown) return;
     event.preventDefault();
-    open(shown);
+    // A + of a row of tabs names its group, so a new tab joins it there.
+    open(shown, shown.dataset.target ?? null);
   };
   document.addEventListener("keydown", onKey);
   return () => document.removeEventListener("keydown", onKey);

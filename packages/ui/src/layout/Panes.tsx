@@ -66,8 +66,13 @@ export type PanesProps = {
    * application can open a menu beside it and give the focus back to it.
    */
   onAddItem?: (targetItemId: string | null, from: HTMLElement) => void;
-  /** The + opens a menu: it says so (`aria-haspopup`); the application sets `aria-expanded` on `from` while it is open. */
+  /** The + opens a menu: it says so (`aria-haspopup`) and is `aria-expanded` while `addMenuOpenFor` names its group. */
   addOpensMenu?: boolean;
+  /**
+   * While the application's menu is open: the item id it was opened for (the `targetItemId` it received), or `null` for
+   * the empty workspace; `undefined` while it is closed. The + of that group reads as expanded, also after a re-render.
+   */
+  addMenuOpenFor?: string | null;
   /** The application's key for "Add pane", such as "mod+shift+1": the + shows it in its tooltip and names it. */
   addShortcut?: string;
   /**
@@ -509,6 +514,7 @@ export default function Panes(props: PanesProps): JSX.Element {
                 onClick={(event) => requestAdd(null, event.currentTarget)}
                 aria-label={panesMessages().addPane}
                 aria-haspopup={props.addOpensMenu ? "menu" : undefined}
+                aria-expanded={props.addOpensMenu ? props.addMenuOpenFor === null : undefined}
               >
                 <i class="ti ti-plus" aria-hidden="true" />
                 <span>{panesMessages().addPane}</span>
@@ -531,6 +537,7 @@ export default function Panes(props: PanesProps): JSX.Element {
             addItem={requestAdd}
             canAdd={() => props.onAddItem !== undefined}
             addOpensMenu={() => props.addOpensMenu === true}
+            addMenuOpenFor={() => props.addMenuOpenFor}
             addShortcut={() => props.addShortcut}
             onActivate={activate}
             onLayoutChange={props.onLayoutChange}
@@ -624,6 +631,7 @@ type RendererProps = {
   addItem: (targetItemId: string | null, from: HTMLElement) => void;
   canAdd: () => boolean;
   addOpensMenu: () => boolean;
+  addMenuOpenFor: () => string | null | undefined;
   addShortcut: () => string | undefined;
   onActivate: (itemId: string) => void;
   onLayoutChange: (layout: PanesLayout) => void;
@@ -1125,6 +1133,8 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
               class="k2b-panes__add k2b-panes__add--tab"
               aria-label={panesMessages().addPane}
               aria-haspopup={props.addOpensMenu() ? "menu" : undefined}
+              aria-expanded={props.addOpensMenu() ? props.addMenuOpenFor() === props.node().active : undefined}
+              data-target={props.node().active}
               aria-keyshortcuts={ariaShortcut(props.addShortcut())}
               content={
                 <>

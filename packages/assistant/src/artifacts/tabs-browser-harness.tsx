@@ -1,4 +1,5 @@
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput } from "../chat-workspace";
 import { AssistantAddMenu, type AssistantAddMenuOpen } from "../frontend/AssistantAddMenu";
@@ -78,7 +79,8 @@ const params = new URL(location.href).searchParams;
 const webReader = params.get("web") !== "0";
 const shown = params.get("results") === "0" ? { ...snapshot, results: [] } : snapshot;
 let openAdd: AssistantAddMenuOpen | undefined;
-bindAddMenuShortcut((from) => openAdd?.(from, null));
+bindAddMenuShortcut((from, beside) => openAdd?.(from, beside));
+const [addMenuOpenFor, setAddMenuOpenFor] = createSignal<string | null | undefined>(undefined);
 
 render(
   () => (
@@ -115,6 +117,7 @@ render(
                   onJump={() => {}}
                   onAsk={(title) => ((window as unknown as { asked?: string }).asked = title)}
                   onAdd={(target, from) => openAdd?.(from, target)}
+                  addMenuOpenFor={addMenuOpenFor()}
                   arrangeHintSeen
                   webReader={webReader}
                   snapshot={() => shown}
@@ -124,6 +127,7 @@ render(
                   snapshot={() => shown}
                   webReader={webReader}
                   openTab={(tab, beside) => controller.open(tab, { beside })}
+                  onOpenFor={setAddMenuOpenFor}
                   register={(open) => {
                     openAdd = open;
                   }}

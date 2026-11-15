@@ -1612,10 +1612,11 @@ export default function AssistantWorkspace(props: Props) {
   // The box "In this chat": a click opens the thing as a tab beside the chat, or jumps to it.
   // The menu behind every "+" beside the chat loads with its first use; a request before then waits for it.
   const [addMenuWanted, setAddMenuWanted] = createSignal(false);
+  const [addMenuOpenFor, setAddMenuOpenFor] = createSignal<string | null | undefined>(undefined);
   let openAddMenu: AssistantAddMenuOpen | undefined;
   let pendingAdd: [HTMLElement, string | null] | undefined;
   // Ctrl/⌘ + Shift + 1 opens the same menu beside the + that shows.
-  onMount(() => onCleanup(bindAddMenuShortcut((from) => requestAddMenu(from, null))));
+  onMount(() => onCleanup(bindAddMenuShortcut((from, beside) => requestAddMenu(from, beside))));
   const requestAddMenu = (from: HTMLElement, beside: string | null) => {
     if (openAddMenu) return openAddMenu(from, beside);
     pendingAdd = [from, beside];
@@ -3037,6 +3038,7 @@ export default function AssistantWorkspace(props: Props) {
                               snapshot={contextState.snapshot}
                               webReader={webReader() === true}
                               openTab={(tab, beside) => artifactWorkspace.open(tab, { beside })}
+                              onOpenFor={setAddMenuOpenFor}
                               register={(open) => {
                                 openAddMenu = open;
                                 const pending = pendingAdd;
@@ -3119,6 +3121,7 @@ export default function AssistantWorkspace(props: Props) {
                     snapshot={contextState.snapshot}
                     onAsk={askAboutTab}
                     onAdd={(target, from) => requestAddMenu(from, target)}
+                    addMenuOpenFor={addMenuOpenFor()}
                     webReader={webReader() === true}
                     arrangeHintSeen={props.arrangeHintSeen === true}
                   />

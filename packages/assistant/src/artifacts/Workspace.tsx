@@ -251,6 +251,8 @@ export function ArtifactWorkspace(props: {
   onAsk?: (title: string) => void;
   /** "Add pane": the chat's whole list. */
   onAdd?: (targetItemId: string | null, from: HTMLElement) => void;
+  /** While the menu behind "+" is open: the item it was opened for; see `Panes`' `addMenuOpenFor`. */
+  addMenuOpenFor?: string | null;
   /** The one-time hint that tabs can be arranged was dismissed on this browser, as the server read it. */
   arrangeHintSeen?: boolean;
   /** The operator set up reading web pages: web links of the chat open as reading-view tabs. */
@@ -606,6 +608,7 @@ export function ArtifactWorkspace(props: {
         onAddItem={props.onAdd}
         addOpensMenu
         addShortcut={ADD_MENU_SHORTCUT}
+        addMenuOpenFor={props.addMenuOpenFor}
         arrangeHint={{
           open: arrangeHintOpen(),
           onDismiss: () => {

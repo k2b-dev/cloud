@@ -32,11 +32,13 @@ export function AssistantAddMenu(props: {
   webReader: boolean;
   openTab: (tab: WorkspaceTab, beside: string | null) => void;
   register: (open: AssistantAddMenuOpen) => void;
+  /** While open: the Panes item it was opened for, `null` beside the box; `undefined` once closed. */
+  onOpenFor?: (beside: string | null | undefined) => void;
 }) {
   const locale = useLocale();
   const t = () => addMenuMessages.resolve([locale()]).t;
   const [stage, setStage] = createSignal<Stage>("menu");
-  let openAt: ((anchor: HTMLElement, returnFocus: HTMLElement) => void) | undefined;
+  let openAt: ((anchor: HTMLElement, returnFocus: () => HTMLElement | undefined) => void) | undefined;
   let from: HTMLElement | undefined;
   let beside: string | null = null;
   // Esc in a search leads back to the menu; any other way out closes it.
@@ -44,6 +46,23 @@ export function AssistantAddMenu(props: {
   // Set while a choice moves the menu to its next step, so its closing is not an end.
   let moving = false;
 
+  /** The + that opened the menu, or the one Panes drew in its place for the same group. */
+  const returnTo = () =>
+    from?.isConnected
+      ? from
+      : beside
+        ? (document.querySelector<HTMLElement>(`.k2b-panes__add[data-target="${CSS.escape(beside)}"]`) ?? undefined)
+        : undefined;
+  /** Says the + is expanded as the menu opens, not a task later when the browser reports it. */
+  const expanded = (element: HTMLElement | undefined, isOpen: boolean) => {
+    props.onOpenFor?.(isOpen ? beside : undefined);
+    // The + of a row of tabs takes its state from Panes, which may draw it anew; any other + keeps it here.
+    if (element && !element.classList.contains("k2b-panes__add")) element.setAttribute("aria-expanded", String(isOpen));
+  };
+  const openMenu = (element: HTMLElement) => {
+    expanded(element, true);
+    openAt?.(element, returnTo);
+  };
   const results = () =>
     (props.snapshot()?.results ?? []).toSorted(
       (a, b) => Date.parse(b.deliveredAt) - Date.parse(a.deliveredAt) || a.key.localeCompare(b.key),
@@ -56,7 +75,7 @@ export function AssistantAddMenu(props: {
     setStage(next);
     // After the menu closed for the choice, the same place opens the next step.
     queueMicrotask(() => {
-      if (from?.isConnected) openAt?.(from, from);
+      if (from?.isConnected) openMenu(from);
       moving = false;
     });
   };
@@ -143,7 +162,7 @@ export function AssistantAddMenu(props: {
       // With only one thing to add, the + opens it directly.
       const entries = menuEntries();
       if (entries.length === 1 && !entries[0]!.disabled) return entries[0]!.action?.();
-      openAt?.(element, element);
+      openMenu(element);
     });
   });
 
@@ -160,7 +179,7 @@ export function AssistantAddMenu(props: {
       openAt={(open) => {
         openAt = open;
       }}
-      onOpenChange={(isOpen) => from?.setAttribute("aria-expanded", String(isOpen))}
+      onOpenChange={(isOpen) => expanded(from, isOpen)}
       onClose={() => {
         if (moving) return;
         const back = escaped && stage() !== "menu";
