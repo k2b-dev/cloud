@@ -765,10 +765,10 @@ const renderFailedTurnTimeline = async (
     await tick();
     expect(dom.root.querySelector(".ai-turn__text")?.textContent).toContain(answer);
     expect(dom.root.querySelector(".ai-turn__notice")?.textContent).toContain("Was bis hier steht, bleibt erhalten.");
-    // Screen readers hear why the answer broke off, never that it is ready.
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    // Screen readers hear why the answer broke off, never that it is ready (announcements land after 100 ms).
+    await new Promise((resolve) => setTimeout(resolve, 500));
     const heard = document.querySelector("[data-k2b-live]")?.textContent ?? "";
-    expect(heard).toContain("Der KI-Dienst hat nicht geantwortet.");
+    expect(heard).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet. Was bis hier steht, bleibt erhalten.");
     expect(heard).not.toContain("Antwort fertig");
   } finally {
     dispose();

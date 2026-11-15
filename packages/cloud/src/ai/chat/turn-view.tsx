@@ -33,7 +33,7 @@ import type { AiStopNotice } from "./stop-notice";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
-import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
+import { aiTurnErrorCanContinue } from "./turn-error";
 import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 import { AiThoughtStep, AiWorkFollowedContext, AiWorkStep, keepsStepDetail } from "./work-steps";
@@ -767,13 +767,16 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
       .join("\n\n");
     return text.includes("](") ? answerSources(markdown.renderSync(text, { locale: locale() }), layout().work) : [];
   });
-  // Screen readers hear once that the turn they followed failed and why; history read later is not announced.
+  /** Something of the turn stays above its failure notice. */
+  const kept = () => layout().text.length > 0 || layout().results.length > 0 || layout().steps > 0;
+  // Screen readers hear once that the turn they followed failed and why, as the notice says it; history read later is not
+  // announced.
   createEffect(
     on(live, (now, before) => {
       const error = props.segment().error;
       if (before && !now && error) {
         const t = aiChatMessages(locale());
-        announce(`${t.turnErrorTitle} ${aiTurnErrorDescription(error, locale())}`);
+        announce([t.turnInterrupted({ reason: t.turnErrorReason(error) }), kept() ? t.keptSoFar : ""].filter(Boolean).join(" "));
       }
     }),
   );
@@ -867,13 +870,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           />
         </Show>
         <Show when={props.segment().error}>
-          {(error) => (
-            <AiTurnErrorNotice
-              error={error()}
-              continuable={props.segment().continuable === true}
-              kept={layout().text.length > 0 || layout().results.length > 0 || layout().steps > 0}
-            />
-          )}
+          {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} kept={kept()} />}
         </Show>
         <Show when={props.segment().stopNotice}>
           {(notice) => <AiTurnStopNotice notice={notice()} continuable={props.segment().continuable === true} />}
