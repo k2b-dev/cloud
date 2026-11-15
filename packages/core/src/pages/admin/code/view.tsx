@@ -367,7 +367,11 @@ export function CodeAreaView(props: Props) {
               {(owner) => (
                 <span class="core-code-approvals__owner">
                   <i class={ownerIcon(owner())} aria-hidden="true" />
-                  <span class="k2b-truncate-fade">{ownerLabel(t, owner(), entry.ownerName ?? null, props.appNames)}</span>
+                  <span class="k2b-truncate-fade">
+                    {owner().kind === "person"
+                      ? r.ownerPersonal({ who: ownerLabel(t, owner(), entry.ownerName ?? null, props.appNames) })
+                      : ownerLabel(t, owner(), entry.ownerName ?? null, props.appNames)}
+                  </span>
                 </span>
               )}
             </Show>

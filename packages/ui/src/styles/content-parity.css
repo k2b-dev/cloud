@@ -4486,9 +4486,11 @@
 
 /* Every row is at least as wide as the longest one, so fills reach the end of
    the scrolled surface. */
+/* The lines name their font: a host's universal font rule must not turn code into prose. */
 .k2b-ui .k2b-code-diff__line {
   display: grid;
   min-width: max-content;
+  font-family: var(--k2b-font-mono);
   grid-template-columns: var(--k2b-code-diff-number) var(--k2b-code-diff-number) var(--k2b-code-diff-sign) minmax(0, 1fr);
   padding-right: 0.75rem;
 }
@@ -4648,6 +4650,10 @@
   padding-left: 0.125rem;
   font: inherit;
   white-space: pre;
+}
+
+.k2b-ui .k2b-code-diff__line code * {
+  font-family: inherit;
 }
 
 .k2b-ui .k2b-code-diff__line[data-kind="add"] {

@@ -1,4 +1,4 @@
-import { Button, ButtonLink, ChoiceTiles, NoticeCard, Section, StatusBadge, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, ChoiceList, NoticeCard, Section, StatusBadge, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { z } from "zod";
 import {
@@ -244,14 +244,13 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
       </Show>
 
       <Show when={!props.groupId}>
-        <ChoiceTiles
+        <ChoiceList
           label={t().presets}
-          layout="row"
           options={presetOptions().map((option) => ({
             value: option.value,
             label: option.label,
-            status: option.status,
-            visual: <i class={`${option.icon} core-code-policy__tile-icon`} aria-hidden="true" />,
+            description: option.status,
+            icon: option.icon,
           }))}
           value={() => draft().preset}
           onValueChange={(preset) => {

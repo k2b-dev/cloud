@@ -300,8 +300,14 @@
   gap: 0.75rem;
   padding: 0.25rem 0.5rem 1.5rem;
 }
-.core-code-approvals__frame > :is(header, .k2b-section__head) {
-  display: none;
+/* The tabs above name the list; its heading stays for screen readers only. */
+.k2b-ui .core-code-approvals__frame > .k2b-section__header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .core-code-approvals__list {
   display: grid;
@@ -360,6 +366,9 @@
   min-width: 0;
   font-size: var(--k2b-type-13, 0.8125rem);
 }
+.core-code-approvals__who > span:first-child {
+  white-space: nowrap;
+}
 .core-code-approvals__owner {
   display: inline-flex;
   align-items: center;
@@ -405,6 +414,10 @@
   .core-code-approvals__go {
     display: none;
   }
+  /* On a phone the head's back arrow closes; the count and arrows keep their room. */
+  .core-code-approvals__position > :last-child {
+    display: none;
+  }
 }
 
 .core-code-review {
@@ -415,7 +428,6 @@
 .core-code-review__panel {
   display: grid;
   gap: 1rem;
-  padding-top: 0.75rem;
 }
 .core-code-review__panel > :empty {
   display: none;
@@ -724,11 +736,14 @@
   gap: 1rem;
   padding: 0.25rem 0.5rem 1.5rem;
 }
-.core-code-policy__tile-icon {
-  font-size: 1.125rem;
-}
-.core-code-policy__frame > :is(header, .k2b-section__head) {
-  display: none;
+/* The tabs above name the list; its heading stays for screen readers only. */
+.k2b-ui .core-code-policy__frame > .k2b-section__header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .core-code-policy__table {
   width: 100%;
@@ -789,8 +804,8 @@
   cursor: pointer;
 }
 .core-code-policy__radio[aria-checked="true"] {
-  border-color: var(--k2b-primary);
-  background: radial-gradient(circle, var(--k2b-primary) 0 0.3125rem, transparent 0.3438rem);
+  border-color: var(--k2b-action);
+  background: radial-gradient(circle, var(--k2b-action) 0 0.25rem, transparent 0.2813rem);
 }
 .core-code-policy__radio:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
