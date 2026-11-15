@@ -222,6 +222,28 @@ describe("Mailbox Code page in a browser", () => {
     }
   });
 
+  test("what it did for you links only named results; a result the reader may not open keeps its row, without link or ID", async () => {
+    for (const width of [1440, 390]) {
+      const page = await load("overview", width);
+      try {
+        const rows = await page.evaluate(() =>
+          Array.from(document.querySelectorAll(".cloud-code__feed li")).map((row) => ({
+            text: row.querySelector(".cloud-code__feed-text")?.textContent ?? "",
+            href: row.querySelector(".cloud-code__feed-text a")?.getAttribute("href") ?? null,
+            height: Math.round(row.getBoundingClientRect().height),
+          })),
+        );
+        expect(rows.find((row) => row.text === "Aufgabe „Lieferung Polsterei Weber“ angelegt")?.href).toBe("/app/spaces/Lg8x2q");
+        expect(rows.find((row) => row.text === "Aufgabe angelegt")).toMatchObject({ href: null });
+        expect(JSON.stringify(rows)).not.toMatch(/Hd7q2w|\{name\}/);
+        // 6b: every row keeps one height, named or not.
+        expect(new Set(rows.map((row) => row.height)).size).toBe(1);
+      } finally {
+        await page.context().close();
+      }
+    }
+  });
+
   test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
     for (const [state, dot] of [
       ["refused", true],

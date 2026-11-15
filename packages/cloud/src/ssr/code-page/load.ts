@@ -3,7 +3,7 @@ import { z } from "zod";
 import { aiLive } from "../../ai/live";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "../../capabilities/server";
 import type { CapabilityCaller } from "../../capabilities/server-invoke";
-import { type CloudResourceRef, cloudResourceRefAppId } from "../../contracts/capabilities";
+import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "../../contracts/capabilities";
 import {
   CodeActivityReadModelSchema,
   type CodeRunReadModel,
@@ -48,6 +48,7 @@ import {
   VersionListSchema,
   VersionReadSchema,
 } from "./data";
+import { nameRecentResults } from "./recent-names";
 import { loadSourceTabInitial } from "./source-tab-load";
 import { type CodeOperationLabel, codeActivationRows, codeTargetsOf, permissionRef, targetKey } from "./targets";
 
@@ -678,6 +679,27 @@ const loadReady = async (
     ),
     tab === "code" && code.permission === "editor" ? loadSourceTabInitial(invoke, code.id, url).catch(() => null) : Promise.resolve(null),
   ]);
+  // Readers of every type in the apps this Code acts in, from the registry catalog the page already reads.
+  const readerApps = new Set(
+    activity
+      ? [
+          ...(activeManifest?.permissions ?? []).map((permission) => permission.operation.split(".")[0]!),
+          ...activity.recent.flatMap((item) => (item.target ? [cloudResourceRefAppId(item.target.ref)] : [])),
+        ]
+      : [],
+  );
+  const recentReaders: Record<string, string> = {};
+  for (const appId of readerApps) {
+    const app = await catalog(appId);
+    if (!app?.ok || !app.data) continue;
+    for (const type of app.data.manifest.types) {
+      const reader = resolveCapabilityResourceReader(app.data.manifest, { type: `${appId}.${type.localId}`, id: "" });
+      if (reader) recentReaders[`${appId}.${type.localId}`] = reader.localId;
+    }
+  }
+  const namedActivity = activity
+    ? { ...activity, recent: await nameRecentResults(activity.recent, invoke, (type) => recentReaders[type] ?? null) }
+    : null;
   const byId = new Map([currentWords, proposalWords, selectedWords].flatMap((item) => (item ? [[item.versionId, item] as const] : [])));
   const secretNames = [
     ...new Set([...(activeManifest?.secrets ?? []), ...(waitingManifest?.secrets ?? [])].map((binding) => binding.name)),
@@ -741,7 +763,7 @@ const loadReady = async (
       current: currentId ? (byId.get(currentId) ?? null) : null,
       proposal: proposalReceipt ? (byId.get(proposalReceipt.version.id) ?? null) : null,
       selected: selectedVersionId ? (byId.get(selectedVersionId) ?? null) : null,
-      activity,
+      activity: namedActivity,
       runs: Object.fromEntries(runWords.filter((entry) => entry !== null)),
     },
     secretNames,
@@ -750,6 +772,7 @@ const loadReady = async (
     runSelected: tab === "runs" && Boolean(runParam && uuid.safeParse(runParam).success),
     versionSelected: tab === "versions" && Boolean(versionParam && uuid.safeParse(versionParam).success),
     sourceTab: tab === "code" ? sourceTab : null,
+    recentReaders,
   };
 };
 
