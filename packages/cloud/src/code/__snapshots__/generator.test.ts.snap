@@ -818,7 +818,7 @@ export type CodeApp<Variables extends object = {}> = {
   all(path: string, handler: (c: CodeContext<Variables>) => Response | Promise<Response>, options?: CodeRouteOptions): CodeApp<Variables>;
 };
 export declare const app: CodeApp;
-type Sfec6469122ed = { kind: ("Text") & (string); text: string };
+type S74d33dc1d944 = { format?: ("markdown") & (string); kind: ("Text") & (string); text: string };
 type S3d52bedc5066 = { kind: ("Heading") & (string); level?: ((2) & (number) | (3) & (number) | (4) & (number)); text: string };
 type S6b47cabf9ccc = { compact?: boolean; currency?: string; decimals?: number; style?: (("number" | "percent" | "currency")) & (string) };
 type Sd70754363e0d = { label: string; tone: (("info" | "ok" | "warning" | "error" | "degraded" | "running" | "neutral")) & (string) };
@@ -894,7 +894,7 @@ type Sd3722946df20 = { [key: string]: string };
 type See970d23b441 = { action: string; kind: ("Button") & (string); label: string; values?: Sd3722946df20 };
 type S0538ad0c0f7b = { kind: ("Notice") & (string); text?: string; title: string; tone: (("info" | "success" | "warning" | "danger")) & (string) };
 type Sa0d669cd1ca9 = { children: Array<CodePageRef0>; color?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); description?: string; icon?: string; kind: ("Section") & (string); title: string };
-type CodePageRef0 = ((Sfec6469122ed | S3d52bedc5066 | Sfd63ba3e49b7 | S34c2f1d4e95e | S98f112b66964 | S7f379fbbf736 | S59cb1e6bee7e | S51ee6e3b75b5 | See970d23b441 | S0538ad0c0f7b) | Sa0d669cd1ca9);
+type CodePageRef0 = ((S74d33dc1d944 | S3d52bedc5066 | Sfd63ba3e49b7 | S34c2f1d4e95e | S98f112b66964 | S7f379fbbf736 | S59cb1e6bee7e | S51ee6e3b75b5 | See970d23b441 | S0538ad0c0f7b) | Sa0d669cd1ca9);
 export type CodePageTree = { asOf?: string; children: Array<CodePageRef0>; color?: (("zinc" | "blue" | "emerald" | "amber" | "red")) & (string); eyebrow?: string; follow?: Array<string>; icon?: string; kind: ("Page") & (string); subtitle?: string; title: string; version: (1) & (number) };
 export type CodeChartDescription = (Sc731f500124b | S9c03cb5a3302 | Sdda147b6785c | S1b69bf224ffe | Se91e56a2986c | Sfcc114f6af45 | S2aa515990a9c | S8d14adeeaf74 | S9b9c7678925c | Sc05000fd895c | Sdf289439ae47 | Sdb5c57fbbc5a | (Sde04f7de3f13 | Sb1dc445a76e2) | S2b209d7c7a8a | S597064cf2f55 | Se434e8daea47 | Scb1d604e2024 | S2e4574ad6b22 | S7405123d54ef | Sfbe43f3b3ef2 | Sbd866db8dbab);
 /**
