@@ -42,7 +42,7 @@ import { createCloudCompactFn } from "./compaction";
 import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { editedDraftArguments } from "./draft-edit";
 import { aiFileStore } from "./files-store";
-import { chartToolResult } from "./gustav-views";
+import { cardToolResult, chartToolResult } from "./gustav-views";
 import { readAiTurnCallUsage } from "./inference-calls";
 import { AI_LIVE_ARGS_INTERVAL_MS, createLiveArgsReader } from "./live-tool-args";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
@@ -2048,7 +2048,12 @@ export class AiTurnExecutor {
         type: "tool_execution_end",
         callId: event.callId,
         name: event.name,
-        result: toolName === "chart" ? chartToolResult(event.args) : { displayed: true },
+        result:
+          toolName === "chart"
+            ? chartToolResult(event.args)
+            : toolName === "card" || toolName === "cloud_card"
+              ? cardToolResult(event.args)
+              : { displayed: true },
         isError: false,
       } as OutboundEvent);
       await aiToolAudit

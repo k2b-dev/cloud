@@ -12,13 +12,49 @@ import {
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
 import { type BlockChoiceState, BlockTree } from "../../blocks/BlockTree";
 import { blockWords } from "../../blocks/messages";
+import { cardToolBlocks, chartToolBlocks } from "../gustav-view-blocks";
 import type { AiTurnBlock } from "../protocol";
 import { useReaderTimeZone } from "./action-sentences";
 import { capabilityView } from "./capability-result";
 import { useAiChatActions } from "./message-actions";
-import { displayToolName } from "./message-utils";
+import { displayToolName, isCardToolName, isChartToolName } from "./message-utils";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
+
+/**
+ * Gustav as the origin of his own visuals: the same head an app's result has, with his tile in the AI colour, the kind
+ * of view and the values he drew behind "Data".
+ */
+export const gustavOrigin = (block: ToolBlock, locale: string, title?: string) => ({
+  // The head names the kind of view, as an app's head does; the chart's own title stands in its island.
+  origin: {
+    name: "Gustav",
+    icon: "ti ti-moustache",
+    accent: "var(--k2b-ai-accent)",
+    title: title ?? displayToolName(block.name, locale),
+  },
+  data: block.args,
+});
+
+/**
+ * Gustav's chart or key figure as a block with its view: the view the server stored with the result, or, while the
+ * call still runs, the same translation of its arguments, so the island stands from the first frame and nothing moves
+ * when the call ends. An older stored result without a view returns `undefined` and keeps the tool's own drawing.
+ */
+export const gustavViewBlock = (block: ToolBlock): ToolBlock | undefined => {
+  if (block.isError) return undefined;
+  if (block.status === "completed") return block.view ? block : undefined;
+  if (block.status !== "running" || block.args === undefined) return undefined;
+  const view = isChartToolName(block.name) ? chartToolBlocks(block.args) : isCardToolName(block.name) ? cardToolBlocks(block.args) : null;
+  return view ? { ...block, status: "completed", view } : undefined;
+};
+
+/** Consecutive key figures as one row: one bound view with their figures, at most six to a row as the tiles allow. */
+export const keyFigureGroup = (blocks: readonly ToolBlock[]): ToolBlock => {
+  const items = blocks.flatMap((block) => (block.view?.blocks ?? []).flatMap((entry) => (entry.kind === "Stats" ? entry.items : [])));
+  const rows = Array.from({ length: Math.ceil(items.length / 6) }, (_, index) => items.slice(index * 6, index * 6 + 6));
+  return { ...blocks[0]!, view: { version: 1, blocks: rows.map((row) => ({ kind: "Stats" as const, items: row })) } };
+};
 
 /**
  * A capability result as the person sees it: Cloud's origin line "App · Title" and the app's blocks in the flow of the

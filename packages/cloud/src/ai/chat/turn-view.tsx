@@ -22,7 +22,7 @@ import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { hasCapabilityView } from "./capability-result";
-import { CapabilityViewBlock } from "./capability-view";
+import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, keyFigureGroup } from "./capability-view";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
@@ -34,7 +34,14 @@ import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
 import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
-import { type AiTurnAction, type AiTurnLayout, type AiTurnPhase, type AiTurnResult, submittedCodeVersion } from "./turn-layout";
+import {
+  type AiTurnAction,
+  type AiTurnLayout,
+  type AiTurnPhase,
+  type AiTurnResult,
+  isKeyFigureResult,
+  submittedCodeVersion,
+} from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -459,11 +466,33 @@ function AiTurnResultView(props: {
   live: boolean;
 }) {
   const actions = useAiChatActions();
+  const locale = useLocale();
   const block = () => props.result()?.block;
   return (
     <Show when={block()}>
       {(current) => (
         <Switch>
+          {/* Gustav's own chart and key figures stand under Cloud's head like an app's result; older ones without a
+              view keep their own drawing below. */}
+          <Match when={isChartToolName(current().name) && gustavViewBlock(current())}>
+            {(shown) => (
+              <CapabilityViewBlock block={shown()} turnId={props.turnId} live={props.live} {...gustavOrigin(current(), locale())} />
+            )}
+          </Match>
+          <Match when={isKeyFigureResult(current())}>
+            <CapabilityViewBlock
+              block={keyFigureGroup(
+                (props.result()?.group ?? [current()]).flatMap((entry) => {
+                  const shown = gustavViewBlock(entry);
+                  return shown ? [shown] : [];
+                }),
+              )}
+              turnId={props.turnId}
+              live={props.live}
+              {...gustavOrigin(current(), locale(), aiChatMessages(locale()).keyFigures)}
+              data={(props.result()?.group ?? [current()]).map((entry) => entry.args)}
+            />
+          </Match>
           <Match when={current().name === "map"}>
             <AiMapToolBlock block={current()} />
           </Match>

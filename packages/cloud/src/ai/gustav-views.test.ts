@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chartToolResult, chartToolView } from "./gustav-views";
+import { cardToolResult, cardToolView, chartToolResult, chartToolView } from "./gustav-views";
 import { capabilityResultView, modelCapabilityResult } from "./result-view";
 
 const revenue = {
@@ -47,4 +47,14 @@ test("the stored result binds as a view for people while the model reads only th
   expect(modelCapabilityResult(result)).toEqual({ displayed: true, data: {}, viewSummary: expect.any(String) });
   // An older stored result has no view and stays as it was.
   expect(capabilityResultView({ displayed: true })).toBeNull();
+});
+
+test("a card becomes one flat key figure with its change or scope as the quiet line", () => {
+  const view = cardToolView({ title: "Girokonto", value: "2.481,20 €", trendValue: "+312,00 €", trendLabel: "seit 01.11.", emoji: "💶" });
+  expect(view?.blocks).toEqual([{ kind: "Stats", items: [{ label: "Girokonto", value: "2.481,20 €", note: "+312,00 € seit 01.11." }] }]);
+  expect(cardToolView({ title: "Tagesgeld", value: "12.050,00 €", caption: "2,1 % Zins" })?.blocks[0]).toMatchObject({
+    items: [{ note: "2,1 % Zins" }],
+  });
+  expect(cardToolView({ title: "", value: "1" })).toBeNull();
+  expect(modelCapabilityResult(cardToolResult({ title: "A", value: "1" }))).toMatchObject({ displayed: true });
 });

@@ -7,7 +7,7 @@ import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityView } from "./capability-result";
-import { CapabilityViewBlock } from "./capability-view";
+import { CapabilityViewBlock, gustavOrigin, gustavViewBlock } from "./capability-view";
 import { CodeStepBody, hasCodeStepView } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
@@ -384,16 +384,6 @@ function MemoryToolView(props: { block: ToolBlock }) {
   );
 }
 
-/**
- * Gustav as the origin of his own visuals: the same head an app's result has, with his tile in the AI colour, the
- * visual's title and the values he drew behind "Data".
- */
-const gustavOrigin = (block: ToolBlock, locale: string) => {
-  const args = block.args && typeof block.args === "object" ? (block.args as Record<string, unknown>) : {};
-  const title = typeof args.title === "string" && args.title.trim() ? args.title.trim() : displayToolName(block.name, locale);
-  return { origin: { name: "Gustav", icon: "ti ti-moustache", accent: "var(--k2b-ai-accent)", title }, data: block.args };
-};
-
 function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boolean }) {
   const actions = useAiChatActions();
   const locale = useLocale();
@@ -456,12 +446,31 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         >
           <SpecializedBuiltinToolBlock block={props.block} />
         </Match>
+        {/* Gustav's key figure and chart stand under Cloud's head as the same blocks an app's result uses, from the first
+            frame; older stored ones without a view keep their own drawing. */}
+        <Match when={isCardToolName(props.block.name) && gustavViewBlock(props.block)}>
+          {(shown) => (
+            <CapabilityViewBlock
+              block={shown()}
+              turnId={props.turnId}
+              live={props.active ?? false}
+              {...gustavOrigin(props.block, locale(), aiChatMessages(locale()).keyFigures)}
+            />
+          )}
+        </Match>
         <Match when={isCardToolName(props.block.name) && !props.block.isError}>
           <CloudCardBlock args={props.block.args} />
         </Match>
-        {/* A chart whose result carries its view stands under Cloud's head below, with no step row of its own; older
-            ones keep their own drawing. */}
-        <Match when={isChartToolName(props.block.name) && !props.block.isError && props.block.view}>{null}</Match>
+        <Match when={isChartToolName(props.block.name) && gustavViewBlock(props.block)}>
+          {(shown) => (
+            <CapabilityViewBlock
+              block={shown()}
+              turnId={props.turnId}
+              live={props.active ?? false}
+              {...gustavOrigin(props.block, locale())}
+            />
+          )}
+        </Match>
         <Match when={isChartToolName(props.block.name) && !props.block.isError}>
           <CloudChartBlock args={props.block.args} completed={status() === "completed"} />
         </Match>
@@ -483,13 +492,8 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
       <Show when={websiteReceipts(props.block).length > 0}>
         <WebsiteReceipts block={props.block} />
       </Show>
-      <Show when={hasCapabilityView(props.block)}>
-        <CapabilityViewBlock
-          block={props.block}
-          turnId={props.turnId}
-          live={props.active ?? false}
-          {...(isChartToolName(props.block.name) ? gustavOrigin(props.block, locale()) : {})}
-        />
+      <Show when={hasCapabilityView(props.block) && !isChartToolName(props.block.name) && !isCardToolName(props.block.name)}>
+        <CapabilityViewBlock block={props.block} turnId={props.turnId} live={props.active ?? false} />
       </Show>
     </>
   );

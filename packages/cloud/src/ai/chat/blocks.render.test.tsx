@@ -21,7 +21,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { AiReaderTimeZoneProvider } = await import("./action-sentences");
 const { AiTurnBlockView } = await import("./blocks");
 const { capabilityResultView } = await import("../result-view");
-const { chartToolResult } = await import("../gustav-views");
+const { cardToolResult, chartToolResult } = await import("../gustav-views");
 const { AiChatActionsProvider } = await import("./message-actions");
 const { createAiChatTimeline } = await import("./presentation");
 const { AiTurnView } = await import("./turn-view");
@@ -106,7 +106,9 @@ describe("Gustav's own charts", () => {
     const html = renderToString(() => createComponent(AiTurnBlockView, { block: chartBlock(chartToolResult(revenue)), turnId: "turn-1" }));
     expect(html).toContain('class="cloud-capability-view"');
     expect(html).toContain("<strong>Gustav</strong>");
-    expect(html).toContain("· Revenue per month");
+    // The head names the kind of view; the chart's own title stands in its island, once.
+    expect(html).toContain("· Chart");
+    expect(html.split("Revenue per month").length - 1).toBeGreaterThan(0);
     expect(html).toContain('aria-label="Open large"');
     expect(html).toContain('aria-label="Show data"');
     expect(html).toContain('data-kind="Chart"');
@@ -1946,6 +1948,59 @@ describe("turn places in the reader's language", () => {
     for (const label of ["Öffnen", "Bearbeiten", "Herunterladen"]) expect(german).toContain(`>${label}</span>`);
     expect(german).not.toMatch(/>(Open|Edit|Download)<\/span>/);
     expect(renderPlaces([mail(result)], { locale: "en" })).toContain(">Open</span>");
+  });
+
+  test("Gustav's key figures stand flat in one row under one head, his chart as an island; older ones keep their drawing", () => {
+    const card = (id: string, args: Record<string, unknown>, stored = true): AiTurnBlock => {
+      const result = stored ? cardToolResult(args) : { displayed: true };
+      return {
+        id,
+        kind: "tool",
+        callId: id,
+        name: "card",
+        args,
+        status: "completed",
+        result,
+        view: capabilityResultView(result) ?? undefined,
+      };
+    };
+    const figures = [
+      card("c1", { title: "Girokonto", value: "2.481,20 €", trendValue: "+312,00 €", trendLabel: "seit 01.11." }),
+      card("c2", { title: "Tagesgeld", value: "12.050,00 €", caption: "2,1 % Zins" }),
+      card("c3", { title: "Kreditkarte", value: "−312,45 €", caption: "Abbuchung 28.11." }),
+    ];
+    const chartArgs = {
+      kind: "bar",
+      title: "Ausgaben",
+      data: [
+        { label: "Okt", value: 3 },
+        { label: "Nov", value: 4 },
+      ],
+    };
+    const chartResult = chartToolResult(chartArgs);
+    const chart: AiTurnBlock = {
+      id: "g1",
+      kind: "tool",
+      callId: "g1",
+      name: "chart",
+      args: chartArgs,
+      status: "completed",
+      result: chartResult,
+      view: capabilityResultView(chartResult) ?? undefined,
+    };
+    const html = renderPlaces([...figures, chart], { locale: "de" });
+    // One head for the three figures and one for the chart, both Gustav's; the figures are one flat row.
+    expect(html.split("<strong>Gustav</strong>").length - 1).toBe(2);
+    expect(html).toContain("· Kennzahlen");
+    expect(html.split('data-kind="Stats"').length - 1).toBe(1);
+    // The tiles' code loads after the first frame, like an app's key figures: the labels stand, the figures wait in place.
+    for (const label of ["Girokonto", "Tagesgeld", "Kreditkarte"]) expect(html).toContain(`>${label}</span>`);
+    expect(html).toContain('data-kind="Chart"');
+    expect(html).not.toContain("ti ti-mood");
+    // An older stored card or chart without a view keeps the tool's own drawing.
+    const old = renderPlaces([card("o1", { title: "Girokonto", value: "2.481,20 €" }, false)], { locale: "de" });
+    expect(old).not.toContain("cloud-capability-view");
+    expect(old).toContain("2.481,20 €");
   });
 
   test("a query's table stands under Cloud's head, and an action's table shows its summary and links once", () => {

@@ -1,3 +1,4 @@
+import { cardToolBlocks } from "../gustav-view-blocks";
 import { type AiTurnBlock, isRenderableTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { hasCapabilityView } from "./capability-result";
@@ -18,7 +19,14 @@ export type AiTurnActionState = "open" | "interaction" | "running" | "done" | "r
 
 export type AiTurnAction = { id: string; block: ToolBlock; state: AiTurnActionState };
 
-export type AiTurnResult = { id: string; block: ToolBlock };
+/** `group` holds consecutive key figures Gustav showed one by one; they stand together in one row. */
+export type AiTurnResult = { id: string; block: ToolBlock; group?: ToolBlock[] };
+
+/** A key figure Gustav showed with the card tool whose result carries its view. */
+export const isKeyFigureResult = (block: ToolBlock): boolean =>
+  isCardToolName(block.name) &&
+  !block.isError &&
+  (block.status === "completed" ? block.view !== undefined : block.status === "running" && cardToolBlocks(block.args) !== null);
 
 /**
  * The four fixed places of one turn. Live and history use the same function on the same blocks, so a
@@ -129,7 +137,10 @@ export function layoutAiTurn(
     if (!isResult(block, options.phase, options.codePresentations ?? false, options.codeVersions ?? false)) continue;
     const target = resultTarget(block);
     const index = target ? resultIndex.get(target) : undefined;
+    const previous = results.at(-1);
     if (index !== undefined) results[index] = { id: results[index]!.id, block };
+    else if (!target && isKeyFigureResult(block) && previous && isKeyFigureResult(previous.block))
+      results[results.length - 1] = { ...previous, group: [...(previous.group ?? [previous.block]), block] };
     else {
       if (target) resultIndex.set(target, results.length);
       results.push({ id: block.id, block });

@@ -140,9 +140,52 @@ describe("Approval scenes", () => {
         });
         await shot(page, `06-gustav-diagramm-light-${width}`);
         expect(look.head).toContain("Gustav");
-        expect(look.head).toContain("Gesamtsaldo");
+        expect(look.head).toContain("Diagramm");
         expect(look.tools).toEqual(["Groß öffnen", "Daten zeigen"]);
         expect(look.island).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+
+  for (const width of [1440, 390])
+    test(`Gustav's key figures at ${width} px stand flat in one row under one head, his chart as an island`, async () => {
+      const page = await open("konten", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        await page.locator(".k2b-stat-cell:not([data-status='loading'])").first().waitFor();
+        await settled(page);
+        const look = await page.evaluate(() => ({
+          heads: [...document.querySelectorAll(".cloud-capability-view__head")].map((head) =>
+            head.textContent?.replace(/\s+/g, " ").trim(),
+          ),
+          stats: document.querySelectorAll('.cloud-blocks__cell[data-kind="Stats"]').length,
+          negative: getComputedStyle(document.querySelectorAll(".k2b-stat-cell__value")[3]!).color,
+          positive: getComputedStyle(document.querySelectorAll(".k2b-stat-cell__value")[0]!).color,
+          cells: [...document.querySelectorAll(".k2b-stat-cell")].map((cell) => [
+            cell.textContent?.replace(/\s+/g, " ").trim(),
+            getComputedStyle(cell).boxShadow,
+            getComputedStyle(cell).borderTopWidth,
+          ]),
+        }));
+        await shot(page, `06-gustav-konten-light-${width}`);
+        expect(look.heads).toHaveLength(2);
+        expect(look.heads[0]).toContain("Kennzahlen");
+        expect(look.heads[1]).toContain("Diagramm");
+        expect(look.stats).toBe(1);
+        expect(look.cells.map(([text]) => text)).toEqual([
+          expect.stringContaining("2.481,20 €"),
+          expect.stringContaining("12.050,00 €"),
+          expect.stringContaining("640,00 €"),
+          expect.stringContaining("−312,45 €"),
+        ]);
+        // A negative figure reads red, given as text with its minus sign.
+        expect(look.negative).not.toBe(look.positive);
+        // Flat: no tile shadow and no frame around a key figure.
+        for (const [, shadow, border] of look.cells) {
+          expect(["none", "rgba(0, 0, 0, 0) 0px 0px 0px 0px"]).toContain(shadow ?? "");
+          expect(border).toBe("0px");
+        }
       } finally {
         await page.close();
       }

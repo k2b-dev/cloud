@@ -4,7 +4,9 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
+import { chartToolResult } from "../gustav-views";
 import type { AiWireEvent } from "../protocol";
+import { capabilityResultView } from "../result-view";
 import type { AiStoredMessage } from "../types";
 import { truncatedAnswer } from "./stop-notice.test-fixture";
 
@@ -1259,7 +1261,14 @@ for (const view of [
           ...base,
           seq: 5,
           type: "block_set",
-          block: { ...chart, args, status: "completed", result: { displayed: true } },
+          // The server stores the chart's view with the result; it is the island the running call already showed.
+          block: {
+            ...chart,
+            args,
+            status: "completed",
+            result: chartToolResult(args),
+            view: capabilityResultView(chartToolResult(args)) ?? undefined,
+          },
         });
         await emit(page, {
           ...base,

@@ -1124,6 +1124,9 @@ suite("AI executor integration", () => {
         // From running straight to completed: an awaiting_client in between would read as an open request.
         expect(statuses).toEqual(["running", "completed"]);
         expect(pipeline.blocks.find((block) => block.kind === "tool")).toMatchObject({ status: "completed", args });
+        // People see the chart as the same block an app's result uses; the model above reads only `displayed`.
+        const stored = pipeline.blocks.find((block) => block.kind === "tool");
+        expect(stored?.kind === "tool" ? stored.view?.blocks[0]?.kind : undefined).toBe("Chart");
         expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
         await pipeline.flush();
       } finally {
