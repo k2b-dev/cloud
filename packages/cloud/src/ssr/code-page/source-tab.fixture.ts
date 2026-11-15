@@ -1,4 +1,4 @@
-import type { CodeDiffLine } from "@k2b/ui";
+import type { CodeDiffLine } from "@k2b/ui/code-diff";
 import { type CodeSourceTabInitial, type CodeSourceTabVersion, compareRows } from "./source-tab-load";
 
 /**

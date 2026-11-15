@@ -1314,3 +1314,12 @@ test("a grant's place reads as its kind and name, from the page's targets", asyn
   const may = markup.slice(markup.indexOf("cloud-code__may"));
   expect(may.slice(0, may.indexOf("</ul>"))).not.toContain("<a ");
 });
+
+// `CodeDiff` comes from its own entry, `@k2b/ui/code-diff`, so islands that never show code leave it out; a direct
+// `?tab=code` still renders the whole tab on the server, with the code region and its lines.
+test("?tab=code renders the code tab on the server", () => {
+  const markup = html("code");
+  expect(markup).toContain('data-code-source-region="code-tab"');
+  expect(markup).toContain('class="k2b-code-diff__body"');
+  expect(markup).toMatch(/class="k2b-code-diff__line"/);
+});
