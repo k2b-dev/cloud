@@ -378,7 +378,7 @@ describe("queued messages", () => {
     try {
       await page.getByRole("button", { name: "Alle 5 vorgemerkten Nachrichten zeigen" }).click();
       await row(page, "q3").getByRole("button", { name: "Jetzt senden" }).click();
-      await expect(row(page, "q3").getByRole("status", { name: "Wird gesendet…" }).isVisible()).resolves.toBe(true);
+      await row(page, "q3").getByRole("status", { name: "Wird gesendet…" }).waitFor();
       await page.mouse.move(0, 0);
       await settled(page);
       // The ring informs, so it stays without the pointer; every other button waits.
