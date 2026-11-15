@@ -84,3 +84,12 @@ test("F26 leaves readCodeOwner alone: it names a person only to that person, als
   expect(await readCodeOwner({ kind: "person", userId: "u1" }, self)).toEqual({ title: "Lea Muster", admin: true });
   expect(await readCodeOwner({ kind: "person", userId: "someone-else" }, self)).toBeNull();
 });
+
+test("only read-only queries share one owner read; Actions check the owner again before every write", async () => {
+  const { runCodeQuery } = await import("./queries");
+  const seen: boolean[] = [];
+  const execution = { authority: authority("invocation"), actor: {}, accessSubject: {}, user: null } as never;
+  await runCodeQuery(execution, async (context) => void seen.push(Boolean(context.ownerReads)), true);
+  await runCodeQuery(execution, async (context) => void seen.push(Boolean(context.ownerReads)));
+  expect(seen).toEqual([true, false]);
+});

@@ -757,7 +757,7 @@ export const aiCapabilities = defineCapabilities({
       description: "Version metadata or manifest; source and bundle require editor rights. Follow nextOffset for all text.",
       ...codeQueryContracts.versionRead,
       openWorld: false,
-      run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersion(input, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => readCodeVersion(input, ctx), true),
     },
     "code.run.list": {
       title: "List Code runs",
