@@ -226,7 +226,7 @@ A swap is one transaction, and its order is the contract:
    starts does not stop the commit; cleanups should not navigate. Push history with an absolute
    URL before inserting the root, so relative URLs in it resolve against the
    new page. Then replace the root, copy title and attributes, mount the new
-   islands, restore keyed scroll regions, focus the first heading, and
+   islands, restore keyed scroll regions, focus the first heading with client rects (a heading hidden by CSS cannot take focus), and
    announce the title in the one live region.
 
 After every committed swap, nav dispatches `ssr:nav-swapped` on `window` with

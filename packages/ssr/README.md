@@ -364,7 +364,7 @@ history. Use the installer island only outside the column.
 A swap fetches the page, then loads its island modules, and only then disposes
 the old islands. It pushes history, replaces the column, sets the title and
 the declared attributes, mounts the new islands, scrolls to the top or to
-the hash, focuses the first heading of the column, and announces the title in
+the hash, focuses the first rendered heading of the column, and announces the title in
 a polite live region. A newer navigation aborts a pending swap: another swap,
 Back or Forward, a native link or form submission, an enhanced `Link` click,
 or a call to `navigate()` or `documentNavigate()`. A swap that starts while

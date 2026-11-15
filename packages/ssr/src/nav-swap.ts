@@ -1033,7 +1033,9 @@ const commit = (
       window.scrollTo(0, 0);
       if (hashId) document.getElementById(hashId)?.scrollIntoView();
     }
-    const focus = root.querySelector<HTMLElement>("h1,h2,h3,h4,h5,h6") ?? root;
+    // A heading hidden by CSS (a layout's stand-in title, for example) cannot take focus, which would leave it on <body>.
+    const focus =
+      [...root.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6")].find((heading) => heading.getClientRects().length > 0) ?? root;
     if (!focus.hasAttribute("tabindex")) focus.setAttribute("tabindex", "-1");
     focus.focus({ preventScroll: true });
     state.announcer.textContent = document.title;

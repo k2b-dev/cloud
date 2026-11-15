@@ -39,6 +39,7 @@ const scenarios = [
   "styles",
   "throw",
   "lang",
+  "hidden-heading",
   "slow",
   "offline",
   "sub/nested",
@@ -51,12 +52,20 @@ const wrapper = (id: string, label: string) =>
   `<solid-island data-id="${id}" data-props='${JSON.stringify(toJSON({ label }))}'>server ${label}</solid-island>`;
 const html = (
   label: string,
-  options: { signature?: string; prefix?: string; style?: string; entry?: string; extra?: string; lang?: string } = {},
+  options: {
+    signature?: string;
+    prefix?: string;
+    style?: string;
+    entry?: string;
+    extra?: string;
+    lang?: string;
+    hiddenTitle?: boolean;
+  } = {},
 ) => {
   const prefix = options.prefix ?? `/_ssr/${version}`;
   return `<!doctype html><html lang="${options.lang ?? "en"}"><head><title>${label}</title><meta name="description" content="About ${label}"><link rel="stylesheet" href="${options.style ?? "/base.css"}"></head><body>
     <div data-nav-shell="${options.signature ?? "sig"}" data-nav-scope="/app" data-nav-attributes="data-mode" data-mode="${label}">
-    ${wrapper(railId, "rail")}<main data-nav-root><h1>${label}</h1>${wrapper(options.entry ?? pageId, label)}${options.extra ?? ""}</main></div>
+    ${wrapper(railId, "rail")}<main data-nav-root><h1${options.hiddenTitle ? ' style="display:none"' : ""}>${label}</h1>${wrapper(options.entry ?? pageId, label)}${options.extra ?? ""}</main></div>
     <script type="module" data-ssr-assets="${prefix}">const p="${prefix}";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
     </body></html>`;
 };
@@ -141,6 +150,8 @@ beforeAll(async () => {
           return pageResponse(label, { style: "/changed.css" });
         case "lang":
           return pageResponse(label, { lang: "de" });
+        case "hidden-heading":
+          return pageResponse(label, { hiddenTitle: true, extra: '<h2 id="visible-heading">Visible</h2>' });
         case "slow": {
           const held = Promise.withResolvers<Response>();
           slow.add(held);
@@ -640,6 +651,21 @@ test(`${browserName}: 50 swaps keep window and document listeners, the head and 
     }
     expect(await footprint()).toEqual(first);
     expect(first).toMatchObject({ announcers: 1, islands: 2, mounted: 1 });
+    expect(documents).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test(`${browserName}: focus goes to the first heading a person can see, not to one hidden by CSS`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await open(page);
+    const documents = trackDocuments(page);
+    await page.click("#hidden-heading");
+    await page.waitForFunction(() => document.querySelector("main [data-mounted]")?.textContent === "hidden-heading");
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("visible-heading");
     expect(documents).toEqual([]);
   } finally {
     await context.close();

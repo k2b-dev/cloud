@@ -177,7 +177,7 @@ regions keep their scroll position instead of starting at the top.
 
 The swap fetches the page and loads its island modules before it changes the
 old column. Then it disposes the old islands, pushes history, replaces the
-column, sets the title, mounts the new islands, focuses the first heading of
+column, sets the title, mounts the new islands, focuses the first visible heading of
 the column, and announces the title. A newer navigation cancels a pending
 swap, also a native form submission, an island's `Link` click, or a
 `navigate()` call. A swap that starts while a `Link` handler still loads
@@ -305,7 +305,7 @@ and each app's swap tests check it in Chromium and WebKit:
   each load the requested URL once as a document. The old column stays until
   then. Each fallback is reported with its reason.
 - **History:** Back and Forward swap the arriving page and restore its scroll;
-  a new page opens at the top or its hash. Focus moves to the first heading,
+  a new page opens at the top or its hash. Focus moves to the first visible heading,
   and the title is announced to screen readers.
 - **Head:** title and description follow the page. Language, theme, user,
   build and app are part of the shell signature, so a change of any of them
