@@ -55,6 +55,15 @@ test("a card becomes one flat key figure with its change or scope as the quiet l
   expect(cardToolView({ title: "Tagesgeld", value: "12.050,00 €", caption: "2,1 % Zins" })?.blocks[0]).toMatchObject({
     items: [{ note: "2,1 % Zins" }],
   });
+  // The icon is the small sign before the label; a name that is no Tabler icon is left out, the figure stays.
+  expect(cardToolView({ title: "Girokonto", value: "2.481,20 €", icon: "building-bank" })?.blocks[0]).toEqual({
+    kind: "Stats",
+    items: [{ label: "Girokonto", value: "2.481,20 €", icon: "ti ti-building-bank" }],
+  });
+  expect(cardToolView({ title: "Girokonto", value: "1", icon: 'ti ti-x" bad' })?.blocks[0]).toEqual({
+    kind: "Stats",
+    items: [{ label: "Girokonto", value: "1" }],
+  });
   expect(cardToolView({ title: "", value: "1" })).toBeNull();
   expect(modelCapabilityResult(cardToolResult({ title: "A", value: "1" }))).toMatchObject({ displayed: true });
 });

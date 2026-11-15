@@ -267,10 +267,10 @@ const scenes: Record<string, () => JSX.Element> = {
       ],
     };
     const blocks: AiTurnBlock[] = [
-      card("c1", { title: "Girokonto", value: "2.481,20 €", trendValue: "+312,00 €", trendLabel: "seit 01.11." }),
-      card("c2", { title: "Tagesgeld", value: "12.050,00 €", caption: "2,1 % Zins" }),
-      card("c3", { title: "Haushaltstopf", value: "640,00 €", caption: "dein Anteil" }),
-      card("c4", { title: "Kreditkarte", value: "−312,45 €", caption: "Abbuchung 28.11." }),
+      card("c1", { icon: "building-bank", title: "Girokonto", value: "2.481,20 €", trendValue: "+312,00 €", trendLabel: "seit 01.11." }),
+      card("c2", { icon: "pig-money", title: "Tagesgeld", value: "12.050,00 €", caption: "2,1 % Zins" }),
+      card("c3", { icon: "home", title: "Haushaltstopf", value: "640,00 €", caption: "dein Anteil" }),
+      card("c4", { icon: "credit-card", title: "Kreditkarte", value: "−312,45 €", caption: "Abbuchung 28.11." }),
       tool("g1", "chart", chartArgs, chartToolResult(chartArgs)),
       { id: "t1", kind: "text", text: "Nach den 4 Zahlungen bleiben auf dem Girokonto etwa **1.176 €**." },
     ];

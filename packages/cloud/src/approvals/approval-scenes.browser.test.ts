@@ -167,6 +167,14 @@ describe("Approval scenes", () => {
             getComputedStyle(cell).boxShadow,
             getComputedStyle(cell).borderTopWidth,
           ]),
+          // Every key figure has its small sign before its name (v12, "Kennzahlen flach"): a plain glyph, no chip.
+          signs: [...document.querySelectorAll(".k2b-stat-cell__head")].map((head) => {
+            const sign = head.querySelector<HTMLElement>(":scope > .k2b-stat-cell__icon");
+            const label = head.querySelector(".k2b-stat-cell__label")!.getBoundingClientRect();
+            if (!sign) return null;
+            const box = sign.getBoundingClientRect();
+            return { before: box.right <= label.left, fill: getComputedStyle(sign).backgroundColor, size: Math.round(box.height) };
+          }),
         }));
         await shot(page, `06-gustav-konten-light-${width}`);
         expect(look.heads).toHaveLength(2);
@@ -179,6 +187,8 @@ describe("Approval scenes", () => {
           expect.stringContaining("640,00 €"),
           expect.stringContaining("−312,45 €"),
         ]);
+        expect(look.signs).toHaveLength(4);
+        for (const sign of look.signs) expect(sign).toMatchObject({ before: true, fill: "rgba(0, 0, 0, 0)" });
         // A negative figure reads red, given as text with its minus sign.
         expect(look.negative).not.toBe(look.positive);
         // Flat: no tile shadow and no frame around a key figure.

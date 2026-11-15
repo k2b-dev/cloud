@@ -41,8 +41,9 @@ const cut = (value: unknown, limit = 80): string | undefined => {
 
 /**
  * One card call as one flat key figure: its title is the label, its value the figure, and the change or scope the one
- * quiet line under it. Consecutive cards stand together in one row (`chat/turn-layout.ts`). The emoji has no place in a
- * key figure; the colour tone of the old card is left to the shared tiles.
+ * quiet line under it. Its icon is the small sign before the label, as every key figure has one; a name that is no
+ * Tabler icon is left out. Consecutive cards stand together in one row (`chat/turn-layout.ts`). The emoji has no place
+ * in a key figure; the colour tone of the old card is left to the shared tiles.
  */
 export const cardToolBlocks = (args: unknown): BoundBlockView | null => {
   if (!args || typeof args !== "object" || Array.isArray(args)) return null;
@@ -52,5 +53,6 @@ export const cardToolBlocks = (args: unknown): BoundBlockView | null => {
   if (!label || !value) return null;
   const trend = [cut(card.trendValue, 40), cut(card.trendLabel, 40)].filter(Boolean).join(" ");
   const note = cut([trend, cut(card.caption)].filter(Boolean).join(" · "));
-  return { version: 1, blocks: [{ kind: "Stats", items: [{ label, value, ...(note ? { note } : {}) }] }] };
+  const icon = typeof card.icon === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(card.icon) ? `ti ti-${card.icon}` : undefined;
+  return { version: 1, blocks: [{ kind: "Stats", items: [{ label, value, ...(icon ? { icon } : {}), ...(note ? { note } : {}) }] }] };
 };

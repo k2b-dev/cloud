@@ -186,6 +186,8 @@ one stat tile, the same look as a stats view. `tone` is accepted but not shown,
 and the trend stays neutral because a card does not say whether up is better.
 Its title, value, caption and trend wrap instead of being cut off; the tool
 asks for a short value of about 20 characters and a one-line caption.
+Optional `icon` is a Tabler icon name, such as `wallet`, drawn as the small
+sign before the title; a name that is no Tabler icon name is left out.
 Several figures computed in `code_run` belong in `cloud.view.stats` in that
 run, followed by `present({path})`.
 
