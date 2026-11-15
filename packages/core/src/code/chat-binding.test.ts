@@ -1,8 +1,10 @@
-import { expect, spyOn, test } from "bun:test";
-import { UserSchema } from "@k2b/cloud/contracts";
+import { expect, mock, spyOn, test } from "bun:test";
+import { CODE_BOUND_CHAT_ID } from "@k2b/cloud/code";
+import { type CapabilityExecutionContext, UserSchema } from "@k2b/cloud/contracts";
+import type { SQL } from "bun";
 import type { CodeContext } from "./access";
 import { codeAuthoringServices } from "./authoring";
-import { CodeChatBindingSchema, requireCodeChatOwner } from "./chat-binding";
+import { CodeChatBindingSchema, requireCodeChatOwner, resolveCodeChatDestination } from "./chat-binding";
 import type { Code } from "./contracts";
 import { describeCodeNotices } from "./read-model/notices";
 import * as store from "./store";
@@ -101,5 +103,92 @@ test("init passes only the authenticated chat origin into Code creation, keeping
     expect(create.mock.calls[1]?.[0]).toEqual({ title: created.title, owner: created.owner });
   } finally {
     create.mockRestore();
+  }
+});
+
+const runContext = (): CapabilityExecutionContext => ({
+  authority: context.authority,
+  actor: {
+    kind: "user",
+    user,
+    delegation: {
+      kind: "invocation",
+      credentialKind: "mandate",
+      callingAppId: "core",
+      invocationId: "binding-test",
+      workloadType: "code.version",
+      workloadId: id,
+      workloadRun: id,
+    },
+  },
+  accessSubject: { type: "user", userId: id },
+  user,
+  origin: "http",
+  requestId: "binding-test",
+  signal: new AbortController().signal,
+  target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
+});
+// SQL's callable generic is supplied by a finite queue; no database connection is opened.
+function bindingDb(rows: unknown[][]) {
+  const pending = [...rows];
+  const db = mock(async () => {
+    const next = pending.shift();
+    if (!next) throw new Error("Unexpected binding SQL statement");
+    return next;
+  });
+  return { db: db as unknown as SQL, calls: db.mock.calls };
+}
+const boundRow = { id: "c_fixture", owner_kind: "person", owner_user_id: id, chat_conversation_id: id, chat_binding_revision: 7 };
+
+test("literal destinations pass through without reading a binding", async () => {
+  const fixture = bindingDb([]);
+  expect(await resolveCodeChatDestination({ ...runContext(), target: { type: "core.ai.chat", id: "Literal433" } }, fixture.db)).toEqual({
+    ok: true,
+    data: { chatId: "Literal433", binding: null },
+  });
+  expect(fixture.calls).toHaveLength(0);
+});
+
+test.each(["session", "foreign-subject", "foreign-app"])("the bound destination refuses %s authority before reading", async (kind) => {
+  const ctx = runContext();
+  if (kind === "session") ctx.actor = { kind: "user", user };
+  if (kind === "foreign-subject") ctx.accessSubject = { type: "user", userId: "other" };
+  if (kind === "foreign-app" && ctx.actor.delegation) ctx.actor.delegation.callingAppId = "other";
+  const fixture = bindingDb([]);
+  expect(await resolveCodeChatDestination(ctx, fixture.db)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+  expect(fixture.calls).toHaveLength(0);
+});
+
+test("the bound destination requires a current run and unchanged owner", async () => {
+  for (const rows of [[[]], [[{ id: "c_fixture" }], [{ ...boundRow, owner_user_id: "other" }], [{ available: false }]]]) {
+    expect(await resolveCodeChatDestination(runContext(), bindingDb(rows).db)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+  }
+});
+
+test("each bound call reads the current short ID and binding revision", async () => {
+  const fixture = bindingDb([
+    [{ id: "c_fixture" }],
+    [boundRow],
+    [{ available: true }],
+    [{ short_id: "Current433", title: "Private", project_id: null, archived_at: null }],
+  ]);
+  expect(await resolveCodeChatDestination(runContext(), fixture.db)).toEqual({
+    ok: true,
+    data: { chatId: "Current433", binding: { codeId: "c_fixture", revision: 7 } },
+  });
+});
+
+test("unbound, archived, deleted and absent-schema destinations return recoverable conflicts", async () => {
+  const prefix = [[{ id: "c_fixture" }]];
+  for (const rows of [
+    [...prefix, [{ ...boundRow, chat_conversation_id: null }]],
+    [...prefix, [boundRow], [{ available: true }], [{ short_id: "Archived433", archived_at: new Date("2030-01-07T08:00:00.000Z") }]],
+    [...prefix, [boundRow], [{ available: true }], []],
+    [...prefix, [boundRow], [{ available: false }]],
+  ]) {
+    expect(await resolveCodeChatDestination(runContext(), bindingDb(rows).db)).toMatchObject({
+      ok: false,
+      error: { code: rows.length === 2 ? "chat_unbound" : "chat_unavailable", status: 409 },
+    });
   }
 });

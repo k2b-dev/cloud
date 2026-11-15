@@ -4,6 +4,7 @@ import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import { defineCapabilities } from "../contracts/capabilities";
 import { codeAiToolCovered, createCodeAiTools } from "./ai-tools";
+import { CODE_BOUND_CHAT_ID } from "./bound-chat";
 import { analyzeCode } from "./checker-analysis";
 import { CodeAiToolBindingSchema } from "./file-ref";
 import { generateCodeSdk } from "./generator";
@@ -49,7 +50,7 @@ test("bound send stays bound through generated AI tools and requires the dynamic
   });
   await module.core.ai.generate({ tools: [module.chat.send] });
   const input = z.object({ tools: z.array(CodeAiToolBindingSchema) }).parse(calls[0]?.call.input);
-  expect(input.tools).toEqual([{ capability: "core.ai.chat.send", target: null, bound: "chat" }]);
+  expect(input.tools).toEqual([{ capability: "core.ai.chat.send", target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID } }]);
   const permissions = [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 1 }];
   const [tool] = await createCodeAiTools({
     bindings: input.tools,
@@ -80,14 +81,18 @@ test("bound send stays bound through generated AI tools and requires the dynamic
     },
   );
   expect(calls[1]).toEqual({
-    bound: "chat",
-    call: { capability: "core.ai.chat.send", target: null, refs: {}, input: { text: "Review the facts." } },
+    call: {
+      capability: "core.ai.chat.send",
+      target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
+      refs: {},
+      input: { text: "Review the facts." },
+    },
     metadata: { idempotencyKey: "ai:bound-tool:1" },
   });
   const binding = input.tools[0]!;
   expect(codeAiToolCovered(binding, [{ operation: binding.capability, target: { type: "core.ai.chat", id: "Literal433" } }])).toBe(false);
   expect(codeAiToolCovered({ ...binding, capability: "core.ai.generate" }, permissions)).toBe(false);
-  expect(codeAiToolCovered({ ...binding, target: { type: "core.ai.chat", id: "Claimed433" } }, permissions)).toBe(false);
+  expect(codeAiToolCovered({ ...binding, target: { type: "core.ai.chat", id: "Claimed433" } }, permissions)).toBe(true);
   const result = analyzeCode({
     sdk: generated,
     entry: "code.ts",
@@ -105,9 +110,9 @@ app.schedule({ cron: "0 8 * * *", name: "morning" }, async () => {
   );
 });
 
-test("the personal chat export preserves send's generated signature and contains no destination", async () => {
+test("the personal chat export preserves send's generated signature and uses the shared sentinel", async () => {
   const generated = sdk();
-  expect(generated.declarations).toContain("export declare const chat:");
+  expect(generated.declarations).toContain(`export declare const chat: CodeHandle<"core.ai.chat", "${CODE_BOUND_CHAT_ID}">`);
   expect(generated.declarations).toContain("readonly send:");
   const calls: CodeSdkInvocation[] = [];
   const module = await import(`data:text/javascript;base64,${Buffer.from(generated.runtime).toString("base64")}`);
@@ -120,17 +125,18 @@ test("the personal chat export preserves send's generated signature and contains
   await module.chat.send({ text: "Summarise this data.", context: "Fictional facts", idempotencyKey: "  morning-1  " });
   expect(calls).toEqual([
     {
-      bound: "chat",
       call: {
         capability: "core.ai.chat.send",
-        target: null,
+        target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
         refs: {},
         input: { text: "Summarise this data.", context: "Fictional facts" },
       },
       metadata: { idempotencyKey: "morning-1" },
     },
   ]);
-  expect(Object.keys(module.chat)).toEqual(["send"]);
+  expect(module.chat.id).toBe(CODE_BOUND_CHAT_ID);
+  expect(module.chat.type).toBe("core.ai.chat");
+  expect(generated.runtime).toContain(`const CODE_BOUND_CHAT_ID = "${CODE_BOUND_CHAT_ID}";`);
   await expect(module.chat.send({ text: "Instructions" })).rejects.toMatchObject({ code: "code_sdk_idempotency_required" });
 });
 
@@ -164,19 +170,49 @@ app.schedule({ cron: "0 8 * * *", name: "morning" }, async () => {
   ]);
 });
 
-test("fake execution uses a null target for the bound chat without consulting a real destination", async () => {
+test("fake execution uses the sentinel target for the bound chat without consulting a real destination", async () => {
   const bridge = createCodeTestBridge(sdk().manifest, [
-    { operation: "core.ai.chat.send", target: null, replies: [{ ok: true, data: { receipt: "fictional" } }] },
+    {
+      operation: "core.ai.chat.send",
+      target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
+      replies: [{ ok: true, data: { receipt: "fictional" } }],
+    },
   ]);
   const invocation = {
-    bound: "chat",
-    call: { capability: "core.ai.chat.send", target: null, refs: {}, input: { text: "Review the facts." } },
+    call: {
+      capability: "core.ai.chat.send",
+      target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
+      refs: {},
+      input: { text: "Review the facts." },
+    },
     metadata: { idempotencyKey: "morning-1" },
   };
   expect(await bridge.call("core.ai.chat.send", invocation)).toEqual({ receipt: "fictional" });
   expect(await bridge.call("core.ai.chat.send", invocation)).toEqual({ receipt: "fictional" });
   expect(bridge.calls()[1]?.replayed).toBe(true);
   expect(bridge.failure()).toBeNull();
-  const { bound: _bound, ...unbound } = invocation;
-  await expect(bridge.call("core.ai.chat.send", unbound)).rejects.toMatchObject({ code: "code_test_invalid_call" });
+  await expect(bridge.call("core.ai.chat.send", { ...invocation, call: { ...invocation.call, target: null } })).rejects.toMatchObject({
+    code: "code_test_invalid_call",
+  });
+});
+
+test.each([CODE_BOUND_CHAT_ID, "Literal433"])("explicit chat handle %s records its actual destination semantics", (id) => {
+  const result = analyzeCode({
+    sdk: sdk(),
+    aiOperations: ["core.ai.chat.send"],
+    entry: "code.ts",
+    files: {
+      "code.ts": `import { app, core } from "@sdk";
+app.schedule({ cron: "0 8 * * *", name: "morning" }, async () => {
+  await core.ai.chat("${id}").send({ text: "Review", idempotencyKey: "morning" });
+}); export default app;`,
+    },
+  });
+  expect(result.diagnostics).toEqual([]);
+  expect(result.permissions).toEqual([
+    expect.objectContaining({
+      operation: "core.ai.chat.send",
+      target: { type: "core.ai.chat", id: id === CODE_BOUND_CHAT_ID ? null : id },
+    }),
+  ]);
 });

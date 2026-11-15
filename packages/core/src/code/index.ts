@@ -18,7 +18,13 @@ export { createCodeCheckRequest } from "./authoring-check";
 export * from "./authoring-contracts";
 export { type CodeAutomation, CodeAutomationSchema, codeAutomationContracts, listCodeAutomations } from "./automations";
 export { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
-export { codeChatBindingContracts, readCodeChatBinding, setCodeChatBinding } from "./chat-binding";
+export {
+  codeChatBindingContracts,
+  getCodeChatBinding,
+  readCodeChatBinding,
+  resolveCodeChatDestination,
+  setCodeChatBinding,
+} from "./chat-binding";
 export * from "./contracts";
 export { CodeJobError } from "./job-errors";
 export { listCodeCleanupJobs } from "./lifecycle";

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { stableJsonValue } from "../_internal/capability-schemas";
 import { type CapabilityManifest, CLOUD_RESOURCE_ID_MAX_LENGTH, CloudResourceRefSchema } from "../contracts/capabilities";
 import * as authoringTypes from "./authoring-types.ts" with { type: "text" };
+import { CODE_BOUND_CHAT_ID } from "./bound-chat";
 import { CODE_DATABASE_MESSAGES } from "./database-contract";
 import { hasFileInput } from "./file-ref";
 import * as pageTypes from "./page-authoring-types.ts" with { type: "text" };
@@ -249,7 +250,10 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     declarations.push(`export declare const ${app.exportName}: ${render(factories)};`);
   }
   const chatSend = options.mode === "personal" ? manifest.operations.find((op) => op.capability === "core.ai.chat.send") : undefined;
-  if (chatSend) declarations.push(`export declare const chat: { readonly send: ${methods.get(chatSend)} };`);
+  if (chatSend)
+    declarations.push(
+      `export declare const chat: CodeHandle<"core.ai.chat", ${quote(CODE_BOUND_CHAT_ID)}> & { readonly send: ${methods.get(chatSend)} };`,
+    );
   if (options.owner) {
     const owner = options.owner;
     const type = owner.kind === "app" ? handleNames.get(`app:${owner.appId}`) : handleNames.get(owner.ref.type);
@@ -370,7 +374,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
   };
   return {
     declarations: `${declarations.join("\n")}\n`,
-    runtime: `// Generated from Cloud capability manifests. Do not edit.\nconst __codeSdk = (() => {\nconst manifest = ${JSON.stringify(stableJsonValue(runtimeManifest))};\nconst RESOURCE_ID_MAX = ${CLOUD_RESOURCE_ID_MAX_LENGTH};\n${CODE_SDK_RUNTIME}\nreturn __codeSdk;\n})();\n${runtimeExports.join("\n")}\n${CODE_PAGE_BUILDERS}\n`,
+    runtime: `// Generated from Cloud capability manifests. Do not edit.\nconst __codeSdk = (() => {\nconst manifest = ${JSON.stringify(stableJsonValue(runtimeManifest))};\nconst RESOURCE_ID_MAX = ${CLOUD_RESOURCE_ID_MAX_LENGTH};\nconst CODE_BOUND_CHAT_ID = ${JSON.stringify(CODE_BOUND_CHAT_ID)};\n${CODE_SDK_RUNTIME}\nreturn __codeSdk;\n})();\n${runtimeExports.join("\n")}\n${CODE_PAGE_BUILDERS}\n`,
     manifest,
   };
 }

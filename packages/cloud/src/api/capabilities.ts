@@ -1500,7 +1500,6 @@ const codeBridgeError = (code: string, status: CodeBridgeRefusal["status"] = 200
 const CodeSdkInvocationSchema = z
   .object({
     call: NormalizedCapabilityCallSchema,
-    bound: z.literal("chat").optional(),
     metadata: z.object({ idempotencyKey: CapabilityIdempotencyKeySchema.optional() }).strict(),
   })
   .strict();
@@ -1631,8 +1630,6 @@ export async function dispatchCodeSdkCall({
 }): Promise<Response> {
   const sdk = CodeSdkInvocationSchema.safeParse(invocation);
   if (!sdk.success || operationId !== sdk.data.call.capability) return codeBridgeError("code_invalid_call");
-  if (sdk.data.bound && (operationId !== "core.ai.chat.send" || sdk.data.call.target !== null || Object.keys(sdk.data.call.refs).length))
-    return codeBridgeError("code_invalid_call");
   const split = operationId.indexOf(".");
   const appId = operationId.slice(0, split);
   const capabilityId = operationId.slice(split + 1);
@@ -1816,9 +1813,5 @@ export async function dispatchCodeSdkCall({
     if (result.ok) authority.onFailure?.(result.data);
     return codeBridgeError(code, 200, response.status >= 400 && response.status <= 599 ? response.status : undefined);
   };
-  return await dependencies.host.withCall(
-    { claims, call, kind, policy, ...(sdk.data.bound ? { bound: sdk.data.bound } : {}) },
-    execute,
-    operation?.stream ? undefined : { receipt: "issuance" },
-  );
+  return await dependencies.host.withCall({ claims, call, kind, policy }, execute, operation?.stream ? undefined : { receipt: "issuance" });
 }

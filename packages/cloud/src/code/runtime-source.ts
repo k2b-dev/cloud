@@ -50,7 +50,7 @@ function coordinate(handle, type) {
   if (!ref || ref.type !== type) throw new CodeError("code_sdk_invalid_handle");
   return { type: ref.type, id: ref.id };
 }
-function handle(appId, type, id, bound) {
+function handle(appId, type, id) {
   if (typeof id !== "string" || id.length === 0 || id.length > RESOURCE_ID_MAX) throw new CodeError("code_sdk_invalid_id");
   const result = node();
   const ref = Object.freeze({ type: type ?? "cloud.app", id });
@@ -92,15 +92,15 @@ function handle(appId, type, id, bound) {
         if (key !== undefined) metadata.idempotencyKey = key.trim();
         delete input.idempotencyKey;
       }
-      const call = { capability: op.capability, target: bound ? null : type === null ? null : coordinate(result, type), refs, input };
-      const response = await invoke(op.capability, { call, metadata, ...(bound ? { bound } : {}) });
+      const call = { capability: op.capability, target: type === null ? null : coordinate(result, type), refs, input };
+      const response = await invoke(op.capability, { call, metadata });
       if (op.capability === "core.ai.decide" && response?.data?.answers)
         return { ...response, data: { ...response.data, answers: Object.fromEntries(Object.entries(response.data.answers).map(([key, answer]) =>
           [key, answer.type === "noul" ? { ...answer, confidence: answer.probability } : answer])) } };
       return response;
     };
     if (Object.keys(op.refs).length === 0) aiTools.set(method, Object.freeze({ capability: op.capability,
-      target: bound || type === null ? null : Object.freeze(coordinate(result, type)), ...(bound ? { bound } : {}) }));
+      target: type === null ? null : Object.freeze(coordinate(result, type)) }));
     setPath(result, op.methodPath, method);
   }
   return result;
@@ -122,7 +122,7 @@ if (manifest.owner) {
     : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id));
 }
 const chat = manifest.mode === "personal" && manifest.operations.some(op => op.capability === "core.ai.chat.send")
-  ? Object.freeze({ send: handle("core", "core.ai.chat", "bound", "chat").send }) : undefined;
+  ? Object.freeze(handle("core", "core.ai.chat", CODE_BOUND_CHAT_ID)) : undefined;
 const app = node();
 app.use = (...args) => {
   const [path, handler] = args.length === 1 ? ["/", args[0]] : args;

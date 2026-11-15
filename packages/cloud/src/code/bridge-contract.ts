@@ -24,7 +24,6 @@ export class CodeBridgeRefusal extends Error {
     if (this.status !== 200) return this.status;
     if (["code_db_full", "code_db_owner_full"].includes(this.code)) return 413;
     if (this.code === "code_db_timeout") return 504;
-    if (["chat_unbound", "chat_unavailable"].includes(this.code)) return 409;
     if (this.code === "code_operation_not_found") return 404;
     if (
       [
@@ -76,8 +75,6 @@ export class CodeBridgeRefusal extends Error {
 /** Live registry metadata for one ACTUAL schema-checked call, never the version's static permission list. */
 export type CodeBridgeCall = {
   claims: CodeRunTokenClaims;
-  /** Core resolves the current personal Code binding before dispatch; never a runner-lease field. */
-  bound?: "chat";
   call: NormalizedCapabilityCall;
   kind: "query" | "action" | "internet" | "database";
   policy?: CapabilityActionPolicy;

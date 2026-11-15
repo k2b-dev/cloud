@@ -856,14 +856,18 @@ Read its revision and state through
 [`code.chat_binding.read`](/en/docs/platform/code-data-model#choose-a-personal-codes-chat).
 `chat_unbound` means that no chat is bound. `chat_unavailable` means that the
 bound chat was archived or deleted, or is no longer the owner's active chat.
-Both return before invoking Send. Choose another own active chat or restore the
+Both return HTTP 409 before queuing a message. Choose another own active chat or restore the
 archived chat. A missing bound chat supplies the `chat_missing` attention reason
 and a recoverable notice on the Code page and in Waiting for you.
 
 The checker records `chat.send` as `core.ai.chat.send` with dynamic target
 `{ type: "core.ai.chat", id: null }`; normal policy, authority and chain checks
-still apply. For fake test fixtures, match this bound call with `target: null`;
-no real chat is looked up during testing.
+still apply. At runtime, `chat` is an ordinary chat handle whose fixed ID is
+`CODE_BOUND_CHAT_ID` (`"bound-chat"`, exported by `@k2b/cloud/code`). Send resolves
+the current binding for a personal Code run; the bridge uses its normal call
+shape. Explicit use of this reserved ID also counts as a dynamic target. For fake test fixtures, match
+`target: { type: "core.ai.chat", id: "bound-chat" }`; no real chat is looked up
+during testing.
 
 Use `core.ai.chat(chatId).send` to write one exact message to an owned active
 chat. Gustav answers using the person's current model grants, tools and approval

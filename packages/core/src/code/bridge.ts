@@ -22,7 +22,6 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAiReferenceCost, codeAiReservesAttemptBudget, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
-import { codeChatSchemaAvailable } from "./chat-binding";
 import { codePolicyGroupRowsQuery, codePolicyGroupsFromRows, codePolicySnapshotFromRow, codePolicySnapshotQuery } from "./policy";
 import { codePolicyRow, isCodeAiOperation } from "./policy-contracts";
 import { effective } from "./policy-effective";
@@ -238,19 +237,6 @@ export async function authorizeCodeCall(
   )
     denied("code_mandate_mismatch");
   return mandate.owner_app_id;
-}
-
-/** Per-call resolution after the lease fence. No target ID enters the bundle or runner lease. */
-export async function resolveCodeBoundChat(codeId: string, db: SQL = sql) {
-  const [row] = await db<{ owner_kind: string; owner_user_id: string | null; chat_conversation_id: string | null }[]>`
-    SELECT owner_kind,owner_user_id,chat_conversation_id FROM code.codes WHERE id=${codeId}`;
-  if (!row || row.owner_kind !== "person") denied("code_invalid_call");
-  if (!row.chat_conversation_id) denied("chat_unbound");
-  if (!(await codeChatSchemaAvailable(db))) denied("chat_unavailable");
-  const [chat] = await db<{ short_id: string }[]>`SELECT short_id FROM ai.conversations
-    WHERE id=${row.chat_conversation_id}::uuid AND created_by_user_id=${row.owner_user_id}::uuid AND archived_at IS NULL`;
-  if (!chat) denied("chat_unavailable");
-  return { type: "core.ai.chat", id: chat.short_id };
 }
 
 /** Postgres owns call ordering/budgets; the existing Valkey limiter owns shared admission across Core replicas. */
@@ -515,30 +501,7 @@ export function createCodeBridgeHost(
     return response;
   };
   return {
-    withCall: async (call, execute, options) => {
-      if (call.bound) {
-        try {
-          await sql.begin(async (db) => {
-            const current = await lockCall(call, db);
-            if (
-              call.bound !== "chat" ||
-              call.call.capability !== "core.ai.chat.send" ||
-              call.call.target !== null ||
-              Object.keys(call.call.refs).length ||
-              current.code.owner.kind !== "person"
-            )
-              denied("code_invalid_call");
-            const target = await resolveCodeBoundChat(call.claims.codeId, db);
-            // The dispatch closure and durable receipt share this exact normalized call object.
-            call.call.target = target;
-          });
-        } catch (error) {
-          if (error instanceof CodeBridgeRefusal) return refusalResponse(error);
-          throw error;
-        }
-      }
-      return runCall(call, { capability: execute }, options?.receipt === "issuance");
-    },
+    withCall: (call, execute, options) => runCall(call, { capability: execute }, options?.receipt === "issuance"),
     withFileObservation: (observation, execute) => {
       if (!["core.code.file.read", "core.code.file.view"].includes(observation.operation))
         throw new CodeBridgeRefusal("code_capability_undeclared", 403);

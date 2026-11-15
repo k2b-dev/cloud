@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
-import { UserSchema } from "@k2b/cloud/contracts";
+import { CODE_BOUND_CHAT_ID } from "@k2b/cloud/code";
+import { type CapabilityExecutionContext, UserSchema } from "@k2b/cloud/contracts";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import type { CodeContext } from "./access";
 import { listCodeAttention, readCodeAttention } from "./attention";
 import { codeAuthoringServices } from "./authoring";
-import { createCodeBridgeHost, resolveCodeBoundChat } from "./bridge";
-import { codeChatMissing, readCodeChatBinding, setCodeChatBinding } from "./chat-binding";
+import { codeChatMissing, getCodeChatBinding, resolveCodeChatDestination, setCodeChatBinding } from "./chat-binding";
 import { codeReadModelFixtureManifest } from "./read-model/fixtures";
 import { loadCodeVersionReadModel } from "./read-model/load";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -55,6 +55,50 @@ async function code(title: string, conversationId?: string) {
   );
 }
 
+async function personalRun(codeId: string, account = owner): Promise<CapabilityExecutionContext> {
+  const [latest] = await sql<{ id: string }[]>`SELECT id FROM code.versions WHERE code_id=${codeId} ORDER BY number DESC LIMIT 1`;
+  const version =
+    latest ??
+    (await createCodeVersion(
+      {
+        codeId,
+        sourceFiles: { "code.ts": "export {};" },
+        bundle: "export {};",
+        manifest: codeReadModelFixtureManifest,
+        baseVersionId: null,
+      },
+      context(account),
+    ));
+  await sql`UPDATE code.codes SET state='active',active_version_id=${version.id}::uuid WHERE id=${codeId}`;
+  const runId = await insertCodeRun({ codeId, versionId: version.id, trigger: "schedule", entrypoint: "daily", input: null });
+  await sql`UPDATE code.runs SET state='running' WHERE id=${runId}::uuid`;
+  const authority = context(account).authority;
+  if (authority.actor.kind !== "user") throw new Error("Expected person");
+  const user = authority.actor.user;
+  return {
+    authority,
+    actor: {
+      kind: "user",
+      user,
+      delegation: {
+        kind: "invocation",
+        credentialKind: "mandate",
+        callingAppId: "core",
+        invocationId: "binding-fixture",
+        workloadType: "code.version",
+        workloadId: version.id,
+        workloadRun: runId,
+      },
+    },
+    accessSubject: authority.accessSubject,
+    user,
+    origin: "http",
+    requestId: "binding-fixture",
+    signal: new AbortController().signal,
+    target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
+  };
+}
+
 databaseSuite()("personal Code chat binding", () => {
   let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
@@ -84,7 +128,7 @@ databaseSuite()("personal Code chat binding", () => {
       },
     );
     const codeId = initialized.config.codeId;
-    expect(await readCodeChatBinding({ codeId }, context())).toMatchObject({
+    expect(await getCodeChatBinding({ codeId }, context())).toMatchObject({
       revision: 1,
       canChange: true,
       chat: { state: "available", id: "Init433", title: "Chat Init433", project: null, href: "/app/assistant?conversation=Init433" },
@@ -104,7 +148,7 @@ databaseSuite()("personal Code chat binding", () => {
     const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${editor}::uuid,'write') RETURNING id`;
     if (!grant) throw new Error("Missing grant");
     await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${item.id},${grant.id}::uuid)`;
-    expect(await readCodeChatBinding({ codeId: item.id }, context(editor))).toEqual({
+    expect(await getCodeChatBinding({ codeId: item.id }, context(editor))).toEqual({
       codeId: item.id,
       revision: 1,
       canChange: false,
@@ -121,7 +165,10 @@ databaseSuite()("personal Code chat binding", () => {
     await expect(setCodeChatBinding({ codeId: item.id, chatId: "First433", revision: 1 }, context())).rejects.toMatchObject({
       code: "CONFLICT",
     });
-    expect(await resolveCodeBoundChat(item.id)).toEqual({ type: "core.ai.chat", id: "Second433" });
+    expect(await resolveCodeChatDestination(await personalRun(item.id), sql)).toEqual({
+      ok: true,
+      data: { chatId: "Second433", binding: { codeId: item.id, revision: 2 } },
+    });
     await sql`UPDATE ai.conversations SET archived_at=${fixed} WHERE id=${first}::uuid`;
     await expect(setCodeChatBinding({ codeId: item.id, chatId: "First433", revision: 2 }, context())).rejects.toMatchObject({
       code: "NOT_FOUND",
@@ -144,16 +191,16 @@ databaseSuite()("personal Code chat binding", () => {
       VALUES(${owner}::uuid,'read') RETURNING id`;
     if (!project || !grant) throw new Error("Missing project fixture");
     await sql`UPDATE ai.conversations SET project_id=${project.id}::uuid WHERE id=${conversationId}::uuid`;
-    expect(await readCodeChatBinding({ codeId: item.id }, context())).toMatchObject({
+    expect(await getCodeChatBinding({ codeId: item.id }, context())).toMatchObject({
       chat: { state: "available", project: null },
     });
     await sql`INSERT INTO ai.project_access(project_id,access_id,short_id)
       VALUES(${project.id}::uuid,${grant.id}::uuid,'Grant433')`;
-    expect(await readCodeChatBinding({ codeId: item.id }, context())).toMatchObject({
+    expect(await getCodeChatBinding({ codeId: item.id }, context())).toMatchObject({
       chat: { state: "available", project: { id: "Project433", title: "Fictional project" } },
     });
     await sql`DELETE FROM auth.access WHERE id=${grant.id}::uuid`;
-    expect(await readCodeChatBinding({ codeId: item.id }, context())).toMatchObject({
+    expect(await getCodeChatBinding({ codeId: item.id }, context())).toMatchObject({
       chat: { state: "available", project: null },
     });
   });
@@ -222,19 +269,22 @@ databaseSuite()("personal Code chat binding", () => {
       context(),
     );
     await sql`UPDATE ai.conversations SET archived_at=${fixed} WHERE id=${destination}::uuid`;
-    expect((await readCodeChatBinding({ codeId: item.id }, context())).chat).toEqual({
+    expect((await getCodeChatBinding({ codeId: item.id }, context())).chat).toEqual({
       state: "unavailable",
       reason: "archived",
       id: "Missing433",
       title: "Chat Missing433",
     });
-    expect(await readCodeChatBinding({ codeId: item.id }, context(editor))).toEqual({
+    expect(await getCodeChatBinding({ codeId: item.id }, context(editor))).toEqual({
       codeId: item.id,
       revision: 1,
       canChange: false,
       chat: { state: "hidden" },
     });
-    await expect(resolveCodeBoundChat(item.id)).rejects.toMatchObject({ code: "chat_unavailable" });
+    expect(await resolveCodeChatDestination(await personalRun(item.id), sql)).toMatchObject({
+      ok: false,
+      error: { code: "chat_unavailable", status: 409 },
+    });
     expect(await codeChatMissing(item.id)).toBe(true);
     expect((await readCodeAttention({ owner: item.owner }, context())).items).toContainEqual({
       codeId: item.id,
@@ -255,85 +305,59 @@ databaseSuite()("personal Code chat binding", () => {
       }),
     ]);
     await sql`UPDATE ai.conversations SET archived_at=NULL WHERE id=${destination}::uuid`;
-    expect(await readCodeChatBinding({ codeId: item.id }, context())).toMatchObject({
+    expect(await getCodeChatBinding({ codeId: item.id }, context())).toMatchObject({
       revision: 1,
       chat: { state: "available", id: "Missing433" },
     });
     expect(await codeChatMissing(item.id)).toBe(false);
     expect((await waiting()).items.some((row) => row.id === `code-attention:${item.id}`)).toBe(false);
     await sql`DELETE FROM ai.conversations WHERE id=${destination}::uuid`;
-    expect((await readCodeChatBinding({ codeId: item.id }, context())).chat).toEqual({ state: "unavailable", reason: "deleted" });
-    expect((await readCodeChatBinding({ codeId: item.id }, context(editor))).chat).toEqual({ state: "hidden" });
-    await expect(resolveCodeBoundChat(item.id)).rejects.toMatchObject({ code: "chat_unavailable" });
+    expect((await getCodeChatBinding({ codeId: item.id }, context())).chat).toEqual({ state: "unavailable", reason: "deleted" });
+    expect((await getCodeChatBinding({ codeId: item.id }, context(editor))).chat).toEqual({ state: "hidden" });
+    expect(await resolveCodeChatDestination(await personalRun(item.id), sql)).toMatchObject({
+      ok: false,
+      error: { code: "chat_unavailable", status: 409 },
+    });
     expect(await codeChatMissing(item.id)).toBe(true);
   });
 
-  test("the Core bridge refuses a missing bound chat without invoking Send", async () => {
+  test("the Send resolver refuses archived bindings and foreign callers", async () => {
     const destination = await chat("Bridge433");
-    const item = await code("Bridge failure", destination);
-    const version = await createCodeVersion(
-      {
-        codeId: item.id,
-        sourceFiles: { "code.ts": "export {};" },
-        bundle: "export {};",
-        manifest: codeReadModelFixtureManifest,
-        baseVersionId: null,
-      },
-      context(),
-    );
-    await sql`UPDATE code.versions SET manifest=jsonb_set(jsonb_set(manifest,'{hashes,source}',to_jsonb(source_hash)),'{hashes,bundle}',to_jsonb(bundle_hash)) WHERE id=${version.id}::uuid`;
-    const [hash] = await sql<{ bundle_hash: string }[]>`SELECT bundle_hash FROM code.versions WHERE id=${version.id}::uuid`;
-    if (!hash) throw new Error("Missing version hash");
-    await sql`UPDATE code.codes SET state='active',active_version_id=${version.id}::uuid WHERE id=${item.id}`;
-    const runId = await insertCodeRun({ codeId: item.id, versionId: version.id, trigger: "schedule", entrypoint: "daily", input: null });
-    await sql`UPDATE code.runs SET state='running',generation=1,started_at=clock_timestamp(),lease_expires_at=clock_timestamp()+interval '1 minute' WHERE id=${runId}::uuid`;
+    const item = await code("Send failure", destination);
+    const run = await personalRun(item.id);
+    expect(await resolveCodeChatDestination(run, sql)).toEqual({
+      ok: true,
+      data: { chatId: "Bridge433", binding: { codeId: item.id, revision: 1 } },
+    });
     await sql`UPDATE ai.conversations SET archived_at=${fixed} WHERE id=${destination}::uuid`;
-    let invoked = false;
-    const response = await createCodeBridgeHost().withCall(
-      {
-        bound: "chat",
-        kind: "action",
-        call: { capability: "core.ai.chat.send", target: null, refs: {}, input: { text: "Instructions" } },
-        claims: {
-          ver: 1,
-          token_use: "code_run",
-          iss: "https://cloud.example",
-          aud: "cloud-code-bridge",
-          iat: fixed.getTime() / 1000,
-          nbf: fixed.getTime() / 1000,
-          exp: fixed.getTime() / 1000 + 60,
-          codeId: item.id,
-          versionId: version.id,
-          runId,
-          generation: 1,
-          mandateId: owner,
-          mandateRevision: 1,
-          entrypoint: "daily",
-          bundleHash: hash.bundle_hash,
-        },
-      },
-      async () => {
-        invoked = true;
-        throw new Error("Send must not run");
-      },
-    );
-    expect(invoked).toBe(false);
-    expect(await response.json()).toEqual({ ok: false, error: { code: "chat_unavailable", status: 409 } });
+    expect(await resolveCodeChatDestination(run, sql)).toMatchObject({ ok: false, error: { code: "chat_unavailable", status: 409 } });
+    const authority = context(editor).authority;
+    if (authority.actor.kind !== "user") throw new Error("Expected person");
+    const foreign = {
+      ...run,
+      user: authority.actor.user,
+      accessSubject: authority.accessSubject,
+      actor: { ...run.actor, kind: "user" as const, user: authority.actor.user },
+    };
+    expect(await resolveCodeChatDestination(foreign, sql)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
   });
 
   test("owner changes clear the binding and advance its revision; new rows start unbound", async () => {
     const destination = await chat("Transfer433");
     const item = await code("Transfer fixture", destination);
     await sql`UPDATE code.codes SET owner_user_id=${editor}::uuid WHERE id=${item.id}`;
-    expect(await readCodeChatBinding({ codeId: item.id }, context(editor))).toEqual({
+    expect(await getCodeChatBinding({ codeId: item.id }, context(editor))).toEqual({
       codeId: item.id,
       revision: 2,
       canChange: true,
       chat: null,
     });
-    await expect(resolveCodeBoundChat(item.id)).rejects.toMatchObject({ code: "chat_unbound" });
+    expect(await resolveCodeChatDestination(await personalRun(item.id, editor), sql)).toMatchObject({
+      ok: false,
+      error: { code: "chat_unbound", status: 409 },
+    });
     const fresh = await code("Copy fixture");
-    expect(await readCodeChatBinding({ codeId: fresh.id }, context())).toEqual({
+    expect(await getCodeChatBinding({ codeId: fresh.id }, context())).toEqual({
       codeId: fresh.id,
       revision: 0,
       canChange: true,

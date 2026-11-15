@@ -5,6 +5,7 @@ import { CodeRouteSchema } from "../contracts/code-routes";
 import { CodeAutomationTitleSchema, CodeOnceScheduleSchema } from "../contracts/code-version";
 import { MANDATE_POLICY_MAX_IDENTIFIERS } from "../services/mandates/policy";
 import { normalizeCronSchedule } from "../shared/cron-schedule";
+import { CODE_BOUND_CHAT_ID } from "./bound-chat";
 import type { CodeCheckDiagnostic, CodeCheckRequest, CodePermission, CodeVersionManifest } from "./checker-contract";
 import { codeCheckerMessages } from "./checker-messages";
 import type { CodeSdkOperation } from "./types";
@@ -398,7 +399,12 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       placed.push({ index: result.permissions.length, node });
       result.permissions.push({
         operation,
-        target: target ? { type: target.type, id } : null,
+        target: target
+          ? {
+              type: target.type,
+              id: operation === "core.ai.chat.send" && target.type === "core.ai.chat" && id === CODE_BOUND_CHAT_ID ? null : id,
+            }
+          : null,
         file: sf.fileName.slice(root.length),
         line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
       });

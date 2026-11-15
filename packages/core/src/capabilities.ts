@@ -53,7 +53,7 @@ import { coreCapabilityPresentation } from "./capability-presentation";
 import { CodeDataError, codePerson } from "./code/access";
 import { codeAttentionContracts, listCodeAttention, readCodeAttention, readCodeSummary } from "./code/attention";
 import { codeAutomationContracts, listCodeAutomations } from "./code/automations";
-import { codeChatBindingContracts, readCodeChatBinding, reviewCodeChatBinding, setCodeChatBinding } from "./code/chat-binding";
+import { codeChatBindingContracts, getCodeChatBinding, reviewCodeChatBinding, setCodeChatBinding } from "./code/chat-binding";
 import { CodeIdSchema, codeQueryContracts } from "./code/contracts";
 import { readCodeDetails } from "./code/database";
 import { cancelCodeEventCatchup, readCodeEventCatchup, resumeCodeEventCatchup, startCodeEventCatchup } from "./code/event-catchup";
@@ -762,7 +762,7 @@ export const aiCapabilities = defineCapabilities({
       description: "Read a Code's chat binding and revision. Chat titles stay private to its owner.",
       ...codeChatBindingContracts.read,
       openWorld: false,
-      run: (input, context) => runCodeQuery(context, (ctx) => readCodeChatBinding(input, ctx)),
+      run: (input, context) => runCodeQuery(context, (ctx) => getCodeChatBinding(input, ctx)),
     },
     "code.read": {
       title: "Read Code",
