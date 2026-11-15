@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { CodeActivityReadModelSchema, CodeRunReadModelSchema } from "@k2b/cloud/contracts";
-import { effectTarget, presentEffect } from "./effects";
+import { effectTarget, presentEffect, presentEffectCount, presentRecentEffect } from "./effects";
 import { codeActivityReadModelFixture, codeRunReadModelFixture } from "./fixtures";
 import type { ReadModelNames } from "./present";
 
@@ -41,7 +41,60 @@ test("unknown, ambiguous, and incomplete evidence use a counted Action, never in
 });
 test("all consumer fixtures use the same bounded de/en contracts", () => {
   for (const locale of ["de", "en"] as const) {
-    expect(CodeActivityReadModelSchema.safeParse(codeActivityReadModelFixture(locale)).success).toBe(true);
+    const fixture = codeActivityReadModelFixture(locale);
+    expect(CodeActivityReadModelSchema.safeParse(fixture).success).toBe(true);
+    expect(CodeActivityReadModelSchema.safeParse({ ...fixture, recent: Array.from({ length: 7 }, () => fixture.recent[0]) }).success).toBe(
+      false,
+    );
     expect(CodeRunReadModelSchema.safeParse(codeRunReadModelFixture(locale)).success).toBe(true);
   }
+});
+
+test("weekly counters use persisted plural results and never a permission title as a result", () => {
+  expect(codeActivityReadModelFixture("de").counters.items[0]?.text).toBe("Aufgaben angelegt");
+  expect(codeActivityReadModelFixture("en").counters.items[0]?.text).toBe("Tasks created");
+  const counted = {
+    ...evidence,
+    forms: {
+      de: { ...evidence.forms.de, countText: "Aufgaben angelegt" },
+      en: { ...evidence.forms.en, countText: "Tasks created" },
+    },
+  };
+  expect(presentEffectCount(counted, "de", "Aufgabe anlegen", 35)).toBe("Aufgaben angelegt");
+  expect(presentEffectCount(counted, "en", "Create task", 35)).toBe("Tasks created");
+  expect(presentEffectCount(evidence, "de", "Aufgabe anlegen", 35)).toBe("Aufgabe anlegen · 35 Mal");
+  expect(presentEffectCount({ ...counted, forms: { de: { ...counted.forms.de, countText: "{private}" } } }, "de", "Action", 2)).toBe(
+    "Action · 2 Mal",
+  );
+});
+
+test("recent results defer one exact target to an independent reader and keep a name-free fallback", () => {
+  const input = { operation: "fictional.create", target: null, evidence };
+  for (const readable of [true, false]) {
+    const de = presentRecentEffect(input, names(readable), "de");
+    expect(de).toEqual({
+      text: "Aufgabe angelegt",
+      app: "Fictional",
+      icon: "ti ti-list",
+      state: "succeeded",
+      target: { ref: target, text: "Aufgabe „{name}“ angelegt" },
+    });
+    expect(JSON.stringify(de)).not.toMatch(/Private delivery|fictional\/task/);
+    expect(presentRecentEffect(input, names(readable), "en").target?.text).toBe("Created task “{name}”");
+  }
+  for (const value of [
+    null,
+    { ...evidence, refs: [target, { ...target, id: "other" }] },
+    { ...evidence, forms: { de: { ...evidence.forms.de, kind: "{name}" } } },
+  ]) {
+    expect(presentRecentEffect({ ...input, evidence: value }, names(true), "de")).not.toHaveProperty("target");
+  }
+  const fixed = { ...evidence, forms: { de: { ...evidence.forms.de, text: "Aufgabe angelegt" } } };
+  expect(presentRecentEffect({ ...input, evidence: fixed }, names(true), "de")).not.toHaveProperty("target");
+});
+
+test("a different call target of the result type makes the deferred result ambiguous", () => {
+  expect(
+    presentRecentEffect({ operation: "fictional.create", target: { ...target, id: "other" }, evidence }, names(true), "de"),
+  ).not.toHaveProperty("target");
 });
