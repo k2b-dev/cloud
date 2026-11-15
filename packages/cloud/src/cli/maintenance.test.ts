@@ -123,6 +123,6 @@ test("cld admin maintenance calls Core's maintenance API and prints the sentence
     { path: "/api/admin/maintenance", method: "GET", body: undefined },
   ]);
   // FORCE_COLOR may be set where tests run; the words matter here.
-  expect(printed.slice(0, 2).map((line) => line.replace(/\u001b\[[0-9;]*m/g, ""))).toEqual(["Wartungsmodus aktiviert.", "Wartungsmodus beendet. Offene Seiten laden jetzt neu."]);
+  expect(printed.slice(0, 2).map((line) => line.replaceAll("\u001b[38;5;208m", "").replaceAll("\u001b[39m", ""))).toEqual(["Wartungsmodus aktiviert.", "Wartungsmodus beendet. Offene Seiten laden jetzt neu."]);
   await expect(invoke(["maintenance", "until", "00:00"])).rejects.toThrow();
 });
