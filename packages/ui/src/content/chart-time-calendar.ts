@@ -59,6 +59,14 @@ const nextWall = (wall: number, step: ChartTimeStep): number => {
   return wall + step.size * UNIT_MS[step.unit];
 };
 
+/**
+ * How many dates fit along a drawing of this width when the caller names no tick count: one date takes about 56 px
+ * (a label such as "12. Nov." and the gap to the next), the Y labels take the first 60 px, and never fewer than five.
+ * A box narrower than the drawing then hides every second date (`chart-tick-room.ts`).
+ */
+export const chartTimeTickBudget = (drawWidth: number, ticks?: number): number =>
+  ticks !== undefined ? ticks + 2 : Math.max(5, Math.floor((drawWidth - 60) / 56));
+
 /** The round step for a time span: the finest one that keeps at most `maxTicks` ticks. */
 export const chartTimeStep = (span: number, maxTicks: number): ChartTimeStep =>
   STEPS.find((step) => span / (step.size * UNIT_MS[step.unit]) <= maxTicks) ?? STEPS.at(-1)!;
