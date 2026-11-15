@@ -15,6 +15,8 @@ else
       });
       const { Dropdown } = await import("../src/actions/Dropdown");
       const { dialogCore } = await import("../src/feedback/dialog-core");
+      // A phone loads the sheet's code with its menus; from then on a tap opens the sheet within the tap.
+      await (await import("../src/actions/menu-sheet-open")).loadMenuSheet();
       const calls: Array<boolean | "close"> = [];
       const dispose = render(
         () => (

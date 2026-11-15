@@ -4,7 +4,7 @@ import { prefersReducedMotion } from "../motion";
 import { ContextMenuBase } from "./ContextMenu";
 import { type DropdownAction, type DropdownActionBase, type DropdownChoice, DropdownItems, type DropdownSection } from "./Dropdown";
 import { onPointerDragStart } from "./drag-and-drop";
-import { openMenuSheet } from "./menu-sheet";
+import { openMenuSheet } from "./menu-sheet-open";
 
 /** A finger held this long without moving opens the menu, as the platforms' own long press does. */
 const LONG_PRESS_MS = 500;
@@ -154,8 +154,8 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
   const active = () => props.items.length > 0;
   const wide = () => window.matchMedia?.("(min-width: 48rem)").matches ?? false;
   /**
-   * A modal dialog makes everything outside it inert, also ContextMenu's menu on the body, so inside one the hold
-   * keeps the sheet, which opens on the same dialog stack. An engine without `:modal` gets the sheet too.
+   * Inside a modal dialog the hold keeps the sheet: it opens as a level of the same dialog stack, so Escape and Back
+   * close it before the dialog. An engine without `:modal` gets the sheet too.
    */
   const inModal = () => {
     const dialog = surface.closest("dialog[open]");
@@ -175,7 +175,10 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     return found !== null && found !== surface && surface.contains(found);
   };
 
-  const openSheet = () => {
+  /** Set while the menu opens in place of a sheet whose code did not load; `onOpen` already ran for it. */
+  let announcedOpen = false;
+
+  const openSheet = (x: number, y: number) => {
     if (sheetOpen || !active()) return;
     sheetOpen = true;
     const controller = new AbortController();
@@ -183,14 +186,25 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     const abortSheet = () => controller.abort();
     disposed.signal.addEventListener("abort", abortSheet, { once: true });
     props.onOpen?.();
-    void openMenuSheet({
-      Items: DropdownItems,
-      items: props.items,
-      label: props.label,
-      locale: locale(),
-      top: props.sheetTop,
-      signal: controller.signal,
-    }).finally(() => {
+    void openMenuSheet(
+      {
+        Items: DropdownItems,
+        items: props.items,
+        label: props.label,
+        locale: locale(),
+        top: props.sheetTop,
+        signal: controller.signal,
+      },
+      (error) => {
+        globalThis.reportError(error);
+        // The sheet's code did not load: the person still chooses, from the menu beside the finger, and the next
+        // hold tries the sheet again.
+        if (controller.signal.aborted) return;
+        announcedOpen = true;
+        openMenuAt?.(x, y);
+        announcedOpen = false;
+      },
+    ).finally(() => {
       disposed.signal.removeEventListener("abort", abortSheet);
       if (sheetController === controller) {
         sheetController = undefined;
@@ -245,7 +259,7 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
     press.long = true;
     lastTap = undefined;
     if (wide() && !inModal()) openMenuAt?.(press.x, press.y);
-    else openSheet();
+    else openSheet(press.x, press.y);
   };
 
   const onPointerDown = (event: PointerEvent) => {
@@ -435,7 +449,9 @@ export function GestureMenu(props: GestureMenuProps): JSX.Element {
       label={props.label}
       tabIndex={props.tabIndex}
       disabled={!active()}
-      onOpen={props.onOpen}
+      onOpen={() => {
+        if (!announcedOpen) props.onOpen?.();
+      }}
       class={props.class}
     >
       <div
