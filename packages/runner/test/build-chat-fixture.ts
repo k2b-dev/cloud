@@ -12,9 +12,14 @@ import {sheet} from "@sdk";
 export default async () => {
   const csv = await sheet.toCsv([{answer:42}], {bom:false});
   await cloud.download("answer.csv", csv);
+  const archive = await cloud.zip.create([{name:"bank/report.xml",data:"<Document>bank report</Document>"}], "input.zip");
+  const zip = await cloud.zip.open(archive);
+  const xml = await zip.text("bank/report.xml");
+  const packed = await cloud.zip.create([{name:"report.xml",data:await zip.read("bank/report.xml")}], "reports.zip");
+  await cloud.download(packed.name, packed);
   let network="allowed";
   try { await fetch("http://127.0.0.1:1"); } catch {network="blocked";}
-  return {answer:42, network, env:Object.keys(process.env)};
+  return {answer:42, xml, zipEntries:zip.entries.length, network, env:Object.keys(process.env)};
 }`,
       },
     ],

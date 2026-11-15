@@ -2,6 +2,7 @@ import { test as bunTest, expect } from "bun:test";
 import { decodeChatValue, encodeChatValue } from "@k2b/cloud/code/chat-run";
 import type { RunnerBridge, RunnerJobLease } from "@k2b/cloud/code/runner";
 import { z } from "zod";
+import { openZip } from "../../assistant/src/chat-code/runtime/zip";
 import { executeChatJob } from "../src/chat-job";
 import { WorkerdEngine } from "../src/engine";
 import { config } from "./fixtures";
@@ -33,7 +34,12 @@ test("chat jobs execute the Assistant runtime, SDK sheet chunk and file RPC in i
     events.push(message);
     if (message.type === "rpc") {
       expect(message.method).toBe("file.save");
-      expect(message.args).toEqual(["answer\r\n42\r\n", "answer.csv"]);
+      if (message.args?.[1] === "reports.zip") {
+        const file = message.args[0];
+        expect(file).toBeInstanceOf(Blob);
+        if (!(file instanceof Blob)) throw new Error("Expected ZIP Blob");
+        expect(await (await openZip(file)).text("report.xml")).toBe("<Document>bank report</Document>");
+      } else expect(message.args).toEqual(["answer\r\n42\r\n", "answer.csv"]);
     }
     return { ok: true, value: await encodeChatValue(null) };
   };
@@ -44,7 +50,10 @@ test("chat jobs execute the Assistant runtime, SDK sheet chunk and file RPC in i
       kind: "chat",
       outcome: "succeeded",
     });
-    expect(events).toContainEqual({ type: "output", value: { answer: 42, network: "blocked", env: [] } });
+    expect(events).toContainEqual({
+      type: "output",
+      value: { answer: 42, xml: "<Document>bank report</Document>", zipEntries: 1, network: "blocked", env: [] },
+    });
     expect(events).toContainEqual({ type: "ready" });
   } finally {
     clearTimeout(timeout);

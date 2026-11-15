@@ -98,6 +98,7 @@ Studio database grants are unavailable.
 | PDF generation and attachments | [PDF](references/pdf.md) |
 | Exact amounts and taxes | [Money](references/money.md) |
 | DATEV and SEPA | [Finance](references/finance.md) |
+| ZIP archives, including bank-export ZIPs | [ZIP](references/zip.md) |
 | CAMT bank reports | [CAMT](references/camt.md) |
 | Electronic invoices | [E-invoice](references/einvoice.md) |
 | Native views and charts | [Views](references/views.md), [Charts](references/charts.md) |
