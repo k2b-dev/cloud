@@ -565,6 +565,8 @@
 /* Chips shrink sideways; nothing is cut above or below, so focus rings and the touch areas of coarse pointers stay whole. */
 .k2b-ui .assistant-waiting__list { display: flex; flex: 0 1 auto; gap: .375rem; min-inline-size: 0; margin: 0; padding: 0; overflow-x: clip; overflow-y: visible; list-style: none; }
 .k2b-ui .assistant-waiting__item { display: flex; flex: 0 1 auto; min-inline-size: 4rem; max-inline-size: 15.625rem; }
+/* The first entry is the next thing to do: when the row is short of room, the later chips give way first. */
+.k2b-ui .assistant-waiting__item:first-child { flex-shrink: .2; }
 .k2b-ui .assistant-waiting__entry { display: inline-flex; flex: 1 1 auto; align-items: center; gap: .375rem; min-inline-size: 0; block-size: 1.625rem; padding: 0 0 0 .5rem; border: 0; border-radius: .5rem; color: var(--k2b-text); background: var(--k2b-ai-surface); font: inherit; white-space: nowrap; cursor: pointer; }
 .k2b-ui .assistant-waiting__entry:hover { background: color-mix(in srgb, var(--k2b-ai-accent) 14%, var(--k2b-surface)); }
 .k2b-ui .assistant-waiting__entry:focus-visible,
