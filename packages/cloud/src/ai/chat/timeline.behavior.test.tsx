@@ -782,6 +782,58 @@ const renderFailedTurnTimeline = async (
   }
 });
 
+(isServer ? test.skip : test)(
+  "a turn that ends after its steps without any answer says so and offers to go on, never ends in silence",
+  async () => {
+    const dom = createDomTestHarness();
+    const [state, setState] = createStore(emptyProjection());
+    const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+    const continued: string[] = [];
+    const dispose = await renderFailedTurnTimeline(
+      dom,
+      { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+      "de",
+      (message) => {
+        continued.push(message);
+      },
+    );
+    const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "write_file", args: { path: "/code.ts" } };
+    try {
+      emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+      emit({ ...base, seq: 2, type: "block_set", block: { ...write, status: "completed", result: "ok" } });
+      await tick();
+      expect(dom.root.querySelector(".ai-turn__notice")).toBeNull();
+      // The model answers with an empty message and a normal stop (kimi-k3 in the Preview, finding 85).
+      emit({
+        ...base,
+        seq: 3,
+        type: "turn_finished",
+        status: "completed",
+        messages: [
+          storedMessage(10, { role: "user", content: [{ type: "text", text: "Bau die Automation fertig." }] }),
+          storedMessage(11, { role: "assistant", content: [{ type: "tool_call", id: "write", name: "write_file", args: write.args }] }),
+          storedMessage(12, { role: "tool_result", callId: "write", name: "write_file", result: "ok", isError: false }),
+          storedMessage(13, { role: "assistant", content: [] }, { loopDoneReason: "stop", stopReason: "stop" }),
+        ],
+      });
+      await tick();
+      const notice = dom.root.querySelector(".ai-turn__notice");
+      expect(notice?.textContent).toContain("Die Antwort endete ohne Text.");
+      expect(notice?.textContent).toContain("Die Schritte oben bleiben.");
+      const button = [...(notice?.querySelectorAll("button") ?? [])].find((element) => element.textContent?.includes("Weiterarbeiten"));
+      expect(button).toBeDefined();
+      button!.click();
+      await tick();
+      expect(continued).toEqual(["Mach an der Stelle weiter, an der du aufgehört hast."]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  },
+);
+
 (isServer ? test.skip : test)("a failed turn keeps its elements and names its reason and next step in the reader's language", async () => {
   const dom = createDomTestHarness();
   const [state, setState] = createStore(emptyProjection());
