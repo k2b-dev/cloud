@@ -51,9 +51,9 @@ import {
   matchesAssistantInvalidation,
 } from "../frontend/assistant-live";
 import { audioMessages } from "../frontend/audio-messages";
-import { assistantMessages } from "../frontend/messages";
 import { AssistantCodeDecisionEntry } from "../frontend/code-decision-deferred";
 import { AssistantCodeVersionCard } from "../frontend/code-version-card-deferred";
+import { assistantMessages } from "../frontend/messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
 import { pwaMessages } from "./messages";
