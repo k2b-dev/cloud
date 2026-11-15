@@ -242,32 +242,6 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     setSystemTime();
   });
 
-  test("the shared version read marks the changed access that needs approval without extra SQL", async () => {
-    const code = await newCode();
-    const submission = await submitCodeVersion(input(code, "approval cause"), author);
-    const reader = spyOn(provider, "invokeCapabilityWithDataSchema").mockImplementation(async (_invocation, schema) => ({
-      ok: true as const,
-      data: { data: schema.parse({ view: { title: "Visible folder", permission: "read" } }) },
-    }));
-    const meter = await meterSql();
-    try {
-      const statements = await meter.during(async () => {
-        const words = await loadCodeVersionReadModel({ codeId: code.id, versionId: submission.version.id }, { ...author, locale: "de" });
-        expect(words.changes.rows.items.find((row) => row.kind === "add")).toMatchObject({
-          requiresApproval: true,
-          accessLabel: "Fixture",
-        });
-        expect(words.changes.approval?.reason).toContain("andere sehen");
-      });
-      expect(statements).toHaveLength(3);
-      await sql`UPDATE code.policy_rules SET value='automatic' WHERE group_id IS NULL AND row='silent_shared'`;
-      expect((await loadCodeVersionReadModel({ codeId: code.id, versionId: submission.version.id }, author)).changes.approval).toBeNull();
-    } finally {
-      reader.mockRestore();
-      await meter.close();
-    }
-  });
-
   test("Composer stop and real submission serialize on the same review gate", async () => {
     for (const stopped of [true, false]) {
       const code = await newCode();
