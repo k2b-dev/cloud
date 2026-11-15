@@ -703,6 +703,13 @@ branch:
   `packages/ui/test/browser.ts`. It waits until the browser store agrees with
   the document and returns the full cookie with its attributes. The
   `cookie-store` check enforces this.
+- Chromium keeps a running animation at one point for the whole task; WebKit
+  moves it on between two reads in the same `evaluate()`. Two boxes read while
+  a bottom sheet slides in therefore sit at different heights, as if they
+  overlapped. A locator `waitFor` returns as soon as the sheet is visible, in
+  its first frame, so a test that compares boxes of something that just
+  appeared awaits `settled(page)` first
+  ([#3441](https://github.com/k2b-dev/cloud/issues/3441)).
 - Playwright's WebKit draws overlay scrollbars that reserve no gutter.
 - Playwright's WebKit ignores the charset of a routed response. A page that a
   test serves names it with `<meta charset="utf-8">`, as every Cloud page
