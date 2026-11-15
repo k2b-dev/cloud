@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { createSync, type Sync } from "@k2b/sync";
+import { createSync, type Sync, type SyncEvent } from "@k2b/sync";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate as migrateLogging } from "../../../../core/src/migrate/core/logging";
 import { bindProcessSync, unbindProcessSync } from "../../_internal/process-sync";
@@ -11,13 +11,28 @@ suiteFor("database", "nats")("one shared platform link retention schedule", () =
   let connection: Awaited<ReturnType<typeof connectTestNats>> | undefined;
   const instances: Sync[] = [];
   const stops: Array<() => Promise<void>> = [];
+  const completions: SyncEvent[] = [];
+  const waitForCompletion = async (runId: string) => {
+    const deadline = performance.now() + 10000;
+    while (!completions.some((event) => event.detail?.id === runId) && performance.now() < deadline) await Bun.sleep(10);
+    expect(completions.filter((event) => event.detail?.id === runId).map((event) => event.detail?.status)).toEqual(["success"]);
+  };
   beforeAll(async () => {
     database = await useFreshDatabase("one_time_links_runtime");
     await migrateLogging();
     connection = await connectTestNats({ ignoreClusterUpdates: true });
     const namespace = testSyncNamespace("links-runtime");
     for (const application of ["invoices", "core", "core"]) {
-      const sync = createSync({ connection, namespace, application, defaults: { replicas: 1 } });
+      const sync = createSync({
+        connection,
+        namespace,
+        application,
+        defaults: { replicas: 1 },
+        observe: (event) => {
+          if (event.resource === "cloud-links-retention" && event.kind === "scheduler" && event.type === "handler_settled")
+            completions.push(event);
+        },
+      });
       instances.push(sync);
       bindProcessSync(sync);
       try {
@@ -39,7 +54,7 @@ suiteFor("database", "nats")("one shared platform link retention schedule", () =
     }
   });
 
-  test("only Core replicas register retention and deduplicate the same accepted cleanup run", async () => {
+  test("only Core replicas register retention and deduplicate cleanup across later runs", async () => {
     const schedules = instances.map((sync) => sync.controls().filter((control) => control.kind === "scheduler"));
     expect(schedules.map((items) => items.length)).toEqual([0, 1, 1]);
     const [first, second] = schedules.slice(1).map((items) => items[0]);
@@ -59,8 +74,13 @@ suiteFor("database", "nats")("one shared platform link retention schedule", () =
       second.scheduler.runNow({ id: "retention", requestId }),
     ]);
     expect(a.runId).toBe(b.runId);
-    expect(await first.scheduler.awaitRun({ id: "retention", runId: a.runId, timeoutMs: 10000 })).toEqual({ completed: true });
+    await waitForCompletion(a.runId);
     const [row] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM platform._cloud_links`;
     expect(row?.count).toBe(0);
+    // Sync awaitRun reads only the latest completion (k2b-dev/sync#10); an hourly tick can replace it.
+    // Complete a successor deterministically, then check the original run's own evidence.
+    const successor = await second.scheduler.runNow({ id: "retention", requestId: "retention-successor-test" });
+    await waitForCompletion(successor.runId);
+    await waitForCompletion(a.runId);
   });
 });

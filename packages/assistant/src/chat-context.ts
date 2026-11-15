@@ -37,6 +37,37 @@ export type AssistantChatResult = {
   presentationId?: string;
 };
 
+/**
+ * A further group of the box "In this chat", such as the automations of the chat. Whoever owns the data fills it
+ * through the snapshot; the box draws it like the results, so it needs no code of its own here. Texts are final and in
+ * the viewer's language.
+ */
+export type AssistantChatContextGroup = {
+  key: string;
+  label: string;
+  /** All entries; the box shows at most three, then "Show all". */
+  count: number;
+  rows: Array<{
+    key: string;
+    icon: string;
+    /** The app colour of the tile. */
+    accent?: string;
+    title: string;
+    /** One state word at the row's end, such as "Paused". */
+    word: string;
+    tone?: "warn" | "ok" | "ai" | "danger";
+    /** It waits for the viewer: the tile carries a ring. */
+    attention?: boolean;
+    tooltip?: string;
+    /** A click jumps to this message of the chat. */
+    jump?: { messageSeq: number; callId: string | null };
+    /** Without a jump, a click opens this Cloud address. */
+    href?: string;
+    /** The one action shown while pointing at the row. */
+    action?: { href: string; label: string; icon: string };
+  }>;
+};
+
 export type AssistantChatContextSnapshot = {
   chatId: string;
   viewerUserId: string;
@@ -61,6 +92,8 @@ export type AssistantChatContextSnapshot = {
   memories: Array<{ id: string; content: string }>;
   runCount: number;
   runs: Array<{ id: string; status: string; createdAt: string }>;
+  /** Further groups of the box, after the results; none yet. */
+  groups?: AssistantChatContextGroup[];
 };
 
 const readableSources = (sources: readonly AiConversationSource[]) =>

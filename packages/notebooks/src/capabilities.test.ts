@@ -1586,3 +1586,15 @@ test("shared creation reviews keep complete text, notebook scope and current wri
     ).ok,
   ).toBe(false);
 });
+
+test("every Query people see says in English and German what it did once it finished", async () => {
+  const { notebooksCapabilityPresentation } = await import("./capability-presentation");
+  const visible = Object.entries(notebooksCapabilities.queries).filter(([, query]) => !("appOnly" in query && query.appOnly));
+  const queries = notebooksCapabilityPresentation.translations.de?.queries ?? {};
+  const missing = visible.flatMap(([id]) => {
+    const english = notebooksCapabilityPresentation.doneTitles?.[id];
+    const german = (queries as Record<string, { doneTitle?: string }>)[id]?.doneTitle;
+    return english && german ? [] : [id];
+  });
+  expect(missing).toEqual([]);
+});
