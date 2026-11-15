@@ -39,11 +39,18 @@ test("a record's reference named for the reader as the file is read still matche
   });
   if (!written || written.view !== "details") throw new Error("Invalid record fixture");
   const reserved = cloudAiViewSummary(written);
-  const named = { ...written, items: written.items.map((item) => (item.type === "ref" ? { ...item, value: { type: "spaces.item", id: "task-2", title: "Rechnung prüfen und freigeben" } } : item)) };
+  const named = {
+    ...written,
+    items: written.items.map((item) =>
+      item.type === "ref" ? { ...item, value: { type: "spaces.item", id: "task-2", title: "Rechnung prüfen und freigeben" } } : item,
+    ),
+  };
   spyOn(globalThis, "fetch").mockResolvedValue(response(named));
   expect(await loadView("/files/orders", path, reserved, signal())).toMatchObject({ block: "details" });
   // A changed text that is not a reference still moves the viewport and stays unavailable.
-  spyOn(globalThis, "fetch").mockResolvedValue(response({ ...named, items: [{ label: "Kunde", type: "text", value: "Galerie Nord am Hafen" }, named.items[1]] }));
+  spyOn(globalThis, "fetch").mockResolvedValue(
+    response({ ...named, items: [{ label: "Kunde", type: "text", value: "Galerie Nord am Hafen" }, named.items[1]] }),
+  );
   expect(await loadView("/files/orders", path, reserved, signal())).toBeNull();
 });
 
