@@ -811,6 +811,7 @@ const renderFailedTurnTimeline = async (
         seq: 3,
         type: "turn_finished",
         status: "completed",
+        error: null,
         messages: [
           storedMessage(10, { role: "user", content: [{ type: "text", text: "Bau die Automation fertig." }] }),
           storedMessage(11, { role: "assistant", content: [{ type: "tool_call", id: "write", name: "write_file", args: write.args }] }),
