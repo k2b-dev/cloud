@@ -110,7 +110,9 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
   const owners = sheetOwners.get(frame) ?? [];
   sheetOwners.set(frame, owners);
   const owner: SheetOwner = { suspend: () => suspend(), resume: () => resume() };
-  const owning = () => !disposed && owners.at(-1) === owner;
+  /** A level that is no sheet, such as a full-screen prompt, covers this one in the same dialog element. */
+  let covered = false;
+  const owning = () => !disposed && !covered && owners.at(-1) === owner;
   const claim = () => {
     frame.dataset.sheetMotion = "";
     if (detents) frame.dataset.sheetDetents = "";
@@ -325,7 +327,7 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
 
   // A mouse or a pen drags by the handle or the header; a finger uses the touch events below.
   let suppressClick = false;
-  const header = panel.querySelector<HTMLElement>(":scope > .k2b-panel-dialog__header");
+  const header = panel.querySelector<HTMLElement>(":scope > .k2b-panel-dialog__header, :scope > .k2b-dialog__panel > .k2b-dialog__header");
   for (const zone of [handle, header]) {
     if (!zone) continue;
     let pointer: number | null = null;
@@ -482,6 +484,24 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
       put(rest(detent));
     });
   }
+
+  // dialogCore shows only its top level, the dialog element's last child; any other level on top takes the element.
+  const levels =
+    typeof MutationObserver === "function"
+      ? new MutationObserver(() => {
+          if (disposed || owners.at(-1) !== owner) return;
+          const top = frame.lastElementChild?.contains(panel) ?? true;
+          if (!top && !covered) {
+            suspend();
+            covered = true;
+          } else if (top && covered) {
+            covered = false;
+            resume();
+          }
+        })
+      : undefined;
+  levels?.observe(frame, { childList: true });
+  cleanups.push(() => levels?.disconnect());
 
   // Set before the dialog opens, so the stylesheet's own entry animation never starts.
   owners.at(-1)?.suspend();

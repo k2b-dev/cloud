@@ -14,7 +14,7 @@ Use `prompts.error` only when the user must read a failure and decide how to con
 
 ## On a phone
 
-Below 48rem a prompt rises from the bottom edge as a sheet, within thumb reach. It has the sheet's handle and motion: it slides in, follows the handle, and slides out, instantly with reduced motion. The handle and a drag down dismiss it the way Escape does, so a prompt with `cancelBehavior: "ignore"` keeps its sheet. A form focuses its first field. From 48rem every prompt stays the dialog in the middle. A `size: "full"` prompt keeps its edge-to-edge frame, and a `surface: "bare"` prompt or a `prompts.dialog` without its header keeps its own chrome. The choice is made when the prompt opens and needs no option.
+Below 48rem a prompt rises from the bottom edge as a sheet, within thumb reach. It has the sheet's handle and motion: it slides in and follows the handle, and the handle or a drag down slides it out and dismisses it the way Escape does, instantly with reduced motion. A dismiss handler that decides later keeps the sheet out until it answers; a prompt with `cancelBehavior: "ignore"` keeps its sheet and shows no handle bar. On a phone the title wraps to up to three lines instead of ending in an ellipsis. A form focuses its first field. From 48rem every prompt stays the dialog in the middle. A `size: "full"` prompt keeps its edge-to-edge frame, and a `surface: "bare"` prompt or a `prompts.dialog` without its header keeps its own chrome. The choice is made when the prompt opens and needs no option.
 
 ## Import
 

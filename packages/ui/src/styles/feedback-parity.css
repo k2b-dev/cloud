@@ -258,6 +258,26 @@
   padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* The question is the decision: on a phone, where no pointer shows a cut
+ * title, it wraps to up to three lines instead of ending in an ellipsis. */
+.k2b-ui .k2b-prompt-sheet .k2b-dialog__header {
+  align-items: flex-start;
+}
+
+.k2b-ui .k2b-prompt-sheet .k2b-dialog__header h2 {
+  display: -webkit-box;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+/* A prompt that must be answered cannot be dismissed: its handle shows no bar. */
+.k2b-ui .k2b-prompt-sheet .k2b-bottom-sheet__handle:disabled > span {
+  visibility: hidden;
+}
+
 /* Custom `prompts.dialog` bodies are arbitrary markup with no `__body`
  * padding, so the stack supplies Cloud's `gap-4` between header and body. */
 .k2b-ui .k2b-dialog__stack {

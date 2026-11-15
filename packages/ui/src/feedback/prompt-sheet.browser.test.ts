@@ -19,6 +19,14 @@ window.ask = (kind, options) => {
     phrase: () => prompts.confirm("This cannot be undone.", { title: "Delete the space?", confirmationPhrase: "Summer party", ...options }),
     alert: () => prompts.alert("The share went to Team Logistics.", { title: "Shared", ...options }),
     form: () => prompts.form({ title: "Rename folder", fields: { name: { type: "text", label: "Name", default: "Summer party" } }, ...options }),
+    // A guard that decides after a moment, as a save in flight does, and then closes.
+    guarded: () =>
+      prompts.dialog((close, context) => {
+        context.setDismissHandler(() => new Promise((done) => setTimeout(() => { close("left"); done(); }, 300)));
+        const body = document.createElement("p");
+        body.textContent = "Saving the draft first.";
+        return body;
+      }, { title: "Draft", ...options }),
   }[kind];
   void open().then((value) => window.results.push(value === undefined ? "dismissed" : value));
 };
@@ -64,7 +72,8 @@ const frame = (tab: Page) =>
     const box = dialog.getBoundingClientRect();
     return {
       sheet: dialog.classList.contains("k2b-bottom-sheet-frame"),
-      handle: dialog.querySelector(".k2b-bottom-sheet__handle") !== null,
+      // Only the top level of the dialog stack shows; the levels below keep their content hidden.
+      handle: dialog.lastElementChild?.querySelector(".k2b-bottom-sheet__handle") != null,
       left: Math.round(box.left),
       width: Math.round(box.width),
       bottom: Math.round(box.bottom),
@@ -189,6 +198,94 @@ test("in dark mode the phone sheet keeps the dialog's surface behind its panel",
       return { frame: getComputedStyle(dialog).backgroundColor, panel: getComputedStyle(panel).backgroundColor };
     });
     expect(colours.panel === colours.frame || colours.panel === "rgba(0, 0, 0, 0)").toBe(true);
+  } finally {
+    await tab.context().close();
+  }
+});
+
+test("a level that is no sheet, opened right above a sliding phone prompt, stays where its own frame puts it", async () => {
+  const tab = await open({ ...phone, reducedMotion: "no-preference" });
+  try {
+    await tab.evaluate(() => {
+      const w = window as unknown as PromptWindow;
+      w.ask("confirm");
+      w.ask("alert", { size: "full" });
+    });
+    await tab.locator("dialog[open]").waitFor();
+    // settled: the frames while the prompt below would still slide in are the subject.
+    const samples = await tab.evaluate(
+      () =>
+        new Promise<{ top: number; bottom: number }[]>((resolve) => {
+          const out: { top: number; bottom: number }[] = [];
+          const sample = () => {
+            const box = document.querySelector<HTMLElement>("dialog[open]")!.getBoundingClientRect();
+            out.push({ top: Math.round(box.top), bottom: Math.round(box.bottom) });
+            if (out.length < 20) requestAnimationFrame(sample);
+            else resolve(out);
+          };
+          requestAnimationFrame(sample);
+        }),
+    );
+    expect(new Set(samples.map((sample) => `${sample.top}:${sample.bottom}`)).size).toBe(1);
+    expect(await frame(tab)).toMatchObject({ sheet: false, handle: false });
+    // Closing the full prompt shows the sheet below at its rest.
+    await tab.keyboard.press("Escape");
+    await tab.waitForFunction(() => (window as unknown as PromptWindow).results.length === 1);
+    await settled(tab);
+    expect(await frame(tab)).toMatchObject({ sheet: true, handle: true, bottom: 844 });
+  } finally {
+    await tab.context().close();
+  }
+});
+
+test("dismissing by the handle waits for an async guard: the sheet stays out and the guard closes it", async () => {
+  const tab = await open({ ...phone, reducedMotion: "no-preference" });
+  try {
+    await ask(tab, "guarded");
+    // settled: the slide out and the wait for the guard are the subject.
+    const shown = await tab.evaluate(
+      () =>
+        new Promise<number[]>((resolve) => {
+          const out: number[] = [];
+          document.querySelector<HTMLElement>(".k2b-bottom-sheet__handle")!.click();
+          const sample = () => {
+            const dialog = document.querySelector<HTMLElement>("dialog[open]");
+            if (!dialog) return resolve(out);
+            out.push(Math.round(innerHeight - dialog.getBoundingClientRect().top));
+            if (out.length < 60) requestAnimationFrame(sample);
+            else resolve(out);
+          };
+          requestAnimationFrame(sample);
+        }),
+    );
+    // It only ever moves down, never back up while the guard decides.
+    for (const [index, value] of shown.entries()) if (index > 0) expect(value).toBeLessThanOrEqual(shown[index - 1]! + 1);
+    await tab.waitForFunction(() => (window as unknown as PromptWindow).results.includes("left"));
+  } finally {
+    await tab.context().close();
+  }
+});
+
+test("on a phone a long question wraps instead of ending in an ellipsis, and a prompt that must be answered shows no handle bar", async () => {
+  const tab = await open(phone);
+  try {
+    await ask(tab, "confirm", {
+      title: "Delete “Offer for the summer party 2027, version C, final.pdf” for everyone?",
+      cancelBehavior: "ignore",
+    });
+    const title = await tab.evaluate(() => {
+      const h2 = document.querySelector<HTMLElement>("dialog[open] .k2b-dialog__header h2")!;
+      const bar = document.querySelector<HTMLElement>("dialog[open] .k2b-bottom-sheet__handle > span")!;
+      return {
+        // More than one line: taller than 1.6 times the font size.
+        lines: h2.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(h2).fontSize) * 1.6 ? 2 : 1,
+        clipped: h2.scrollHeight > h2.clientHeight + 1,
+        bar: getComputedStyle(bar).visibility,
+      };
+    });
+    expect(title.lines).toBeGreaterThanOrEqual(2);
+    expect(title.clipped).toBe(false);
+    expect(title.bar).toBe("hidden");
   } finally {
     await tab.context().close();
   }

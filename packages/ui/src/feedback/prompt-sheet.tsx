@@ -16,7 +16,7 @@ type PromptFrame = { size?: string; surface?: string };
 const opensAsSheet = (options?: PromptFrame): boolean =>
   options?.size !== "full" && options?.surface !== "bare" && typeof matchMedia === "function" && matchMedia(PHONE_SHEET_QUERY).matches;
 
-function PromptSheet(props: { children: JSX.Element; canDismiss: boolean; dismiss: () => void }) {
+function PromptSheet(props: { children: JSX.Element; canDismiss: boolean; dismiss: () => void | Promise<void> }) {
   let handle: HTMLButtonElement | undefined;
   let motion: SheetMotion | undefined;
   let releaseTextSelection: (() => void) | undefined;
@@ -62,7 +62,7 @@ function PromptSheet(props: { children: JSX.Element; canDismiss: boolean; dismis
         onClick={() => {
           // The press after a drag never gets here: the sheet's motion swallows that click.
           if (motion) motion.press();
-          else props.dismiss();
+          else void props.dismiss();
         }}
       >
         <span aria-hidden="true" />
@@ -80,7 +80,7 @@ export const openPrompt = <T,>(render: DialogRender<T>, options: OpenDialogOptio
   if (!opensAsSheet(prompt)) return dialogCore.open<T>(render, options);
   return dialogCore.open<T>(
     (close, context) => (
-      <PromptSheet canDismiss={options.cancelBehavior !== "ignore"} dismiss={() => void context.requestDismiss()}>
+      <PromptSheet canDismiss={options.cancelBehavior !== "ignore"} dismiss={() => context.requestDismiss()}>
         {render(close, context)}
       </PromptSheet>
     ),
