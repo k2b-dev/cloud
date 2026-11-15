@@ -591,7 +591,7 @@ suiteFor(
     chat = await aiConversations.createConversation({ ownerUserId: owner });
     expect(await invoke(chat.shortId, ctx("daily-limit"))).toMatchObject({
       ok: false,
-      error: { code: scope === "code" ? "code_ai_daily_budget_limit" : "code_ai_owner_daily_budget_limit" },
+      error: { code: scope === "code" ? "code_ai_daily_budget_limit" : "code_ai_owner_daily_budget_limit", status: 409 },
     });
     const [run] = await sql<{ cost: string }[]>`SELECT ai_reference_cost::text AS cost FROM code.runs WHERE id=${runId}::uuid`;
     expect(Number(run?.cost)).toBe(0);
