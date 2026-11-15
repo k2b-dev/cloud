@@ -191,7 +191,7 @@ export function CodeSourceTab(props: {
 
   const toolbar = (
     <>
-      <span class="text-[12px] leading-5 text-(--k2b-text-muted)" aria-hidden="true">
+      <span class="text-[12px] leading-5 text-(--k2b-text-subtle)" aria-hidden="true">
         {t().compareLabel}
       </span>
       <Select
@@ -218,7 +218,7 @@ export function CodeSourceTab(props: {
           </Show>
         </span>
       </Show>
-      <i class="ti ti-file-code text-[15px] text-(--k2b-text-muted)" aria-hidden="true" />
+      <i class="ti ti-file-code text-[15px] text-(--k2b-text-subtle)" aria-hidden="true" />
     </>
   );
 
@@ -261,7 +261,7 @@ export function CodeSourceTab(props: {
             toolbarStart={toolbar}
           />
         </div>
-        <p id={footId} class="m-0 flex items-start gap-1.5 text-[12px] leading-5 text-(--k2b-text-muted)">
+        <p id={footId} class="m-0 flex items-start gap-1.5 text-[12px] leading-5 text-(--k2b-text-subtle)">
           <i class="ti ti-lock mt-[3px] text-[13px]" aria-hidden="true" />
           <Show
             when={foot()}

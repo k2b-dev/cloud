@@ -100,10 +100,9 @@ describe("Code page: overview (Bild 19 to 21)", () => {
     expect(page).toContain("Zuletzt");
     expect(page).toContain("Letzte 30 Läufe · heute 30, davon 1 fehlgeschlagen");
     expect(page).toContain("Alle Läufe");
-    expect(markup).toContain('data-shape="bar"');
-    expect(markup.match(/<a class="k2b-dot-strip__link" role="listitem" href="\/app\/mail\/Mb4kd2\/code\?tab=runs&amp;run=/g)).toHaveLength(
-      30,
-    );
+    expect(markup).toContain('data-variant="bar"');
+    // Each of the 30 bars opens its run.
+    expect(markup.match(/class="k2b-dot-strip__target" href="\/app\/mail\/Mb4kd2\/code\?tab=runs&amp;run=/g)).toHaveLength(30);
     expect(markup.match(/data-state="danger"/g)?.length).toBeGreaterThanOrEqual(1);
     for (const word of ["erfolgreich", "fehlgeschlagen", "übersprungen"]) expect(page).toContain(word);
   });

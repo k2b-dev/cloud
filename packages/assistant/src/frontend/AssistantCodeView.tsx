@@ -5,6 +5,7 @@ import {
   DotStrip,
   type DotStripTone,
   FilterToggle,
+  LinkCard,
   Paper,
   Placeholder,
   ScrollArea,
@@ -88,7 +89,7 @@ const runTone = (run: CodeCardRun): DotStripTone =>
     : run.state === "failed" || run.state === "cancelled"
       ? "danger"
       : run.state === "skipped"
-        ? "skipped"
+        ? "muted"
         : "running";
 const runWord = (state: CodeCardRun["state"], t: Messages) =>
   state === "succeeded"
@@ -163,33 +164,38 @@ function CodeCard(props: { item: CodeOverviewItem; timeZone: string; now: Date }
       failed: runs().filter((run) => run.state === "failed" || run.state === "cancelled").length,
     });
   return (
-    <Paper as="a" href={codeHref(props.item.id)} interactive class="assistant-apps__card" data-status={status()}>
-      <span class="assistant-apps__card-top">
+    <LinkCard
+      href={codeHref(props.item.id)}
+      title={props.item.title}
+      description={cardSchedule(props.item, t(), locale())}
+      media={
         <span class="assistant-apps__tile" aria-hidden="true">
           <FeatCodeMark variant="glyph" tone="current" size={16} decorative />
         </span>
-        <span class="assistant-apps__card-copy">
-          <span class="assistant-apps__card-title">{props.item.title}</span>
-          <span class="assistant-apps__card-schedule">{cardSchedule(props.item, t(), locale())}</span>
-        </span>
+      }
+      aside={
         <Show when={runs().length > 0}>
-          <DotStrip shape="bar" dots={runs().map(runTone)} label={runsLabel()} class="assistant-apps__bars" />
+          <DotStrip variant="bar" dots={runs().map(runTone)} label={runsLabel()} class="assistant-apps__bars" />
         </Show>
-      </span>
-      <span class="assistant-apps__card-last">
-        <i class="ti ti-arrow-forward-up" aria-hidden="true" />
-        <Show when={props.item.extras} fallback={<Skeleton class="assistant-apps__card-last-skeleton" />}>
-          <span>{cardLast(props.item, status(), t(), locale(), props.timeZone, props.now)}</span>
-        </Show>
-      </span>
-      <span class="assistant-apps__card-foot">
-        <span class="assistant-apps__state" data-tone={shown().tone}>
-          <i class={shown().icon} aria-hidden="true" />
-          {shown().word(t())}
+      }
+      body={
+        <span class="assistant-apps__card-last">
+          <i class="ti ti-arrow-forward-up" aria-hidden="true" />
+          <Show when={props.item.extras} fallback={<Skeleton class="assistant-apps__card-last-skeleton" />}>
+            <span>{cardLast(props.item, status(), t(), locale(), props.timeZone, props.now)}</span>
+          </Show>
         </span>
-        <span class="assistant-apps__card-when">{cardWhen(props.item, status(), t(), locale(), props.timeZone, props.now)}</span>
-      </span>
-    </Paper>
+      }
+      footer={{
+        start: (
+          <span class="assistant-apps__state" data-tone={shown().tone}>
+            <i class={shown().icon} aria-hidden="true" />
+            {shown().word(t())}
+          </span>
+        ),
+        end: <span class="assistant-apps__card-when">{cardWhen(props.item, status(), t(), locale(), props.timeZone, props.now)}</span>,
+      }}
+    />
   );
 }
 

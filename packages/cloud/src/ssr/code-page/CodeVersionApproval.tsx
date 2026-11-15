@@ -61,6 +61,7 @@ export function CodeVersionApproval(props: {
     (props.words?.changes.rows.items ?? []).filter((row) => row.kind === "same").length + (props.words?.changes.rows.more ?? 0);
   const changes = () => (
     <ChangeList
+      marker="sign"
       label={t().changesTitle}
       items={
         changed().length > 0

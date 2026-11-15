@@ -742,13 +742,13 @@
 .k2b-ui .assistant-apps__today { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.8125rem 1rem 0.75rem; }
 .assistant-apps__today-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; min-height: 1.25rem; margin: 0; }
 .assistant-apps__today-title { color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
-.assistant-apps__today-sentence { color: var(--k2b-text-muted); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.assistant-apps__today-sentence { color: var(--k2b-text-subtle); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
 /* The line keeps its height in every state; loading shows the axis without marks, a failed read takes the same room. */
 .assistant-apps__day { position: relative; height: 3.625rem; margin: 0.375rem 1.25rem 0; }
 .assistant-apps__axis { position: absolute; inset: 0; }
 .assistant-apps__axis-line { position: absolute; top: 22px; right: 0; left: 0; height: 1px; background: var(--k2b-border-strong); }
 .assistant-apps__axis-line > i { position: absolute; top: 0; left: 0; height: 1px; background: var(--k2b-text-secondary); }
-.assistant-apps__hour { position: absolute; top: 34px; transform: translateX(-50%); color: var(--k2b-text-muted); font-size: 0.75rem; line-height: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.assistant-apps__hour { position: absolute; top: 34px; transform: translateX(-50%); color: var(--k2b-text-subtle); font-size: 0.75rem; line-height: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .assistant-apps__hour::before { content: ""; position: absolute; top: -14px; left: 50%; width: 1px; height: 6px; background: var(--k2b-border-strong); }
 .assistant-apps__now { position: absolute; top: 4px; bottom: 16px; width: 1px; margin-left: -0.5px; background: var(--k2b-ai-accent); }
 .assistant-apps__now > span { position: absolute; top: -14px; left: 6px; color: var(--k2b-ai-accent); font-size: 0.75rem; line-height: 1; white-space: nowrap; }
@@ -768,7 +768,7 @@
 a.assistant-apps__mark::before { content: ""; position: absolute; inset: -6px -4px; }
 a.assistant-apps__mark:hover { filter: brightness(0.86); }
 a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
-.assistant-apps__legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.125rem 0 0; color: var(--k2b-text-muted); font-size: 0.75rem; }
+.assistant-apps__legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.125rem 0 0; color: var(--k2b-text-subtle); font-size: 0.75rem; }
 .assistant-apps__legend > span { display: inline-flex; align-items: center; gap: 0.3125rem; }
 .assistant-apps__legend .assistant-apps__mark { position: static; display: inline-block; height: 10px; }
 .assistant-apps__legend .assistant-apps__mark[data-state="failed"] { background: linear-gradient(var(--k2b-danger-500) 0 3px, transparent 3px 5px, var(--k2b-danger-500) 5px); }
@@ -789,11 +789,11 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .assistant-waiting-page__tile { display: grid; flex: none; place-items: center; width: 1.625rem; height: 1.625rem; border-radius: 7px; background: var(--k2b-surface-muted); color: var(--k2b-text); }
 .assistant-apps__card-copy { display: flex; flex: 1; flex-direction: column; gap: 0.125rem; min-width: 0; }
 .assistant-apps__card-title { overflow: hidden; color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-apps__card-schedule { overflow: hidden; color: var(--k2b-text-muted); font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-apps__card-schedule { overflow: hidden; color: var(--k2b-text-subtle); font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
 .assistant-apps__bars { flex: none; margin-top: 3px; }
 /* "Last: …" holds two lines in every state, so cards of a row keep one height while their words arrive. */
 .assistant-apps__card-last { display: flex; align-items: flex-start; gap: 0.375rem; min-height: 2.375rem; color: var(--k2b-text-secondary); font-size: 0.8125rem; line-height: 1.1875rem; }
-.assistant-apps__card-last > .ti { flex: none; margin-top: 2px; color: var(--k2b-text-muted); }
+.assistant-apps__card-last > .ti { flex: none; margin-top: 2px; color: var(--k2b-text-subtle); }
 .assistant-apps__card-last > span { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .assistant-apps__card-last-skeleton { width: 70%; height: 0.75rem; margin-top: 0.25rem; }
 .assistant-apps__card-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.625rem; min-height: 1.25rem; margin-top: auto; }
@@ -803,13 +803,13 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .assistant-apps__state[data-tone="danger"] { color: var(--k2b-danger-text); }
 .assistant-apps__state[data-tone="warning"] { color: var(--k2b-warning-text); }
 .assistant-apps__state[data-tone="ai"] { color: var(--k2b-ai-accent); }
-.assistant-apps__state[data-tone="ai"] > .ti { animation: assistant-apps-running 1s linear infinite; }
+.assistant-apps__state[data-tone="ai"] > .ti { animation: assistant-apps-running var(--k2b-motion-spin) linear infinite; }
 @keyframes assistant-apps-running { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .assistant-apps__state[data-tone="ai"] > .ti { animation: none; }
 }
-.assistant-apps__card-when { min-width: 0; overflow: hidden; color: var(--k2b-text-muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-apps__quiet { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; color: var(--k2b-text-muted); font-size: 0.8125rem; }
+.assistant-apps__card-when { min-width: 0; overflow: hidden; color: var(--k2b-text-subtle); font-size: 0.75rem; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-apps__quiet { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; color: var(--k2b-text-subtle); font-size: 0.8125rem; }
 .assistant-apps__quiet > .ti { flex: none; margin-top: 2px; }
 .assistant-apps__more { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 .assistant-apps__more-failed { color: var(--k2b-danger-text); font-size: 0.8125rem; }
@@ -1049,14 +1049,14 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
    Code that needs the person stands as rows in one island. */
 .assistant-waiting-page__section { display: flex; flex-direction: column; gap: 0.625rem; min-width: 0; }
 .assistant-waiting-page__heading { display: flex; align-items: baseline; gap: 0.375rem; margin: 0; color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
-.assistant-waiting-page__count { color: var(--k2b-text-muted); font-size: 0.8125rem; font-weight: 400; font-variant-numeric: tabular-nums; }
+.assistant-waiting-page__count { color: var(--k2b-text-subtle); font-size: 0.8125rem; font-weight: 400; font-variant-numeric: tabular-nums; }
 .k2b-ui .assistant-waiting-page__rows { padding: 0.375rem 0 0.25rem; }
 .assistant-waiting-page__list { margin: 0; padding: 0; list-style: none; }
 .assistant-waiting-page__row { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 1rem; }
 .assistant-waiting-page__row--more { flex-wrap: wrap; }
 .assistant-waiting-page__row-copy { display: flex; flex: 1; flex-direction: column; gap: 0.125rem; min-width: 0; }
 .assistant-waiting-page__row-title { color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
-.assistant-waiting-page__row-sub { color: var(--k2b-text-muted); font-size: 0.8125rem; }
+.assistant-waiting-page__row-sub { color: var(--k2b-text-subtle); font-size: 0.8125rem; }
 .assistant-waiting-page__open { flex: none; }
 .assistant-waiting-page__failed { color: var(--k2b-danger-text); font-size: 0.8125rem; }
 @container (max-width: 34rem) {

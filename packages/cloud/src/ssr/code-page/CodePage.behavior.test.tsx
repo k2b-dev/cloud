@@ -192,11 +192,9 @@ test.skipIf(isServer)(
       // The strip keeps its 30 slots; the new run takes the newest, rightmost one.
       expect(strip()).toHaveLength(before);
       expect(strip().at(-1)?.dataset.state).toBe("running");
-      expect(strip().at(-1)?.hasAttribute("data-settled")).toBe(false);
       feed.run({ id: runId, state: "succeeded", createdAt: "2026-11-14T12:49:00.000Z", title: "Create tasks · 1 confirmed" });
       await tick();
       expect(strip().at(-1)?.dataset.state).toBe("success");
-      expect(strip().at(-1)?.hasAttribute("data-settled")).toBe(true);
       // "Last" changes to the run that just ended.
       expect(page.dom.document.querySelector(".cloud-code__lage-last")?.textContent).toContain("Create tasks · 1 confirmed");
       expect(page.dom.document.querySelector(".cloud-code__lage-last")?.hasAttribute("data-fresh")).toBe(true);

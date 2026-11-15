@@ -2581,7 +2581,7 @@
   align-items: flex-start;
   gap: 0.5rem;
   margin: 0;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-subtle);
   font-size: 0.8125rem;
   line-height: 1.25rem;
 }
@@ -2621,7 +2621,7 @@
 }
 .k2b-ui .mail-code-catchup__lead {
   margin: 0;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-subtle);
   font-size: 0.8125rem;
   line-height: 1.25rem;
 }
@@ -2691,7 +2691,7 @@
 }
 .k2b-ui .mail-code-catchup__row > i {
   flex: 0 0 1rem;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-subtle);
   font-size: 1rem;
   line-height: 1.25rem;
 }

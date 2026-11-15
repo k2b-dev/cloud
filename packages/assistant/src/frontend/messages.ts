@@ -376,6 +376,7 @@ export const assistantMessages = i18n.define({
       waitingFailed: "The open questions could not be loaded.",
       waitingFailedHint: "Open approvals stay open. Gustav does not carry them out without your consent.",
       waitingLoading: "Loading what waits for you",
+      waitingView: "View",
       waitingViewLabel: ({ title }: { title: string }) => `View: ${title}`,
     },
     de: {
@@ -729,6 +730,7 @@ export const assistantMessages = i18n.define({
       waitingFailed: "Die offenen Fragen konnten nicht geladen werden.",
       waitingFailedHint: "Offene Freigaben bleiben offen. Ohne deine Zustimmung führt Gustav sie nicht aus.",
       waitingLoading: "Lädt, was auf dich wartet",
+      waitingView: "Ansehen",
       waitingViewLabel: ({ title }) => `Ansehen: ${title}`,
     },
   },

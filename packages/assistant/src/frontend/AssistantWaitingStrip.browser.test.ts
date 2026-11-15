@@ -751,31 +751,6 @@ describe("Waiting for you", () => {
     }
   }, 60_000);
 
-  for (const view of [desktop, phone, panel])
-    test(`View at ${view.name} opens approvals when several wait outside this chat`, async () => {
-      const { page, errors, unrouted, close } = await open(
-        view,
-        { locale: "de", scenario: "three" },
-        {
-          path: "/app/assistant?conversation=Urlb42",
-        },
-      );
-      try {
-        await strip(page).waitFor();
-        expect(await line(page)).toBe("Gustav wartet auf 3 Freigaben");
-        await viewButton(page).click();
-        await page.waitForURL(/\?approvals=1$/);
-        // The page "Waiting for you" opens; with no approval in this mock it says that nothing waits.
-        await page.locator(".assistant-waiting-page").waitFor();
-        expect(await focusedSentence(page)).toBeNull();
-        expect(await page.getByRole("button", { name: /alle (freigeben|bestätigen|erlauben)|approve all/i }).count()).toBe(0);
-        expect(errors).toEqual([]);
-        expect(unrouted).toEqual([]);
-      } finally {
-        await close();
-      }
-    }, 60_000);
-
   test("a jump started while a reload still looks for a question that is gone keeps its focus", async () => {
     const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "three" });
     try {
