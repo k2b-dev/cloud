@@ -504,7 +504,15 @@ export function CodeOverview(props: {
         <NoticeCard tone="warning" title={t().reconfirmTitle} detail={t().reconfirmDescription} />
       </Show>
       <Show when={props.state.chatBinding}>
-        {(binding) => <CodeChatMissing codeId={props.state.code.id} binding={binding()} text={props.text} />}
+        {(binding) => (
+          <CodeChatMissing
+            codeId={props.state.code.id}
+            binding={binding()}
+            // The running version writes to its chat: Core marks that row in "What it may do".
+            usesChat={(props.state.words?.current?.mayDo.items ?? []).some((row) => row.target?.ref.type === "core.ai.chat")}
+            text={props.text}
+          />
+        )}
       </Show>
       <Show when={props.state.versionsFailed}>
         <NoticeCard

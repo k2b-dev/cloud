@@ -1055,6 +1055,11 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
                       note: L("KI · mit deinen Rechten, zählt auf dein Kontingent", "AI · with your rights, counts toward your allowance"),
                       app: "Gustav",
                       icon: "tabler:message-chatbot",
+                      // Core marks the row with the SDK's own handle; no reader names it.
+                      target: {
+                        ref: { type: "core.ai.chat", id: "bound-chat" },
+                        text: L("In den Chat „{name}“ schreiben, Gustav antwortet", "Write to the chat “{name}”, Gustav answers"),
+                      },
                     }
                   : {
                       text: L(

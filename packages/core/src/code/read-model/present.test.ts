@@ -233,7 +233,8 @@ test.each(["de", "en"])("bound chat grants defer names and preserve permission c
   for (const boundChat of [undefined, null]) {
     const unbound = present({ ...input, boundChat });
     expect(unbound.mayDo.items[0]?.text).toBe(model.mayDo.items[0]?.text);
-    expect(unbound.mayDo.items[0]).not.toHaveProperty("target");
+    // The SDK's own handle marks the chat row for the page; it names no chat.
+    expect(unbound.mayDo.items[0]?.target?.ref).toEqual({ type: "core.ai.chat", id: "bound-chat" });
   }
   const literal = present({
     ...input,

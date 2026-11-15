@@ -1,4 +1,4 @@
-import type { CodeTestLimits } from "@k2b/cloud/code";
+import { CODE_BOUND_CHAT_ID, type CodeTestLimits } from "@k2b/cloud/code";
 import { describeCodeTiming } from "@k2b/cloud/code/schedule";
 import {
   CODE_READ_MODEL_LIST_LIMIT,
@@ -133,7 +133,12 @@ export function presentCodeVersion(input: {
             {
               text: t.chatSend,
               note: t.chatSendNote,
-              ...(input.boundChat ? { target: { ref: input.boundChat, text: t.chatSendNamed({ name: "{name}" }) } } : {}),
+              // Without a readable bound chat the row still carries the SDK's own handle, so the page finds the chat
+              // row and offers its owner to choose one; no reader names that handle, so the safe sentence stays.
+              target: {
+                ref: input.boundChat ?? { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
+                text: t.chatSendNamed({ name: "{name}" }),
+              },
               ...(action.app ? { app: action.app } : {}),
               ...(action.icon ? { icon: action.icon } : {}),
             },

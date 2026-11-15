@@ -1374,3 +1374,57 @@ describe("the chat of personal Code", () => {
     }
   });
 });
+
+// `chat_unbound` needs a way out: personal Code that writes to its chat but has none offers its owner to choose one,
+// in the notice and under the chat row, through the same dialog and action at revision 0.
+test("personal Code without a chat offers its owner to choose one", () => {
+  const unbound = (canChange: boolean) => {
+    const data = codePageFixture("personal-chat-missing");
+    if (data.state.kind !== "ready" || !data.state.chatBinding) throw new Error("Expected a bound personal fixture");
+    data.state.chatBinding = { ...data.state.chatBinding, revision: 0, canChange, chat: null };
+    return renderedText(
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      ),
+      " ",
+    );
+  };
+  const owner = unbound(true);
+  expect(owner).toContain("Diese Automation hat noch keinen Chat.");
+  expect(owner).toContain("Bis du einen Chat wählst, schreibt die Automation nichts.");
+  // Once in the notice, once under the chat row of "What it may do"; nothing to restore.
+  expect(owner.split("Chat wählen …").length - 1).toBe(2);
+  expect(owner).not.toContain("Anderen Chat wählen");
+  expect(owner).not.toContain("Chat wiederherstellen");
+  expect(owner.indexOf("Diese Automation hat noch keinen Chat.")).toBeLessThan(owner.indexOf("Was sie darf"));
+  const other = unbound(false);
+  expect(other).toContain("Diese Automation hat noch keinen Chat.");
+  expect(other).toContain("Nur die Person, der die Automation gehört, kann einen Chat wählen.");
+  expect(other).not.toContain("Chat wählen …");
+  // Personal Code that never writes to a chat shows no notice at all.
+  const quiet = codePageFixture("personal-chat-missing");
+  if (quiet.state.kind !== "ready" || !quiet.state.chatBinding || !quiet.state.words?.current) throw new Error("Expected fixture");
+  quiet.state.chatBinding = { ...quiet.state.chatBinding, revision: 0, chat: null };
+  quiet.state.words.current.mayDo = {
+    ...quiet.state.words.current.mayDo,
+    items: quiet.state.words.current.mayDo.items.filter((row) => row.target?.ref.type !== "core.ai.chat"),
+  };
+  const page = renderedText(
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data: quiet });
+        },
+      }),
+    ),
+    " ",
+  );
+  expect(page).not.toContain("Diese Automation hat noch keinen Chat.");
+  expect(page).not.toContain("Chat wählen …");
+});
