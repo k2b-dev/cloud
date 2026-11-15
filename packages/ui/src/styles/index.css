@@ -176,6 +176,7 @@
   /* The grey track of a segmented control, and an option hovered on it. */
   --k2b-tray: #ececef;
   --k2b-tray-hover: rgb(9 9 11 / 0.06);
+  --k2b-info-mark: var(--k2b-accent-500);
   --k2b-info-surface: var(--k2b-accent-50);
   --k2b-info-text: var(--k2b-accent-700);
   --k2b-success-surface: #ecfdf5;
@@ -384,6 +385,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-rail-hover: #8d8d98;
   --k2b-tray: #1a2028;
   --k2b-tray-hover: rgb(255 255 255 / 0.08);
+  --k2b-info-mark: var(--k2b-accent-500);
   --k2b-info-surface: var(--k2b-accent-950);
   --k2b-info-text: var(--k2b-accent-300);
   --k2b-success-surface: #052e26;
@@ -14193,10 +14195,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
 }
 
+/* The person's own message is a neutral grey bubble whose corner toward the composer is tighter; colour stays for
+   meaning, and a sent message means nothing more than being one's own. */
 .k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__bubble {
-  padding: 0.625rem 0.75rem;
-  border-radius: var(--k2b-radius-surface);
-  background: var(--k2b-selected);
+  padding: 0.625rem 0.875rem;
+  border-radius: 1rem 1rem 0.3125rem 1rem;
+  /* The person's own words stay neutral grey in every primary scope. */
+  background: var(--k2b-surface-muted);
 }
 
 .k2b-ui .k2b-chat-message[data-role="system"],
@@ -14216,7 +14221,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1;
 }
 
@@ -14362,12 +14367,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-bottom: 0;
 }
 
+/* Quiet 15 px icons in 32 px buttons. Under an answer the first glyph sits on the text's edge; under the person's own
+   message the last glyph sits on the bubble's edge. */
 .k2b-ui .k2b-chat-message__actions {
   display: flex;
-  min-height: 1.5rem;
+  min-height: 2rem;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.125rem;
   color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-chat-message[data-role="assistant"] .k2b-chat-message__actions {
+  margin: -0.25rem 0 0 -0.5rem;
+}
+
+.k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__actions {
+  margin-inline-end: -0.5rem;
+}
+
+.k2b-ui .k2b-chat-message__actions > :is(button, .k2b-chat-message__menu),
+.k2b-ui .k2b-chat-message__actions .k2b-chat-message__menu {
+  min-width: 2rem;
+  min-height: 2rem;
+  font-size: 0.9375rem;
 }
 
 .k2b-ui .k2b-chat-message__menu {
@@ -19481,6 +19503,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion] {
   animation-name: none;
 }
+/* Pulled past full height, a sheet gives like a rubber band and lifts off the
+ * edge; an apron in its own colour fills the gap below it. */
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion] {
+  box-shadow: 0 6rem 0 0 var(--k2b-surface), var(--k2b-shadow-sheet);
+}
 .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame[data-sheet-motion][data-sheet-dragging] {
   user-select: none;
   -webkit-user-select: none;
@@ -19497,7 +19524,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-bottom-sheet-frame[data-sheet-detents] > .k2b-bottom-sheet-viewport > .k2b-panel-dialog > .k2b-panel-dialog__footer:last-child {
   position: relative;
   z-index: 1;
-  background: var(--k2b-surface-elevated);
+  background: var(--k2b-surface);
   transform: translate3d(0, var(--k2b-sheet-footer-y, 0px), 0);
 }
 /* A sheet only dims what lies behind it, without blur, so a drag stays
@@ -19566,6 +19593,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     max-height: min(86dvh, var(--k2b-dialog-available-height));
     border-bottom: 1px solid var(--k2b-border-strong);
     border-radius: var(--k2b-radius-dialog);
+    box-shadow: var(--k2b-shadow-float);
     animation-name: k2b-sheet-dialog-enter;
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive > .k2b-bottom-sheet-viewport {

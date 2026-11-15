@@ -1,6 +1,7 @@
 import { createMemo, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
+import { inheritUiScope } from "../internal/portal-scope";
 import { useUiMessages } from "../intl/messages";
 import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition } from "./Dropdown";
 import { focusRowSegment } from "./menu-rows";
@@ -245,7 +246,10 @@ export function ContextMenuBase(
         {(point) => (
           <Portal>
             <div
-              ref={menu}
+              ref={(element) => {
+                menu = element;
+                inheritUiScope(element, host);
+              }}
               id={menuId}
               class="k2b-ui k2b-context-menu"
               role="menu"
