@@ -8,7 +8,7 @@ import {
 } from "@k2b/ui";
 import { chartSvgWithUiPalette } from "@k2b/ui/charts/core";
 import type { JSX } from "solid-js";
-import { BlockActions, useBlockFrame } from "../../blocks/block-actions";
+import { BlockActions, useBlockFrame, useBlockIsLarge } from "../../blocks/block-actions";
 import { blockFileName, chartImage, saveBlob } from "../../blocks/block-copy";
 import type { CloudAiChartRow, CloudAiChartTable } from "../chart-block";
 import type { CloudAiChartInput } from "../default-tool-contracts";
@@ -46,6 +46,7 @@ export function ChartFrame(props: {
   const locale = useLocale();
   // In a chat answer the frame owns the head's controls: Copy as a picture and Maximize, no view switcher.
   const frame = useBlockFrame();
+  const large = useBlockIsLarge();
   const picture = () => {
     const drawn = props.chart?.snapshot;
     if (!drawn?.svg) throw new Error("No drawing");
@@ -84,9 +85,11 @@ export function ChartFrame(props: {
       empty={props.empty}
       renderDetails={false}
       class={props.nested ? "[&_h4]:text-sm!" : undefined}
-      headerControls={frame ? "owner" : "explorer"}
+      // In an answer the head carries Copy and Maximize only (Feinschliff v3 §5). Drawn large, the chart gets the
+      // explorer's own controls back, so its rows stay one switch away as a table; the Lightbox copies the picture.
+      headerControls={frame && !large ? "owner" : "explorer"}
       actions={
-        frame ? (
+        frame && !large ? (
           <BlockActions
             kind="chart"
             name={props.title}
