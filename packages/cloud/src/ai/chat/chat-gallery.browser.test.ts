@@ -246,21 +246,16 @@ for (const width of [1440, 390])
       const ends = await page.locator(line).evaluate((node) => {
         const chevron = node.querySelector(".k2b-chat-activity__chevron")!.getBoundingClientRect();
         const meta = node.querySelector(".ai-turn-work__meta")!.getBoundingClientRect();
-        const words = node.querySelector(".ai-turn-work__text")!.getBoundingClientRect();
         return {
           chevronBehindTime: chevron.left >= meta.right,
           rowRight: node.getBoundingClientRect().right - chevron.right,
-          timeAfterWords: meta.left - words.right,
           chevronAfterTime: chevron.left - meta.right,
         };
       });
+      // The time and the chevron end the row, right-aligned on the work's right axis (Valentin, 15.11.).
       expect(ends.chevronBehindTime).toBe(true);
-      // …and the chevron right beside the time.
       expect(ends.chevronAfterTime).toBeLessThan(12);
       expect(ends.rowRight).toBeLessThan(12);
-      // The time follows the sentence (v12), not a column at the far end.
-      expect(ends.timeAfterWords).toBeGreaterThanOrEqual(0);
-      expect(ends.timeAfterWords).toBeLessThan(16);
 
       // Opened: the steps in words, each with its tile on one axis; a refused step says why and what followed.
       await page.locator(line).click();
