@@ -1859,6 +1859,11 @@ Other phone sheets close on Back, but a sidebar may replace the URL while
 the sheet is open, such as a search, and the sheet's entry would then stay
 behind as a stale step in the history.
 
+The sheet's code loads in the background where the row shows All, so All
+opens within the tap. If it cannot load, for example offline or after a
+deploy, All opens the same sidebar in the dialog that prompts use and the error
+goes to `reportError`; the next All tries the sheet again.
+
 Hosts can set `--k2b-workspace-chip-inset` for the row's content inset
 (default `clamp(1rem, 3vw, 2.5rem)`, `1rem` below a 40 rem viewport),
 `--k2b-workspace-chip-background` for chip fill (default
