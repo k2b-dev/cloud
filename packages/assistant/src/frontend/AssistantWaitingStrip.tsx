@@ -183,13 +183,41 @@ export function AssistantWaitingStrip(props: {
   );
 }
 
-const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+/** How long a jump waits for its card and the card's main control to appear. */
+const LANDING_WAIT_MS = 3000;
 
-/** The card of a question in the timeline, by the anchor the chat gives it. */
+/** Resolves on the next change inside `root`, on the next frame without one, or after `ms` at the latest. */
+const nextChange = (root: HTMLElement | undefined, ms: number) =>
+  new Promise<void>((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      observer?.disconnect();
+      clearTimeout(timer);
+      resolve();
+    };
+    const observer = root && typeof MutationObserver !== "undefined" ? new MutationObserver(done) : undefined;
+    observer?.observe(root!, { childList: true, subtree: true, attributes: true });
+    // Without a timeline yet (the chat still opens), look again on the next frame.
+    if (!observer) requestAnimationFrame(done);
+    const timer = setTimeout(done, Math.max(0, Math.min(ms, root ? 250 : ms)));
+  });
+
+/**
+ * The card of a waiting entry in the timeline, by the anchor the chat gives it: a decision card, or any other card that
+ * waits for the person, such as a version to switch on.
+ */
 const questionElement = (content: HTMLElement | undefined, anchor: string): HTMLElement | null =>
-  Array.from(content?.querySelectorAll<HTMLElement>(".k2b-chat-decision[data-chat-anchor]") ?? []).find(
-    (element) => element.dataset.chatAnchor === anchor,
-  ) ?? null;
+  Array.from(content?.querySelectorAll<HTMLElement>("[data-chat-anchor]") ?? []).find((element) => element.dataset.chatAnchor === anchor) ??
+  null;
+
+/** Where the focus lands on a card: its sentence, its outcome once answered, else its main button. */
+const landingTarget = (element: HTMLElement): HTMLElement | null =>
+  element.querySelector<HTMLElement>(".k2b-chat-decision__sentence") ??
+  element.querySelector<HTMLElement>(".k2b-chat-outcome") ??
+  element.querySelector<HTMLElement>('[data-chat-primary]:not(:disabled), .k2b-button[data-variant="primary"]:not(:disabled)') ??
+  element.querySelector<HTMLElement>("button:not(:disabled), a[href]");
 
 /**
  * What the strip needs from the timeline: whether it stays quiet, and the jump's landing.
@@ -246,14 +274,22 @@ export const createWaitingQuestionFocus = (input: {
   });
 
   const focus = async (anchor: string, current: () => boolean = () => true) => {
-    let element = questionElement(input.content(), anchor);
-    for (let frame = 0; !element && frame < 60; frame += 1) {
-      await nextFrame();
+    // A card may come late: its chat still loads, or the card itself is loaded on demand and first renders without its
+    // buttons. Wait until the card and the place the focus lands on are both there, at most LANDING_WAIT_MS.
+    const landing = () => {
+      const element = questionElement(input.content(), anchor);
+      return element ? { element, target: landingTarget(element) } : null;
+    };
+    const deadline = performance.now() + LANDING_WAIT_MS;
+    let found = landing();
+    while (!found?.target && performance.now() < deadline) {
+      await nextChange(input.content(), deadline - performance.now());
       if (!current()) return;
-      element = questionElement(input.content(), anchor);
+      found = landing();
     }
     if (!current()) return;
-    if (!element) return input.gone();
+    if (!found) return input.gone();
+    const element = found.element;
     const viewport = input.viewport();
     const card = element.getBoundingClientRect();
     const room = viewport?.getBoundingClientRect();
@@ -268,10 +304,9 @@ export const createWaitingQuestionFocus = (input: {
       // A taller one starts at the top.
       input.scrollToAnchor(anchor);
     }
-    const target =
-      element.querySelector<HTMLElement>(".k2b-chat-decision__sentence") ??
-      element.querySelector<HTMLElement>(".k2b-chat-outcome") ??
-      element;
+    const target = found.target ?? element;
+    // A card without anything to focus still takes the focus, so the jump never ends on the page itself.
+    if (!found.target && !element.hasAttribute("tabindex")) element.tabIndex = -1;
     target.focus({ preventScroll: true });
   };
 

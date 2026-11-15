@@ -6,6 +6,17 @@ import { Filegate } from "@k2b/filegate";
 import { testInfra } from "../../../scripts/fixtures/test-infra";
 import { localFilegateToken } from "./private-database";
 
+export async function activityFilegateCommand(args: string[], signal: AbortSignal, allowMissing = false) {
+  // An attached `docker run` forwards SIGTERM to the container and can keep
+  // waiting forever. End the CLI itself; stop() owns container cleanup.
+  const child = Bun.spawn(["docker", ...args], { stdin: "ignore", stdout: "pipe", stderr: "pipe", signal, killSignal: "SIGKILL" });
+  const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  if (signal.aborted) throw new Error(`Activity Filegate fixture: docker ${args[0]} aborted`, { cause: signal.reason });
+  if (code !== 0 && !(allowMissing && /No such (container|volume)/i.test(stderr)))
+    throw new Error(`Activity Filegate fixture: docker ${args[0]} exited ${code}: ${stderr.trim()}`);
+  return stdout.trim();
+}
+
 /** Explicit local test target, or an isolated daemon in CI; never silently skip storage assertions. */
 export async function activityFilegate(): Promise<{ url: string; token: string; stop(): Promise<void> }> {
   if (testInfra.filegate) return { url: testInfra.filegate, token: await localFilegateToken(), stop: async () => {} };
@@ -20,28 +31,23 @@ export async function activityFilegate(): Promise<{ url: string; token: string; 
   let ownsContainer = false;
   let ownsInitializer = false;
   const startup = AbortSignal.timeout(20_000);
-  async function command(args: string[], signal: AbortSignal, allowMissing = false) {
-    const child = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe", signal });
-    const [stdout, stderr, code] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
-    if (code !== 0 && !(allowMissing && /No such (container|volume)/i.test(stderr)))
-      throw new Error(`Activity Filegate fixture: ${stderr.trim()}`);
-    return stdout.trim();
-  }
-  const docker = (...args: string[]) => command(args, startup);
+  const docker = (...args: string[]) => activityFilegateCommand(args, startup);
   async function stop() {
+    // Startup plus cleanup must fit inside the existing 30-second setup hook.
+    const cleanup = AbortSignal.timeout(5_000);
     try {
       if (ownsInitializer) {
-        await command(["rm", "--force", `${name}-init`], AbortSignal.timeout(5_000), true);
+        await activityFilegateCommand(["rm", "--force", `${name}-init`], cleanup, true);
         ownsInitializer = false;
       }
       if (ownsContainer) {
-        await command(["rm", "--force", name], AbortSignal.timeout(5_000), true);
+        await activityFilegateCommand(["rm", "--force", name], cleanup, true);
         ownsContainer = false;
       }
     } finally {
       try {
         if (ownsVolume) {
-          await command(["volume", "rm", volume], AbortSignal.timeout(5_000), true);
+          await activityFilegateCommand(["volume", "rm", volume], cleanup, true);
           ownsVolume = false;
         }
       } finally {

@@ -1,9 +1,9 @@
-import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, test } from "bun:test";
 import { type ProcessSync, sql, startProcessSync } from "@k2b/cloud";
 import { type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import { accountIdentities, secrets } from "@k2b/cloud/services";
 import { Filegate, FilegateError } from "@k2b/filegate";
-import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { suiteFor, testInfra } from "../../../../scripts/fixtures/test-infra";
 import { migrate as migrateAudit } from "../../../core/src/migrate/core/audit";
 import { migratePosix } from "../../../core/src/migrate/core/posix";
 import { activityFilegate } from "../../test/activity-filegate";
@@ -245,7 +245,9 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
     return joined!;
   }
 
-  beforeAll(async () => {
+  let setup: Promise<void> | undefined;
+  beforeEach(() => (setup ??= initializeTrashActivityFixture()), 30_000);
+  async function initializeTrashActivityFixture() {
     await assertPrivateDatabase();
     processSync = await startProcessSync({ application: "filesv2" });
     storage = await activityFilegate();
@@ -303,7 +305,7 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
       })
     )[0]!.id;
     service = makeService();
-  }, 30_000);
+  }
   beforeEach(async () => {
     await sql`TRUNCATE filesv2.activity,filesv2.trash,filesv2.operations,audit.events`.simple();
     await sql`UPDATE filesv2.bases SET lifecycle='active' WHERE id=${bindingId}::uuid`;
@@ -317,7 +319,9 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
   });
   afterAll(async () => {
     try {
-      if (ownsPrefix) {
+      // The isolated daemon's volume is removed by storage.stop(); only a
+      // configured shared Filegate needs a separate recursive prefix delete.
+      if (ownsPrefix && testInfra.filegate) {
         try {
           await root().remove(prefix, true);
         } catch (error) {
@@ -331,6 +335,11 @@ suite("trash and permanent-deletion activity with real Filegate", () => {
         await storage?.stop();
       }
     }
+  });
+
+  test("initializes the private trash database and real Filegate storage", async () => {
+    await assertPrivateDatabase();
+    expect((await root().stat(home)).directory).toBe(true);
   });
 
   test("selected top-level entries commit atomic trash intents before ensureTrash, then finish with one batch ID", async () => {

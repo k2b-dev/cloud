@@ -31,6 +31,10 @@ const durations = {
   "--k2b-motion-settle": "300ms",
   "--k2b-motion-enter-row": "420ms",
   "--k2b-motion-think": "2200ms",
+  // Feinschliff v3, section 1: a changing activity word fades out, then the next fades in, and stands its hold.
+  "--k2b-motion-word-out": "120ms",
+  "--k2b-motion-word-in": "160ms",
+  "--k2b-motion-word-hold": "2400ms",
 };
 const curves = {
   "--k2b-ease-out": "cubic-bezier(0.23, 1, 0.32, 1)",
@@ -41,6 +45,7 @@ const curves = {
   "--k2b-ease-pop-strong": "cubic-bezier(0.2, 1.4, 0.4, 1)",
   "--k2b-ease-rise": "cubic-bezier(0.2, 0.8, 0.2, 1)",
   "--k2b-ease-settle": "ease",
+  "--k2b-ease-in": "ease-in",
 };
 /** Declarations of every rule with this selector in this context, in source order. */
 const declarations = (selector: string, context = "") => {
