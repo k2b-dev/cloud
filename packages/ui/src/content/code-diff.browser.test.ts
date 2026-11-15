@@ -25,7 +25,7 @@ const entry = resolve(import.meta.dir, "code-diff.fixture.ts");
 const fixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { CodeDiff } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { CodeDiff } from ${JSON.stringify(resolve(ui, "dist/browser/code-diff.js"))};
 
 const same = (text) => ({ kind: "same", text });
 const add = (text) => ({ kind: "add", text });
@@ -373,7 +373,7 @@ const annotatedEntry = resolve(import.meta.dir, "code-diff-annotated.fixture.ts"
 const annotatedFixture = `
 import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
-import { CodeDiff } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
+import { CodeDiff } from ${JSON.stringify(resolve(ui, "dist/browser/code-diff.js"))};
 
 const same = (text) => ({ kind: "same", text });
 const add = (text) => ({ kind: "add", text });

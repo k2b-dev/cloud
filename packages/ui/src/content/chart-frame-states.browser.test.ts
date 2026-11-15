@@ -180,3 +180,31 @@ test("calm hover keeps a 2 px ring on points, so a tiny point stays the pointer'
   await point.hover();
   await page.close();
 });
+
+test("dates on a stretched line never draw over each other: a narrow box shows every second or fourth date", async () => {
+  const { page, errors } = await open(1280);
+  try {
+    const visible = (box: string) =>
+      page.evaluate((selector) => {
+        const labels = [...document.querySelectorAll<SVGTextElement>(`${selector} [data-time-tick]`)].filter(
+          (label) => Number(getComputedStyle(label).opacity) > 0.5,
+        );
+        return labels.map((label) => {
+          const rect = label.getBoundingClientRect();
+          return { text: label.textContent, left: rect.left, right: rect.right };
+        });
+      }, box);
+    const narrow = await visible(".time-narrow");
+    const wide = await visible(".time-wide");
+    expect(narrow.length).toBeGreaterThanOrEqual(2);
+    expect(narrow.length).toBeLessThan(wide.length);
+    for (const labels of [narrow, wide])
+      for (const [index, label] of labels.entries()) {
+        const next = labels[index + 1];
+        if (next) expect(next.left - label.right).toBeGreaterThanOrEqual(2);
+      }
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});

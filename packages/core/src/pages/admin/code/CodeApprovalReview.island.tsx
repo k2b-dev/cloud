@@ -8,9 +8,6 @@ import {
   ButtonLink,
   ChangeList,
   type ChangeListItem,
-  CodeDiff,
-  type CodeDiffFile,
-  type CodeDiffLocation,
   Discussion,
   IconButton,
   LoadMore,
@@ -21,6 +18,7 @@ import {
   Tabs,
   useLocale,
 } from "@k2b/ui";
+import { CodeDiff, type CodeDiffFile, type CodeDiffLocation } from "@k2b/ui/code-diff";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { type CodeReviewComment, CodeReviewCommentSchema, codeReviewCommentContracts } from "../../../code/review-contracts";

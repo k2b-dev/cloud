@@ -1,5 +1,15 @@
 import type { AiCodeAuthoringStop, AiStoredMessage } from "../types";
 
+/**
+ * The person stopped the turn: its loop ended as aborted, which only the stop request does; without a loop ending, the
+ * last message ended as aborted. A turn Cloud ended (a restart, a budget, a time limit) is not stopped by the person.
+ */
+export const stoppedByPerson = (entries: readonly Pick<AiStoredMessage, "loopDoneReason" | "stopReason">[]): boolean => {
+  const loop = entries.findLast((entry) => entry.loopDoneReason)?.loopDoneReason;
+  if (loop) return loop === "aborted";
+  return entries.findLast((entry) => entry.stopReason)?.stopReason === "aborted";
+};
+
 export type AiStopNotice =
   | { kind: "code_authoring"; state: AiCodeAuthoringStop }
   | { kind: "output_limit"; reasoning: boolean }

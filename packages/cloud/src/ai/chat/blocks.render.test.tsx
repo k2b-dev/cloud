@@ -1942,7 +1942,8 @@ describe("turn places in the reader's language", () => {
   test("a failed turn says that it was interrupted", () => {
     const blocks: AiTurnBlock[] = [
       { id: "text-1", kind: "text", text: "Now I build the dashboard." },
-      { id: "tool-run", kind: "tool", callId: "run", name: "code_run", status: "completed", result: {} },
+      // A step that names nothing it did, so the line says how long the turn worked.
+      { id: "tool-run", kind: "tool", callId: "run", name: "memory", status: "completed", result: {} },
     ];
     const english = renderPlaces(blocks, { phase: "failed", workedMs: 240_000 });
     expect(english).toContain("Worked 4 min · interrupted");
@@ -2088,16 +2089,16 @@ describe("Code check steps", () => {
     ];
     const english = renderExpanded(blocks, { open: ["group:check-failed"] });
     expect(english).toContain("3 findings");
-    expect(english).toContain("<strong>Checks the Code</strong><small>passed</small>");
+    expect(english).toContain("<strong>Checks</strong><small>successful</small>");
     expect(english).toContain("ti-alert-triangle");
     expect(english).toContain("ti-circle-check");
     expect(english).not.toContain('data-tone="danger"');
 
     const german = renderExpanded(blocks, { locale: "de", open: ["group:check-failed"] });
-    expect(german).toContain("Prüft den Code");
+    expect(german).toContain("Prüft");
     expect(german).toContain("3 Befunde");
-    expect(german).toContain("bestanden");
-    expect(german).not.toMatch(/Checks the Code|findings|passed/);
+    expect(german).toContain("erfolgreich");
+    expect(german).not.toMatch(/Checks|findings|successful/);
 
     // A check that could not run answers with Core's error and is a failed step, not a passed or failed check.
     const broken = renderExpanded([
@@ -2129,8 +2130,8 @@ describe("Code check steps", () => {
       { locale: "de", open: ["group:tested"] },
     );
     const rows = html.split("<details").slice(1);
-    const failed = rows.find((row) => row.includes("Testet mit erfundenen Daten"))!;
-    const written = rows.find((row) => row.includes("Bearbeitet eine Code-Datei"))!;
+    const failed = rows.find((row) => row.includes("Probiert Beispiele aus"))!;
+    const written = rows.find((row) => row.includes("Schreibt die Änderung"))!;
     expect(failed).toContain("ti-alert-circle");
     expect(failed).toContain('data-tone="danger"');
     expect(failed).toContain("fehlgeschlagen");
@@ -2163,11 +2164,11 @@ describe("Code check steps", () => {
       open: ["group:tool-code_init"],
     });
     for (const label of [
-      "Legt neuen Code an",
+      "Legt die Automation an",
       "Schlägt nach, was Apps anbieten",
-      "Bearbeitet eine Code-Datei",
-      "Testet mit erfundenen Daten",
-      "Prüft den Code",
+      "Schreibt die Änderung",
+      "Probiert Beispiele aus",
+      "Prüft",
       "Reicht Version 3 ein",
       "Bild ansehen",
     ])
@@ -2198,7 +2199,7 @@ describe("Code check steps", () => {
         },
       }),
     );
-    expect(german).toContain("Prüft den Code");
+    expect(german).toContain("Prüft");
     expect(german).toContain("Kontakte suchen");
     expect(german).not.toContain("Code Check");
   });

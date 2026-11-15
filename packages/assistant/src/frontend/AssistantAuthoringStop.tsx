@@ -1,7 +1,7 @@
 import type { AiCodeAuthoringStop } from "@k2b/cloud/ai";
 import { useAiChatActions } from "@k2b/cloud/ai/ui";
-import { Button, NoticeCard, useLocale } from "@k2b/ui";
-import { createSignal, createUniqueId, For, Show } from "solid-js";
+import { Button, Chat, type ChatTask, NoticeCard, useLocale } from "@k2b/ui";
+import { createSignal, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 
 type Messages = ReturnType<typeof assistantMessages.resolve>["t"];
@@ -34,7 +34,6 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const actions = useAiChatActions();
-  const id = createUniqueId();
   const [sending, setSending] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
   const [sent, setSent] = createSignal(false);
@@ -65,25 +64,18 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
       setSending(false);
     }
   };
-  const list = (key: "done" | "open", label: string, items: string[]) => (
-    <Show when={items.length > 0}>
-      <div class="assistant-authoring-stop__group" data-status={key}>
-        <p class="assistant-authoring-stop__label" id={`${id}-${key}`}>
-          {label}
-        </p>
-        <ul class="assistant-authoring-stop__list" aria-labelledby={`${id}-${key}`}>
-          <For each={items}>
-            {(item) => (
-              <li>
-                <i class={key === "done" ? "ti ti-check" : "ti ti-circle"} aria-hidden="true" />
-                <span>{item}</span>
-              </li>
-            )}
-          </For>
-        </ul>
-      </div>
-    </Show>
-  );
+  // One still list of the steps (Chat.TaskList): what is done carries its check, what remains stays open. No ring
+  // turns: the work stopped, nothing runs.
+  const tasks = (): ChatTask[] => [
+    ...progress().done.map((content, index) => ({ id: `done-${index}`, content, status: "completed" as const })),
+    ...progress().open.map((content, index) => ({ id: `open-${index}`, content, status: "pending" as const })),
+  ];
+  const statusLabels = () => ({
+    pending: t().authoringStopOpenLabel,
+    in_progress: t().authoringStopOpenLabel,
+    completed: t().authoringStopDoneLabel,
+    cancelled: t().authoringStopOpenLabel,
+  });
   return (
     <NoticeCard
       tone="warning"
@@ -98,8 +90,7 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
     >
       {/* Only the receipt's text is a live region; the button and the recovery line announce themselves. */}
       <div role="status" aria-live="polite">
-        {list("done", t().authoringStopDoneLabel, progress().done)}
-        {list("open", t().authoringStopOpenLabel, progress().open)}
+        <Chat.TaskList items={tasks()} statusLabels={statusLabels()} aria-label={t().authoringStopTitle} />
       </div>
       {/* The recovery line shares the saved line's space, so neither the card nor the button moves. */}
       <p class="assistant-authoring-stop__meta">

@@ -17,6 +17,10 @@ export type AssistantStarterAction = {
   prompt: string;
   icon: string;
   skill?: string;
+  /** The small line above the title: where the suggestion leads. */
+  area?: string;
+  /** The bold title; `label` follows below it. */
+  title?: string;
 };
 
 export const assistantStarterActions: readonly AssistantStarterAction[] = (() => {
@@ -48,10 +52,24 @@ export default function AssistantEmptyChat(props: {
   const t = () => assistantMessages.resolve([locale()]).t;
   const placeT = () => placeMessages.resolve([locale()]).t;
   const starters = (): readonly AssistantStarterAction[] => [
-    { label: t().analyzeFiles, prompt: t().analyzeFilesPrompt, icon: "ti ti-file-analytics", skill: "assistant-code-mode" },
-    { label: t().buildApp, prompt: t().buildAppPrompt, icon: "ti ti-app-window", skill: "assistant-code-mode" },
-    { label: t().discover, prompt: t().discoverPrompt, icon: "ti ti-sparkles" },
-    { label: t().followMail, prompt: t().followMailPrompt, icon: "ti ti-mail-forward" },
+    {
+      label: t().analyzeFiles,
+      prompt: t().analyzeFilesPrompt,
+      icon: "ti ti-folder",
+      skill: "assistant-code-mode",
+      area: t().starterFilesArea,
+      title: t().starterFilesTitle,
+    },
+    {
+      label: t().buildApp,
+      prompt: t().buildAppPrompt,
+      icon: "ti ti-code",
+      skill: "assistant-code-mode",
+      area: t().starterCodeArea,
+      title: t().starterCodeTitle,
+    },
+    { label: t().discover, prompt: t().discoverPrompt, icon: "ti ti-sparkles", area: t().starterStartArea, title: t().starterStartTitle },
+    { label: t().followMail, prompt: t().followMailPrompt, icon: "ti ti-mail", area: t().starterMailArea, title: t().starterMailTitle },
   ];
   const selectedProject = () => props.projects.find((project) => project.id === props.selectedProjectId) ?? null;
 
@@ -63,7 +81,7 @@ export default function AssistantEmptyChat(props: {
           <div class="absolute inset-x-0 bottom-0 flex flex-col justify-end">
             <h1
               id="assistant-empty-title"
-              class="text-center text-2xl font-semibold tracking-tight text-[var(--k2b-text)]"
+              class="text-start text-2xl font-semibold tracking-tight text-[var(--k2b-text)]"
               classList={{ "sr-only": Boolean(props.modelNote) }}
             >
               {props.place ? placeT().emptyTitle({ title: props.place.title }) : t().workOn}
@@ -118,8 +136,14 @@ export default function AssistantEmptyChat(props: {
           <div class="assistant-starters" role="group" aria-label={t().starters}>
             {starters().map((starter) => (
               <Button variant="subtle" class="assistant-starter" onClick={() => props.onStarter?.(starter)}>
-                <i class={starter.icon} aria-hidden="true" />
-                <span>{starter.label}</span>
+                <span class="k2b-icon-tile assistant-starter__tile" aria-hidden="true">
+                  <i class={starter.icon} />
+                </span>
+                <span class="assistant-starter__text">
+                  {starter.area ? <small class="assistant-starter__area">{starter.area}</small> : null}
+                  {starter.title ? <strong class="assistant-starter__title">{starter.title}</strong> : null}
+                  <span class="assistant-starter__hint">{starter.label}</span>
+                </span>
               </Button>
             ))}
           </div>

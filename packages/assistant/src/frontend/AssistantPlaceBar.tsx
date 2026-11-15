@@ -43,6 +43,7 @@ export default function AssistantPlaceBar(props: { state: AssistantPlaceBarState
       <span class="sr-only">{t().onlyYouHint}</span>
     </Tooltip.Anchor>
   );
+  let sentenceLink: HTMLButtonElement | undefined;
   const Info = (info: { view: Available }) => (
     <>
       <IconButton
@@ -79,7 +80,24 @@ export default function AssistantPlaceBar(props: { state: AssistantPlaceBarState
                 <OnlyYou />
                 <Info view={state().view} />
               </div>
-              <PlaceChips view={state().view} />
+              {/* One sentence instead of marks (F5 B): what Gustav reads here and how many things it can do, with the list a click away. */}
+              <p class="assistant-place-bar__sentence">
+                {t().readsAlong}
+                <Show when={state().view.tools.length > 0}>
+                  {" "}
+                  {t().canDoHere}{" "}
+                  <button
+                    ref={sentenceLink}
+                    type="button"
+                    class="k2b-text-link assistant-place-bar__things"
+                    aria-expanded={infoAnchor() ? "true" : "false"}
+                    onClick={() => setInfoAnchor((open) => (open ? null : (sentenceLink ?? null)))}
+                  >
+                    {t().things({ count: state().view.tools.length })}
+                  </button>
+                </Show>
+                .
+              </p>
             </>
           )}
         </Match>
@@ -148,11 +166,9 @@ export default function AssistantPlaceBar(props: { state: AssistantPlaceBarState
               {t().loading}
             </span>
           </div>
-          {/* The chip row's place, so the loaded place moves nothing below in the usual one-line case. */}
-          <div class="assistant-place-bar__chips" aria-hidden="true">
-            <Skeleton class="assistant-place-bar__skeleton-chip" />
-            <Skeleton class="assistant-place-bar__skeleton-chip" />
-            <Skeleton class="assistant-place-bar__skeleton-chip" />
+          {/* The sentence's place, so the loaded place moves nothing below. */}
+          <div class="assistant-place-bar__sentence" aria-hidden="true">
+            <Skeleton class="assistant-place-bar__skeleton-line" />
           </div>
         </Match>
         <Match when={props.state.kind === "failed" && props.state}>
@@ -168,32 +184,6 @@ export default function AssistantPlaceBar(props: { state: AssistantPlaceBarState
           )}
         </Match>
       </Switch>
-    </div>
-  );
-}
-
-function PlaceChips(props: { view: Available }) {
-  const locale = useLocale();
-  const t = () => placeMessages.resolve([locale()]).t;
-  return (
-    <div class="assistant-place-bar__chips">
-      <For each={props.view.tools}>
-        {(tool) => (
-          <Tag size="sm" icon={tool.icon ?? "ti ti-tool"}>
-            {tool.title}
-          </Tag>
-        )}
-      </For>
-      <For each={props.view.skills}>
-        {(skill) => (
-          <Tag size="sm" icon="ti ti-sparkles">
-            {t().skill({ title: skill.title })}
-          </Tag>
-        )}
-      </For>
-      <Tag size="sm" icon="ti ti-file-text">
-        {t().contextOf({ type: props.view.typeTitle })}
-      </Tag>
     </div>
   );
 }

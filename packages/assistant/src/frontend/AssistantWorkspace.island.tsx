@@ -93,7 +93,6 @@ import { AssistantChatContextPlaces, type ContextBoxActions } from "./AssistantC
 import type { ChatSidebarJump } from "./AssistantChatSidebar";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantCodeBlock, { type AssistantCodeBlockInitial } from "./AssistantCodeBlock";
-import AssistantCodeVersionCard from "./AssistantCodeVersionCard";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
@@ -142,8 +141,10 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
+import { AssistantCodeDecisionEntry } from "./code-decision-deferred";
 import { AssistantCodeDetail, AssistantCodeView } from "./code-deferred-views";
 import type { CodeOverviewPage } from "./code-overview";
+import { AssistantCodeVersionCard } from "./code-version-card-deferred";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
@@ -1844,6 +1845,20 @@ export default function AssistantWorkspace(props: Props) {
     }
   };
 
+  /**
+   * A prepared message from a version card, such as "Revise version 5 the way Jana wants it". An empty field sends it
+   * at once; text the person already typed stays, and the message joins it in the field instead.
+   */
+  const askGustav = (text: string) => {
+    const key = composerSessionKey();
+    const current = composerDraft(key);
+    if (current.trim() || composerAttachmentsFor(key).length > 0) {
+      setComposerDraft(key, `${current.trimEnd()}\n\n${text}`);
+      focusComposer();
+      return;
+    }
+    void send({ message: text });
+  };
   const useStarter = async (starter: AssistantStarterAction) => {
     const release = holdComposerSave();
     try {
@@ -3299,11 +3314,15 @@ export default function AssistantWorkspace(props: Props) {
                                     renderCodeAuthoringStop: (state, continuable) => (
                                       <AssistantAuthoringStop state={state} continuable={continuable} />
                                     ),
+                                    renderCodeDecision: (entry) => (
+                                      <AssistantCodeDecisionEntry entry={entry} messages={chat.usageMessages} timeZone={props.timeZone} />
+                                    ),
                                     renderCodeVersion: (version) => (
                                       <AssistantCodeVersionCard
                                         {...version}
                                         timeZone={props.timeZone}
                                         onActivated={() => setCodeRevision((revision) => revision + 1)}
+                                        onAsk={askGustav}
                                       />
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",
@@ -3376,12 +3395,8 @@ export default function AssistantWorkspace(props: Props) {
                               }
                             >
                               <AssistantEmptyChat
-                                composer={
-                                  <div class="flex flex-col gap-2">
-                                    <WaitingRow />
-                                    <AssistantComposer />
-                                  </div>
-                                }
+                                // The start screen keeps only the field (v12 image 11); what waits is in the navigation.
+                                composer={<AssistantComposer />}
                                 notices={<ComposerNotices />}
                                 modelNote={modelNote()}
                                 projects={projects()}

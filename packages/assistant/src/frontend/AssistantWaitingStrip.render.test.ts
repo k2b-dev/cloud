@@ -6,7 +6,7 @@ import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { WAITING_NOW, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
+import { WAITING_NOW, waitingChatHistory, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
 
 // The server renders "Waiting for you" from the same read the browser starts from. Its first client frame, in
 // AssistantWorkspace.waiting.behavior.test.tsx, must show the same row: the same entries, and quiet in the same case.
@@ -54,7 +54,13 @@ test("the server renders the waiting row of every case as the first client frame
             initialDoneCount: 0,
             initialConversationId: here.id,
             initialArtifactPath: null,
-            initialDetail: { conversation: here, messages: [], hasMoreMessages: false, activeTurn: fixture.activeTurn, timeline: [] },
+            initialDetail: {
+              conversation: here,
+              messages: waitingChatHistory,
+              hasMoreMessages: false,
+              activeTurn: fixture.activeTurn,
+              timeline: [],
+            },
             initialContext: null,
             projects: [],
             initialProject: null,
@@ -106,4 +112,35 @@ test("Code waiting kinds keep their own sign in the shared chip row", async () =
     expect(html).toContain(`data-kind="${kind}"`);
     expect(html).toContain(`assistant-waiting__icon ${icon}`);
   }
+});
+
+test("a Code entry shows the sign of its kind and its own sentence, never the approval prefix", async () => {
+  const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
+  const base = waitingFixture.conversations[0]!;
+  const question = {
+    id: "q-code",
+    kind: "code_activate" as const,
+    conversationId: base.id,
+    conversationTitle: base.title,
+    anchor: "code-version-66666666-6666-4666-8666-666666666666",
+    short: "Version 5 einschalten",
+    createdAt: WAITING_NOW,
+  };
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(AssistantWaitingStrip, {
+          view: { attention: [], entries: [question] as never, more: 0, total: 1, onlyHere: null },
+          conversationId: base.id,
+          quiet: false,
+          onJump: () => undefined,
+          onShowMore: () => undefined,
+        });
+      },
+    }),
+  );
+  expect(html).toContain("ti-power");
+  expect(html).toContain("Version 5 einschalten");
+  expect(html).not.toContain("Freigabe:");
 });

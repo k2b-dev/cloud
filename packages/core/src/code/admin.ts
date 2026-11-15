@@ -402,7 +402,7 @@ export function codeAdminInternet(manifest: CodeCheckedVersionManifest | null): 
 }
 
 /** Catalog titles of the operations and target types a version names, in the request locale. */
-async function operationTitles(
+export async function operationTitles(
   permissions: readonly { operation: string; target: { type: string } | null }[],
   context: CodeContext,
 ): Promise<CodeAdminApprovalDetail["titles"]> {

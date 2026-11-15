@@ -91,7 +91,7 @@ test("SDK diagnostics stay out of the human step label", () => {
   });
   expect(failed(html)).toBe(false);
   const summary = /<summary\b[^>]*>([\s\S]*?)<\/summary>/.exec(html)?.[1] ?? "";
-  expect(summary).toContain("Checks the Code");
+  expect(summary).toContain("Checks");
   for (const internal of ["space.task.list", "spaces.task.list", "code_unresolved_call", "code.ts"])
     expect(summary).not.toContain(internal);
 });
@@ -110,7 +110,7 @@ test("a lasting Code command that answered with Core's error shows as a failed s
   });
   expect(CodeAuthoringErrorSchema.parse(refused).error.code).toBe("FORBIDDEN");
   expect(failed(step("code_write", refused))).toBe(true);
-  expect(label(step("code_write", refused, "de"))).toContain("Bearbeitet eine Code-Datei");
+  expect(label(step("code_write", refused, "de"))).toContain("Schreibt die Änderung");
   expect(failed(step("code_write", project))).toBe(false);
   const failure = codeAuthoringFailure(new Error("unknown")).body;
   for (const name of tools.map((tool) => tool.def.name)) expect(failed(step(name, failure))).toBe(true);
@@ -154,7 +154,7 @@ test("every lasting Code chat tool has a step name that says what happens, in En
       // Without a name the row would read the tool name in words, like "Code init".
       expect(text).not.toMatch(/^Code [a-z]+$/);
     }
-  expect(label(step("code_test", {}, "de"))).toBe("Testet mit erfundenen Daten");
+  expect(label(step("code_test", {}, "de"))).toBe("Probiert Beispiele aus");
   expect(label(step("code_review", {}, "de"))).toBe("Liest die Rückmeldung");
   expect(label(step("code_review", {}, "en"))).toBe("Reads the review feedback");
 });

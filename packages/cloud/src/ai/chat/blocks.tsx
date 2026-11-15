@@ -8,7 +8,8 @@ import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences"
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityView } from "./capability-result";
 import { CapabilityViewBlock } from "./capability-view";
-import { CodeStepBody, hasCodeStepView } from "./code-steps";
+import { isCodeStepResult } from "./code-step-words";
+import { CodeStepBody, CodeStepResult, hasCodeStepView } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -438,6 +439,20 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         <Match when={props.block.name === "fetch_file" && !props.block.isError}>
           <FetchFileToolBlock block={props.block} />
         </Match>
+        {/* A lasting Code step says in words what it did; its input and output stay with the model and `cld`. */}
+        <Match when={hasCodeStepView(props.block.name) && status() !== "running" && status() !== "awaiting_client"}>
+          <Chat.Activity
+            label={displayToolName(props.block.name, locale())}
+            icon={aiToolIcon(props.block.name)}
+            leading={isFailedTool(props.block) ? undefined : featCodeLeading(props.block.name, props.block.presentation?.appIcon)}
+            tone={isFailedTool(props.block) ? "danger" : undefined}
+          >
+            <CodeStepBody block={props.block} />
+          </Chat.Activity>
+          <Show when={isCodeStepResult(props.block)}>
+            <CodeStepResult block={props.block} />
+          </Show>
+        </Match>
         <Match when={props.block.name === "memory"}>
           <MemoryToolView block={props.block} />
         </Match>
@@ -569,8 +584,11 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           : null;
     return outcome ?? toolSubject(props.block, locale(), timeZone);
   };
+  // A lasting Code step names no file: the person does not read the source.
   const detail = () =>
-    sentence() ? undefined : [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");
+    sentence() || hasCodeStepView(props.block.name)
+      ? undefined
+      : [args().path, args().name, args().query, args().title].find((value) => typeof value === "string");
   const waiting = () => props.block.status === "awaiting_client" || props.block.status === "awaiting_approval";
   const state = () =>
     waiting() ? t().stepWaiting : props.block.status === "rejected" ? t().stepRejected : isFailedTool(props.block) ? t().stepFailed : "";
@@ -633,8 +651,9 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           );
           return (
             <div class="flex min-w-0 flex-col gap-2">
+              {/* Lasting Code steps say what they did in words; their input and output stay with the model and `cld`. */}
               <Show when={hasCodeStepView(props.block.name)} fallback={inputOutput()}>
-                <CodeStepBody block={props.block} raw={inputOutput} />
+                <CodeStepBody block={props.block} />
               </Show>
               {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
               <Show when={image()}>
