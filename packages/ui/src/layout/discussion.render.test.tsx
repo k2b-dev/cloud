@@ -165,4 +165,35 @@ describe("Discussion", () => {
     expect(failed).toContain("Comments could not be refreshed.");
     expect(failed).toContain("Show 2 older");
   });
+
+  test("a compact thread renders flush entries and a real reply field, and no reply field when read only", () => {
+    const thread = (onSubmit?: () => void) =>
+      renderToString(() =>
+        createComponent(Discussion.Thread, {
+          label: "Comments on line 3",
+          placeholder: "Reply …",
+          submitLabel: "Comment",
+          onSubmit,
+          get children() {
+            return createComponent(Discussion.Item, {
+              author: "Ben Schulz",
+              meta: "Cloud admin",
+              timestamp: "20 min ago",
+              children: "Why only unread mails?",
+            });
+          },
+        }),
+      );
+    const html = thread(() => undefined);
+    expect(html).toContain('class="k2b-discussion-thread"');
+    expect(html).toContain('role="group"');
+    expect(html).toContain('aria-label="Comments on line 3"');
+    expect(html).toContain('class="k2b-discussion-thread__reply"');
+    expect(html).toContain('placeholder="Reply …"');
+    expect(html).not.toContain("<textarea");
+    expect(html).toContain("Ben Schulz");
+    const decided = thread();
+    expect(decided).not.toContain("k2b-discussion-thread__reply");
+    expect(decided).toContain("Why only unread mails?");
+  });
 });

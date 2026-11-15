@@ -811,6 +811,74 @@ const HoverCardDemo = () => {
   );
 };
 
+const HoverCardActionsDemo = () => {
+  const [reported, setReported] = createSignal(false);
+  return (
+    <DemoCard
+      id="hover-card-actions"
+      chip={{ kind: "component", name: "HoverCard.Trigger", from: "@k2b/ui" }}
+      description="A card with actions is a small dialog: pointing opens nothing, a click or Enter opens it above the pill with the focus inside, and Escape returns the focus. In a low window it never gets taller than the room above the pill; the title and the last line stay while the facts scroll and fade out below."
+      code={`<HoverCard.Trigger
+  aria-label="About this page"
+  title="Page of Lea Muster"
+  detail="Example Cloud"
+  side="above"
+  align="end"
+  width="23rem"
+  content={<DescriptionList layout="compact" size="sm" items={facts} />}
+  actions={<a href="#report">Report page</a>}
+  hint="Made with feat/code"
+>
+  Page of Lea Muster
+</HoverCard.Trigger>`}
+    >
+      <div style={{ display: "flex", "justify-content": "flex-end", padding: "0.5rem 0" }}>
+        <HoverCard.Trigger
+          aria-label="About this page"
+          triggerClass="ui-hover-card-demo__pill"
+          title="Page of Lea Muster"
+          detail="Example Cloud"
+          side="above"
+          align="end"
+          width="23rem"
+          content={
+            <DescriptionList
+              layout="compact"
+              size="sm"
+              items={[
+                { term: "Belongs to", description: "Lea Muster" },
+                { term: "Automation", description: "Delivery notes, version 5" },
+                { term: "On since", description: "Nov 12, 09:41" },
+                { term: "Cloud passes on", description: "Name, user name, and groups of your account" },
+              ]}
+            />
+          }
+          actions={
+            reported() ? (
+              <span>Reported</span>
+            ) : (
+              <a
+                href="#hover-card-actions"
+                onClick={(event) => {
+                  event.preventDefault();
+                  setReported(true);
+                }}
+              >
+                Report page
+              </a>
+            )
+          }
+          hint="Made with feat/code"
+        >
+          <i class="ti ti-code" aria-hidden="true" />
+          Page of Lea Muster
+          <i class="ti ti-info-circle" aria-hidden="true" />
+        </HoverCard.Trigger>
+      </div>
+    </DemoCard>
+  );
+};
+
 const demoMessages = [
   {
     id: "invoice",
@@ -1187,6 +1255,7 @@ const demos: DemoSection = {
   "hover-card": () => (
     <DemoGrid columns="one">
       <HoverCardDemo />
+      <HoverCardActionsDemo />
     </DemoGrid>
   ),
   "hover-preview": () => (

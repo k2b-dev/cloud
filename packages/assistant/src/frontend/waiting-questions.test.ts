@@ -4,6 +4,7 @@ import { waitingQuestionsView } from "./waiting-questions";
 
 const question = (id: string, conversationId: string, createdAt: string, anchor = `tool-${id}`): AiOpenQuestion => ({
   id,
+  kind: "approval",
   conversationId,
   conversationTitle: conversationId === "here01" ? "October maintenance" : "Team Ops planning",
   anchor,
@@ -70,17 +71,17 @@ describe("waitingQuestionsView", () => {
       conversationId: "here01",
       local: [tool("tool-mail", "awaiting_approval")],
     });
-    expect(view).toEqual({ entries: [], more: 0, total: 1, onlyHere: "tool-mail" });
+    expect(view).toEqual({ attention: [], entries: [], more: 0, total: 1, onlyHere: "tool-mail" });
   });
 
   test("while the chat is not loaded, the server's read decides, and the row shows until the card does", () => {
     const view = waitingQuestionsView({ questions: { items: [mail], count: 1 }, conversationId: "here01", local: null });
-    expect(view).toEqual({ entries: [mail], more: 0, total: 1, onlyHere: null });
+    expect(view).toEqual({ attention: [], entries: [mail], more: 0, total: 1, onlyHere: null });
   });
 
   test("a question this chat does not show, such as one without its card, keeps the row visible", () => {
     const view = waitingQuestionsView({ questions: { items: [mail], count: 1 }, conversationId: "here01", local: [] });
-    expect(view).toEqual({ entries: [mail], more: 0, total: 1, onlyHere: null });
+    expect(view).toEqual({ attention: [], entries: [mail], more: 0, total: 1, onlyHere: null });
   });
 
   test("questions beyond the bounded read are counted as more", () => {
@@ -90,5 +91,25 @@ describe("waitingQuestionsView", () => {
 
   test("no question, no strip", () => {
     expect(waitingQuestionsView({ questions: { items: [], count: 0 }, conversationId: "here01", local: [] }).total).toBe(0);
+  });
+});
+
+describe("what stopped in this chat", () => {
+  const stopped = { key: "task:t1", kind: "routine" as const, short: "Routine needs attention", open: () => {} };
+  const mail = question("mail", "here01", "2026-10-17T12:00:00.000Z");
+
+  test("comes first, counts, and keeps the row visible beside the only card here", () => {
+    const view = waitingQuestionsView({
+      questions: { items: [mail], count: 1 },
+      conversationId: "here01",
+      local: [tool("tool-mail", "awaiting_approval")],
+      attention: [stopped],
+    });
+    expect(view).toEqual({ attention: [stopped], entries: [mail], more: 0, total: 2, onlyHere: null });
+  });
+
+  test("belongs to an open chat only", () => {
+    const view = waitingQuestionsView({ questions: { items: [], count: 0 }, conversationId: null, local: null, attention: [stopped] });
+    expect(view).toEqual({ attention: [], entries: [], more: 0, total: 0, onlyHere: null });
   });
 });
