@@ -40,6 +40,7 @@ import {
   type CodeSubmissionOrigin,
   CodeSubmissionOriginSchema,
 } from "./review-contracts";
+import { assertCodeReviewTurn, enqueueCodeReviewChat } from "./review-chat-state";
 import { codeReviewEventPublisher } from "./review-events";
 import { createRunnerCodeTestingHost } from "./runner-jobs";
 import { validateCodeSecretBindings } from "./secrets";
@@ -312,6 +313,7 @@ export async function submitCodeVersion(
       ORDER BY r.id FOR UPDATE OF r`;
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     const code = await lockCodeForEdit(input.codeId, context, tx);
+    await assertCodeReviewTurn(code.id, context, tx);
     const [latest] = await tx<{ id: string }[]>`SELECT id FROM code.versions WHERE code_id=${code.id} ORDER BY number DESC LIMIT 1`;
     if ((latest?.id ?? null) !== input.baseVersionId) {
       const before = input.baseVersionId ? await versionSnapshot(code.id, input.baseVersionId, tx) : null;
@@ -372,6 +374,9 @@ export async function submitCodeVersion(
     }
     await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest,evidence,origin,locale)
       VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest},${JSON.stringify(evidence)}::text::jsonb,${JSON.stringify(CodeSubmissionOriginSchema.parse(context.submissionOrigin ?? { kind: "cli" }))}::text::jsonb,${context.locale ?? "en"})`;
+    if (context.reviewTurn)
+      await tx`UPDATE code.review_chat_work SET state='submitted',submitted_version_id=${version.id}::uuid,updated_at=now()
+        WHERE version_id=${context.reviewTurn.versionId}::uuid AND turn_id=${context.reviewTurn.turnId}::uuid`;
     if (approvalId)
       await tx`INSERT INTO code.review_notification_outbox(version_id,kind) VALUES(${version.id}::uuid,'submitted') ON CONFLICT DO NOTHING`;
     await audit.record(
@@ -585,6 +590,7 @@ export async function applyCodeVersionDecision(
     data: { codeId: code.id, versionId: version.id, number: number!.number, outcome: decision.outcome },
   });
   await tx`INSERT INTO code.review_notification_outbox(version_id,kind) VALUES(${version.id}::uuid,'decided') ON CONFLICT DO NOTHING`;
+  await enqueueCodeReviewChat(version.id, "decision", tx);
   await replaceCodePolicyCoverage(version.id, request.status === "approved" ? manifest.policyRows : [], tx);
   if (request.status === "approved") await recordCodeVersionBaseline(code.id, version.id, tx);
   await audit.record(

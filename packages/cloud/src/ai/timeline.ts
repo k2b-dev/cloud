@@ -22,6 +22,8 @@ export type AiAssistantTimelineItem = {
 export type AiMessageTimelineItem =
   | { type: "user"; id: string; entry: AiStoredMessage }
   | { type: "summary"; id: string; entry: AiStoredMessage }
+  | { type: "code-decision"; id: string; entry: AiStoredMessage }
+  | { type: "code-review-start"; id: string; entry: AiStoredMessage }
   | AiAssistantTimelineItem;
 
 export const assistantVisibleTextFromMessage = (message: Message): string => {
@@ -85,6 +87,14 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
   for (let index = 0; index < messages.length; ) {
     const entry = messages[index]!;
 
+    if (entry.meta?.codeDecision || entry.meta?.codeReviewStart) {
+      flushPendingSteers();
+      if (entry.meta.codeReviewStart) lastUserEntry=entry;
+      items.push({ type: entry.meta.codeDecision ? "code-decision" : "code-review-start", id: entry.id, entry });
+      index += 1;
+      continue;
+    }
+
     if (entry.kind === "summary") {
       flushPendingSteers();
       items.push({ type: "summary", id: entry.id, entry });
@@ -115,6 +125,7 @@ export const buildAiMessageTimeline = (messages: AiStoredMessage[]): AiMessageTi
     while (
       index < messages.length &&
       isAssistantPart(messages[index]!) &&
+      !messages[index]!.meta?.codeDecision &&
       sameLoop(messages[index]!, loopId) &&
       (loopId !== null || sameBackgroundResult(messages[index]!, entry))
     ) {

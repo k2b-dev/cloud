@@ -26,6 +26,7 @@ import { listCodeRunsWithEvents } from "./events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
 import { type CodePolicyRow, codePolicyRow } from "./policy-contracts";
 import { readCodeReview, waitCodeReview } from "./review";
+import { cancelCodeReviewRevision } from "./review-chat";
 import { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
 import { startCodeRun } from "./scheduling";
 import { checkCodeSecretBinding, currentCodeSecretBindings, deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./secrets";
@@ -179,6 +180,7 @@ async function check(input: CodeAuthoringInput<"check">, context: CodeContext, p
 /** Shared CLI/chat service. Calls the same owning services as capabilities and never executes source in Core. */
 export const codeAuthoringServices = {
   review: readCodeReview,
+  reviewStop: cancelCodeReviewRevision,
   reviewWait: waitCodeReview,
   withdraw: withdrawCodeVersion,
   async init(input: CodeAuthoringInput<"init">, context: CodeContext): Promise<CodeAuthoringData<"init">> {

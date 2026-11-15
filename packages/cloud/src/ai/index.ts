@@ -253,7 +253,7 @@ export {
   createCloudAiMemoryTool,
 } from "./memory-tool";
 export { migrateCloudAi } from "./migrate";
-export { type AiOpenQuestion, type AiOpenQuestions, countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
+export { type AiOpenQuestion, type AiOpenQuestionKind, type AiOpenQuestionSource, type AiOpenQuestions, AiOpenQuestionsSchema, countAiOpenQuestions, listAiOpenQuestions } from "./open-questions";
 export { personalAiModelPolicy } from "./personal-agent";
 /** Trusted platform host: read current place context as the person. */
 export { type PlaceProviderOptions, runPlaceProvider } from "./place-provider";

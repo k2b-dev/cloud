@@ -135,16 +135,16 @@ databaseSuite()("open questions", () => {
     expect(await countAiOpenQuestions(owner.userId)).toBe(0);
   });
 
-  test("bounds the newest-first page while counting all questions, including timestamp ties", async () => {
+  test("bounds the oldest-first page while counting all questions, including timestamp ties", async () => {
     const f = await fixture();
     const ids: string[] = [];
     for (let i = 0; i < APPROVALS_PAGE_SIZE + 1; i++) ids.push((await f.ask()).id);
     const page = await f.read();
-    expect(page.items.map((item) => item.id)).toEqual(ids.slice(1).reverse());
+    expect(page.items.map((item) => item.id)).toEqual(ids.slice(0, APPROVALS_PAGE_SIZE));
     expect(page.count).toBe(21);
     expect(page.items[0]?.createdAt).toMatch(/^2026-10-17T12:/);
     await sql`UPDATE approvals.requests SET created_at=${now}::timestamptz WHERE approver_user_id=${f.userId}::uuid`;
-    expect((await f.read()).items.map((item) => item.id)).toEqual([...ids].sort().reverse().slice(0, APPROVALS_PAGE_SIZE));
+    expect((await f.read()).items.map((item) => item.id)).toEqual([...ids].sort().slice(0, APPROVALS_PAGE_SIZE));
   });
 
   test("uses the chat's tool block and card anchor for standard and custom approvals, the card's words and app, and the current chat title", async () => {

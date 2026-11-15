@@ -3,6 +3,7 @@ import type { AiOpenQuestion, AiTurnBlock } from "@k2b/cloud/ai";
 import { waitingQuestionsView } from "./waiting-questions";
 
 const question = (id: string, conversationId: string, createdAt: string, anchor = `tool-${id}`): AiOpenQuestion => ({
+  kind: "approval",
   id,
   conversationId,
   conversationTitle: conversationId === "here01" ? "October maintenance" : "Team Ops planning",

@@ -1907,6 +1907,7 @@ export const gridsCapabilities = defineCapabilities({
       description: "A permission-scoped Grids workspace.",
       icon: "ti ti-table",
       reader: "base.read",
+      access: { managers: (input, context) => listBaseManagers(input, context.signal) },
       pages: ["/app/grids/:id"],
     },
     table: {
@@ -2194,3 +2195,4 @@ export const gridsCapabilities = defineCapabilities({
     },
   },
 });
+import { listBaseManagers } from "./service/manager-recipients";

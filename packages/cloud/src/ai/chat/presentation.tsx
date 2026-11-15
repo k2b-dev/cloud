@@ -171,7 +171,7 @@ const storedItems = (
   // A failed turn's notice ends its last item, which is its user message when the model never answered.
   const lastEntryOfLoop = new Map<string, number>();
   timeline.forEach((item, index) => {
-    const loopId = item.type === "summary" ? null : item.type === "user" ? item.entry.loopId : item.loopId;
+    const loopId = (item.type === "summary" || item.type === "code-decision" || item.type === "code-review-start") ? null : item.type === "user" ? item.entry.loopId : item.loopId;
     if (!loopId) return;
     lastEntryOfLoop.set(loopId, index);
     if (item.type === "assistant") lastItemOfLoop.set(loopId, index);
@@ -286,6 +286,11 @@ const storedItems = (
           ]
         : [];
       return [...replacementItem, userItem, ...unansweredNotice(item.entry, itemIndex)];
+    }
+
+    if (item.type === "code-decision" || item.type === "code-review-start") {
+      return { kind: "activity", id: item.id, label: textFromMessage(item.entry.message),
+        icon: "ti ti-shield-check", tone: "ai", content: actions.renderCodeDecision?.(item.entry) };
     }
 
     if (item.type === "summary") {

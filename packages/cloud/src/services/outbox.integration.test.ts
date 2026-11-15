@@ -5,7 +5,7 @@ import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { notifyPgOutbox, pgOutboxKey, subscribeWorkWake } from "../_internal/work-wake";
 import { sql } from "../runtime/clients";
 import { connections } from "../runtime/connections";
-import { createPgOutbox } from "./outbox";
+import { createPgOutbox, PgOutboxDeferred } from "./outbox";
 
 // The contract an application relies on with a table of its own, shaped as in "Migrations and transactions".
 const schema = `outbox_contract_${crypto.randomUUID().replaceAll("-", "_")}`;
@@ -86,6 +86,21 @@ suiteFor("database")("Postgres outbox on an application table", () => {
     expect(published.filter((row) => row.item_id === itemA).map((row) => row.delta)).toEqual([2, 4]);
     expect(published).toContainEqual({ item_id: itemB, delta: 3 });
     expect(await pending()).toEqual([]);
+  });
+
+  test("a partial batch acknowledges free keys and defers busy keys without consuming error attempts",async()=>{
+    await report(sql,itemA,51); await report(sql,itemB,52);
+    const batch=createPgOutbox<StockReport>({table,name:"outbox-batch-contract",orderBy:"item_id",sequence:"seq",reconcileIntervalMs:60000,
+      publish:async()=>{throw new Error("batch only");},publishBatch:async rows=>({deferred:rows.filter(row=>row.item_id===itemA).map(row=>row.id)})});
+    await batch.reconcile();
+    expect(await pending()).toMatchObject([{item_id:itemA,delta:51,attempts:0}]);
+    await report(sql,itemA,53);
+    expect(await batch.reconcile()).toBe(0);
+    expect(await pending()).toHaveLength(2);
+    const [remaining]=await sql<StockReport[]>`SELECT * FROM ${sql.unsafe(table)} WHERE delta=51`;
+    await batch.dispatch(remaining!,async()=>{throw new PgOutboxDeferred("Still busy");});
+    expect((await pending())[0]?.attempts).toBe(0);
+    await sql`DELETE FROM ${sql.unsafe(table)}`;
   });
 
   test("a failed publish keeps its row for a retry, holds back its key, and lets other keys through", async () => {

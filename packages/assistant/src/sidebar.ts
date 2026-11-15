@@ -1,3 +1,4 @@
+import type { RequestAuthority } from "@k2b/cloud/server";
 import {
   type AiConversation,
   type AiOpenQuestions,
@@ -34,7 +35,7 @@ export type AssistantSidebarSnapshot = {
 
 export const loadAssistantSidebarSnapshot = async (
   identity: AiResourceContext,
-  context: { locale: string; timeZone: string },
+  context: { locale: string; timeZone: string; authority?: RequestAuthority },
   placeApp?: AssistantPlaceAppLookup,
 ): Promise<AssistantSidebarSnapshot> => {
   if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");

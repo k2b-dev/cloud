@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { generateCodeSdk } from "@k2b/cloud/code";
@@ -23,6 +23,11 @@ const size = (value: unknown) => JSON.stringify(value).length;
  * about half the context at nessi's four characters per token (resolveAiToolResultMaxChars in @k2b/cloud).
  */
 const budget = 128_000 * 2;
+const declarationSizes: {appId:string;size:number}[]=[];
+// Each real app is an independent bounded fixture; keep expensive catalog generation out of the combined assertion.
+for (const manifest of manifests) beforeAll(()=>{
+  declarationSizes.push({appId:manifest.appId,size:size(codeChatSdkView([manifest],{mode:"personal"},[manifest.appId]))});
+});
 test("Spaces task and event list references name the app-level paginated Queries", () => {
   const index = codeChatSdkView(manifests, { mode: "personal" });
   if (index.kind !== "index") throw new Error("expected index");
@@ -63,9 +68,7 @@ test("the index names every app export, method and automation event with its pol
 test(`the index plus the declarations of any ${CODE_CHAT_SDK_APPS} apps fit the tool result budget of a 128k model`, () => {
   const index = codeChatSdkView(manifests, { mode: "personal" });
   // Rank each app with its own catalog rather than regenerating the complete catalog for every app.
-  const declarations = manifests
-    .map((manifest) => ({ appId: manifest.appId, size: size(codeChatSdkView([manifest], { mode: "personal" }, [manifest.appId])) }))
-    .sort((a, b) => b.size - a.size);
+  const declarations = [...declarationSizes].sort((a,b)=>b.size-a.size);
   const largestApps = declarations.slice(0, CODE_CHAT_SDK_APPS);
   const shared = size(codeChatSdkView(manifests, { mode: "personal" }, []));
   // Each further app adds its own declarations on top of the shared ones.

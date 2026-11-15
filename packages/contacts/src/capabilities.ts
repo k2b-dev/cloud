@@ -1149,6 +1149,7 @@ export const contactsCapabilities = defineCapabilities({
       description: "A permission-scoped collection of contacts.",
       icon: "ti ti-book",
       reader: "book.read",
+      access: { managers: listBookManagers },
       pages: ["/app/contacts/:id"],
     },
     tag: {
@@ -1542,3 +1543,4 @@ export const contactsCapabilities = defineCapabilities({
     },
   },
 });
+import { listBookManagers } from "./service/manager-recipients";

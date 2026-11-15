@@ -1,3 +1,4 @@
+import { aiCodeDecisionContext } from "./code-review-turn";
 import type { DoneReason, InboundEvent, LoopAggregate, Message, SessionStore, StoreEntry } from "@k2b/nessi";
 import type { Usage } from "@k2b/nessi/ai";
 import type { SQL } from "bun";
@@ -613,7 +614,7 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
 
 // A background result arriving during an interactive turn becomes context on the next turn.
 const visibleToTurn = (turnId?: string) => sql`(
-  ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ?| ARRAY['scheduledTask','codeDelivery'], false) OR seq < ALL (
+  ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ?| ARRAY['scheduledTask','codeDelivery','codeDecision'], false) OR seq < ALL (
     SELECT input_message.seq FROM ai.messages input_message
     WHERE input_message.loop_id = ${turnId ?? null} AND input_message.role = 'user'
   )
@@ -2892,7 +2893,7 @@ export const aiConversations: AiConversationService = {
         AND compacted_at IS NULL
       ORDER BY seq ASC
     `;
-    return projectAiMaps(rows.map(rowToMessage));
+    return projectAiMaps(rows.map(rowToMessage).map(aiCodeDecisionContext));
   },
 
   listTurnMessages: async (input) => {
@@ -3215,6 +3216,7 @@ export const aiConversations: AiConversationService = {
           meta: {
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
             ...(input.runConfig.codeOrigin ? { codeOrigin: input.runConfig.codeOrigin } : {}),
+            ...(input.runConfig.codeReview ? { codeReviewStart: input.runConfig.codeReview } : {}),
             modelRequest: input.runConfig.model,
             modelResolved: input.runConfig.modelResolved,
             ...(input.runConfig.modelReplacement ? { modelReplacement: input.runConfig.modelReplacement } : {}),
@@ -4098,7 +4100,7 @@ export const aiConversations: AiConversationService = {
               AND ${visibleToTurn(input.turnId)}
             ORDER BY seq ASC
           `
-          ).map(rowToMessage)
+          ).map(rowToMessage).map(aiCodeDecisionContext)
         : await aiConversations.listContextMessages({ conversationId: input.conversationId });
       return projectCalls(
         projectSettledAiToolChecks(

@@ -764,6 +764,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "ai.chats.search",
     "ai.decide",
     "ai.generate",
+    "ai.open_questions",
     "ai.skill.access.read",
     "ai.skill.read",
     "ai.skill.reference.read",

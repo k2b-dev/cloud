@@ -30,6 +30,7 @@ export {
   getMemberPermission,
   hasPermission,
   listUsersWithAccess,
+  listAccessRecipientUserIds,
   lockAccessMutationAuthority,
   PERMISSION_LEVELS,
   updateAccess,

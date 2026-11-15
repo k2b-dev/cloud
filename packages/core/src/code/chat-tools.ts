@@ -22,6 +22,7 @@ import {
   updateCodeChatDraft,
 } from "./chat-drafts";
 import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, readCodeChatSdk } from "./chat-sdk";
+import { assertCodeReviewTurn } from "./review-chat-state";
 import { readCodeReview } from "./review";
 import { codeAuthor, readCode } from "./store";
 
@@ -35,6 +36,8 @@ export function createCodeAuthoringChatTools() {
     const run = await aiConversations.getTurnRunConfig({ conversationId: context.conversationId, turnId: context.turnId });
     if (!run || run.kind === "compact" || run.background || run.mandate)
       throw new CodeDataError("FORBIDDEN", "Edit lasting Code in an interactive chat.");
+    if (run.codeReview && codeId !== run.codeReview.codeId)
+      throw new CodeDataError("FORBIDDEN", "This automatic revision can only work on its own Code.");
     const authority = await resolveAiCapabilityActor({
       conversationId: context.conversationId,
       persistedActor: context.actor,
@@ -45,9 +48,11 @@ export function createCodeAuthoringChatTools() {
       locale: context.locale,
       signal: context.signal,
       requestId: context.callId,
-      submissionOrigin: { kind: "ai_chat", conversationId: context.conversationId, automaticAfterReview: false },
+      submissionOrigin: { kind: "ai_chat", conversationId: context.conversationId, automaticAfterReview: Boolean(run.codeReview), cardAnchor: `tool-${context.callId}` },
+      ...(run.codeReview ? { reviewTurn: { versionId: run.codeReview.versionId, turnId: context.turnId } } : {}),
     };
     codeAuthor(result);
+    if (codeId) await assertCodeReviewTurn(codeId, result);
     if (codeId) await requireCodePermission((await readCode(codeId, result)).code, result, true);
     return result;
   }

@@ -33,7 +33,7 @@ export const waitingQuestionsView = (input: {
   const known = localTools ? new Set(localTools.map((block) => block.id)) : null;
   // A block this chat shows decides; one it does not show yet stays as the server read it.
   const stillOpen = (question: AiOpenQuestion) =>
-    !here(question) || !known?.has(question.anchor) || Boolean(openHere?.includes(question.anchor));
+    (question.kind !== undefined && question.kind !== "approval") || !here(question) || !known?.has(question.anchor) || Boolean(openHere?.includes(question.anchor));
   const entries = questions.items.filter(stillOpen);
   const listedHere = new Set(entries.filter(here).map((question) => question.anchor));
   const unlistedHere = (openHere ?? []).filter((anchor) => !listedHere.has(anchor)).length;
