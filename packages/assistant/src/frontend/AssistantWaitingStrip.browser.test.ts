@@ -709,7 +709,8 @@ describe("Waiting for you", () => {
         expect(await line(page)).toBe("Gustav wartet auf 3 Freigaben");
         await viewButton(page).click();
         await page.waitForURL(/\?approvals=1$/);
-        await page.locator(".cloud-approvals").waitFor();
+        // The page "Waiting for you" opens; with no approval in this mock it says that nothing waits.
+        await page.locator(".assistant-waiting-page").waitFor();
         expect(await focusedSentence(page)).toBeNull();
         expect(await page.getByRole("button", { name: /alle (freigeben|bestätigen|erlauben)|approve all/i }).count()).toBe(0);
         expect(errors).toEqual([]);

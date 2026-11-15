@@ -766,6 +766,11 @@ a.cloud-code__row-main:focus-visible {
   font-family: var(--k2b-font-mono, ui-monospace, monospace);
   overflow-wrap: anywhere;
 }
+/* Under a refusal notice (Administration › Code) the hint has the notice's text size, not the page's meta size. */
+.cloud-code__refusal .cloud-code__quiet {
+  font-size: 14px;
+  line-height: 20px;
+}
 .cloud-code__refusal .cloud-code__quiet code {
   white-space: nowrap;
 }
