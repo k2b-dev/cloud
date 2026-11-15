@@ -372,6 +372,8 @@ export const aiRoutes = (() => {
             const prepared = await prepareAiChatTurn({
               assistantChat: true,
               signedInSession: true,
+              writerOrigin: ctx.actor.kind === "user" ? { kind: "person", id: ctx.actor.user.id } : undefined,
+              turnTrigger: ctx.actor.kind === "user" ? { kind: "person", id: ctx.actor.user.id } : undefined,
               conversationId: conversation.id,
               chatId: conversation.shortId,
               input: "Choice",
@@ -1112,6 +1114,9 @@ export const aiRoutes = (() => {
         try {
           const submission = {
             assistantChat: true as const,
+            writerOrigin: ctx.actor.kind === "user" ? { kind: "person" as const, id: ctx.actor.user.id } : undefined,
+            turnTrigger: ctx.actor.kind === "user" ? { kind: "person" as const, id: ctx.actor.user.id } : undefined,
+            ...(!ctx.signedInSession ? { sourceRestricted: true as const } : {}),
             ...(ctx.signedInSession ? { signedInSession: true as const } : {}),
             conversationId: conversation.id,
             chatId: conversation.shortId,
@@ -1224,6 +1229,13 @@ export const aiRoutes = (() => {
           }
           const result = await submitAiChatTurn({
             assistantChat: true,
+            writerOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.writerOrigin : undefined,
+            turnTrigger: originalRunConfig?.kind !== "compact" ? originalRunConfig?.turnTrigger : undefined,
+            send: originalRunConfig?.kind !== "compact" ? originalRunConfig?.send : undefined,
+            codeOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.codeOrigin : undefined,
+            ...(!ctx.signedInSession || (originalRunConfig?.kind !== "compact" && originalRunConfig?.sourceRestricted)
+              ? { sourceRestricted: true as const }
+              : {}),
             ...(ctx.signedInSession ? { signedInSession: true as const } : {}),
             conversationId: conversation.id,
             chatId: conversation.shortId,

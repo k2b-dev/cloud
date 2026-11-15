@@ -4,7 +4,7 @@ import { aiCostDecimal, aiCostUnits, aiDecimalUnits } from "@k2b/cloud/shared";
 import type { SQL } from "bun";
 import { z } from "zod";
 /** Synchronous inference reserves the Code attempt allowance. Chat turns have
- * their own daily Code and interactive allowance admission in ai-chat-run.ts. */
+ * their own daily Code and interactive allowance admission in ai-chat-send.ts. */
 export function codeAiReservesAttemptBudget(capability: string): boolean {
   return capability === "core.ai.generate" || capability === "core.ai.decide";
 }

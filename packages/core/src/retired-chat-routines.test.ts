@@ -35,8 +35,7 @@ test("Core no longer advertises routine types, readers or actions", async () => 
   for (const name of [...Object.keys(aiCapabilities.queries ?? {}), ...Object.keys(aiCapabilities.actions ?? {})]) {
     expect(name).not.toMatch(/^ai\.(tasks\.|task\.)/);
   }
-  expect(aiCapabilities.actions["ai.chat.run"]).toBeDefined();
-  expect(aiCapabilities.actions["ai.chat.deliver"]).toBeDefined();
+  expect(aiCapabilities.actions["ai.chat.send"]).toBeDefined();
 });
 
 test("the retained routine router exposes definition exports only", async () => {

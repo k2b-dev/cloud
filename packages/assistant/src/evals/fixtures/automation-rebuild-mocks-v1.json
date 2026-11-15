@@ -24,59 +24,63 @@
     ]
   },
   {
-    "operation": "core.ai.chat.run",
+    "operation": "core.ai.chat.send",
     "target": {
       "type": "core.ai.chat",
       "id": "ExMndy"
     },
     "input": {
-      "prompt": "Review my inbox conversations needing action in the Review mailbox. Use our earlier decisions in this chat to choose which conversations need closer reading and decide the next steps. Read messages as needed, explain your recommendations, and report here. Ask for my approval before making any changes."
+      "text": "Review my inbox conversations needing action in the Review mailbox. Use our earlier decisions in this chat to choose which conversations need closer reading and decide the next steps. Read messages as needed, explain your recommendations, and report here. Ask for my approval before making any changes."
     },
     "replies": [
       {
         "ok": true,
         "data": {
-          "id": "ExTurn",
+          "id": "44bd0000-0000-4000-8000-000000000009",
           "chatId": "ExMndy",
           "status": "queued",
           "reason": null,
           "origin": {
-            "codeId": "c_fixture",
-            "title": "Monday inbox review",
-            "runId": "44bd0000-0000-4000-8000-000000000008",
-            "requestId": "fixture-request",
-            "label": "Started by Code Monday inbox review"
+            "kind": "automation",
+            "id": "c_fixture"
           }
         }
       }
     ]
   },
   {
-    "operation": "core.ai.chat.run.read",
-    "target": {
-      "type": "core.ai.chat",
-      "id": "ExMndy"
-    },
+    "operation": "core.ai.chat.read",
     "input": {
-      "id": "ExTurn"
+      "id": "ExMndy",
+      "message": "44bd0000-0000-4000-8000-000000000009"
     },
     "replies": [
       {
         "ok": true,
         "data": {
-          "id": "ExTurn",
-          "chatId": "ExMndy",
-          "status": "waiting_for_approval",
-          "reason": null,
-          "origin": {
-            "codeId": "c_fixture",
+          "chat": {
+            "id": "ExMndy",
             "title": "Monday inbox review",
-            "runId": "44bd0000-0000-4000-8000-000000000008",
-            "requestId": "fixture-request",
-            "label": "Started by Code Monday inbox review"
+            "description": "",
+            "status": "needs_attention",
+            "archived": false,
+            "createdAt": "2030-01-07T09:00:00Z",
+            "updatedAt": "2030-01-07T09:00:00Z"
+          },
+          "messages": [],
+          "message": {
+            "id": "44bd0000-0000-4000-8000-000000000009",
+            "chatId": "ExMndy",
+            "status": "waiting",
+            "reason": null,
+            "origin": {
+              "kind": "automation",
+              "id": "c_fixture"
+            }
           }
         }
       }
-    ]
+    ],
+    "target": null
   }
 ]

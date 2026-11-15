@@ -26,6 +26,9 @@ import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } fr
 import { AiClientToolResultSchema } from "./http";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
 import { drainQueuedMessages } from "./message-queue";
+
+export { AiMessageQueueConflict, enqueueChatMessage } from "./message-queue";
+
 import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import { aiQuotas } from "./quotas";
@@ -104,6 +107,11 @@ export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enq
 // ---------------------------------------------------------------------------
 
 export type SubmitAiChatTurnInput = {
+  writerOrigin?: AiChatTurnRunConfig["writerOrigin"];
+  turnTrigger?: AiChatTurnRunConfig["turnTrigger"];
+  sourceRestricted?: true;
+  send?: AiChatTurnRunConfig["send"];
+  codeOrigin?: AiChatTurnRunConfig["codeOrigin"];
   /** Only interactive Assistant HTTP handlers set this server-owned marker. */
   assistantChat?: true;
   /** Only a handler that saw a signed-in browser session sets this server-owned marker; see `AiChatTurnRunConfig`. */
@@ -192,6 +200,11 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     resolved.profile.label + (resolved.profile.id !== resolved.profile.modelId ? ` · ${resolved.profile.variantLabel}` : "");
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
+    writerOrigin: input.writerOrigin,
+    turnTrigger: input.turnTrigger,
+    sourceRestricted: input.sourceRestricted,
+    send: input.send,
+    codeOrigin: input.codeOrigin,
     selectedSkillIds: [
       ...new Set(
         (userMessage.role === "user" ? userMessage.content : []).flatMap((part) => {
@@ -265,6 +278,8 @@ export const deliverAiInterChatMessage = async (input: {
   const { resolved } = await validateAiTurnRequest({ input: text, modelPolicy: input.modelPolicy });
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
+    writerOrigin: { kind: "chat", id: input.message.sourceChatId, turnId: input.message.sourceTurnShortId },
+    turnTrigger: { kind: "chat", id: input.message.sourceChatId },
     input: text,
     chatId: input.chatId,
     actor: input.actor,

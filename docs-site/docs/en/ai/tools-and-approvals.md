@@ -824,7 +824,7 @@ asking only if all of these hold:
 - it is GET or HEAD without a body, with only the headers above and no secret
   reference;
 - a person started the turn in a signed-in browser session, or their personal
-  Code started an owner-authorized turn with `core.ai.chat.run`; routines,
+  Code started an owner-authorized turn with `core.ai.chat.send`; routines,
   mandates, `cld`, API keys and other delegated credentials do not qualify;
 - the code runs in that chat's own context.
 

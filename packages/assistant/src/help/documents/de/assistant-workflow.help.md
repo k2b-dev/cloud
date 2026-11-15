@@ -92,7 +92,7 @@ Aktion. Ohne Ergebnisprüfung gibt es keine Schaltfläche zum Wiederholen.
 
 Gustav kann seine verfügbaren Capabilities verwenden, wenn deine Anfrage vom Chatverlauf abhängt. Er kann den aktuellen Chat durchsuchen, einen anderen eigenen Chat finden und lesen sowie strukturierte Cloud-Ressourcen suchen, die in einem der beiden Bereiche verwendet wurden.
 
-Wenn du Gustav ausdrücklich bittest, einer anderen Unterhaltung einen genauen Text mitzuteilen, sie danach zu fragen, sie zu benachrichtigen oder Text weiterzuleiten oder zu senden, kann er die Aktion `core.ai.chat.message` anfordern. Vor dem Einreihen zeigt die Freigabeaufforderung das Ziel und den genauen Text. Zugestellte Nachrichten erscheinen mit ihrem Quell-Chat im Zielverlauf. Sie werden nicht als von dir verfasste Nachrichten dargestellt.
+Wenn du Gustav ausdrücklich bittest, einer anderen Unterhaltung einen genauen Text mitzuteilen, sie danach zu fragen, sie zu benachrichtigen oder Text weiterzuleiten oder zu senden, kann er die Aktion `core.ai.chat.send` anfordern. Vor dem Einreihen zeigt die Freigabeaufforderung das Ziel und den genauen Text. Zugestellte Nachrichten erscheinen mit ihrem Quell-Chat im Zielverlauf. Sie werden nicht als von dir verfasste Nachrichten dargestellt.
 
 ## Audio und Diktieren {icon="microphone"}
 

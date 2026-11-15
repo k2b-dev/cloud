@@ -46,7 +46,7 @@ import { app, core } from "@sdk";
 
 app.schedule({ at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin", name: "yearly-report-reminder", title: "Yearly report reminder" }, async () => {
   // Fictional chat ID; discover the owner's chat first.
-  await core.ai.chat("Chat23").deliver({
+  await core.ai.chat("Chat23").send({
     text: "Reminder: the yearly report is due today.",
     idempotencyKey: "yearly-report-reminder",
   });
@@ -75,7 +75,7 @@ overlapping tick of the same schedule.
 
 The handler receives `{ runId, scheduledAt, input }`. `scheduledAt` is the
 original tick instant as an ISO string, stable across retries and explicit reruns of a failed tick; it is `null`
-for a manual start. `input` is the value supplied to `core.code.run`, or `null`
+for a manual start. `input` is the value supplied to `core.code.send`, or `null`
 for a tick. `runId` identifies the durable run and is unchanged on retry.
 
 Every Action uses the same key scope, retained at least 24 hours: acting user or service account, capability and

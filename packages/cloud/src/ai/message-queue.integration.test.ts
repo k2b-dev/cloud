@@ -136,3 +136,45 @@ integration(
   },
   30_000,
 );
+
+integration("cancellation retains the send account and trigger without assigning personal authorship", async () => {
+  await migrateAiMessageQueue();
+  const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile)
+    VALUES (${crypto.randomUUID()},'local','user') RETURNING id`;
+  const chat = await aiConversations.createConversation({ ownerUserId: user!.id });
+  const id = crypto.randomUUID();
+  const turnTrigger = { kind: "automation" as const, id: "c_report" };
+  const send = { id, accountId: user!.id, keyHash: "a".repeat(64), requestHash: "b".repeat(64) };
+  try {
+    await enqueueChatMessage(
+      id,
+      {
+        conversationId: chat.id,
+        modelId: "fixture",
+        expectedProjectId: null,
+        userMessage: { role: "user", content: [{ type: "text", text: "Automation message" }] },
+        runConfig: {
+          kind: "chat",
+          input: "Automation message",
+          writerOrigin: { kind: "automation", id: "c_report", runId: "run" },
+          turnTrigger,
+          send,
+          toolSource: { kind: "none" },
+        },
+      },
+      [{ type: "text", text: "Automation message" }],
+    );
+    expect(await updateQueuedMessage(chat.id, id, "cancel")).toBeTrue();
+    const [entry] = await sql<{ author_user_id: string | null; origin: unknown; submission: unknown; content: unknown }[]>`
+      SELECT author_user_id,origin,submission,content FROM ai.queued_messages WHERE id=${id}::uuid`;
+    expect(entry).toEqual({
+      author_user_id: null,
+      origin: { kind: "automation", id: "c_report", runId: "run" },
+      submission: { runConfig: { send, turnTrigger } },
+      content: [],
+    });
+  } finally {
+    await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+    await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
+  }
+});

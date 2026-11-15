@@ -637,12 +637,14 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
   'toolReviews', ${todoMetaJson()}->'toolReviews',
   'toolChecks', ${todoMetaJson()}->'toolChecks',
   'codeDecision', ${todoMetaJson()}->'codeDecision',
-  'codeReviewStart', ${todoMetaJson()}->'codeReviewStart'
+  'codeReviewStart', ${todoMetaJson()}->'codeReviewStart',
+  'writerOrigin', ${todoMetaJson()}->'writerOrigin',
+  'turnTrigger', ${todoMetaJson()}->'turnTrigger'
 )), '{}'::jsonb)`;
 
 // A background result arriving during an interactive turn becomes context on the next turn.
 const visibleToTurn = (turnId?: string) => sql`(
-  ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ?| ARRAY['scheduledTask','codeDelivery','codeDecision'], false) OR seq < ALL (
+  ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ?| ARRAY['scheduledTask','codeDecision'], false) OR seq < ALL (
     SELECT input_message.seq FROM ai.messages input_message
     WHERE input_message.loop_id = ${turnId ?? null} AND input_message.role = 'user'
   )
@@ -2953,9 +2955,10 @@ export const aiConversations: AiConversationService = {
       WHERE conversation_id = ${input.conversationId}
         AND loop_id = ${input.loopId}
         AND (${input.includeCompacted ?? false} OR compacted_at IS NULL)
-      ORDER BY seq ASC
+      ORDER BY seq ${input.limit === undefined ? sql`ASC` : sql`DESC`}
+      ${input.limit === undefined ? sql`` : sql`LIMIT ${input.limit}`}
     `;
-    return projectAiMaps(rows.map(rowToMessage));
+    return projectAiMaps((input.limit === undefined ? rows : rows.reverse()).map(rowToMessage));
   },
 
   setMessageFeedback: async (input) => {
@@ -3171,6 +3174,22 @@ export const aiConversations: AiConversationService = {
         SELECT draft_revision, project_id, created_by_user_id, archived_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
       `;
       if (!conversation) throw new Error("Conversation not found.");
+      if (input.retrySourceTurnId) {
+        const [source] = await tx<{ run_config: AiTurnRunConfig | null }[]>`
+          SELECT run_config FROM ai.turns WHERE id=${input.retrySourceTurnId}::uuid AND conversation_id=${input.conversationId}::uuid`;
+        const config = source?.run_config ? parseJsonValue<AiTurnRunConfig>(source.run_config) : null;
+        input = {
+          ...input,
+          runConfig: {
+            ...input.runConfig,
+            writerOrigin: config?.kind !== "compact" ? config?.writerOrigin : undefined,
+            turnTrigger: config?.kind !== "compact" ? config?.turnTrigger : undefined,
+            send: config?.kind !== "compact" ? config?.send : undefined,
+            codeOrigin: config?.kind !== "compact" ? config?.codeOrigin : undefined,
+            ...(config?.kind !== "compact" && config?.sourceRestricted ? { sourceRestricted: true as const } : {}),
+          },
+        };
+      }
       let choice: ReturnType<typeof resolveAiChoice> | undefined;
       if (input.choice) {
         if (
@@ -3292,6 +3311,8 @@ export const aiConversations: AiConversationService = {
           meta: {
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
             ...(input.runConfig.codeOrigin ? { codeOrigin: input.runConfig.codeOrigin } : {}),
+            ...(input.runConfig.writerOrigin ? { writerOrigin: input.runConfig.writerOrigin } : {}),
+            ...(input.runConfig.turnTrigger ? { turnTrigger: input.runConfig.turnTrigger } : {}),
             ...(choice ? { choice: choice.provenance } : {}),
             ...(input.runConfig.codeReview ? { codeReviewStart: input.runConfig.codeReview } : {}),
             modelRequest: input.runConfig.model,
@@ -3361,7 +3382,9 @@ export const aiConversations: AiConversationService = {
         `;
       }
       if (input.queuedMessageId) {
-        await tx`UPDATE ai.queued_messages SET status = 'submitted', submission = '{}'::jsonb, content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
+        await tx`UPDATE ai.queued_messages SET status = 'submitted',
+          submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
+          content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
         await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${input.queuedMessageId}::uuid`;
       }
       return { turn, message: rowToMessage(messageRow) };

@@ -53,7 +53,6 @@ import { drain as drainDeferredAuthRequests } from "@k2b/cloud/services/auth-flo
 import { initializeIdentityAuthority, startAppWorkloadBroker, startIdentityKeyMaintenance } from "@k2b/cloud/services/identity";
 import { startOutgoingMailRuntime, stopOutgoingMailRuntime } from "@k2b/cloud/services/outgoing-mail/runtime";
 import { startWorkflowEventRetention } from "@k2b/cloud/workflows/store";
-import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import type { createAiNotificationService } from "./ai-notifications";
 import { appApprovalRuntime } from "./app-approval-runtime";
 import { rememberApps } from "./known-apps";
@@ -256,13 +255,11 @@ export const startCoreServices = async (
       onTurnFinalized: async ({ turnId, status, kind }) => {
         await Promise.allSettled([
           ...(status === "completed" && kind === "chat" ? [aiNotifications.notifyTurnCompleted(turnId)] : []),
-          deliverPendingAiMessages(),
           finishCodeReviewRevision(turnId, status),
         ]);
       },
     });
     await aiMaintenanceJobs.start();
-    await deliverPendingAiMessages();
     await startOutgoingMailRuntime();
     await outgoingMailBounceRuntime.start();
     await startNotificationRuntime();

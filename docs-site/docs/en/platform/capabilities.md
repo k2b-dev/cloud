@@ -1561,51 +1561,44 @@ For a multilingual app, resolve `forms` once from the app's catalog using
 `"{amount} {item} an {to} übergeben"`, with matching running, done, confirm,
 and decline forms.
 
-## Deliver personal Code results to a chat
+## Write to a Gustav chat
 
-Core's `core.ai.chat.deliver` Action targets `core.ai.chat`. Its closed input is
-`{ text }`, with 1–10,000 characters after trimming; supply the required
-idempotency key as invocation metadata. It returns
-`{ id, status: "delivered", targetChatId }` and an open link to the destination.
+`core.ai.chat.send` is the one chat-writing Action, targeting `core.ai.chat`.
+Its strict input is `{ text, context? }`: 1–10,000 trimmed characters of
+instructions and at most 10,000 characters of untrusted source data. Supply a
+required idempotency key in invocation metadata. Review shows the destination
+chat and the entire text and context. It never selects or creates a chat.
 
-The caller must be a delegated personal Code run whose owner owns the active
-target chat. Core checks both identities on review and execution. Resource- and
-app-owned Code and ordinary person calls are refused. Its policy is
-`{ silent: "you" }`, so approved personal versions can deliver unattended.
-The destination is always explicit; no chat is created or selected implicitly.
+An unrestricted signed-in person, a person-initiated Gustav turn (including
+`code_run`) and an active personal Code version may write to the owner's active
+chat. Core checks ownership and current authority on review and execution.
+App sessions, scoped credentials and source chats with any `allowedTools`
+ceiling return `source_restricted`. Service accounts cannot write to personal
+chats. A non-person initiator, or missing initiator, returns
+`chat_chain_forbidden`; retry, resume and queue promotion cannot replace it.
 
-A committed call appends one assistant message, marks the chat unread and leaves
-a durable receipt for the existing Assistant response notification recovery.
-Messages retain their Code/run provenance, form separate answers, and enter
-model context after an already-running interactive turn finishes.
-Notification delivery follows the person's preferences. The Action starts no
-AI turn. A repeated key for the same Code principal and capability within 24 hours returns the original message; changed
-text or destination returns `IDEMPOTENCY_CONFLICT`. Each call uses the ordinary
-Code call log. See [Code SDK](/en/docs/platform/code-sdk#deliver-a-result-to-your-gustav-chat)
-for the generated handle and an example.
+Send creates one message in the existing queue, preserving the person's draft.
+The normal worker starts a turn with the person's tools and approval rules,
+without the Code mandate. The result is `{ id, chatId, status, reason, origin }`,
+where `id` is the message UUID and `origin` has `kind` (`person`, `automation`,
+`chat`) and stable `id`; chat origins also carry `turnId` and Code origins can
+carry `runId`. Names are resolved for display, not stored as authority.
+States are `queued`, `running`, `waiting`, `done`, `failed` and `cancelled`.
+Read a later snapshot through app-wide `ai.chat.read({ id: chatId, message: id })`:
+its result contains `{ chat, messages, message }`. Do not poll for a human.
 
-## Start personal Code chat turns
+Repeating a key across Code runs recovers the accepted message, even when model
+or quota admission would now refuse a new one. The dispatcher can replay an
+admission response; the read Query gives current state. Different text, context
+or destination under that key returns `IDEMPOTENCY_CONFLICT`. A full queue
+returns `chat_busy`; a Project change during preparation returns `chat_changed`.
+This slice uses the existing shared capacity. Separate automation receipts and
+capacity follow with the automation queue.
 
-Core's `core.ai.chat.run` Action targets `core.ai.chat` and takes
-`{ prompt, context? }`. The prompt has 1–10,000 characters after trimming;
-source context has at most 10,000 characters. Invocation metadata supplies a
-required idempotency key. The Action uses `silent: "you"` and accepts only a
-delegated personal Code run whose owner owns the active target chat. Review
-and execution both check that binding. It never selects or creates a chat.
-
-It creates one ordinary durable Assistant turn with the owner's current
-permissions, model grants, loop and step limits, and approval rules. Tool requests that need approval
-wait in the chat. Code receives `{ id, chatId, status, reason, origin }` and an
-open link promptly; it does not wait for a human. `core.ai.chat.run.read`, on
-the same chat target with `{ id }`, returns a current snapshot of that turn.
-States are `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
-`completed` and `failed`. A failed turn includes its reason. A retry of the
-same Action key recovers the original turn; the dispatcher may replay the
-admission reply. Use `ai.chat.run.read` for its current state. Different
-instructions, context or destination under that key return
-`IDEMPOTENCY_CONFLICT`. A chat with another active turn or pending/failed queued
-messages returns `chat_busy`. A Project change during preparation returns
-`chat_changed`; reread the chat before trying again.
+Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.
+Chat reads are `read`; send retains the `ai` version-approval rule until the
+reserved per-turn budget policy is available. The Action's ordinary policy is
+`silent: "you"`.
 
 Turn admission uses the owner's normal interactive Assistant budget. Each
 provider call reserves only affordable input/output and settles to its actual
@@ -1637,12 +1630,10 @@ that setting continues to bound the separate text AI calls. A receipt retry
 starts no inference and adds no cost. Model admission can also return
 `ai_disabled`, `ai_no_model` or `model_policy_mismatch` before starting a turn.
 
-Turn creation and its receipt commit together. The
-ordinary AI queue and sweep recover work after a failed queue wake-up. Chat
-history and the turn record retain the Code name, Code run and invocation
-request ID. Code call logging remains the standard bridge log. Read a later
-state once or show the chat link; never keep a Code run polling for approval.
-See the [SDK example](/en/docs/platform/code-sdk#start-a-gustav-turn-in-your-own-chat).
+Accepted queue entries survive a failed wake-up and retain their initiator when
+promoted or retried. Code inference attribution remains in the ordinary usage
+ledger and capability call log. See the
+[SDK example](/en/docs/platform/code-sdk#write-to-your-gustav-chat).
 
 ## Write valid contracts
 

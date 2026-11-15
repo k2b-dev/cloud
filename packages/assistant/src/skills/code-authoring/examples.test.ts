@@ -20,7 +20,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { acceptanceChecker } from "../../../../core/src/code/acceptance.test-fixture";
-import { codePolicyPreset, codePolicyRow } from "../../../../core/src/code/policy-contracts";
+import { codePolicyPreset, codePolicyRow, isCodeAiOperation } from "../../../../core/src/code/policy-contracts";
 
 // The skill's examples, templates and fixtures are its contract with Gustav and application authors.
 // Each one is checked against an SDK generated from the real manifests of the apps it documents,
@@ -69,7 +69,6 @@ const sdkFor = (mode: string): GeneratedCodeSdk => {
   sdks.set(mode, sdk);
   return sdk;
 };
-const notAi = ["core.ai.chat.deliver", "core.ai.chat.run.read"];
 const adminPreset = new Map(codePolicyPreset("admin").rules.map((rule) => [rule.row, rule.value]));
 /** When a call runs unattended under the default Admin preset, mirroring Core's Code bridge: AI first, then the Action policy. */
 const unattended = (capability: string): "automatic" | "admin" | "never" | "omitted" | "missing" => {
@@ -78,7 +77,7 @@ const unattended = (capability: string): "automatic" | "admin" | "never" | "omit
   if (!op) return "missing";
   const policy = capabilityActionPolicy(manifests.find((candidate) => candidate.appId === op.appId)!, op.localId);
   if (op.kind === "action" && (!policy || !("silent" in policy) || policy.routines === false)) return "never";
-  const ai = capability.startsWith("core.ai.") && !notAi.includes(capability);
+  const ai = isCodeAiOperation(capability);
   return adminPreset.get(codePolicyRow(ai ? "ai" : op.kind, policy)) ?? "never";
 };
 
@@ -127,9 +126,7 @@ beforeAll(async () => {
           files: { [example.entry]: example.source },
           entry: example.entry,
           sdk,
-          aiOperations: sdk.manifest.operations
-            .filter((op) => op.capability.startsWith("core.ai.") && !notAi.includes(op.capability))
-            .map((op) => op.capability),
+          aiOperations: sdk.manifest.operations.filter((op) => isCodeAiOperation(op.capability)).map((op) => op.capability),
           limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 },
         });
       }

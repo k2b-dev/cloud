@@ -96,6 +96,6 @@ test.each(["core.ai.skills.list", "core.ai.skill.read", "core.ai.chats.search", 
 
 test("synchronous inference keeps attempt admission while chat turns use their own daily and interactive admission", () => {
   for (const capability of ["core.ai.generate", "core.ai.decide"]) expect(codeAiReservesAttemptBudget(capability)).toBe(true);
-  for (const capability of ["core.ai.chat.run", "core.ai.chat.run.read", "core.ai.chat.deliver", "mail.message.read"])
+  for (const capability of ["core.ai.chat.send", "core.ai.chat.read", "core.ai.chat.create", "mail.message.read"])
     expect(codeAiReservesAttemptBudget(capability)).toBe(false);
 });

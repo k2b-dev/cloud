@@ -203,6 +203,7 @@ test("Core callback binds cryptographically to target, operation, conversation, 
   expect(success.headers.get("cache-control")).toBe("no-store");
   expect(f.dispatch.mock.calls[0]?.[0]).toMatchObject({
     origin: "assistant",
+    assistantTurn: { conversationId, turnId },
     authority: { credentialKind: "session", accessSubject: { type: "user", userId } },
   });
 });

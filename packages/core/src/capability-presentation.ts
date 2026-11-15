@@ -399,17 +399,13 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
           description: "Liest deine offenen Fragen und nächsten Schritte zu Code mit aktuellen Rechten.",
           input: { timeZone: "Zeitzone für angezeigte Daten." },
         },
-        "ai.chat.run.read": {
-          title: "Gustav-Lauf aus Code lesen",
-          description: "Liest den aktuellen Zustand eines durch Code gestarteten Laufs im eigenen Chat.",
-          input: { id: "Lauf-ID aus ai.chat.run." },
-        },
         "ai.chat.read": {
           title: "KI-Chat lesen",
           description:
             "Lesen Sie sichtbaren Text von einem core.ai.chat ref, der von ai.chats.search oder einem Core Action zurückgegeben wird. Verwenden Sie ai.chat.search für die Textsuche im bekannten Chat und ai.chat.resources für referenced Cloud-Ressourcen.",
           input: {
             id: "Lesbares ID des eigenen Chats zum Lesen.",
+            message: "Nachrichten-ID aus ai.chat.send für den aktuellen Stand und Gustavs Antwort.",
             cursor: "Numerischer Cursor, der von der vorherigen Nachrichtenseite zurückgegeben wurde.",
             limit: "Maximale Anzahl sichtbarer Nachrichten, die zurückgegeben werden sollen.",
           },
@@ -452,7 +448,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         "ai.chats.search": {
           title: "KI-Chats durchsuchen",
           description:
-            "Normaler Eintrag zum Suchen der AI-Konversationen des aktuellen Benutzers nach Text oder nach der genauen Cloud-Ressource refs. Verwenden Sie das zurückgegebene core.ai.chat refs mit ai.chat.read, ai.chat.search, ai.chat.resources oder ai.chat.message.",
+            "Normaler Eintrag zum Suchen der AI-Konversationen des aktuellen Benutzers nach Text oder nach der genauen Cloud-Ressource refs. Verwenden Sie das zurückgegebene core.ai.chat refs mit ai.chat.read, ai.chat.search, ai.chat.resources oder ai.chat.send.",
           input: {
             place: "Nur Chats an diesem genauen Ort durchsuchen. Ohne Angabe werden Orts-Chats ausgelassen.",
             "place.type": "Namespace-Ressourcentyp des Orts.",
@@ -616,27 +612,13 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             permission: "Neue Berechtigungsstufe; null entzieht die vorhandene Berechtigung.",
           },
         },
-        "ai.chat.deliver": {
-          title: "Code-Ergebnis im eigenen Chat ablegen",
+        "ai.chat.send": {
+          title: "In einen Chat schreiben",
           description:
-            "Legt das Ergebnis eines persönlichen Codes in einem Chat seines Eigentümers ab und benachrichtigt ihn, ohne einen KI-Lauf zu starten.",
-          input: { text: "Ergebnistext für den eigenen Chat, höchstens 10.000 Zeichen." },
-        },
-        "ai.chat.run": {
-          title: "Gustav-Lauf aus persönlichem Code starten",
-          description:
-            "Startet einen Lauf mit Werkzeugen im eigenen Chat. Rückfragen warten im Chat; das KI-Kontingent des Eigentümers gilt.",
+            "Reiht eine Nachricht in einen eigenen aktiven Chat ein. Gustav antwortet mit den Rechten der Person. Eingeschränkte Quellen und Chat-Ketten sind ausgeschlossen.",
           input: {
-            prompt: "Anweisung für einen Chat-Lauf, höchstens 10.000 Zeichen.",
-            context: "Optionaler Quellkontext, höchstens 10.000 Zeichen.",
-          },
-        },
-        "ai.chat.message": {
-          title: "Nachricht an einen anderen KI-Chat senden",
-          description:
-            "Stellen Sie eine zuordenbare Nachricht für eine andere AI-Konversation in die Warteschlange, nachdem Sie das genaue Ziel und den Text überprüft haben.",
-          input: {
-            text: "Genaue Nachricht, die an den Zielchat gesendet werden soll.",
+            text: "Genauer Nachrichtentext, höchstens 10.000 Zeichen.",
+            context: "Optionale Daten, keine Anweisungen; höchstens 10.000 Zeichen.",
           },
         },
         "ai.skill.create": {
