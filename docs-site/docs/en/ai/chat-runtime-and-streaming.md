@@ -567,6 +567,11 @@ invalidates `conversation-detail` and `code-versions`; cards keep listening
 when ready and during a revision. Model history receives a fixed historical
 fact without names, titles or administrator instructions.
 
+The following `codeReviewStart` message marks the start of the automatic
+revision. Its localized sentence says that Gustav is revising the version;
+it does not repeat the administrator's decision or name. Render the decision
+once, followed by this separate start of the review turn.
+
 A host can use `appendAiBackgroundMessages` from `@k2b/cloud/ai/runtime` for a
 bounded batch under its destination chat locks. It assigns message order and
 updates chat markers in one statement; the caller owns durable deduplication

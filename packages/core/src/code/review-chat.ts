@@ -219,11 +219,10 @@ export async function startCodeReviewRevision(versionId: string) {
       state: string;
       number: number;
       locale: string;
-      by_name: string | null;
     }[]
   >`
-    SELECT w.*,v.number,s.locale,COALESCE(NULLIF(u.display_name,''),u.uid) AS by_name FROM code.review_chat_work w JOIN code.versions v ON v.id=w.version_id
-      JOIN code.version_submissions s ON s.version_id=v.id LEFT JOIN code.version_decisions d ON d.version_id=v.id LEFT JOIN auth.users u ON u.id=d.decided_by WHERE w.version_id=${versionId}::uuid`;
+    SELECT w.*,v.number,s.locale FROM code.review_chat_work w JOIN code.versions v ON v.id=w.version_id
+      JOIN code.version_submissions s ON s.version_id=v.id WHERE w.version_id=${versionId}::uuid`;
   if (!work) return;
   if (work.state === "running") {
     const [turn] = await sql<
@@ -263,18 +262,15 @@ export async function startCodeReviewRevision(versionId: string) {
   const ownerSnapshot = code.owner.kind === "person" ? null : await readCodeOwner(code.owner, context);
   if (ready.busy || ready.queued || !ready.delivered) throw new PgOutboxDeferred("The person's answer and queued messages go first");
   const text = work.locale.startsWith("de")
-    ? `Ein Admin hat Änderungen an Version ${work.number} angefordert · Gustav startet von selbst, einmal.`
-    : `An admin requested changes to version ${work.number} · Gustav starts automatically, once.`;
-  const displayText = work.locale.startsWith("de")
-    ? `${work.by_name ?? "Ein Admin"} hat Änderungen an Version ${work.number} angefordert · Gustav startet von selbst, einmal.`
-    : `${work.by_name ?? "An admin"} requested changes to version ${work.number} · Gustav starts automatically, once.`;
+    ? `Gustav überarbeitet jetzt Version ${work.number}.`
+    : `Gustav is now revising version ${work.number}.`;
   try {
     const prepared = await prepareAiChatTurn({
       assistantChat: true,
       conversationId: conversation.id,
       chatId: conversation.shortId,
       input: text,
-      userMessage: { role: "user", content: [{ type: "text", text: displayText }] },
+      userMessage: { role: "user", content: [{ type: "text", text }] },
       actor: context.authority.actor,
       locale: work.locale,
       modelPolicy: personalAiModelPolicy,
