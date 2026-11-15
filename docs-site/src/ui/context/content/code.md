@@ -53,7 +53,7 @@ Highlighting renders on the server. Copy requires browser code and the Clipboard
 
 ## Code differences
 
-`CodeDiff` shows a read-only change between two versions of one or more files, line by line. The application computes the rows (for example on the server); the component counts line numbers, folds unchanged regions, and renders large files page by page.
+`CodeDiff` shows a read-only change between two versions of one or more files, line by line. The application computes the rows (for example on the server); the component counts line numbers, folds unchanged regions, and renders large files page by page. It has its own entry, `@k2b/ui/code-diff`, so only pages that show code load it.
 
 ```tsx
 import {
@@ -63,7 +63,7 @@ import {
   type CodeDiffLineKind,
   type CodeDiffLocation,
   type CodeDiffProps,
-} from "@k2b/ui";
+} from "@k2b/ui/code-diff";
 ```
 
 ```ts

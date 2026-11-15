@@ -1,4 +1,4 @@
-import type { CodeDiffFile, CodeDiffLine } from "@k2b/ui";
+import type { CodeDiffFile, CodeDiffLine } from "@k2b/ui/code-diff";
 import { diffArrays } from "diff";
 import { z } from "zod";
 import { CODE_CHECK_LIMITS } from "../../code/checker-contract";
