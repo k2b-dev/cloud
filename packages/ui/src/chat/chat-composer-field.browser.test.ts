@@ -201,6 +201,61 @@ describe("Chat.Composer conversation field", () => {
     );
 
     test(
+      `at ${width} px around the edge, character by character, the mode follows the one-row fit and nothing moves but the top`,
+      async () => {
+        const page = await open(width, context);
+        try {
+          const place = () =>
+            page.evaluate(() => {
+              const composer = document.querySelector(".k2b-chat-composer")!.getBoundingClientRect();
+              const tools = document.querySelector(".k2b-chat-composer__field-tools")!.getBoundingClientRect();
+              return {
+                lines: document.querySelector<HTMLElement>(".k2b-chat-composer__field")!.dataset.lines,
+                composer: { left: composer.left, right: composer.right, bottom: composer.bottom, top: composer.top },
+                tools: { left: tools.left, top: tools.top, width: tools.width, height: tools.height },
+              };
+            });
+          // Find the first length that no longer fits one row beside the tools.
+          let edge = 0;
+          for (let length = 1; length <= LONG.length; length++) {
+            await page.evaluate((next) => fx.setValue(next), LONG.slice(0, length));
+            if ((await place()).lines === "many") {
+              edge = length;
+              break;
+            }
+          }
+          expect(edge).toBeGreaterThan(1);
+          await type(page, LONG.slice(0, edge - 1));
+          const one = await place();
+          await type(page, LONG.slice(0, edge));
+          const many = await place();
+          // Back and forth across the edge, one character at a time: the mode follows the one-row fit and holds.
+          for (const length of [edge - 1, edge, edge - 1, edge, edge + 1, edge, edge - 1, edge - 2, edge - 1, edge]) {
+            await type(page, LONG.slice(0, length));
+            const first = await place();
+            // A frame later, after the field and its copy measured again, nothing switched back.
+            await settled(page);
+            const later = await place();
+            const expected = length >= edge ? "many" : "one";
+            expect(first.lines, `${length} characters`).toBe(expected);
+            expect(later.lines, `${length} characters, a frame later`).toBe(expected);
+            // The bottom and both side edges stay; the tools stand at the same bottom right spot in both modes.
+            expect(later.composer.bottom).toBe(one.composer.bottom);
+            expect(later.composer.left).toBe(one.composer.left);
+            expect(later.composer.right).toBe(one.composer.right);
+            expect(later.tools).toEqual(one.tools);
+          }
+          // Only the top moves: the field grows upward when the text needs more rows.
+          expect(many.composer.top).toBeLessThan(one.composer.top);
+          expect(many.tools).toEqual(one.tools);
+        } finally {
+          await page.context().close();
+        }
+      },
+      TEST_TIMEOUT * 2,
+    );
+
+    test(
       `at ${width} px three typed lines stand one line apart, and the field is exactly as tall as its text`,
       async () => {
         const page = await open(width, context);
