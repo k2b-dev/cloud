@@ -1,6 +1,16 @@
 import type { AiStoredMessage } from "../types";
 
 /**
+ * The person stopped the turn: its loop ended as aborted, which only the stop request does; without a loop ending, the
+ * last message ended as aborted. A turn Cloud ended (a restart, a budget, a time limit) is not stopped by the person.
+ */
+export const stoppedByPerson = (entries: readonly Pick<AiStoredMessage, "loopDoneReason" | "stopReason">[]): boolean => {
+  const loop = entries.findLast((entry) => entry.loopDoneReason)?.loopDoneReason;
+  if (loop) return loop === "aborted";
+  return entries.findLast((entry) => entry.stopReason)?.stopReason === "aborted";
+};
+
+/**
  * `no_answer`: the turn ended normally after its steps but left nothing to read, act on, or explain, such as a model
  * that answers with an empty message. An ending never stays silent, so the chat says so and offers to go on.
  */
