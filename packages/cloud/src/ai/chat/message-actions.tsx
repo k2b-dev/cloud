@@ -89,6 +89,11 @@ export type AiChatActions = {
   onMessageFeedback?: (entry: AiStoredMessage, feedback: Omit<AiMessageFeedback, "updatedAt"> | null) => void | Promise<void>;
   /** Open a conversation VFS file in the host application's artifact surface. */
   onOpenFile?: (path: string) => void;
+  /**
+   * Open a web link of an answer inside the host, such as a reading view beside the chat. Called for a plain click on
+   * an http(s) link that is no conversation file; returns whether the host opened it, otherwise the link navigates.
+   */
+  onOpenWebLink?: (href: string, title: string) => boolean;
   /** Resolve a Markdown link only when it identifies a known conversation file. */
   resolveFileLink?: (href: string) => { path: string; href: string } | null;
   /** Download URL for a conversation VFS file (present blocks, attachment chips). */

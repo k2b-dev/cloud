@@ -415,6 +415,15 @@ const open = async (
     if (url.pathname.endsWith("/viewed")) return route.fulfill({ status: 204 });
     if (url.pathname.endsWith("/queue")) return route.fulfill({ json: [] });
     if (url.pathname.endsWith("/dictations")) return route.fulfill({ json: { items: [], nextCursor: null } });
+    // No reading view here, and every chat starts without tabs.
+    if (url.pathname === "/api/assistant/workspace/web-reader") return route.fulfill({ json: { available: false } });
+    if (/^\/api\/assistant\/workspace\/conversations\/\w+\/tabs$/.test(url.pathname))
+      return route.fulfill({
+        json:
+          route.request().method() === "GET"
+            ? { state: { tabs: [], layout: null, front: null }, revision: 0 }
+            : { conflict: false, revision: 1 },
+      });
     const contextPath = /^\/api\/assistant\/workspace\/conversations\/(\w+)\/context$/.exec(url.pathname);
     if (contextPath) return route.fulfill({ json: emptySidebarSnapshot({ chatId: contextPath[1]! }) });
     unrouted.push(`${route.request().method()} ${url.pathname}`);

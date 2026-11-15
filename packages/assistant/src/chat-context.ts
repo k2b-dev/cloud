@@ -9,6 +9,7 @@ import {
   aiConversations,
   aiMemories,
   aiSkills,
+  describeAiResourceTypeCounts,
   loadAiConversationFileOverview,
 } from "@k2b/cloud/ai";
 
@@ -94,6 +95,11 @@ export type AssistantChatContextSnapshot = {
   runs: Array<{ id: string; status: string; createdAt: string }>;
   /** Further groups of the box, after the results; none yet. */
   groups?: AssistantChatContextGroup[];
+  /**
+   * The Cloud items among `sources`, counted by type in the viewer's words ("3 Mails"), for types whose app names its
+   * nouns; the rest count as items.
+   */
+  resourceCounts?: Array<{ type: string; count: number; label: string }>;
 };
 
 const readableSources = (sources: readonly AiConversationSource[]) =>
@@ -122,6 +128,16 @@ export const loadAssistantChatSources = async (
   return { ...page, sources: readableSources(page.sources) };
 };
 
+/** The Cloud items among the sources by type, named where the type's app names its nouns. */
+const countResourceSources = async (sources: readonly AiConversationSource[], locale: string | undefined) => {
+  const counts = new Map<string, number>();
+  for (const source of sources)
+    if (source.kind === "resource" && source.ref) counts.set(source.ref.type, (counts.get(source.ref.type) ?? 0) + 1);
+  if (!locale || counts.size === 0) return [];
+  const labels = await describeAiResourceTypeCounts(counts, locale).catch(() => new Map<string, string>());
+  return [...labels].map(([type, label]) => ({ type, count: counts.get(type) ?? 0, label }));
+};
+
 const resultSources = async (conversationId: string) => {
   const sources: AiConversationSource[] = [];
   let before: string | undefined;
@@ -136,7 +152,7 @@ const resultSources = async (conversationId: string) => {
 export const loadAssistantChatContextSnapshot = async (
   identity: AiResourceContext,
   chatId: string,
-  options: { timeZone: string },
+  options: { timeZone: string; locale?: string },
 ): Promise<AssistantChatContextSnapshot | null> => {
   if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
   const userId = identity.accessSubject.userId;
@@ -196,6 +212,8 @@ export const loadAssistantChatContextSnapshot = async (
   const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM assistant.code_agent_calls
     WHERE conversation_id=${conversation.id}::uuid AND user_id=${userId}::uuid
       AND input->>'operation'='run' AND input->>'id' IS NULL`;
+  const shownSources = readableSources(sourcePage.sources);
+  const resourceCounts = await countResourceSources(shownSources, options.locale);
   return {
     chatId,
     viewerUserId: userId,
@@ -213,8 +231,9 @@ export const loadAssistantChatContextSnapshot = async (
       bytes: overview.workingBytes,
     },
     storage: { usedBytes: overview.usedBytes, maxBytes: overview.maxBytes },
-    sources: readableSources(sourcePage.sources),
+    sources: shownSources,
     sourceCount: sourcePage.total,
+    ...(resourceCounts.length ? { resourceCounts } : {}),
     sourceCursor: sourcePage.nextCursor ?? null,
     skills,
     memories: memories.map((memory) => ({ id: memory.shortId, content: memory.content })),

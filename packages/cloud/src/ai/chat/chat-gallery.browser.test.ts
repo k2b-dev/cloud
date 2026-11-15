@@ -315,3 +315,58 @@ test("the running work line has the finished line's height, shimmers in 2.2 s, a
     }
   }
 }, 60_000);
+
+test("a stopped answer ends with a quiet line and Answer again; a failed one says what stays", async () => {
+  for (const width of [1440, 390]) {
+    const stopped = await open("gestoppt", width);
+    try {
+      // The answer it had begun stays in its place, not folded into the work line.
+      expect(await stopped.page.locator(".ai-turn__text").innerText()).toContain("Jana Berger fragt zwei Dinge");
+      const line = stopped.page.locator(".ai-turn__stopped");
+      expect(await line.innerText()).toContain("Du hast gestoppt. Der Text bis hier bleibt.");
+      // "Answer again" follows the sentence instead of standing at the far edge.
+      const sentence = await line.locator(".k2b-chat-activity__copy").boundingBox();
+      const again = await line.getByRole("button", { name: "Neu antworten" }).boundingBox();
+      expect(again!.x - (sentence!.x + sentence!.width)).toBeLessThan(16);
+      // A quiet line, not a warning: no notice card at the end of a stopped answer.
+      expect(await stopped.page.locator(".ai-turn__notice").count()).toBe(0);
+      await line.getByRole("button", { name: "Neu antworten" }).click();
+      expect(await stopped.page.evaluate(() => (window as unknown as { retried: unknown[] }).retried)).toEqual([
+        { id: "gallery-1", mode: "retry" },
+      ]);
+    } finally {
+      await stopped.close();
+    }
+    const failed = await open("fehler", width);
+    try {
+      expect(await failed.page.locator(".ai-turn__text").innerText()).toContain("Jana Berger fragt zwei Dinge");
+      const notice = failed.page.locator(".ai-turn__notice");
+      const said = await notice.innerText();
+      expect(said).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet.");
+      expect(said).toContain("Was bis hier steht, bleibt erhalten.");
+      // Said once: the reason does not repeat what stays.
+      expect(said).not.toContain("Die bisherigen Ergebnisse bleiben erhalten.");
+      expect(await notice.locator(".ti-alert-circle").count()).toBe(1);
+      // The notice ends the turn, below the text that stays.
+      expect(
+        await failed.page.evaluate(() => document.querySelector(".ai-turn")?.lastElementChild?.classList.contains("ai-turn__notice")),
+      ).toBe(true);
+    } finally {
+      await failed.close();
+    }
+  }
+}, 60_000);
+
+test("the Gustav column is 812 px with 764 px for turns and composer, and prose stops at 44 rem", async () => {
+  const { page, close } = await open("antwort", 1440);
+  try {
+    const content = await box(page, ".k2b-chat-timeline__content");
+    expect(content.width).toBe(812);
+    const prose = await box(page, ".ai-turn__text .assistant-markdown-block");
+    expect(prose.width).toBeLessThanOrEqual(704);
+    // Headings stand out by size: 18 px in the answer.
+    expect(await page.locator(".ai-turn__text h2").evaluate((node) => getComputedStyle(node).fontSize)).toBe("18px");
+  } finally {
+    await close();
+  }
+}, 60_000);

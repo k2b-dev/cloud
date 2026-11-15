@@ -24,6 +24,8 @@ test("retired Studio endpoints are absent while chat code stays mounted", () => 
     ["PUT", "/artifacts/machine/:id/storage/file"],
     ["POST", "/artifacts/machine/:id/database"],
     ["PUT", "/artifacts/machine/:id/access/:accessId"],
+    ["GET", "/workspace/conversations/:conversationId/tabs"],
+    ["PUT", "/workspace/conversations/:conversationId/tabs"],
   ];
   expect(router.routes.some((route) => route.path === "/api/assistant/chat-code/runtime/capabilities")).toBe(true);
   for (const [method, path] of routes) {

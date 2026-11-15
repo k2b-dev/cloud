@@ -464,8 +464,11 @@ order:
    space behind. A long quiet text that becomes the final message unfolds
    below its first lines.
    Finished, it is the final message in answer typography: the turn's last
-   text, even if a tool call followed it. A stopped or failed turn has no final
-   message; its texts stay in the work line.
+   text, even if a tool call followed it. A stopped or failed turn keeps the
+   answer it had begun after its last step in this place; a status written
+   before a step stays in the work line. A failed turn ends with a notice that
+   names the reason and that what is there stays; a stopped one ends with a
+   quiet line and **Answer again**.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
    The question and result use the same card: a sentence with typed chips,
@@ -615,7 +618,9 @@ tab**. Below come the three newest **Results** with their time or size, then
 any further group the chat snapshot carries (`groups` on
 `AssistantChatContextSnapshot`: each row a sign, a title, one state word in its
 tone, and an optional ring when it waits for the viewer; at most three rows,
-then **Show all**), then one line for **Sources** and one for **Context**. A
+then **Show all**), then one line for **Sources** (Cloud items in their app's nouns where the
+resource type names them, such as "3 Mails", then web pages and searches) and
+one for **Context**. A
 click on a row opens the thing as a tab beside the chat (files and apps) or
 jumps to its message; pointing at a row shows exactly one action over its
 fixed place (download for files, show in chat otherwise), never on touch. The
@@ -633,6 +638,28 @@ otherwise as a button **In this chat** at the top of the chat that opens the
 same box below it without moving the chat (Escape closes it); on phones the
 button opens a bottom sheet that Back closes. The former sidebar column, its
 drawer, and the `assistant_context` cookie are gone.
+
+Things open as tabs in a workspace beside the chat, built from `Panes`
+(`@k2b/ui`) unchanged: tabs with a grip, **Add pane**, **Arrange** (two,
+three, stacked, tabs) and the same menu on a right click, dragging with a
+preview, shadow edges between panes, and the one-time arrange hint, whose
+dismissal the `assistant_panes_hint` cookie keeps. The chat stays at the left,
+at least 360 px wide, and the workspace takes the rest behind a shadow edge.
+Every pane has the same head: the title, one meta line (kind, size, the
+sentence the assistant gave a result), at most two actions, and **…** with
+**Show in chat**, **Ask Gustav about it**, **Copy link**, and per kind
+**Download**, **Save to Files**, **Delete from the chat**, **Open in your own
+browser**, then **Pin** (kept by **Close others**), **Close**, and **Close
+others**. A tab's content is made once and moves between panes, so switching
+and arranging keep a run or an editor. Which tabs are open, how they are
+arranged, and which is in front belong to the chat and the person: Assistant
+keeps them through `GET` and `PUT
+/api/assistant/workspace/conversations/:id/tabs` (see [Assistant chat
+workspace storage](../operations/assistant-chat-workspaces.md)), another chat
+shows its own tabs, and the URL's `workspace` parameter names the front tab and
+wins on load. On phones an open thing fills the screen, with **To the chat**
+above the row of tabs; Panes reports a choice there through `onActivate`, so
+the URL and the next device follow it.
 
 **Open as tab** and **Show all** open the tab **In this chat** with the chat's
 whole list, in this order: what needs attention, **Results** (files and

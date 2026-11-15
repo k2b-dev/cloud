@@ -51,6 +51,10 @@ const messages = /* @__PURE__ */ i18n.define({
       reconnecting: "Reconnecting",
       authoringTurnStopped: "Work paused after reaching this turn’s safety limit.",
       turnErrorTitle: "The answer was interrupted.",
+      turnInterrupted: ({ reason }: { reason: string }) => `The answer was interrupted: ${reason}`,
+      keptSoFar: "What is here so far stays.",
+      stoppedByYou: "You stopped.",
+      stoppedTextStays: "You stopped. The text so far stays.",
       turnErrorReason: ({ code, limitMinutes }: AiTurnError) => {
         if (code === "model_unavailable") return "The model service did not answer.";
         if (code === "provider_stopped") return "The model provider ended this answer early.";
@@ -433,6 +437,10 @@ const messages = /* @__PURE__ */ i18n.define({
       reconnecting: "Verbindung wird wiederhergestellt",
       authoringTurnStopped: "Die Arbeit pausiert, weil die Grenze für diesen Lauf erreicht ist.",
       turnErrorTitle: "Die Antwort wurde abgebrochen.",
+      turnInterrupted: ({ reason }) => `Die Antwort wurde unterbrochen: ${reason}`,
+      keptSoFar: "Was bis hier steht, bleibt erhalten.",
+      stoppedByYou: "Du hast gestoppt.",
+      stoppedTextStays: "Du hast gestoppt. Der Text bis hier bleibt.",
       turnErrorReason: ({ code, limitMinutes }) => {
         if (code === "model_unavailable") return "Der KI-Dienst hat nicht geantwortet.";
         if (code === "provider_stopped") return "Der KI-Anbieter hat diese Antwort vorzeitig beendet.";
