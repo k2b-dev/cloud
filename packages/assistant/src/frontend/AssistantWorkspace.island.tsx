@@ -2499,6 +2499,7 @@ export default function AssistantWorkspace(props: Props) {
               : {
                   usage: usageSnapshot()?.request ?? null,
                   loopUsage: usageSnapshot()?.loop ?? null,
+                  contextWindow: usageModel()?.contextWindow,
                   modelLabel: usageModel()?.label,
                   note: quotaText.resolve([locale()]).t.contextNote,
                 }
