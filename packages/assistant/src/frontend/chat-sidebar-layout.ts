@@ -1,5 +1,11 @@
 import { createSignal } from "solid-js";
 
+/** The one-time hint that tabs beside the chat can be arranged was dismissed on this browser; the page reads it. */
+export const ASSISTANT_PANES_HINT_COOKIE = "assistant_panes_hint";
+export const dismissAssistantPanesHint = () => {
+  document.cookie = `${ASSISTANT_PANES_HINT_COOKIE}=seen; Max-Age=31536000; Path=/; SameSite=Lax`;
+};
+
 /** How the box "In this chat" shows: an island beside the chat, a popover under the chat's button, or a phone sheet. */
 export type ChatContextMode = "column" | "popover" | "sheet";
 
