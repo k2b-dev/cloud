@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /**
@@ -7,12 +8,22 @@ import type { Finding, Rule } from "./rule";
  * every app `appearance` color and every launchpad fallback tile color keeps at least `MIN_HUE_DISTANCE` degrees of
  * OKLCH hue from both AI accents. Near-gray colors (chroma below `MIN_CHROMA`) carry no hue and pass. The Assistant
  * is the AI app and may use the AI colors.
+ *
+ * One named case widens "plum means AI" to "plum means machine-written": a chat message that an automation or another
+ * chat wrote for the person sits on `--k2b-chat-machine-surface`, a faint plum (at most `MACHINE_MIX_MAX` percent) in
+ * the grey of the person's own bubble. That tint exists only as this token: every declaration of the token mixes the
+ * AI accent into `--k2b-surface-muted`, and no other stylesheet or component mixes the two by hand.
  */
 const MIN_HUE_DISTANCE = 20;
 const MIN_CHROMA = 0.03;
 const AI_APPS = new Set(["assistant"]);
 const TOKENS = "packages/ui/src/styles/index.css";
 const LAUNCHPAD = "packages/cloud/src/ssr/AppLaunchpadPanel.tsx";
+const MACHINE_TOKEN = "--k2b-chat-machine-surface";
+const MACHINE_MIX_MAX = 10;
+/** A `color-mix` that puts the AI accent into the bubble grey, in either order. */
+const MACHINE_MIX =
+  /color-mix\(\s*in\s+[\w-]+\s*,\s*(?:var\(--k2b-ai-accent\)\s*(\d+(?:\.\d+)?)%\s*,\s*var\(--k2b-surface-muted\)|var\(--k2b-surface-muted\)[^,]*,\s*var\(--k2b-ai-accent\)\s*(\d+(?:\.\d+)?)%)[^)]*\)/g;
 
 const linear = (channel: number) => {
   const c = channel / 255;
@@ -88,6 +99,27 @@ export const rule: Rule = {
       }
     }
 
+    const tokenSource = readFileSync(tokens, "utf8");
+    for (const match of tokenSource.matchAll(new RegExp(`${MACHINE_TOKEN}:\\s*([^;]+);`, "g"))) {
+      const mix = [...match[1]!.matchAll(MACHINE_MIX)][0];
+      const share = mix ? Number(mix[1] ?? mix[2]) : Number.NaN;
+      if (mix && share <= MACHINE_MIX_MAX) continue;
+      findings.push({
+        file: tokens,
+        line: lineAt(tokenSource, match.index),
+        message: `${MACHINE_TOKEN} must mix var(--k2b-ai-accent) at most ${MACHINE_MIX_MAX}% into var(--k2b-surface-muted); it is the one named machine-written plum.`,
+      });
+    }
+    for (const file of listFiles(packages, /\.(?:css|ts|tsx)$/)) {
+      if (file === tokens || isTestFile(file)) continue;
+      const source = readFileSync(file, "utf8");
+      for (const match of source.matchAll(MACHINE_MIX))
+        findings.push({
+          file,
+          line: lineAt(source, match.index),
+          message: `Plum mixed into the bubble grey is the named machine-written case; use var(${MACHINE_TOKEN}) instead of mixing it here.`,
+        });
+    }
     const launchpad = join(workspaceRoot, LAUNCHPAD);
     if (existsSync(launchpad)) {
       const source = readFileSync(launchpad, "utf8");

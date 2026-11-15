@@ -48,6 +48,9 @@
   --k2b-ai-solid: #8e1b6f;
   --k2b-ai-solid-hover: #701556;
   --k2b-ai-on-solid: #ffffff;
+  /* Machine-written: a chat message that an automation or another chat wrote for the person. A faint plum in the
+     person's grey keeps it apart from their own words; text keeps 15.9:1. */
+  --k2b-chat-machine-surface: color-mix(in srgb, var(--k2b-ai-accent) 8%, var(--k2b-surface-muted));
   /* The assistant composer's edge: the AI border (#c4519f) at 60 % on white at rest (2.2:1 on the surface, 3.6:1
      against the accent it turns into on focus) and a soft plum glow outside while it has focus. */
   --k2b-ai-edge-rest: #dc97c5;
@@ -463,6 +466,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-ai-solid: #f0abdc;
   --k2b-ai-solid-hover: #f7cdea;
   --k2b-ai-on-solid: #3a0f2e;
+  /* Machine-written chat messages: text keeps 12.0:1. */
+  --k2b-chat-machine-surface: color-mix(in srgb, var(--k2b-ai-accent) 10%, var(--k2b-surface-muted));
   /* Rest edge 4.7:1 against the focus accent. */
   --k2b-ai-edge-rest: #6e3a61;
   /* shadow-tokens: allow the approved glow outside the assistant composer (Composer v3), the one control exception. */
@@ -14490,6 +14495,39 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   border-radius: 1rem 1rem 0.3125rem 1rem;
   /* The person's own words stay neutral grey in every primary scope. */
   background: var(--k2b-surface-muted);
+}
+
+/* A message written for the person by a machine, such as an automation or another chat: its source stands above in the
+   meta step, and the bubble takes the machine-written surface, never the AI surface of the assistant's own cards. */
+.k2b-ui .k2b-chat-message[data-role][data-source] .k2b-chat-message__bubble {
+  background: var(--k2b-chat-machine-surface);
+}
+
+.k2b-ui .k2b-chat-message__source {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 0.3125rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.k2b-ui .k2b-chat-message__source a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.k2b-ui .k2b-chat-message__source a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.k2b-ui .k2b-chat-message__source a:focus-visible {
+  border-radius: 0.25rem;
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
 }
 
 .k2b-ui .k2b-chat-message[data-role="system"],
