@@ -249,8 +249,8 @@ test("a lost answer never claims that nothing changed", async () => {
 test("a Cloud admin pauses any Code from its detail, and a refused resume says why", async () => {
   await goto("sec=code&id=c_rechn");
   await page.getByRole("button", { name: "Pausieren" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Pausieren" }).click();
-  await page.waitForLoadState("load");
+  // Confirmation dispatches asynchronously. Wait for its reload, rather than the old document's completed load.
+  await Promise.all([page.waitForEvent("load"), page.getByRole("dialog").getByRole("button", { name: "Pausieren" }).click()]);
   expect(fixture.requests).toEqual([{ path: "pause", body: { codeId: "c_rechn", paused: true } }]);
   await goto("sec=code&id=c_woche&state=savefail");
   await page.getByRole("button", { name: "Fortsetzen" }).click();
