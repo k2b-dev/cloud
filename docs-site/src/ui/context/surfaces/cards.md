@@ -19,6 +19,45 @@ list of people. Image content takes precedence over the icon, which takes preced
 
 Use `Avatar`'s `ring` for a live status such as someone working on a task, or a collaborator's own color, not for selection or focus. `"success"` uses the theme's success text color; `{ color }` accepts any CSS color the application owns. The ring and its small transparent gap lie inside the avatar's own box: it keeps its size, nothing moves when the ring appears or disappears, and a scrolling panel edge does not cut it off.
 
+## Show a thing with a state
+
+Give `LinkCard` an `aside`, a `body`, or a `footer` to make it a small overview
+of one thing, as on "My apps & automations". The card then stacks: the head
+holds the tile, the bold title, the description (such as a schedule), and
+`aside` top right (such as a `DotStrip` of the last runs); `body` is a line
+below (such as what it did last); `footer` is the last line with `start` (a
+state with its sign and colour) and `end` (a quiet time such as "next run Mon,
+16.11." or "since 29.10."). Body and footer stand on the tile's edge, and the
+footer sits on the bottom edge, so cards in a row end level. The stacked card
+has a 10px radius, the island shadow, and no chevron; in `AppOverview.Cards`
+stacked cards sit 14px apart. The whole card stays one link with one focus
+ring, so `aside`, `body`, and `footer` hold text and marks only, never links or
+buttons; pass a `DotStrip` without `links`. Type: title 14/600, description
+and body 13/400, the footer's `end` 12/400; give the state word its colour and
+weight in `start`.
+
+```tsx
+<AppOverview.Cards>
+  <LinkCard
+    href="/code/weekly-report"
+    icon="ti ti-code"
+    color="zinc"
+    title="Weekly report"
+    description="Mondays at 07:00"
+    aside={<DotStrip variant="bar" dots={runs} label="Last 8 runs: all succeeded" />}
+    body={<>Last: created 1 note „Weekly report 46“</>}
+    footer={{
+      start: (
+        <span class="state" data-tone="on">
+          <i class="ti ti-circle-check" aria-hidden="true" /> On
+        </span>
+      ),
+      end: "next run Mon, 16.11.",
+    }}
+  />
+</AppOverview.Cards>
+```
+
 ## Show a referenced element
 
 `ResourceCard` shows an element in one of five `state`s:
@@ -42,6 +81,7 @@ type LinkCardProps = {
   href: string; title: string; description: string; icon?: string; media?: JSX.Element; color?: LinkCardColor; meta?: JSX.Element;
   surface?: "paper" | "plain";
   navigation?: "document" | "enhanced"; onNavigate?: (event: LinkNavigateEvent) => void | Promise<void>;
+  aside?: JSX.Element; body?: JSX.Element; footer?: { start?: JSX.Element; end?: JSX.Element };
 };
 
 type ResourceCardState = "ok" | "loading" | "no_access" | "deleted" | "unavailable";

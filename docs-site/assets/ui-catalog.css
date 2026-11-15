@@ -2626,3 +2626,10 @@
   font-size: 0.75rem;
   cursor: pointer;
 }
+
+/* The state word of the stacked LinkCard demo: sign and word in the state's colour. */
+.ui-automation-card__state { display: inline-flex; align-items: center; gap: 0.375rem; font-weight: 600; }
+.ui-automation-card__state[data-tone="on"] { color: var(--k2b-success-text); }
+.ui-automation-card__state[data-tone="running"] { color: var(--k2b-ai-accent); }
+.ui-automation-card__state[data-tone="failed"] { color: var(--k2b-danger-text); }
+.ui-automation-card__state[data-tone="paused"] { color: var(--k2b-warning-text); }

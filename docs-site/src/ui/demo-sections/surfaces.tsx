@@ -1834,6 +1834,92 @@ const changeDate = (next: Date) => {
   );
 };
 
+const automationCards: {
+  id: string;
+  title: string;
+  schedule: string;
+  last: string;
+  state: { icon: string; label: string; tone: "on" | "running" | "failed" | "paused" };
+  end: string;
+  runs: DotStripTone[];
+}[] = [
+  {
+    id: "weekly",
+    title: "Weekly report",
+    schedule: "Mondays at 07:00",
+    last: "Last: created 1 note „Weekly report 46“",
+    state: { icon: "ti ti-circle-check", label: "On", tone: "on" },
+    end: "next run Mon, 16.11.",
+    runs: ["success", "success", "success", "success", "success", "success", "success", "success"],
+  },
+  {
+    id: "questions",
+    title: "Collect questions",
+    schedule: "When a mail reaches you",
+    last: "Last: 2 questions collected in your list",
+    state: { icon: "ti ti-loader-2", label: "Running", tone: "running" },
+    end: "for 3 seconds",
+    runs: ["success", "success", "success", "success", "success", "muted", "running"],
+  },
+  {
+    id: "prices",
+    title: "Check fabric prices",
+    schedule: "Daily at 06:30",
+    last: "Last: the price list of fabrics-north.example could not be reached",
+    state: { icon: "ti ti-alert-circle", label: "Last run failed", tone: "failed" },
+    end: "today, 06:30",
+    runs: ["success", "success", "success", "success", "success", "success", "success", "danger"],
+  },
+];
+
+const AutomationCardsDemo = () => (
+  <DemoCard
+    id="link-card-stacked"
+    chip={[
+      { kind: "component", name: "LinkCard", from: "@k2b/ui" },
+      { kind: "component", name: "AppOverview.Cards", from: "@k2b/ui" },
+    ]}
+    description="A stacked LinkCard shows one thing with its state: the strip of the last runs top right, what it did last in the middle, the state and a quiet time on the bottom edge. The whole card is one link; cards in a row end level."
+    code={`<AppOverview.Cards>
+  <LinkCard
+    href="/code/weekly-report"
+    icon="ti ti-code"
+    color="zinc"
+    title="Weekly report"
+    description="Mondays at 07:00"
+    aside={<DotStrip variant="bar" dots={runs} label="Last 8 runs: all succeeded" />}
+    body="Last: created 1 note „Weekly report 46“"
+    footer={{ start: <span class="state"><i class="ti ti-circle-check" aria-hidden="true" /> On</span>, end: "next run Mon, 16.11." }}
+  />
+</AppOverview.Cards>`}
+  >
+    <AppOverview.Cards>
+      <For each={automationCards}>
+        {(card) => (
+          <LinkCard
+            href="#link-card-stacked"
+            icon="ti ti-code"
+            color="zinc"
+            title={card.title}
+            description={card.schedule}
+            aside={<DotStrip variant="bar" dots={card.runs} label={`Last ${card.runs.length} runs`} />}
+            body={card.last}
+            footer={{
+              start: (
+                <span class="ui-automation-card__state" data-tone={card.state.tone}>
+                  <i class={card.state.icon} aria-hidden="true" />
+                  {card.state.label}
+                </span>
+              ),
+              end: card.end,
+            }}
+          />
+        )}
+      </For>
+    </AppOverview.Cards>
+  </DemoCard>
+);
+
 const demos: DemoSection = {
   utilities: () => (
     <DemoGrid columns="one">
@@ -1874,6 +1960,7 @@ const demos: DemoSection = {
   cards: () => (
     <DemoGrid columns="one">
       <CardsDemo />
+      <AutomationCardsDemo />
       <ResourceCardDemo />
     </DemoGrid>
   ),
