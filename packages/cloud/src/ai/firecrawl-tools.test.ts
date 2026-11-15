@@ -113,6 +113,46 @@ describe("Firecrawl AI tools", () => {
     expect(assertPublicHttpUrl("https://[64:ff9b::808:808]/")).toBe("https://[64:ff9b::808:808]/");
   });
 
+  test("rejects URL credentials before sending to the hosted service", async () => {
+    let sent = false;
+    const fetcher = async () => {
+      sent = true;
+      return Response.json({ success: true, data: { markdown: "Unused" } });
+    };
+    await expect(
+      runCloudAiWebExtract({ url: "https://name:placeholder@example.com/" }, { apiKey: "test", fetch: fetcher as typeof fetch }),
+    ).rejects.toThrow("credentials");
+    expect(sent).toBe(false);
+  });
+
+  test("rejects non-public final addresses before returning extracted content", async () => {
+    for (const url of [
+      "http://169.254.169.254/latest/meta-data/",
+      "http://[::ffff:169.254.169.254]/",
+      "http://[::1]/",
+      "http://[fc00::1]/",
+      "http://metadata.google.internal/",
+      "https://name:placeholder@example.com/",
+    ]) {
+      for (const address of [{ url }, { metadata: { url } }, { metadata: { sourceURL: url } }]) {
+        const fetcher = async () => Response.json({ success: true, data: { markdown: "Fixture article", ...address } });
+        await expect(
+          runCloudAiWebExtract({ url: "https://example.com/start" }, { apiKey: "test", fetch: fetcher as typeof fetch }),
+        ).rejects.toThrow();
+      }
+    }
+  });
+
+  test("does not allow the hosted API connection to follow a redirect", async () => {
+    let redirect: RequestRedirect | undefined;
+    const fetcher = async (_url: string | URL | Request, init?: RequestInit) => {
+      redirect = init?.redirect;
+      return Response.json({ success: true, data: { markdown: "Article" } });
+    };
+    await runCloudAiWebExtract({ url: "https://example.com/" }, { apiKey: "test", fetch: fetcher as typeof fetch });
+    expect(redirect).toBe("error");
+  });
+
   test("normalizes search results and omits scraped content", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
