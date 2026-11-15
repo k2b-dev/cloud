@@ -362,10 +362,12 @@ export default function AssistantCodeVersionCard(props: {
   const changeDetails = (): ApprovalFrameProps["details"] => {
     const words = current()?.words;
     if (!words || changes().length === 0) return undefined;
-    const label = changeKind() === "first" ? t().detailsFirst : t().detailsAgainst({ version: keep() ?? 0 });
+    // The frame sets the label in bold and its context quietly after it: "Details von Code · gegenüber Version 4".
+    const context = changeKind() === "first" ? t().detailsFirst : t().detailsAgainst({ version: keep() ?? 0 });
     return {
-      label,
-      content: <ChangeList items={changes()} label={label} />,
+      label: t().details,
+      context,
+      content: <ChangeList items={changes()} label={`${t().details} · ${context}`} />,
       note: { text: words.changes.assurance, icon: "ti ti-info-circle" },
     };
   };

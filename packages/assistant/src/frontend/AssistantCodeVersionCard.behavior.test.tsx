@@ -135,7 +135,9 @@ test("ready: one approval form with the question, what changes against the runni
   expect(text(card)).toContain("Approval·Code");
   expect(card.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Version 5 of Code of info@ switch on?");
   expect(text(card)).toContain("It may do more than version 4 afterwards.");
-  expect(text(card)).toContain("Details from Code · compared with version 4");
+  // The label in bold and its context quietly after it, as two parts of the frame.
+  expect(card.querySelector(".k2b-chat-decision__details-label")?.textContent).toContain("Details from Code");
+  expect(card.querySelector(".k2b-chat-decision__details-context")?.textContent).toBe(" · compared with version 4");
   const rows = [...card.querySelectorAll(".k2b-change-list__item")].map((row) => row.getAttribute("data-tone"));
   expect(rows).toEqual(["add", "add", "remove", "neutral"]);
   expect(text(card)).toContain("Cloud checks access and triggers, not behavior.");
@@ -294,7 +296,7 @@ test("a first version says the automation stays off until then", async () => {
     [WORDS]: () => ({ json: { data: words({ changes: { ...words().changes, state: "first" } }) } }),
   });
   expect(text(dom.root)).toContain("Until then the automation does not run. You do not need to do anything.");
-  expect(text(dom.root)).toContain("Details from Code · first version");
+  expect(dom.root.querySelector(".k2b-chat-decision__details-context")?.textContent).toBe(" · first version");
 });
 
 test("changes requested: the admin's message and comments as text, never a file or line, and Gustav revises on request", async () => {
