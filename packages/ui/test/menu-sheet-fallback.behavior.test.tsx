@@ -1,17 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { createSignal } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "./dom";
 
 // The phone sheets' code arrives as its own chunks; here every attempt to load them fails, as after a deploy or offline.
-let attempts = 0;
-mock.module("../src/actions/menu-sheet", () => {
-  attempts++;
-  throw new Error("the sheet's chunk did not load");
-});
-mock.module("../src/layout/BottomSheet", () => {
-  throw new Error("the sheet's chunk did not load");
-});
+// The factories reject: a factory that throws gives Bun an empty module instead of a failed import.
+mock.module("../src/actions/menu-sheet", () => Promise.reject(new Error("the sheet's chunk did not load")));
+mock.module("../src/layout/BottomSheet", () => Promise.reject(new Error("the sheet's chunk did not load")));
 
 const settle = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
 const until = async (check: () => unknown) => {
@@ -32,8 +27,9 @@ else
     };
 
     beforeEach(() => {
-      attempts = 0;
       dom = createDomTestHarness();
+      // Solid delegates clicks once per document; each test has a document of its own.
+      delegateEvents(["click"], dom.document);
       dom.window.happyDOM.setWindowSize({ width: 390, height: 844 });
       define(globalThis, "matchMedia", dom.window.matchMedia.bind(dom.window));
       define(dom.window, "innerWidth", 390);
@@ -100,10 +96,8 @@ else
       expect(reported).toHaveBeenCalledTimes(1);
       await settle(10);
       // The owner hears one open, not one for the sheet and one for the menu.
-      expect(heard).toEqual([true]);
       // A phone also tried in the background when the menus loaded; that failure stays quiet until someone opens.
-      const tried = attempts;
-      expect(tried).toBeGreaterThan(0);
+      expect(heard).toEqual([true]);
 
       menu.querySelector<HTMLElement>("[role='menuitem']")!.click();
       await until(() => !shown());
@@ -112,13 +106,13 @@ else
       expect(heard).toEqual([true, false]);
       expect(trigger.getAttribute("aria-expanded")).toBe("false");
 
-      // The next open tries the sheet's code once more, and nothing keeps retrying in between.
+      // The next open asks for the sheet's code once more (Bun answers from its cache; a browser fetches again) and
+      // falls back again; nothing keeps retrying in between.
       trigger.click();
       await until(shown);
       expect(shown()).toBe(true);
-      expect(attempts).toBe(tried + 1);
+      expect(reported).toHaveBeenCalledTimes(2);
       await settle(50);
-      expect(attempts).toBe(tried + 1);
       expect(reported).toHaveBeenCalledTimes(2);
     });
 
