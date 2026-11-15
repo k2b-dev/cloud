@@ -116,6 +116,8 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   };
 
   let settling = false;
+  /** A scroll is on its way until the strip rests, such as a reveal that started in the frame of a resize. */
+  let scrolling = false;
   let glideTarget: number | null = null;
   let glideTimer = 0;
   const glideTo = (left: number, top?: number) => {
@@ -195,6 +197,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   let heading = 0;
   let headingFrom = 0;
   const settle = () => {
+    if (fingers === 0) scrolling = false;
     if (!scroller || fingers > 0 || settling || glideTarget !== null || view.dragging()) return;
     const width = columnWidth();
     const space = Number.parseFloat(getComputedStyle(scroller).scrollPaddingRight) || 0;
@@ -277,6 +280,7 @@ export const CalendarWeekView = (props: TimeViewProps) => {
   let frame = 0;
   const onScroll = () => {
     if (!scroller) return;
+    scrolling = true;
     if (glideTarget !== null && Math.abs(scroller.scrollLeft - glideTarget) < 2) glideTarget = null;
     if (Math.abs(scroller.scrollLeft - headingFrom) > 0.5) heading = Math.sign(scroller.scrollLeft - headingFrom);
     headingFrom = scroller.scrollLeft;
@@ -357,8 +361,11 @@ export const CalendarWeekView = (props: TimeViewProps) => {
         ? undefined
         : new ResizeObserver(() => {
             if (!scroller) return;
-            // A reveal the scroll handler has not read yet wins over keeping the first day.
-            const unread = Math.abs(scroller.scrollLeft - lastLeft) > 0.5;
+            // A scroll on its way, such as a reveal, wins over keeping the first day, also once the scroll handler read
+            // it: a scrollbar can deliver the resize in the frame the reveal starts. A strip the resize clamped to its
+            // end is not on its way and keeps its first day.
+            const clamped = Math.abs(scroller.scrollLeft - (scroller.scrollWidth - scroller.clientWidth)) <= 0.5;
+            const unread = (scrolling && !clamped) || Math.abs(scroller.scrollLeft - lastLeft) > 0.5;
             const before = untrack(firstIndex);
             measureCount();
             // Only days of a new width move the strip back onto its first day. Setting scrollLeft stops a smooth scroll

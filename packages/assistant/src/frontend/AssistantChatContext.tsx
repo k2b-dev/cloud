@@ -3,6 +3,7 @@ import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { query } from "@k2b/stdlib/solid";
 import {
   Button,
+  DetailPanel,
   type DetailPanelActionSecondary,
   FileView,
   Lightbox,
@@ -19,7 +20,13 @@ import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
-import { AssistantChatSidebarTab, type ChatSidebarActions, type ChatSidebarJump, createChatSourcePages } from "./AssistantChatSidebar";
+import {
+  AssistantChatSidebarTab,
+  ChatContextDetails,
+  type ChatSidebarActions,
+  type ChatSidebarJump,
+  createChatSourcePages,
+} from "./AssistantChatSidebar";
 import {
   type AssistantContextFile,
   AssistantContextRow,
@@ -53,7 +60,7 @@ export { splitAssistantConversationSources } from "./assistant-context";
 const CONTEXT_PREVIEW_LIMIT = 3;
 /** The primary control of a focusable context row. */
 const CONTEXT_ROW_ACTION = ":is(a, button).k2b-detail-panel__action";
-export type ContextCategory = "files" | "sources" | "knowledge";
+export type ContextCategory = "files" | "sources" | "knowledge" | "context";
 export type ContextView = {
   context?: { conversationId: string; category: ContextCategory; project?: AiProject | null };
   file?: { conversationId: string; path: string };
@@ -702,6 +709,36 @@ export function AssistantChatContextContent(
 ) {
   const state = createAssistantChatContextState(props);
   const text = useAssistantText();
+  const actions = (onOpenView: (view: ContextView) => void) =>
+    assistantChatSidebarActions({
+      chatId: props.chatId,
+      project: props.project ?? null,
+      copy: { files: text("Files"), knowledge: text("Project knowledge"), sources: text("Sources") },
+      onOpenView,
+      onJump: (target) => props.onJump?.(target),
+      onOpenSecrets: props.onOpenSecrets,
+      onFileDeleted: props.onFileDeleted,
+    });
+  // The tab "Context": what the chat works with, open, with its secrets.
+  if (props.category === "context")
+    return (
+      <div class="assistant-context-tab">
+        <DetailPanel surface="plain">
+          <DetailPanel.Body>
+            <Show when={state.snapshot()}>
+              {(snapshot) => (
+                <ChatContextDetails
+                  snapshot={snapshot()}
+                  project={props.project ?? null}
+                  state={state}
+                  actions={actions(props.onOpenView ?? (() => undefined))}
+                />
+              )}
+            </Show>
+          </DetailPanel.Body>
+        </DetailPanel>
+      </div>
+    );
   return (
     <Show
       when={props.category === "files" && props.onOpenView}
@@ -719,15 +756,7 @@ export function AssistantChatContextContent(
           state={state}
           project={props.project}
           runCount={state.snapshot()?.runCount}
-          actions={assistantChatSidebarActions({
-            chatId: props.chatId,
-            project: props.project ?? null,
-            copy: { files: text("Files"), knowledge: text("Project knowledge"), sources: text("Sources") },
-            onOpenView: onOpenView(),
-            onJump: (target) => props.onJump?.(target),
-            onOpenSecrets: props.onOpenSecrets,
-            onFileDeleted: props.onFileDeleted,
-          })}
+          actions={actions(onOpenView())}
         />
       )}
     </Show>

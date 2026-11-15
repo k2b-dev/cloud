@@ -108,7 +108,13 @@ export type {
 } from "./DetailSections";
 export { DetailAccess, DetailLinks, DetailPresence, DetailPresenceSlot, DetailProperties, DetailTags } from "./DetailSections";
 export { DETAILS_ICON, DetailsToggle, type DetailsToggleProps } from "./DetailsToggle";
-export type { DiscussionComposerProps, DiscussionItemProps, DiscussionListProps, DiscussionProps } from "./Discussion";
+export type {
+  DiscussionComposerProps,
+  DiscussionItemProps,
+  DiscussionListProps,
+  DiscussionProps,
+  DiscussionThreadProps,
+} from "./Discussion";
 export { default as Discussion } from "./Discussion";
 export type {
   FloatingWindowClose,

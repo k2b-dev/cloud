@@ -55,13 +55,14 @@
     --k2b-text: light-dark(#09090b, #fafafa);
     --k2b-text-secondary: light-dark(#27272a, #f1f1f3);
     --k2b-text-muted: light-dark(#45454e, #bdbdc6);
+    --k2b-text-subtle: light-dark(#71717a, #8d8d98);
     --k2b-placeholder-color: light-dark(#71717a, color-mix(in srgb, #a1a1aa 70%, #71717a));
     --k2b-border: light-dark(#e4e4e7, #29313a);
     --k2b-border-strong: light-dark(#d4d4d8, #3a4552);
     --k2b-hover: light-dark(#eff6ff, #252c35);
     --k2b-selected: light-dark(#dbeafe, #172554);
     --k2b-action: light-dark(#1d4ed8, #93c5fd);
-    --k2b-action-hover: light-dark(#1e3a8a, #dbeafe);
+    --k2b-action-hover: light-dark(#1e40af, #bfdbfe);
     --k2b-action-solid: light-dark(#1d4ed8, #2563eb);
     --k2b-action-solid-hover: light-dark(#1e40af, #1d4ed8);
     --k2b-selection: light-dark(rgb(29 78 216 / 0.35), rgb(147 197 253 / 0.35));
@@ -217,6 +218,7 @@
 
   a:hover {
     color: var(--k2b-action-hover);
+    text-decoration: underline;
   }
 
   strong,

@@ -16,6 +16,36 @@ Use one vocabulary for every time and curve. The tokens are available on
 | `--k2b-ease-morph` | `cubic-bezier(0.2, 0, 0, 1)` | With `--k2b-motion-morph` only: a soft start and a long, calm landing. |
 | `--k2b-ease-spring` | `cubic-bezier(0.34, 1.56, 0.64, 1)` | Small marks only: check, switch knob, badge. |
 
+### Moments of work in progress
+
+Work that runs in front of a person (a plan, examples, an approval, a run)
+uses one token per moment. Each follows a change of state; only "running"
+loops.
+
+| Token | Value | Moment |
+| --- | --- | --- |
+| `--k2b-motion-glide` with `--k2b-ease-glide` | `380ms`, `cubic-bezier(0.3, 0.7, 0.2, 1)` | The highlight of the current step glides to the next row. |
+| `--k2b-motion-check` with `--k2b-ease-pop` | `260ms`, `cubic-bezier(0.2, 1.15, 0.4, 1)` | A check springs open when a step is done. |
+| `--k2b-motion-ink` with `--k2b-ease-settle` | `240ms`, `ease` | Finished text settles into grey. |
+| `--k2b-motion-progress` | `400ms` | A progress ring grows. |
+| `--k2b-motion-fold` with `--k2b-ease-glide` | `280ms` | A list folds open or shut: its height only. |
+| `--k2b-motion-spin` | `1100ms` | One turn of a running ring, looping, linear. |
+| `--k2b-motion-pass` with `--k2b-ease-pop` | `300ms` | The check of a passing example springs open. |
+| `--k2b-motion-glow` | `1000ms` | A passing row glows once (`ease-out`). |
+| `--k2b-motion-count` with `--k2b-ease-pop-strong` | `500ms`, `cubic-bezier(0.2, 1.4, 0.4, 1)` | A counter rolls to its next number. |
+| `--k2b-motion-arrive` with `--k2b-ease-rise` | `460ms`, `cubic-bezier(0.2, 0.8, 0.2, 1)` | An approval rises 10 px into place. |
+| `--k2b-motion-ring-out` | `1100ms` | A plum ring around a new approval loosens outwards once (`ease-out`). |
+| `--k2b-motion-busy` | `1300ms` | One shimmer pass over a filled button while Cloud works, looping until the answer. |
+| `--k2b-motion-switch-on` with `--k2b-ease-pop` | `340ms` | A card changes in place to "on"; success shows only after confirmation. |
+| `--k2b-motion-pulse` | `1100ms` | One pulse of a running run, looping until its result (`ease-in-out`). |
+| `--k2b-motion-settle` | `300ms` | A value fades over to its new text. |
+| `--k2b-motion-enter-row` with `--k2b-ease-rise` | `420ms` | A new row slides in from above. |
+| `--k2b-motion-think` | `2200ms` | One shimmer pass over a working sentence, looping, linear. |
+
+These moments move only transform, opacity, and colour. The one exception is
+a folding list such as `Chat.Tasks`: its own height opens upwards from a
+header that stays put, and nothing beside it moves.
+
 Choose the duration by what changes. Use the standard curve for ordinary
 entry motion. A large surface that grows, shrinks, or moves uses the morph
 pair: its largest step per frame stays about a third smaller than with the
