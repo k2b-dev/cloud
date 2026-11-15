@@ -24,6 +24,7 @@ import { codeAiReferenceCost, codeAiReservesAttemptBudget, reserveCodeAiBudget, 
 import { codePolicyGroupRowsQuery, codePolicyGroupsFromRows, codePolicySnapshotFromRow, codePolicySnapshotQuery } from "./policy";
 import { codePolicyRow, isCodeAiOperation } from "./policy-contracts";
 import { effective } from "./policy-effective";
+import { type CodeEffectEvidence, CodeEffectEvidenceSchema } from "./read-model/effects";
 import { codeSettings } from "./settings";
 import { appendLockedCodeCall, CodeCallLimitError, CodeReceiptNotCommittedError, type CodeRow, finishCodeCall, mapCode } from "./store";
 
@@ -285,6 +286,7 @@ export function createCodeBridgeHost(
     let response: Response;
     let refusalKind: CodeBridgeRefusalKind = "bridge";
     let replayed = false;
+    let effect: CodeEffectEvidence | undefined;
     let issuanceRefusal: CodeBridgeRefusal | undefined;
     let aiReservation: string | null = null;
     let aiProfiles: AiModelProfile[] = [];
@@ -392,6 +394,19 @@ export function createCodeBridgeHost(
           onRefusal: (kind) => {
             refusalKind = kind;
           },
+          onEffect: (evidence) => {
+            const normalized = {
+              ...evidence,
+              forms: Object.fromEntries(
+                Object.entries(evidence.forms).map(([locale, form]) => [
+                  locale,
+                  { ...form, targetType: `${call.call.capability.split(".")[0]}.${form.targetType}` },
+                ]),
+              ),
+            };
+            const parsed = CodeEffectEvidenceSchema.safeParse(normalized);
+            if (parsed.success) effect = parsed.data;
+          },
           onReplay: () => {
             replayed = true;
           },
@@ -462,6 +477,7 @@ export function createCodeBridgeHost(
           result,
           replayed,
           confirmedEffect: call.kind === "action" && success && !replayed,
+          effect,
           refusalKind: success ? null : refusalKind,
           endedAt: new Date(),
         },

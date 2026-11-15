@@ -23,8 +23,10 @@ import {
   capabilityHash,
   capabilityManifestEvolutionIssues,
   compileCapabilities,
+  compileCapabilityPresentation,
   invokeCompiledCapability,
   parseCapabilityManifest,
+  resolveCapabilityActionWording,
   resolveCapabilityManifestPresentation,
   reviewCompiledCapability,
   serializeCapabilityProviderResult,
@@ -1926,4 +1928,29 @@ test("resource manager audiences use a paged app-only query without a person ses
     context,
   });
   expect(person).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+});
+
+test("result forms are translated, target-bound presentation for confirmed effects, including third-party Actions", () => {
+  const { manifest } = compileCapabilities("example", example());
+  const catalog = {
+    baseLocale: "en",
+    results: { rename: { text: "Updated {target}", targetType: "item", kind: "item" } },
+    translations: { de: { actions: { rename: { result: { text: "{target} geändert", targetType: "item", kind: "Eintrag" } } } } },
+  };
+  const compiled = compileCapabilityPresentation(manifest, catalog);
+  const action = manifest.actions.find((action) => action.localId === "rename")!;
+  expect(resolveCapabilityActionWording(action, compiled, "de-DE").result).toEqual(catalog.translations.de.actions.rename.result);
+  expect(resolveCapabilityActionWording(action, compiled, "en").result).toEqual(catalog.results.rename);
+  for (const text of ["{input.secret} changed", "{target} {target}", "Changed\n{target}"]) {
+    const bad = { ...catalog, results: { rename: { ...catalog.results.rename, text } } };
+    expect(() => compileCapabilityPresentation(manifest, bad)).toThrow();
+    expect(compileCapabilityPresentation(manifest, bad, "reader")?.results).toBeUndefined();
+  }
+  expect(() => compileCapabilityPresentation(manifest, { ...catalog, results: { unknown: catalog.results.rename } })).toThrow();
+  const badTranslation = {
+    ...catalog,
+    translations: { de: { actions: { rename: { result: { ...catalog.results.rename, targetType: "unknown" } } } } },
+  };
+  expect(() => compileCapabilityPresentation(manifest, badTranslation)).toThrow();
+  expect(compileCapabilityPresentation(manifest, badTranslation, "reader")?.translations.de?.actions?.rename).toBeUndefined();
 });
