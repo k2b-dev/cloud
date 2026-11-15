@@ -2103,7 +2103,7 @@ for (const width of [1440, 390])
         const look = (element: Element) => ({ color: getComputedStyle(element).color, size: getComputedStyle(element).fontSize });
         return { quietColor, chart: look(chart), table: look(table) };
       });
-      expect(heads.chart).toEqual({ color: heads.quietColor, size: "13px" });
+      expect(heads.chart).toEqual({ color: heads.quietColor, size: "12px" });
       expect(heads.table).toEqual(heads.chart);
       expect(points[0]!.fill).not.toBe(points[0]!.stroke);
       if (process.env.VIEW_SHOTS)
@@ -2113,7 +2113,7 @@ for (const width of [1440, 390])
     }
   });
 
-test('"Open large" shows a view file\'s table in the Lightbox from the file the chat loaded, and gives the focus back', async () => {
+test('"Maximize" shows a view file\'s table in the Lightbox from the file the chat loaded, and gives the focus back', async () => {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
   try {
     const page = await context.newPage();
@@ -2137,7 +2137,7 @@ test('"Open large" shows a view file\'s table in the Lightbox from the file the 
       ],
     );
     await page.waitForSelector("[data-view-path] tbody tr");
-    const opener = page.getByRole("button", { name: "Open large" });
+    const opener = page.getByRole("button", { name: "Maximize" });
     await opener.click();
     const lightbox = page.locator(".k2b-lightbox[open]");
     await lightbox.locator(".k2b-lightbox__view tbody tr").first().waitFor();

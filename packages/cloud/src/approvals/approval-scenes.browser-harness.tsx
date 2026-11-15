@@ -291,6 +291,98 @@ const scenes: Record<string, () => JSX.Element> = {
       </>
     );
   },
+  // Feinschliff v3, section 5: one answer with key figures, an app's table and Gustav's chart. No origin lines; every
+  // block carries Copy and Maximize, and the Lightbox steps through all three.
+  baustein: () => {
+    const tool = (
+      id: string,
+      name: string,
+      args: Record<string, unknown>,
+      result: unknown,
+      presentation?: AiTurnBlock["presentation"],
+    ): AiTurnBlock => ({
+      id,
+      kind: "tool",
+      callId: id,
+      name,
+      args,
+      status: "completed",
+      at: FIXTURE_AT,
+      result,
+      view: capabilityResultView(result) ?? undefined,
+      ...(presentation ? { presentation } : {}),
+    });
+    const card = (id: string, args: Record<string, unknown>) => tool(id, "card", args, cardToolResult(args));
+    const rows = [
+      ["2026-11-03", "Polsterei Beispiel", "Stoffmuster", -48.9],
+      ["2026-11-04", "Schraubenwelt", "Beschläge, 200 Stück", -112],
+      ["2026-11-07", "Lena Vogt", "Anzahlung Sideboard", 450],
+      ["2026-11-11", "Holzhandel Nord", "Eiche, 3 Bohlen", -386.4],
+      ["2026-11-14", "Druckerei Kern", "Preisschilder", -29.5],
+    ].map(([date, who, what, amount]) => ({ date, who, what, amount }));
+    const tableResult = {
+      data: {},
+      view: {
+        version: 1,
+        blocks: [
+          {
+            kind: "Table",
+            title: "PayPal-Buchungen im November",
+            subtitle: "37 Buchungen · Summe 1.284,60 €",
+            search: true,
+            columns: [
+              { key: "date", label: "Datum", type: "date" },
+              { key: "who", label: "Empfänger" },
+              { key: "what", label: "Verwendung" },
+              { key: "amount", label: "Betrag", type: "amount" },
+            ],
+            rows,
+          },
+        ],
+      },
+    };
+    const chartArgs = {
+      kind: "line",
+      title: "PayPal-Umsatz",
+      subtitle: "letzte 6 Monate, in Tausend Euro",
+      series: [
+        {
+          label: "Umsatz",
+          data: [0.6, 0.9, 0.5, 1, 1.2, 1.4].map((y, index) => ({ x: `2026-${String(index + 6).padStart(2, "0")}-01`, y })),
+        },
+      ],
+    };
+    const blocks: AiTurnBlock[] = [
+      card("c1", { icon: "arrow-down-left", title: "Eingang", value: "1.570,00 €", caption: "3 Buchungen" }),
+      card("c2", { icon: "arrow-up-right", title: "Ausgang", value: "−806,74 €", caption: "34 Buchungen" }),
+      tool("q1", "mail__query__paypal", {}, tableResult, {
+        kind: "capability",
+        appId: "mail",
+        appName: "Mail",
+        appIcon: "ti ti-mail",
+        title: "PayPal-Buchungen",
+        capabilityKind: "query",
+      }),
+      tool("g1", "chart", chartArgs, chartToolResult(chartArgs)),
+      { id: "t1", kind: "text", text: "Im November bleibt ein Plus von **741,92 €**." },
+    ];
+    return (
+      <>
+        <Label>Eine Antwort, drei Bausteine</Label>
+        <AiTurnView
+          segment={() => ({
+            id: "ai-turn:turn-1:start",
+            turnId: "turn-1",
+            phase: "completed",
+            layout: layoutAiTurn(blocks, { phase: "completed" }),
+            earlier: false,
+            duration: () => null,
+          })}
+          disclosureState={createAiToolDisclosureState()}
+        />
+      </>
+    );
+  },
   // Durchgang 5, #78: Gustav asked for three key figures, once as stat charts, once as cards with their signs; both
   // stand as the flat row of key figures under his head.
   kennzahlen: () => {

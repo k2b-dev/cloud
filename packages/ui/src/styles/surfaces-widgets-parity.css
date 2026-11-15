@@ -2159,6 +2159,15 @@
 
 :where(.k2b-ui) .k2b-dashboard-frame__header .k2b-dashboard-frame__stale { color: var(--k2b-warning-text); }
 
+/* The quiet line under a frame's body, such as a search's matches; it stands in every state. */
+:where(.k2b-ui) .k2b-dashboard-frame__footer {
+  min-height: 1.25rem;
+  margin: 0.5rem 0 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
 /* Try again inside a line of text: underlined like every link in running text, and never taller than the line. */
 :where(.k2b-ui) .k2b-dashboard-frame__link {
   display: inline;

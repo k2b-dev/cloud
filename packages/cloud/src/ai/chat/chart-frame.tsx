@@ -6,7 +6,10 @@ import {
   type createChartCursor,
   useLocale,
 } from "@k2b/ui";
+import { chartSvgWithUiPalette } from "@k2b/ui/charts/core";
 import type { JSX } from "solid-js";
+import { BlockActions, useBlockFrame } from "../../blocks/block-actions";
+import { blockFileName, chartImage, saveBlob } from "../../blocks/block-copy";
 import type { CloudAiChartRow, CloudAiChartTable } from "../chart-block";
 import type { CloudAiChartInput } from "../default-tool-contracts";
 import { aiChatMessages } from "./messages";
@@ -41,6 +44,13 @@ export function ChartFrame(props: {
   height?: number;
 }) {
   const locale = useLocale();
+  // In a chat answer the frame owns the head's controls: Copy as a picture and Maximize, no view switcher.
+  const frame = useBlockFrame();
+  const picture = () => {
+    const drawn = props.chart?.snapshot;
+    if (!drawn?.svg) throw new Error("No drawing");
+    return chartImage(chartSvgWithUiPalette(drawn.svg), { width: drawn.width, height: drawn.height });
+  };
   const columns = () =>
     props.chart
       ? props.chart.table.columns.map(
@@ -74,6 +84,18 @@ export function ChartFrame(props: {
       empty={props.empty}
       renderDetails={false}
       class={props.nested ? "[&_h4]:text-sm!" : undefined}
+      headerControls={frame ? "owner" : "explorer"}
+      actions={
+        frame ? (
+          <BlockActions
+            kind="chart"
+            name={props.title}
+            copy={() => ({ image: picture })}
+            download={async () => saveBlob(await picture(), blockFileName(props.title, "png"))}
+            content={() => <ChartFrame {...props} />}
+          />
+        ) : undefined
+      }
     />
   );
 }

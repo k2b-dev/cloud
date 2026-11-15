@@ -1,5 +1,7 @@
 import { CopyButton, Skeleton, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
+import { BlockActions, BlockFoot, SearchToggle, useBlockFrame } from "../../blocks/block-actions";
+import { tableCopy, wholeTable } from "../../blocks/block-copy";
 import type { CloudAiViewSummary } from "../view-block";
 import { aiChatMessages } from "./messages";
 import { ViewHeading } from "./view-heading";
@@ -31,17 +33,23 @@ export const tableHeight = (summary: TableSummary) => {
 export function CloudTablePlaceholder(props: { id: string; summary: TableSummary; loading: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
+  const frame = useBlockFrame();
+  // The same head and foot as the loaded table in a chat answer, so nothing moves when the rows arrive.
+  const counted = () => frame !== undefined && props.summary.search;
   const number = () => new Intl.NumberFormat(locale());
   return (
-    <section class="grid min-w-0 gap-3" aria-labelledby={props.id}>
+    <section class={counted() ? "cloud-table-frame grid min-w-0 gap-3" : "grid min-w-0 gap-3"} aria-labelledby={props.id}>
       <ViewHeading
         id={props.id}
         title={props.summary.title}
         subtitle={props.summary.subtitle}
         actions={
-          <div class="flex min-w-0 flex-wrap items-center gap-2">
+          <div class="cloud-table-tools flex min-w-0 flex-wrap items-center gap-2">
+            <Show when={counted()}>
+              <SearchToggle label={props.summary.title} disabled />
+            </Show>
             <Show when={props.summary.search || props.summary.grouped}>
-              <div class="k2b-data-table-tools" aria-hidden="true">
+              <div class="cloud-table-search-host k2b-data-table-tools" aria-hidden="true">
                 <Show when={props.summary.search}>
                   <Skeleton class="k2b-data-table-tools__search h-9" />
                 </Show>
@@ -50,7 +58,19 @@ export function CloudTablePlaceholder(props: { id: string; summary: TableSummary
                 </Show>
               </div>
             </Show>
-            <CopyButton text="" label={t().viewCopyData} iconOnly size="sm" variant="ghost" disabled />
+            {/* The same controls as the loaded table, so its head never changes width when the rows arrive. */}
+            <Show when={frame} fallback={<CopyButton text="" label={t().viewCopyData} iconOnly size="sm" variant="ghost" disabled />}>
+              <BlockActions
+                kind="table"
+                name={props.summary.title}
+                copy={(root) => {
+                  const shown = wholeTable(root);
+                  if (!shown.rows.length) throw new Error("No rows yet");
+                  return tableCopy(shown.columns, shown.rows);
+                }}
+                content={() => <CloudTablePlaceholder {...props} />}
+              />
+            </Show>
           </div>
         }
       />
@@ -59,10 +79,26 @@ export function CloudTablePlaceholder(props: { id: string; summary: TableSummary
           {props.loading ? t().viewLoading : t().viewUnavailable}
         </div>
       </div>
-      <Show when={props.summary.rows > VISIBLE_ROWS}>
-        <p class="text-sm text-secondary">
-          {t().viewRowsCapped({ shown: number().format(VISIBLE_ROWS), total: number().format(props.summary.rows) })}
-        </p>
+      <Show
+        when={counted()}
+        fallback={
+          <Show when={props.summary.rows > VISIBLE_ROWS}>
+            <p class="text-sm text-secondary">
+              {t().viewRowsCapped({ shown: number().format(VISIBLE_ROWS), total: number().format(props.summary.rows) })}
+            </p>
+          </Show>
+        }
+      >
+        <BlockFoot
+          query=""
+          shown={0}
+          total={props.summary.rows}
+          idle={
+            props.summary.rows > VISIBLE_ROWS
+              ? t().viewRowsCapped({ shown: number().format(VISIBLE_ROWS), total: number().format(props.summary.rows) })
+              : undefined
+          }
+        />
       </Show>
     </section>
   );

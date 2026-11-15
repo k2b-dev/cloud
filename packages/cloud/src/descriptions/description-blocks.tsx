@@ -5,11 +5,12 @@ import {
   type DashboardFrameState,
   type DashboardWidth,
   DataTable,
+  IconButton,
   SelectChip,
   TextInput,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, For, type JSX, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import {
   type DescriptionObject,
   type DescriptionRowLinks,
@@ -57,6 +58,15 @@ export type TableBlockProps = {
   empty?: string;
   /** Where each row leads; a last column then holds each row's Open link. */
   rowLinks?: DescriptionRowLinks;
+  /** The host's own controls at the end of the head, such as a chat answer's Copy and Maximize. */
+  actions?: JSX.Element;
+  /** A quiet line under the table in every state, such as how many rows a search finds (`DashboardFrame.footer`). */
+  footer?: (counts: { query: string; shown: number; total: number }) => JSX.Element;
+  /**
+   * The search shrinks to a sign on a narrow frame and opens over the title, so the head keeps its height (a chat
+   * answer on a phone).
+   */
+  compactSearch?: boolean;
 };
 
 /**
@@ -78,6 +88,7 @@ export function TableBlock(props: TableBlockProps): JSX.Element {
     setQuery = view.setQuery,
     rows = view.rows;
   const group = () => view.groupBy() ?? "";
+  const [searching, setSearching] = createSignal(false);
   const grouping = (): { groupBy?: string } => (group() ? { groupBy: group() } : {});
   // A search without a match is the empty state with its own sentence and a way back.
   const noMatch = () => descriptionWithContent(props.state) && query() !== "" && rows().length === 0;
@@ -95,6 +106,8 @@ export function TableBlock(props: TableBlockProps): JSX.Element {
       onRetry={props.onRetry}
       empty={noMatch() ? t().noRowContains({ query: query() }) : (props.empty ?? t().nothingToShow)}
       emptyIcon="ti ti-table-off"
+      class={props.compactSearch ? `cloud-table-frame${searching() || query() !== "" ? " cloud-table-frame--searching" : ""}` : undefined}
+      footer={props.footer?.({ query: query(), shown: rows().length, total: allRows().length })}
       height={props.height === 0 ? undefined : descriptionLength(props.height)}
       emptyAction={
         <Show when={noMatch()}>
@@ -106,13 +119,30 @@ export function TableBlock(props: TableBlockProps): JSX.Element {
       tools={
         <>
           <Show when={props.spec.search === true}>
+            <Show when={props.compactSearch}>
+              <IconButton
+                class="cloud-table-search-toggle"
+                size="sm"
+                variant="ghost"
+                label={t().searchIn({ title: props.title })}
+                disabled={!descriptionWithContent(props.state)}
+                onClick={(event) => {
+                  setSearching(true);
+                  event.currentTarget.parentElement?.querySelector<HTMLInputElement>("input[type=search]")?.focus();
+                }}
+              >
+                <i class="ti ti-search" aria-hidden="true" />
+              </IconButton>
+            </Show>
             <TextInput
               type="search"
               icon="ti ti-search"
+              class={props.compactSearch ? "cloud-table-search" : undefined}
               aria-label={t().searchIn({ title: props.title })}
               placeholder={t().search}
               value={query()}
               onValueChange={setQuery}
+              onBlur={() => setSearching(false)}
               disabled={!descriptionWithContent(props.state)}
             />
           </Show>
@@ -132,6 +162,7 @@ export function TableBlock(props: TableBlockProps): JSX.Element {
               ]}
             />
           </Show>
+          {props.actions}
         </>
       }
       reserve={
