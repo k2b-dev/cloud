@@ -3,7 +3,7 @@ import type { InboundEvent, Input, Message } from "@k2b/nessi";
 import type { QueueMessage } from "@k2b/sync";
 import { z } from "zod";
 import { lazySync } from "../_internal/process-sync";
-import type { AccessSubject, RequestActor, RequestAuthority } from "../server";
+import type { AccessSubject, RequestActor } from "../server";
 import { type ApprovalDecisionChannel, approvals } from "../services/approvals";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
@@ -17,24 +17,19 @@ import {
   rememberAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModel } from "./assistant-models";
-import { assertPersonalChatWriter } from "./chat-writer";
 import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
 import {
-  AiMessageQueueConflict,
   assertQueuedMessageQuota,
   drainQueuedMessages,
-  enqueueChatMessage,
-  queuedMessageAccepted,
   queuedMessageReceipt,
   reconcileQueuedInterruptions,
   requestQueuedMessageSendNow,
 } from "./message-queue";
 import { aiUserPrefs } from "./prefs";
-import { aiProjects } from "./projects";
 import { AI_TURN_LEASE_MS } from "./protocol";
 import type { AiStoredMessageOrigin } from "./queue-contracts";
 import { aiQuotas } from "./quotas";
@@ -260,52 +255,6 @@ export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ 
   return submitted;
 };
 
-/**
- * Platform entry for writing an existing personal chat. Applications never set
- * provenance in request JSON; a capability adapter derives it from its run.
- * Personal Code uses its person's subject; mailbox Code is refused here.
- */
-export const sendAiChatMessage = async (input: {
-  idempotencyKey: string;
-  chatId: string;
-  text: string;
-  authority: RequestAuthority;
-  origin: AiStoredMessageOrigin;
-  locale?: string;
-}) => {
-  if (input.authority.accessSubject.type !== "user") throw new AiMessageQueueConflict("Personal chats require a person's access subject.");
-  const text = z.string().trim().min(1).max(20_000).parse(input.text);
-  const id = z.uuid().parse(input.idempotencyKey);
-  const conversation = await aiConversations.getConversationByShortId({
-    shortId: input.chatId,
-    ownerUserId: input.authority.accessSubject.userId,
-  });
-  if (!conversation) throw new AiMessageQueueConflict("Conversation not found.");
-  assertPersonalChatWriter(input.authority.accessSubject, conversation.createdByUserId);
-  // Replays acknowledge the durable entry even if quota/model access changed since acceptance.
-  if (await queuedMessageAccepted(conversation.id, id)) return { id, conversationId: conversation.shortId };
-  const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, input.authority) : null;
-  if (conversation.projectId && !project) throw new AiMessageQueueConflict("Conversation Project is unavailable.");
-  const submission = await prepareAiChatTurn({
-    assistantChat: true,
-    conversationId: conversation.id,
-    chatId: conversation.shortId,
-    input: text,
-    userMessage: { role: "user", content: [{ type: "text", text }] },
-    actor: input.authority.actor,
-    accessSubject: input.authority.accessSubject,
-    writerOrigin: input.origin,
-    locale: input.locale,
-    project: project ?? undefined,
-    expectedProjectId: conversation.projectId,
-    toolSource: { kind: "default", appTools: true },
-    toolApprovalContext: { actorUserId: input.authority.accessSubject.userId },
-  });
-  await enqueueChatMessage(id, submission, [{ type: "text", text }]);
-  wakeAiMessageQueue(conversation.id);
-  return { id, conversationId: conversation.shortId };
-};
-
 export const sendQueuedAiChatMessageNow = async (conversationId: string, id: string) => {
   const receipt = await queuedMessageReceipt(conversationId, id);
   if (!receipt || receipt.state === "submitted" || receipt.state === "sending") return receipt;
@@ -341,31 +290,26 @@ export const deliverAiInterChatMessage = async (input: {
   const text = [`Assistant message from chat ${input.message.sourceChatId} (${input.message.sourceTitle}):`, input.message.text].join(
     "\n\n",
   );
-  if (await queuedMessageAccepted(input.message.targetConversationId, input.message.id)) {
-    wakeAiMessageQueue(input.message.targetConversationId);
-    return { delivered: false, reason: "busy" };
-  }
-  const prepared = await prepareAiChatTurn({
-    assistantChat: true,
-    conversationId: input.message.targetConversationId,
-    chatId: input.chatId,
+  const { resolved } = await validateAiTurnRequest({ input: text, modelPolicy: input.modelPolicy });
+  const runConfig: AiChatTurnRunConfig = {
+    kind: "chat",
     input: text,
-    userMessage: { role: "user", content: [{ type: "text", text }] },
+    chatId: input.chatId,
     actor: input.actor,
-    locale: input.locale,
-    theme: input.theme,
-    timeZone: input.timeZone,
+    ...(input.locale ? { locale: input.locale } : {}),
+    ...(input.theme ? { theme: input.theme } : {}),
+    ...(input.timeZone ? { timeZone: input.timeZone } : {}),
     modelPolicy: input.modelPolicy,
     systemPrompt: input.systemPrompt,
     project: input.project,
     toolSource: input.toolSource ?? { kind: "none" },
     toolApprovalContext: input.toolApprovalContext,
-  });
+  };
   const delivered = await aiConversations.deliverInterChatMessage({
     messageId: input.message.id,
-    modelId: prepared.modelId,
-    runConfig: prepared.runConfig,
-    userMessage: prepared.userMessage,
+    modelId: resolved.profile.id,
+    runConfig,
+    userMessage: { role: "user", content: [{ type: "text", text }] },
   });
   if (delivered.delivered) await enqueueAiTurn({ conversationId: delivered.message.targetConversationId, turnId: delivered.turn.id });
   return delivered;

@@ -28,7 +28,8 @@ that draft revision and preserves its text, resource references, model selection
 and exact attachment bytes. Repeating the same `queueId` is idempotent, including
 after the message has started. A later composer draft remains independent.
 
-Each conversation accepts up to 20 pending or failed messages. Queued attachment
+The personal composer queue accepts up to 20 pending or failed messages per
+conversation. Queued attachment
 snapshots share a 250 MiB budget. The existing turn worker processes messages in
 acceptance order, one active turn per conversation. Queues survive navigation,
 reloads and worker restarts. Completion, failure or cancellation of a turn allows
@@ -85,27 +86,18 @@ old work. It must check an uncertain effect before repeating it.
 
 ### Preserve writer identity and live state
 
-One queue combines the person's messages, automation messages, and messages
-from another chat. `origin.kind` is `person`, `automation`, or `chat`, with a
-stable ID and a resolved display name. Chat and automation links appear only
-when the viewer can open the target. Durable provenance stores IDs, never
-translated names or display links. Existing inter-chat delivery also enters
-this queue and cannot overtake a person's entry.
+Queue entries and history messages carry server-authored provenance.
+`origin.kind` is `person`, `automation`, or `chat`, with a stable ID and a
+resolved display name. Chat and automation links appear only when the viewer
+can open the target. Durable provenance stores IDs, never translated names or
+display links. The existing inter-chat delivery path also records its source
+chat. Its delivery lifecycle is unchanged.
 
-The platform-owned `sendAiChatMessage` from `@k2b/cloud/ai/runtime` accepts
-`idempotencyKey`, `chatId`, `text`, `authority`, and `origin`. A platform adapter
-must derive `origin` and `actor` from the verified writer/run context; they are
-never application-supplied request fields. For an automation, pass its stable
-Code/version ID and optional run ID; a resource reference lets the authorized
-resource reader resolve its name and link. This function prepares a future
-capability adapter; it does not register an `ai.chat.send` capability.
-
-A personal automation uses the person's `accessSubject` and the automation's
-`actor`. The person must own the target chat. A service-account `accessSubject`,
-including mailbox Code, is refused for personal chats. No additional grant or
-manifest field is required. Every writer uses the same model access, quota,
-queue limit, and attachment budget. Acceptance wakes the existing turn worker;
-an idle chat starts promptly, while an approval wait keeps messages queued.
+The admission limit is defined by `AI_MESSAGE_QUEUE_LIMIT` for the existing
+personal composer queue. Platform adapters supply provenance through the
+existing server-owned turn configuration;
+request JSON cannot set it. A personal-chat writer must have the owner's
+user access subject; a service-account subject is refused.
 
 Queue changes use the existing `/api/ai/live` invalidations for
 `conversation-detail` and `conversation-list`. Clients reload the authorized

@@ -159,11 +159,6 @@ export const requestQueuedMessageSendNow = async (conversationId: string, id: st
     return { interrupt: active && interrupt ? { turnId: active.id, request: interrupt, waitingForClient: Boolean(client) } : null };
   });
 
-export const queuedMessageAccepted = async (conversationId: string, id: string) => {
-  const [row] = await sql`SELECT id FROM ai.queued_messages WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid`;
-  return Boolean(row);
-};
-
 export const assertQueuedMessageQuota = async (conversationId: string, id: string): Promise<void> => {
   const [row] = await sql<{ submission: Submission }[]>`SELECT submission FROM ai.queued_messages
     WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid AND status IN ('pending','failed')`;
@@ -196,7 +191,8 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
     const [count] = await tx<
       { count: number }[]
     >`SELECT count(*)::int AS count FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed')`;
-    if (count!.count >= AI_MESSAGE_QUEUE_LIMIT) throw new AiMessageQueueConflict("The message queue is full (20 messages).");
+    if (count!.count >= AI_MESSAGE_QUEUE_LIMIT)
+      throw new AiMessageQueueConflict(`The message queue is full (${AI_MESSAGE_QUEUE_LIMIT} messages).`);
     const [size] = await tx<
       { size: number }[]
     >`SELECT COALESCE(sum(f.size),0)::float8 AS size FROM ai.queued_message_files f JOIN ai.queued_messages q ON q.id = f.message_id WHERE q.conversation_id = ${input.conversationId}::uuid`;
@@ -217,10 +213,7 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
       WHERE conversation_id = ${input.conversationId}::uuid AND path = ${file.path} AND version = ${file.version ?? -1} RETURNING path`;
       if (!copied.length) throw new AiMessageQueueConflict("An attached file changed before the message was queued.");
     }
-    if (input.expectedDraftRevision !== undefined)
-      await tx`UPDATE ai.conversations SET draft_content = '[]'::jsonb, draft_revision = draft_revision + 1, draft_updated_at = now(), last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END WHERE id = ${input.conversationId}::uuid`;
-    else
-      await tx`UPDATE ai.conversations SET last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END WHERE id = ${input.conversationId}::uuid`;
+    await tx`UPDATE ai.conversations SET draft_content = '[]'::jsonb, draft_revision = draft_revision + 1, draft_updated_at = now(), last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END WHERE id = ${input.conversationId}::uuid`;
   });
 
 /** Cancellation and retry share the conversation lock with promotion. */
@@ -231,7 +224,6 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
     WHERE id = ${id}::uuid AND conversation_id = ${conversationId}::uuid AND status IN ('pending','failed')
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages q WHERE q.conversation_id=${conversationId}::uuid AND q.send_requested_at IS NOT NULL AND q.status IN ('pending','failed')) RETURNING id`;
     if (action === "cancel" && changed.length) {
-      await tx`UPDATE ai.inter_chat_messages SET status='failed',error='removed_from_queue' WHERE id=${id}::uuid AND status='pending'`;
       await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${id}::uuid`;
       await tx`UPDATE ai.queued_messages SET submission = '{}'::jsonb, content = '[]'::jsonb WHERE id = ${id}::uuid`;
     }

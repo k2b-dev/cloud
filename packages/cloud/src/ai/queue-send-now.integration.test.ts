@@ -90,17 +90,17 @@ integration("one FIFO combines people, automations and chats; only the person's 
   }
 });
 
-integration("limit 20 applies to every writer; migration retains legacy entries above the limit", async () => {
+integration("the personal queue limit retains legacy entries above the limit", async () => {
   const f = await fixture();
   try {
-    for (let i = 0; i < AI_MESSAGE_QUEUE_LIMIT; i++) await f.add(`Entry ${i}`, { kind: "automation", id: "code-version" });
-    await expect(f.add("Overflow")).rejects.toThrow("full (20 messages)");
+    for (let i = 0; i < AI_MESSAGE_QUEUE_LIMIT; i++) await f.add(`Entry ${i}`);
+    await expect(f.add("Overflow")).rejects.toThrow(`full (${AI_MESSAGE_QUEUE_LIMIT} messages)`);
     const legacy = crypto.randomUUID();
     await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,origin,author_user_id)
       VALUES (${legacy}::uuid,${f.chat.id}::uuid,${JSON.stringify(f.input("Legacy"))}::jsonb,'[]'::jsonb,NULL,NULL)`;
     await migrateAiMessageQueue();
-    expect(await listQueuedMessages(f.chat.id)).toHaveLength(21);
-    await expect(f.add("Still full", { kind: "chat", id: f.chat.shortId, turnId: "source" })).rejects.toThrow("full");
+    expect(await listQueuedMessages(f.chat.id)).toHaveLength(AI_MESSAGE_QUEUE_LIMIT + 1);
+    await expect(f.add("Still full")).rejects.toThrow("full");
     expect((await listQueuedMessages(f.chat.id, { userId: f.userId })).at(-1)).toMatchObject({ id: legacy, authorIsViewer: true });
   } finally {
     await f.close();
@@ -121,7 +121,7 @@ integration("a service-account subject cannot bypass personal-chat ownership thr
   }
 });
 
-integration("normal automation input stays queued during a person's approval wait and preserves their draft", async () => {
+integration("a composer entry stays queued during an approval wait and consumes the submitted draft", async () => {
   const f = await fixture();
   try {
     const { turn } = await aiConversations.submitChatTurn(f.input("Waiting"));
@@ -133,16 +133,17 @@ integration("normal automation input stays queued during a person's approval wai
       content: [{ type: "text", text: "Still typing" }],
     });
     expect(draft.ok).toBe(true);
-    const id = await f.add("From automation", { kind: "automation", id: "code-version" });
+    const submission = f.input("Still typing");
+    submission.expectedDraftRevision = 1;
+    const id = crypto.randomUUID();
+    await enqueueChatMessage(id, submission, [{ type: "text", text: "Still typing" }]);
     const jobs: unknown[] = [];
     await drainQueuedMessages(async (job) => {
       jobs.push(job);
     }, f.chat.id);
     expect(jobs).toEqual([]);
     expect((await listQueuedMessages(f.chat.id))[0]?.id).toBe(id);
-    expect((await aiConversations.getConversation({ conversationId: f.chat.id }))?.draft.content).toEqual([
-      { type: "text", text: "Still typing" },
-    ]);
+    expect((await aiConversations.getConversation({ conversationId: f.chat.id }))?.draft.content).toEqual([]);
   } finally {
     await f.close();
   }
@@ -153,10 +154,10 @@ integration("quota rejection marks not sent before it can interrupt the current 
   const quota = spyOn(aiQuotas, "assertAllowed").mockRejectedValue(new AiQuotaError("quota_exhausted", "Fixture quota exhausted"));
   try {
     const { turn } = await aiConversations.submitChatTurn(f.input("Continue current work"));
-    const submission = f.input("From Code", { kind: "automation", id: "version" });
+    const submission = f.input("Urgent");
     submission.runConfig.assistantChat = true;
     const id = crypto.randomUUID();
-    await enqueueChatMessage(id, submission, [{ type: "text", text: "From Code" }]);
+    await enqueueChatMessage(id, submission, [{ type: "text", text: "Urgent" }]);
     await expect(assertQueuedMessageQuota(f.chat.id, id)).rejects.toThrow("Fixture quota exhausted");
     expect(quota).toHaveBeenCalledWith({ type: "user", userId: f.userId }, "fixture");
     expect((await listQueuedMessages(f.chat.id))[0]?.state).toBe("failed");
@@ -172,7 +173,7 @@ integration("send now is idempotent, keeps other positions, and supplies interru
   try {
     const { turn } = await aiConversations.submitChatTurn(f.input("Old turn"));
     const first = await f.add("First");
-    const now = await f.add("Urgent", { kind: "automation", id: "version", runId: "run" });
+    const now = await f.add("Urgent");
     const last = await f.add("Last");
     const request = await requestQueuedMessageSendNow(f.chat.id, now);
     expect(request?.interrupt?.request).toMatchObject({ found: true, ownerless: true });
@@ -188,9 +189,7 @@ integration("send now is idempotent, keeps other positions, and supplies interru
     expect(jobs).toHaveLength(1);
     const next = await aiConversations.getTurnRunConfig({ conversationId: f.chat.id, turnId: jobs[0]!.turnId });
     expect(next?.kind !== "compact" ? next?.systemPrompt : null).toContain(`"interruptedTurnId":"${turn.shortId}"`);
-    expect(next?.kind !== "compact" ? next?.systemPrompt : null).toContain(
-      '"messageOrigin":{"kind":"automation","id":"version","runId":"run"}',
-    );
+    expect(next?.kind !== "compact" ? next?.systemPrompt : null).toContain(`"messageOrigin":{"kind":"person","id":"${f.userId}"}`);
     expect((await listQueuedMessages(f.chat.id)).map(({ id }) => id)).toEqual([first, last]);
     await requestQueuedMessageSendNow(f.chat.id, now);
     await drainQueuedMessages(push, f.chat.id);

@@ -2,7 +2,6 @@ import { beforeAll, expect, test } from "bun:test";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import { aiCapabilityId } from "./capabilities";
-import { listQueuedMessages } from "./message-queue";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 import { aiToolAudit } from "./tool-audit";
@@ -182,6 +181,7 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
       expect(messages[0]).toMatchObject({
         loopId: delivered.delivered ? delivered.turn.id : null,
         meta: {
+          writerOrigin: { kind: "chat", id: source.shortId, turnId: sourceTurn.shortId },
           agentMessage: {
             id: created.message.shortId,
             sourceChatId: source.shortId,
@@ -210,7 +210,6 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
             userMessage: { role: "user", content: [{ type: "text", text: queued.message.text }] },
           }),
         ).toEqual({ delivered: false, reason: "busy" });
-        expect((await listQueuedMessages(target.id)).map(({ id, origin }) => [id, origin.kind])).toEqual([[queued.message.id, "chat"]]);
       }
 
       const deliverable = await aiConversations.createInterChatMessage({

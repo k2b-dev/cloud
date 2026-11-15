@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AiDraftContentPart } from "./types";
 
-/** One FIFO shared by every writer of a chat. */
+/** Admission limit for the existing personal composer queue. */
 export const AI_MESSAGE_QUEUE_LIMIT = 20;
 
 /** Server-authored display metadata. href is projected for the current viewer. */

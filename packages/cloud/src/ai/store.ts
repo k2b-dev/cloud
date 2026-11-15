@@ -2130,43 +2130,86 @@ export const aiConversations: AiConversationService = {
   },
 
   deliverInterChatMessage: async (input) => {
-    const [row] = await sql<InterChatMessageRow[]>`${interChatMessageSelect()} WHERE message.id=${input.messageId}::uuid`;
-    if (!row) return { delivered: false, reason: "not_found" };
-    const message = rowToInterChatMessage(row);
-    if (row.status === "delivered") {
-      const turn = row.target_turn_id
-        ? await aiConversations.getTurn({ conversationId: row.target_conversation_id, turnId: row.target_turn_id })
-        : null;
-      return turn ? { delivered: true, message, turn } : { delivered: false, reason: "failed" };
-    }
-    if (row.status === "failed") return { delivered: false, reason: "failed" };
-    const target = await aiConversations.getConversation({ conversationId: row.target_conversation_id, ownerUserId: row.actor_user_id });
-    if (!target) {
-      await aiConversations.failInterChatMessage({ messageId: row.id, error: "Target chat is unavailable" });
-      return { delivered: false, reason: "failed" };
-    }
-    const { enqueueChatMessage } = await import("./message-queue");
-    const submission = {
-      conversationId: target.id,
-      modelId: input.modelId,
-      userMessage: input.userMessage,
-      expectedProjectId: target.projectId,
-      runConfig: {
-        ...input.runConfig,
-        accessSubject: input.runConfig.accessSubject ?? { type: "user" as const, userId: row.actor_user_id },
-        writerOrigin: { kind: "chat" as const, id: row.source_chat_id, turnId: row.source_turn_short_id },
-      },
-    };
-    await enqueueChatMessage(row.id, submission, [{ type: "text", text: message.text }]);
-    try {
-      // The existing promotion gate owns FIFO and the active-turn race. Never start a second delivery path.
-      const submitted = await aiConversations.submitChatTurn({ ...submission, queuedMessageId: row.id });
-      const [updated] = await sql<InterChatMessageRow[]>`${interChatMessageSelect()} WHERE message.id=${row.id}::uuid`;
-      return { delivered: true, message: rowToInterChatMessage(updated!), turn: submitted.turn };
-    } catch (error) {
-      if (error instanceof Error && error.message === "Queued message is no longer ready.") return { delivered: false, reason: "busy" };
-      throw error;
-    }
+    const delivered = await sql.begin(async (tx) => {
+      const rows = await tx<InterChatMessageRow[]>`
+        ${interChatMessageSelect()}
+        WHERE message.id = ${input.messageId}::uuid
+        FOR UPDATE OF message
+      `;
+      const message = rows[0];
+      if (!message) return { delivered: false as const, reason: "not_found" as const };
+      if (message.status === "delivered") {
+        const turn = message.target_turn_id
+          ? await tx<TurnRow[]>`SELECT * FROM ai.turns WHERE id = ${message.target_turn_id}::uuid LIMIT 1`
+          : [];
+        return turn[0]
+          ? { delivered: true as const, message: rowToInterChatMessage(message), turn: rowToTurn(turn[0]) }
+          : { delivered: false as const, reason: "failed" as const };
+      }
+      if (message.status === "failed") return { delivered: false as const, reason: "failed" as const };
+
+      const [target] = await tx<{ archived_at: Date | string | null }[]>`
+        SELECT archived_at FROM ai.conversations WHERE id = ${message.target_conversation_id}::uuid FOR UPDATE
+      `;
+      if (!target || target.archived_at) {
+        await tx`UPDATE ai.inter_chat_messages SET status = 'failed', error = 'Target chat is unavailable' WHERE id = ${message.id}::uuid`;
+        return { delivered: false as const, reason: "failed" as const };
+      }
+      const [active] = await tx<{ id: string }[]>`
+        SELECT id FROM ai.turns
+        WHERE conversation_id = ${message.target_conversation_id}::uuid
+          AND NOT COALESCE(run_config ? 'background', false)
+          AND status IN ('queued', 'running', 'waiting_for_action')
+        LIMIT 1
+      `;
+      if (active) return { delivered: false as const, reason: "busy" as const };
+
+      const writerOrigin = { kind: "chat" as const, id: message.source_chat_id, turnId: message.source_turn_short_id };
+      const turnRows = await withAiShortIdForDb(
+        tx,
+        "idx_ai_turns_conversation_short_id",
+        (attempt, shortId) => attempt<TurnRow[]>`
+          INSERT INTO ai.turns (short_id, conversation_id, model_profile_id, status, run_config)
+          VALUES (${shortId}, ${message.target_conversation_id}, ${input.modelId}, 'queued', (${JSON.stringify({ ...input.runConfig, writerOrigin })}::text)::jsonb)
+          RETURNING *
+        `,
+      );
+      await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${message.target_conversation_id}::uuid`;
+      const turn = rowToTurn(turnRows[0]!);
+      const targetMeta: NonNullable<AiStoredMessage["meta"]> = {
+        writerOrigin,
+        agentMessage: {
+          id: message.short_id,
+          sourceChatId: message.source_chat_id,
+          sourceTurnId: message.source_turn_short_id,
+          sourceTitle: message.source_title,
+        },
+      };
+      const messageRows = await withAiShortIdForDb(
+        tx,
+        "idx_ai_messages_conversation_short_id",
+        (attempt, shortId) => attempt<MessageRow[]>`
+          INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, search_text, loop_id, meta)
+          VALUES (
+            ${shortId}, ${message.target_conversation_id},
+            (SELECT COALESCE(MAX(seq), 0) + 1 FROM ai.messages WHERE conversation_id = ${message.target_conversation_id} AND seq > 0),
+            'message', ${input.userMessage.role}, (${JSON.stringify(input.userMessage)}::text)::jsonb,
+            ${messageSearchText(input.userMessage)}, ${turn.id}, (${JSON.stringify(targetMeta)}::text)::jsonb
+          )
+          RETURNING *
+        `,
+      );
+      const messageRow = messageRows[0]!;
+      await tx`UPDATE ai.conversations SET updated_at = now() WHERE id = ${message.target_conversation_id}::uuid`;
+      await tx`
+        UPDATE ai.inter_chat_messages
+        SET status = 'delivered', target_turn_id = ${turn.id}, target_message_id = ${messageRow.id}, delivered_at = now()
+        WHERE id = ${message.id}::uuid
+      `;
+      const updated = await tx<InterChatMessageRow[]>`${interChatMessageSelect()} WHERE message.id = ${message.id}::uuid LIMIT 1`;
+      return { delivered: true as const, message: rowToInterChatMessage(updated[0]!), turn };
+    });
+    return delivered;
   },
 
   updateConversationMetadata: async (input) => {
@@ -3053,10 +3096,6 @@ export const aiConversations: AiConversationService = {
         `;
         if (!copied[0]) throw new Error(`Attached conversation file changed before the turn was submitted: ${file.path}`);
       }
-      const [interChat] = input.queuedMessageId
-        ? await tx<InterChatMessageRow[]>`${interChatMessageSelect()}
-        WHERE message.id=${input.queuedMessageId}::uuid`
-        : [];
       const messageRow = await insertMessageLocked(
         {
           conversationId: input.conversationId,
@@ -3064,16 +3103,6 @@ export const aiConversations: AiConversationService = {
           loopId: turn.id,
           meta: {
             ...(input.runConfig.writerOrigin ? { writerOrigin: input.runConfig.writerOrigin } : {}),
-            ...(interChat
-              ? {
-                  agentMessage: {
-                    id: interChat.short_id,
-                    sourceChatId: interChat.source_chat_id,
-                    sourceTurnId: interChat.source_turn_short_id,
-                    sourceTitle: interChat.source_title,
-                  },
-                }
-              : {}),
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
             modelRequest: input.runConfig.model,
             modelResolved: input.runConfig.modelResolved,
@@ -3115,8 +3144,6 @@ export const aiConversations: AiConversationService = {
         `;
       }
       if (input.queuedMessageId) {
-        await tx`UPDATE ai.inter_chat_messages SET status='delivered',target_turn_id=${turn.id}::uuid,
-          target_message_id=${messageRow.id}::uuid,delivered_at=now() WHERE id=${input.queuedMessageId}::uuid AND status='pending'`;
         await tx`UPDATE ai.queued_messages SET status = 'submitted', submitted_turn_id=${turn.id}::uuid, submission = '{}'::jsonb, content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
         await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${input.queuedMessageId}::uuid`;
       }

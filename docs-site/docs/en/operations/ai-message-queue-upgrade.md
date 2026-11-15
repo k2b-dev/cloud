@@ -3,7 +3,7 @@ title: Upgrade personal chat queues
 navTitle: Chat queue upgrade
 section: Operations
 order: 1345
-description: Preserve existing chat queues while adopting the shared 20-entry limit and safe interruption.
+description: Preserve existing chat queues while adopting the 20-entry personal queue limit and safe interruption.
 tags: [operations, ai, migrations]
 updated: 2026-11-15
 ---
@@ -15,7 +15,8 @@ interruption protocol agree. Startup extends the existing `ai.queued_messages`
 table with writer provenance and durable send-now receipts. It reuses the
 existing queue, attachment snapshots, workers, and live invalidations.
 
-The admission limit changes from 32 to 20 pending or failed entries per chat.
+The existing personal composer queue changes from 32 to 20 pending or failed
+entries per chat, using `AI_MESSAGE_QUEUE_LIMIT`.
 Existing queues above 20 remain intact and readable. New entries are refused
 until fewer than 20 remain; no migration deletes or reorders them. Legacy
 entries without provenance are attributed to their chat owner.
@@ -37,4 +38,6 @@ uncertain submission by its original entry ID before retrying. See the
 
 Keep stored `steer_message` and `steer_applied` blocks readable. The CLI's
 `turns steer` and its server route remain supported while the Assistant UI uses
-send-now. No `ai.chat.send` automation capability is registered by this change.
+send-now. No automation enqueue API, separate automation slots, or `ai.chat.send`
+automation capability is registered by this change. Inter-chat delivery keeps
+its existing lifecycle and gains source provenance.
