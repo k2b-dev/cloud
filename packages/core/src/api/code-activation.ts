@@ -63,13 +63,12 @@ export const createCodeActivationRoutes = () => {
       v("json", codeActivationContracts.read.input),
       (c) => run(context(c), (ctx) => readCodeActivation(c.req.valid("json"), ctx)),
     )
-    // The version card in the chat reads the review as the person sees it: who decided, the message, and the comments
-    // as text. File and line stay out of this answer; an editor reads them with `cld code review show`.
     .post(
       "/review",
       auth.readOnly,
       middleware.openapi({ tags: ["Code"], summary: "Read the review of a Code version without its places in the source" }),
       v("json", codeAuthoringContracts.review.input),
+      // The chat's version card shows a decision, its message and comments as text: no file or line in this answer.
       (c) => run(context(c), (ctx) => readCodeReview(c.req.valid("json"), ctx, { anchors: false })),
     )
     .post(

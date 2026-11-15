@@ -89,9 +89,17 @@ const examples = {
 test("a file Gustav writes shows no source, no file name and no line, live or finished", () => {
   const live = render(
     CodeStepBody,
-    block({ name: "code_write", status: "running", args: { path: "code.ts", content: source }, liveArgs: { omittedLines: { path: 0, content: 100 } } }),
+    block({
+      name: "code_write",
+      status: "running",
+      args: { path: "code.ts", content: source },
+      liveArgs: { omittedLines: { path: 0, content: 100 } },
+    }),
   );
-  const done = render(CodeStepBody, block({ name: "code_write", args: { codeId: "c_1234", path: "code.tsx", content: source }, result: { version: 1 } }));
+  const done = render(
+    CodeStepBody,
+    block({ name: "code_write", args: { codeId: "c_1234", path: "code.tsx", content: source }, result: { version: 1 } }),
+  );
   for (const html of [live, done]) {
     expectNoCode(html);
     expect(html).not.toContain("line40");
@@ -107,10 +115,22 @@ test("a check says what the Code may do in words, with the new rights marked, an
       name: "code_check",
       result: {
         version: 1,
-        result: { ok: false, diagnostics: [{ code: "code_unresolved_call", message: "Bad code.ts:19 sp_hidden", file: "code.ts", line: 19, column: 1 }] },
+        result: {
+          ok: false,
+          diagnostics: [{ code: "code_unresolved_call", message: "Bad code.ts:19 sp_hidden", file: "code.ts", line: 19, column: 1 }],
+        },
         manifest: null,
         permissions: [
-          { operation: "spaces.task.create", target: { type: "spaces.space", id: "sp_fixture" }, title: "Team", typeTitle: "Space", own: false, file: "code.ts", line: 4, status: "new" },
+          {
+            operation: "spaces.task.create",
+            target: { type: "spaces.space", id: "sp_fixture" },
+            title: "Team",
+            typeTitle: "Space",
+            own: false,
+            file: "code.ts",
+            line: 4,
+            status: "new",
+          },
         ],
         words,
       },
@@ -132,7 +152,11 @@ test("notices stand in the conversation with their consequence; tried examples w
   expect(notices).toContain('data-tone="warning"');
   expectNoCode(notices);
 
-  const test = block({ name: "code_test", args: { codeId: "c_1234" }, result: { version: 1, mode: "test", ok: false, cases: [], diagnostics: [], words: { notices: [], examples } } });
+  const test = block({
+    name: "code_test",
+    args: { codeId: "c_1234" },
+    result: { version: 1, mode: "test", ok: false, cases: [], diagnostics: [], words: { notices: [], examples } },
+  });
   expect(isCodeStepResult(test)).toBe(true);
   const html = render(CodeStepResult, test, "de");
   const text = visible(html);
@@ -151,7 +175,11 @@ test("notices stand in the conversation with their consequence; tried examples w
 });
 
 test("a step without words, such as an older result, shows no building block and no raw data", () => {
-  const old = block({ name: "code_test", args: { codeId: "c_1234" }, result: { version: 1, mode: "test", ok: true, cases: [], diagnostics: [] } });
+  const old = block({
+    name: "code_test",
+    args: { codeId: "c_1234" },
+    result: { version: 1, mode: "test", ok: true, cases: [], diagnostics: [] },
+  });
   expect(isCodeStepResult(old)).toBe(false);
   const html = render(CodeStepBody, old);
   expectNoCode(html);
@@ -161,7 +189,11 @@ test("a step without words, such as an older result, shows no building block and
 test("a failed step names no Core error code; Gustav explains it in the conversation", () => {
   const html = render(
     CodeStepBody,
-    block({ name: "code_submit", isError: true, result: { version: 1, error: { code: "code_version_conflict", message: "Stale base c_1234.", details: null } } }),
+    block({
+      name: "code_submit",
+      isError: true,
+      result: { version: 1, error: { code: "code_version_conflict", message: "Stale base c_1234.", details: null } },
+    }),
     "de",
   );
   expect(visible(html)).toContain("Dieser Schritt hat nicht geklappt.");

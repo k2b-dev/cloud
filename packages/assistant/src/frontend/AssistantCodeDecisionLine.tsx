@@ -66,7 +66,9 @@ export default function AssistantCodeDecisionLine(props: {
     const day = (date: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: props.timeZone, dateStyle: "short" }).format(date);
     try {
       if (day(new Date(props.at)) === day(new Date()))
-        return t().todayAt({ time: new Intl.DateTimeFormat(locale(), { timeZone: props.timeZone, timeStyle: "short" }).format(new Date(props.at)) });
+        return t().todayAt({
+          time: new Intl.DateTimeFormat(locale(), { timeZone: props.timeZone, timeStyle: "short" }).format(new Date(props.at)),
+        });
     } catch {
       /* An unknown time zone falls back to the full date. */
     }

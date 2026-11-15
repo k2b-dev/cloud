@@ -1737,7 +1737,7 @@ dialog:has(.launchpad-panel)::backdrop {
   column-gap: 0.75rem;
   row-gap: 0.125rem;
   margin: 0.375rem 0 0;
-  color: var(--k2b-text-primary);
+  color: var(--k2b-text);
 }
 
 .k2b-ui .ai-code-examples__differences dt {

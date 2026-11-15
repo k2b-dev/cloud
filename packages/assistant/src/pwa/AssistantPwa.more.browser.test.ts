@@ -384,8 +384,15 @@ describe("Code in the Cloud app", () => {
       await loading.evaluate(() => (window as unknown as { harness: { release(): void } }).harness.release());
       await loading.getByText("Die Admins wissen Bescheid. Du bekommst eine Mitteilung, sobald einer entschieden hat.").waitFor();
       expect((await word(loading)).trim()).toBe("Wartet auf Admin");
-      expect(await loading.locator(".assistant-code-version").innerText()).toContain("Bis dahin bleibt Version 2 eingeschaltet. Du musst nichts tun.");
-      expect(await loading.locator(".assistant-code-version").getByRole("button", { name: /einschalten/ }).count()).toBe(0);
+      expect(await loading.locator(".assistant-code-version").innerText()).toContain(
+        "Bis dahin bleibt Version 2 eingeschaltet. Du musst nichts tun.",
+      );
+      expect(
+        await loading
+          .locator(".assistant-code-version")
+          .getByRole("button", { name: /einschalten/ })
+          .count(),
+      ).toBe(0);
       expect(await fits(loading)).toBe(true);
       await shot(loading, "f-pwa-karte-wartet-390");
     } finally {

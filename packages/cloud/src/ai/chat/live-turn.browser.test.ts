@@ -461,7 +461,7 @@ for (const view of [
         const diagnostics = [{ code: "TS2339", message: "Property does not exist.", file: "code.ts", line: 4, column: 1 }];
         await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
         await emit(page, { ...base, seq: 2, type: "block_set", block: { ...check, status: "running" } });
-        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft den Code" : "Checking the Code");
+        expect(await page.locator(".ai-turn-work summary").innerText()).toContain(de ? "Prüft" : "Checking");
         await page.locator(".ai-turn-work > summary").click();
         await frames(page);
         // Without its shimmer, a busy label keeps a visible text colour, in the work line and in the steps below it.
@@ -486,7 +486,7 @@ for (const view of [
         const checked = await layout(page);
         expect(checked.nodes.map(({ box }) => box)).toEqual(before.nodes.map(({ box }) => box));
         const row = page.locator(".ai-turn-steps .k2b-chat-activity").first();
-        expect(await row.innerText()).toContain(de ? "Prüft den Code" : "Checks the Code");
+        expect(await row.innerText()).toContain(de ? "Prüft" : "Checks");
         expect(await row.innerText()).toContain(de ? "1 Befund" : "1 finding");
         expect(await row.locator(".ti-alert-triangle").count()).toBe(1);
         expect(checked.overflowX).toBeLessThanOrEqual(0);
@@ -1575,7 +1575,12 @@ for (const width of [1440, 390])
         ...base,
         seq: 2,
         type: "block_set",
-        block: { ...write, status: "running", args: { path: "code.ts", content: source }, liveArgs: { omittedLines: { path: 0, content: 0 } } },
+        block: {
+          ...write,
+          status: "running",
+          args: { path: "code.ts", content: source },
+          liveArgs: { omittedLines: { path: 0, content: 0 } },
+        },
       });
       await settled(page, ".ai-turn-work");
       const work = page.locator(".ai-turn-work > summary");
@@ -1597,7 +1602,8 @@ for (const width of [1440, 390])
       // The work line is as high running as finished: the building blocks below it never move.
       expect(await work.evaluate((node) => node.getBoundingClientRect().height)).toBe(running);
       const shown = await page.locator(".ai-turn").first().innerText();
-      for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /sp_team/, /spaces\.task\.create/, /"version"/]) expect(shown).not.toMatch(pattern);
+      for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /sp_team/, /spaces\.task\.create/, /"version"/])
+        expect(shown).not.toMatch(pattern);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     } finally {
       await context.close();
@@ -1625,11 +1631,22 @@ for (const width of [1440, 390])
             result: {
               ok: true,
               diagnostics: [],
-              warnings: [{ code: "code_route_unchecked", message: "Diese Seite prüft c.user nicht.", file: "code.ts", line: 12, column: 1 }],
+              warnings: [
+                { code: "code_route_unchecked", message: "Diese Seite prüft c.user nicht.", file: "code.ts", line: 12, column: 1 },
+              ],
             },
             manifest: null,
             permissions: [
-              { operation: "spaces.task.create", target: { type: "spaces.space", id: "sp_team" }, title: "Team", typeTitle: "Space", own: false, file: "code.ts", line: 2, status: "new" },
+              {
+                operation: "spaces.task.create",
+                target: { type: "spaces.space", id: "sp_team" },
+                title: "Team",
+                typeTitle: "Space",
+                own: false,
+                file: "code.ts",
+                line: 2,
+                status: "new",
+              },
             ],
             words: {
               notices: [
@@ -1650,7 +1667,9 @@ for (const width of [1440, 390])
         state: ok ? "succeeded" : "failed",
         status: ok ? "Erfolgreich" : "Fehlgeschlagen",
         sentence: ok ? "Aufgabe anlegen · 1 im Beispiel erfolgreich" : "Weicht von der Erwartung ab",
-        differences: ok ? [] : [{ subject: "Aufrufe", expected: "Keine Aufrufe aufgezeichnet", actual: "Datei ablegen · 1 im Beispiel erfolgreich" }],
+        differences: ok
+          ? []
+          : [{ subject: "Aufrufe", expected: "Keine Aufrufe aufgezeichnet", actual: "Datei ablegen · 1 im Beispiel erfolgreich" }],
       });
       const test = { id: "tool-test", kind: "tool" as const, callId: "test", name: "code_test", args: { codeId: "c_1234" } };
       await emit(page, {
@@ -1692,16 +1711,17 @@ for (const width of [1440, 390])
       expect(await examples.innerText()).toContain("1 von 2 erfolgreich");
       expect(await examples.innerText()).toContain("Erwartet");
       // The result word has the width of the longest one, so the text beside it starts and ends at one edge.
-      const statuses = await examples.locator(".ai-code-examples__status").evaluateAll((nodes) =>
-        nodes.map((node) => node.getBoundingClientRect().width),
-      );
+      const statuses = await examples
+        .locator(".ai-code-examples__status")
+        .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().width));
       expect(Math.min(...statuses)).toBeGreaterThanOrEqual(120);
-      const names = await examples.locator(".ai-code-examples__name").evaluateAll((nodes) =>
-        nodes.map((node) => Math.round(node.getBoundingClientRect().right)),
-      );
+      const names = await examples
+        .locator(".ai-code-examples__name")
+        .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().right)));
       expect(new Set(names).size).toBe(1);
       const shown = await turn.innerText();
-      for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /sp_team/, /code_[a-z_]+/, /test\/\S+\.json/, /\$\.calls/]) expect(shown).not.toMatch(pattern);
+      for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /sp_team/, /code_[a-z_]+/, /test\/\S+\.json/, /\$\.calls/])
+        expect(shown).not.toMatch(pattern);
       await page.locator(".ai-turn-work > summary").click();
       await frames(page);
       await page.locator(".ai-turn-steps .k2b-chat-activity", { hasText: "Prüft" }).last().locator("summary").first().click();
