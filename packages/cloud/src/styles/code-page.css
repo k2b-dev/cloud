@@ -246,6 +246,14 @@ a.cloud-code__row-main:focus-visible {
   line-height: 20px;
   overflow-wrap: anywhere;
 }
+/* In a pick list every row keeps one height: title and quiet line run out instead of wrapping (Bilder 22, 23). */
+.cloud-code__rows--pick .cloud-code__row-title,
+.cloud-code__rows--pick .cloud-code__row-sub {
+  overflow: hidden;
+  overflow-wrap: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cloud-code__row-sub {
   color: var(--k2b-text-muted);
   font-size: 13px;
@@ -423,6 +431,12 @@ a.cloud-code__row-main:focus-visible {
 }
 .cloud-code__stack > div:empty {
   display: none;
+}
+/* Islands never grow past their column: long lines run out with a fade instead of widening the page. */
+.cloud-code__grid > *,
+.cloud-code__stack > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* What it did: two large numbers in fixed columns, then a fixed number of rows of fixed height. */
@@ -701,6 +715,8 @@ a.cloud-code__row-main:focus-visible {
 }
 .cloud-code__skel-row {
   display: flex;
+  min-height: 3.75rem;
+  align-items: center;
   gap: 0.75rem;
 }
 .cloud-code__skel-row > span {
@@ -806,7 +822,7 @@ a.cloud-code__row-main:focus-visible {
   gap: 0.5rem;
   margin-top: 0.75rem;
 }
-.cloud-code__secret-delete {
+.cloud-code .k2b-button.cloud-code__secret-delete {
   color: var(--k2b-danger-text);
 }
 .cloud-code__secret-actions-gap {
@@ -940,4 +956,16 @@ a.cloud-code__row-main:focus-visible {
   .cloud-code__secret-fields {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* Loading keeps the content's geometry: two lede lines, the counts' height, rows of the content's height. */
+.cloud-code__skel-lede-block {
+  display: grid;
+  gap: 0.5rem;
+}
+.cloud-code__skel-counts {
+  display: grid;
+  grid-template-columns: 10.5rem 10.5rem;
+  height: 3.25rem;
+  align-items: center;
 }

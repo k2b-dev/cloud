@@ -467,6 +467,8 @@ export const codePageMessages = i18n.define({
       askAfter: "?",
       approvalSource: "Code",
       changedAgainst: ({ version }: Version) => `compared with version ${version}`,
+      sameAccess: ({ running }: { running: number | null }) =>
+        running === null ? "Access and triggers stay the same." : `Access and triggers stay as in version ${running}.`,
       approvalReady: ({ version, name }: { version: number; name: string }) => `Switch on version ${version} of ${name}?`,
       approvalReadyPersonal: ({ version }: Version) => `Switch on version ${version}?`,
       approvalWaiting: ({ version }: Version) => `Version ${version} is waiting for an administrator’s approval.`,
@@ -964,6 +966,8 @@ export const codePageMessages = i18n.define({
       askAfter: " einschalten?",
       approvalSource: "Code",
       changedAgainst: ({ version }) => `gegenüber Version ${version}`,
+      sameAccess: ({ running }) =>
+        running === null ? "Zugriffe und Auslöser bleiben gleich." : `Zugriffe und Auslöser bleiben wie bei Version ${running}.`,
       approvalReady: ({ version, name }) => `Version ${version} von ${name} einschalten?`,
       approvalReadyPersonal: ({ version }) => `Version ${version} einschalten?`,
       approvalWaiting: ({ version }) => `Version ${version} wartet auf die Freigabe eines Admins.`,

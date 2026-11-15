@@ -56,7 +56,7 @@ function NeedsYou(props: { data: CodePageData; state: CodePageReady; text: PageT
       {(failed) => (
         <NoticeCard
           tone="danger"
-          icon="ti ti-alert-circle"
+          icon={props.state.refusal ? "ti ti-lock" : "ti ti-alert-circle"}
           layout="card"
           role="alert"
           class="cloud-code__needs-you"
@@ -73,7 +73,7 @@ function NeedsYou(props: { data: CodePageData; state: CodePageReady; text: PageT
                 fallback={
                   <Show when={panel()}>
                     {(editor) => (
-                      <Button type="button" size="sm" variant="danger" onClick={() => openPanel(editor().provider)}>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => openPanel(editor().provider)}>
                         <i class={editor().icon} aria-hidden="true" />
                         {t().changeWith({ name: editor().label })}
                       </Button>
@@ -82,7 +82,7 @@ function NeedsYou(props: { data: CodePageData; state: CodePageReady; text: PageT
                 }
               >
                 {(href) => (
-                  <ButtonLink size="sm" variant="danger" href={href()}>
+                  <ButtonLink size="sm" variant="secondary" href={href()}>
                     <i class="ti ti-lock" aria-hidden="true" />
                     {t().checkAccess}
                   </ButtonLink>

@@ -16,7 +16,7 @@ import { CodeVersions } from "./CodeVersions";
 import { followCodeRuns } from "./code-live";
 import type { CodePageData, CodePageReady } from "./data";
 import type { CodePageMessages } from "./messages";
-import { type PageText, personal, type Tone, usePageText, withQuery } from "./page-kit";
+import { Island, type PageText, personal, type Tone, usePageText, withQuery } from "./page-kit";
 
 export { switchOnReady } from "./CodeActivation";
 export { CodeDatabaseDelete, CodeDatabaseStatus } from "./CodeDatabaseStatus";
@@ -414,6 +414,7 @@ function ReadyPage(props: {
 
 /** The page while it loads (Bild 33): placeholders at the heights of the content they stand for. */
 export function CodePageSkeleton(props: { data: CodePageData; text: PageText }) {
+  const t = props.text.t;
   const rows = (count: number) =>
     Array.from({ length: count }, () => (
       <div class="cloud-code__skel-row">
@@ -424,16 +425,25 @@ export function CodePageSkeleton(props: { data: CodePageData; text: PageText }) 
         </span>
       </div>
     ));
+  // The tabs and island titles are known before the data: they stand as they will, so nothing moves when it loads.
+  const tabs = () => [
+    { id: "overview", label: t().tabOverview, href: props.data.href },
+    { id: "runs", label: t().tabRuns, href: withQuery(props.data.href, { tab: "runs" }) },
+    { id: "versions", label: t().tabVersions, href: withQuery(props.data.href, { tab: "versions" }) },
+  ];
   return (
-    <div class="cloud-code__skeleton" role="status" aria-busy="true" aria-label={props.text.t().loadingPage}>
+    <div class="cloud-code__skeleton" role="status" aria-busy="true" aria-label={t().loadingPage}>
       <header class="cloud-code__head">
         <div class="cloud-code__head-text">
           <Skeleton class="cloud-code__skel-title" />
           <Skeleton class="cloud-code__skel-meta" />
         </div>
       </header>
-      <Skeleton class="cloud-code__skel-tabs" />
-      <Skeleton class="cloud-code__skel-lede" />
+      <ViewTabs label={t().tabsLabel} items={tabs()} current={props.data.tab} max={5} class="cloud-code__tabs" />
+      <span class="cloud-code__skel-lede-block">
+        <Skeleton class="cloud-code__skel-lede" />
+        <Skeleton class="cloud-code__skel-lede cloud-code__skel-line--short" />
+      </span>
       <Show when={!personal(props.data)}>
         <div class="cloud-code__lage cloud-code__lage--skeleton">
           <span class="cloud-code__lage-cell">
@@ -454,12 +464,22 @@ export function CodePageSkeleton(props: { data: CodePageData; text: PageText }) 
       <div class="cloud-code__grid">
         <div class="cloud-code__stack">
           <Show when={!personal(props.data)}>
-            <section class="cloud-code__skel-island">{rows(3)}</section>
+            <Island title={t().didTitle} class="cloud-code__o0">
+              <div class="cloud-code__skel-counts">
+                <Skeleton class="cloud-code__skel-big" />
+                <Skeleton class="cloud-code__skel-big" />
+              </div>
+              {rows(4)}
+            </Island>
           </Show>
-          <section class="cloud-code__skel-island">{rows(personal(props.data) ? 1 : 2)}</section>
+          <Island title={t().whenTitle} class="cloud-code__o1">
+            {rows(personal(props.data) ? 1 : 2)}
+          </Island>
         </div>
         <div class="cloud-code__stack">
-          <section class="cloud-code__skel-island">{rows(3)}</section>
+          <Island title={t().mayTitle} class="cloud-code__o2">
+            {rows(3)}
+          </Island>
         </div>
       </div>
     </div>

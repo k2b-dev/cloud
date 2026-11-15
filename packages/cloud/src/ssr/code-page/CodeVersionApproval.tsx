@@ -72,7 +72,8 @@ export function CodeVersionApproval(props: {
               })),
               ...(same() > 0 ? [{ tone: "neutral" as const, icon: "ti ti-equal", content: t().sameRows({ count: same() }) }] : []),
             ]
-          : [{ tone: "neutral" as const, icon: "ti ti-equal", content: props.words?.changes.text ?? "" }]
+          : // The reason above already says what changed; here only what stays.
+            [{ tone: "neutral" as const, icon: "ti ti-equal", content: t().sameAccess({ running: running() }) }]
       }
     />
   );
