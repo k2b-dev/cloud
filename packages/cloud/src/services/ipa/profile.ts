@@ -8,6 +8,7 @@
 import { sql } from "../../runtime/clients";
 
 import { calculateIpaProfileFromGroupNames } from "../account-model";
+import { ordinaryAccountIdentity } from "../accounts/identity";
 import { getFreeIpaConfig } from "../freeipa-config";
 
 type DbRow = Record<string, unknown>;
@@ -103,8 +104,7 @@ export const updateUserIpaProfile = async (userId: string): Promise<void> => {
   const profile = await calculateIpaProfile(groups);
   await sql`
     UPDATE auth.users
-    SET provider = 'ipa',
-        profile = ${profile}
+    SET ${sql(ordinaryAccountIdentity({ provider: "ipa", profile }))}
     WHERE id = ${userId} AND provider = 'ipa'
   `;
 };

@@ -4,6 +4,7 @@ import { sql } from "../../../runtime/clients";
 import { isAccountCategoryAllowed } from "../../account-category-policy";
 import { writeDeletedAccountAudit } from "../../account-lifecycle/audit";
 import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../../accounts/email-write";
+import { ordinaryAccountIdentity } from "../../accounts/identity";
 import { resolveStoredAdminState } from "../../accounts/model";
 import { writeLocalAccount } from "../../accounts/posix";
 import type { AuditActor } from "../../audit";
@@ -208,8 +209,7 @@ export const setProfile = async (params: {
 
     await tx`
     UPDATE auth.users
-    SET provider = 'local',
-        profile = ${params.profile},
+    SET ${sql(ordinaryAccountIdentity({ provider: "local", profile: params.profile }))},
         admin = ${admin},
         account_expires = ${params.accountExpires}
     WHERE id = ${params.id}::uuid

@@ -6,6 +6,7 @@ import { freeipa } from "../../server/services";
 import { writeDeletedAccountAudit } from "../account-lifecycle/audit";
 import { resolveProviderProfile } from "../accounts/base-user";
 import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../accounts/email-write";
+import { ordinaryAccountIdentity } from "../accounts/identity";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { logger } from "../logging";
 import { EMERGENCY_ADMIN_UID } from "../providers/local/constants";
@@ -467,8 +468,7 @@ export const addIpa = async (params: {
         const guestId = existingLocalRows[0]!.id as string;
         const updateRows: DbRow[] = await tx`
         UPDATE auth.users SET
-          provider = 'ipa',
-          profile = ${targetProfile},
+          ${sql(ordinaryAccountIdentity({ provider: "ipa", profile: targetProfile }))},
           admin = false,
           given_name = ${givenname},
           sn = ${sn},
@@ -499,8 +499,7 @@ export const addIpa = async (params: {
         INSERT INTO auth.users (uid, provider, profile, admin, given_name, sn, display_name, mail, account_expires)
         VALUES (${uid}, 'ipa', ${targetProfile}, false, ${givenname}, ${sn}, ${displayName}, ${email}, ${accountExpiry})
         ON CONFLICT (uid) DO UPDATE SET
-          provider = EXCLUDED.provider,
-          profile = EXCLUDED.profile,
+          ${sql(ordinaryAccountIdentity({ provider: "ipa", profile: targetProfile }))},
           admin = false,
           given_name = EXCLUDED.given_name,
           sn = EXCLUDED.sn,
@@ -869,7 +868,7 @@ export const demoteToGuest = async (params: {
     await sql.begin(async (tx) => {
       await tx`
         UPDATE auth.users
-        SET provider = 'local', profile = 'guest', admin = false,
+        SET ${sql(ordinaryAccountIdentity({ provider: "local", profile: "guest" }))}, admin = false,
             account_expires = ${accountExpires}
         WHERE id = ${id}
       `;

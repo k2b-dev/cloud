@@ -231,12 +231,13 @@ This is an advisory next step: the decision checks eligibility again.
 
 Machine accounts, expired or locked administrators, disabled account categories,
 and the emergency identity do not count as other reviewers. The platform
-recognizes that identity by a stored marker set by successful emergency-token
-sign-in, independently of its username. An ordinary IPA account named `admin`
-remains a human reviewer after switching to local Login and receiving admin
-access. After upgrading, sign in through `/admin-login` once to establish the
-marker for an existing emergency account; until then it counts conservatively
-as an ordinary administrator.
+recognizes that identity by a stored marker together with local Login and the
+username `admin`. Returning the account to an ordinary provider or profile ends
+that marker; the restored human admin counts as a reviewer. An ordinary IPA
+account named `admin` also remains a human reviewer after switching to local
+Login and receiving admin access. An existing emergency account without the
+marker counts conservatively as an ordinary administrator until it carries
+the marker.
 The emergency admin may approve its own version only when no active human
 admin exists, with the same recent sign-in requirement and audit evidence.
 An active ordinary account such as `dev-admin` counts as a human reviewer,

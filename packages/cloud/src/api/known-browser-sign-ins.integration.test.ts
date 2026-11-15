@@ -279,53 +279,52 @@ suite("every successful web sign-in route remembers its browser", () => {
     }
   });
 
-  test("admin-login: real emergency login remembers the browser only with the right token", async () => {
-    const originalToken = process.env.ADMIN_LOGIN_TOKEN;
-    const [before] = await sql<{ id: string; provider: string; profile: string; admin: boolean; emergency_admin: boolean }[]>`
-      SELECT id, provider, profile, admin, emergency_admin FROM auth.users WHERE uid = 'admin'
-    `;
-    const token = "known-browser-admin-fixture";
-    process.env.ADMIN_LOGIN_TOKEN = token;
-    const cookie = newBrowserCookie();
-    const create = spyOn(session, "create");
-    const [countryBefore] = before
-      ? await sql<
-          { last_seen_at: Date }[]
-        >`SELECT last_seen_at FROM auth.sign_in_countries WHERE user_id = ${before.id}::uuid AND country = 'AT'`
-      : [];
-    let adminId: string | undefined;
-    try {
-      const refused = await post("admin-login", { token: "wrong-token" }, cookie);
-      expect(refused.status).toBe(401);
-      expect(create).not.toHaveBeenCalled();
-      expect(refused.headers.get("set-cookie")).toBeNull();
-      expect(await sql`SELECT id FROM auth.known_browsers WHERE browser_hash = ${browserHash(before?.id ?? userId, cookie)}`).toHaveLength(
-        0,
-      );
-      const response = await waitsForHandoff(() => post("admin-login", { token }, cookie), "admin_token");
-      if (!response.ok) throw new Error(`admin-login: ${response.status} ${await response.text()}`);
-      const [admin] = await sql<{ id: string; emergency_admin: boolean }[]>`SELECT id, emergency_admin FROM auth.users WHERE uid = 'admin'`;
-      expect(admin?.emergency_admin).toBe(true);
-      adminId = admin!.id;
-      expect(create).toHaveBeenCalledTimes(1);
-      expect(await browserRows(adminId, cookie)).toHaveLength(1);
-      expect(response.headers.get("set-cookie")).toContain(cookieHeader(cookie));
-    } finally {
-      create.mockRestore();
-      if (originalToken === undefined) delete process.env.ADMIN_LOGIN_TOKEN;
-      else process.env.ADMIN_LOGIN_TOKEN = originalToken;
-      if (before) {
-        await sql`UPDATE auth.users SET provider = ${before.provider}, profile = ${before.profile}, admin = ${before.admin}, emergency_admin = ${before.emergency_admin} WHERE id = ${before.id}::uuid`;
-        if (adminId) {
-          if (countryBefore)
-            await sql`UPDATE auth.sign_in_countries SET last_seen_at = ${countryBefore.last_seen_at} WHERE user_id = ${adminId}::uuid AND country = 'AT'`;
-          else await sql`DELETE FROM auth.sign_in_countries WHERE user_id = ${adminId}::uuid AND country = 'AT'`;
-          await sql`DELETE FROM auth.known_browsers WHERE user_id = ${adminId}::uuid AND browser_hash = ${browserHash(adminId, cookie)}`;
-          await sql`DELETE FROM auth.session_families WHERE user_id = ${adminId}::uuid AND created_request_id = 'known-browser-route-fixture'`;
+  test.each(["new", "unmarked", "marked"] as const)(
+    "admin-login: %s emergency row keeps the browser and marker semantics",
+    async (kind) => {
+      const originalToken = process.env.ADMIN_LOGIN_TOKEN;
+      const [before] = await sql<{ id: string }[]>`SELECT id FROM auth.users WHERE uid='admin'`;
+      // Keep any pre-existing account untouched while testing both INSERT and conflict-update paths.
+      if (before) await sql`UPDATE auth.users SET uid=${`known-browser-saved-${before.id}`} WHERE id=${before.id}::uuid`;
+      const token = "known-browser-admin-fixture";
+      process.env.ADMIN_LOGIN_TOKEN = token;
+      const cookie = newBrowserCookie();
+      const create = spyOn(session, "create");
+      try {
+        let existingId: string | undefined;
+        if (kind !== "new") {
+          const [existing] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,admin,emergency_admin)
+          VALUES('admin','local','user',true,${kind === "marked"}) RETURNING id`;
+          if (!existing) throw new Error("Missing emergency fixture");
+          existingId = existing.id;
         }
-      } else await sql`DELETE FROM auth.users WHERE uid = 'admin'`;
-    }
-  });
+        const refused = await post("admin-login", { token: "wrong-token" }, cookie);
+        expect(refused.status).toBe(401);
+        expect(create).not.toHaveBeenCalled();
+        expect(refused.headers.get("set-cookie")).toBeNull();
+        expect(
+          await sql`SELECT id FROM auth.known_browsers WHERE browser_hash = ${browserHash(existingId ?? userId, cookie)}`,
+        ).toHaveLength(0);
+        const response = await waitsForHandoff(() => post("admin-login", { token }, cookie), "admin_token");
+        if (!response.ok) throw new Error(`admin-login: ${response.status} ${await response.text()}`);
+        const [admin] = await sql<
+          { id: string; emergency_admin: boolean }[]
+        >`SELECT id, emergency_admin FROM auth.users WHERE uid = 'admin'`;
+        expect(admin?.emergency_admin).toBe(kind !== "unmarked");
+        if (!admin) throw new Error("Missing emergency account after sign-in");
+        if (existingId) expect(admin.id).toBe(existingId);
+        expect(create).toHaveBeenCalledTimes(1);
+        expect(await browserRows(admin.id, cookie)).toHaveLength(1);
+        expect(response.headers.get("set-cookie")).toContain(cookieHeader(cookie));
+      } finally {
+        create.mockRestore();
+        if (originalToken === undefined) delete process.env.ADMIN_LOGIN_TOKEN;
+        else process.env.ADMIN_LOGIN_TOKEN = originalToken;
+        await sql`DELETE FROM auth.users WHERE uid='admin'`;
+        if (before) await sql`UPDATE auth.users SET uid='admin' WHERE id=${before.id}::uuid`;
+      }
+    },
+  );
 
   test("Cloud Login start for an unknown identifier stores no browser or country for any account", async () => {
     const [before] = await sql<{ browsers: number; countries: number }[]>`SELECT

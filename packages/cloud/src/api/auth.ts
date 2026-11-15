@@ -434,8 +434,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         ON CONFLICT (uid) DO UPDATE SET
           provider = 'local',
           profile = 'user',
-          admin = true,
-          emergency_admin = true
+          admin = true
         RETURNING id, (xmax = 0) AS inserted
       `;
           if (created?.inserted)

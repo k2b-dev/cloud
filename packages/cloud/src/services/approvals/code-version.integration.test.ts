@@ -124,8 +124,8 @@ databaseSuite()("independent Code-version approvals", () => {
     await withSoleAdmin(async (tx) => {
       const [existing] = await tx<{ id: string }[]>`SELECT id FROM auth.users WHERE uid='admin'`;
       if (existing) await tx`UPDATE auth.users SET uid=${`saved-admin-${existing.id}`} WHERE id=${existing.id}::uuid`;
-      const [ordinary] = await tx<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile)
-        VALUES('admin','ipa','user') RETURNING id`;
+      const [ordinary] = await tx<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,emergency_admin)
+        VALUES('admin','ipa','user',true) RETURNING id`;
       if (!ordinary) throw new Error("Missing ordinary account");
       await transitionIpaUserToLocal({ userId: ordinary.id, targetProfile: "user", accountExpires: null, db: tx });
       await tx`UPDATE auth.users SET admin=true WHERE id=${ordinary.id}::uuid`;
@@ -140,6 +140,24 @@ databaseSuite()("independent Code-version approvals", () => {
       expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
       expect(await listApprovalAdminRecipients(tx, { userId: ordinary.id })).toEqual([ordinary.id]);
       expect(await selfDecide(pending.id, tx, authority)).toMatchObject({ ok: true });
+    });
+  });
+  test.each(["ipa", "local"] as const)("a stale emergency marker on an ordinary %s admin still counts as a reviewer", async (provider) => {
+    const pending = await ask();
+    await withSoleAdmin(async (tx) => {
+      // Simulate a stored marker left over from an earlier identity transition.
+      // Check provider and UID independently: IPA/admin and local/ordinary-name both count.
+      if (provider === "ipa") {
+        await tx`UPDATE auth.users SET uid=${`saved-admin-${admin}`} WHERE uid='admin'`;
+        await tx`UPDATE auth.users SET uid='admin' WHERE id=${admin}::uuid`;
+      }
+      await tx`UPDATE auth.users SET provider=${provider},admin=true,emergency_admin=true WHERE id=${admin}::uuid`;
+      await tx`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${admin}::uuid,'code-review-admins')`;
+      await tx`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
+        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(true);
+      expect(await selfDecide(pending.id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "SELF_APPROVAL" });
+      expect(await approvals.get(pending.id, tx)).toMatchObject({ status: "pending" });
     });
   });
   test("the sole human admin self-approves with durable decision evidence and an audit reason", async () => {

@@ -3,6 +3,7 @@ import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { writeDeletedAccountAudit } from "../account-lifecycle/audit";
 import { calculateIpaProfileFromGroupNames, parseIpaAccountTransitionPolicy, parseIpaMatchMode } from "../account-model";
+import { ordinaryAccountIdentity } from "../accounts/identity";
 import { applyIpaAccountTransitionPolicy } from "../accounts/switching";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { logger } from "../logging";
@@ -553,7 +554,7 @@ export const syncFromIpa = async (runtime: IpaSyncRuntime = {}): Promise<void> =
         }
         await tx`
           UPDATE auth.users SET
-            uid = ${u.uid}, provider = ${provider}, profile = ${profile}, admin = false,
+            ${sql(ordinaryAccountIdentity({ uid: u.uid, provider, profile }))}, admin = false,
             given_name = ${u.givenname}, sn = ${u.sn}, display_name = ${u.displayName},
             mail = ${keepMail ? row.mail : u.mail},
             account_expires = ${u.ipaAccountExpires}
@@ -1085,8 +1086,7 @@ export const syncUser = async (username: string): Promise<SyncUserOutcome> => {
     if (keepMail) log.warn("Single-user sync kept the previous email: another FreeIPA account uses the directory email", { username });
     await tx`
       UPDATE auth.users SET
-        provider = ${provider},
-        profile = ${profile},
+        ${sql(ordinaryAccountIdentity({ provider, profile }))},
         admin = false,
         given_name = ${user.givenname},
         sn = ${user.sn},

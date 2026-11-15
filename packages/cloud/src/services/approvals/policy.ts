@@ -4,6 +4,7 @@ import { isAccountCategoryAllowed } from "../account-category-policy";
 import { accountLockedSql } from "../account-lock";
 import { getFreeIpaAdminGroups } from "../freeipa-config";
 import { toPgTextArray } from "../postgres";
+import { EMERGENCY_ADMIN_UID } from "../providers/local/constants";
 
 /** Active admin recipients/readers, including the emergency identity unless selecting independent reviewers. Never exposed to ordinary users. */
 export const listApprovalAdminRecipients = async (
@@ -15,7 +16,7 @@ export const listApprovalAdminRecipients = async (
   const groups = await getFreeIpaAdminGroups(db);
   const rows = await db<{ id: string }[]>`SELECT u.id
     FROM auth.users u WHERE u.profile='user' AND (${page.after ?? null}::uuid IS NULL OR u.id>${page.after ?? null}::uuid)
-      AND (NOT ${page.independentReviewer ?? false} OR NOT u.emergency_admin)
+      AND (NOT ${page.independentReviewer ?? false} OR NOT (u.emergency_admin AND u.provider='local' AND u.uid=${EMERGENCY_ADMIN_UID}))
       AND NOT ${accountLockedSql(sql`u.id`)}
       AND (${page.excludeUserId ?? null}::uuid IS NULL OR u.id<>${page.excludeUserId ?? null}::uuid)
       AND (${page.userId ?? null}::uuid IS NULL OR u.id=${page.userId ?? null}::uuid)
