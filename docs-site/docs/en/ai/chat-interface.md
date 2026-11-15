@@ -666,10 +666,18 @@ The same rule applies when creating, saving, restoring, or opening a web tab
 in the browser.
 
 Things open as tabs in a workspace beside the chat, built from `Panes`
-(`@k2b/ui`) unchanged: tabs with a grip, **Add pane**, **Arrange** (two,
+(`@k2b/ui`) unchanged: tabs with a grip, **+**, **Arrange** (two,
 three, stacked, tabs) and the same menu on a right click, dragging with a
 preview, shadow edges between panes, and the one-time arrange hint, whose
-dismissal the `assistant_panes_hint` cookie keeps. The chat stays at the left,
+dismissal the `assistant_panes_hint` cookie keeps. Every **+** beside the chat
+(at the end of each row of tabs, in the box's head, and on phones in the chat's
+head row) opens one menu, **Open beside**, with what Gustav has: **Result from
+this chat** (disabled with its reason while there is none; among several, a
+search in the menu's place) and **Files of the chat**. Ctrl/⌘ + Shift + 1 opens
+it beside the + that shows, also from the composer but not from another field;
+each + names that key in its tooltip. E and D choose directly while it is open; Esc gives the focus back to the + that
+opened it; a phone gets a sheet without keys. A new tab joins the group of the
++ that opened it. The chat stays at the left,
 at least 360 px wide, and the workspace takes the rest behind a shadow edge.
 Every pane has the same head: the title, one meta line (kind, size, the
 sentence the assistant gave a result), at most two actions, and **…** with

@@ -13,6 +13,7 @@ import {
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { Kbd } from "../content/Kbd";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { KeyedFor } from "../internal/keyed-for";
@@ -49,6 +50,11 @@ export type DropdownActionBase = {
   description?: string;
   /** Quiet trailing information, such as a count. */
   trailing?: JSX.Element;
+  /**
+   * One letter that chooses this entry while the menu is open and the focus is not in a field, such as "E". It shows as
+   * a key cap at the end of the row, not in a phone sheet. Give each entry of a menu its own letter.
+   */
+  key?: string;
   /** `danger` for destructive entries; `accent` for the entry most people want, such as creating a blank item. */
   variant?: "danger" | "accent";
 };
@@ -191,6 +197,13 @@ export type DropdownProps = {
   icons?: "plain" | "tile";
   /** One quiet sentence below the entries that explains them all, such as what choosing one keeps; it describes the menu. */
   note?: string;
+  /**
+   * How the keys work, as a quiet foot with a start and an end, such as `["↑↓ choose · Enter opens", "A letter
+   * chooses directly"]`. Only in the menu beside a pointer and keys, never in a phone sheet.
+   */
+  keyHint?: readonly [string, string];
+  /** A quiet line above the entries that says what they do, such as "Open beside"; a phone sheet takes it as its title. */
+  heading?: string;
 };
 
 export type DropdownTriggerProps = Omit<
@@ -219,6 +232,8 @@ export type DropdownItemProps = {
   description?: string;
   /** Quiet trailing information, such as a count. */
   trailing?: JSX.Element;
+  /** The letter that chooses this entry while the menu is open; see `DropdownActionBase.key`. */
+  shortcutKey?: string;
   disabled?: boolean;
   danger?: boolean;
   variant?: "danger" | "accent";
@@ -262,6 +277,18 @@ const actionableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
       )
     : [];
 
+/** Chooses the entry whose `key` is the pressed letter; true when one was chosen. Fields keep their letters. */
+const chooseByKey = (menu: HTMLElement | undefined, event: KeyboardEvent): boolean => {
+  if (!menu || event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false;
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.isContentEditable || target.closest("input, textarea, select"))) return false;
+  const entry = menu.querySelector<HTMLElement>(`.k2b-dropdown__item[data-key="${CSS.escape(event.key.toLowerCase())}"]`);
+  if (!entry || entry.matches(":disabled, [aria-disabled='true']")) return false;
+  event.preventDefault();
+  entry.click();
+  return true;
+};
+
 const focusMenuItem = (menu: HTMLElement | undefined, index: number): void => {
   const items = actionableItems(menu).filter((item) => !item.classList.contains("k2b-dropdown__secondary"));
   if (items.length === 0) return;
@@ -296,6 +323,7 @@ const itemContent = (props: {
   icon?: string;
   image?: string;
   trailing?: JSX.Element;
+  shortcutKey?: string;
   children: JSX.Element;
 }): JSX.Element => (
   <>
@@ -307,6 +335,7 @@ const itemContent = (props: {
       <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
     </span>
     {props.trailing}
+    <Show when={props.shortcutKey}>{(key) => <Kbd keys={key().toLowerCase()} class="k2b-dropdown__key" />}</Show>
   </>
 );
 
@@ -326,6 +355,8 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           aria-label={props.ariaLabel}
           tabIndex={-1}
           class={`k2b-dropdown__item ${props.class ?? ""}`}
+          data-key={props.shortcutKey?.toLowerCase()}
+          aria-keyshortcuts={props.shortcutKey?.toUpperCase()}
           data-danger={danger() ? "true" : undefined}
           data-accent={props.variant === "accent" ? "true" : undefined}
           disabled={props.disabled}
@@ -352,6 +383,8 @@ export function DropdownItem(props: DropdownItemProps): JSX.Element {
           aria-label={props.ariaLabel}
           tabIndex={-1}
           class={`k2b-dropdown__item ${props.class ?? ""}`}
+          data-key={props.shortcutKey?.toLowerCase()}
+          aria-keyshortcuts={props.shortcutKey?.toUpperCase()}
           data-danger={danger() ? "true" : undefined}
           data-accent={props.variant === "accent" ? "true" : undefined}
           onClick={(event) => {
@@ -490,6 +523,7 @@ export function DropdownItems(props: {
         image={action().image}
         description={action().description}
         trailing={action().trailing}
+        shortcutKey={action().key}
         variant={action().variant}
         disabled={action().disabled}
         class={action().class}
@@ -777,7 +811,7 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
       void openMenuSheet({
         Items: DropdownItems,
         items: props.items,
-        label: props.label ?? messages().dropdownMenu,
+        label: props.heading ?? props.label ?? messages().dropdownMenu,
         locale: locale(),
         top: props.sheetTop,
         search: props.search,
@@ -800,6 +834,8 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
     else close(false);
   };
   const handleMenuKeyDown = (event: KeyboardEvent) => {
+    // A letter chooses the entry that carries it, unless the person is typing in a field of the menu.
+    if (chooseByKey(menuRef, event)) return;
     const items = actionableItems(menuRef);
     // A searchable menu's field keeps the focus and moves the marked entry itself.
     if (!props.search && !props.body && (focusMenuRow(items, event.key) || focusRowSegment(items, event.key))) {
@@ -932,6 +968,13 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
           }}
         >
           <Show when={entriesShown()}>
+            <Show when={props.heading}>
+              {(heading) => (
+                <p class="k2b-dropdown__heading" aria-hidden="true">
+                  {heading()}
+                </p>
+              )}
+            </Show>
             <Show when={props.body}>
               {(body) => {
                 const Body = body();
@@ -973,6 +1016,14 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
                     });
                   }}
                 />
+              )}
+            </Show>
+            <Show when={props.keyHint}>
+              {(hint) => (
+                <p class="k2b-dropdown__keys" aria-hidden="true">
+                  <span>{hint()[0]}</span>
+                  <span>{hint()[1]}</span>
+                </p>
               )}
             </Show>
             {/* Hidden from the menu's children, which are entries only; the menu reads it as its description. */}

@@ -1,6 +1,7 @@
 import { type DndCollisionContext, type DndController, type DndDroppableSnapshot, dnd } from "@k2b/stdlib/solid";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Dropdown, type DropdownAnchor, type DropdownItem, type DropdownReturnFocus } from "../actions/Dropdown";
+import { Kbd } from "../content/Kbd";
 import { announce } from "../feedback/announce";
 import { MovedHint } from "../feedback/MovedHint";
 import { Tooltip } from "../feedback/Tooltip";
@@ -60,7 +61,15 @@ export type PanesProps = {
   movable?: boolean;
   resizable?: boolean;
   split?: false | "horizontal" | "vertical" | "both";
-  onAddItem?: (targetItemId: string | null) => void;
+  /**
+   * "Add pane": the item of the group whose + was used, or `null` for an empty workspace, and that + itself, so an
+   * application can open a menu beside it and give the focus back to it.
+   */
+  onAddItem?: (targetItemId: string | null, from: HTMLElement) => void;
+  /** The + opens a menu: it says so (`aria-haspopup`); the application sets `aria-expanded` on `from` while it is open. */
+  addOpensMenu?: boolean;
+  /** The application's key for "Add pane", such as "mod+shift+1": the + shows it in its tooltip and names it. */
+  addShortcut?: string;
   /**
    * The application's own arrangement. "Reset arrangement" in the Arrange menu returns to it, choosing its preset
    * restores its sizes, and a double click on a boundary restores that boundary's size.
@@ -355,7 +364,7 @@ export default function Panes(props: PanesProps): JSX.Element {
     const next = activatePanesItem(current, itemId);
     if (next !== current) props.onLayoutChange(next);
   };
-  const requestAdd = (targetItemId: string | null) => props.onAddItem?.(targetItemId);
+  const requestAdd = (targetItemId: string | null, from: HTMLElement) => props.onAddItem?.(targetItemId, from);
 
   const title = (itemId: string) => requireItem(items(), itemId).title;
   const moveLabel = (move: PanesMove, messages: PanesMessages): string => {
@@ -494,7 +503,13 @@ export default function Panes(props: PanesProps): JSX.Element {
             </span>
             <p>{panesMessages().noPane}</p>
             <Show when={props.onAddItem !== undefined}>
-              <button type="button" class="k2b-panes__add" onClick={() => requestAdd(null)} aria-label={panesMessages().addPane}>
+              <button
+                type="button"
+                class="k2b-panes__add"
+                onClick={(event) => requestAdd(null, event.currentTarget)}
+                aria-label={panesMessages().addPane}
+                aria-haspopup={props.addOpensMenu ? "menu" : undefined}
+              >
                 <i class="ti ti-plus" aria-hidden="true" />
                 <span>{panesMessages().addPane}</span>
               </button>
@@ -515,6 +530,8 @@ export default function Panes(props: PanesProps): JSX.Element {
             canResize={canResize}
             addItem={requestAdd}
             canAdd={() => props.onAddItem !== undefined}
+            addOpensMenu={() => props.addOpensMenu === true}
+            addShortcut={() => props.addShortcut}
             onActivate={activate}
             onLayoutChange={props.onLayoutChange}
             defaultRatio={(path, direction) =>
@@ -585,6 +602,15 @@ export default function Panes(props: PanesProps): JSX.Element {
   );
 }
 
+/** "mod+shift+1" as `aria-keyshortcuts` reads it: "Control+Shift+1 Meta+Shift+1". */
+const ariaShortcut = (keys: string | undefined) => {
+  if (!keys) return undefined;
+  const parts = keys.split("+").map((part) => (part === "shift" ? "Shift" : part === "alt" ? "Alt" : part.toUpperCase()));
+  return parts.includes("MOD")
+    ? ["Control", "Meta"].map((mod) => parts.map((part) => (part === "MOD" ? mod : part)).join("+")).join(" ")
+    : parts.join("+");
+};
+
 type RendererProps = {
   node: () => PanesNode;
   path: PanesPath;
@@ -595,8 +621,10 @@ type RendererProps = {
   instanceId: string;
   canMove: () => boolean;
   canResize: () => boolean;
-  addItem: (targetItemId: string | null) => void;
+  addItem: (targetItemId: string | null, from: HTMLElement) => void;
   canAdd: () => boolean;
+  addOpensMenu: () => boolean;
+  addShortcut: () => string | undefined;
   onActivate: (itemId: string) => void;
   onLayoutChange: (layout: PanesLayout) => void;
   defaultRatio: (path: PanesPath, direction: PanesSplit["direction"]) => number;
@@ -1096,8 +1124,15 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
               type="button"
               class="k2b-panes__add k2b-panes__add--tab"
               aria-label={panesMessages().addPane}
-              content={panesMessages().addPane}
-              onClick={() => props.addItem(props.node().active)}
+              aria-haspopup={props.addOpensMenu() ? "menu" : undefined}
+              aria-keyshortcuts={ariaShortcut(props.addShortcut())}
+              content={
+                <>
+                  {panesMessages().addPane}
+                  <Show when={props.addShortcut()}>{(keys) => <Kbd keys={keys()} />}</Show>
+                </>
+              }
+              onClick={(event) => props.addItem(props.node().active, event.currentTarget)}
             >
               <i class="ti ti-plus" aria-hidden="true" />
             </Tooltip.Trigger>

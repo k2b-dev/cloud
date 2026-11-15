@@ -8167,6 +8167,37 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: flex;
 }
 
+/* The letter that chooses an entry, at the row's end; a phone sheet has no keys. */
+.k2b-ui .k2b-dropdown__key {
+  flex: none;
+  margin-inline-start: auto;
+}
+
+.k2b-ui .k2b-gesture-menu__sheet-menu .k2b-dropdown__key {
+  display: none;
+}
+
+/* What the entries do, as a quiet line above them. */
+.k2b-ui .k2b-dropdown__heading {
+  padding: 0.375rem 0.75rem 0.25rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+/* How the keys work, as a quiet foot: its start and its end. */
+.k2b-ui .k2b-dropdown__keys {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.375rem 0.75rem 0.25rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
 .k2b-ui .k2b-dropdown__note {
   max-inline-size: 18rem;
   padding: 0.375rem 0.75rem 0.25rem;

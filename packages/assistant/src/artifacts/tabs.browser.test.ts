@@ -147,6 +147,162 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
     }
   }, 30_000);
 
+  test("“+” opens one menu of what Gustav has: keys, focus in and back, and letters while it is open", async () => {
+    const { page, errors } = await openPage();
+    try {
+      await open(page, "report");
+      const add = page.locator(".k2b-panes__add--tab").first();
+      expect(await add.getAttribute("aria-haspopup")).toBe("menu");
+      await add.focus();
+      await page.keyboard.press("Enter");
+      const menu = page.getByRole("menu", { name: "Daneben öffnen" });
+      await menu.waitFor();
+      await settled(page);
+      if (shots) await page.screenshot({ path: `${shots}/plus-menue-light-1440.png` });
+      expect(await add.getAttribute("aria-expanded")).toBe("true");
+      expect(await menu.locator(".k2b-dropdown__heading").textContent()).toBe("Daneben öffnen");
+      // Only what Gustav has; without Code there is no "Automation".
+      expect(await menu.getByRole("menuitem").allTextContents()).toEqual([
+        expect.stringContaining("Ergebnis aus diesem Chat"),
+        expect.stringContaining("Dateien des Chats"),
+      ]);
+      expect(await menu.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.getAttribute("aria-keyshortcuts")))).toEqual([
+        "E",
+        "D",
+      ]);
+      expect(await page.evaluate(() => document.activeElement?.textContent ?? "")).toContain("Ergebnis aus diesem Chat");
+      // Esc closes and gives the focus back to the + that opened it.
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "hidden" });
+      expect(await add.evaluate((element) => element === document.activeElement)).toBe(true);
+      expect(await add.getAttribute("aria-expanded")).toBe("false");
+      // A letter chooses directly: "D" opens the chat's files as a tab.
+      await page.keyboard.press("Enter");
+      await menu.waitFor();
+      await page.keyboard.press("d");
+      await page.locator(".artifact-pane__title", { hasText: "In diesem Chat" }).waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("Ctrl/⌘ + Shift + 1 opens the menu, also from the composer but not from another field; the + names the key", async () => {
+    const { page, errors } = await openPage();
+    try {
+      await open(page, "report");
+      const add = page.locator(".k2b-panes__add--tab").first();
+      expect(await add.getAttribute("aria-keyshortcuts")).toBe("Control+Shift+1 Meta+Shift+1");
+      const menu = page.getByRole("menu", { name: "Daneben öffnen" });
+      await page.getByRole("textbox", { name: "Chats durchsuchen" }).focus();
+      await page.keyboard.press("Control+Shift+Digit1");
+      await frames(page);
+      expect(await menu.isVisible()).toBe(false);
+      await page.getByRole("textbox", { name: "Gustav etwas fragen" }).focus();
+      await page.keyboard.press("Control+Shift+Digit1");
+      await menu.waitFor();
+      expect(await add.getAttribute("aria-expanded")).toBe("true");
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "hidden" });
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("“Ergebnis” among several opens a search in the menu's place; Esc leads back, Enter opens the result", async () => {
+    const { page, errors } = await openPage();
+    try {
+      await open(page, "report");
+      const add = page.locator(".k2b-panes__add--tab").first();
+      await add.focus();
+      await page.keyboard.press("Enter");
+      await page.getByRole("menu", { name: "Daneben öffnen" }).waitFor();
+      await page.keyboard.press("e");
+      const field = page.getByRole("combobox", { name: /In 2 Ergebnissen suchen/ });
+      await field.waitFor();
+      await page.keyboard.press("Escape");
+      await page.getByRole("menu", { name: "Daneben öffnen" }).waitFor();
+      await page.keyboard.press("e");
+      await field.waitFor();
+      await page.keyboard.type("Rückfragen");
+      await page.keyboard.press("Enter");
+      await page.locator(".artifact-pane__title", { hasText: "Offene Rückfragen Kern" }).waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("entries follow the chat: no result disables “Ergebnis” with its reason, and its letter does nothing", async () => {
+    const { page } = await openPage(1440, "/?results=0");
+    try {
+      await open(page, "report");
+      await page.locator(".k2b-panes__add--tab").first().click();
+      const menu = page.getByRole("menu", { name: "Daneben öffnen" });
+      await menu.waitFor();
+      const result = menu.getByRole("menuitem", { name: /Ergebnis aus diesem Chat/ });
+      expect(await result.isDisabled()).toBe(true);
+      expect(await result.textContent()).toContain("Noch kein Ergebnis in diesem Chat");
+      // The letter of a disabled entry does nothing.
+      await page.keyboard.press("e");
+      expect(await menu.isVisible()).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("opening the menu moves neither the chat nor the tabs, and a new tab lands in the group of its +", async () => {
+    const { page, errors } = await openPage();
+    try {
+      await open(page, "report");
+      await open(page, "table");
+      await page.locator(".k2b-panes__arrange").click();
+      await page.getByRole("menuitemradio", { name: /Zwei|Two/ }).click();
+      await page.locator(".k2b-panes__separator").first().waitFor();
+      const boxes = async () => {
+        await settled(page);
+        return page.evaluate(() =>
+          [document.querySelector(".harness-chat"), ...document.querySelectorAll(".k2b-panes__group")].map((element) => {
+            const rect = element!.getBoundingClientRect();
+            return [Math.round(rect.x), Math.round(rect.width)];
+          }),
+        );
+      };
+      const before = await boxes();
+      const second = page.locator(".k2b-panes__group").nth(1);
+      await second.locator(".k2b-panes__add--tab").click();
+      await page.getByRole("menu", { name: "Daneben öffnen" }).waitFor();
+      expect(await boxes()).toEqual(before);
+      await page.keyboard.press("d");
+      await second.locator(".k2b-panes__tab", { hasText: "In diesem Chat" }).waitFor();
+      expect(await page.locator(".k2b-panes__group").first().locator(".k2b-panes__tab", { hasText: "In diesem Chat" }).count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("on a phone “+” opens the same entries as a sheet from below, without keys", async () => {
+    const { page } = await openPage(390);
+    try {
+      await open(page, "report");
+      await page.locator(".k2b-panes__add--tab").first().click();
+      const sheet = page.getByRole("dialog", { name: "Daneben öffnen" });
+      await sheet.waitFor();
+      await settled(page);
+      if (shots) await page.screenshot({ path: `${shots}/plus-menue-light-390.png` });
+      expect(await sheet.getByRole("menuitem").count()).toBe(2);
+      expect(
+        await sheet.locator(".k2b-dropdown__key").evaluateAll((keys) => keys.filter((key) => key.getClientRects().length > 0).length),
+      ).toBe(0);
+      const heights = await sheet.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height));
+      expect(Math.min(...heights)).toBeGreaterThanOrEqual(44);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("switching, opening another, closing one, and the menu “…” never move or resize the chat", async () => {
     const { page } = await openPage();
     try {

@@ -36,6 +36,7 @@ import { openAssistantTaskRun } from "../frontend/AssistantActivitiesDialog";
 import { AssistantChatContextContent, type ContextView } from "../frontend/AssistantChatContext";
 import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
 import { AssistantTaskDetail } from "../frontend/AssistantTasksDialog";
+import { ADD_MENU_SHORTCUT } from "../frontend/add-menu-shortcut";
 import { useAssistantLive } from "../frontend/assistant-live";
 import { dismissAssistantPanesHint } from "../frontend/chat-sidebar-layout";
 import { chatSidebarMessages } from "../frontend/chat-sidebar-messages";
@@ -249,7 +250,7 @@ export function ArtifactWorkspace(props: {
   /** "Ask Gustav about it": hands the thing to the next message. */
   onAsk?: (title: string) => void;
   /** "Add pane": the chat's whole list. */
-  onAdd?: () => void;
+  onAdd?: (targetItemId: string | null, from: HTMLElement) => void;
   /** The one-time hint that tabs can be arranged was dismissed on this browser, as the server read it. */
   arrangeHintSeen?: boolean;
   /** The operator set up reading web pages: web links of the chat open as reading-view tabs. */
@@ -602,7 +603,9 @@ export function ArtifactWorkspace(props: {
         items={items()}
         onLayoutChange={props.controller.setLayout}
         onActivate={props.controller.activateItem}
-        onAddItem={props.onAdd ? () => props.onAdd!() : undefined}
+        onAddItem={props.onAdd}
+        addOpensMenu
+        addShortcut={ADD_MENU_SHORTCUT}
         arrangeHint={{
           open: arrangeHintOpen(),
           onDismiss: () => {

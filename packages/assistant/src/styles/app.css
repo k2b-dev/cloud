@@ -88,6 +88,9 @@
   padding: 0.375rem 1.25rem 0;
 }
 .k2b-ui .assistant-context-head__title { display: none; }
+/* The "+" of the head row sits before the button "In this chat"; with tabs open, the row of tabs has its own "+". */
+.k2b-ui .assistant-context-head__add { margin-inline-start: auto; }
+.k2b-ui .assistant-chat-layout[data-tabs="open"] .assistant-context-head__add { display: none; }
 @media (max-width: 47.999rem) {
   .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
   .k2b-ui .assistant-context-button .k2b-button__label > span { display: none; }
@@ -149,7 +152,10 @@
 .k2b-ui .assistant-context-box__head {
   display: grid;
   height: 2rem;
-  grid-template-columns: minmax(0, 1fr) auto 1.75rem;
+  /* Title, the place for "New · n", then one column per action: "+" and "Open as tab". */
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-auto-columns: 1.75rem;
+  grid-auto-flow: column;
   align-items: center;
   gap: 0.25rem;
   padding-inline-start: 0.5rem;

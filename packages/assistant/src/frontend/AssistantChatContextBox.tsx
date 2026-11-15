@@ -1,9 +1,11 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
-import { AnchoredPopover, Button, formatFileViewSize, IconButton, IconButtonLink, Skeleton, useLocale } from "@k2b/ui";
+import { AnchoredPopover, Button, formatFileViewSize, IconButton, IconButtonLink, Kbd, Skeleton, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, on, Show, untrack } from "solid-js";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { type ChatSidebarState, createReadingFreeze } from "./AssistantChatSidebar";
+import { addMenuMessages } from "./add-menu-messages";
+import { ADD_MENU_SHORTCUT } from "./add-menu-shortcut";
 import {
   buildContextBoxModel,
   type ContextBoxGroup,
@@ -23,6 +25,8 @@ export type ContextBoxActions = {
   onOpenAll: () => void;
   onOpenSources: () => void;
   onOpenContext: () => void;
+  /** "+": opens the menu of what can be opened beside the chat, beside the given control. */
+  onAdd?: (from: HTMLElement) => void;
 };
 
 const useCopy = () => {
@@ -241,6 +245,27 @@ export function AssistantChatContextBox(props: {
             {copy().boxNew({ count: held.pending() })}
           </button>
         </span>
+        <Show when={props.variant === "island" ? props.actions.onAdd : undefined}>
+          {(add) => (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              class="assistant-context-box__add"
+              label={addMenuMessages.resolve([locale()]).t.open}
+              tooltip={
+                <>
+                  {addMenuMessages.resolve([locale()]).t.open} <Kbd keys={ADD_MENU_SHORTCUT} />
+                </>
+              }
+              aria-keyshortcuts="Control+Shift+1 Meta+Shift+1"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              onClick={(event) => add()(event.currentTarget)}
+            >
+              <i class="ti ti-plus" aria-hidden="true" />
+            </IconButton>
+          )}
+        </Show>
         <IconButton
           size="sm"
           variant="ghost"
@@ -344,6 +369,8 @@ export function AssistantChatContextPlaces(props: {
   onSheet: () => void;
 }) {
   const copy = useCopy();
+  const placesLocale = useLocale();
+  const addCopy = () => addMenuMessages.resolve([placesLocale()]).t;
   const host = createChatContextHost({ onSheet: () => props.onSheet() });
   createEffect(on(() => props.chatId, host.close, { defer: true }));
   const freeze = createReadingFreeze();
@@ -370,6 +397,27 @@ export function AssistantChatContextPlaces(props: {
             <p class="assistant-context-head__title k2b-truncate-fade" title={title()}>
               {title()}
             </p>
+          )}
+        </Show>
+        <Show when={props.actions.onAdd}>
+          {(add) => (
+            <IconButton
+              class="assistant-context-head__add"
+              size="sm"
+              variant="ghost"
+              label={addCopy().open}
+              tooltip={
+                <>
+                  {addCopy().open} <Kbd keys={ADD_MENU_SHORTCUT} />
+                </>
+              }
+              aria-keyshortcuts="Control+Shift+1 Meta+Shift+1"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              onClick={(event) => add()(event.currentTarget)}
+            >
+              <i class="ti ti-plus" aria-hidden="true" />
+            </IconButton>
           )}
         </Show>
         <Button
