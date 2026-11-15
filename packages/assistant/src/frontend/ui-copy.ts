@@ -194,6 +194,7 @@ const germanText: Record<string, string> = {
   "Failed to import skill": "Skill konnte nicht importiert werden",
   "Failed to load AI preferences": "KI-Einstellungen konnten nicht geladen werden",
   "Failed to dismiss the suggestion": "Der Vorschlag konnte nicht verworfen werden",
+  "Failed to save AI preferences": "KI-Einstellungen konnten nicht gespeichert werden",
   Composer: "Eingabefeld",
   "Suggest next message": "Nächste Nachricht vorschlagen",
   "After an answer, the empty field shows what you might write next. Tab takes it over; nothing is sent. It costs hardly any budget.":
