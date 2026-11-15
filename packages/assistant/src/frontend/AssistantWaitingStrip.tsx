@@ -7,6 +7,10 @@ import type { WaitingAttention, WaitingQuestionsView } from "./waiting-questions
 /** The sign of each kind of entry; a new source adds its kind here. */
 const KIND_ICON: Record<AiOpenQuestion["kind"] | WaitingAttention["kind"], string> = {
   approval: "ti ti-shield-check",
+  code_activate: "ti ti-power",
+  code_changes: "ti ti-message-2",
+  code_expired: "ti ti-clock-off",
+  code_attention: "ti ti-alert-circle",
   routine: "ti ti-alert-circle",
   app_run: "ti ti-alert-circle",
 };
