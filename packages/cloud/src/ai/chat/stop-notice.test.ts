@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AssistantStopReason } from "@k2b/nessi/ai";
-import { aiMessageStopNotice } from "./stop-notice";
+import { aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
 import { truncatedAnswer } from "./stop-notice.test-fixture";
 
 const reasons = {
@@ -28,4 +28,20 @@ test("reasoning clause uses this message's measured output, including the 80 per
       reasoning: expected,
     });
   expect(aiMessageStopNotice({ ...truncatedAnswer, usage: null })).toEqual({ kind: "output_limit", reasoning: false });
+});
+
+test("only the person's stop request counts as stopped by the person; a turn Cloud ended does not", () => {
+  // The stop request aborts the loop.
+  expect(
+    stoppedByPerson([
+      { loopDoneReason: null, stopReason: "aborted" },
+      { loopDoneReason: "aborted", stopReason: "aborted" },
+    ]),
+  ).toBe(true);
+  // A restart interrupts, a budget or time limit fails the loop: Cloud's notice explains those.
+  expect(stoppedByPerson([{ loopDoneReason: null, stopReason: "interrupted" }])).toBe(false);
+  expect(stoppedByPerson([{ loopDoneReason: "error", stopReason: "aborted" }])).toBe(false);
+  // Without a loop ending, the last message decides.
+  expect(stoppedByPerson([{ loopDoneReason: null, stopReason: "aborted" }])).toBe(true);
+  expect(stoppedByPerson([{ loopDoneReason: "stop", stopReason: "stop" }])).toBe(false);
 });

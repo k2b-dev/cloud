@@ -81,6 +81,8 @@ export type AiTurnSegment = {
   error?: AiTurnError | null;
   /** A stopped answer can be given again: the person's message is answered anew. */
   answerAgain?: () => void | Promise<void>;
+  /** The person stopped this turn: it ends with the quiet stopped line and no notice. */
+  stoppedByPerson?: boolean;
   stopNotice?: AiStopNotice | null;
   /** The turn is the chat's newest and nothing runs, so a new message can pick up its work. */
   continuable?: boolean;
@@ -1030,7 +1032,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           {/* Calm by design: no busy sweep while the turn reconnects. */}
           <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
         </Show>
-        <Show when={props.segment().phase === "stopped" && !props.segment().earlier}>
+        <Show when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().stoppedByPerson}>
           {/* Calm by design: the person stopped it, so this is a quiet line, not a warning. */}
           <Chat.Activity
             class="ai-turn__stopped"

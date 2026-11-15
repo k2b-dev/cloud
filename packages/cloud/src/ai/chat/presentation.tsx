@@ -23,7 +23,7 @@ import { AiReaderTimeZoneProvider } from "./action-sentences";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
-import { aiMessageStopNotice } from "./stop-notice";
+import { aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
@@ -385,7 +385,9 @@ const storedItems = (
       firstSegment = false;
       const error = last ? turnError : undefined;
       const lastMessage = item.entries.findLast((entry) => entry.message.role === "assistant");
-      const stopNotice = index === lastAssistant && lastMessage ? aiMessageStopNotice(lastMessage) : null;
+      // One ending, never two: the person's stop is the quiet line; only a turn Cloud ended explains itself in a notice.
+      const byPerson = last && segmentPhase === "stopped" && stoppedByPerson(item.entries);
+      const stopNotice = index === lastAssistant && lastMessage && !byPerson ? aiMessageStopNotice(lastMessage) : null;
       if (isEmptyLayout(layout) && !messageActions && !task && !error && !stopNotice) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
       return [
@@ -404,9 +406,8 @@ const storedItems = (
             duration: last ? () => ({ workedMs: item.workedMs, waitingMs: null }) : () => null,
             scheduledTask: task,
             error,
-            // The person stopped it: the turn's own quiet line says so. The notice speaks only when Cloud ended the
-            // answer itself (output limit, Code authoring budget, an interruption the person did not ask for).
-            stopNotice: error || (stopNotice?.kind === "stopped" && segmentPhase === "stopped") ? null : stopNotice,
+            stoppedByPerson: byPerson,
+            stopNotice: error ? null : stopNotice,
             // A stopped answer offers to answer the person's message again, where it stopped.
             answerAgain:
               last && segmentPhase === "stopped" && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
