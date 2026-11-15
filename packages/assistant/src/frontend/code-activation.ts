@@ -1,3 +1,5 @@
+import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities";
+import { type CodeVersionReadModel, CodeVersionReadModelSchema } from "@k2b/cloud/contracts/code-read-model";
 import { codeOwnPath } from "@k2b/cloud/contracts/code-routes";
 import { z } from "zod";
 
@@ -159,4 +161,58 @@ export const pendingCodeVersionActivation = (codeId: string, versionId: string) 
       }
     },
   };
+};
+
+/** The review as the person who manages the Code sees it: comments as text, never their place in the source. */
+const ReviewSchema = z.object({
+  status: z.enum(["not_required", "pending", "approved", "changes_requested", "rejected", "withdrawn", "superseded", "expired"]),
+  origin: z.union([
+    z.object({ kind: z.literal("cli") }),
+    z.object({ kind: z.literal("ai_chat"), conversationId: z.string(), automaticAfterReview: z.boolean() }),
+  ]),
+  decidedBy: z.object({ id: z.string().nullable(), name: z.string().nullable(), avatarHash: z.string().nullable() }).nullable(),
+  decidedAt: z.string().nullable(),
+  message: z.string().nullable(),
+  comments: z.array(
+    z.object({
+      id: z.string(),
+      author: z.object({ id: z.string().nullable(), name: z.string().nullable(), avatarHash: z.string().nullable() }),
+      createdAt: z.string(),
+      body: z.string(),
+      parentId: z.string().nullable(),
+    }),
+  ),
+  commentCount: z.number().int(),
+  activeVersion: z.object({ id: z.string(), number: z.number().int() }).nullable(),
+});
+export type CodeVersionReview = z.infer<typeof ReviewSchema>;
+
+/** `null`: Core could not say; the card then follows the activation preview alone. */
+export const loadCodeVersionReview = async (codeId: string, versionId: string): Promise<CodeVersionReview | null> => {
+  try {
+    const response = await post("review", { codeId, versionId });
+    if (!response.ok) return null;
+    const parsed = z.object({ data: ReviewSchema }).safeParse(await response.json());
+    return parsed.success ? parsed.data.data : null;
+  } catch {
+    return null;
+  }
+};
+
+/** True when Core withdrew the waiting version; any other answer changed nothing that the card can claim. */
+export const withdrawCodeVersion = async (codeId: string, versionId: string): Promise<boolean> => {
+  try {
+    return (await post("withdraw", { codeId, versionId })).ok;
+  } catch {
+    return false;
+  }
+};
+
+/** The version in words, from Core's read model: what changes against the version before, and the tried examples. */
+export const loadCodeVersionWords = async (codeId: string, versionId: string): Promise<CodeVersionReadModel | null> => {
+  const result = await invokeCapabilityWithDataSchema(
+    { appId: "core", capabilityId: "code.version.words", kind: "query", input: { codeId, versionId } },
+    CodeVersionReadModelSchema,
+  ).catch(() => null);
+  return result?.ok ? result.data.data : null;
 };

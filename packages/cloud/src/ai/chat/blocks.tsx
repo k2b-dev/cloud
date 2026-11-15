@@ -633,8 +633,9 @@ export function CompactToolRow(props: { block: ToolBlock; busy?: boolean }) {
           );
           return (
             <div class="flex min-w-0 flex-col gap-2">
+              {/* Lasting Code steps say what they did in words; their input and output stay with the model and `cld`. */}
               <Show when={hasCodeStepView(props.block.name)} fallback={inputOutput()}>
-                <CodeStepBody block={props.block} raw={inputOutput} />
+                <CodeStepBody block={props.block} />
               </Show>
               {/* Below the input and output, so an image that arrives in an open step grows in like its output and moves nothing above. */}
               <Show when={image()}>

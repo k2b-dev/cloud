@@ -1,9 +1,11 @@
 import { type AiRuntimeTool, aiConversations, defineAiTool, resolveAiCapabilityActor } from "@k2b/cloud/ai";
+import type { CodeTestResult } from "@k2b/cloud/code";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { z } from "zod";
 import { codeAuthoringFailure } from "../api/code-authoring";
 import { type CodeContext, CodeDataError, requireCodePermission } from "./access";
+import { operationTitles } from "./admin";
 import { codeAuthoringServices } from "./authoring";
 import {
   CODE_AUTHORING_REQUEST_BYTES,
@@ -11,6 +13,7 @@ import {
   CodeAuthoringErrorSchema,
   CodeChatCheckDataSchema,
   CodeChatDraftSummarySchema,
+  CodeChatTestDataSchema,
   codeAuthoringContracts,
   codeChatAuthoringInputs,
 } from "./authoring-contracts";
@@ -22,6 +25,8 @@ import {
   updateCodeChatDraft,
 } from "./chat-drafts";
 import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, readCodeChatSdk } from "./chat-sdk";
+import { describeCodeCheckWords, describeCodeTestWords } from "./read-model/chat-words";
+import { codeReadModelMessages } from "./read-model/messages";
 import { readCodeReview } from "./review";
 import { codeAuthor, readCode } from "./store";
 
@@ -96,6 +101,18 @@ export function createCodeAuthoringChatTools() {
       timeoutMs: REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000,
     }).server((input, context) => safe(() => call(service, input, context), context, command));
   }
+  /** The person reads tried examples in words; the model keeps the exact result beside them. */
+  async function withTestWords(result: CodeTestResult, context: CodeContext) {
+    const operations = [...new Set(result.cases.flatMap((example) => example.runs.flatMap((run) => run.calls.map((call) => call.operation))))];
+    const titles = operations.length
+      ? await operationTitles(
+          operations.map((operation) => ({ operation, target: null })),
+          context,
+        ).catch(() => null)
+      : null;
+    const call = codeReadModelMessages.resolve(context.locale ? [context.locale] : []).t.call;
+    return { ...result, words: describeCodeTestWords(result, context.locale, (id) => titles?.operations[id] ?? call) };
+  }
   function conversationId(context: ChatContext) {
     if (!context.conversationId) throw new CodeDataError("FORBIDDEN", "Code authoring requires an active chat turn.");
     return context.conversationId;
@@ -165,19 +182,22 @@ export function createCodeAuthoringChatTools() {
     ),
     tool(
       "test",
-      { input: codeChatAuthoringInputs.test, data: codeAuthoringContracts.test.data },
+      { input: codeChatAuthoringInputs.test, data: CodeChatTestDataSchema },
       async (input, context, chat) => {
         const draft = await draftFor(input, chat);
-        return codeAuthoringServices.test({ ...input, files: draft.files, entry: draft.entry, tests: draft.tests }, context);
+        return withTestWords(
+          await codeAuthoringServices.test({ ...input, files: draft.files, entry: draft.entry, tests: draft.tests }, context),
+          context,
+        );
       },
       "With {codeId}, check the server-held draft and run its test/**/*.json fixtures written through code_write. Explicit files, entry or tests replace that draft part first. Run fixtures with fictional data in the production sandbox. Returns the exact cld code test JSON, including ordered calls. No real capabilities or durable runs.",
     ),
     tool(
       "simulate",
-      { input: codeChatAuthoringInputs.simulate, data: codeAuthoringContracts.simulate.data },
+      { input: codeChatAuthoringInputs.simulate, data: CodeChatTestDataSchema },
       async (input, context, chat) => {
         const draft = await draftFor(input, chat);
-        return codeAuthoringServices.simulate({ ...input, files: draft.files, entry: draft.entry }, context);
+        return withTestWords(await codeAuthoringServices.simulate({ ...input, files: draft.files, entry: draft.entry }, context), context);
       },
       "With {codeId,fixture}, check the server-held draft and simulate exactly one fixture. Explicit files or entry replace that draft part first. Uses a fixture invocation with a fixed clock and seed and explicit fake replies. Returns the exact cld code simulate JSON. No real effects.",
     ),
@@ -272,9 +292,17 @@ export function createCodeAuthoringChatTools() {
       async (input, context, chat) => {
         const draft = await draftFor(input, chat);
         const checked = await codeAuthoringServices.check({ codeId: input.codeId, files: draft.files, entry: draft.entry }, context);
-        if (!checked.result.ok) return { ...checked, result: checked.result };
+        const words = describeCodeCheckWords(
+          {
+            diagnostics: checked.result.ok ? [] : checked.result.diagnostics,
+            warnings: checked.result.ok ? (checked.result.warnings ?? []) : [],
+            permissions: checked.permissions,
+          },
+          context.locale,
+        );
+        if (!checked.result.ok) return { ...checked, result: checked.result, words };
         const { bundle: _bundle, ...result } = checked.result;
-        return { ...checked, result };
+        return { ...checked, result, words };
       },
       "Check the server-held draft with {codeId}. Explicit files or entry replace that draft part first. Returns diagnostics, warnings and operation/target permissions at file/line locations; the checked bundle stays on the server. Fix errors before test and submit; address each warning or know why it is fine.",
     ),

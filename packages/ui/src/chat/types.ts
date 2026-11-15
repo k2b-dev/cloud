@@ -16,6 +16,11 @@ export type ChatDecisionAnswer = {
   label: string;
   /** Icon class, for example `ti ti-send`. */
   icon?: string;
+  /**
+   * The answer was given and Cloud works on it for an unknown time, such as switching something on while the question
+   * stays in place. A shimmer runs over the filled button and it takes no second press. Only `confirm` reads it.
+   */
+  busy?: boolean;
   onSelect: () => void | Promise<void>;
 };
 

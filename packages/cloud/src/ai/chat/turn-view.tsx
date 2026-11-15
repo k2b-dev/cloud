@@ -34,6 +34,8 @@ import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
 import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
+import { isCodeStepResult } from "./code-step-words";
+import { CodeStepResult } from "./code-steps";
 import { type AiTurnAction, type AiTurnLayout, type AiTurnPhase, type AiTurnResult, submittedCodeVersion } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 
@@ -158,7 +160,8 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (isCardToolName(name)) return t.stepPreparingCard;
   if (isChartToolName(name)) return t.stepPreparingChart;
   const authoring = CODE_AUTHORING_STEPS[name];
-  if (authoring) return name === "code_write" ? withTarget(t[authoring]) : t[authoring];
+  // Lasting Code steps name what happens, never a file: the person does not read the source.
+  if (authoring) return t[authoring];
   if (name === "code_run") return withTarget(t.stepRunningCode);
   if (name === "code_inspect") return t.stepCheckingRun;
   if (name.startsWith("code_")) return t.stepCode;
@@ -482,6 +485,9 @@ function AiTurnResultView(props: {
                 )
               }
             </Show>
+          </Match>
+          <Match when={isCodeStepResult(current())}>
+            <CodeStepResult block={current()} />
           </Match>
           <Match when={submittedCodeVersion(current())}>
             {(version) => (

@@ -1761,6 +1761,20 @@ export default function AssistantWorkspace(props: Props) {
     }
   };
 
+  /**
+   * A prepared message from a version card, such as "Revise version 5 the way Jana wants it". An empty field sends it
+   * at once; text the person already typed stays, and the message joins it in the field instead.
+   */
+  const askGustav = (text: string) => {
+    const key = composerSessionKey();
+    const current = composerDraft(key);
+    if (current.trim() || composerAttachmentsFor(key).length > 0) {
+      setComposerDraft(key, `${current.trimEnd()}\n\n${text}`);
+      focusComposer();
+      return;
+    }
+    void send({ message: text });
+  };
   const useStarter = async (starter: AssistantStarterAction) => {
     const release = holdComposerSave();
     try {
@@ -3188,6 +3202,7 @@ export default function AssistantWorkspace(props: Props) {
                                         {...version}
                                         timeZone={props.timeZone}
                                         onActivated={() => setCodeRevision((revision) => revision + 1)}
+                                        onAsk={askGustav}
                                       />
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",

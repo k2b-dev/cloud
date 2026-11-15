@@ -70,7 +70,7 @@ else {
     const view = await mount(blocks, { locale: "de" });
     try {
       const row = view.work.querySelector(".ai-turn-steps details")!;
-      expect(row.querySelector("strong")!.textContent).toBe("Prüft den Code");
+      expect(row.querySelector("strong")!.textContent).toBe("Prüft");
       expect(row.querySelector("small")).toBeNull();
 
       setBlocks([

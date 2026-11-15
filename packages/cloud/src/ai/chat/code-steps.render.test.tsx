@@ -12,167 +12,158 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { CodeStepBody } = await import("./code-steps");
+const { CodeStepBody, CodeStepResult } = await import("./code-steps");
+const { isCodeStepResult } = await import("./code-step-words");
 const { LocaleProvider } = await import("@k2b/ui");
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
-const step = (block: Partial<ToolBlock> & Pick<ToolBlock, "name">, locale = "en") =>
+const block = (value: Partial<ToolBlock> & Pick<ToolBlock, "name">): ToolBlock => ({
+  id: "tool-1",
+  kind: "tool",
+  callId: "call-1",
+  status: "completed",
+  ...value,
+});
+const render = (component: typeof CodeStepBody | typeof CodeStepResult, value: ToolBlock, locale = "en") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(CodeStepBody, {
-          block: { id: "tool-1", kind: "tool", callId: "call-1", status: "completed", ...block },
-          raw: () => "RAW-INPUT-OUTPUT",
-        });
+        return createComponent(component, { block: value });
       },
     }),
   );
-const numbers = (html: string) => [...html.matchAll(/k2b-content-code-display__number"[^>]*>(\d+)</g)].map((match) => Number(match[1]));
+/** Visible text only: what a person reads. */
+const visible = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z#0-9]+;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+/** The patterns of the code-no-source rule: no source, file, line, diagnostic code, ID or hash. */
+const technical = [/\bcode\.tsx?\b/i, /\.[a-z]{1,8}:\d+/i, /\bcode_[a-z_]+\b/, /\bsp_[a-z0-9]+\b/i, /\bTS\d{4}\b/, /\b[0-9a-f]{8,}\b/i];
+const expectNoCode = (html: string) => {
+  for (const pattern of technical) expect(visible(html)).not.toMatch(pattern);
+};
+
 const source = Array.from({ length: 40 }, (_, index) => `const line${index + 1} = ${index + 1};`).join("\n");
+const words = {
+  notices: [
+    {
+      severity: "block",
+      text: "The automation wants to send mail. Code in your Cloud may not do that without a person.",
+      consequence: "This version cannot be submitted.",
+    },
+    { severity: "warning", text: "The page is open to everyone signed in.", consequence: "Everyone in your Cloud can open it." },
+  ],
+  mayDo: [
+    { text: "Create task · Space", isNew: true },
+    { text: "Read mail · Mailbox", isNew: false },
+  ],
+};
+const examples = {
+  passed: 1,
+  total: 2,
+  summary: "1 of 2 examples successful",
+  explanation: "Successful means the automation met Gustav’s expectation. Cloud does not confirm that the expectation is correct.",
+  items: [
+    {
+      name: "Delivery note with attachment",
+      modelLabel: "✦",
+      state: "succeeded",
+      status: "Successful",
+      sentence: "Create task · 1 successful in the example",
+      differences: [],
+    },
+    {
+      name: "Delivery note without attachment",
+      modelLabel: "✦",
+      state: "failed",
+      status: "Failed",
+      sentence: "Differs from the expectation",
+      differences: [{ subject: "Calls", expected: "No calls recorded", actual: "Store file · 1 successful in the example" }],
+    },
+  ],
+};
 
-test("a file Gustav still writes shows its newest lines, numbered like the whole file, in the AI colour", () => {
-  // The executor sent the end of the content after 100 earlier lines.
-  const html = step({
-    name: "code_write",
-    status: "running",
-    args: { path: "code.ts", content: source },
-    liveArgs: { omittedLines: { path: 0, content: 100 } },
-  });
-  expect(numbers(html)).toEqual(Array.from({ length: 14 }, (_, index) => 127 + index));
-  expect(html).toContain("code.ts · line 140");
-  expect(html).toContain("data-live");
-  expect(html).toContain("line40");
-  expect(html).not.toContain("line26 ");
-  // Nothing to copy or inspect until the call exists.
-  expect(html).not.toContain("RAW-INPUT-OUTPUT");
-  expect(html).not.toContain("k2b-copy");
-  expect(
-    step(
-      { ...{ name: "code_write", status: "running" as const }, args: { path: "a.ts", content: "x" }, liveArgs: { omittedLines: {} } },
-      "de",
-    ),
-  ).toContain("a.ts · Zeile 1");
+test("a file Gustav writes shows no source, no file name and no line, live or finished", () => {
+  const live = render(
+    CodeStepBody,
+    block({ name: "code_write", status: "running", args: { path: "code.ts", content: source }, liveArgs: { omittedLines: { path: 0, content: 100 } } }),
+  );
+  const done = render(CodeStepBody, block({ name: "code_write", args: { codeId: "c_1234", path: "code.tsx", content: source }, result: { version: 1 } }));
+  for (const html of [live, done]) {
+    expectNoCode(html);
+    expect(html).not.toContain("line40");
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("k2b-content-code-display");
+  }
 });
 
-test("a written file shows its complete source instead of the call's JSON", () => {
-  const html = step({ name: "code_write", args: { codeId: "c_1234", path: "code.tsx", content: source }, result: { version: 1 } });
-  expect(numbers(html)).toHaveLength(40);
-  expect(html).toContain("code.tsx");
-  expect(html).not.toContain("c_1234");
+test("a check says what the Code may do in words, with the new rights marked, and never a file or a code", () => {
+  const html = render(
+    CodeStepBody,
+    block({
+      name: "code_check",
+      result: {
+        version: 1,
+        result: { ok: false, diagnostics: [{ code: "code_unresolved_call", message: "Bad code.ts:19 sp_hidden", file: "code.ts", line: 19, column: 1 }] },
+        manifest: null,
+        permissions: [
+          { operation: "spaces.task.create", target: { type: "spaces.space", id: "sp_fixture" }, title: "Team", typeTitle: "Space", own: false, file: "code.ts", line: 4, status: "new" },
+        ],
+        words,
+      },
+    }),
+    "en",
+  );
+  expect(visible(html)).toContain("Create task · Space");
+  expect(visible(html)).toContain("new");
+  expectNoCode(html);
+  expect(html).not.toContain("<details");
 });
 
-test("a check lists findings at file and line, and the rights the Code needs", () => {
-  const diagnostic = { code: "TS2304", message: "Cannot find name 'mailbox'.", file: "code.ts", line: 3, column: 9 };
-  const failed = step(
-    { name: "code_check", result: { version: 1, result: { ok: false, diagnostics: [diagnostic] }, manifest: null, permissions: [] } },
+test("notices stand in the conversation with their consequence; tried examples with their result words", () => {
+  const check = block({ name: "code_check", args: { codeId: "c_1234" }, result: { version: 1, result: { ok: true }, words } });
+  expect(isCodeStepResult(check)).toBe(true);
+  const notices = render(CodeStepResult, check, "de");
+  expect(visible(notices)).toContain("Folge: This version cannot be submitted.");
+  expect(notices).toContain('data-tone="danger"');
+  expect(notices).toContain('data-tone="warning"');
+  expectNoCode(notices);
+
+  const test = block({ name: "code_test", args: { codeId: "c_1234" }, result: { version: 1, mode: "test", ok: false, cases: [], diagnostics: [], words: { notices: [], examples } } });
+  expect(isCodeStepResult(test)).toBe(true);
+  const html = render(CodeStepResult, test, "de");
+  const text = visible(html);
+  expect(text).toContain("Beispiele");
+  expect(text).toContain("1 von 2 erfolgreich");
+  expect(text).toContain("Delivery note without attachment");
+  expect(text).toContain("Erwartet No calls recorded");
+  expect(text).toContain("Passiert Store file · 1 successful in the example");
+  expect(html).toContain('data-state="failed"');
+  expectNoCode(html);
+  // No status word is a bare "OK", "Passt" or "Done".
+  expect(text).not.toMatch(/\b(Passt|OK|Gut|Done)\b/);
+
+  const trial = render(CodeStepResult, { ...test, name: "code_simulate" }, "de");
+  expect(visible(trial)).toContain("Probelauf");
+});
+
+test("a step without words, such as an older result, shows no building block and no raw data", () => {
+  const old = block({ name: "code_test", args: { codeId: "c_1234" }, result: { version: 1, mode: "test", ok: true, cases: [], diagnostics: [] } });
+  expect(isCodeStepResult(old)).toBe(false);
+  const html = render(CodeStepBody, old);
+  expectNoCode(html);
+  expect(html).not.toContain("<details");
+});
+
+test("a failed step names no Core error code; Gustav explains it in the conversation", () => {
+  const html = render(
+    CodeStepBody,
+    block({ name: "code_submit", isError: true, result: { version: 1, error: { code: "code_version_conflict", message: "Stale base c_1234.", details: null } } }),
     "de",
   );
-  expect(failed).toContain("Befunde");
-  expect(failed).toContain("Cannot find name 'mailbox'.");
-  expect(failed).toContain("code.ts:3 · TS2304");
-  const permission = {
-    operation: "spaces.task.create",
-    target: { type: "spaces.space", id: "sp_fixture" },
-    title: "Team",
-    typeTitle: "Space",
-    own: false,
-    file: "code.ts",
-    line: 7,
-    status: "new",
-  };
-  const passed = step({
-    name: "code_check",
-    result: { version: 1, result: { ok: true, diagnostics: [], permissions: [] }, manifest: null, permissions: [permission] },
-  });
-  expect(passed).toContain("No findings.");
-  expect(passed).toContain("spaces.task.create");
-  expect(passed).toContain("Space Team");
-  expect(passed).toContain("new");
-});
-
-test("a test run counts passed cases and names what failed", () => {
-  const html = step({
-    name: "code_test",
-    result: {
-      version: 1,
-      mode: "test",
-      ok: false,
-      error: null,
-      diagnostics: [],
-      cases: [
-        { name: "monday", file: "test/monday.json", ok: true, runs: [] },
-        {
-          name: "empty week",
-          file: "test/empty.json",
-          ok: false,
-          runs: [{ entrypoint: "monday", ok: false, error: "code_assertion_failed", value: null, calls: [], failures: ["$.calls[0]"] }],
-        },
-      ],
-    },
-  });
-  expect(html).toContain("1 of 2 test cases passed");
-  // A simulation's returned value and ordered calls stay reachable behind the exact input and result.
-  expect(html).toContain("Exact input and result");
-  expect(html).toContain("RAW-INPUT-OUTPUT");
-  expect(html).toContain("test/empty.json · monday · code_assertion_failed · $.calls[0]");
-});
-
-test("a run that executed but missed its expectations still names what failed; a passing case names nothing", () => {
-  const html = step({
-    name: "code_simulate",
-    result: {
-      version: 1,
-      mode: "simulate",
-      ok: false,
-      error: null,
-      diagnostics: [],
-      cases: [
-        {
-          name: "wrong value",
-          file: null,
-          ok: false,
-          runs: [{ entrypoint: "monday", ok: true, error: null, value: 1, calls: [], failures: ["value"] }],
-        },
-        {
-          name: "expected refusal",
-          file: null,
-          ok: true,
-          runs: [{ entrypoint: "monday", ok: false, error: "FORBIDDEN", value: null, calls: [], failures: [] }],
-        },
-      ],
-    },
-  });
-  expect(html).toContain("monday · value");
-  expect(html).not.toContain("FORBIDDEN<");
-  expect(html).not.toMatch(/expected refusal<\/span><span class="ai-code-step__where"/);
-});
-
-test("tests that could not run say so in the reader's language and keep the stable code", () => {
-  const result = { version: 1, mode: "test", ok: false, error: "code_test_invalid_fixture", diagnostics: [], cases: [] };
-  const german = step({ name: "code_test", result }, "de");
-  expect(german).toContain("Die Tests konnten nicht laufen.");
-  expect(german).toContain("code_test_invalid_fixture");
-  expect(step({ name: "code_test", result })).toContain("The tests could not run.");
-});
-
-test("a refused command shows Core's message, not its error body", () => {
-  const html = step({
-    name: "code_write",
-    args: { codeId: "c_1234", path: "code.ts", content: "x" },
-    result: { version: 1, error: { code: "NOT_FOUND", message: "No draft of this Code in this chat.", details: null } },
-  });
-  expect(html).toContain("No draft of this Code in this chat.");
-  expect(html).not.toContain("NOT_FOUND");
-});
-
-test("a pulled project lists its files with their length", () => {
-  const html = step({
-    name: "code_pull",
-    result: { version: 1, config: {}, files: { "lib/dates.ts": "a\nb\n", "code.ts": source } },
-  });
-  expect(html).toContain("2 files");
-  expect(html.indexOf("code.ts")).toBeLessThan(html.indexOf("lib/dates.ts"));
-  expect(html).toContain("40 lines");
-  expect(html).toContain("2 lines");
+  expect(visible(html)).toContain("Dieser Schritt hat nicht geklappt.");
+  expectNoCode(html);
 });
