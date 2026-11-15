@@ -248,7 +248,11 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     <AiToolActivity
       blockId={`work:${segment().id}`}
       class="ai-turn-work"
-      label={<span class="ai-turn-work__sentence">{sentence()}</span>}
+      label={
+        <span class="ai-turn-work__sentence" title={sentence()}>
+          {sentence()}
+        </span>
+      }
       ariaLabel={ariaLabel()}
       icon={waiting() ? "ti ti-hand-stop" : "ti ti-sparkles"}
       tone="ai"
