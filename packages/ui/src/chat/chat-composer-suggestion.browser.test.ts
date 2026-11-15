@@ -17,6 +17,7 @@ const TEST_TIMEOUT = 30_000;
 // Set K2B_UI_SHOTS to a directory to keep a screenshot of every state at 1440 and 390 px for review.
 const shots = process.env.K2B_UI_SHOTS;
 const SUGGESTION = "Ja, entwirf die Antwort an Jana und häng das Angebot an";
+const SHORT = "Ja, schick sie so ab";
 const LONG =
   "Ja, entwirf die Antwort an Jana, häng das Angebot vom 02.11. an und schlag ihr für den Aufbau Samstag, den 14.11., ab 8 Uhr vor, mit Beleuchtung als Position 4";
 
@@ -151,18 +152,19 @@ const suggest = async (page: Page, text: string | undefined) => {
 
 describe("Chat.Composer suggestion", () => {
   test(
-    "the hint reads in the 12 px meta step and the suggestion stays readable plum",
+    "the pill reads in the 12 px meta step and the suggestion stays readable plum",
     async () => {
       const page = await open(1440);
       try {
         await suggest(page, SUGGESTION);
         const look = await page.evaluate(() => {
           const hint = getComputedStyle(document.querySelector(".k2b-chat-composer__suggestion-key")!);
+          const key = getComputedStyle(document.querySelector(".k2b-chat-composer__suggestion-cap")!);
           const text = getComputedStyle(document.querySelector(".k2b-chat-composer__suggestion")!);
-          return { size: hint.fontSize, weight: hint.fontWeight, text: text.fontSize };
+          return { size: hint.fontSize, height: hint.height, key: key.fontWeight, text: text.fontSize };
         });
-        // v12 6d: sizes only from 12/13/14/18 px; the hint is the meta step at 12 px, semibold as v12 draws it.
-        expect(look).toEqual({ size: "12px", weight: "600", text: "14px" });
+        // 6d: sizes only from 12/13/14/18 px. The pill is 20 px in the 12 px meta step, "Tab" semibold (Feinschliff v3).
+        expect(look).toEqual({ size: "12px", height: "20px", key: "600", text: "14px" });
       } finally {
         await page.context().close();
       }
@@ -175,29 +177,36 @@ describe("Chat.Composer suggestion", () => {
     [390, touch],
   ] as const) {
     test(
-      `at ${width} px the hint stands small on its own line under the suggestion, where the text starts`,
+      `at ${width} px the pill follows the suggestion inline and wraps only as a whole`,
       async () => {
         const page = await open(width, context);
         try {
-          await suggest(page, SUGGESTION);
-          const place = await page.evaluate(() => {
-            const overlay = document.querySelector<HTMLElement>(".k2b-chat-composer__suggestion")!;
-            const text = overlay.querySelector<HTMLElement>(":scope > span[aria-hidden]")!;
-            const hint = [
-              ...overlay.querySelectorAll<HTMLElement>(".k2b-chat-composer__suggestion-key, .k2b-chat-composer__suggestion-accept"),
-            ].find((node) => node.getBoundingClientRect().width > 0)!;
-            const lines = text.getClientRects();
-            const box = hint.getBoundingClientRect();
-            const style = getComputedStyle(hint);
-            return {
-              below: box.top >= lines[lines.length - 1]!.bottom - 0.5,
-              left: Math.round(box.left - lines[0]!.left),
-              size: style.fontSize,
-              height: box.height,
-            };
-          });
-          // v12 image 12: the mark sits under the suggestion, flush with its first letter, in the 12 px meta step.
-          expect(place).toEqual({ below: true, left: 0, size: "12px", height: 20 });
+          const place = () =>
+            page.evaluate(() => {
+              const overlay = document.querySelector<HTMLElement>(".k2b-chat-composer__suggestion")!;
+              const text = overlay.querySelector<HTMLElement>(":scope > span[aria-hidden]:not(.k2b-chat-composer__suggestion-gap)")!;
+              const pill = [
+                ...overlay.querySelectorAll<HTMLElement>(".k2b-chat-composer__suggestion-key, .k2b-chat-composer__suggestion-accept"),
+              ].find((node) => node.getBoundingClientRect().width > 0)!;
+              const lines = [...text.getClientRects()];
+              const last = lines[lines.length - 1]!;
+              const box = pill.getBoundingClientRect();
+              return {
+                rects: pill.getClientRects().length,
+                height: box.height,
+                // Behind the last word on its line, or at the start of the next line without an indent.
+                sameLine: Math.abs(box.top - last.top) < 2 && box.left > last.right,
+                ownLine: box.top >= last.bottom - 0.5 && Math.round(box.left - lines[0]!.left) === 0,
+              };
+            });
+          for (const text of [SHORT, SUGGESTION, LONG]) {
+            await suggest(page, text);
+            const placed = await place();
+            expect(placed.rects, text).toBe(1);
+            expect(placed.height, text).toBe(20);
+            expect(placed.sameLine || placed.ownLine, text).toBe(true);
+            if (text === SHORT) expect(placed.sameLine, text).toBe(true);
+          }
         } finally {
           await page.context().close();
         }
@@ -212,13 +221,14 @@ describe("Chat.Composer suggestion", () => {
         try {
           const empty = await layout(page);
           expect(empty.overlay).toBeNull();
-          for (const text of [SUGGESTION, LONG]) {
+          for (const text of [SHORT, LONG]) {
             await suggest(page, text);
             const shown = await layout(page);
             // The whole suggestion grows the field like text; the conversation moves up with the composer's top.
             expect(shown.field).toBe(shown.overlay!);
-            // The hint takes its own line under the text, so every suggestion grows the field.
-            expect(shown.field).toBeGreaterThan(empty.field);
+            // The pill is lower than the line: a short suggestion keeps the empty height, a long one wraps like text.
+            if (text === SHORT) expect(shown.field).toBe(empty.field);
+            else expect(shown.field).toBeGreaterThan(empty.field);
             expect(shown.gap).toBe(empty.gap);
             expect(shown.bottom).toBe(empty.bottom);
             expect(shown.placeholder).toBe("");
@@ -230,7 +240,10 @@ describe("Chat.Composer suggestion", () => {
             await suggest(page, LONG);
             const lines = await page.evaluate(() => {
               const overlay = document.querySelector<HTMLElement>(".k2b-chat-composer__suggestion")!;
-              return overlay.scrollHeight <= overlay.clientHeight && overlay.getBoundingClientRect().height;
+              // The pill's touch area may reach past the suggestion on a phone; the text itself must end inside it.
+              const text = overlay.querySelector<HTMLElement>(":scope > span[aria-hidden]:not(.k2b-chat-composer__suggestion-gap)")!;
+              const box = overlay.getBoundingClientRect();
+              return text.getBoundingClientRect().bottom <= box.bottom + 0.5 && box.height;
             });
             expect(lines).toBeGreaterThan(3 * 21);
           }
@@ -279,6 +292,12 @@ describe("Chat.Composer suggestion", () => {
         expect(dismissed.gap).toBe(empty.gap);
         expect(dismissed.describedBy).toBeNull();
         expect(await page.evaluate(() => calls.dismiss)).toBe(1);
+        // Dismissed is dismissed: Tab no longer takes it, the field stays empty and at its empty height.
+        await page.keyboard.press("Tab");
+        await settled(page);
+        expect(await page.evaluate(() => calls.accept)).toBe(1);
+        expect(await page.locator(FIELD).inputValue()).toBe("");
+        expect((await layout(page)).field).toBe(empty.field);
         // A new suggestion shows again.
         await suggest(page, SUGGESTION);
         expect((await layout(page)).overlay).not.toBeNull();
