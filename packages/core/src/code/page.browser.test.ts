@@ -88,6 +88,7 @@ const documentFor = (tree: CodePageTree, path: string) => {
         return createComponent(AppWorkspace.Content, {
           get children() {
             return createComponent(AppWorkspace.Main, {
+              class: "code-page-main",
               scrollFade: false,
               get children() {
                 return host();

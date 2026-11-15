@@ -40,7 +40,9 @@ export const codePageHandlers = ssr<CodePageHostingContext>((context) => {
             fade replaces Main's, which would blend the label out with the content. */}
         <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1" resizable={false} head={false}>
           <AppWorkspace.Content>
-            <AppWorkspace.Main scrollFade={false}>{view()}</AppWorkspace.Main>
+            <AppWorkspace.Main class="code-page-main" scrollFade={false}>
+              {view()}
+            </AppWorkspace.Main>
           </AppWorkspace.Content>
         </AppWorkspace>
       </Layout>

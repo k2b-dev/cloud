@@ -590,6 +590,16 @@ main > .code-page-host {
     width: min(var(--k2b-dialog-available-width), 30rem);
   }
 }
+/* A Code page exists to scroll, so with a mouse its Main keeps the shared track whether the page overflows or not:
+   WebKit reserves no gutter before content overflows, and the footer with the pill must not narrow by the track when a
+   page grows or a new tree makes it shorter. The platform draws the same track for its other scrollers. */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-app-workspace__main.code-page-main {
+      overflow-y: scroll;
+    }
+  }
+}
 /* Phones: one line of 40px plus the safe area at the window's edge, centred; the page keeps that room free. */
 @media (max-width: 47.999rem) {
   .code-page-provenance {
