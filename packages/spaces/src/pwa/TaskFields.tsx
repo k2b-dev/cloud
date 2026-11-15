@@ -146,6 +146,7 @@ export function TaskProps(props: Props) {
         undo = toast.success(t().movedTo({ title: task.title, status: next.name }), {
           action: {
             label: t().undo,
+            variant: "ghost",
             onClick: () => {
               undo?.dismiss();
               undo = undefined;

@@ -70,6 +70,8 @@ type ChatActionBase = {
   pressed?: boolean;
   /** Semantic foreground for selected feedback actions, without a persistent background. */
   pressedTone?: "success" | "danger";
+  /** With inline actions, listed in the trailing "More" menu instead of as its own icon button. */
+  overflow?: boolean;
 };
 
 /** Exactly one executable behavior for every chat action. */

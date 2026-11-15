@@ -556,6 +556,12 @@
   border-radius: var(--k2b-radius-control);
   background: var(--k2b-surface-muted);
 }
+/* In a phone sheet the sheet's height is fixed: the grid grows with its folders and the sheet's body scrolls, so full
+   height shows the list and half height previews it. */
+.k2b-bottom-sheet-frame .filesv2-picker {
+  height: auto;
+  overflow: visible;
+}
 .filesv2-picker__tile {
   display: flex;
   flex-direction: column;

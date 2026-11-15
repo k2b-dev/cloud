@@ -104,33 +104,14 @@ export const createAiUserMessageActions = (entry: AiStoredMessage, actions: AiCh
   if (copyText) {
     result.push({ id: "copy", label: t.actionCopy, icon: "ti ti-copy", copyText });
   }
+  // Answering again and its variants sit under the answer; here the message can be edited and sent again.
   if (!entry.compactedAt && actions.onRetryMessage) {
-    result.push(
-      {
-        id: "retry",
-        label: t.actionTryAgain,
-        icon: "ti ti-refresh",
-        onSelect: () => actions.onRetryMessage?.(entry, { mode: "retry" }),
-      },
-      {
-        id: "details",
-        label: t.actionMoreDetailed,
-        icon: "ti ti-list-details",
-        onSelect: () => actions.onRetryMessage?.(entry, { mode: "details" }),
-      },
-      {
-        id: "concise",
-        label: t.actionMoreConcise,
-        icon: "ti ti-align-left",
-        onSelect: () => actions.onRetryMessage?.(entry, { mode: "concise" }),
-      },
-      {
-        id: "edit",
-        label: t.actionEditPrompt,
-        icon: "ti ti-pencil",
-        onSelect: () => openModifyRetryDialog(entry, actions.onRetryMessage!, locale),
-      },
-    );
+    result.push({
+      id: "edit",
+      label: t.actionEditPrompt,
+      icon: "ti ti-pencil",
+      onSelect: () => openModifyRetryDialog(entry, actions.onRetryMessage!, locale),
+    });
   }
   return result;
 };
