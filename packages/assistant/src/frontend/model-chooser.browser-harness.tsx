@@ -132,6 +132,8 @@ render(() => {
       onValueChange={setDraft}
       placeholder="Assistent etwas fragen"
       state={running ? "running" : "idle"}
+      // As in the Assistant: without any model the composer is locked.
+      disabled={state === "empty"}
       submitDisabled={aiModelBlocksSending(chooserState(), value())}
       fileSelection={{ onSelect: () => {}, choose: async () => [], disabled: running }}
       submitTools={
