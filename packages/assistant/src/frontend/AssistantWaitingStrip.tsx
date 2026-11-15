@@ -185,11 +185,20 @@ export function AssistantWaitingStrip(props: {
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-/** The card of a question in the timeline, by the anchor the chat gives it. */
+/**
+ * The card of a waiting entry in the timeline, by the anchor the chat gives it: a decision card, or any other card that
+ * waits for the person, such as a version to switch on.
+ */
 const questionElement = (content: HTMLElement | undefined, anchor: string): HTMLElement | null =>
-  Array.from(content?.querySelectorAll<HTMLElement>(".k2b-chat-decision[data-chat-anchor]") ?? []).find(
-    (element) => element.dataset.chatAnchor === anchor,
-  ) ?? null;
+  Array.from(content?.querySelectorAll<HTMLElement>("[data-chat-anchor]") ?? []).find((element) => element.dataset.chatAnchor === anchor) ??
+  null;
+
+/** Where the focus lands on a card: its sentence, its outcome once answered, else its main button. */
+const landingTarget = (element: HTMLElement): HTMLElement | null =>
+  element.querySelector<HTMLElement>(".k2b-chat-decision__sentence") ??
+  element.querySelector<HTMLElement>(".k2b-chat-outcome") ??
+  element.querySelector<HTMLElement>('[data-chat-primary]:not(:disabled), .k2b-button[data-variant="primary"]:not(:disabled)') ??
+  element.querySelector<HTMLElement>("button:not(:disabled), a[href]");
 
 /**
  * What the strip needs from the timeline: whether it stays quiet, and the jump's landing.
@@ -268,11 +277,7 @@ export const createWaitingQuestionFocus = (input: {
       // A taller one starts at the top.
       input.scrollToAnchor(anchor);
     }
-    const target =
-      element.querySelector<HTMLElement>(".k2b-chat-decision__sentence") ??
-      element.querySelector<HTMLElement>(".k2b-chat-outcome") ??
-      element;
-    target.focus({ preventScroll: true });
+    (landingTarget(element) ?? element).focus({ preventScroll: true });
   };
 
   return { quiet: () => input.onlyHere() !== null && !answersOutOfView(), focus };

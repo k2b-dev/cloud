@@ -248,12 +248,15 @@ for (const width of [1440, 390])
         const meta = node.querySelector(".ai-turn-work__meta")!.getBoundingClientRect();
         const words = node.querySelector(".ai-turn-work__text")!.getBoundingClientRect();
         return {
-          chevronAfterTime: chevron.left >= meta.right,
+          chevronBehindTime: chevron.left >= meta.right,
           rowRight: node.getBoundingClientRect().right - chevron.right,
           timeAfterWords: meta.left - words.right,
+          chevronAfterTime: chevron.left - meta.right,
         };
       });
-      expect(ends.chevronAfterTime).toBe(true);
+      expect(ends.chevronBehindTime).toBe(true);
+      // …and the chevron right beside the time.
+      expect(ends.chevronAfterTime).toBeLessThan(12);
       expect(ends.rowRight).toBeLessThan(12);
       // The time follows the sentence (v12), not a column at the far end.
       expect(ends.timeAfterWords).toBeGreaterThanOrEqual(0);
