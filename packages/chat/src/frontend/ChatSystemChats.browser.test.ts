@@ -588,7 +588,8 @@ test("system item directory and info keep their links inside the universal panel
     await page.waitForURL(`**/app/chat/panel/c/${chat}/t/${threads[0]}`);
     const info = page.getByRole("link", { name: "Chat-Info", exact: true });
     expect(await info.getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/t/${threads[0]}?panel=info`);
-    expect(await page.locator(".chat-conversation__back a").getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/threads`);
+    // The panel's way back is "All chats"; the overview stays in the sidebar and the thread picker.
+    expect(await page.locator(".chat-conversation__back a").getAttribute("href")).toBe("/app/chat/panel");
     await info.click();
     await page.getByText("Mitglieder: alle mit Zugriff auf diesen Bereich. Zugriff änderst du dort.").waitFor();
     expect(errors).toEqual([]);

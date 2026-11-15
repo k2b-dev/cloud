@@ -1194,3 +1194,8 @@
 .chat-deferred-dialog > * { min-height: 0; flex: 1; }
 .chat-deferred-dialog .chat-dialog__body { flex: 1; }
 .chat-deferred-dialog > .chat-deferred-feedback { height: 100%; }
+
+/* The panel's ready discussion about a resource before anyone wrote: the quiet line fills the feed's place. */
+.chat-resource-start__feed {
+  display: flex;
+}
