@@ -106,6 +106,7 @@ export * from "./address";
 export { createAppAccessCommands } from "./app-access";
 export * from "./commands";
 export * from "./locale";
+export * from "./maintenance";
 export * from "./output";
 export * from "./plugin";
 export * from "./resource-links";

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { buildRouteTable } from "./trie";
-import { tryUpgradeWebSocket, websocketHandlers } from "./ws-proxy";
+import { closeProxiedSockets, tryUpgradeWebSocket, websocketHandlers } from "./ws-proxy";
 
 class FakeUpstream extends EventTarget {
   static instances: FakeUpstream[] = [];
@@ -280,4 +280,15 @@ describe("gateway WebSocket proxy", () => {
     expect(connection.response?.status).toBe(500);
     expect(FakeUpstream.instances[0]!.closes).toEqual([{ code: 1011, reason: "upgrade failed" }]);
   });
+});
+
+test("maintenance closes every open proxied socket once with 1012, and closed sockets are forgotten", () => {
+  const first = setup();
+  const second = setup();
+  const a = clientFor(first.data()!);
+  const b = clientFor(second.data()!);
+  expect(closeProxiedSockets(1012, "maintenance")).toBe(2);
+  expect(a.closes).toEqual([{ code: 1012, reason: "maintenance" }]);
+  expect(b.closes).toEqual([{ code: 1012, reason: "maintenance" }]);
+  expect(closeProxiedSockets(1012, "maintenance")).toBe(0);
 });
