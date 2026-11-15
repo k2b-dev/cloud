@@ -5,7 +5,7 @@ section: Operations
 order: 1256
 description: Approve Code versions, edit the Code policy, see all Code, waiting cleanup, limits and runner capacity.
 tags: [operations, code, policy, approvals, administration]
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Administration › Code
@@ -16,7 +16,8 @@ pattern as the AI area: sections on the left, a list, and the selected item.
 Every selection is part of the URL, so reload, back and shared links return to
 the same place. Other people see a no-permission state; the page has no
 partial view for them. The "Code" entry in the Administration sidebar shows the
-number of open Code-version approvals for the signed-in Cloud administrator.
+number of open Code-version approvals for the signed-in Cloud administrator,
+plus the open reports on Code pages.
 
 | Section | What it shows | Source of truth |
 | --- | --- | --- |
@@ -126,6 +127,25 @@ of claiming that nothing changed.
 and each changed row with its old and new value. Code keeps no history store
 of its own.
 
+## Reported pages
+
+Every page a Code serves under `/code/<id>/…` carries a label with a card.
+Members of the Cloud can report the page there; visitors without an account
+and guests cannot. A report names the person, the page path, an optional
+reason and a short text. It goes to every Cloud administrator as the
+**Reported Code pages** notification, with links to the page and to the
+automation under **Code in this Cloud**; the Code's owner is not notified.
+Administrators who did not turn the notification off receive it in the browser
+and by email.
+
+The automation's detail shows **Reported pages** while reports are open, with
+**Mark done** for each report and **Pause** for the whole automation. Marking a
+report done tells the person who filed it, without naming the administrator.
+Each person has one open report per page and can file ten reports per hour.
+Open reports stay until an administrator marks them done; Cloud deletes done
+reports 30 days later, like the automation's run history, and deletes all
+reports with their Code.
+
 ## Browser routes
 
 The page calls Core routes under `/api/code/admin`. They require the Cloud
@@ -139,6 +159,8 @@ capabilities and `cld code`:
 | `POST /api/code/admin/policy/read` | The current policy with its revision |
 | `POST /api/code/admin/policy/preview` | Paused Code for a complete replacement table, with owner names |
 | `POST /api/code/admin/policy/update` | Replace the table at the read revision |
+| `POST /api/code/admin/reports/list` | `{ codeId, state?, cursor? }`; one page of 20 reports on the automation's pages, newest first |
+| `POST /api/code/admin/reports/resolve` | `{ codeId, reportId }`; mark one report done and tell the person who filed it |
 
 A stale revision, hash or comparison returns `409`. The decision route preserves
 the platform refusal in its stable `code`: `SELF_APPROVAL`, `REAUTHENTICATE` and
