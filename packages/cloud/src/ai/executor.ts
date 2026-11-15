@@ -1,4 +1,4 @@
-import type { AssistantMessage, CompactEvent, LoopAggregate, Message, NessiLoop, OutboundEvent } from "@k2b/nessi";
+import type { AssistantMessage, CompactEvent, LoopAggregate, Message, NessiLoop, OutboundEvent, Tool } from "@k2b/nessi";
 import { compact, nessi } from "@k2b/nessi";
 import { capabilityReviewRememberScope } from "../_internal/capability-reviews";
 import { getCapability, listCapabilities } from "../_internal/registry";
@@ -84,13 +84,14 @@ import {
   recordAiWebsiteReceipts,
   settleAiToolCheck,
 } from "./store";
-import { AI_LIVE_SNAPSHOT_INTERVAL_MS, publishAiWireEvent } from "./stream";
+import { AI_LIVE_SNAPSHOT_INTERVAL_MS, publishAiWireEvent, subscribeAiTurnInterrupts } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
 import { acceptCanonicalToolNames } from "./tool-call-names";
 import { resolveAiToolResultMaxChars } from "./tool-result-budget";
 import { type AiApprovalUse, aiApprovalAskedLater, aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
 import { AiTranscriptionError } from "./transcription";
+import { AI_ACTION_BUDGET_MS } from "./turn-action-budget";
 import {
   AiTurnFailure,
   type AiTurnFailureInfo,
@@ -101,6 +102,7 @@ import {
   rememberProviderErrors,
 } from "./turn-failure";
 import { type AiTurnGuidance, loadAiTurnGuidance } from "./turn-guidance";
+import { AiTurnInterruption } from "./turn-interruption";
 import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type {
@@ -124,7 +126,6 @@ const log = logger("ai:executor");
 
 const AI_COALESCE_MS = 25;
 const AI_COALESCE_MAX_CHARS = 512;
-const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
 
 // Failed or cut-off generation can contain calls that nessi deliberately never executes or resumes.
 // Malformed calls are skipped too: they never run.
@@ -821,9 +822,13 @@ export class AiTurnExecutor {
       turnError: failed?.error ?? null,
       leaseOwner: this.config.leaseOwner,
     });
-    if (finalized === "completed") await pipeline.emitTurnFinished(status, error);
+    if (finalized === "interrupted") {
+      status = "aborted";
+      error = null;
+    }
+    if (finalized === "completed" || finalized === "interrupted") await pipeline.emitTurnFinished(status, error);
     await pipeline.flush().catch(() => undefined);
-    if (finalized === "completed" && this.config.onTurnFinalized) {
+    if ((finalized === "completed" || finalized === "interrupted") && this.config.onTurnFinalized) {
       await this.config.onTurnFinalized({ conversationId, turnId, status, kind }).catch((hookError) => {
         log.warn("AI turn finalized hook failed", {
           conversationId,
@@ -848,6 +853,7 @@ export class AiTurnExecutor {
   ): Promise<void> {
     const startedAt = Date.now();
     const abortController = new AbortController();
+    const interruption = new AiTurnInterruption(() => abortController.abort());
     const onSignal = () => abortController.abort();
     if (signal.aborted) abortController.abort();
     else signal.addEventListener("abort", onSignal, { once: true });
@@ -889,7 +895,10 @@ export class AiTurnExecutor {
         model: claim.turn.modelId ? { id: claim.turn.modelId } : material.model,
       });
       if (isAssistantChatTurn(config)) {
-        await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, accessSubjectForActor(material.actor));
+        await aiModelAccess.assertAllowed(
+          validated.resolved.profile.modelId,
+          config.accessSubject ?? accessSubjectForActor(material.actor),
+        );
       }
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
@@ -1341,7 +1350,9 @@ export class AiTurnExecutor {
             ? {
                 execute: async (entry, args, context) => {
                   try {
+                    interruption.assertCanStart();
                     await authorizeBackgroundMandate?.(entry, args);
+                    interruption.assertCanStart();
                     const result = await executeAiCapability({
                       conversationId,
                       turnId,
@@ -1576,7 +1587,7 @@ export class AiTurnExecutor {
       ),
     );
     const priorToolRounds = toolRoundState(turnMessages);
-    const quotaSubject = accessSubjectForActor(material.actor);
+    const quotaSubject = config.accessSubject ?? accessSubjectForActor(material.actor);
     const deadline = claim.turn.deadline ? Date.parse(claim.turn.deadline) : null;
     // The reason a failed turn names: the one the current model call or the turn's own checks gave.
     const failureReason: { current: AiTurnFailureReason | null } = { current: null };
@@ -1638,7 +1649,28 @@ export class AiTurnExecutor {
       }),
       tools: async () => {
         try {
-          return await turnPolicy.tools();
+          const current = await turnPolicy.tools();
+          return current.map(
+            (tool): Tool =>
+              tool.kind !== "server"
+                ? tool
+                : {
+                    ...tool,
+                    execute: async (args, context) => {
+                      const callId = context.callId ?? tool.def.name;
+                      interruption.begin(callId);
+                      const started = await aiToolAudit.noteToolStarted({
+                        conversationId,
+                        turnId,
+                        callId,
+                        toolName: prepared.canonicalNames.get(tool.def.name) ?? tool.def.name,
+                      });
+                      if (!started) interruption.request();
+                      interruption.assertCanStart();
+                      return tool.execute(args, context);
+                    },
+                  },
+          );
         } catch (error) {
           remember(aiTurnReasonFromThrown(error));
           throw error;
@@ -1684,29 +1716,38 @@ export class AiTurnExecutor {
       if (record.resolvedEvent) loop.push(record.resolvedEvent);
     }
 
-    const outcome = await this.driveChatLoop({
-      loop,
-      pipeline,
-      initialRoundFailed: lastToolRoundFailed(turnMessages, turnBlocks),
-      conversationId,
-      turnId,
-      abortController,
-      prepared,
-      approvalContext: material.toolApprovalContext,
-      allowRememberedApprovals: aiTurnAllowsRememberedApprovals(config),
-      rememberableCapabilityApprovals,
-      capabilityActionReviews,
-      approvalTargets,
-      linkedApprovals,
-      freshApprovalRequired,
-      appliedSteers,
-      noteToolRound: turnPolicy.noteToolRound,
-      noteToolCall: turnPolicy.noteToolCall,
-      failureReason,
-      onBackgroundBlocked: (message) => {
-        backgroundError = message;
-      },
-    });
+    const stopControls = await subscribeAiTurnInterrupts({ conversationId, turnId, onInterrupt: () => interruption.request() }).catch(
+      () => async () => {},
+    );
+    const outcome = await (async () => {
+      // Cursor first, durable flag second closes the startup race.
+      const beforeLoop = await aiConversations.getTurn({ conversationId, turnId });
+      if (beforeLoop?.cancellationReason === "queue_interrupt") interruption.request();
+      return this.driveChatLoop({
+        loop,
+        pipeline,
+        initialRoundFailed: lastToolRoundFailed(turnMessages, turnBlocks),
+        conversationId,
+        turnId,
+        abortController,
+        interruption,
+        prepared,
+        approvalContext: material.toolApprovalContext,
+        allowRememberedApprovals: aiTurnAllowsRememberedApprovals(config),
+        rememberableCapabilityApprovals,
+        capabilityActionReviews,
+        approvalTargets,
+        linkedApprovals,
+        freshApprovalRequired,
+        appliedSteers,
+        noteToolRound: turnPolicy.noteToolRound,
+        noteToolCall: turnPolicy.noteToolCall,
+        failureReason,
+        onBackgroundBlocked: (message) => {
+          backgroundError = message;
+        },
+      });
+    })().finally(stopControls);
     signal.removeEventListener("abort", onSignal);
 
     if (outcome.kind === "suspended") {
@@ -1765,6 +1806,7 @@ export class AiTurnExecutor {
     conversationId: string;
     turnId: string;
     abortController: AbortController;
+    interruption: AiTurnInterruption;
     prepared: PreparedAiTools;
     approvalContext?: AiToolApprovalContext;
     allowRememberedApprovals: boolean;
@@ -1801,7 +1843,7 @@ export class AiTurnExecutor {
       noteToolCall,
       failureReason,
     } = input;
-    const stopHeartbeat = this.startHeartbeat(conversationId, turnId, abortController);
+    const stopHeartbeat = this.startHeartbeat(conversationId, turnId, abortController, input.interruption);
     let lastIssueMessage: string | null = null;
     let lastResponse: AssistantMessage | undefined;
     let roundFailed = input.initialRoundFailed;
@@ -1811,8 +1853,18 @@ export class AiTurnExecutor {
       for await (const event of loop) {
         await pipeline.timing.event(event);
         if (event.type === "tool_action_request") {
+          if (input.interruption.draining) {
+            loop.push(
+              event.kind === "client_tool"
+                ? { type: "tool_result", callId: event.callId, result: { error: "Turn interrupted before this step ran." } }
+                : { type: "approval_response", callId: event.callId, approved: false },
+            );
+            continue;
+          }
+          if (event.kind === "client_tool") input.interruption.begin(event.callId);
           const suspended = await this.handleActionRequest({
             event,
+            interruption: input.interruption,
             loop,
             pipeline,
             conversationId,
@@ -1854,13 +1906,10 @@ export class AiTurnExecutor {
               location: prepared.frontendModes.get(event.name) ?? "server",
             })
             .catch(() => undefined);
-          if (!prepared.frontendModes.has(event.name))
-            await aiToolAudit
-              .noteToolStarted({ conversationId, turnId, callId: event.callId, toolName })
-              .catch(() =>
-                log.warn("AI tool audit write failed", { code: "tool_audit_start_failed", conversationId, turnId, callId: event.callId }),
-              );
         } else if (event.type === "tool_execution_end") {
+          // Nessi has journaled this result before yielding the event. Finish the
+          // running effect before aborting, so its result remains in next-turn context.
+          input.interruption.settled(event.callId);
           await aiToolAudit
             .noteToolCompleted({ turnId, callId: event.callId, isError: event.isError })
             .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));
@@ -1953,6 +2002,7 @@ export class AiTurnExecutor {
     freshApprovalRequired?: ReadonlySet<string>;
     onBackgroundBlocked?: (message: string) => void;
     signal: AbortSignal;
+    interruption: AiTurnInterruption;
   }): Promise<boolean> {
     const {
       event,
@@ -2086,7 +2136,7 @@ export class AiTurnExecutor {
         approvalId = record.id;
       }
     }
-    await aiConversations.savePendingTurnAction({
+    const saved = await aiConversations.savePendingTurnAction({
       approvalId,
       turnId,
       conversationId,
@@ -2104,6 +2154,16 @@ export class AiTurnExecutor {
       frontendMode,
       resolvedEvent: null,
     });
+
+    if (!saved) {
+      if (approvalId) await approvals.cancel([approvalId]);
+      loop.push(
+        event.kind === "client_tool"
+          ? { type: "tool_result", callId: event.callId, result: { error: "Turn interrupted before this step ran." } }
+          : { type: "approval_response", callId: event.callId, approved: false },
+      );
+      return false;
+    }
 
     if (event.kind === "client_tool") {
       await aiToolAudit
@@ -2134,6 +2194,8 @@ export class AiTurnExecutor {
       while (!input.signal.aborted && performance.now() < deadline) {
         const action = await aiConversations.getPendingTurnAction({ conversationId, turnId, callId: event.callId });
         if (action?.status === "resolved" && action.resolvedEvent) {
+          // The durable queue reconciler journals the receipt without replaying the tool body.
+          if (input.interruption.draining) break;
           await aiConversations.markPendingTurnActionConsumedInline({ conversationId, turnId, callId: event.callId });
           loop.push(action.resolvedEvent);
           return false;
@@ -2171,7 +2233,12 @@ export class AiTurnExecutor {
     return suspended;
   }
 
-  private startHeartbeat(conversationId: string, turnId: string, abortController: AbortController): () => void {
+  private startHeartbeat(
+    conversationId: string,
+    turnId: string,
+    abortController: AbortController,
+    interruption?: AiTurnInterruption,
+  ): () => void {
     let stopped = false;
     let failures = 0;
     const tick = async () => {
@@ -2183,6 +2250,7 @@ export class AiTurnExecutor {
           turnId,
           leaseOwner: this.config.leaseOwner,
           leaseMs: AI_TURN_LEASE_MS,
+          drainingInterruption: interruption?.draining,
         });
         failures = 0;
       } catch {
@@ -2191,6 +2259,10 @@ export class AiTurnExecutor {
       }
       if (!ok && !stopped) {
         const turn = await aiConversations.getTurn({ conversationId, turnId }).catch(() => null);
+        if (turn?.cancellationReason === "queue_interrupt" && interruption) {
+          interruption.request();
+          return;
+        }
         const timedOut = turn?.deadline && Date.parse(turn.deadline) <= Date.now() && !turn.cancelRequestedAt;
         abortController.abort(timedOut ? new AiRunTimeout(turn.runBudgetMs ?? null) : undefined);
       }

@@ -3,7 +3,7 @@ import type { InboundEvent, Input, Message } from "@k2b/nessi";
 import type { QueueMessage } from "@k2b/sync";
 import { z } from "zod";
 import { lazySync } from "../_internal/process-sync";
-import type { RequestActor } from "../server";
+import type { AccessSubject, RequestActor, RequestAuthority } from "../server";
 import { type ApprovalDecisionChannel, approvals } from "../services/approvals";
 import { logger } from "../services/logging";
 import { superviseRuntimeTask } from "../services/runtime-lifecycle";
@@ -17,19 +17,31 @@ import {
   rememberAiToolApproval,
 } from "./approvals";
 import { aiChatAccessSubject, selectAssistantAiModel } from "./assistant-models";
+import { assertPersonalChatWriter } from "./chat-writer";
 import { waitingAiApprovals } from "./conversation-watchers";
 import { startAiDictationRuntime } from "./dictation-runtime";
 import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
-import { drainQueuedMessages } from "./message-queue";
+import {
+  AiMessageQueueConflict,
+  assertQueuedMessageQuota,
+  drainQueuedMessages,
+  enqueueChatMessage,
+  queuedMessageAccepted,
+  queuedMessageReceipt,
+  reconcileQueuedInterruptions,
+  requestQueuedMessageSendNow,
+} from "./message-queue";
 import { aiUserPrefs } from "./prefs";
+import { aiProjects } from "./projects";
 import { AI_TURN_LEASE_MS } from "./protocol";
+import type { AiStoredMessageOrigin } from "./queue-contracts";
 import { aiQuotas } from "./quotas";
 import { parseAiResourceMarker } from "./resource-markers";
 import { isAiVisionModelConfigured, readAiSettingsState } from "./settings";
 import { aiConversations } from "./store";
-import { publishAiWireEvent } from "./stream";
+import { publishAiTurnInterrupt, publishAiWireEvent } from "./stream";
 import { aiToolAudit } from "./tool-audit";
 import { finishAiTurnAbort } from "./turn-abort";
 import type {
@@ -51,6 +63,8 @@ import { isAiImageMediaType } from "./types";
 import { validateAiTurnRequest } from "./validate";
 
 export { createAiTurnCodeAndClientTools } from "./default-tools";
+export { AiMessageQueueConflict } from "./message-queue";
+export type { AiStoredMessageOrigin } from "./queue-contracts";
 export type { ValidateAiTurnInput } from "./validate";
 export { isAiSettingsError, validateAiTurnRequest } from "./validate";
 
@@ -99,6 +113,9 @@ export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enq
 // ---------------------------------------------------------------------------
 
 export type SubmitAiChatTurnInput = {
+  /** Platform-only authority and provenance, absent from request schemas. */
+  accessSubject?: AccessSubject;
+  writerOrigin?: AiStoredMessageOrigin;
   /** Only interactive Assistant HTTP handlers set this server-owned marker. */
   assistantChat?: true;
   /** Only a handler that saw a signed-in browser session sets this server-owned marker; see `AiChatTurnRunConfig`. */
@@ -160,14 +177,14 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     if (inherited && "id" in inherited && requested && "id" in requested && requested.id === inherited.id) {
       if (!state.profiles.some((profile) => profile.id === inherited.id)) {
         previousLabel = previous?.kind === "chat" ? (previous.modelLabel ?? inherited.id) : inherited.id;
-        const subject = aiChatAccessSubject(input.actor);
+        const subject = input.accessSubject ?? aiChatAccessSubject(input.actor);
         const prefs = subject?.type === "user" ? await aiUserPrefs.get(subject.userId) : null;
         requested = prefs?.selection && "class" in prefs.selection ? prefs.selection : { class: "balanced" };
       }
     }
   }
   const model = input.assistantChat
-    ? await selectAssistantAiModel(aiChatAccessSubject(input.actor), requested, input.modelPolicy, state)
+    ? await selectAssistantAiModel(input.accessSubject ?? aiChatAccessSubject(input.actor), requested, input.modelPolicy, state)
     : requested;
   const { resolved } = await validateAiTurnRequest(
     {
@@ -180,11 +197,17 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     },
     state,
   );
-  const quotaSubject = aiChatAccessSubject(input.actor);
+  const quotaSubject = input.accessSubject ?? aiChatAccessSubject(input.actor);
   if (input.assistantChat && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id, state);
   const modelLabel =
     resolved.profile.label + (resolved.profile.id !== resolved.profile.modelId ? ` · ${resolved.profile.variantLabel}` : "");
   const runConfig: AiChatTurnRunConfig = {
+    ...(input.accessSubject ? { accessSubject: input.accessSubject } : {}),
+    ...(input.writerOrigin
+      ? { writerOrigin: input.writerOrigin }
+      : input.actor?.kind === "user"
+        ? { writerOrigin: { kind: "person" as const, id: input.actor.user.id } }
+        : {}),
     kind: "chat",
     selectedSkillIds: [
       ...new Set(
@@ -237,6 +260,69 @@ export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ 
   return submitted;
 };
 
+/**
+ * Platform entry for writing an existing personal chat. Applications never set
+ * provenance in request JSON; a capability adapter derives it from its run.
+ * Personal Code uses its person's subject; mailbox Code is refused here.
+ */
+export const sendAiChatMessage = async (input: {
+  idempotencyKey: string;
+  chatId: string;
+  text: string;
+  authority: RequestAuthority;
+  origin: AiStoredMessageOrigin;
+  locale?: string;
+}) => {
+  if (input.authority.accessSubject.type !== "user") throw new AiMessageQueueConflict("Personal chats require a person's access subject.");
+  const text = z.string().trim().min(1).max(20_000).parse(input.text);
+  const id = z.uuid().parse(input.idempotencyKey);
+  const conversation = await aiConversations.getConversationByShortId({
+    shortId: input.chatId,
+    ownerUserId: input.authority.accessSubject.userId,
+  });
+  if (!conversation) throw new AiMessageQueueConflict("Conversation not found.");
+  assertPersonalChatWriter(input.authority.accessSubject, conversation.createdByUserId);
+  // Replays acknowledge the durable entry even if quota/model access changed since acceptance.
+  if (await queuedMessageAccepted(conversation.id, id)) return { id, conversationId: conversation.shortId };
+  const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, input.authority) : null;
+  if (conversation.projectId && !project) throw new AiMessageQueueConflict("Conversation Project is unavailable.");
+  const submission = await prepareAiChatTurn({
+    assistantChat: true,
+    conversationId: conversation.id,
+    chatId: conversation.shortId,
+    input: text,
+    userMessage: { role: "user", content: [{ type: "text", text }] },
+    actor: input.authority.actor,
+    accessSubject: input.authority.accessSubject,
+    writerOrigin: input.origin,
+    locale: input.locale,
+    project: project ?? undefined,
+    expectedProjectId: conversation.projectId,
+    toolSource: { kind: "default", appTools: true },
+    toolApprovalContext: { actorUserId: input.authority.accessSubject.userId },
+  });
+  await enqueueChatMessage(id, submission, [{ type: "text", text }]);
+  wakeAiMessageQueue(conversation.id);
+  return { id, conversationId: conversation.shortId };
+};
+
+export const sendQueuedAiChatMessageNow = async (conversationId: string, id: string) => {
+  const receipt = await queuedMessageReceipt(conversationId, id);
+  if (!receipt || receipt.state === "submitted" || receipt.state === "sending") return receipt;
+  await assertQueuedMessageQuota(conversationId, id);
+  const requested = await requestQueuedMessageSendNow(conversationId, id);
+  if (!requested) return null;
+  if (requested.interrupt) {
+    const target = { conversationId, turnId: requested.interrupt.turnId };
+    // The reconciler proves idle/waiting turns safe to stop. An orphaned effect
+    // without a durable result instead leaves this entry visibly not sent.
+    await reconcileQueuedInterruptions(conversationId);
+    if ((await queuedMessageReceipt(conversationId, id))?.state === "sending") await publishAiTurnInterrupt(target).catch(() => undefined);
+  }
+  wakeAiMessageQueue(conversationId);
+  return queuedMessageReceipt(conversationId, id);
+};
+
 export const deliverAiInterChatMessage = async (input: {
   message: AiInterChatMessage;
   chatId?: string;
@@ -247,7 +333,6 @@ export const deliverAiInterChatMessage = async (input: {
   modelPolicy?: AiModelPolicy;
   systemPrompt?: string;
   project?: AiChatTurnRunConfig["project"];
-  sourceHref?: string;
   toolSource?: AiTurnToolSource;
   toolApprovalContext?: AiToolApprovalContext;
 }): Promise<
@@ -256,27 +341,31 @@ export const deliverAiInterChatMessage = async (input: {
   const text = [`Assistant message from chat ${input.message.sourceChatId} (${input.message.sourceTitle}):`, input.message.text].join(
     "\n\n",
   );
-  const { resolved } = await validateAiTurnRequest({ input: text, modelPolicy: input.modelPolicy });
-  const runConfig: AiChatTurnRunConfig = {
-    kind: "chat",
-    input: text,
+  if (await queuedMessageAccepted(input.message.targetConversationId, input.message.id)) {
+    wakeAiMessageQueue(input.message.targetConversationId);
+    return { delivered: false, reason: "busy" };
+  }
+  const prepared = await prepareAiChatTurn({
+    assistantChat: true,
+    conversationId: input.message.targetConversationId,
     chatId: input.chatId,
+    input: text,
+    userMessage: { role: "user", content: [{ type: "text", text }] },
     actor: input.actor,
-    ...(input.locale ? { locale: input.locale } : {}),
-    ...(input.theme ? { theme: input.theme } : {}),
-    ...(input.timeZone ? { timeZone: input.timeZone } : {}),
+    locale: input.locale,
+    theme: input.theme,
+    timeZone: input.timeZone,
     modelPolicy: input.modelPolicy,
     systemPrompt: input.systemPrompt,
     project: input.project,
     toolSource: input.toolSource ?? { kind: "none" },
     toolApprovalContext: input.toolApprovalContext,
-  };
+  });
   const delivered = await aiConversations.deliverInterChatMessage({
     messageId: input.message.id,
-    modelId: resolved.profile.id,
-    runConfig,
-    userMessage: { role: "user", content: [{ type: "text", text }] },
-    sourceHref: input.sourceHref,
+    modelId: prepared.modelId,
+    runConfig: prepared.runConfig,
+    userMessage: prepared.userMessage,
   });
   if (delivered.delivered) await enqueueAiTurn({ conversationId: delivered.message.targetConversationId, turnId: delivered.turn.id });
   return delivered;
@@ -442,6 +531,7 @@ export const submitAiTurnAction = async (input: {
     await aiToolAudit.noteToolCompleted({ turnId: input.turnId, callId: input.callId, isError: false }).catch(() => undefined);
   }
 
+  wakeAiMessageQueue(input.conversationId);
   await enqueueAiTurn({ conversationId: input.conversationId, turnId: input.turnId });
   return { ok: true };
 };

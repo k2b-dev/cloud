@@ -1,5 +1,5 @@
-import { type AiInterChatMessage, aiConversations, aiProjects, personalAiModelPolicy } from "@k2b/cloud/ai";
-import { deliverAiInterChatMessage } from "@k2b/cloud/ai/runtime";
+import { type AiInterChatMessage, AiQuotaError, aiConversations, aiProjects, personalAiModelPolicy } from "@k2b/cloud/ai";
+import { AiMessageQueueConflict, deliverAiInterChatMessage } from "@k2b/cloud/ai/runtime";
 import { accounts, logger } from "@k2b/cloud/services";
 
 const log = logger("core:ai-inter-chat-messages");
@@ -51,12 +51,19 @@ export const deliverPendingAiMessages = async (targetConversationId?: string): P
         actor: { kind: "user", user },
         modelPolicy: personalAiModelPolicy,
         project: project ?? undefined,
-        sourceHref: `/app/assistant?conversation=${encodeURIComponent(message.sourceChatId)}`,
         toolSource: { kind: "default", appTools: true },
         toolApprovalContext: { actorUserId: user.id },
       });
       outcomes.set(message.id, delivered.delivered ? "delivered" : delivered.reason === "busy" ? "queued" : "failed");
     } catch (error) {
+      if (error instanceof AiMessageQueueConflict || error instanceof AiQuotaError) {
+        await aiConversations.failInterChatMessage({
+          messageId: message.id,
+          error: error instanceof AiQuotaError ? error.code : "queue_full_or_unavailable",
+        });
+        outcomes.set(message.id, "failed");
+        continue;
+      }
       outcomes.set(message.id, "queued");
       log.warn("Inter-chat message delivery failed; leaving it pending", {
         messageId: message.shortId,
