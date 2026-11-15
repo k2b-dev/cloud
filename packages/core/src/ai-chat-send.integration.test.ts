@@ -293,13 +293,17 @@ suiteFor(
     await sql`INSERT INTO ai.inter_chat_messages(short_id,source_conversation_id,source_turn_id,source_call_id,target_conversation_id,actor_user_id,text,idempotency_key)
       VALUES('OldMsg',${chat.id}::uuid,${turn.id}::uuid,'legacy-call',${target.id}::uuid,${owner}::uuid,'Already accepted','legacy-cutover')`;
     await expect(migrateCode()).rejects.toThrow("Deliver pending inter-chat messages");
-    expect(await sql`SELECT to_regclass('code.chat_deliveries')::text AS relation`).toEqual([{ relation: "code.chat_deliveries" }]);
+    expect(await sql<{ relation: string | null }[]>`SELECT to_regclass('code.chat_deliveries')::text AS relation`).toEqual([
+      { relation: "code.chat_deliveries" },
+    ]);
     await sql`UPDATE ai.inter_chat_messages SET status='delivered' WHERE idempotency_key='legacy-cutover'`;
     await migrateCode();
     await migrateCode();
-    expect(await sql`SELECT to_regclass('code.chat_deliveries')::text AS delivery,to_regclass('code.chat_runs')::text AS runs`).toEqual([
-      { delivery: null, runs: null },
-    ]);
+    expect(
+      await sql<
+        { delivery: string | null; runs: string | null }[]
+      >`SELECT to_regclass('code.chat_deliveries')::text AS delivery,to_regclass('code.chat_runs')::text AS runs`,
+    ).toEqual([{ delivery: null, runs: null }]);
     const [message] = await sql<
       { content: unknown; legacy: boolean }[]
     >`SELECT message->'content' AS content,meta ? 'codeDelivery' AS legacy FROM ai.messages WHERE loop_id=${turn.id}`;
