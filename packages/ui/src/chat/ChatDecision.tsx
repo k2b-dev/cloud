@@ -41,7 +41,10 @@ export type ChatDecisionProps = {
   kind: { label: string; icon: string };
   /** Who asks: the app's name and icon, its icon tile in `accent`. */
   source: { name: string; icon: string; accent?: string };
-  /** The state as a word with its icon at the end of the head, for every state but an open question. */
+  /**
+   * The state as a word with its icon at the end of the head. A closed question always has one; an open one has one when
+   * the question itself has a state, such as a version that waits for an administrator.
+   */
   status?: { label: string; icon: string; tone: ChatOutcomeTone };
   /** The question as one sentence, usually with `ReferenceChip`s. */
   sentence: JSX.Element;
@@ -82,6 +85,11 @@ export type ChatDecisionProps = {
   outcome?: JSX.Element;
   /** Receives a rejected promise from an answer's `onSelect`. */
   onAnswerError?: (error: unknown) => void;
+  /**
+   * Lines the facts keep where they wrap under the answers, for a question whose facts change while it stays open, such
+   * as work that waits, runs and stops: the question then keeps its height between those states.
+   */
+  factLines?: 1 | 2;
   anchorId?: string | number;
   class?: string;
 };
@@ -187,6 +195,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
   );
 
   const confirm = () => {
+    if (props.confirm?.busy) return;
     const chosen = props.remember && remembered() && !editing() ? props.remember : props.confirm;
     if (chosen) answer(chosen, !confirmOff());
   };
@@ -198,6 +207,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
       data-state={props.state}
       data-mode={open() && editing() ? "edit" : "approve"}
       data-k2b-primary="ai"
+      data-fact-lines={props.factLines === 2 ? "2" : undefined}
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
       aria-labelledby={open() ? sentenceId : undefined}
       aria-describedby={open() ? reasonId : undefined}
@@ -213,7 +223,7 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
           </span>
           {props.source.name}
         </span>
-        <Show when={!open() && props.status}>
+        <Show when={props.status}>
           {(status) => (
             <span class="k2b-chat-decision__status" data-tone={status().tone}>
               <i class={status().icon} aria-hidden="true" />
@@ -373,6 +383,9 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                     wrap
                     variant={editing() ? "secondary" : "ai"}
                     disabled={confirmOff()}
+                    aria-disabled={confirmAnswer().busy ? "true" : undefined}
+                    aria-busy={confirmAnswer().busy ? "true" : undefined}
+                    data-busy={confirmAnswer().busy ? "" : undefined}
                     onClick={confirm}
                   >
                     <Show when={confirmAnswer().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>

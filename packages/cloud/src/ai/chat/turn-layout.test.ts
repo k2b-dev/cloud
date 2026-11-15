@@ -301,3 +301,24 @@ test("a saved version is a result only for a host that shows it, once per Code, 
   expect(shown).toHaveLength(1);
   expect(submittedCodeVersion(shown[0]!.block)).toEqual({ codeId: "c_info01", versionId: "v-6", number: 6 });
 });
+
+test("a Code check's notices stand as a result until a clean check of the same Code takes their place", () => {
+  const check = (id: string, notices: unknown[]): AiTurnBlock => ({
+    id,
+    kind: "tool",
+    callId: id,
+    name: "code_check",
+    status: "completed",
+    args: { codeId: "c_1234" },
+    result: { version: 1, result: { ok: notices.length === 0 }, manifest: null, permissions: [], words: { notices, mayDo: [] } },
+  });
+  const blocked = check("first", [{ severity: "block", text: "Sends mail without a person.", consequence: "Cannot be submitted." }]);
+  const failed = layoutAiTurn([blocked], { phase: "completed" });
+  expect(failed.results.map((result) => result.block.id)).toEqual(["first"]);
+  const clean = layoutAiTurn([blocked, check("second", [])], { phase: "completed" });
+  // One place per Code: the clean check replaces the old notices, so nothing that no longer holds stays visible.
+  expect(clean.results.map((result) => [result.id, result.block.id])).toEqual([["first", "second"]]);
+  // A result from before words existed shows no building block at all.
+  const old = { ...check("old", []), result: { version: 1, result: { ok: true }, manifest: null, permissions: [] } } as AiTurnBlock;
+  expect(layoutAiTurn([old], { phase: "completed" }).results).toEqual([]);
+});

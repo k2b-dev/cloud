@@ -114,7 +114,7 @@ test("a passing chat check leaves the checked bundle on the server; its hash sta
     hashes: { source: hash, sdk: hash, bundle: hash },
   };
   const result = { ok: true, diagnostics: [], manifest, permissions: [] };
-  const answer = (value: object) => ({ version: 1, result: value, manifest: null, permissions: [] });
+  const answer = (value: object) => ({ version: 1, result: value, manifest: null, permissions: [], words: { notices: [], mayDo: [] } });
   expect(check.def.outputSchema.safeParse(answer(result)).success).toBe(true);
   expect(check.def.outputSchema.safeParse(answer({ ...result, bundle: "export {}" })).success).toBe(false);
 });

@@ -32,7 +32,11 @@ render(
       {window.harness.card ? (
         <div style="width:100%;padding:1rem">
           <AssistantLiveProvider value={live}>
-            <AssistantCodeVersionCard {...window.harness.card} timeZone="Europe/Berlin" />
+            <AssistantCodeVersionCard
+              {...window.harness.card}
+              timeZone="Europe/Berlin"
+              onAsk={(text) => (window.harnessAsked = [...(window.harnessAsked ?? []), text])}
+            />
           </AssistantLiveProvider>
         </div>
       ) : (
@@ -191,6 +195,9 @@ type Scenario = {
   panelAccessMissing?: boolean;
   /** What Core answers for a version card, which then renders alone in the panel's width. */
   cardPreview?: CodeVersionPreview;
+  /** The review as the person sees it, and the version in words; without them Core answers the card's ordinary defaults. */
+  cardReview?: Record<string, unknown>;
+  cardWords?: Record<string, unknown>;
   /** Core's answer to switching the card's version on, held back until `answered` settles. */
   activation?: { answered: Promise<void>; status: { state: string; failure: { reason: string } | null } };
   /** One personal Code with the shared Code page. */
@@ -452,6 +459,8 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
     }
     if (url.pathname === "/api/code/activation/preview" && scenario.cardPreview)
       return route.fulfill({ json: { data: scenario.cardPreview } });
+    if (url.pathname === "/api/code/review" && scenario.cardPreview)
+      return route.fulfill({ json: { data: { ...cardReview, ...scenario.cardReview } } });
     if (url.pathname === "/api/code/activate" && scenario.activation) {
       await scenario.activation.answered;
       return route.fulfill({ json: { data: scenario.activation.status } });
@@ -490,6 +499,7 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
             },
           },
         });
+      if (capabilityId === "code.version.words") return route.fulfill({ json: { data: { ...cardWords, ...scenario.cardWords } } });
     }
     if (url.pathname === "/api/capabilities/v1/catalog") return route.fulfill({ json: mailCatalog });
     if (url.pathname === "/api/assistant/workspace/sidebar")
@@ -518,6 +528,45 @@ const personalCodePage = () => ({
 });
 
 const cardVersionId = "66666666-6666-4666-8666-666666666666";
+/** The review and the version in words that Core answers for the card, fictional. */
+const cardReview = {
+  status: "not_required",
+  origin: { kind: "ai_chat", conversationId: "chat-1", automaticAfterReview: false },
+  decidedBy: null,
+  decidedAt: null,
+  message: null,
+  comments: [],
+  commentCount: 0,
+  activeVersion: { id: "v4", number: 4 },
+};
+const JANA = { id: "u-jana", name: "Jana Probe", avatarHash: null };
+const cardWords = {
+  versionId: cardVersionId,
+  number: 5,
+  submittedAt: "2026-11-12T08:00:00.000Z",
+  locale: "de",
+  description: { state: "visible", text: "Legt Lieferscheine ab.", modelLabel: "✦" },
+  assurance: "Cloud begrenzt die Zugriffe auf die Apps und Ziele dieser Version.",
+  mayDo: { items: [], more: 0, moreText: null },
+  timing: { items: [], more: 0, moreText: null },
+  changes: {
+    state: "changed",
+    text: "Zugriffe oder Auslöser geändert",
+    rows: {
+      items: [
+        { kind: "add", text: "Läuft zusätzlich Mo–Fr um 08:00" },
+        { kind: "add", text: "Darf neu Dateien ablegen im Ordner Lieferscheine 2026" },
+        { kind: "remove", text: "Darf nicht mehr Unterhaltungen markieren im Postfach info@moebel-beispiel.de" },
+        { kind: "same", text: "5 weitere bleiben gleich" },
+      ],
+      more: 0,
+      moreText: null,
+    },
+    assurance: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+  },
+  examples: { state: "passed", passed: 3, total: 3, summary: "3 von 3 Beispielen erfolgreich", explanation: "", items: [] },
+  notices: { items: [], more: 0, moreText: null },
+};
 const cardPreview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPreview => ({
   codeId: "c_info01",
   title: "Code von info@",
@@ -682,147 +731,179 @@ describe("Gustav", () => {
     }
   }, 60_000);
 
-  test("the version card fits the panel and shows account, approval and credential state without target planning", async () => {
-    const states = [
+  test("the version card is the one approval frame in every state and fits desktop, panel and phone without code", async () => {
+    const changes = { status: "changes_requested", decidedBy: JANA, decidedAt: at(10), message: "Bitte nur PDF-Anhänge ablegen." };
+    const states: { name: string; scenario: Scenario; word: string | null; sentence: string; main: string | null }[] = [
       {
-        name: "ready",
-        preview: cardPreview(),
-        expected: "Läuft als Dienstkonto mit dessen aktuellen Rechten am Ziel.",
-        switchOn: true,
-        diff: true,
+        name: "bereit",
+        scenario: { cardPreview: cardPreview() },
+        word: null,
+        sentence: "Version 5 von Code von info@ einschalten?",
+        main: "Version 5 einschalten",
       },
       {
-        name: "personal",
-        preview: cardPreview({ ownerKind: "person", place: null }),
-        expected: "Läuft als du, mit deinen Rechten und nicht mehr.",
-        switchOn: true,
-        diff: true,
+        name: "ohne-beispiele",
+        scenario: {
+          cardPreview: cardPreview(),
+          cardWords: { examples: { state: "none", passed: 0, total: 0, summary: "", explanation: "", items: [] } },
+        },
+        word: null,
+        sentence: "Version 5 von Code von info@ einschalten?",
+        main: "Trotzdem einschalten",
       },
       {
-        name: "approval",
-        preview: cardPreview({ readiness: { state: "approval_pending" } }),
-        expected: "Diese Version muss erst ein Cloud-Admin freigeben.",
-        switchOn: null,
-        diff: true,
+        name: "wartet-auf-admin",
+        scenario: { cardPreview: cardPreview({ readiness: { state: "approval_pending" } }), cardReview: { status: "pending" } },
+        word: "Wartet auf Admin",
+        sentence: "Version 5 von Code von info@ wartet auf die Freigabe eines Admins.",
+        main: null,
       },
       {
-        name: "refused",
-        preview: cardPreview({ readiness: { state: "refused", code: "code_policy_never", message: "Die Richtlinie erlaubt das nicht." } }),
-        expected: "Die Richtlinie erlaubt das nicht.",
-        switchOn: null,
-        diff: true,
+        name: "aenderungen",
+        scenario: {
+          cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
+          cardReview: changes,
+        },
+        word: "Änderungen angefordert",
+        sentence: "Version 5 von Code von info@ braucht noch Änderungen.",
+        main: "Gustav überarbeiten lassen",
       },
       {
-        name: "phone",
-        preview: cardPreview({ allowed: { allowed: false, reason: "phone" } }),
-        expected: "Am Telefon lässt sich nicht einschalten. Öffne diesen Chat am Computer.",
-        switchOn: false,
-        diff: true,
+        name: "ueberarbeitung-wartet",
+        scenario: {
+          cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
+          cardReview: { ...changes, revision: { state: "queued", reason: null } },
+        },
+        word: "Änderungen angefordert",
+        sentence: "Version 5 von Code von info@ braucht noch Änderungen.",
+        main: null,
       },
       {
-        name: "credential",
-        preview: cardPreview({ allowed: { allowed: false, reason: "credential" } }),
-        expected: "Einschalten braucht eine Browser-Sitzung oder eine persönliche Anmeldung.",
-        switchOn: false,
-        diff: true,
+        name: "ueberarbeitet-gerade",
+        scenario: {
+          cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
+          cardReview: { ...changes, revision: { state: "running", reason: null } },
+        },
+        word: "Änderungen angefordert",
+        sentence: "Version 5 von Code von info@ braucht noch Änderungen.",
+        main: null,
       },
       {
-        name: "an",
-        preview: cardPreview({ running: 5, activated: { at: at(5), byYou: true, byName: null } }),
-        expected: "Version 5 eingeschaltet",
-        switchOn: null,
-        diff: false,
-      },
-      {
-        name: "superseded",
-        preview: cardPreview({ latest: 6 }),
-        expected: "Version 5 wurde von Version 6 abgelöst.",
-        switchOn: null,
-        diff: false,
+        name: "abgelehnt",
+        scenario: {
+          cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
+          cardReview: { ...changes, status: "rejected", message: "Keine gemeinsamen Ordner." },
+        },
+        word: "Abgelehnt",
+        sentence: "Version 5 von Code von info@ wurde abgelehnt.",
+        main: null,
       },
     ];
-    // A browser session switches on at any width; only the Cloud app's session cannot (AssistantPwa.more.browser.test.ts).
     for (const state of states)
-      for (const view of state.name === "ready" || state.name === "an" ? [desktop, panel, phone] : [panel, phone]) {
-        const h = await open(view, { cardPreview: state.preview }, { path: "/app/assistant/panel" });
+      for (const view of [desktop, panel, phone]) {
+        const h = await open(view, state.scenario, { path: "/app/assistant/panel" });
         try {
-          await h.page.getByText(state.expected).waitFor();
-          const card = h.page.locator(".assistant-code-version, .assistant-code-version__line");
-          const switchOn = card.getByRole("button", { name: "Einschalten", exact: true });
-          if (state.switchOn === null) expect(await switchOn.count()).toBe(0);
-          else {
-            expect(await switchOn.count()).toBe(1);
-            expect(await switchOn.isDisabled()).toBe(!state.switchOn);
-          }
-          expect(await card.getByRole("link", { name: "Unterschied", exact: true }).count()).toBe(state.diff ? 1 : 0);
-          expect(await card.textContent()).not.toMatch(/du verwaltest|Link für|Ben Schulz|Logistik/);
-          expect(await card.locator(".assistant-code-version__row").count()).toBe(0);
-          if (state.switchOn === true) {
-            expect(await card.textContent()).not.toContain("Am Telefon");
-            expect(await card.locator(".assistant-code-version__ops > span").allTextContents()).toEqual([
-              "Unterhaltung markieren · Mail",
-              "Aufgabe anlegen · Spaces",
+          const card = h.page.locator(".assistant-code-version .k2b-chat-decision");
+          await card.locator(".k2b-chat-decision__sentence").waitFor();
+          expect(await card.locator(".k2b-chat-decision__sentence").innerText()).toBe(state.sentence);
+          expect(await card.getAttribute("data-k2b-primary")).toBe("ai");
+          const word = card.locator(".k2b-chat-decision__status");
+          if (state.word) expect((await word.innerText()).trim()).toBe(state.word);
+          else expect(await word.count()).toBe(0);
+          if (state.main) expect(await card.getByRole("button", { name: state.main, exact: true }).count()).toBe(1);
+          if (state.name === "aenderungen" && view === desktop) {
+            await card.getByRole("button", { name: "Gustav überarbeiten lassen", exact: true }).click();
+            expect(await h.page.evaluate(() => (window as unknown as { harnessAsked?: string[] }).harnessAsked)).toEqual([
+              "Überarbeite Version 5 so, wie Jana Probe es möchte.",
             ]);
           }
-          expect(h.activationCalls).toEqual(["/api/code/activation/preview"]);
-          // A switched-on version reads its next run from the same list as "My apps"; no other Code query.
-          expect(h.codeCalls).toEqual(state.name === "an" ? ["core.code.automation.list"] : []);
-          expect(h.errors).toEqual([]);
-          const overflow = await h.page.evaluate(() => {
-            const card = document.querySelector(".assistant-code-version, .assistant-code-version__line")!;
-            return card.scrollWidth - card.clientWidth;
+          expect(await card.getByRole("link", { name: "Unterschied", exact: true }).count()).toBe(0);
+          const shown = await card.innerText();
+          for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /\bcode_[a-z_]+/, /sp_2lg8/, /\b[0-9a-f]{8,}\b/])
+            expect(shown).not.toMatch(pattern);
+          // The card has no frame and no shadow; the details lie on white inside the plum ground.
+          const look = await card.evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { shadow: style.boxShadow, radius: style.borderTopLeftRadius };
           });
-          expect(overflow).toBeLessThanOrEqual(0);
-          await shot(h.page, `b-karte-${state.name}-${view.name}-light`);
+          expect(look.shadow).toBe("none");
+          expect(look.radius).toBe("12px");
+          expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+          expect(h.errors).toEqual([]);
+          await shot(h.page, `f-karte-${state.name}-${view.name}-light`);
         } finally {
           await h.close();
         }
       }
+  }, 240_000);
+
+  test("the changes card has one height whether Gustav's revision waits, runs or stopped", async () => {
+    const changes = { status: "changes_requested", decidedBy: JANA, decidedAt: at(10), message: "Bitte nur PDF-Anhänge ablegen." };
+    for (const view of [desktop, phone]) {
+      const heights: number[] = [];
+      for (const revision of [
+        { state: "queued", reason: null },
+        { state: "running", reason: null },
+        { state: "stopped", reason: "stopped" },
+      ]) {
+        const h = await open(
+          view,
+          {
+            cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
+            cardReview: { ...changes, revision },
+          },
+          { path: "/app/assistant/panel" },
+        );
+        try {
+          const card = h.page.locator(".assistant-code-version .k2b-chat-decision");
+          await card.locator(".k2b-chat-decision__sentence").waitFor();
+          heights.push(Math.round((await card.boundingBox())!.height));
+        } finally {
+          await h.close();
+        }
+      }
+      const first = heights[0] ?? 0;
+      expect({ view: view.name, heights }).toEqual({ view: view.name, heights: [first, first, first] });
+    }
   }, 120_000);
 
-  test("a check keeps the switch in place, says its progress beside it, and hands focus back with the result", async () => {
-    // Wide, the status sits beside the switch and a long refusal wraps there; narrow, it takes its own line below.
-    const chat: View = { name: "720", width: 720, height: 900, touch: false };
-    for (const view of [desktop, chat, panel, phone]) {
+  test("switching on keeps the card's top edge; the switch shimmers while Cloud works and the card says the result in place", async () => {
+    for (const view of [desktop, phone]) {
       let answer = () => {};
       const answered = new Promise<void>((resolve) => {
         answer = resolve;
       });
-      const reason =
-        "Die Richtlinie erlaubt das nicht mehr. Ein Cloud-Admin hat die Regeln für Code an diesem Postfach geändert, nachdem die Version geprüft wurde.";
-      const status = { state: "failed", failure: { reason } };
-      const h = await open(view, { cardPreview: cardPreview(), activation: { answered, status } }, { path: "/app/assistant/panel" });
+      const reason = "Die Richtlinie erlaubt das nicht mehr.";
+      const h = await open(
+        view,
+        { cardPreview: cardPreview(), activation: { answered, status: { state: "failed", failure: { reason } } } },
+        { path: "/app/assistant/panel" },
+      );
       try {
-        const card = h.page.locator(".assistant-code-version");
-        const switchOn = card.getByRole("button", { name: "Einschalten", exact: true });
+        const card = h.page.locator(".assistant-code-version .k2b-chat-decision");
+        const switchOn = card.getByRole("button", { name: "Version 5 einschalten", exact: true });
         await switchOn.waitFor();
-        const at = async () => {
-          const box = await card.locator(".assistant-code-version__actions button").boundingBox();
-          return box && { x: Math.round(box.x), y: Math.round(box.y) };
-        };
-        const before = await at();
-        await shot(h.page, `l19-karte-vorher-${view.name}-light`);
+        const top = async () => Math.round((await card.boundingBox())!.y);
+        const before = await top();
         await switchOn.focus();
         await h.page.keyboard.press("Enter");
-        await card.getByText("Prüft …").waitFor();
-        expect(await at()).toEqual(before);
-        await shot(h.page, `l19-karte-pruefung-${view.name}-light`);
+        await card.getByText("Version 5 wird eingeschaltet …").waitFor();
+        expect((await card.locator(".k2b-chat-decision__status").innerText()).trim()).toBe("Schaltet ein");
+        expect(await top()).toBe(before);
+        await shot(h.page, `f-karte-schaltet-ein-${view.name}-light`);
         answer();
-        const again = card.getByRole("button", { name: "Erneut versuchen", exact: true });
-        await again.waitFor();
-        await card.getByText(reason, { exact: false }).waitFor();
-        expect(await at()).toEqual(before);
-        // The switch was pressed from the keyboard: focus returns to it, so Enter tries again.
-        expect(await again.evaluate((element) => element === document.activeElement)).toBe(true);
+        await card.getByText("Cloud hat das Einschalten abgelehnt. Version 4 bleibt eingeschaltet.").waitFor();
+        expect(await top()).toBe(before);
+        expect(await card.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
         expect(h.errors).toEqual([]);
-        await shot(h.page, `l19-karte-nachher-${view.name}-light`);
+        await shot(h.page, `f-karte-fehlgeschlagen-${view.name}-light`);
       } finally {
         await h.close();
       }
     }
   }, 120_000);
 
-  test("a version waiting for a Cloud administrator shows the decision when it arrives live, on the desktop and the phone", async () => {
+  test("a decision that arrives live changes the waiting card in place: same top edge, its answers change, nothing polls", async () => {
     const decided = {
       type: "ai.invalidated",
       changeId: "77777777-7777-4777-8777-777777777777",
@@ -831,70 +912,30 @@ describe("Gustav", () => {
       domains: ["code-versions"],
       at: at(0),
     };
-    const tests = { state: "passed" as const, passed: 3, total: 3 };
-    for (const decision of ["approved", "rejected"] as const)
-      for (const view of [desktop, phone]) {
-        const scenario: Scenario = { cardPreview: cardPreview({ tests, readiness: { state: "approval_pending" } }) };
-        const h = await open(view, scenario, { path: "/app/assistant/panel" });
-        try {
-          const card = h.page.locator(".assistant-code-version");
-          await card.getByText("Die Karte zeigt die Entscheidung, sobald sie fällt.").waitFor();
-          expect(await card.locator(".assistant-code-version__checks").innerText()).toMatch(/^Prüfung bestanden\s*Tests 3\/3$/);
-          expect(await card.getByRole("button", { name: "Einschalten", exact: true }).count()).toBe(0);
-          const height = (await card.boundingBox())?.height;
-          if (decision === "approved") await shot(h.page, `l26-karte-wartet-${view.name}-light`);
-          scenario.cardPreview =
-            decision === "approved"
-              ? cardPreview({ tests })
-              : cardPreview({
-                  tests,
-                  readiness: { state: "refused", code: "code_approval_revoked", message: "This version approval is rejected or revoked." },
-                });
-          await h.page.evaluate(
-            (event) => (window as unknown as { harnessLive: { apply(events: unknown[]): Promise<void> } }).harnessLive.apply([event]),
-            decided,
-          );
-          if (decision === "approved") await card.getByRole("button", { name: "Einschalten", exact: true }).waitFor();
-          else {
-            await card.getByText("Ein Cloud-Admin hat diese Version nicht freigegeben.", { exact: false }).waitFor();
-            expect(await card.innerText()).toContain("Nichts geändert, Version 4 läuft weiter.");
-            expect(await card.innerText()).not.toContain("rejected or revoked");
-            // Rejected and waiting take the same room: the card does not jump when the decision arrives.
-            expect((await card.boundingBox())?.height).toBeLessThanOrEqual(height! + 1);
-          }
-          // The decision came on the live channel: the card asked Core once more and never polled.
-          expect(h.activationCalls).toEqual(["/api/code/activation/preview", "/api/code/activation/preview"]);
-          expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-          expect(h.errors).toEqual([]);
-          await shot(h.page, `l26-karte-${decision === "approved" ? "freigegeben" : "abgelehnt"}-${view.name}-light`);
-        } finally {
-          await h.close();
-        }
-      }
-  }, 120_000);
-
-  test("a schedule says when it runs and an app's pages name its service account", async () => {
-    const preview = cardPreview({
-      ownerKind: "app",
-      appName: "Werkstattbuch",
-      place: null,
-      page: null,
-      targets: [],
-      automations: [
-        { entrypoint: "wochenbericht", cron: "0 8 * * 1" },
-        { entrypoint: "morgen", title: "Morgenübersicht", cron: "0 7 * * 1-5" },
-        { entrypoint: "route:GET:/", route: { method: "GET", path: "/", public: false } },
-      ],
-    });
-    for (const view of [desktop, panel, phone]) {
-      const h = await open(view, { cardPreview: preview }, { path: "/app/assistant/panel" });
+    for (const view of [desktop, phone]) {
+      const scenario: Scenario = {
+        cardPreview: cardPreview({ readiness: { state: "approval_pending" } }),
+        cardReview: { status: "pending" },
+      };
+      const h = await open(view, scenario, { path: "/app/assistant/panel" });
       try {
-        const card = h.page.locator(".assistant-code-version");
-        await card.getByText("Montags 08:00 · Morgenübersicht (Mo–Fr 07:00) · GET /").waitFor();
-        expect(await card.textContent()).toContain("den Rechten des Dienstkontos „Code von Werkstattbuch“");
-        expect(await card.textContent()).not.toContain("wochenbericht");
+        const card = h.page.locator(".assistant-code-version .k2b-chat-decision");
+        await card.getByText("Die Admins wissen Bescheid. Du bekommst eine Mitteilung, sobald einer entschieden hat.").waitFor();
+        expect(await card.innerText()).not.toContain("Jana");
+        const before = (await card.boundingBox())!;
+        scenario.cardPreview = cardPreview();
+        scenario.cardReview = { status: "approved", decidedBy: JANA, decidedAt: at(1) };
+        await h.page.evaluate(
+          (event) => (window as unknown as { harnessLive: { apply(events: unknown[]): Promise<void> } }).harnessLive.apply([event]),
+          decided,
+        );
+        await card.getByRole("button", { name: "Version 5 einschalten", exact: true }).waitFor();
+        expect(await card.innerText()).toContain("Jana Probe hat sie heute um");
+        const after = (await card.boundingBox())!;
+        expect(Math.round(after.y)).toBe(Math.round(before.y));
+        expect(h.activationCalls.filter((call) => call === "/api/code/activation/preview")).toHaveLength(2);
         expect(h.errors).toEqual([]);
-        await shot(h.page, `l19-karte-zeitplan-${view.name}-light`);
+        await shot(h.page, `f-karte-freigegeben-${view.name}-light`);
       } finally {
         await h.close();
       }

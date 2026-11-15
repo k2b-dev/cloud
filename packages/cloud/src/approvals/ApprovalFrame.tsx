@@ -15,8 +15,11 @@ import { ActionTextView } from "../ai/chat/action-question";
 /** `loading` shows the head with the word "Loading" and placeholder lines; the others are the question's states. */
 export type ApprovalFrameState = "open" | "sending" | "decided" | "expired" | "loading";
 
-/** The state as a word at the end of the head. The frame chooses the icon from the tone, so a state looks alike everywhere. */
-export type ApprovalFrameStatus = { tone: ChatOutcomeTone | "expired"; label: string };
+/**
+ * The state as a word at the end of the head. The frame chooses the icon from the tone, so a state looks alike
+ * everywhere; `icon` names a state that has its own sign, such as a version that waits for an administrator.
+ */
+export type ApprovalFrameStatus = { tone: ChatOutcomeTone | "expired"; label: string; icon?: string };
 
 /**
  * The drawing part of every approval: head "Approval · App" with its state, one sentence, the reason, the details on
@@ -33,7 +36,10 @@ export type ApprovalFrameProps = {
   mode?: "approve" | "edit";
   /** Who asks: the app's name and icon, its icon tile in `accent`. */
   source: { name: string; icon: string; accent?: string };
-  /** Shown in every state but an open question; a `loading` frame says "Loading" by itself. */
+  /**
+   * Shown in every closed state, and on an open question that has a state of its own, such as "Waiting for admin"; a
+   * `loading` frame says "Loading" by itself.
+   */
   status?: ApprovalFrameStatus;
   /** The question, or in a closed state nothing: `outcome` takes its place. Text and chips, never markup. */
   sentence?: ActionText;
@@ -63,6 +69,8 @@ export type ApprovalFrameProps = {
   /** The result line of every closed state, usually `Chat.Outcome`. */
   outcome?: JSX.Element;
   onAnswerError?: (error: unknown) => void;
+  /** Facts that change while the question stays open keep two lines where they wrap, so the frame never changes height. */
+  factLines?: 1 | 2;
   anchorId?: string | number;
 };
 
@@ -89,7 +97,11 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
     if (loading()) return { label: t().statusLoading, icon: STATUS_ICONS.running, tone: "running" as const };
     const given = props.status;
     if (!given) return undefined;
-    return { label: given.label, icon: STATUS_ICONS[given.tone], tone: given.tone === "expired" ? ("off" as const) : given.tone };
+    return {
+      label: given.label,
+      icon: given.icon ?? STATUS_ICONS[given.tone],
+      tone: given.tone === "expired" ? ("off" as const) : given.tone,
+    };
   });
   return (
     <LocaleProvider locale={props.locale}>
@@ -114,6 +126,7 @@ export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
         unavailable={props.unavailable}
         waiting={props.waiting}
         onAnswerError={props.onAnswerError}
+        factLines={props.factLines}
         outcome={
           loading() ? (
             <div class="cloud-approval-frame__loading" aria-busy="true">
