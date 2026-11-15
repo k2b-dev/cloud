@@ -578,20 +578,27 @@ The disposer removes that handler; ordinary turns do not invoke it.
 
 Use `listAiOpenQuestions` from `@k2b/cloud/ai` on the server to seed a personal
 chat overview. Resolve `ownerUserId` from the authenticated user; the read
-includes that person's pending approvals in chats they own. Pass the current
-`authority` to include Core's other waiting sources through its authorized
-`ai.open_questions` Query. The authority must name the same person.
+includes that person's pending approvals in chats they own. An independently
+deployed application passes a `caller` with the person's own credentials to
+read Core's other waiting sources through its authorized `ai.open_questions`
+Query. Only Core-owned code may pass `authority` for in-process dispatch; that
+authority must name the same person.
 
 ```ts
 import { listAiOpenQuestions } from "@k2b/cloud/ai";
-import { auth, expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 
 const user = expectUserBackedActor(c);
 const questions = await listAiOpenQuestions({
   ownerUserId: user.id,
   locale: getLocale(c),
   timeZone: getTimeZone(c),
-  authority: auth.getAuthority(c),
+  caller: {
+    cookie: c.req.header("cookie"),
+    authorization: c.req.header("authorization"),
+    locale: getLocale(c),
+    signal: c.req.raw.signal,
+  },
 });
 ```
 

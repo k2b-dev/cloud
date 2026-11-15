@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { invokeCapabilityWithDataSchema } from "../capabilities/server";
+import { type CapabilityCaller, invokeCapabilityWithDataSchema } from "../capabilities/server";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import { CapabilityActionReviewPresentationSchema, CapabilitySemanticLinkSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
@@ -95,8 +95,11 @@ const countApprovalQuestions = async (ownerUserId: string): Promise<number> => {
 };
 
 /** One bounded, owner-scoped snapshot, using exactly the chat's stored question card. */
-export const countAiOpenQuestions = async (ownerUserId: string, options?: { authority: RequestAuthority }): Promise<number> =>
-  options
+export const countAiOpenQuestions = async (
+  ownerUserId: string,
+  options?: { authority?: RequestAuthority; caller?: CapabilityCaller },
+): Promise<number> =>
+  options?.authority || options?.caller
     ? (await listAiOpenQuestions({ ownerUserId, locale: "en", timeZone: "UTC", ...options })).count
     : countApprovalQuestions(ownerUserId);
 
@@ -105,15 +108,19 @@ export const listAiOpenQuestions = async (input: {
   locale: string;
   timeZone: string;
   authority?: RequestAuthority;
+  /** An app outside Core forwards the person's own credentials; `authority` dispatches in the Core process only. */
+  caller?: CapabilityCaller;
   sources?: readonly AiOpenQuestionSource[];
 }): Promise<AiOpenQuestions> => {
-  if (input.authority) {
-    if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.ownerUserId)
+  const caller = input.caller ?? (input.authority ? { authority: input.authority, locale: input.locale } : undefined);
+  if (caller) {
+    const authority = caller.authority;
+    if (authority && (authority.accessSubject.type !== "user" || authority.accessSubject.userId !== input.ownerUserId))
       throw new Error("Question owner and authority disagree");
     const result = await invokeCapabilityWithDataSchema(
       { appId: "core", capabilityId: "ai.open_questions", kind: "query", input: { timeZone: input.timeZone } },
       AiOpenQuestionsSchema,
-      { authority: input.authority, locale: input.locale },
+      caller,
     );
     if (!result.ok) throw new Error(`Open questions unavailable: ${result.error.code}`);
     return result.data.data;
