@@ -1,4 +1,4 @@
-import { activatePanesItem, createPanesLayout, type PanesLayout, reconcilePanesLayout } from "@k2b/ui";
+import type { PanesLayout, PanesNode } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput, SaveChatWorkspaceResult } from "../chat-workspace";
 import {
@@ -27,11 +27,50 @@ const CHAT_TABS_KEPT = 24;
 /** Longer web addresses do not fit a stored tab; they open in the person's own browser. */
 const WEB_TAB_URL_MAX = 500;
 
+/*
+ * The few layout steps the controller needs, on the Panes layout data. Panes' own helpers stay with the tabs, which load
+ * when the first one opens, so the chat's first frame does not carry them.
+ */
+const keepItems = (node: PanesNode, keep: ReadonlySet<string>): PanesNode | null => {
+  if (node.type === "group") {
+    const items = node.items.filter((item) => keep.has(item));
+    if (!items.length) return null;
+    return { ...node, items, active: items.includes(node.active) ? node.active : items[0]! };
+  }
+  const first = keepItems(node.first, keep);
+  const second = keepItems(node.second, keep);
+  return first && second ? { ...node, first, second } : (first ?? second);
+};
+const itemsOf = (node: PanesNode | null, into: string[] = []): string[] => {
+  if (!node) return into;
+  if (node.type === "group") into.push(...node.items);
+  else {
+    itemsOf(node.first, into);
+    itemsOf(node.second, into);
+  }
+  return into;
+};
+/** Adds items to the first pane, in front of nothing: the person's arrangement of the others stays. */
+const addToFirst = (node: PanesNode, items: readonly string[]): PanesNode =>
+  node.type === "group" ? { ...node, items: [...node.items, ...items] } : { ...node, first: addToFirst(node.first, items) };
+const activatePanesItem = (layout: PanesLayout, itemId: string): PanesLayout => {
+  const visit = (node: PanesNode): PanesNode =>
+    node.type === "group"
+      ? node.items.includes(itemId)
+        ? { ...node, active: itemId }
+        : node
+      : { ...node, first: visit(node.first), second: visit(node.second) };
+  return layout.root ? { ...layout, root: visit(layout.root) } : layout;
+};
+
 /** The arrangement for these tabs: the given one where it still fits, every other tab added to its first group. */
 const fitLayout = (layout: PanesLayout | null, tabs: readonly WorkspaceTab[]): PanesLayout | null => {
   const ids = tabs.map((tab) => workspaceTabId(tab.key));
   if (!ids.length) return null;
-  return layout ? reconcilePanesLayout(layout, ids) : createPanesLayout(ids);
+  const root = layout?.root ? keepItems(layout.root, new Set(ids)) : null;
+  const missing = ids.filter((id) => !itemsOf(root).includes(id));
+  if (!root) return { version: 2, root: { type: "group", items: ids, active: ids[0]! } };
+  return { version: 2, root: missing.length ? addToFirst(root, missing) : root };
 };
 
 /** The stored tabs of a chat as the workspace shows them; tabs this version cannot open again are left out. */
