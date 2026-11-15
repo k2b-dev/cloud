@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation, AiOpenQuestion, AiOpenQuestions, AiStoredMessage, AiTurnBlock } from "@k2b/cloud/ai";
 import { aiOpenQuestionFixture, aiQuestionFixtures } from "@k2b/cloud/ai/testing";
@@ -256,7 +256,6 @@ const propsOf = (state: State, url: URL) => {
     initialWorkspaceHref: `${url.pathname}${url.search}`,
     initialDetail: detail,
     initialContext: null,
-    initialContextClosed: true,
     projects: [],
     initialProject: null,
     initialProjectChats: null,
@@ -499,7 +498,33 @@ const focusedSentence = (page: Page) =>
   });
 
 const short = (locale: Locale, key: "mail" | "del" | "routine") => question(locale, key, "Wart42", 0).short;
-const height = (view: View) => (view.touch ? 44 : 40);
+/** The row is 32 px everywhere; touch screens get 44 px hit areas that reach past it without changing it. */
+const height = (_view: View) => 32;
+/** What the row shows: one entry on a narrow chat, at most three otherwise. */
+const visibleEntries = (page: Page) =>
+  strip(page)
+    .locator(".assistant-waiting__entry")
+    .evaluateAll((buttons) =>
+      buttons
+        .filter((button) => button.getClientRects().length > 0)
+        .map((button) => (button.textContent ?? "").replace(/\s+/g, " ").trim()),
+    );
+/**
+ * Goes to an entry the way a person does: its chip when the row shows it, otherwise through "+n" and the list, which
+ * opens as a menu, or as a sheet on a phone.
+ */
+const openEntry = async (page: Page, name: string | RegExp) => {
+  const chip = strip(page).getByRole("button", { name });
+  if ((await chip.count()) > 0 && (await chip.first().isVisible())) return chip.first().click();
+  await strip(page).locator(".assistant-waiting__more:visible").click();
+  await page.getByRole("menuitem", { name }).first().click();
+};
+const moreLabel = (page: Page) =>
+  strip(page)
+    .locator(".assistant-waiting__more")
+    .evaluateAll((buttons) =>
+      buttons.filter((button) => button.getClientRects().length > 0).map((button) => (button as HTMLElement).innerText.trim()),
+    );
 
 describe("Waiting for you", () => {
   for (const view of [desktop, phone, panel])
@@ -517,20 +542,51 @@ describe("Waiting for you", () => {
             `${short("de", "routine")} in Team Ops Wochenplanung`,
           ]);
           expect(await strip(page).getAttribute("data-quiet")).toBeNull();
-          // Every entry is a ghost button; there is no way to answer several at once.
+          // Every entry is a chip that goes to its question; there is no way to answer several at once.
           expect(await strip(page).locator(".assistant-waiting__entry").count()).toBe(3);
-          expect(await strip(page).locator(".assistant-waiting__entry:not([data-variant='ghost'])").count()).toBe(0);
           expect(await page.getByRole("button", { name: /alle (freigeben|bestätigen|erlauben)|approve all/i }).count()).toBe(0);
-          // The row sits right above the field, inside the composer's width, at one fixed height; it scrolls sideways.
+          // Wide, all three fit and "+n" stays away; narrow, one chip and "+2" for the rest.
+          const narrow = view !== desktop;
+          expect((await visibleEntries(page)).length).toBe(narrow ? 1 : 3);
+          expect(await moreLabel(page)).toEqual(narrow ? ["+2"] : []);
+          // The row sits right above everything over the field (here the model notice), inside the composer's width, at
+          // one fixed height, and never wraps.
           const row = await rect(page, "nav.assistant-waiting");
           const field = await rect(page, ".k2b-chat-composer");
-          expect(row.bottom).toBeLessThanOrEqual(field.top + 1);
-          expect(field.top - row.bottom).toBeLessThanOrEqual(12);
+          const column = await rect(page, ".assistant-chat-composer__column");
+          expect(row.bottom).toBeLessThanOrEqual(column.top + 1);
+          expect(column.top - row.bottom).toBeLessThanOrEqual(8);
           expect(row.left).toBeGreaterThanOrEqual(field.left - 1);
           expect(row.right).toBeLessThanOrEqual(field.right + 1);
           expect(row.height).toBe(height(view));
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
           const composerTop = field.top;
+          // Evidence for the comparison with the concept's images; the run keeps them in /tmp.
+          mkdirSync("/tmp/assistant-waiting-shots", { recursive: true });
+          await page.screenshot({ path: `/tmp/assistant-waiting-shots/zeile-${theme}-${view.name}.png` });
+          if (narrow && theme === "light") {
+            await strip(page).locator(".assistant-waiting__more:visible").click();
+            await page.getByRole("menuitem").first().waitFor();
+            await settled(page);
+            // The list shows each entry's kind in the chip's colour.
+            const colors = await page.evaluate(() => {
+              const probe = document.createElement("i");
+              probe.style.color = "var(--k2b-ai-accent)";
+              document.querySelector(".k2b-ui")?.append(probe);
+              const accent = getComputedStyle(probe).color;
+              probe.remove();
+              const icon = document.querySelector(".assistant-waiting__menu-entry:not(.assistant-waiting__menu-entry--attention) > i");
+              return { accent, icon: icon ? getComputedStyle(icon).color : null };
+            });
+            expect(colors.icon).toBe(colors.accent);
+            await page.screenshot({ path: `/tmp/assistant-waiting-shots/liste-${theme}-${view.name}.png` });
+            await page.keyboard.press("Escape");
+            await page.getByRole("menuitem").first().waitFor({ state: "detached" });
+            await settled(page);
+          }
+          // The row lies over the timeline's free end: the timeline keeps its size whether the row is there or not.
+          const timeline = () => rect(page, ".k2b-chat-timeline__viewport");
+          const timelineBefore = await timeline();
           // Both chats with an open question carry the dot in the list, the other chat none.
           if (view === desktop)
             expect(
@@ -555,10 +611,13 @@ describe("Waiting for you", () => {
           expect(await rect(page, "nav.assistant-waiting")).toEqual(row);
           expect((await rect(page, ".k2b-chat-composer")).top).toBe(composerTop);
 
-          // None pending: no row, as in the mockup.
+          // None pending: no row, as in the mockup, and nothing moves where it was.
           state.scenario = "none";
           await changed(page, null);
           await strip(page).waitFor({ state: "detached" });
+          await settled(page);
+          expect((await rect(page, ".k2b-chat-composer")).top).toBe(composerTop);
+          expect(await timeline()).toEqual(timelineBefore);
           expect(errors).toEqual([]);
           expect(unrouted).toEqual([]);
         } finally {
@@ -610,9 +669,7 @@ describe("Waiting for you", () => {
       const { page, errors, unrouted, close } = await open(view, state, { slowMessageDocument: true });
       try {
         await strip(page).waitFor();
-        await strip(page)
-          .getByRole("button", { name: /in Team Ops Wochenplanung/ })
-          .click();
+        await openEntry(page, /Team Ops Wochenplanung/);
         await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);
         await until(page, async () => (await focusedSentence(page)) === "tool-routine-1", "sentence of the other chat focused");
         await settled(page);
@@ -642,10 +699,10 @@ describe("Waiting for you", () => {
 
         // A jump in the open chat stays in it and lands on that sentence, also for a reload: here the earlier one, above
         // the chat's end.
-        await strip(page).locator(".assistant-waiting__entry").nth(1).click();
+        await openEntry(page, short("de", "del"));
         await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence in this chat focused");
         expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-del-1");
-        await strip(page).locator(".assistant-waiting__entry").first().click();
+        await openEntry(page, short("de", "mail"));
         await until(page, async () => (await focusedSentence(page)) === "tool-mail-1", "earlier sentence focused");
         expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-mail-1");
         await page.reload();
@@ -667,7 +724,7 @@ describe("Waiting for you", () => {
         // WebKit did refuse a load here, so this step still exercises what pageErrors() drops.
         if (browserName === "webkit") expect(refused).not.toEqual([]);
         await strip(page).waitFor();
-        await strip(page).locator(".assistant-waiting__entry").nth(1).click();
+        await openEntry(page, short("de", "del"));
         await until(page, async () => (await focusedSentence(page)) === "tool-del-1", "sentence focused over the message");
         expect(new URL(page.url()).search).toBe("?conversation=Wart42&question=tool-del-1");
         expect(errors).toEqual([]);
@@ -682,7 +739,7 @@ describe("Waiting for you", () => {
     try {
       await strip(page).waitFor();
       // By the question, since the entry drops "in Team Ops Wochenplanung" once that chat is the open one.
-      const entry = strip(page).locator('[data-question="req-routine"]');
+      const entry = strip(page).locator('[data-entry="req-routine"]');
       await entry.click();
       await entry.click();
       await page.waitForURL(/\?conversation=Tops42&question=tool-routine-1$/);

@@ -1,4 +1,6 @@
 import type { AssistantContentBlock } from "@k2b/nessi/ai";
+import type { AiActiveTurn } from "../client/projection";
+import type { AiTurnBlock } from "../protocol";
 import type { AiStoredMessage, AiToolPresentation } from "../types";
 
 /**
@@ -36,7 +38,14 @@ const stored = (message: Part, options: { loopId?: string; minute?: number; meta
 
 const user = (text: string) => stored({ role: "user", content: [{ type: "text", text }] });
 
-const app = (appId: string, appName: string, appIcon: string, appAccent: string, title: string): AiToolPresentation => ({
+const app = (
+  appId: string,
+  appName: string,
+  appIcon: string,
+  appAccent: string,
+  title: string,
+  doneTitle?: string,
+): AiToolPresentation => ({
   kind: "capability",
   appId,
   appName,
@@ -44,10 +53,11 @@ const app = (appId: string, appName: string, appIcon: string, appAccent: string,
   appAccent,
   title,
   capabilityKind: "query",
+  ...(doneTitle ? { doneTitle } : {}),
 });
 
-const mail = (title: string) => app("mail", "Mail", "ti ti-mail", "var(--app-mail, #1d4ed8)", title);
-const files = (title: string) => app("files", "Dateien", "ti ti-folder", "var(--app-files, #b45309)", title);
+const mail = (title: string, doneTitle?: string) => app("mail", "Mail", "ti ti-mail", "var(--app-mail, #1d4ed8)", title, doneTitle);
+const files = (title: string, doneTitle?: string) => app("files", "Dateien", "ti ti-folder", "var(--app-files, #b45309)", title, doneTitle);
 const spaces = (title: string) => app("spaces", "Spaces", "ti ti-layout-kanban", "var(--app-spaces, #0f766e)", title);
 
 type Call = {
@@ -91,27 +101,27 @@ export const answerChat = (): AiStoredMessage[] => {
           name: "mail__query__search",
           args: { query: "Messestand" },
           result: { summary: "3 Unterhaltungen gefunden" },
-          presentation: mail("In Mail suchen"),
+          presentation: mail("In Mail suchen", "In Mail gesucht"),
         },
         {
           id: "call-read",
           name: "mail__query__thread",
           args: { title: "Messestand Köln" },
           result: { ref: messestandThread, href: "/open/mail.thread/~messestand-koeln", title: "Messestand Köln · Jana Berger" },
-          presentation: mail("Unterhaltung lesen"),
+          presentation: mail("Unterhaltung lesen", "Unterhaltung gelesen"),
         },
         {
           id: "call-file",
           name: "files__query__read",
           args: { title: "Angebot-2026-118.pdf" },
           result: { ref: angebotFile, href: "/open/files.file/~angebot-2026-118", title: "Angebot-2026-118.pdf", summary: "4 Seiten" },
-          presentation: files("Datei lesen"),
+          presentation: files("Datei lesen", "Datei gelesen"),
         },
         {
           id: "call-space",
           name: "spaces__query__tasks",
           args: { title: "Messe" },
-          result: { error: "forbidden" },
+          result: "FORBIDDEN: Kein Zugriff auf den Space Messe.",
           isError: true,
           presentation: spaces("Aufgaben suchen"),
         },
@@ -152,9 +162,75 @@ export const routineChat = (): AiStoredMessage[] => [
   ),
 ];
 
+/** `#g-anhaenge`: a photo and a PDF go along with the question. */
+const attachmentChat = (): AiStoredMessage[] => {
+  seq = 0;
+  return [
+    stored({
+      role: "user",
+      content: [
+        { type: "text", text: '<attachment path="/uploads/vase.jpg" media-type="image/jpeg" size="482133" />' },
+        { type: "text", text: '<attachment path="/uploads/Nachlass-Liste.pdf" media-type="application/pdf" size="126204" />' },
+        { type: "text", text: "Was ist diese Vase wert? Sie steht auf Seite 2 der Liste." },
+      ],
+    }),
+  ];
+};
+
+const QUESTION = "Was hat Jana zum Angebot für den Messestand gefragt? Und was kostet uns die Beleuchtung?";
+
+/** A live turn that started `seconds` ago with these blocks. */
+const live = (blocks: AiTurnBlock[], seconds: number): AiActiveTurn => ({
+  turnId: "turn-live",
+  attempt: 1,
+  seq: 10,
+  status: "running",
+  blocks,
+  modelId: "fictional-model",
+  createdAt: new Date(Date.now() - seconds * 1000).toISOString(),
+});
+
+const searchBlock: AiTurnBlock = {
+  id: "tool-search",
+  kind: "tool",
+  callId: "call-search",
+  name: "mail__query__search",
+  args: { query: "Messestand" },
+  status: "completed",
+  result: { summary: "3 Unterhaltungen gefunden" },
+  presentation: mail("In Mail suchen", "In Mail gesucht"),
+};
+
+const readingBlock: AiTurnBlock = {
+  id: "tool-file",
+  kind: "tool",
+  callId: "call-file",
+  name: "files__query__read",
+  args: { title: "Angebot-2026-118.pdf" },
+  status: "running",
+  presentation: files("Datei lesen", "Datei gelesen"),
+};
+
+export type GalleryChat = { messages: AiStoredMessage[]; active?: AiActiveTurn };
+
 export const galleryScenes = {
-  antwort: answerChat,
-  routine: routineChat,
-} satisfies Record<string, () => AiStoredMessage[]>;
+  /** `#g-anhaenge` */
+  anhaenge: () => ({ messages: attachmentChat() }),
+  antwort: () => ({ messages: answerChat() }),
+  routine: () => ({ messages: routineChat() }),
+  /** `#g-antwort/denkt`: the turn started and Gustav thinks. */
+  denkt: () => {
+    seq = 0;
+    return { messages: [user(QUESTION)], active: live([], 4) };
+  },
+  /** `#g-antwort/arbeitet`: Gustav searched Mail and reads the offer. */
+  arbeitet: () => {
+    seq = 0;
+    return {
+      messages: [user(QUESTION)],
+      active: live([{ id: "thinking-1", kind: "thinking", text: "Ich suche die Mail und das Angebot." }, searchBlock, readingBlock], 7),
+    };
+  },
+} satisfies Record<string, () => GalleryChat>;
 
 export type GalleryScene = keyof typeof galleryScenes;

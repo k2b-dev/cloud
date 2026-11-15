@@ -11,7 +11,7 @@ forced-color mode always leaves content unmasked.
 
 Compose `Chat.Timeline` and `Chat.Composer` inside `Chat`. The application owns messages, draft, attachments, model selection, run state, and mutations. The components own keyboard behavior, scrolling, focus, disclosures, structured actions, and accessible status presentation.
 
-Timeline items are plain message or activity records. Message actions and attachments are structured arrays; activity bodies remain JSX so an application can render rich tool results without coupling the package to a protocol.
+Timeline items are plain message or activity records. Message actions and attachments are structured arrays; activity bodies remain JSX so an application can render rich tool results without coupling the package to a protocol. A message shows its attachments above its words: an image with a `previewUrl` as a 148 × 110 px preview, every other attachment as a grey tile with its name and, with `size`, its size.
 
 `Chat.Timeline` renders rows by `id`, which must be unique within the timeline.
 A new record with a known `id` updates that row in place: the message element,
@@ -63,11 +63,13 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 ## Controlled behavior
 
-The assistant prompt is one card around the field and its footer. It carries the shared 2 px field edge of every input, without a shadow: grey at rest, a slightly darker fill on hover, the blue edge of the same width while anything inside has focus, red with `error`, and a muted card without an edge when `disabled`. A state changes only the edge colour and the fill, never the card's size or the text position.
+The assistant prompt is one card around the field and its footer. It carries the shared 2 px field edge in the AI colour: light plum (`--k2b-ai-edge-rest`) at rest, a slightly darker fill on hover, and the full plum (`--k2b-ai-accent`) of the same width with a soft glow outside (`--k2b-ai-glow`) while anything inside has focus. With `error` the edge is red until the card has focus again, and the error line stays; a `disabled` card is a muted well with a quiet `--k2b-border` edge. A state changes only the edge colour, the fill, and the glow, never the card's size or the text position. The glow is the one approved exception to "no control casts a shadow" (see [Field edge](/en/ui/surfaces/color#field-edge)). The conversation variant between people keeps the neutral field edge.
 
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
-Use `state="running"` to show Stop when the draft is empty. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu unless `addOpensCommands` opens the command list; `contextActions` sit beside context usage. `contextPopupAction` places one small action inside the context details popup and keeps it available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
+Use `state="running"` to show Stop when the draft is empty. In the assistant composer Stop stands where Send stands and takes the same AI colour; the conversation composer keeps a red Stop. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu unless `addOpensCommands` opens the command list. One usage ring sits right of Plus: it holds the context from `contextUsage` and the application parts from `contextSections`, such as a budget, see [Context usage](/en/ui/ai/context-usage). `contextActions` follow the ring as icon controls. `contextPopupAction` places one small icon action next to the context share in the usage details and keeps the ring available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
+
+`suggestion` offers a suggested next message, for example one the assistant proposes with its answer. It stands in the empty field instead of the placeholder, in muted plum (`--k2b-ai-suggestion`), as one line of text whose line breaks read as spaces. It wraps like typed text and grows the field the same way, up to 19.3125rem, from the first paint on. A hint at its end reads "Tab accept" after a sparkles icon, in the 12 px meta step; on touch-only devices it is an Accept button 1.75rem high with a 2.75rem touch area. Tab or the hint puts the text into the field as an edit that undo takes back, calls `onAccept`, and sends nothing. Tab keeps moving the focus when no suggestion stands, with Shift, Ctrl, Alt or ⌘, during an input method's composition, and while a command, emoji, or people list is open. Typing replaces the suggestion and an empty field shows it again; the field keeps the suggestion's height until it is empty or sent, so neither the first character nor accepting shrinks it. Escape sets it aside and calls `onDismiss`, and sending sets it aside as well; a different `text` shows again. Screen readers hear it once per suggestion when the field has focus, and the field describes it with `aria-describedby` while it stands. The application decides when a suggestion fits and drops it when a new response starts.
 
 Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
@@ -90,7 +92,7 @@ stay on one horizontally scrollable row, and the controlled text field grows
 up to approximately fifteen visible lines. The conversation variant grows
 differently; see [Conversations between people](#conversations-between-people).
 
-`Chat.Timeline` follows new messages and growing rich content while the reader remains near the bottom. Content and viewport resizing keep the latest item visible without overriding a reader who has scrolled upward. A reader who opens or closes an expandable row in the timeline keeps that row where it was: the timeline does not follow the end for that change, and it keeps following new content only if the end is still in view afterwards. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
+`Chat.Timeline` follows new messages and growing rich content while the reader remains near the bottom. Content and viewport resizing keep the latest item visible without overriding a reader who has scrolled upward. A reader who opens or closes an expandable row in the timeline (a `summary`, or a button with `aria-expanded` and `aria-controls` that is not a popup trigger with `aria-haspopup`) keeps that row where it was: the timeline does not follow the end for that change, and it keeps following new content only if the end is still in view afterwards. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
 
 Use `scrollToAnchorRef` to receive a function that scrolls to a rendered `anchorId` and pauses following. It returns `false` if the anchor is not rendered yet; load the relevant history first. This also works behind an open dialog where browser focus is blocked. Following resumes when the reader returns to the bottom.
 
@@ -234,8 +236,8 @@ type ChatMessageStatus = "pending" | "streaming" | "complete" | "error";
 type ChatActivityTone = "neutral" | "ai" | "success" | "warning" | "danger";
 
 type ChatActionBase = {
-  id: string; label: string; icon?: string; variant?: "danger"; disabled?: boolean; pressed?: boolean;
-  pressedTone?: "success" | "danger"; overflow?: boolean;
+  id: string; label: string; icon?: string; variant?: "danger"; disabled?: boolean; disabledReason?: string;
+  pressed?: boolean; pressedTone?: "success" | "danger"; overflow?: boolean;
 };
 
 type ChatAction = ChatActionBase &
@@ -587,7 +589,7 @@ type ChatComposerProps = {
   onAttachmentsChange?: (attachments: readonly ChatAttachment[]) => void; fileSelection?: ChatFileSelection;
   onPaste?: ChatPasteHandler; menuActions?: readonly ChatAction[]; addOpensCommands?: boolean; models?: readonly ChatModelOption[];
   selectedModelId?: string | null; onModelChange?: (modelId: string) => void;
-  commands?: readonly ChatCommand[]; contextUsage?: ChatContextUsageData;
+  commands?: readonly ChatCommand[]; contextUsage?: ChatContextUsageData; contextSections?: readonly ChatUsageSection[];
   commandSections?: readonly ChatCommandSection[]; commandScopes?: readonly ChatCommandScope[];
   searchCommands?: (query: string, signal: AbortSignal, search: ChatCommandSearch) => Promise<readonly ChatCommand[]>;
   mentions?: readonly ChatMention[]; onMentionsChange?: (mentions: readonly ChatMention[]) => void;
@@ -598,7 +600,10 @@ type ChatComposerProps = {
   inputLabel?: string; disabled?: boolean; error?: string; focusToken?: unknown; class?: string;
   variant?: "default" | "conversation"; sendKey?: "enter" | "mod-enter"; formatting?: boolean;
   emoji?: ChatComposerEmoji; microphone?: ChatComposerMicrophone; hint?: JSX.Element;
+  reply?: ChatComposerReply; suggestion?: ChatComposerSuggestion;
 };
+
+type ChatComposerSuggestion = { text: string; onAccept: () => void; onDismiss: () => void };
 
 type ChatDictationState = "listening" | "refining" | "refined" | "unrefined" | "interrupted";
 
@@ -712,13 +717,29 @@ user input is a separate state.
 Use `Chat.Tasks` above the composer for a compact working plan. Pass `items`
 with stable `id`, `content`, and `status` (`pending`, `in_progress`, `completed`,
 `cancelled`), controlled `open`/`onOpenChange`, a `label`, a `progressLabel`,
-and localized `statusLabels`. The component renders one colored segment per
-item and a bounded, scrollable disclosure. Status symbols and labels complement
-color; cancelled work has a striped segment and a struck-through description.
+and localized `statusLabels`. Set `paused` while the work is interrupted.
+
+The plan is a plum-tinted tray without edge or shadow. Its header lies at the
+composer and holds a progress ring, the title, the current step (only while
+folded), and the count with tabular figures. The list opens upwards from the
+header; folding changes only the list's height, so the composer and the
+conversation stay where they are. Rows are 32 px high and never change their
+height with their status: a circle for open work, a turning ring and bold text
+for the current step on a white highlight that glides to the next row, a check
+and grey text for done work, and a cross with struck-through text for dropped
+work. Long text wraps; about six rows show, then the list scrolls inside
+itself and keeps the current row in view. Dropped work does not count towards
+the ring. Each status is read out as its word; folded rows leave the tab order.
+
+`Chat.TaskList` shows the same rows still, without header, ring, or fold, on
+its container's text edge: use it for a plan that stopped, such as a notice
+that lists what is done and what is open. Name it with `aria-label` or
+`aria-labelledby`.
 
 The host decides when a plan exists, persists it, counts cancelled work
-separately, and translates execution state into labels. Do not label a paused
-current step as running. This component does not start tasks or infer progress.
+separately, translates execution state into labels, and titles a finished plan
+("All tasks done"). Do not label a paused current step as running. This
+component does not start tasks or infer progress.
 
 Message file attachments use compact horizontal chips with an icon and a single
 filename line. Long filenames truncate; the attachment row wraps when needed.
@@ -730,14 +751,15 @@ A changed `previewUrl` loads the thumbnail again.
 
 ## Application-owned model details
 
-Use `Chat.ContextPopup` in `modelDetails` for a compact button with custom
-details, such as an application's usage indicator. Pass the trigger content as
+For usage, such as a budget, pass a section through `contextSections`; the
+composer keeps one ring for context and budget. Use `Chat.ContextPopup` in
+`modelDetails` only for other compact details after a model selector. Pass the trigger content as
 children, `content` for the panel, and a complete `aria-label` that names the
 state and its value. The button defaults to `type="button"` and to the same
 trigger style as the context indicator; a `class` replaces that style. Hover
 previews the panel; click or keyboard activation pins it open. Escape and
 outside click close it. `onOpen` runs each time the panel opens, which is the
-place to refresh its data instead of offering a refresh button. Interactive
+place to refresh its data. Interactive
 panel content is reachable with Tab. Popup-owned click, pointer-enter/leave and
 ref props are not part of its public props. Applications own data loading and
 authorization.

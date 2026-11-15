@@ -15,8 +15,8 @@ afterAll(async () => {
   gallery?.close();
 });
 
-const open = async (scene: string, width: number, theme: "light" | "dark" = "light") => {
-  const context = await browser.newContext({ viewport: { width, height: width < 768 ? 780 : 900 }, reducedMotion: "reduce" });
+const open = async (scene: string, width: number, theme: "light" | "dark" = "light", motion: "reduce" | "no-preference" = "reduce") => {
+  const context = await browser.newContext({ viewport: { width, height: width < 768 ? 780 : 900 }, reducedMotion: motion });
   const page = await context.newPage();
   await page.goto(`${gallery.url}?scene=${scene}&theme=${theme}`);
   await page.waitForSelector("body[data-ready]", { state: "attached" });
@@ -36,6 +36,8 @@ const box = (page: Page, selector: string) =>
         height: rect.height,
         top: rect.top,
         bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
         radius: style.borderRadius,
         background: style.backgroundColor,
         color: style.color,
@@ -170,5 +172,146 @@ test("a delivered routine result offers no answer again, so a retry never target
     expect(await labels(1)).not.toContain("Neu antworten");
   } finally {
     await close();
+  }
+}, 60_000);
+
+test("what a message brings along stands above it: images as previews, files as tiles with name and size", async () => {
+  for (const width of [1440, 390]) {
+    const { page, close } = await open("anhaenge", width);
+    try {
+      const image = await box(page, '.k2b-chat-message__attachment[data-kind="image"]');
+      expect([image.width, image.height, image.radius]).toEqual([148, 110, "12px"]);
+      // Without its preview the image shows its sign in the quiet third grey, not in full ink.
+      const ink = await page.locator('.k2b-chat-message__attachment[data-kind="image"] > i').evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-text-subtle)";
+        node.parentElement!.append(probe);
+        const subtle = getComputedStyle(probe).color;
+        probe.remove();
+        return { icon: getComputedStyle(node).color, subtle };
+      });
+      expect(ink.icon).toBe(ink.subtle);
+      const file = page.locator('.k2b-chat-message__attachment[data-kind="file"]');
+      expect((await file.innerText()).replace(/\s+/g, " ").trim()).toMatch(/^Nachlass-Liste\.pdf 12\d\S* [KkM]i?B$/);
+      const tile = await box(page, '.k2b-chat-message__attachment[data-kind="file"]');
+      // Grey tiles without an edge, on the bubble's right edge.
+      expect(tile.radius).toBe("12px");
+      expect(await file.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe("0px");
+      const bubble = await box(page, ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble");
+      expect(Math.abs(tile.right - bubble.right)).toBeLessThan(1);
+    } finally {
+      await close();
+    }
+  }
+}, 60_000);
+
+for (const width of [1440, 390])
+  test(`the work line says in one line what the turn did, with ✦ and app tiles, and opens the steps in words (${width} px)`, async () => {
+    const { page, close } = await open("antwort", width);
+    try {
+      const line = ".ai-turn-work > summary";
+      expect(await page.locator(`${line} .ai-turn-work__text`).textContent()).toBe(
+        "In Mail und Dateien nachgesehen · 5 Schritte, 1 ohne Zugriff",
+      );
+      // The sentence gives way first: the step count and what did not go through are never cut.
+      const whole = await page.locator(`${line} .ai-turn-work__steps`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5);
+      expect(whole).toBe(true);
+      // On a phone the plain step count gives way to the sentence; what did not go through stays.
+      const visible = (await page.locator(`${line} .ai-turn-work__steps`).innerText()).replace(/\s+/g, " ").trim();
+      expect(visible).toBe(width < 768 ? "· 1 ohne Zugriff" : "· 5 Schritte, 1 ohne Zugriff");
+      // ✦ in the AI colour, then one 20 px tile per app that went through, in the app's colour on its tint.
+      const spark = await page.locator(`${line} .ai-turn-work__lead > i`).evaluate((node) => getComputedStyle(node).color);
+      const plum = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-ai-accent)";
+        document.body.append(probe);
+        const value = getComputedStyle(probe).color;
+        probe.remove();
+        return value;
+      });
+      expect(spark).toBe(plum);
+      const tiles = page.locator(`${line} .ai-app-tile`);
+      expect(await tiles.count()).toBe(2);
+      const tile = await box(page, `${line} .ai-app-tile`);
+      expect([tile.width, tile.height, tile.radius]).toEqual([20, 20, "6px"]);
+      // One line in 13 px, the time in 12 px tabular figures on the right, the chevron last.
+      const row = await box(page, line);
+      expect(row.height).toBe(28);
+      expect(await page.locator(`${line} .ai-turn-work__text`).evaluate((node) => getComputedStyle(node).fontSize)).toBe("13px");
+      const time = page.locator(`${line} .ai-turn-work__meta`);
+      expect(await time.evaluate((node) => [getComputedStyle(node).fontSize, getComputedStyle(node).fontVariantNumeric])).toEqual([
+        "12px",
+        "tabular-nums",
+      ]);
+      const ends = await page.locator(line).evaluate((node) => {
+        const chevron = node.querySelector(".k2b-chat-activity__chevron")!.getBoundingClientRect();
+        const meta = node.querySelector(".ai-turn-work__meta")!.getBoundingClientRect();
+        return { chevronAfterTime: chevron.left >= meta.right, rowRight: node.getBoundingClientRect().right - chevron.right };
+      });
+      expect(ends.chevronAfterTime).toBe(true);
+      expect(ends.rowRight).toBeLessThan(12);
+
+      // Opened: the steps in words, each with its tile on one axis; a refused step says why and what followed.
+      await page.locator(line).click();
+      await settled(page);
+      const steps = page.locator(".ai-turn-steps > .k2b-chat-activity");
+      expect(await steps.count()).toBe(5);
+      expect(await steps.first().innerText()).toContain("Nachgedacht");
+      // Finished reading steps say what happened, in the app's own past form (v12 image 03).
+      expect(await steps.nth(1).innerText()).toContain("In Mail gesucht");
+      expect(await steps.nth(2).innerText()).toContain("Unterhaltung gelesen");
+      expect(await steps.nth(3).innerText()).toContain("Datei gelesen");
+      const axis = await steps.evaluateAll((nodes) =>
+        nodes.map((node) => Math.round(node.querySelector(".ai-app-tile")!.getBoundingClientRect().left)),
+      );
+      expect(new Set(axis).size).toBe(1);
+      const denied = steps.last();
+      expect(await denied.innerText()).toContain("Kein Zugriff. Ohne dieses Ergebnis weitergearbeitet.");
+      expect(await denied.locator("small").evaluate((node) => getComputedStyle(node).color)).not.toBe(
+        await steps
+          .nth(1)
+          .locator("small")
+          .evaluate((node) => getComputedStyle(node).color),
+      );
+      expect(await page.locator(".ai-turn-steps").innerText()).not.toContain("FORBIDDEN");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+test("the running work line has the finished line's height, shimmers in 2.2 s, and stands still with reduced motion", async () => {
+  const finished = await open("antwort", 1440);
+  const height = (await box(finished.page, ".ai-turn-work > *")).height;
+  await finished.close();
+  // Before the first step the line cannot open yet, but its time stands where it stands once it can.
+  const timeEdge = async (scene: string) => {
+    const view = await open(scene, 1440);
+    const right = await view.page.locator(".ai-turn-work .ai-turn-work__meta").evaluate((node) => node.getBoundingClientRect().right);
+    await view.close();
+    return right;
+  };
+  expect(await timeEdge("denkt")).toBe(await timeEdge("arbeitet"));
+  for (const motion of ["no-preference", "reduce"] as const) {
+    const { page, close } = await open("arbeitet", 1440, "light", motion);
+    try {
+      const line = ".ai-turn-work .k2b-chat-activity__row";
+      expect((await box(page, line)).height).toBe(height);
+      expect(await page.locator(`${line} .ai-turn-work__sentence`).innerText()).toContain("Nutzt Dateien");
+      // The message's progress dots give way to the work line.
+      expect(await page.locator(".k2b-chat-progress-dots").evaluate((node) => getComputedStyle(node).visibility)).toBe("hidden");
+      const sentence = await page.locator(`${line} .ai-turn-work__sentence`).evaluate((node) => ({
+        name: getComputedStyle(node).animationName,
+        duration: getComputedStyle(node).animationDuration,
+      }));
+      if (motion === "reduce") expect(sentence.name).toBe("none");
+      else expect(sentence).toEqual({ name: "k2b-chat-activity-shimmer", duration: "2.2s" });
+      // Tiles keep their colours while the sentence shimmers.
+      expect(await page.locator(`${line} .k2b-chat-activity__leading`).evaluate((node) => getComputedStyle(node).animationName)).toBe(
+        "none",
+      );
+    } finally {
+      await close();
+    }
   }
 }, 60_000);

@@ -49,11 +49,13 @@ else
       action.click();
       action.click();
       expect(calls).toBe(1);
-      expect(action.disabled).toBe(true);
+      // Pending reads as off but stays focusable, so its tooltip can still be read.
+      expect(action.getAttribute("aria-disabled")).toBe("true");
+      expect(action.getAttribute("aria-busy")).toBe("true");
       reject(new Error("provider unavailable"));
       await Bun.sleep(10);
       expect(errors).toBe(1);
-      expect(action.disabled).toBe(false);
+      expect(action.hasAttribute("aria-disabled")).toBe(false);
       action.focus();
       action.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       expect(trigger.getAttribute("aria-expanded")).toBe("false");
@@ -91,6 +93,43 @@ if (!isServer)
       expect(trigger.getAttribute("aria-expanded")).toBe("false");
       trigger.click();
       expect(opened).toBe(2);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  });
+
+if (!isServer)
+  test("a focused control that leaves the details without a focus event keeps the focus in them, as in WebKit", async () => {
+    const dom = createDomTestHarness();
+    const { ChatContextPopup } = await import("../src/chat/ChatContextPopup");
+    const details = dom.document.createElement("div");
+    const retry = dom.document.createElement("button");
+    retry.textContent = "Try again";
+    details.append(retry);
+    const dispose = render(
+      () => createComponent(ChatContextPopup, { "aria-label": "Usage", content: details, children: "ring" }),
+      dom.root,
+    );
+    try {
+      const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-chat-context")!;
+      const popup = dom.root.querySelector<HTMLElement>("[role=dialog]")!;
+      popup.showPopover = () => {};
+      popup.hidePopover = () => {};
+      trigger.click();
+      retry.focus();
+      expect(dom.document.activeElement).toBe(retry);
+      // WebKit drops the focus to the page without blur or focusout when the focused element is removed; Happy DOM
+      // does the same, so only the details' own watch can bring the focus back.
+      let focusEvents = 0;
+      popup.addEventListener("focusout", () => focusEvents++);
+      const refresh = dom.document.createElement("button");
+      refresh.textContent = "Refresh";
+      retry.replaceWith(refresh);
+      await Bun.sleep(10);
+      expect(focusEvents).toBe(0);
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      expect(popup.contains(dom.document.activeElement)).toBe(true);
     } finally {
       dispose();
       dom.cleanup();
