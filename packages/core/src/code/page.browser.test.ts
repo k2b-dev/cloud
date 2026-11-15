@@ -4,14 +4,17 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type CodePageTree, validateCodePage } from "@k2b/cloud/code";
 import { createConfig } from "@k2b/ssr";
+import { AppWorkspace } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { meterType } from "../../../../scripts/fixtures/type-meter";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { CODE_NEWSLETTER_DEMO_SOURCE } from "./page.newsletter-demo";
-import { codePageFixture, codePageProvenanceSeedFixture } from "./page.test-fixture";
+import { codePageFixture } from "./page.test-fixture";
 import { buildCodePage } from "./page.test-source";
+import type { CodePageLabel, CodePageProvenance } from "./page-provenance-contracts";
 
 // The real renderer with the real stylesheet: the server's page, the island that replaces it, and every request it
 // sends. A fake event source stands in for platform events.
@@ -39,12 +42,23 @@ const itemPage = check({
 
 type Post = { path: string; fields: Record<string, string>; tree: string | null };
 type Reply = { delay?: number; response: () => Response };
+/** How a page is framed: in the app card, whose Main scrolls, or alone in the window (`layout: "plain"`). */
+type Frame = "workspace" | "plain";
 const state = {
   trees: new Map<string, CodePageTree>(),
   posts: [] as Post[],
   replies: [] as Reply[],
   treeLoads: 0,
   treeDelay: 0,
+  frame: "plain" as Frame,
+  locale: "en",
+  label: { kind: "person", name: "Lea Muster" } as CodePageLabel,
+  /** The card's facts the provenance route answers with, unless a queued reply says otherwise. */
+  facts: null as CodePageProvenance | null,
+  reads: [] as Record<string, unknown>[],
+  readReplies: [] as Reply[],
+  reports: [] as Record<string, unknown>[],
+  reportReplies: [] as Reply[],
 };
 const treeResponse = (tree: CodePageTree) => Response.json({ tree, csrf }, { headers: { "X-Code-Page": "tree" } });
 const failure = (status: number, code: string) => Response.json({ code }, { status });
@@ -54,17 +68,47 @@ let css = "";
 let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 
-const documentFor = (tree: CodePageTree) => {
-  // As Core hosts it: the tree in its host, with the feat/code label beside it.
-  const body = renderToString(() =>
-    createComponent(CodePageHost, { tree, codeId, csrf, provenance: codePageProvenanceSeedFixture, locale: "en", timeZone: "UTC" }),
-  );
-  const props = JSON.stringify({ tree, codeId, csrf, locale: "en", timeZone: "UTC" }).replaceAll("<", "\\u003c");
+/** The opaque version value hosting would send; the fake routes accept any. */
+const versionValue = "v".repeat(32);
+const json = (value: unknown) => JSON.stringify(value).replaceAll("<", "\\u003c");
+const documentFor = (tree: CodePageTree, path: string) => {
+  const { locale } = state;
+  const provenance = { label: state.label, version: versionValue, path, cloudName: "Möbel Beispiel Cloud" };
+  // As Core hosts it: the tree in its host, with the footer and the feat/code label beside it.
+  const host = () => createComponent(CodePageHost, { tree, codeId, csrf, locale, timeZone: "UTC", provenance });
+  // The app card as render-page draws it for signed-in people; Main scrolls and has no fade of its own.
+  const workspace = () =>
+    createComponent(AppWorkspace, {
+      mobileSurface: "flush",
+      class: "min-h-0 flex-1",
+      resizable: false,
+      head: false,
+      get children() {
+        return createComponent(AppWorkspace.Content, {
+          get children() {
+            return createComponent(AppWorkspace.Main, {
+              scrollFade: false,
+              get children() {
+                return host();
+              },
+            });
+          },
+        });
+      },
+    });
+  const body =
+    state.frame === "workspace"
+      ? `<div class="code-test-shell">${renderToString(workspace)}</div>`
+      : `<main id="app">${renderToString(host)}</main>`;
+  const form = JSON.stringify(tree).includes('"kind":"Form"');
   return (
-    `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
+    `<!doctype html><html lang="${locale}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
     `<title>${tree.title} · Cloud</title><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css">` +
-    `<style>${css}</style></head><body class="k2b-ui"><main id="app">${body}</main>` +
-    `<script type="application/json" id="props">${props}</script><script src="/client.js"></script></body></html>`
+    `<style>${css}</style><style>body{margin:0}.code-test-shell{position:fixed;inset:0;display:flex;flex-direction:column;padding:8px;background:var(--k2b-surface-canvas)}@media (max-width:47.999rem){.code-test-shell{padding:0}}</style>` +
+    `</head><body class="k2b-ui">${body}` +
+    `<script type="application/json" id="props">${json({ tree, codeId, csrf, locale, timeZone: "UTC" })}</script>` +
+    `<script type="application/json" id="label-props">${json({ provenance, codeId, form, locale })}</script>` +
+    `<script src="/client.js"></script></body></html>`
   );
 };
 
@@ -78,6 +122,7 @@ beforeAll(async () => {
   const fixture = `import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import Page from "./PageTree.island";
+import Label from "./PageProvenance.island";
 const listeners = new Set();
 const events = { subscribe(types, onEvent) { window.followed = types; listeners.add(onEvent); return () => listeners.delete(onEvent); } };
 window.emit = () => listeners.forEach((listener) => listener());
@@ -87,6 +132,11 @@ window.mount = () => {
   const props = JSON.parse(document.getElementById("props").textContent);
   app.textContent = "";
   render(() => createComponent(Page, { ...props, events }), app);
+  // The label is an island of its own beside the tree.
+  const label = document.querySelector("[data-code-provenance]");
+  const labelProps = JSON.parse(document.getElementById("label-props").textContent);
+  label.textContent = "";
+  render(() => createComponent(Label, labelProps), label);
 };
 if (!location.search.includes("hold")) window.mount();`;
   const bundle = await Bun.build({
@@ -128,6 +178,21 @@ if (!location.search.includes("hold")) window.mount();`;
       const url = new URL(request.url);
       if (url.pathname.startsWith("/public/")) return new Response(Bun.file(join(root, url.pathname)));
       if (url.pathname === "/client.js") return new Response(script, { headers: { "Content-Type": "text/javascript" } });
+      // The card's routes, as hosting answers them for the viewer the test chose.
+      if (url.pathname === "/api/code/pages/provenance" || url.pathname === "/api/code/pages/report") {
+        const read = url.pathname.endsWith("/provenance");
+        (read ? state.reads : state.reports).push(await request.json());
+        const reply = (read ? state.readReplies : state.reportReplies).shift() ?? {
+          response: () =>
+            read
+              ? state.facts
+                ? Response.json({ data: state.facts })
+                : failure(404, "code_route_not_found")
+              : Response.json({ data: { reportedAt: "2026-11-15T09:00:00.000Z" } }),
+        };
+        if (reply.delay) await Bun.sleep(reply.delay);
+        return reply.response();
+      }
       const path = url.pathname.slice(`/code/${codeId}`.length) || "/";
       if (request.method === "POST") {
         state.posts.push({
@@ -146,7 +211,7 @@ if (!location.search.includes("hold")) window.mount();`;
         if (state.treeDelay) await Bun.sleep(state.treeDelay);
         return treeResponse(tree);
       }
-      return new Response(documentFor(tree), { headers: { "Content-Type": "text/html" } });
+      return new Response(documentFor(tree, path), { headers: { "Content-Type": "text/html" } });
     },
   });
   browser = await launchBrowser();
@@ -156,25 +221,182 @@ afterAll(async () => {
   await server?.stop(true);
 });
 
+/** The weekly delivery notices of the concept's mockup (fictitious data), as short, normal and long pages and with a form. */
+const week = [
+  ["Beschläge Kern", "Mo., 09.11.", "Messinggriffe, 400 Stück", "mit Lieferschein"],
+  ["Holz Brandt", "Di., 10.11.", "Eiche, 12 Platten", "mit Lieferschein"],
+  ["Lack & Leim", "Di., 10.11.", "Klarlack, 30 Liter", "ohne Lieferschein"],
+  ["Beschläge Kern", "Mi., 11.11.", "Scharniere, 250 Stück", "mit Lieferschein"],
+  ["Holz Brandt", "Do., 12.11.", "Nussbaum, 6 Platten", "mit Lieferschein"],
+  ["Polster Winter", "Fr., 13.11.", "Bezugsstoff, 40 Meter", "ohne Lieferschein"],
+];
+const notices = (rows: string[][], form = false, weeks = 1) =>
+  check({
+    version: 1,
+    kind: "Page",
+    title: "Lieferavise dieser Woche",
+    subtitle: "Jeden Morgen um 8 aktualisiert",
+    icon: "ti ti-truck-delivery",
+    color: "blue",
+    follow: ["grids.record.changed"],
+    children: [
+      {
+        kind: "Stats",
+        items: [
+          { label: "Lieferavise", value: 14, compare: { label: "Letzte Woche", value: 11 } },
+          { label: "Mit Lieferschein", value: 9 },
+          { label: "Lieferanten", value: 5 },
+        ],
+      },
+      // A table scrolls inside its panel; a long page has one panel per week.
+      ...Array.from({ length: weeks }, (_, week) => ({
+        kind: "Table",
+        title: week ? `Angekündigt, Woche ${46 - week}` : "Angekündigt",
+        columns: [
+          { key: "supplier", label: "Lieferant" },
+          { key: "day", label: "Tag" },
+          { key: "goods", label: "Ware" },
+          { key: "slip", label: "Lieferschein" },
+        ],
+        rows: rows.map(([supplier, day, goods, slip]) => ({ supplier, day, goods, slip })),
+      })),
+      ...(form
+        ? [
+            {
+              kind: "Form",
+              title: "Lieferung fehlt?",
+              action: "/missing",
+              submit: "Melden",
+              width: "half",
+              fields: [
+                {
+                  type: "select",
+                  name: "supplier",
+                  label: "Lieferant",
+                  options: [...new Set(week.map(([supplier]) => supplier!))].map((supplier) => ({ label: supplier, value: supplier })),
+                },
+                { type: "textarea", name: "missing", label: "Was fehlt?" },
+              ],
+            },
+          ]
+        : []),
+    ],
+  });
+const callback = check({
+  version: 1,
+  kind: "Page",
+  title: "Rückruf anfragen",
+  subtitle: "Wir melden uns an einem Werktag bei dir",
+  icon: "ti ti-phone-call",
+  color: "emerald",
+  children: [
+    {
+      kind: "Form",
+      title: "Deine Angaben",
+      action: "/callback",
+      submit: "Rückruf anfragen",
+      width: "half",
+      fields: [
+        { type: "text", name: "name", label: "Name" },
+        { type: "text", name: "phone", label: "Telefon" },
+        { type: "textarea", name: "message", label: "Nachricht" },
+      ],
+    },
+  ],
+});
+const labelPages: [string, CodePageTree][] = [
+  ["/week", notices(week)],
+  ["/week/short", notices(week.slice(0, 2))],
+  ["/week/long", notices(week, false, 5)],
+  ["/week/form", notices(week, true)],
+  ["/callback", callback],
+];
+/** The card's facts per viewer, as the provenance route answers them (fictitious names). */
+const facts = {
+  visitor: { viewer: "visitor", owner: null, automation: null, gives: "nothing", report: null },
+  member: {
+    viewer: "member",
+    owner: { kind: "person", name: "Lea Muster" },
+    automation: null,
+    gives: "account",
+    report: { reportedAt: null },
+  },
+  reader: {
+    viewer: "reader",
+    owner: { kind: "person", name: "Lea Muster" },
+    automation: {
+      title: "Lieferavise der Woche",
+      version: 3,
+      activeSince: "2026-11-03T08:00:00.000Z",
+      approvedBy: "Jana Probe",
+      href: "/app/assistant/code/c_page",
+    },
+    gives: "account",
+    report: { reportedAt: null },
+  },
+  mailbox: {
+    viewer: "member",
+    owner: { kind: "resource", type: "Postfach", name: null },
+    automation: null,
+    gives: "account",
+    report: { reportedAt: null },
+  },
+  unclear: { viewer: "member", owner: { kind: "unavailable" }, automation: null, gives: "account", report: { reportedAt: null } },
+  reported: {
+    viewer: "member",
+    owner: { kind: "person", name: "Lea Muster" },
+    automation: null,
+    gives: "account",
+    report: { reportedAt: "2026-11-12T09:00:00.000Z" },
+  },
+} satisfies Record<string, CodePageProvenance>;
+
 /** The Newsletter dashboard of the chart showcase, built from Code source. */
 const newsletter = await buildCodePage(CODE_NEWSLETTER_DEMO_SOURCE, codeId);
 const reset = () => {
-  state.trees = new Map([
-    ["/", home],
-    ["/newsletter", newsletter],
-    ["/items/W-1", itemPage],
-  ]);
+  state.trees = new Map([["/", home], ["/newsletter", newsletter], ["/items/W-1", itemPage], ...labelPages]);
   state.posts = [];
   state.replies = [];
   state.treeLoads = 0;
   state.treeDelay = 0;
+  state.frame = "plain";
+  state.locale = "en";
+  state.label = { kind: "person", name: "Lea Muster" };
+  state.facts = null;
+  state.reads = [];
+  state.readReplies = [];
+  state.reports = [];
+  state.reportReplies = [];
 };
 
 type Camera = "code" | "denied" | null;
-async function open(width: number, options: { hold?: boolean; camera?: Camera; path?: string } = {}) {
+type OpenOptions = {
+  hold?: boolean;
+  camera?: Camera;
+  path?: string;
+  height?: number;
+  frame?: Frame;
+  locale?: string;
+  label?: CodePageLabel;
+  facts?: CodePageProvenance;
+  /** Sets `prefers-reduced-motion: reduce`, as for screenshots. */
+  reducedMotion?: boolean;
+};
+async function open(width: number, options: OpenOptions = {}) {
   reset();
+  if (options.frame) state.frame = options.frame;
+  if (options.locale) state.locale = options.locale;
+  if (options.label) state.label = options.label;
+  if (options.facts) state.facts = options.facts;
   const phone = width < 600;
-  const context = await browser.newContext({ viewport: { width, height: 900 }, deviceScaleFactor: 1, isMobile: phone, hasTouch: phone });
+  const context = await browser.newContext({
+    viewport: { width, height: options.height ?? 900 },
+    deviceScaleFactor: 1,
+    isMobile: phone,
+    hasTouch: phone,
+    ...(options.reducedMotion ? { reducedMotion: "reduce" as const } : {}),
+    locale: options.locale === "de" ? "de-DE" : "en-US",
+  });
   if (options.camera)
     await context.addInitScript((camera: Exclude<Camera, null>) => {
       // A camera that films a white picture and a detector that reads one code from it, as on Chrome for Android.
@@ -243,30 +465,33 @@ const boxes = (page: Page) =>
     }),
     text: document.querySelector<HTMLElement>("[data-code-page]")?.innerText,
     label: (() => {
-      const rect = document.querySelector("[data-code-provenance] button")?.getBoundingClientRect();
+      const rect = document.querySelector("[data-code-provenance] .code-page-provenance__pill")?.getBoundingClientRect();
       return rect ? [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)] : null;
     })(),
   }));
 
-/** Scrolled to the end, the last block is fully visible: every shown chip of the label sits below it, in view. */
+/** Scrolled to the end, the last block is fully visible and ends above the footer, which sits in view. */
 const expectEndClear = async (page: Page) => {
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.evaluate(() => {
+    window.scrollTo(0, document.documentElement.scrollHeight);
+    const main = document.querySelector(".k2b-app-workspace__main");
+    main?.scrollTo(0, main.scrollHeight);
+  });
   await settled(page);
   const end = await page.evaluate(() => {
-    const chips = Array.from(document.querySelectorAll<HTMLElement>("[data-code-provenance] > :not([popover])"))
-      .filter((chip) => getComputedStyle(chip).display !== "none")
-      .map((chip) => chip.getBoundingClientRect());
+    const footer = document.querySelector<HTMLElement>("[data-code-provenance]")!.getBoundingClientRect();
     const blocks = Array.from(
       document.querySelectorAll("[data-code-page-tree] .k2b-dashboard-frame, [data-code-page-tree] [data-code-block]"),
     );
     return {
-      chips: Math.min(...chips.map((chip) => chip.top)),
+      footerTop: footer.top,
+      footerBottom: footer.bottom,
       last: Math.max(...blocks.map((block) => block.getBoundingClientRect().bottom)),
       view: window.innerHeight,
     };
   });
-  expect(end.last).toBeLessThanOrEqual(end.view);
-  expect(end.chips).toBeGreaterThanOrEqual(end.last);
+  expect(end.last).toBeLessThanOrEqual(end.footerTop);
+  expect(end.footerBottom).toBeLessThanOrEqual(end.view);
 };
 
 describe("Code page in a browser", () => {
@@ -289,96 +514,6 @@ describe("Code page in a browser", () => {
       await close();
     }
   }, 60_000);
-  test("a page with a form says not to enter passwords, readable at the edge, and the line follows the tree", async () => {
-    for (const width of [1280, 390]) {
-      const { page, errors, close } = await open(width);
-      try {
-        await settled(page);
-        const warning = () =>
-          page.evaluate(() => {
-            const line = document.querySelector<HTMLElement>("[data-code-provenance-warning]")!;
-            const rect = line.getBoundingClientRect();
-            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-            const style = getComputedStyle(line);
-            return {
-              shown: style.display !== "none",
-              text: line.innerText.trim(),
-              inView: rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth,
-              onTop: !!hit && line.contains(hit),
-              oneLine: line.scrollWidth <= line.clientWidth,
-              fontPx: Number.parseFloat(style.fontSize),
-            };
-          });
-        const shown = await warning();
-        expect(shown).toMatchObject({ shown: true, text: "Do not enter passwords here.", inView: true, onTop: true, oneLine: true });
-        expect(shown.fontPx).toBeGreaterThanOrEqual(12);
-        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
-        await settled(page);
-        expect(await warning()).toMatchObject({ shown: true, inView: true, onTop: true });
-        await expectEndClear(page);
-        // A tree without a form takes the line away, with no script of the label's own.
-        await page.evaluate(() => {
-          for (const form of document.querySelectorAll('[data-code-block="Form"]')) form.remove();
-        });
-        expect((await warning()).shown).toBe(false);
-        expect(errors).toEqual([]);
-      } finally {
-        await close();
-      }
-    }
-  }, 60_000);
-
-  test("the feat/code label stays outside the page, above it at the bottom edge while scrolling, and explains itself", async () => {
-    for (const width of [1280, 390]) {
-      const { page, errors, close } = await open(width, { path: "/newsletter" });
-      try {
-        await settled(page);
-        const placement = () =>
-          page.evaluate(() => {
-            const button = document.querySelector<HTMLElement>("[data-code-provenance] button")!;
-            const rect = button.getBoundingClientRect();
-            const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-            return {
-              inTree: !!button.closest("[data-code-page-tree]"),
-              treeIsolation: getComputedStyle(document.querySelector("[data-code-page-tree]")!).isolation,
-              position: getComputedStyle(button.closest("[data-code-provenance]")!).position,
-              zIndex: getComputedStyle(button.closest("[data-code-provenance]")!).zIndex,
-              onTop: !!hit && button.contains(hit),
-              inView: rect.top >= 0 && rect.bottom <= window.innerHeight && rect.left >= 0 && rect.right <= window.innerWidth,
-            };
-          });
-        const top = await placement();
-        expect(top).toEqual({
-          inTree: false,
-          treeIsolation: "isolate",
-          // In the scroll area from 48rem; on phones at the window's edge, whichever element scrolls there.
-          position: width < 768 ? "fixed" : "sticky",
-          zIndex: "10",
-          onTop: true,
-          inView: true,
-        });
-        // The mark reads as its name; the note describes the button before it is opened.
-        const named = page.getByRole("button", { name: "Made with feat/code", exact: true });
-        expect(await named.count()).toBe(1);
-        expect(await named.getAttribute("aria-describedby")).toBe("code-page-provenance-note");
-        // Halfway down, the page's panels pass under the label; it stays on top and in view.
-        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
-        await settled(page);
-        expect(await placement()).toMatchObject({ onTop: true, inView: true });
-        await expectEndClear(page);
-        await named.click();
-        const note = page.locator("#code-page-provenance-note");
-        await note.waitFor({ state: "visible" });
-        expect(await note.innerText()).toBe("Someone built this page with feat/code. Never enter passwords or recovery codes here.");
-        await page.keyboard.press("Escape");
-        await note.waitFor({ state: "hidden" });
-        expect(errors).toEqual([]);
-      } finally {
-        await close();
-      }
-    }
-  }, 60_000);
-
   test("the Newsletter demo from Code data fits at 1280 and 390 px and keeps every panel from server to browser", async () => {
     for (const width of [1280, 390]) {
       const { page, errors, close } = await open(width, { hold: true, path: "/newsletter" });
@@ -612,9 +747,11 @@ describe("Code page in a browser", () => {
       await page.evaluate(() => {
         const seen = window as unknown as { valueWhenScannerLeft?: string };
         let opened = false;
+        // The label's card is a closed dialog beside the page all along; the scanner is the other one.
+        const scanner = '[role="dialog"]:not(.code-page-provenance__card)';
         const observer = new MutationObserver(() => {
-          if (document.querySelector('[role="dialog"]')) opened = true;
-          if (!opened || document.querySelector('[role="dialog"]')) return;
+          if (document.querySelector(scanner)) opened = true;
+          if (!opened || document.querySelector(scanner)) return;
           seen.valueWhenScannerLeft = document.querySelector<HTMLInputElement>('input[name="barcode"]')!.value;
           observer.disconnect();
         });
@@ -653,4 +790,749 @@ describe("Code page in a browser", () => {
       await denied.close();
     }
   }, 60_000);
+});
+
+type Rect = { x: number; y: number; width: number; height: number };
+const rectOf = (page: Page, selector: string) =>
+  page.evaluate((selector) => {
+    const element = document.querySelector(selector);
+    if (!element) return null;
+    const box = element.getBoundingClientRect();
+    return { x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height) };
+  }, selector);
+const pill = (page: Page) => page.locator(".code-page-provenance__pill");
+const card = (page: Page) => page.locator(".code-page-provenance__card");
+/** Opens the card with a press and waits for its facts (or its failure) to show. */
+const openCard = async (page: Page) => {
+  await pill(page).click();
+  await card(page).waitFor({ state: "visible" });
+  await page.waitForFunction(() => !document.querySelector(".code-page-provenance__card [aria-busy='true']"));
+  await settled(page);
+};
+/** Lage und Größe of what must never move: the page's heading, its scroll area, and the footer with the pill. */
+const steady = (page: Page) =>
+  page.evaluate(() =>
+    ["[data-code-page] h1", ".k2b-app-workspace__main", "[data-code-provenance]", ".code-page-provenance__pill"].map((selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const box = element.getBoundingClientRect();
+      return [selector, Math.round(box.x), Math.round(box.y), Math.round(box.width), Math.round(box.height)];
+    }),
+  );
+const shoot = async (page: Page, name: string) => {
+  if (!shots) return;
+  mkdirSync(shots, { recursive: true });
+  await settled(page);
+  await page.screenshot({ path: join(shots, `${name}.png`) });
+};
+
+describe("the feat/code label of a Code page", () => {
+  test("the footer stands in the same place for short, normal and long pages and with a form, and every page ends above it", async () => {
+    for (const [frame, width, height] of [
+      ["workspace", 1440, 900],
+      ["plain", 1440, 900],
+      ["workspace", 390, 844],
+      ["plain", 390, 844],
+    ] as const) {
+      const places: (Rect | null)[] = [];
+      for (const path of ["/week/short", "/week", "/week/long", "/week/form"]) {
+        const { page, errors, close } = await open(width, { frame, height, path });
+        try {
+          await settled(page);
+          const footer = await page.evaluate(() => {
+            const element = document.querySelector<HTMLElement>("[data-code-provenance]")!;
+            const box = element.getBoundingClientRect();
+            const pillBox = element.querySelector(".code-page-provenance__pill")!.getBoundingClientRect();
+            const hit = document.elementFromPoint(pillBox.left + pillBox.width / 2, pillBox.top + pillBox.height / 2);
+            return {
+              inTree: !!element.closest("[data-code-page-tree]"),
+              treeIsolation: getComputedStyle(document.querySelector("[data-code-page-tree]")!).isolation,
+              position: getComputedStyle(element).position,
+              height: Math.round(box.height),
+              onTop: !!hit && element.contains(hit),
+              pillHeight: Math.round(pillBox.height),
+              pillCentre: Math.round(pillBox.left + pillBox.width / 2),
+              opaque: getComputedStyle(element).backgroundColor !== "rgba(0, 0, 0, 0)",
+            };
+          });
+          expect(footer).toMatchObject({
+            inTree: false,
+            treeIsolation: "isolate",
+            position: width < 768 ? "fixed" : "sticky",
+            height: width < 768 ? 40 : 44,
+            onTop: true,
+            pillHeight: 28,
+            opaque: true,
+          });
+          // On a phone the pill sits in the middle; from 48rem at the right end.
+          if (width < 768) expect(Math.abs(footer.pillCentre - width / 2)).toBeLessThanOrEqual(1);
+          places.push(await rectOf(page, "[data-code-provenance]"));
+          // A short page keeps the footer at the bottom edge of its scroll area, not right under the content.
+          const edge = await page.evaluate(() => {
+            const area = document.querySelector(".k2b-app-workspace__main")?.getBoundingClientRect();
+            // On a phone the footer holds the window's edge, whichever element scrolls.
+            return Math.round(area && window.innerWidth >= 768 ? area.bottom : window.innerHeight);
+          });
+          expect(places.at(-1)!.y + places.at(-1)!.height).toBe(edge);
+          // Halfway down, the page passes behind the footer, which stays on top and in view.
+          await page.evaluate(() => {
+            window.scrollTo(0, document.documentElement.scrollHeight / 2);
+            const main = document.querySelector(".k2b-app-workspace__main");
+            main?.scrollTo(0, main.scrollHeight / 2);
+          });
+          await settled(page);
+          expect(await rectOf(page, "[data-code-provenance]")).toEqual(places.at(-1)!);
+          await expectEndClear(page);
+          expect(errors).toEqual([]);
+        } finally {
+          await close();
+        }
+      }
+      for (const place of places) expect(place).toEqual(places[0]!);
+    }
+  }, 180_000);
+
+  test("with a form the pill leads with no passwords; the part follows the tree and the pill grows to the left", async () => {
+    for (const width of [1440, 390]) {
+      const { page, errors, close } = await open(width, { frame: "workspace", path: "/week/form" });
+      try {
+        await settled(page);
+        const parts = () =>
+          page.evaluate(() => {
+            const part = document.querySelector<HTMLElement>("[data-code-provenance-warning]")!;
+            const owner = document.querySelector(".code-page-provenance__owner")!.getBoundingClientRect();
+            return {
+              shown: getComputedStyle(part).display !== "none",
+              text: part.innerText.trim(),
+              ownerRight: Math.round(owner.right),
+              ownerTop: Math.round(owner.top),
+            };
+          });
+        const withForm = await parts();
+        expect(withForm).toMatchObject({ shown: true, text: width < 768 ? "No passwords" : "Do not enter passwords here" });
+        const pillBox = (await rectOf(page, ".code-page-provenance__pill"))!;
+        expect(pillBox.x).toBeGreaterThanOrEqual(0);
+        expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(width);
+        // A tree without a form takes the part away, with no script of the label's own; the owner part stays put.
+        await page.evaluate(() => {
+          for (const form of document.querySelectorAll('[data-code-block="Form"]')) form.setAttribute("data-code-block", "Gone");
+        });
+        const without = await parts();
+        expect(without.shown).toBe(false);
+        if (width >= 768) expect(without.ownerRight).toBe(withForm.ownerRight);
+        expect(without.ownerTop).toBe(withForm.ownerTop);
+        // A form that arrives later brings it back.
+        await page.evaluate(() => {
+          for (const form of document.querySelectorAll('[data-code-block="Gone"]')) form.setAttribute("data-code-block", "Form");
+        });
+        expect((await parts()).shown).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
+  test("the last field, keyboard focus and an anchor at the end stay above the footer, and printing puts the label after the page", async () => {
+    for (const [frame, width, height] of [
+      ["workspace", 1440, 520],
+      ["plain", 1440, 520],
+      ["workspace", 390, 667],
+    ] as const) {
+      const { page, errors, close } = await open(width, { frame, height, path: "/week/form" });
+      try {
+        await settled(page);
+        const clear = (selector: string) =>
+          page.evaluate((selector) => {
+            const target = document.querySelector(selector)!.getBoundingClientRect();
+            const footer = document.querySelector("[data-code-provenance]")!.getBoundingClientRect();
+            return { above: target.bottom <= footer.top, inView: target.top >= 0 };
+          }, selector);
+        // Tab from the page's heading to the last field: the browser scrolls it into view above the footer.
+        await page.locator("[data-code-page] h1").focus();
+        for (let step = 0; step < 40; step++) {
+          if (await page.evaluate(() => document.activeElement?.getAttribute("name") === "missing")) break;
+          await page.keyboard.press("Tab");
+        }
+        expect(await page.evaluate(() => document.activeElement?.getAttribute("name"))).toBe("missing");
+        await settled(page);
+        expect(await clear('[data-code-field="missing"]')).toEqual({ above: true, inView: true });
+        await page.keyboard.press("Tab");
+        await settled(page);
+        expect(await clear('[data-code-block="Form"] button[type="submit"]')).toEqual({ above: true, inView: true });
+        // An anchor at the end scrolls in above the footer as well.
+        await page.evaluate(() => {
+          window.scrollTo(0, 0);
+          document.querySelector(".k2b-app-workspace__main")?.scrollTo(0, 0);
+          document.querySelector('[data-code-block="Form"] button[type="submit"]')!.scrollIntoView({ block: "end" });
+        });
+        await settled(page);
+        expect(await clear('[data-code-block="Form"] button[type="submit"]')).toEqual({ above: true, inView: true });
+        await page.emulateMedia({ media: "print" });
+        await settled(page);
+        const printed = await page.evaluate(() => {
+          const footer = document.querySelector("[data-code-provenance]")!;
+          return {
+            position: getComputedStyle(footer).position,
+            after:
+              footer.getBoundingClientRect().top >= document.querySelector("[data-code-page-tree]")!.getBoundingClientRect().bottom - 1,
+            text: (footer as HTMLElement).innerText,
+          };
+        });
+        expect(printed.position).toBe("static");
+        expect(printed.after).toBe(true);
+        expect(printed.text).toContain("Lea Muster");
+        await page.emulateMedia({ media: "screen" });
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+    // The on-screen keyboard of a phone is not part of a desktop browser test; the fixed footer then rides above it
+    // like every fixed bar, and scroll padding keeps the focused field above it.
+  }, 90_000);
+
+  test("a press or Enter opens the card, resting the pointer does not, and Escape gives the focus back to the pill", async () => {
+    const { page, errors, close } = await open(1440, { frame: "workspace", path: "/week", facts: facts.member });
+    try {
+      await settled(page);
+      await pill(page).hover();
+      // fixed wait: a hint card opens 400 ms after the pointer rests; this card must still be closed after that.
+      await page.waitForTimeout(700);
+      expect(await card(page).isVisible()).toBe(false);
+      expect(state.reads).toHaveLength(0);
+      await pill(page).focus();
+      // fixed wait: keyboard focus opens a hint card at once; one frame is enough to see that this one stays closed.
+      await page.waitForTimeout(100);
+      expect(await card(page).isVisible()).toBe(false);
+      await page.keyboard.press("Enter");
+      await card(page).waitFor({ state: "visible" });
+      await page.getByText("Lea Muster", { exact: true }).waitFor();
+      expect(await page.evaluate(() => document.activeElement?.closest(".code-page-provenance__card") !== null)).toBe(true);
+      expect(state.reads).toEqual([{ codeId, path: "/week", version: versionValue }]);
+      await page.keyboard.press("Escape");
+      await card(page).waitFor({ state: "hidden" });
+      expect(await page.evaluate(() => document.activeElement?.classList.contains("code-page-provenance__pill"))).toBe(true);
+      // Opening again shows what is loaded; nothing is asked twice.
+      await openCard(page);
+      expect(state.reads).toHaveLength(1);
+      await pill(page).click();
+      await card(page).waitFor({ state: "hidden" });
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  test("the card stays in the visible area above the pill at every size; when it is tight only its body scrolls", async () => {
+    for (const [width, height] of [
+      [1440, 900],
+      [1440, 700],
+      [1280, 640],
+      [1280, 420],
+      [390, 844],
+      [390, 667],
+    ] as const) {
+      const phone = width < 768;
+      const { page, errors, close } = await open(width, { frame: "workspace", height, path: "/week", facts: facts.reader });
+      try {
+        await settled(page);
+        const before = await steady(page);
+        if (phone) await pill(page).tap();
+        else await pill(page).click();
+        await card(page).waitFor({ state: "visible" });
+        await page.getByText("Lieferavise der Woche · Version 3").waitFor();
+        await settled(page);
+        // Opening the card moves nothing on the page.
+        expect(await steady(page)).toEqual(before);
+        const place = await page.evaluate(() => {
+          const surface = document.querySelector<HTMLElement>(".code-page-provenance__card")!;
+          const box = surface.getBoundingClientRect();
+          const pillBox = document.querySelector(".code-page-provenance__pill")!.getBoundingClientRect();
+          const head = surface.querySelector(".k2b-hover-card__head")!.getBoundingClientRect();
+          const foot = surface.querySelector(".k2b-hover-card__foot")!.getBoundingClientRect();
+          const body = surface.querySelector<HTMLElement>(".k2b-hover-card__body")!;
+          return {
+            sheet: surface.hasAttribute("data-sheet"),
+            top: box.top,
+            bottom: box.bottom,
+            left: box.left,
+            right: box.right,
+            gap: pillBox.top - box.bottom,
+            alignedEnd: Math.abs(pillBox.right - box.right),
+            headIn: head.top >= box.top && head.bottom <= box.bottom,
+            footIn: foot.top >= box.top && foot.bottom <= box.bottom,
+            scrolls: body.scrollHeight > body.clientHeight + 1,
+            width: box.width,
+          };
+        });
+        expect(place.headIn).toBe(true);
+        expect(place.footIn).toBe(true);
+        if (phone) {
+          expect(place.sheet).toBe(true);
+          expect(Math.round(place.bottom)).toBe(height);
+          expect(place.top).toBeGreaterThanOrEqual(48 - 1);
+        } else {
+          expect(place.sheet).toBe(false);
+          expect(place.top).toBeGreaterThanOrEqual(8 - 0.5);
+          expect(place.right).toBeLessThanOrEqual(width - 8 + 0.5);
+          expect(Math.round(place.gap)).toBe(6);
+          expect(place.alignedEnd).toBeLessThanOrEqual(0.5);
+          expect(Math.round(place.width)).toBe(368);
+        }
+        // Only in the low window there is too little room: the body scrolls between title and last line.
+        expect(place.scrolls).toBe(height <= 420);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 180_000);
+
+  test("the card shows each viewer only what they may see", async () => {
+    const cases = [
+      [
+        "visitor",
+        { kind: "anonymous" },
+        facts.visitor,
+        ["Someone built this page themselves", "Cloud passes on", "nothing about your account"],
+        ["Belongs to", "Report page", "Open automation", "Automation"],
+      ],
+      [
+        "member",
+        { kind: "person", name: "Lea Muster" },
+        facts.member,
+        ["This page belongs to Lea Muster", "Belongs to", "Lea Muster", "name, username and groups of your account", "Report page"],
+        ["Open automation", "Switched on", "Approved"],
+      ],
+      [
+        "reader",
+        { kind: "person", name: "Lea Muster" },
+        facts.reader,
+        ["Lieferavise der Woche · Version 3", "since 11/03/2026", "by Jana Probe", "Open automation", "Report page"],
+        [],
+      ],
+      [
+        "mailbox",
+        { kind: "resource", type: "Postfach" },
+        facts.mailbox,
+        ["This page belongs to: Postfach", "Postfach · not visible to you"],
+        ["Open automation"],
+      ],
+      [
+        "unclear",
+        { kind: "anonymous" },
+        facts.unclear,
+        ["Someone built this page themselves", "cannot be retrieved right now", "Report page"],
+        ["Open automation"],
+      ],
+      ["reported", { kind: "person", name: "Lea Muster" }, facts.reported, ["Reported on 11/12"], ["Report page"]],
+    ] as const;
+    for (const [name, label, answer, shown, hidden] of cases) {
+      const { page, errors, close } = await open(1440, { frame: "workspace", path: "/week", label, facts: answer });
+      try {
+        await settled(page);
+        await openCard(page);
+        const text = await card(page).innerText();
+        for (const part of shown) expect(text, name).toContain(part);
+        for (const part of hidden) expect(text, name).not.toContain(part);
+        // The three promises and the made-with line are always there.
+        for (const part of ["Checked by Cloud:", "Not checked:", "No passwords:", "Made with"]) expect(text, name).toContain(part);
+        if (name === "reader")
+          expect(await card(page).getByRole("link", { name: "Open automation" }).getAttribute("href")).toBe("/app/assistant/code/c_page");
+        // The card's type: title 14/600, entries 13/400, labels and meta 12/400; leading signs on one axis.
+        const type = await meterType(page, ".code-page-provenance__card", { ignore: ".cloud-featcode" });
+        expect(
+          type.styles.every((style) => ["12/400", "13/400", "14/600"].includes(style)),
+          JSON.stringify(type.samples),
+        ).toBe(true);
+        expect(type.offSizes).toEqual([]);
+        expect(type.axes, name).toHaveLength(1);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 120_000);
+
+  test("the pill has one text style, 12/400, and its signs share one line", async () => {
+    for (const path of ["/week", "/week/form"]) {
+      const { page, errors, close } = await open(1440, { frame: "workspace", path });
+      try {
+        await settled(page);
+        const type = await meterType(page, ".code-page-provenance__pill", { ignore: ".cloud-featcode" });
+        expect(type.styles).toEqual(["12/400"]);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
+  test("loading shows placeholders in the height of the rows, a failure offers Try again, and a changed page offers Reload", async () => {
+    const { page, errors, close } = await open(1440, { frame: "workspace", path: "/week", facts: facts.member });
+    try {
+      await settled(page);
+      state.readReplies.push({ delay: 900, response: () => Response.json({ data: facts.member }) });
+      const before = await steady(page);
+      await pill(page).click();
+      const loading = card(page).locator("[aria-busy='true']");
+      await loading.waitFor();
+      const rows = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".code-page-provenance__facts dd")).map((dd) => Math.round(dd.getBoundingClientRect().height)),
+      );
+      expect(rows).toEqual([20, 20]);
+      expect(await card(page).innerText()).toContain("Checked by Cloud:");
+      await page.getByText("Lea Muster", { exact: true }).waitFor();
+      const loaded = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".code-page-provenance__facts dd")).map((dd) => Math.round(dd.getBoundingClientRect().height)),
+      );
+      expect(loaded[0]).toBe(20);
+      expect(await steady(page)).toEqual(before);
+      await pill(page).click();
+      await card(page).waitFor({ state: "hidden" });
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+    {
+      const { page, errors, close } = await open(1440, { frame: "workspace", path: "/week", facts: facts.member });
+      try {
+        await settled(page);
+        state.readReplies.push({ response: () => failure(503, "code_request_failed") });
+        await openCard(page);
+        expect(await card(page).innerText()).toContain("Who owns this page cannot be loaded right now. Try again");
+        await card(page).getByRole("button", { name: "Try again" }).click();
+        await page.getByText("Lea Muster", { exact: true }).waitFor();
+        expect(state.reads).toHaveLength(2);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+    {
+      const { page, errors, close } = await open(1440, { frame: "workspace", path: "/week", facts: facts.reader });
+      try {
+        await settled(page);
+        state.readReplies.push({ response: () => failure(409, "code_page_changed") });
+        await openCard(page);
+        const text = await card(page).innerText();
+        expect(text).toContain("The page has changed in the meantime. Reload, then the details are right.");
+        expect(text).not.toContain("Report page");
+        await Promise.all([page.waitForEvent("load"), card(page).getByRole("button", { name: "Reload" }).click()]);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 90_000);
+
+  test("a new tree drops the loaded facts; the next opening asks again for the page shown now", async () => {
+    const { page, errors, close } = await open(1440, { frame: "workspace", path: "/week/form", facts: facts.member });
+    try {
+      await settled(page);
+      const footer = await rectOf(page, "[data-code-provenance]");
+      await openCard(page);
+      await pill(page).click();
+      await card(page).waitFor({ state: "hidden" });
+      // The form answers with another tree, as a submit does.
+      state.replies.push({ response: () => treeResponse(state.trees.get("/week")!) });
+      await page.getByLabel("Was fehlt?", { exact: true }).fill("Scharniere");
+      await page.getByRole("button", { name: "Melden", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('[data-code-block="Form"]'));
+      await settled(page);
+      // The no-passwords part left with the form; the footer stays.
+      expect(await page.evaluate(() => getComputedStyle(document.querySelector("[data-code-provenance-warning]")!).display)).toBe("none");
+      expect(await rectOf(page, "[data-code-provenance]")).toEqual(footer);
+      await openCard(page);
+      expect(state.reads).toHaveLength(2);
+      expect(state.reads[1]).toEqual({ codeId, path: "/week/form", version: versionValue });
+      await pill(page).click();
+      await card(page).waitFor({ state: "hidden" });
+      // A followed event loads the tree again: the facts go as well, and the footer stays where it is.
+      const loads = state.treeLoads;
+      await page.evaluate(() => (window as unknown as { emit: () => void }).emit());
+      await page.waitForFunction(() => !document.querySelector("[data-code-page][aria-busy]"));
+      expect(state.treeLoads).toBe(loads + 1);
+      await settled(page);
+      expect(await rectOf(page, "[data-code-provenance]")).toEqual(footer);
+      await openCard(page);
+      expect(state.reads).toHaveLength(3);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  test("reporting: one optional reason, a required sentence, one size in every state, one key, and the card says Reported", async () => {
+    for (const width of [1440, 390]) {
+      const { page, errors, close } = await open(width, { frame: "workspace", path: "/week", facts: facts.member, locale: "de" });
+      try {
+        await settled(page);
+        if (width < 768) await pill(page).tap();
+        else await pill(page).click();
+        await card(page).waitFor({ state: "visible" });
+        await card(page).getByRole("button", { name: "Seite melden" }).click();
+        const dialog = page.locator(".code-page-report");
+        await dialog.waitFor();
+        await settled(page);
+        const frame = () => rectOf(page, ".code-page-report-frame");
+        const send = page.locator(".code-page-report__actions button").last();
+        const status = page.locator(".code-page-report__status");
+        // Empty: the sentence is required, so "Melden" waits for it; the line below says why.
+        expect(await send.isDisabled()).toBe(true);
+        expect(await status.innerText()).toBe("Schreib einen Satz dazu. Dann kannst du melden.");
+        const empty = await frame();
+        if (width >= 768) {
+          expect(empty!.width).toBe(480);
+          await shoot(page, "89-seite-melden-leer-light-1440");
+        }
+        // A reason is optional, one at most, and a second press takes it back.
+        const reason = (label: string) => page.getByRole("button", { name: label, exact: true });
+        await reason("Verdächtige Aktivität").click();
+        await reason("Sicherheitsproblem").click();
+        expect(await page.locator(".code-page-report__reasons [aria-pressed='true']").count()).toBe(1);
+        await reason("Sicherheitsproblem").click();
+        expect(await page.locator(".code-page-report__reasons [aria-pressed='true']").count()).toBe(0);
+        await reason("Sicherheitsproblem").click();
+        await page.locator(".code-page-report textarea").fill("Die Seite fragt nach meinen Zugangsdaten zum Lieferantenportal.");
+        expect(await send.isEnabled()).toBe(true);
+        expect(await status.innerText()).toBe("Geht an die Admins dieser Cloud.");
+        await settled(page);
+        expect(await frame()).toEqual(empty);
+        if (width >= 768) await shoot(page, "75-seite-melden-light-1440");
+        else await shoot(page, "92-seite-melden-telefon-light-390");
+        if (width < 768) {
+          // A sheet from below with two buttons of the same width.
+          const sheet = await page.evaluate(() => {
+            const frame = document.querySelector(".code-page-report-frame")!;
+            const buttons = Array.from(document.querySelectorAll(".code-page-report__actions button")).map((button) =>
+              Math.round(button.getBoundingClientRect().width),
+            );
+            return {
+              bottom: Math.round(frame.getBoundingClientRect().bottom),
+              radius: getComputedStyle(frame).borderTopLeftRadius,
+              buttons,
+            };
+          });
+          expect(sheet.bottom).toBe(900);
+          expect(sheet.radius).toBe("16px");
+          expect(sheet.buttons[0]).toBe(sheet.buttons[1]);
+        }
+        // Sending: fields and buttons are off, the line says so, and the dialog keeps its size.
+        state.reportReplies.push({ delay: 700, response: () => failure(500, "code_request_failed") });
+        await send.click();
+        await page.waitForFunction(() => document.querySelector(".code-page-report")?.getAttribute("aria-busy") === "true");
+        expect(await status.innerText()).toBe("Wird gesendet …");
+        expect(await page.locator(".code-page-report textarea").isDisabled()).toBe(true);
+        expect(await page.locator(".code-page-report__actions button").first().isDisabled()).toBe(true);
+        expect(await frame()).toEqual(empty);
+        // A failure keeps the text, says why in red, and the main button tries again.
+        await page.waitForFunction(() => document.querySelector(".code-page-report__status")?.getAttribute("data-tone") === "danger");
+        expect(await status.innerText()).toBe("Die Meldung ist nicht angekommen. Dein Text bleibt stehen.");
+        expect(await send.innerText()).toBe("Erneut versuchen");
+        expect(await page.locator(".code-page-report textarea").inputValue()).toContain("Zugangsdaten");
+        expect(await frame()).toEqual(empty);
+        if (width >= 768) await shoot(page, "91-seite-melden-fehler-light-1440");
+        const type = await meterType(page, ".code-page-report");
+        expect(
+          type.styles.every((style) => ["12/400", "13/400", "14/600"].includes(style)),
+          JSON.stringify(type.samples),
+        ).toBe(true);
+        expect(type.offSizes).toEqual([]);
+        await send.click();
+        await page.getByText("Deine Meldung ist angekommen.").waitFor();
+        await settled(page);
+        if (width >= 768) await shoot(page, "90-seite-melden-gesendet-light-1440");
+        expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Fertig");
+        // Both sends carry the same key, the reason and the sentence.
+        expect(state.reports).toHaveLength(2);
+        expect(state.reports[0]).toMatchObject({
+          codeId,
+          path: "/week",
+          version: versionValue,
+          reason: "security",
+          text: "Die Seite fragt nach meinen Zugangsdaten zum Lieferantenportal.",
+        });
+        expect(state.reports[1]!.key).toBe(state.reports[0]!.key);
+        expect(String(state.reports[0]!.key)).toMatch(/^[0-9a-f-]{36}$/);
+        await page.getByRole("button", { name: "Fertig" }).click();
+        await dialog.waitFor({ state: "hidden" });
+        // The card opens again beside the pill and says the page is reported; on a phone the pill keeps the focus
+        // and the next tap shows the same.
+        if (width < 768) {
+          expect(await page.evaluate(() => document.activeElement?.classList.contains("code-page-provenance__pill"))).toBe(true);
+          await pill(page).tap();
+        }
+        await card(page).waitFor({ state: "visible" });
+        const text = await card(page).innerText();
+        expect(text).toContain("Gemeldet. Die Admins sehen sich die Seite an.");
+        expect(text).toContain("Gemeldet");
+        expect(text).not.toContain("Seite melden");
+        if (width >= 768) await shoot(page, "seite-gemeldet-light-1440");
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 120_000);
+
+  test("a lost answer is checked before anything is sent again", async () => {
+    const { page, errors, close } = await open(1440, { frame: "workspace", path: "/week", facts: facts.member });
+    try {
+      await settled(page);
+      await openCard(page);
+      await card(page).getByRole("button", { name: "Report page" }).click();
+      await page.locator(".code-page-report textarea").fill("Asks for my password.");
+      // The answer gets lost, but the report did arrive: the card's route says so, and nothing is sent twice.
+      state.reportReplies.push({ response: () => new Response("lost", { status: 200 }) });
+      state.readReplies.push({ response: () => Response.json({ data: facts.reported }) });
+      await page.locator(".code-page-report__actions button").last().click();
+      await page.getByText("Your report arrived.").waitFor();
+      expect(state.reports).toHaveLength(1);
+      expect(state.reads).toHaveLength(2);
+      await page.keyboard.press("Escape");
+      await page.locator(".code-page-report").waitFor({ state: "hidden" });
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+    {
+      const { page, errors, close } = await open(1440, { frame: "workspace", path: "/week", facts: facts.member });
+      try {
+        await settled(page);
+        await openCard(page);
+        await card(page).getByRole("button", { name: "Report page" }).click();
+        await page.locator(".code-page-report textarea").fill("Asks for my password.");
+        // Lost and not there: the dialog says so and offers to send again; a refusal names its reason.
+        state.reportReplies.push({ response: () => new Response("lost", { status: 200 }) });
+        await page.locator(".code-page-report__actions button").last().click();
+        await page.getByText("The report did not arrive. Your text stays.").waitFor();
+        state.reportReplies.push({ response: () => failure(429, "code_report_rate_limit") });
+        await page.locator(".code-page-report__actions button").last().click();
+        await page.getByText("You reported many pages just now. Try again in a minute.").waitFor();
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
+  test("light pictures of the label in the states of the concept", async () => {
+    if (!shots) return;
+    const pictures: [string, number, number, OpenOptions, boolean][] = [
+      ["71-seite-kennzeichnung-light-1440", 1440, 900, { frame: "workspace", path: "/week", facts: facts.member }, false],
+      ["72-seite-karte-mitglied-light-1440", 1440, 900, { frame: "workspace", path: "/week", facts: facts.member }, true],
+      ["73-seite-formular-light-1440", 1440, 900, { frame: "workspace", path: "/week/form", facts: facts.member }, false],
+      [
+        "74-seite-karte-ohne-konto-light-1440",
+        1440,
+        900,
+        { frame: "plain", path: "/callback", label: { kind: "anonymous" }, facts: facts.visitor },
+        true,
+      ],
+      [
+        "76-seite-telefon-light-390",
+        390,
+        780,
+        { frame: "plain", path: "/callback", label: { kind: "anonymous" }, facts: facts.visitor },
+        false,
+      ],
+      ["79-seite-karte-leser-light-1440", 1440, 900, { frame: "workspace", path: "/week", facts: facts.reader }, true],
+      [
+        "80-seite-telefon-karte-light-390",
+        390,
+        780,
+        { frame: "plain", path: "/callback", label: { kind: "anonymous" }, facts: facts.visitor },
+        true,
+      ],
+      [
+        "seite-postfach-karte-light-1440",
+        1440,
+        900,
+        { frame: "workspace", path: "/week", label: { kind: "resource", type: "Postfach" }, facts: facts.mailbox },
+        true,
+      ],
+      [
+        "seite-besitzer-unklar-light-1440",
+        1440,
+        900,
+        { frame: "workspace", path: "/week", label: { kind: "anonymous" }, facts: facts.unclear },
+        true,
+      ],
+      ["seite-schon-gemeldet-light-1440", 1440, 900, { frame: "workspace", path: "/week", facts: facts.reported }, true],
+      ["seite-kurz-light-1440", 1440, 900, { frame: "workspace", path: "/week/short", facts: facts.member }, false],
+      ["seite-lang-light-1440", 1440, 900, { frame: "workspace", path: "/week/long", facts: facts.member }, false],
+      [
+        "seite-allein-light-1440",
+        1440,
+        900,
+        { frame: "plain", path: "/callback", label: { kind: "anonymous" }, facts: facts.visitor },
+        false,
+      ],
+      ["seite-kennzeichnung-dark-1440", 1440, 900, { frame: "workspace", path: "/week/form", facts: facts.reader }, true],
+    ];
+    for (const [name, width, height, options, opened] of pictures) {
+      const { page, errors, close } = await open(width, { ...options, height, locale: "de", reducedMotion: true });
+      try {
+        if (name.includes("dark"))
+          await page.evaluate(() => {
+            document.documentElement.className = "dark";
+          });
+        await settled(page);
+        if (name === "seite-lang-light-1440")
+          await page.evaluate(() => document.querySelector(".k2b-app-workspace__main")?.scrollTo(0, 260));
+        if (opened) {
+          if (width < 768) await pill(page).tap();
+          else await pill(page).click();
+          await card(page).waitFor({ state: "visible" });
+          await page.waitForFunction(() => !document.querySelector(".code-page-provenance__card [aria-busy='true']"));
+        }
+        await settled(page);
+        await shoot(page, name);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+    // The card's own states, in German like the concept: low window, loading, not loadable, changed meanwhile.
+    const cardStates: [string, number, number, CodePageProvenance, Reply | null, boolean][] = [
+      ["84-seite-karte-niedrig-light-1280", 1280, 420, facts.reader, null, true],
+      [
+        "seite-karte-laedt-light-1440",
+        1440,
+        900,
+        facts.member,
+        { delay: 2000, response: () => Response.json({ data: facts.member }) },
+        false,
+      ],
+      ["seite-karte-fehler-light-1440", 1440, 900, facts.member, { response: () => failure(503, "code_request_failed") }, true],
+      ["seite-karte-veraltet-light-1440", 1440, 900, facts.reader, { response: () => failure(409, "code_page_changed") }, true],
+    ];
+    for (const [name, width, height, cardFacts, reply, settle] of cardStates) {
+      const { page, errors, close } = await open(width, {
+        frame: "workspace",
+        path: "/week",
+        facts: cardFacts,
+        height,
+        locale: "de",
+        reducedMotion: true,
+      });
+      try {
+        await settled(page);
+        if (reply) state.readReplies.push(reply);
+        await pill(page).click();
+        await card(page).waitFor({ state: "visible" });
+        if (settle) {
+          await page.waitForFunction(() => !document.querySelector(".code-page-provenance__card [aria-busy='true']"));
+          await settled(page);
+        } else await card(page).locator("[aria-busy='true']").waitFor();
+        await shoot(page, name);
+        if (!settle) await page.getByText("Lea Muster", { exact: true }).waitFor();
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 240_000);
 });
