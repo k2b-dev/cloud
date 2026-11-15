@@ -1,5 +1,6 @@
 import { type PanesLayout, type PanesNode, parsePanesLayout } from "@k2b/ui";
 import { z } from "zod";
+import { isWebAddress } from "./web-address";
 
 export const ChatWorkspaceTabSchema = z.object({
   id: z
@@ -7,7 +8,21 @@ export const ChatWorkspaceTabSchema = z.object({
     .min(1)
     .max(160)
     .regex(/^[A-Za-z0-9_:.-]+$/),
-  key: z.string().min(1).max(600),
+  key: z
+    .string()
+    .min(1)
+    .max(600)
+    .refine((key) => {
+      // Other tab kinds stay opaque; web addresses have one rule at creation, storage and restore.
+      try {
+        const parts: unknown = JSON.parse(key);
+        return (
+          !Array.isArray(parts) || parts[0] !== "web" || (parts.length === 3 && typeof parts[2] === "string" && isWebAddress(parts[2]))
+        );
+      } catch {
+        return true;
+      }
+    }, "Web tabs require an HTTP or HTTPS address without credentials"),
   title: z.string().max(200),
   pinned: z.boolean().optional(),
 });

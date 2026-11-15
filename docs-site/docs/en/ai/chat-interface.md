@@ -655,6 +655,10 @@ same box below it without moving the chat (Escape closes it); on phones the
 button opens a bottom sheet that Back closes. The former sidebar column, its
 drawer, and the `assistant_context` cookie are gone.
 
+Web tabs accept absolute HTTP and HTTPS addresses without embedded credentials.
+The same rule applies when creating, saving, restoring, or opening a web tab
+in the browser.
+
 Things open as tabs in a workspace beside the chat, built from `Panes`
 (`@k2b/ui`) unchanged: tabs with a grip, **Add pane**, **Arrange** (two,
 three, stacked, tabs) and the same menu on a right click, dragging with a

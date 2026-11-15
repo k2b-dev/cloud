@@ -1,6 +1,7 @@
 import type { PanesLayout, PanesNode } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput, SaveChatWorkspaceResult } from "../chat-workspace";
+import { isWebAddress } from "../web-address";
 import {
   closeWorkspaceTab,
   fileTab,
@@ -188,9 +189,15 @@ export function createArtifactWorkspace(
     syncUrl();
     changed();
   };
-  const open = (tab: WorkspaceTab) => {
+  const openInBrowser = (address: string) => {
+    if (!isWebAddress(address)) return;
+    const url = new URL(address);
+    if (url.protocol === "http:" || url.protocol === "https:") window.open(url.href, "_blank", "noopener,noreferrer");
+  };
+  const open = (tab: WorkspaceTab | null) => {
+    if (!tab || (tab.kind === "web" && !isWebAddress(tab.url))) return;
     if (tab.kind === "web" && tab.url.length > WEB_TAB_URL_MAX) {
-      window.open(tab.url, "_blank", "noopener,noreferrer");
+      openInBrowser(tab.url);
       return;
     }
     update((current) => {
@@ -230,6 +237,7 @@ export function createArtifactWorkspace(
     mobile,
     setMobile,
     open,
+    openInBrowser,
     rename: (key: string, title: string) =>
       update((current) => ({ ...current, tabs: current.tabs.map((tab) => (tab.key === key ? { ...tab, title } : tab)) })),
     /** Opens the tab the URL names, when it belongs to the chat shown; another chat's tab waits for that chat. */
