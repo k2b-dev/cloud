@@ -14,7 +14,9 @@ import {
   loadCodeVersionWords,
   pendingCodeVersionActivation,
   readCodeVersionActivation,
+  requestCodeVersionAgain,
   startCodeVersionActivation,
+  stopCodeReviewRevision,
   withdrawCodeVersion,
 } from "./code-activation";
 import { browserCodeInvoke, formatCodeTime } from "./code-client";
@@ -22,6 +24,8 @@ import { codeVersionCardMessages } from "./code-version-card-messages";
 
 const POLLS = 90;
 const POLL_MS = 1_000;
+/** A version submitted this recently appears with its motion; anything older is history and stays still. */
+const APPEAR_WINDOW_MS = 2 * 60_000;
 /** A status that could not be read is read again by itself after this long, as the card says. */
 const RECHECK_MS = 30_000;
 /** The Code app's icon and colour, the same tile as on the Code page. */
@@ -79,6 +83,15 @@ export default function AssistantCodeVersionCard(props: {
   /** Switched on here while history stands below: the card keeps its full form for this session. */
   const [stayFull, setStayFull] = createSignal(false);
   const [withdrawError, setWithdrawError] = createSignal(false);
+  /** "Ask again" submits a new version; the card then follows it under its original anchor. */
+  const [versionId, setVersionId] = createSignal(props.versionId);
+  const [number, setNumber] = createSignal(props.number);
+  /** A stop that came after Gustav had submitted: the number of that version. */
+  const [tooLate, setTooLate] = createSignal<number | null>(null);
+  const [actionError, setActionError] = createSignal<string | null>(null);
+  /** The version was submitted moments ago and this is its first paint: the approval appears once (6a). */
+  const [appear, setAppear] = createSignal(false);
+  let firstPaint = true;
   let root: HTMLDivElement | undefined;
   let disposed = false;
   let recheck: ReturnType<typeof setTimeout> | undefined;
@@ -95,18 +108,23 @@ export default function AssistantCodeVersionCard(props: {
     const read = ++reads;
     const run = (async (): Promise<boolean> => {
       const [preview, review, words] = await Promise.all([
-        loadCodeVersionPreview(props.codeId, props.versionId),
-        loadCodeVersionReview(props.codeId, props.versionId),
-        loadCodeVersionWords(props.codeId, props.versionId),
+        loadCodeVersionPreview(props.codeId, versionId()),
+        loadCodeVersionReview(props.codeId, versionId()),
+        loadCodeVersionWords(props.codeId, versionId()),
       ]);
       // A running version shows its next run in the same paint as its line, so nothing moves once it arrives.
       const next =
-        typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null;
+        typeof preview === "object" && preview.running === number() ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null;
       if (read !== reads) return newest;
       if (preview === "failed" && live && loaded() !== null) return false;
       // A decision's review that could not be read is tried again by the live channel, never shown as a guess.
       if (live && typeof preview === "object" && review === null && loaded() !== null) return false;
       setNextRun(next);
+      if (firstPaint && typeof preview === "object") {
+        firstPaint = false;
+        const age = words ? Date.now() - Date.parse(words.submittedAt) : Number.POSITIVE_INFINITY;
+        setAppear(age >= 0 && age < APPEAR_WINDOW_MS);
+      }
       setLoaded(typeof preview === "object" ? { preview, review, words } : preview);
       return preview !== "failed";
     })();
@@ -115,7 +133,7 @@ export default function AssistantCodeVersionCard(props: {
   };
 
   // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
-  const pending = pendingCodeVersionActivation(props.codeId, props.versionId);
+  let pending = pendingCodeVersionActivation(props.codeId, versionId());
   let activationId = pending.read() ?? crypto.randomUUID();
   const finish = () => {
     pending.write(null);
@@ -169,7 +187,7 @@ export default function AssistantCodeVersionCard(props: {
     setStayFull(historyBelow(root));
     setActivation({ kind: "progress", state: "pending" });
     pending.write(activationId);
-    const started = await startCodeVersionActivation(props.codeId, props.versionId, activationId);
+    const started = await startCodeVersionActivation(props.codeId, versionId(), activationId);
     if (started.ok) {
       if (!settle(started.status)) await follow();
       return;
@@ -183,9 +201,33 @@ export default function AssistantCodeVersionCard(props: {
     // The answer was lost: Core may have accepted. Its status says what happened.
     await check();
   };
+  /** Stops Gustav's automatic revision, at the card or as "Don't start" while it waits. */
+  const stopRevision = async () => {
+    setActionError(null);
+    const answer = await stopCodeReviewRevision(props.codeId, versionId());
+    if (!answer) {
+      setActionError(t().stopFailed);
+      return;
+    }
+    if (answer.status === "too_late") setTooLate(answer.submittedNumber);
+    await load();
+  };
+  const askAgain = async () => {
+    setActionError(null);
+    const next = await requestCodeVersionAgain(props.codeId, versionId());
+    if (!next) {
+      setActionError(t().askAgainFailed);
+      return;
+    }
+    pending = pendingCodeVersionActivation(props.codeId, next.id);
+    activationId = pending.read() ?? crypto.randomUUID();
+    setVersionId(next.id);
+    setNumber(next.number);
+    await load();
+  };
   const withdraw = async () => {
     setWithdrawError(false);
-    if (await withdrawCodeVersion(props.codeId, props.versionId)) await load();
+    if (await withdrawCodeVersion(props.codeId, versionId())) await load();
     else setWithdrawError(true);
   };
 
@@ -235,7 +277,7 @@ export default function AssistantCodeVersionCard(props: {
     return when(iso).phrase;
   };
   const sentence = (verb: string): NonNullable<ApprovalFrameProps["sentence"]> => [
-    { kind: "chip", chip: { kind: "object", title: t().versionChip({ version: props.number }) } },
+    { kind: "chip", chip: { kind: "object", title: t().versionChip({ version: number() }) } },
     { kind: "text", text: ` ${t().of} ` },
     { kind: "chip", chip: { kind: "object", title: current()?.preview.title ?? "" } },
     { kind: "text", text: ` ${verb}` },
@@ -244,7 +286,7 @@ export default function AssistantCodeVersionCard(props: {
   const page = () => {
     const value = current();
     const href = value ? codeVersionPageHref(value.preview) : null;
-    return href ? `${href}?tab=versions&version=${encodeURIComponent(props.versionId)}` : null;
+    return href ? `${href}?tab=versions&version=${encodeURIComponent(versionId())}` : null;
   };
   const runsHref = () => {
     const value = current();
@@ -277,7 +319,14 @@ export default function AssistantCodeVersionCard(props: {
         ) : (
           row.text
         ),
-      detail: row.note,
+      detail: row.requiresApproval ? (
+        <span class="assistant-code-version__needs">
+          <i class="ti ti-eye" aria-hidden="true" />
+          {t().needsApproval}
+        </span>
+      ) : (
+        row.note
+      ),
     }));
     if (rows.more > 0 && rows.moreText) items.push({ tone: "neutral", icon: "ti ti-dots", content: rows.moreText });
     if (items.length === 0 && words.changes.state === "same") items.push({ tone: "neutral", icon: "ti ti-equal", content: t().sameText });
@@ -442,7 +491,7 @@ export default function AssistantCodeVersionCard(props: {
     const withAnchor = (frameProps: ApprovalFrameProps): ApprovalFrameProps => ({ ...frameProps, anchorId: base.anchorId });
 
     // Switched on: compact, unless history stands below and it was switched on here, then the same full form.
-    if (preview.running === props.number) {
+    if (preview.running === number()) {
       const at = preview.activated ? when(preview.activated.at) : null;
       if (stayFull())
         return {
@@ -464,25 +513,28 @@ export default function AssistantCodeVersionCard(props: {
         compact(
           { tone: "done", label: words.statusOn },
           {
-            text: at ? words.lineOn({ version: props.number, when: at.short }) : words.lineOnPlain({ version: props.number }),
+            text: at ? words.lineOn({ version: number(), when: at.short }) : words.lineOnPlain({ version: number() }),
             detail: nextRun() ? words.lineNextRun({ when: relativeRun(nextRun()!) }) : undefined,
             action: runs ? { label: words.seeRuns, onSelect: () => window.location.assign(runs) } : undefined,
           },
         ),
       );
     }
-    if ((preview.latest ?? 0) > props.number || status === "superseded")
+    if ((preview.latest ?? 0) > number() || status === "superseded")
       return withAnchor(
         compact(
           { tone: "off", label: words.statusSuperseded, icon: "ti ti-history" },
-          { text: words.lineSuperseded({ version: props.number, latest: Math.max(preview.latest ?? 0, props.number + 1) }) },
+          {
+            text: words.lineSuperseded({ version: number(), latest: Math.max(preview.latest ?? 0, number() + 1) }),
+            detail: tooLate() ? words.tooLate({ version: tooLate()! }) : undefined,
+          },
         ),
       );
     if (status === "withdrawn")
       return withAnchor(
         compact(
           { tone: "off", label: words.statusWithdrawn, icon: "ti ti-arrow-back-up" },
-          { text: words.lineWithdrawn({ version: props.number, keep: keep() }) },
+          { text: words.lineWithdrawn({ version: number(), keep: keep() }) },
         ),
       );
     if (status === "expired")
@@ -491,7 +543,8 @@ export default function AssistantCodeVersionCard(props: {
           { tone: "expired", label: words.statusExpired, icon: "ti ti-clock-off" },
           {
             text: words.lineExpired({ keep: keep() }),
-            actions: props.onAsk ? small(words.askAgain, ask(words.askAgainText({ version: props.number }))) : undefined,
+            detail: actionError() ?? undefined,
+            actions: small(words.askAgain, () => void askAgain()),
           },
         ),
       );
@@ -509,11 +562,34 @@ export default function AssistantCodeVersionCard(props: {
         reason: { text: words.reasonRejected({ name: decider, keep: keep() }), icon: "ti ti-history" },
         details: reviewDetails(words.reasonFrom),
         more: props.onAsk
-          ? [{ label: words.buildDifferently, icon: "ti ti-sparkles", onSelect: ask(words.askDifferently({ version: props.number })) }]
+          ? [{ label: words.buildDifferently, icon: "ti ti-sparkles", onSelect: ask(words.askDifferently({ version: number() })) }]
           : undefined,
       };
     if (status === "changes_requested") {
-      const second = review?.origin.kind === "ai_chat" && review.origin.automaticAfterReview;
+      const revision = review?.revision ?? null;
+      const second = (review?.origin.kind === "ai_chat" && review.origin.automaticAfterReview) || revision?.reason === "already_automatic";
+      // Gustav's one automatic revision: it waits for the person's turn, runs, or did not start, and says why.
+      const automatic = revision?.state === "queued" || revision?.state === "running";
+      const foot = (): ApprovalFrameProps["meta"] => {
+        if (actionError()) return [{ text: actionError()!, icon: "ti ti-alert-triangle", tone: "danger" }];
+        if (revision?.state === "queued") return [{ text: words.reworkQueued, icon: "ti ti-clock", tone: "ai" }];
+        if (revision?.state === "running") return [{ text: words.reworkRunning, icon: "ti ti-loader-2", tone: "ai" }];
+        if (second) return [{ text: words.secondTimeFoot, icon: "ti ti-info-circle" }];
+        if (revision?.state === "stopped" || revision?.reason === "stopped") return [{ text: words.reworkStopped, icon: "ti ti-player-stop" }];
+        if (revision?.state === "skipped") {
+          const reason = revision.reason;
+          const text =
+            reason === "quota"
+              ? words.skippedQuota
+              : reason === "conversation_gone" || reason === "access_lost"
+                ? words.skippedGone
+                : reason === "needs_person"
+                  ? words.skippedPerson
+                  : words.skippedUnavailable;
+          return [{ text, icon: "ti ti-info-circle" }];
+        }
+        return [{ text: words.reworkFoot, icon: "ti ti-refresh" }];
+      };
       return {
         ...base,
         state: "open",
@@ -521,14 +597,19 @@ export default function AssistantCodeVersionCard(props: {
         sentence: sentence(words.needsChanges),
         reason: { text: words.reasonChanges({ name: decider, keep: keep() }), icon: "ti ti-history" },
         details: reviewDetails(words.messageFrom),
-        meta: [{ text: second ? words.secondTimeFoot : words.reworkFoot, icon: second ? "ti ti-info-circle" : "ti ti-refresh" }],
-        confirm: props.onAsk
-          ? {
-              label: words.rework,
-              icon: "ti ti-sparkles",
-              onSelect: ask(words.askRework({ version: props.number, name: review?.decidedBy?.name ?? null })),
-            }
+        meta: foot(),
+        // The same place for the one answer in every sub-state, so the card never moves: stop it, or ask for it.
+        more: automatic
+          ? [{ label: revision?.state === "queued" ? words.dontStart : words.stop, icon: "ti ti-player-stop", onSelect: () => stopRevision() }]
           : undefined,
+        confirm:
+          !automatic && props.onAsk
+            ? {
+                label: words.rework,
+                icon: "ti ti-sparkles",
+                onSelect: ask(words.askRework({ version: number(), name: review?.decidedBy?.name ?? null })),
+              }
+            : undefined,
       };
     }
     if (preview.readiness.state === "approval_pending" || status === "pending")
@@ -537,7 +618,10 @@ export default function AssistantCodeVersionCard(props: {
         state: "open",
         status: { tone: "warning", label: words.statusWaitingAdmin, icon: "ti ti-hourglass" },
         sentence: sentence(words.waitsAdmin),
-        reason: { text: words.reasonAdmin, icon: "ti ti-eye" },
+        reason: {
+          text: value.words?.changes.approval ? `${words.reasonAdmin} ${value.words.changes.approval.reason}` : words.reasonAdmin,
+          icon: "ti ti-eye",
+        },
         details: changeDetails(),
         notes: [
           { text: words.notesAdminKnow, icon: "ti ti-bell" },
@@ -547,7 +631,17 @@ export default function AssistantCodeVersionCard(props: {
         more: [
           { label: words.withdraw, onSelect: () => withdraw() },
           ...(props.onAsk
-            ? [{ label: words.withoutApproval, icon: "ti ti-sparkles", onSelect: ask(words.askWithoutApproval({ version: props.number })) }]
+            ? [
+                {
+                  label: value.words?.changes.approval?.withoutLabel ?? words.withoutApproval,
+                  icon: "ti ti-sparkles",
+                  onSelect: ask(
+                    value.words?.changes.approval?.accessLabel
+                      ? words.askWithout({ version: number(), access: value.words.changes.approval.accessLabel })
+                      : words.askWithoutApproval({ version: number() }),
+                  ),
+                },
+              ]
             : []),
         ],
         link: seeAll(),
@@ -558,7 +652,7 @@ export default function AssistantCodeVersionCard(props: {
       return withAnchor(
         compact(
           { tone: "warning", label: words.statusUnclear },
-          { text: words.lineUnclear({ version: props.number }), actions: small(words.checkStatus, () => void check()) },
+          { text: words.lineUnclear({ version: number() }), actions: small(words.checkStatus, () => void check()) },
         ),
       );
     if (act.kind === "unreadable")
@@ -588,7 +682,7 @@ export default function AssistantCodeVersionCard(props: {
       );
     if (act.kind === "progress" && !stayFull())
       return withAnchor(
-        compact({ tone: "running", label: words.statusSwitching }, { text: words.lineSwitching({ version: props.number }) }, "sending"),
+        compact({ tone: "running", label: words.statusSwitching }, { text: words.lineSwitching({ version: number() }) }, "sending"),
       );
 
     const approved = status === "approved" && review?.decidedAt;
@@ -620,9 +714,9 @@ export default function AssistantCodeVersionCard(props: {
       meta: approved ? facts : [...facts, keepFact()],
       link: noExamples ? undefined : seeAll(),
       more:
-        noExamples && props.onAsk ? [{ label: words.tryExamples, onSelect: ask(words.askExamples({ version: props.number })) }] : undefined,
+        noExamples && props.onAsk ? [{ label: words.tryExamples, onSelect: ask(words.askExamples({ version: number() })) }] : undefined,
       confirm: {
-        label: act.kind === "progress" ? words.switching : noExamples ? words.switchAnyway : words.switchOn({ version: props.number }),
+        label: act.kind === "progress" ? words.switching : noExamples ? words.switchAnyway : words.switchOn({ version: number() }),
         icon: "ti ti-power",
         busy: act.kind === "progress",
         onSelect: () => {
@@ -633,7 +727,7 @@ export default function AssistantCodeVersionCard(props: {
   });
 
   return (
-    <div ref={root} class="assistant-code-version" data-version={props.number}>
+    <div ref={root} class="assistant-code-version" data-version={number()} data-appear={appear() ? "" : undefined}>
       <ApprovalFrame
         locale={frame().locale}
         state={frame().state}

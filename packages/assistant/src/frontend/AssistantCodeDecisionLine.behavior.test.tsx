@@ -6,7 +6,8 @@ import type { AssistantCodeDecision } from "./AssistantCodeDecisionLine";
 // The UI library needs a document when it loads.
 const first = createDomTestHarness();
 const { LocaleProvider } = await import("@k2b/ui");
-const { default: AssistantCodeDecisionLine, jumpToCodeVersionCard } = await import("./AssistantCodeDecisionLine");
+const lines = await import("./AssistantCodeDecisionLine");
+const { default: AssistantCodeDecisionLine, jumpToCodeVersionCard } = lines;
 first.cleanup();
 
 const restore: Array<() => void> = [];
@@ -106,4 +107,33 @@ test("a card not on the page is revealed by the host first; if that fails, the l
   await new Promise((resolve) => setTimeout(resolve, 10));
   expect(asked).toEqual([decision("rejected").anchor]);
   expect(line.querySelector(".assistant-code-decision__missing")?.textContent).toContain("weiter oben in diesem Chat");
+});
+
+test("changes that Gustav revises by himself carry the mark and no action; a settled approval stays as history", () => {
+  const { AssistantCodeReviewStartLine } = lines;
+  const dom = createDomTestHarness();
+  restore.push(() => dom.cleanup());
+  const dispose = render(
+    () => (
+      <LocaleProvider locale="de">
+        <AssistantCodeDecisionLine decision={decision("changes_requested")} at={at} timeZone="Europe/Berlin" automatic />
+        <AssistantCodeDecisionLine decision={decision("approved")} at={at} timeZone="Europe/Berlin" settled />
+        <AssistantCodeDecisionLine
+          decision={{ ...decision("activated"), nextRunAt: new Date(Date.now() + 11 * 60_000).toISOString() }}
+          at={at}
+          timeZone="Europe/Berlin"
+        />
+        <AssistantCodeReviewStartLine text="Jana Probe hat Änderungen an Version 5 angefordert" />
+      </LocaleProvider>
+    ),
+    dom.root,
+  );
+  restore.push(dispose);
+  const rows = [...dom.root.querySelectorAll(".assistant-code-decision")];
+  expect(rows[0]!.textContent).toContain("Gustav startet von selbst, einmal");
+  expect(rows[0]!.querySelectorAll("button").length).toBe(0);
+  expect(rows[1]!.querySelectorAll("button").length).toBe(0);
+  expect(rows[2]!.textContent).toContain("Du hast Version 5 eingeschaltet");
+  expect(rows[2]!.textContent).toContain("nächster Lauf in 11 Minuten");
+  expect(rows[3]!.textContent).toBe("Jana Probe hat Änderungen an Version 5 angefordert Gustav startet von selbst, einmal");
 });

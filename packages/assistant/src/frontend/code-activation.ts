@@ -184,6 +184,17 @@ const ReviewSchema = z.object({
   ),
   commentCount: z.number().int(),
   activeVersion: z.object({ id: z.string(), number: z.number().int() }).nullable(),
+  /** Gustav's one automatic revision after requested changes, as Core tracks it. */
+  revision: z
+    .object({
+      state: z.enum(["none", "queued", "running", "submitted", "completed", "stopped", "skipped"]),
+      reason: z
+        .enum(["already_automatic", "superseded", "withdrawn", "conversation_gone", "access_lost", "quota", "unavailable", "stopped", "needs_person"])
+        .nullable(),
+      submittedNumber: z.number().int().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 export type CodeVersionReview = z.infer<typeof ReviewSchema>;
 
@@ -215,4 +226,37 @@ export const loadCodeVersionWords = async (codeId: string, versionId: string): P
     CodeVersionReadModelSchema,
   ).catch(() => null);
   return result?.ok ? result.data.data : null;
+};
+
+/**
+ * Stops Gustav's automatic revision. `too_late`: Gustav had already submitted the new version, which the person can
+ * withdraw; `null`: Core did not answer, so nothing is claimed.
+ */
+export const stopCodeReviewRevision = async (
+  codeId: string,
+  versionId: string,
+): Promise<{ status: "stopped" } | { status: "too_late"; submittedNumber: number | null } | null> => {
+  try {
+    const response = await post("authoring/reviewStop", { codeId, versionId });
+    if (!response.ok) return null;
+    const parsed = z
+      .object({ status: z.enum(["stopped", "too_late"]), submittedNumber: z.number().int().nullable() })
+      .safeParse(await response.json());
+    if (!parsed.success) return null;
+    return parsed.data.status === "too_late" ? { status: "too_late", submittedNumber: parsed.data.submittedNumber } : { status: "stopped" };
+  } catch {
+    return null;
+  }
+};
+
+/** Asks the admins again after the request expired: Core submits the saved project as a new version with its own request. */
+export const requestCodeVersionAgain = async (codeId: string, versionId: string): Promise<{ id: string; number: number } | null> => {
+  try {
+    const response = await post("authoring/reviewRequestAgain", { codeId, versionId });
+    if (!response.ok) return null;
+    const parsed = z.object({ version: z.object({ id: z.string(), number: z.number().int() }) }).safeParse(await response.json());
+    return parsed.success ? { id: parsed.data.version.id, number: parsed.data.version.number } : null;
+  } catch {
+    return null;
+  }
 };

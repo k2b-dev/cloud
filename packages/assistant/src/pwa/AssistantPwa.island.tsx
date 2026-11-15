@@ -51,6 +51,7 @@ import {
   matchesAssistantInvalidation,
 } from "../frontend/assistant-live";
 import { audioMessages } from "../frontend/audio-messages";
+import { AssistantCodeDecisionEntry } from "../frontend/code-decision-deferred";
 import { AssistantCodeVersionCard } from "../frontend/code-version-card-deferred";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
@@ -980,6 +981,9 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                   actions={{
                     // The same version card as the workspace: on a phone it says where switching on works.
                     renderCodeAuthoringStop: (state, continuable) => <AssistantAuthoringStop state={state} continuable={continuable} />,
+                    renderCodeDecision: (entry) => (
+                      <AssistantCodeDecisionEntry entry={entry} messages={chat.messages} timeZone={props.timeZone} />
+                    ),
                     renderCodeVersion: (version) => (
                       <AssistantLiveProvider value={liveHub}>
                         <AssistantCodeVersionCard

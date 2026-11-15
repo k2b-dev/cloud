@@ -15048,6 +15048,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 @media (any-pointer: coarse) {
   .k2b-ui .k2b-chat-decision__buttons {
     row-gap: 0.625rem;
+}
+
+/* Work Gustav does by himself speaks in the AI colour; a running one turns its sign. */
+.k2b-ui .k2b-chat-decision__fact[data-tone="ai"] {
+  color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .k2b-chat-decision__fact[data-tone="ai"] > .ti-loader-2 {
+  animation: k2b-spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-chat-decision__fact[data-tone="ai"] > .ti-loader-2 {
+    animation: none;
   }
 }
 
