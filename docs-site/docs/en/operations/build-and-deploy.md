@@ -417,6 +417,28 @@ links, autolinks and bare URLs. URLs longer than 2,048 characters are excluded.
 The shared list reads the messages themselves, so deleting a message removes
 its items from subsequent reads.
 
+## Chat quoted passages after the upgrade
+
+Chat's startup migration adds a `quotes` column (default `[]`) and one index on
+messages. No configuration is required.
+
+`POST /api/chat/conversations/:conversation/messages` accepts optional
+`quotes`: up to 10 entries `{ message, text }`, where `message` is a message ID
+in the same chat. Chat turns each run of whitespace in `text` into one space and
+trims it; together the texts hold at most 20,000 Unicode code points. Each
+quoted message must exist and not be deleted (404 otherwise). The quoted
+messages and a `replyTo` must share one thread, and the new message goes to
+that thread; a different `thread` or quotes from several threads return 400.
+The text must occur in its message, ignoring whitespace and Markdown marks;
+an invented passage returns 400. Chat checks this only after it has confirmed
+that the sender may read the thread.
+
+Message responses and live message events include `quotes`: each entry is
+`{ id, author, text }`, a snapshot taken when the message was sent. Editing the
+quoted message keeps the snapshot. Deleting it turns its entries into
+`{ deleted: true }` in the same transaction. A deleted message has no quotes.
+Messages from before the upgrade return an empty list.
+
 ## Chat message attachments after the upgrade
 
 Chat's startup migration adds `chat.attachments`; no new configuration or

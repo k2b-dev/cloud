@@ -144,6 +144,18 @@ a short text such as "Message deleted" when the original is gone. With
 `onSelect`, the quote is a button, for example to jump to the quoted message
 with `VirtualFeed`'s `scrollToKey` and its `highlight`.
 
+`quotes` shows passages of other messages that this one quotes, above its
+text and below `quote`. Each passage stands on a quiet grey, without a bar,
+border or a coloured edge: the quote icon, the passage in at most two lines,
+and below it the author in small secondary text. Several stack with a small
+gap. Screen readers hear "Quote from" and the author before the passage.
+Pass each passage as plain text, and "Message deleted" with an empty `author`
+when its original is gone. `onSelect` makes a passage a button. Let it jump to
+the original and tint the passage there with `scrollToKey(key, { highlight:
+true, highlightText: text })`. People select the passages with
+[`SelectionAction`](/en/ui/actions/toolbar#selection-action), and the composer
+holds them as `quotes` until the message is sent.
+
 `forwarded` adds a "Forwarded" line above the bubble. `edited` ends the last
 paragraph of the text with a quiet "edited", so it takes no line of its own
 unless the text ends in a code block, list, or table. A collapsed message

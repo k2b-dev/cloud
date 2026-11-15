@@ -2,7 +2,7 @@
 id: chat-send
 title: Nachricht senden
 icon: ti ti-send
-description: Öffne einen Chat, sende eine Nachricht, hänge Dateien an, teile Cloud-Elemente und sende eine nicht gesendete Nachricht erneut oder verwirf sie.
+description: Öffne einen Chat, sende eine Nachricht, zitiere einen Teil einer Nachricht, hänge Dateien an, teile Cloud-Elemente und sende eine nicht gesendete Nachricht erneut oder verwirf sie.
 order: 110
 ---
 
@@ -69,6 +69,23 @@ Du kannst in einem Chat, in dem du Mitglied bist, mit Zugriff **Schreiben** oder
 :::
 
 Die Liste zeigt die Mitglieder des Chats und die Personen, die darin geschrieben haben. In einer Ressourcen-Diskussion zeigt sie die Personen, die dort geschrieben haben. Die erwähnte Person findet die Nachricht unter **Für dich**, sofern sie sie lesen darf.
+
+## Teil einer Nachricht zitieren {icon="quote"}
+
+:::steps
+1. Markiere Wörter in einer Nachricht. Daneben erscheint **Zitieren**.
+2. Wähle **Zitieren**. Die Wörter stehen über dem Eingabefeld, mit dem Namen der Person, die sie geschrieben hat.
+3. Schreib deine Antwort und sende sie. Das Zitat steht über deinem Text.
+:::
+
+:::reference
+- Um eine ganze Nachricht zu zitieren, öffne ihr Menü und wähle **Zitieren**. Auf dem Smartphone hältst du die Nachricht gedrückt, um ihr Menü zu öffnen.
+- Mit der Tastatur drückst du nach dem Markieren **Tab** und dann **Enter**. **Escape** schließt **Zitieren**.
+- Du kannst mehrere Stellen in einer Antwort zitieren. Mit **Zitat entfernen** nimmst du eine wieder heraus.
+- Wähle ein Zitat, um zu seiner Nachricht zu springen. Dort sind die zitierten Wörter kurz hervorgehoben.
+- Zitate müssen aus einem Thread stammen. Deine Antwort geht in diesen Thread. Zitierst du aus einem anderen Thread, werden die bisherigen Zitate entfernt.
+- Ein Zitat behält die Wörter, wie sie waren. Löscht jemand die Nachricht, zeigt das Zitat **Nachricht gelöscht**.
+:::
 
 ## Cloud-Element teilen {icon="share"}
 

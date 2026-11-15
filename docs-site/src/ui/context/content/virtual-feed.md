@@ -93,7 +93,12 @@ mounted:
   returns `false` if no loaded item has that key, so you can load a page
   around it first and call it again. `align` is `"center"` (default) or
   `"start"`; `highlight` tints the item briefly. The item stays in place
-  afterwards.
+  afterwards. With `highlight` and `highlightText`, only that passage of the
+  item's text is tinted, such as a quoted part of a message. Whitespace does
+  not count when the feed looks for it. Where the browser has no CSS Custom
+  Highlight API or the item does not hold the passage, the whole item is tinted
+  as before. The search loads with the first passage, so a feed that never
+  jumps to one carries none of its code.
 - `scrollToEnd()` follows the end again. Call it after the reader sends an
   item, so the item shows even while the feed still coasts from a fling. With
   `anchor="start"` it shows the last loaded item and follows nothing.
