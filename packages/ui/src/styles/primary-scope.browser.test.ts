@@ -319,6 +319,24 @@ for (const theme of ["light", "dark"] as const) {
           node.style.removeProperty("border");
           document.getElementById("primary-focus-self-test")?.remove();
         });
+        // Syntax token text is content colour: an accent-valued token is exempt, a blue focus ring beside it is not.
+        await page.locator("#portal-trigger").evaluate((node) => {
+          const token = document.createElement("span");
+          token.className = "cd-s";
+          token.id = "primary-syntax-self-test";
+          token.textContent = '"text"';
+          token.style.color = "#bfdbfe";
+          node.after(token);
+          node.style.outline = "2px solid #2563eb";
+        });
+        await settled(page);
+        const syntaxAudit = await page.evaluate(auditPrimaryColors, "#portal-trigger, #primary-syntax-self-test");
+        expect(syntaxAudit.some((leak) => leak.startsWith("SPAN.cd-s"))).toBe(false);
+        expect(syntaxAudit.some((leak) => leak.includes("outline-color"))).toBe(true);
+        await page.locator("#portal-trigger").evaluate((node) => {
+          node.style.removeProperty("outline");
+          document.getElementById("primary-syntax-self-test")?.remove();
+        });
         await page.locator("#evidence").scrollIntoViewIfNeeded();
 
         const primary = page.locator("#controls").getByRole("button", { name: "Save notes", exact: true });

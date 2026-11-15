@@ -102,6 +102,12 @@ export async function auditPrimaryColors(input: string | { selector: string; foc
     "accent-color",
     "text-decoration-color",
   ];
+  // Content colours, not primary: syntax token spans in code views (`cd-*` from
+  // CodeDiff/CodeDisplay) keep their own palette under any primary scope, like
+  // tag or status colours. Only their text colours are exempt; focus rings,
+  // selection, buttons, line marks and borders in the same view stay audited.
+  const syntaxTokenTextProperties = new Set(["color", "caret-color", "text-decoration-color"]);
+  const isSyntaxToken = (node: Element) => node.tagName === "SPAN" && [...node.classList].some((name) => name.startsWith("cd-"));
   const values = new Map<string, boolean>();
   const hasBlue = (value: string) => {
     const cached = values.get(value);
@@ -118,6 +124,7 @@ export async function auditPrimaryColors(input: string | { selector: string; foc
   const audit = (nodes: Iterable<Element>, focusing = false) => {
     for (const node of nodes) {
       const exempt = node.closest(exceptions) !== null;
+      const syntaxToken = isSyntaxToken(node);
       const initial = baseline.get(node) ?? new Map<string, string>();
       if (!focusing) baseline.set(node, initial);
       for (const pseudo of [null, "::before", "::after"]) {
@@ -139,6 +146,7 @@ export async function auditPrimaryColors(input: string | { selector: string; foc
           if (exempt && property !== "outline-color") {
             if (!focusing || (property !== "box-shadow" && !property.startsWith("border-")) || initial.get(key) === value) continue;
           }
+          if (syntaxToken && !pseudo && syntaxTokenTextProperties.has(property)) continue;
           if (property === "outline-color" && (style.outlineStyle === "none" || style.outlineWidth === "0px")) continue;
           if (property.startsWith("border-") && style.getPropertyValue(property.replace("color", "width")) === "0px") continue;
           if (hasBlue(value)) leaks.add(`${node.tagName}.${String(node.className)} ${pseudo ?? ""} ${property}=${value}`);
