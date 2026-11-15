@@ -1,17 +1,19 @@
-import { Button, ButtonLink, ChangeList, NoticeCard, StatusBadge } from "@k2b/ui";
+import { ChangeList, Chat, type ChatDecisionAnswer, type ChatDecisionFact, type ChatOutcomeTone } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
+import type { ActionText } from "../../ai/chat/action-card";
+import { ApprovalFrame, type ApprovalFrameStatus } from "../../approvals/ApprovalFrame";
 import { openPanel } from "../../browser/panel";
 import type { CodeVersionReadModel } from "../../contracts/code-read-model";
 import { switchOnReady } from "./CodeActivation";
 import type { CodePageData, CodePageReady, CodePageVersion } from "./data";
 import { type PageText, personal, withQuery } from "./page-kit";
 
+type Kind = "ready" | "waiting" | "changes" | "rejected";
+
 /**
- * The short approval card for a version that waits: ready to switch on, waiting for an administrator, changes
- * requested, or rejected. Its content comes from the version's read model, so it never shows code or identifiers.
- *
- * It keeps today's presentation (`NoticeCard` and buttons) behind one component, so the lead can move it onto the shared
- * `ApprovalFrame` from the capability blocks without touching the page around it.
+ * The approval of a version that waits, drawn by the shared `ApprovalFrame` (v12 3g): open while it is ready to switch
+ * on; in its short form while it waits for an administrator, needs changes, or was rejected. Its words come from the
+ * version's read model, so it never shows code or identifiers.
  */
 export function CodeVersionApproval(props: {
   data: CodePageData;
@@ -26,160 +28,166 @@ export function CodeVersionApproval(props: {
   const t = props.text.t;
   const editor = () => props.state.permission === "editor";
   const running = () => props.state.active?.number ?? null;
-  const ready = () => props.version.status === "submitted" || props.version.status === "approved";
-  const kind = () =>
+  const kind = (): Kind =>
     props.version.status === "pending"
-      ? ("waiting" as const)
+      ? "waiting"
       : props.version.status === "changes_requested"
-        ? ("changes" as const)
+        ? "changes"
         : props.version.status === "rejected"
-          ? ("rejected" as const)
-          : ("ready" as const);
-  const title = () => {
-    const version = props.version.number;
-    switch (kind()) {
-      case "waiting":
-        return t().approvalWaiting({ version });
-      case "changes":
-        return t().approvalChanges({ version });
-      case "rejected":
-        return t().approvalRejected({ version });
-      default:
-        return personal(props.data) ? t().approvalReadyPersonal({ version }) : t().approvalReady({ version, name: props.data.owner.title });
-    }
+          ? "rejected"
+          : "ready";
+  const decidedBy = () => props.version.decidedBy?.name ?? null;
+  const phone = () => !props.data.activation.allowed && props.data.activation.reason === "phone";
+  const canSwitchOn = () => switchOnReady(props.state) && props.state.waiting?.id === props.version.id;
+  const panel = () => (editor() ? props.data.editor : null);
+  const sentence = (): ActionText => {
+    const version = {
+      kind: "chip" as const,
+      chip: { kind: "object" as const, title: t().versionLine({ version: props.version.number }) },
+    };
+    return personal(props.data)
+      ? [{ kind: "text", text: t().askBefore }, version, { kind: "text", text: t().askAfter }]
+      : [
+          { kind: "text", text: t().askBefore },
+          version,
+          { kind: "text", text: t().askMiddle },
+          { kind: "chip", chip: { kind: "place", title: props.data.owner.title } },
+          { kind: "text", text: t().askAfter },
+        ];
   };
-  const detail = () => {
-    const decidedBy = props.version.decidedBy?.name ?? null;
-    switch (kind()) {
-      case "waiting":
-        return `${t().approvalAdminWhy} ${t().approvalAdminNext} ${t().approvalKeep({ running: running() })}`;
-      case "changes":
-        return `${t().approvalReviewed({ name: decidedBy })} ${t().approvalKeepNow({ running: running() })}`;
-      case "rejected":
-        return `${t().approvalRejectedBy({ name: decidedBy })} ${t().approvalKeepNow({ running: running() })}`;
-      default:
-        return t().approvalKeep({ running: running() });
-    }
-  };
-  const tone = () => (kind() === "rejected" ? "danger" : kind() === "ready" ? "info" : "warning");
-  const icon = () =>
-    kind() === "waiting"
-      ? "ti ti-hourglass"
-      : kind() === "changes"
-        ? "ti ti-message-2"
-        : kind() === "rejected"
-          ? "ti ti-circle-x"
-          : "ti ti-shield-check";
   const changed = () => (props.words?.changes.rows.items ?? []).filter((row) => row.kind !== "same");
   const same = () =>
     (props.words?.changes.rows.items ?? []).filter((row) => row.kind === "same").length + (props.words?.changes.rows.more ?? 0);
-  const examples = () => props.words?.examples ?? null;
-  const phone = () => !props.data.activation.allowed && props.data.activation.reason === "phone";
-  const canSwitchOn = () => ready() && switchOnReady(props.state) && props.state.waiting?.id === props.version.id;
-  const panel = () => (editor() ? props.data.editor : null);
-  const actions = () => (
+  const changes = () => (
+    <ChangeList
+      label={t().changesTitle}
+      items={
+        changed().length > 0
+          ? [
+              ...changed().map((row) => ({
+                tone: row.kind === "remove" ? ("remove" as const) : ("add" as const),
+                content: row.text,
+                detail: row.note,
+              })),
+              ...(same() > 0 ? [{ tone: "neutral" as const, icon: "ti ti-equal", content: t().sameRows({ count: same() }) }] : []),
+            ]
+          : [{ tone: "neutral" as const, icon: "ti ti-equal", content: props.words?.changes.text ?? "" }]
+      }
+    />
+  );
+  const facts = (): ChatDecisionFact[] => {
+    const examples = props.words?.examples;
+    return [
+      ...(examples
+        ? [
+            {
+              text: examples.summary,
+              icon:
+                examples.state === "passed"
+                  ? "ti ti-circle-check"
+                  : examples.state === "failed"
+                    ? "ti ti-circle-x"
+                    : "ti ti-alert-triangle",
+              tone:
+                examples.state === "passed"
+                  ? ("success" as const)
+                  : examples.state === "failed"
+                    ? ("danger" as const)
+                    : ("warning" as const),
+            },
+          ]
+        : []),
+      { text: t().approvalKeep({ running: running() }), icon: "ti ti-history" },
+    ];
+  };
+  const switchOn = (): ChatDecisionAnswer | undefined =>
+    canSwitchOn()
+      ? { label: t().switchOnVersion({ version: props.version.number }), icon: "ti ti-power", onSelect: () => props.onActivate() }
+      : undefined;
+  const status = (): ApprovalFrameStatus | undefined =>
+    kind() === "waiting"
+      ? { tone: "waiting", label: t().vWaiting }
+      : kind() === "changes"
+        ? { tone: "warning", label: t().vChanges }
+        : kind() === "rejected"
+          ? { tone: "error", label: t().vRejected }
+          : undefined;
+  const outcomeTone = (): ChatOutcomeTone => (kind() === "rejected" ? "error" : kind() === "changes" ? "warning" : "waiting");
+  const outcomeText = () =>
+    kind() === "waiting"
+      ? t().approvalWaiting({ version: props.version.number })
+      : kind() === "changes"
+        ? t().approvalChanges({ version: props.version.number })
+        : t().approvalRejected({ version: props.version.number });
+  const outcomeDetail = () => {
+    const comment = props.version.decisionComment;
+    const lead =
+      kind() === "waiting"
+        ? `${t().approvalAdminWhy} ${t().approvalAdminNext} ${t().approvalKeep({ running: running() })}`
+        : kind() === "changes"
+          ? `${t().approvalReviewed({ name: decidedBy() })} ${t().approvalKeepNow({ running: running() })}`
+          : `${t().approvalRejectedBy({ name: decidedBy() })} ${t().approvalKeepNow({ running: running() })}`;
+    return (
+      <>
+        {lead}
+        <Show when={kind() !== "waiting" && comment}>
+          {(text) => (
+            <span class="cloud-code__approval-message">
+              <span class="cloud-code__approval-from">
+                {kind() === "changes" ? t().messageFrom({ name: decidedBy() }) : t().reasonFrom({ name: decidedBy() })}
+              </span>
+              {text()}
+            </span>
+          )}
+        </Show>
+      </>
+    );
+  };
+  const outcomeActions = () => (
     <>
       <Show when={!props.onPage}>
-        <ButtonLink size="sm" variant="secondary" href={withQuery(props.data.href, { tab: "versions", version: props.version.id })}>
+        <a class="link" href={withQuery(props.data.href, { tab: "versions", version: props.version.id })}>
           {t().seeAll}
-        </ButtonLink>
+        </a>
       </Show>
-      <Show when={kind() === "ready" && canSwitchOn()}>
-        <Button type="button" size="sm" variant="primary" disabled={phone()} onClick={() => props.onActivate()}>
-          <i class="ti ti-power" aria-hidden="true" />
-          {t().switchOnVersion({ version: props.version.number })}
-        </Button>
-      </Show>
-      <Show when={kind() === "changes" && panel()}>
+      <Show when={kind() !== "waiting" && panel()}>
         {(editorPanel) => (
-          <Button type="button" size="sm" variant="primary" onClick={() => openPanel(editorPanel().provider)}>
-            <i class={editorPanel().icon} aria-hidden="true" />
-            {t().reworkWith({ name: editorPanel().label })}
-          </Button>
-        )}
-      </Show>
-      <Show when={kind() === "rejected" && panel()}>
-        {(editorPanel) => (
-          <Button type="button" size="sm" variant="secondary" onClick={() => openPanel(editorPanel().provider)}>
-            <i class={editorPanel().icon} aria-hidden="true" />
-            {t().rebuildWith({ name: editorPanel().label })}
-          </Button>
+          <button type="button" class="link" onClick={() => openPanel(editorPanel().provider)}>
+            {kind() === "changes" ? t().reworkWith({ name: editorPanel().label }) : t().rebuildWith({ name: editorPanel().label })}
+          </button>
         )}
       </Show>
     </>
   );
   return (
-    <NoticeCard
-      tone={tone()}
-      icon={icon()}
-      layout="card"
-      class="cloud-code__approval"
-      data-version={props.version.number}
-      title={title()}
-      detail={detail()}
-      actions={actions()}
-    >
-      <Show when={(kind() === "changes" || kind() === "rejected") && props.version.decisionComment}>
-        {(comment) => (
-          <div class="cloud-code__approval-message">
-            <span class="cloud-code__approval-from">
-              {kind() === "changes"
-                ? t().messageFrom({ name: props.version.decidedBy?.name ?? null })
-                : t().reasonFrom({ name: props.version.decidedBy?.name ?? null })}
-            </span>
-            <p>{comment()}</p>
-          </div>
-        )}
-      </Show>
-      <Show when={kind() !== "rejected" && changed().length > 0}>
-        <ChangeList
-          class="cloud-code__approval-changes"
-          label={t().changesTitle}
-          items={[
-            ...changed().map((row) => ({
-              tone: row.kind === "remove" ? ("remove" as const) : ("add" as const),
-              content: row.text,
-              detail: row.note,
-            })),
-            ...(same() > 0 ? [{ tone: "neutral" as const, icon: "ti ti-equal", content: t().sameRows({ count: same() }) }] : []),
-          ]}
-        />
-      </Show>
-      <Show when={kind() !== "rejected" && changed().length === 0 && props.words}>
-        {(words) => (
-          <ChangeList
-            class="cloud-code__approval-changes"
-            label={t().changesTitle}
-            items={[{ tone: "neutral" as const, icon: "ti ti-equal", content: words().changes.text }]}
+    <div class="cloud-code__approval" data-version={props.version.number}>
+      <ApprovalFrame
+        locale={props.text.locale()}
+        state={kind() === "ready" ? "open" : "decided"}
+        source={{ name: t().approvalSource, icon: "ti ti-code" }}
+        status={status()}
+        sentence={sentence()}
+        reason={{ text: props.words?.changes.text ?? t().approvalKeep({ running: running() }), icon: "ti ti-eye" }}
+        details={{
+          label: t().changesTitle,
+          content: changes(),
+          ...(running() !== null && props.words?.changes.state !== "first"
+            ? { note: { text: t().changedAgainst({ version: running()! }), icon: "ti ti-git-compare" } }
+            : {}),
+        }}
+        meta={facts()}
+        confirm={phone() ? undefined : switchOn()}
+        unavailable={phone() && canSwitchOn() ? { text: t().phoneShort, icon: "ti ti-device-mobile-off", tone: "warning" } : undefined}
+        link={
+          props.onPage ? undefined : { label: t().seeAll, href: withQuery(props.data.href, { tab: "versions", version: props.version.id }) }
+        }
+        outcome={
+          <Chat.Outcome
+            current="state"
+            lines={{ state: { tone: outcomeTone(), text: outcomeText(), detail: outcomeDetail(), actions: outcomeActions() } }}
           />
-        )}
-      </Show>
-      <Show when={kind() === "ready" || kind() === "waiting"}>
-        <p class="cloud-code__approval-foot">
-          <Show when={examples()}>
-            {(current) => (
-              <StatusBadge
-                variant="text"
-                tone={current().state === "passed" ? "ok" : current().state === "failed" ? "error" : "warning"}
-                icon={
-                  current().state === "passed"
-                    ? "ti ti-circle-check"
-                    : current().state === "failed"
-                      ? "ti ti-circle-x"
-                      : "ti ti-alert-triangle"
-                }
-                label={current().summary}
-              />
-            )}
-          </Show>
-          <Show when={kind() === "ready" && phone()}>
-            <StatusBadge variant="text" tone="warning" icon="ti ti-device-mobile-off" label={t().phoneShort} />
-          </Show>
-        </p>
-      </Show>
-      <Show when={kind() === "changes" && panel()}>
-        <p class="cloud-code__approval-foot">{t().reworkNote}</p>
-      </Show>
-    </NoticeCard>
+        }
+      />
+    </div>
   );
 }
