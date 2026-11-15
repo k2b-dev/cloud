@@ -650,9 +650,11 @@ untouched.
 
 CSS decides where the box shows, so the server render is final: as the island
 while the chat area is at least 56 rem wide and no workspace tab is open;
-otherwise as a button **In this chat** at the top of the chat that opens the
-same box below it without moving the chat (Escape closes it); on phones the
-button opens a bottom sheet that Back closes. The former sidebar column, its
+otherwise as a button **In this chat** in a head row above the timeline, so the
+history scrolls below it and no message passes under it; it opens the same box
+below it (Escape closes it). On phones the head row also names the chat, and
+the button opens a bottom sheet as high as the box that leaves the chat
+undimmed; Back or a tap beside it closes it. The former sidebar column, its
 drawer, and the `assistant_context` cookie are gone.
 
 Things open as tabs in a workspace beside the chat, built from `Panes`
