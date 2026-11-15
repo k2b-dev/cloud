@@ -12,12 +12,7 @@ import { ChatActivity, ChatActivityToggle, ChatContextUsage, ChatMessage } from 
 import { ChatRoot } from "./ChatRoot";
 import { ChatTimeline } from "./ChatTimeline";
 
-export {
-  CHAT_ACTIVITY_WORDS_HOLD_MS,
-  CHAT_ACTIVITY_WORDS_START_MS,
-  type ChatActivityWordsProps,
-  chatActivityWordAt,
-} from "./ChatActivityWords";
+export type { ChatActivityWordsProps } from "./ChatActivityWords";
 export type {
   ChatCommand,
   ChatCommandContext,

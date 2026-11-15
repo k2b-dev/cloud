@@ -659,8 +659,7 @@ type ChatActivityToggleProps = { children: JSX.Element };
 type ChatActivityWordsProps = { first: string; words: readonly string[]; elapsedMs: number; announce: string };
 ```
 
-`Chat.Activity.Words` takes `ChatActivityWordsProps`; `chatActivityWordAt(first, words, elapsedMs)` returns the word
-for a time, and `CHAT_ACTIVITY_WORDS_START_MS` and `CHAT_ACTIVITY_WORDS_HOLD_MS` are its two times.
+`Chat.Activity.Words` takes `ChatActivityWordsProps`.
 
 `ChatRootProps` belongs to `Chat`, the other component props to `.Timeline`, `.Composer`, `.Message`, and `.Activity`. `ChatActionBase` is the common shape shown here; consumers import `ChatAction`. For usage data see [Context usage](/en/ui/ai/context-usage#api-reference).
 

@@ -11,7 +11,8 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { Chat, chatActivityWordAt } = await import("../index");
+const { Chat } = await import("../index");
+const { chatActivityWordAt } = await import("./ChatActivityWords");
 const FIRST = "Denkt nach";
 const WORDS = ["Grübelt", "Tüftelt", "Spitzt den Bleistift"];
 
