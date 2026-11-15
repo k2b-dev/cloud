@@ -96,7 +96,7 @@ export function AssistantAddMenu(props: {
         key: "E",
         disabled: found.length === 0,
         description: found.length === 0 ? copy.resultNone : undefined,
-        action: () => (found.length === 1 ? found[0]!.action() : show("results")),
+        action: () => (found.length === 1 ? found[0]!.action?.() : show("results")),
       },
       {
         label: copy.files,
@@ -142,7 +142,7 @@ export function AssistantAddMenu(props: {
       setStage("menu");
       // With only one thing to add, the + opens it directly.
       const entries = menuEntries();
-      if (entries.length === 1 && !entries[0]!.disabled) return entries[0]!.action();
+      if (entries.length === 1 && !entries[0]!.disabled) return entries[0]!.action?.();
       openAt?.(element, element);
     });
   });
