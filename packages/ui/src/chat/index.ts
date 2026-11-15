@@ -5,13 +5,19 @@ import { ChatTaskList, ChatTasks } from "./ChatTasks";
 
 export type { ChatTask, ChatTaskListProps, ChatTasksProps } from "./ChatTasks";
 
+import { ChatActivityWords } from "./ChatActivityWords";
 import { ChatComposer } from "./ChatComposer";
 import { ChatDecision, ChatMark, ChatOutcome, ChatPreview } from "./ChatDecision";
-import { ChatActivityWords } from "./ChatActivityWords";
 import { ChatActivity, ChatActivityToggle, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
 import { ChatRoot } from "./ChatRoot";
 import { ChatTimeline } from "./ChatTimeline";
 
+export {
+  CHAT_ACTIVITY_WORDS_HOLD_MS,
+  CHAT_ACTIVITY_WORDS_START_MS,
+  type ChatActivityWordsProps,
+  chatActivityWordAt,
+} from "./ChatActivityWords";
 export type {
   ChatCommand,
   ChatCommandContext,
@@ -42,12 +48,6 @@ export type {
   ChatPreviewShowAllProps,
   ChatPreviewTitleProps,
 } from "./ChatDecision";
-export {
-  CHAT_ACTIVITY_WORDS_HOLD_MS,
-  CHAT_ACTIVITY_WORDS_START_MS,
-  type ChatActivityWordsProps,
-  chatActivityWordAt,
-} from "./ChatActivityWords";
 export type { ChatActivityProps, ChatActivityToggleProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
 export { formatChatTokens } from "./ChatPrimitives";
 export type { ChatRootProps } from "./ChatRoot";
