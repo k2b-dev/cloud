@@ -722,8 +722,8 @@ describe("@k2b/ui portable chat family", () => {
     );
 
     expect(css).toContain("--k2b-ai-accent:");
-    // The browser contract in styles/control-edge.browser.test.ts measures the edge in every state.
-    expect(css).toContain('.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within,');
+    // The browser contract in chat/chat-composer-edge.browser.test.ts measures the edge in every state.
+    expect(css).toContain('.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within {');
     expect(css).toContain("border-radius: calc(var(--k2b-radius-surface) + 0.25rem);");
     expect(css).not.toMatch(/\.k2b-chat-composer[^{]*\{[^}]*var\(--k2b-shadow-surface\)/);
     expect(css).toContain("max-height: 19.3125rem;");
