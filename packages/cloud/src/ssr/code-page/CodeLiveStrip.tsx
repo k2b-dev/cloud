@@ -121,6 +121,8 @@ export function CodeLiveStrip(props: {
   text: PageText;
   /** The next scheduled start; null when none is planned. */
   next: string | null;
+  /** `none` only when Core says nothing is planned; otherwise an unknown next run reads as unknown. */
+  nextState?: "planned" | "none" | "unavailable";
 }) {
   const t = props.text.t;
   const paused = () => props.state.code.state === "paused";
@@ -135,7 +137,15 @@ export function CodeLiveStrip(props: {
     <section class="cloud-code__lage" aria-label={t().nextRunLabel}>
       <div class="cloud-code__lage-cell">
         <span class="cloud-code__meta">{t().nextRunLabel}</span>
-        <span class="cloud-code__lage-value">{paused() ? t().nextPaused : props.next ? props.text.moment(props.next) : t().nextNone}</span>
+        <span class="cloud-code__lage-value">
+          {paused()
+            ? t().nextPaused
+            : props.next
+              ? props.text.moment(props.next)
+              : props.nextState === "unavailable"
+                ? t().nextUnknown
+                : t().nextNone}
+        </span>
       </div>
       <div class="cloud-code__lage-cell">
         <span class="cloud-code__meta">{t().lastLabel}</span>

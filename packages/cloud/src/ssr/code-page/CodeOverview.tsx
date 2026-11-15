@@ -20,6 +20,17 @@ export const nextRunOf = (state: CodePageReady): string | null =>
     .map((automation) => automation.nextRunAt!)
     .sort()[0] ?? null;
 
+/**
+ * Whether a next run is known: `none` only when Core says nothing is planned; when it cannot say (no scheduler answer,
+ * a list that did not load) the page says "not known" instead of claiming that nothing runs.
+ */
+export const nextRunStateOf = (state: CodePageReady): "planned" | "none" | "unavailable" => {
+  if (nextRunOf(state)) return "planned";
+  const current = (state.automations ?? []).filter((automation) => !automation.isNew);
+  if (!state.automations || current.some((automation) => automation.nextRunState === "unavailable")) return "unavailable";
+  return "none";
+};
+
 /** The newest run that ended; skipped and cancelled starts are not a result. */
 export const lastFinishedRun = (state: CodePageReady) =>
   state.runs?.items.find((run) => run.state === "succeeded" || run.state === "failed") ?? null;
@@ -484,7 +495,14 @@ export function CodeOverview(props: {
         )}
       </Show>
       <NeedsYou data={props.data} state={props.state} text={props.text} />
-      <CodeLiveStrip data={props.data} state={props.state} live={props.live} text={props.text} next={nextRunOf(props.state)} />
+      <CodeLiveStrip
+        data={props.data}
+        state={props.state}
+        live={props.live}
+        text={props.text}
+        next={nextRunOf(props.state)}
+        nextState={nextRunStateOf(props.state)}
+      />
       <div class="cloud-code__grid">
         <div class="cloud-code__stack">
           <Show when={!personal(props.data)}>

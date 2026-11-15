@@ -10,12 +10,12 @@ import { coreSettings } from "@k2b/cloud/services";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError } from "../access";
 import { readCode } from "../store";
-import { effectTarget, presentEffect } from "./effects";
+import { effectTarget, presentEffect, presentEffectCount } from "./effects";
 import { codeReadModelMessages } from "./messages";
 import { readModelNames } from "./names";
 
 type Mark = CodeActivityReadModel["timeline"]["marks"][number];
-type Counter = { key: string; automationKey: string; count: number; total: number };
+type Counter = { key: string; automationKey: string; count: number; total: number; evidence: unknown };
 type Recent = {
   evidence: unknown;
   operation: string;
@@ -43,11 +43,19 @@ export async function readCodeActivityData(input: z.infer<typeof codeReadModelCo
         (${input.day}::date+1)::timestamp AT TIME ZONE ${input.timeZone} AS hi
     ), day_runs AS MATERIALIZED (
       SELECT id,created_at,state FROM code.runs,bounds WHERE code_id=${input.codeId} AND created_at>=lo AND created_at<hi
-    ), day_count AS (SELECT count(*)::int AS total FROM day_runs)
+    ), day_count AS (SELECT count(*)::int AS total FROM day_runs), effect_words AS MATERIALIZED (
+      SELECT DISTINCT ON (r.entrypoint,c.call->>'capability') r.entrypoint,c.call->>'capability' AS operation,c.effect
+      FROM code.runs r JOIN code.calls c ON c.run_id=r.id
+      WHERE r.code_id=${input.codeId} AND c.confirmed_effect AND NOT c.replayed AND c.state='succeeded' AND c.effect IS NOT NULL
+        AND r.ended_at>=date_trunc('week',${input.day}::date::timestamp) AT TIME ZONE 'UTC'
+        AND r.ended_at<(date_trunc('week',${input.day}::date::timestamp) AT TIME ZONE 'UTC')+interval '168 hours'
+      ORDER BY r.entrypoint,c.call->>'capability',c.ended_at DESC,c.ordinal DESC
+    )
     SELECT lo AS "from",hi AS "to",date_trunc('week',${input.day}::date::timestamp) AT TIME ZONE 'UTC' AS week,
       (SELECT manifest FROM code.versions v JOIN code.codes c ON c.active_version_id=v.id WHERE c.id=${input.codeId}) AS manifest,
       COALESCE((SELECT jsonb_agg(item) FROM (
-        SELECT entrypoint AS "automationKey",kv.key,kv.value::bigint AS count,count(*) OVER()::int AS total
+        SELECT entrypoint AS "automationKey",kv.key,kv.value::bigint AS count,count(*) OVER()::int AS total,
+          (SELECT e.effect FROM effect_words e WHERE e.entrypoint=w.entrypoint AND e.operation=kv.key) AS evidence
         FROM code.activity_weeks w CROSS JOIN LATERAL jsonb_each_text(w.counts) kv
         WHERE code_id=${input.codeId} AND week=date_trunc('week',${input.day}::date::timestamp) AT TIME ZONE 'UTC'
         ORDER BY entrypoint,kv.key LIMIT 50
@@ -84,6 +92,7 @@ export async function loadCodeActivityReadModel(
   raw: z.input<typeof codeReadModelContracts.activity.input>,
   context: CodeContext,
 ): Promise<CodeActivityReadModel> {
+  context = { ...context, ownerReaderAnswer: null };
   const input = codeReadModelContracts.activity.input.parse(raw);
   try {
     // PostgreSQL interprets numeric offsets with POSIX signs; accept named zones only.
@@ -145,7 +154,7 @@ export async function loadCodeActivityReadModel(
         key: item.key,
         automationKey: item.automationKey,
         count: Number(item.count),
-        text: t.calls({ action: names.operation(item.key).title, count: Number(item.count) }),
+        text: presentEffectCount(item.evidence, context.locale ?? "en", names.operation(item.key).title, Number(item.count)),
       })),
       more: Math.max(0, totalCounters - 50),
       moreText: totalCounters > 50 ? t.more({ count: totalCounters - 50 }) : null,

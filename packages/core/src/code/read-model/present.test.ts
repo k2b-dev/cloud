@@ -160,3 +160,29 @@ test("changed Internet, public-page and AI accesses retain one localized approva
     expect(model.changes.approval?.withoutLabel).toBe(locale === "de" ? "Ohne Freigabe bauen" : "Build without approval");
   }
 });
+
+test("unavailable readers hide free text without asserting that the reader lacks permission", () => {
+  const model = present({ names: { ...names, target: () => ({ name: "ein Space", readable: false, unavailable: true }) } });
+  expect(model.description.state).toBe("restricted");
+  expect(model.description.text).toBe("Die Beschreibung bleibt verborgen, weil Cloud nicht für alle Ziele Leserechte feststellen kann");
+  expect(JSON.stringify(model)).not.toMatch(/SECRET TARGET NAME|nicht sehen darfst/);
+});
+
+test("an explicit denial keeps its restriction even when another target is unavailable", () => {
+  const permission = manifest.permissions[0]!;
+  const model = present({
+    manifest: { ...manifest, permissions: [permission, { ...permission, target: { type: "spaces.space", id: "denied" } }] },
+    names: { ...names, target: (ref) => ({ name: "Space", readable: false, unavailable: ref.id !== "denied" }) },
+  });
+  expect(model.description.text).toBe("Die Beschreibung nennt Ziele, die du nicht sehen darfst");
+});
+test("dynamic target text remains hidden when no complete read-access proof is possible", () => {
+  const permission = manifest.permissions[0]!;
+  const model = present({
+    manifest: { ...manifest, permissions: [{ ...permission, target: { type: "spaces.space", id: null } }] },
+    names: { ...names, target: () => ({ name: "Space: wird beim Lauf gewählt", readable: false, unavailable: true }) },
+  });
+  expect(model.description.state).toBe("restricted");
+  expect(JSON.stringify(model)).not.toContain("SECRET TARGET NAME");
+  expect(model.description.text).not.toContain("nicht sehen darfst");
+});

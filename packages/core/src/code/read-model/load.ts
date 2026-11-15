@@ -16,6 +16,7 @@ export async function loadCodeVersionReadModel(
   raw: z.input<typeof codeReadModelContracts.version.input>,
   context: CodeContext,
 ): Promise<CodeVersionReadModel> {
+  context = { ...context, ownerReaderAnswer: null };
   const input = codeReadModelContracts.version.input.parse(raw);
   const { code } = await readCode(input.codeId, context);
   const { locale } = codeReadModelMessages.resolve(context.locale ? [context.locale] : []);
