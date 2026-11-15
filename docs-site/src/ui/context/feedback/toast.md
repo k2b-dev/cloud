@@ -181,6 +181,12 @@ saving.update("Budget 2027.grid", {
 });
 ```
 
+`update` returns `false` when the toast is already gone, because the person closed it or a timer did. A result that must not be lost, such as a failure, then needs a new toast:
+
+```ts
+if (saving.update(message, { variant: "error", progress: null }) === false) toast.error(message);
+```
+
 Use `toast.dismissAll()` when navigation or a major context change would make existing messages stale.
 
 ## Announce without a toast

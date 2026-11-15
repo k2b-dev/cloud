@@ -1147,7 +1147,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(css).toContain(".k2b-panes__tabs::-webkit-scrollbar{display:none}");
       const tabsScrollbar = rule(".k2b-panes__tabs-scrollbar");
       expect(tabsScrollbar).toContain("position:absolute");
-      expect(tabsScrollbar).toContain("top:2.125rem");
+      expect(tabsScrollbar).toContain("top:2.0625rem");
+      expect(tabsScrollbar).toContain("height:.5rem");
       expect(tabsScrollbar).toContain("opacity:0");
       expect(tabsScrollbar).toContain("pointer-events:none");
       expect(css).toContain(".k2b-panes__head:has(>.k2b-panes__tabs:is(:hover,:focus-within))+.k2b-panes__tabs-scrollbar");

@@ -53,6 +53,7 @@ export const showRestoredVersionNotice = (params: { notebookId: string; noteId: 
     action: undoVersionId
       ? {
           label: t.undo,
+          variant: "ghost",
           onClick: () => {
             if (undoing) return;
             undoing = true;
