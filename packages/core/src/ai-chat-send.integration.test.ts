@@ -6,6 +6,8 @@ import * as runtime from "@k2b/cloud/ai/runtime";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { coreSettings } from "@k2b/cloud/services";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
+import { Hono } from "hono";
+import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
 import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import {
@@ -22,6 +24,9 @@ import {
   invokeCompiledCapability,
 } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
+import { createCodeCapabilityRoutes } from "../../cloud/src/ai/code-capability-routes";
+import { codeCapabilityOperation } from "../../cloud/src/ai/code-capability-transport";
+import { signInvocationToken, verifyInvocationToken } from "../../cloud/src/services/identity/invocation-token";
 import { aiChatSendAction } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
@@ -180,7 +185,7 @@ suiteFor(
     const [entry] = await sql<{ author_user_id: string | null }[]>`SELECT author_user_id FROM ai.queued_messages WHERE id=${sent.id}::uuid`;
     expect(entry?.author_user_id).toBe(owner);
   });
-  test.each(["Gustav", "code_run"])("%s keeps the verified source turn through its invocation lease", async () => {
+  test.each(["Gustav", "code_run"])("%s keeps the verified source turn through its invocation lease", async (sourceKind) => {
     await setup();
     const source = await aiConversations.createConversation({ ownerUserId: owner });
     const submitted = await aiConversations.submitChatTurn({
@@ -211,13 +216,66 @@ suiteFor(
         delegation: { kind: "invocation", credentialKind: "session", callingAppId: "core", invocationId: "source" },
       },
     };
-    expect(await invoke(chat.shortId, context)).toMatchObject({
-      ok: true,
-      data: {
-        data: {
-          origin: { kind: "chat", id: source.shortId, turnId: submitted.turn.shortId },
+    let result: unknown;
+    if (sourceKind === "code_run") {
+      const pair = await generateKeyPair("RS256", { extractable: true });
+      const signer = { kid: "ac1-code-run-fixture", key: pair.privateKey, signUntil: new Date(Date.now() + 3_600_000) };
+      const issuer = "https://cloud.test";
+      const key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: signer.kid, alg: "RS256", use: "sig" }] });
+      const signed = await signInvocationToken({
+        targetAppId: "core",
+        callingAppId: "assistant",
+        operation: codeCapabilityOperation(source.id, submitted.turn.id),
+        schemaHash: null,
+        authority: {
+          sub: owner,
+          principal_type: "user",
+          access_subject_type: "user",
+          access_subject_id: owner,
+          credential_kind: "session",
+          scopes: [],
         },
-      },
+        signer,
+        issuer,
+      });
+      const callback = createCodeCapabilityRoutes({
+        invocation: {
+          getApp: async () => ({ id: "core" }),
+          verify: (value, expected, options) => verifyInvocationToken(value, expected, { ...options, issuer, key }),
+          resolve: async (claims) => ({
+            actor: {
+              kind: "user",
+              user,
+              delegation: { kind: "invocation", callingAppId: "assistant", credentialKind: "session", invocationId: claims.jti },
+            },
+            accessSubject: { type: "user", userId: owner },
+            credentialKind: "invocation",
+            scopes: [],
+          }),
+        },
+        dispatch: async (input) => {
+          expect(input.assistantTurn).toEqual({ conversationId: source.id, turnId: submitted.turn.id });
+          expect(input.origin).toBe("assistant");
+          expect(input.authority.scopes).toEqual([]);
+          expect(input.target).toEqual({ type: "core.ai.chat", id: chat.shortId });
+          return Response.json(await invoke(chat.shortId, context));
+        },
+      });
+      const app = new Hono().route("/code", callback);
+      const response = await app.request(`/code/${source.id}/${submitted.turn.id}/capabilities/v1/actions/core/ai.chat.send`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${signed.token}`, "content-type": "application/json", "idempotency-key": "code-run-send" },
+        body: JSON.stringify({
+          target: { type: "core.ai.chat", id: chat.shortId },
+          input: { text: "Delegate" },
+        }),
+      });
+      expect(response.status).toBe(200);
+      result = await response.json();
+    } else result = await invoke(chat.shortId, context);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { data: { origin: { kind: "chat", id: source.shortId, turnId: submitted.turn.shortId } } },
     });
     for (const kind of ["automation", "chat"] as const) {
       await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{turnTrigger}',${JSON.stringify(
