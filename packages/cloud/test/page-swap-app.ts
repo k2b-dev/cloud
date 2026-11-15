@@ -141,7 +141,7 @@ export async function startPageSwapApp(options: PageSwapAppOptions): Promise<Pag
       async fetch(request) {
         const url = new URL(request.url);
         if (url.pathname === "/api/me/page-swap-fallbacks") {
-          fallbacks.push(await request.json());
+          fallbacks.push({ ...(await request.json()), referer: request.headers.get("referer") });
           return new Response(null, { status: 204 });
         }
         if (url.pathname === "/harness.css") return new Response(css.join("\n"), { headers: { "content-type": "text/css" } });
@@ -363,7 +363,8 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
       await tab.page.waitForFunction((path) => location.pathname === path && document.readyState === "complete", failurePath);
       expect(tab.documents).toEqual([failurePath]);
       for (let attempt = 0; attempt < 50 && app().fallbacks.length === 0; attempt++) await Bun.sleep(20);
-      expect(app().fallbacks).toEqual([{ appId: expect.any(String), reason: "status", status: 503 }]);
+      // Neither the body nor the Referer may carry the page's path or query.
+      expect(app().fallbacks).toEqual([{ appId: expect.any(String), reason: "status", status: 503, referer: `${app().origin}/` }]);
     } finally {
       await tab.close();
     }
