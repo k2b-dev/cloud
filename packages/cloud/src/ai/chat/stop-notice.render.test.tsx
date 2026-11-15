@@ -36,6 +36,9 @@ test("reload SSR shows a completed max_tokens answer with the reasoning clause a
   expect(html).toContain("Die Antwort wurde abgeschnitten");
   expect(html).toContain("Das Nachdenken hat den größten Teil davon verbraucht.");
   expect(html).toContain("Weiterschreiben");
+  // v12 05: the notice has its sign, says what stays, and continuing is a real button, not a bare text link.
+  expect(html).toContain("ti-alert-triangle");
+  expect(html).toMatch(/<button[^>]*data-variant="secondary"[^>]*>[\s\S]*?Weiterschreiben/);
   expect(html).not.toContain("max_tokens");
   expect(messages[0]?.loopDoneReason).toBe("stop");
 });
