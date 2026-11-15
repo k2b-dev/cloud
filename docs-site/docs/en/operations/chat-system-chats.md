@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to resource providers.
-updated: 2026-10-30
+updated: 2026-11-15
 ---
 
 # Chat system conversations
@@ -16,6 +16,15 @@ third-party providers use the same contract. Chat lists these conversations
 under **Discussions**. Item directories and message links work in the full
 page and below `/app/chat/panel`. Providers can also offer an activity feed.
 Existing comments stay in their owning application.
+
+Built-in providers include Spaces (Space and item), Notebooks (notebook and
+note), and Grids (Base and Record). After deploying the updated Grids app,
+its Bases appear through catalog discovery without Chat configuration.
+The panel beside a Base page follows the Base's discussion; opening a live
+Record detail selects that Record's thread. Closing the detail returns to the
+Base scope. Read and write access follow current Base permissions, credential
+scopes, and resource bindings. Grids provides no activity feed or account
+reader checks for discussion push in this release.
 
 The [item discussion capabilities](/en/docs/platform/chat-discussions) expose
 only provider-backed item threads. Keep the item and container types' declared

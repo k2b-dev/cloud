@@ -25,6 +25,10 @@ export const gridsCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "base.containers": {
+          title: "Diskussionsbereiche auflisten",
+          description: "Lesbare Grids-Bases seitenweise auflisten.",
+        },
         "record.finalization.read": {
           title: "Abschlussbereitschaft lesen",
           description: "Aktuelle Pflichtfelder, Vier-Augen-Anfrage und Regelrevision vor dem Abschließen eines Datensatzes lesen.",

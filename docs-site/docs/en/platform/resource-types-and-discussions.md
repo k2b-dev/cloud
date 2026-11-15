@@ -5,7 +5,7 @@ section: Platform services
 order: 564
 description: Declare resource containment, a standard reader presentation, and a discussions provider without application-specific consumers.
 tags: [capabilities, resources, discussions, authorization]
-updated: 2026-10-29
+updated: 2026-11-15
 ---
 
 # Resource types and discussions
@@ -250,13 +250,20 @@ expected container.
 ## Built-in providers
 
 Spaces declares `item` inside `space`; Notebooks declares `note` inside
-`notebook`. Both Types in each pair expose `access.readable` and a standard
-reader view. Spaces task views include the current column or localized Done
+`notebook`; Grids declares `record` inside `base`. Each pair supplies standard
+reader views. Spaces and Notebooks also expose `access.readable` on both Types.
+Grids does not yet offer those account reader checks, so resource discussion
+push is not configured for Grids. Its ordinary readers enforce current Base
+grants, credential scopes, and Base resource bindings. Table and View are not
+separate discussion containers. Grids uses `base.containers` for the standard
+container list and offers no activity query.
+
+Spaces task views include the current column or localized Done
 status, completion flag, and a due date when relevant. Event views include the
 localized schedule and completion flag. Notebook and note views describe
 their resource without a task status or completion flag.
 
-The roles use `space.containers` and `notebook.containers` for the standard
+Spaces and Notebooks use `space.containers` and `notebook.containers` for the standard
 `{ items, next }` container list. The published `space.list` and `notebook.list`
 array results remain available. Activity uses `space.activity` and
 `notebook.activity`: send `container`, or retain the published `space` or
@@ -264,7 +271,7 @@ array results remain available. Activity uses `space.activity` and
 match. Both accept `timeZone`; notebook activity has no date presentation
 that changes with that option.
 
-Readers preserve their existing domain fields, including the item's
+Spaces and Notebooks readers preserve their existing domain fields, including the item's
 `container: { ref, name, permission }`, beside `view`. Ordinary readers and
 activity still enforce the caller's credential limits. The generated
 `readable` checks concern account rights, so a service account with a

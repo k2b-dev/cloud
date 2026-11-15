@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-10-08
+updated: 2026-11-15
 ---
 
 # Grids
@@ -23,6 +23,14 @@ template. **All apps** lists every usable App.
 Open the base name in the sidebar or phone menu to switch bases. Signed-in
 users can choose **New base** to create and open a blank base; **All bases**
 opens the overview. Use the overview to start from a template.
+
+## Discuss a Base or Record
+
+Open Chat in the panel beside a Base to discuss that Base. Opening a Record's
+detail selects its thread in the Base's discussion; closing the detail returns
+to the Base. Reading needs Base Read access, and posting needs Base Write or
+Manage access. Sharing a published App alone does not grant access to its Base
+discussions. Existing Record comments stay separate.
 
 ## Use Grids
 
@@ -888,6 +896,15 @@ version-checked updates, external-identity upserts, saved Views, stored document
 and linked correction/cancellation drafts. It deliberately does not expose
 schema administration, arbitrary workflow execution or financial-export approval.
 Use the existing authorized UI or CLI for those tasks.
+
+The catalog declares `base`, `table`, `view`, and `record` Types alongside
+documents and workflow runs. The `discussions` role uses `record` as its item
+and `base` as its container, with the `base.containers` Query for readable
+Bases and opaque pagination. `base.read` and `record.read` retain their domain
+metadata and add a standard `view`; the Record view identifies its current
+Base by public ref. See [Resource types and discussions](/en/docs/platform/resource-types-and-discussions)
+for the provider contract. Grids does not offer discussion activity or account
+reader checks for push notifications.
 
 Record creation reviews resolve field IDs to names. Large write reviews keep
 within Cloud's 20-detail budget and explicitly summarize additional values.
