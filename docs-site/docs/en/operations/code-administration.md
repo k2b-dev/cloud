@@ -32,48 +32,62 @@ Guests cannot create Code or submit versions; authoring requires a Cloud member 
 ## Approve or reject a version
 
 A version lands under **Approvals** when one of its classifications resolves
-to **Admin approval** for its author or owner. The review shows:
+to **Admin approval** for its author or owner. **Approvals** is a page of its
+own: each row names the automation and version, who submitted it, whom it
+belongs to, its main change and the policy reason. **Open** and **Decided**
+are its two views.
 
-- why the version needs you: each classification and the default or group rule
-  that decided it;
-- what changes in permissions: each operation and exact target, marked new,
-  unchanged or removed against the compared version, with its source line;
-  choosing the line opens it in the Code difference;
-- the internet targets: each exact HTTPS origin the version may send a secret
-  to, from its secret bindings, and whether calls without a secret reach public
-  HTTPS addresses;
-- what happens: a short AI explanation of the version, marked as only a hint.
-  An open review asks for it once; it is stored per version and language and
-  charged to the administrator who asked first. When no explanation can be
-  generated the review says so and offers a retry; deciding never depends on it;
-- the check Core ran at submission: types, the author's test fixtures, and a
-  trial run with their test data that lists each call with its count, compared
-  with the earlier version when that has a record. Fixtures run against fake
-  data, so nothing real happens. Failed tests or tests that could not run are
-  shown and do not refuse the version;
-- the complete Code difference against the last approved or switched-on
-  version, or the whole Code for a first version.
+A review has a head with the submitter, how the version arrived (with Gustav or
+from the command line), its owner, its place in the open list, and one row of
+tabs, kept in the URL as `?tab=code` or `?tab=diff`:
+
+- **Overview**: the approval with the reason, what changes in words against the
+  compared version, the tried examples and the three decisions; beside it what
+  the version does (an AI explanation, marked as not checked by Cloud, asked
+  once per version and language), the comments, everything the version may do,
+  and the examples. Phones stack the two columns.
+- **Code**: the new version's complete source, read-only, in a field of fixed
+  height. Its count is the number of comments.
+- **Diff**: the difference against the last approved or switched-on version,
+  with the number of added and removed lines on the tab. A first version has no
+  difference; the tab is there but locked.
+
+Both views come with the page; switching tabs loads nothing.
 
 The decision is bound to the exact version, source hash, bundle hash and
-comparison shown in the footer. Cloud rechecks all of them when you decide. A
+comparison under review. Cloud rechecks all of them when you decide. A
 newer submission, a moved comparison or a Code difference that could not be
-loaded disables **Approve** and names the reason. Requesting changes and rejecting require a message. Approval accepts an
-optional message. Negative decisions keep the proposed version off; the current
+loaded disables **Approve** and names the reason. **Request changes …** and
+**Reject …** open a dialog with a required message; it names who receives it,
+which version stays switched on, how many comments go along, and for a version
+from Gustav that Gustav revises it once by itself. A refused decision keeps the
+dialog and its text open. When the answer is lost, the review shows
+**Outcome unclear** with the unconfirmed message and only **Check state**; no
+decision is possible until the saved state is read. When another administrator
+decided first or the version was withdrawn meanwhile, the reloaded review says
+so. Approval accepts an optional message. Negative decisions keep the proposed version off; the current
 active version keeps running. The first version leaves the automation off.
 Cloud administrators receive a submission notice; the submitting person and
 current Code editors receive the decision, with a link to that version.
 Reviews expire after 14 days.
 
-Administrators can add line comments and replies while a review is pending.
-Only the author may delete a comment before the decision; publication freezes
-the comments. Ordinary Code surfaces show the comments as text without file
+Administrators can add line comments and replies while a review is pending:
+the **+** at the start of a line in **Code** or **Diff** opens a thread directly
+under that line (one tab stop for the code; the arrow keys, Home and End move
+between lines, Enter comments). Code and Diff show the same thread at the same
+line; an unchanged file in **Diff** lists its commented lines. A comment that
+cannot be saved keeps its text with **Try again**, and **Load older comments**
+pages back. Only the author may delete a comment before the decision; the
+decision freezes the comments, and the review then shows no **+** and no reply
+field. Ordinary Code surfaces show the comments as text without file
 names or line numbers. The CLI and Gustav can read the exact anchors.
 
 The approval list includes the author, avatar, submission time, owner, strictest
 policy reason and a sentence describing it. A place name is resolved only when
 the administrator can read that place; otherwise only its type is available.
 A follow-up version also carries the current administrator's request for changes
-and comments from the directly preceding version. After a decision the review reloads with its result at the top
+and comments from the directly preceding version; the review shows them on top
+as "You requested changes to version N". After a decision the review reloads with its result at the top
 and moves focus there. A decision cannot be withdrawn. To take an approval back, pause
 the Code: Cloud administrators can pause and resume any Code from its detail
 under **Code in this Cloud**. Resuming checks the active version's approval
@@ -100,30 +114,34 @@ technical error codes.
 
 ## Read a version's Code
 
-Under **Code in this Cloud**, choose **View code** or a version in a Code's
-detail to read that version's complete source, read-only, with or without an
-open approval. The selection is part of the URL. Like the other reads in this
-area it needs the Cloud administrator role and writes no audit entry.
+A version's source shows only in its review, in the **Code** and **Diff** tabs.
+The former **View code** in a Code's detail under **Code in this Cloud** is
+gone; a link with a `version` parameter now points to that version's review.
+Each version in the detail opens its review. Like the other reads in this area
+it needs the Cloud administrator role and writes no audit entry.
 
 ## Edit the policy
 
-**Default** lists every classification with the number of Code that uses it
-and its value: Automatic, Admin approval or Never. A preset replaces the whole
-table, including group rules. **Groups** edits one group's rules; a row set to
+**Default** shows the presets as choices (Off, Admin approval, Open, Custom)
+and one framed table with a radio group per classification: Automatic, Admin
+approval or Never, with the number of automations that use it. Classifications
+that always need a person are listed separately and cannot change. A preset
+replaces the whole table, including group rules. **Groups** edits one group's rules; a row set to
 "As default" has no group rule. **Effective for …** resolves the table for one
 person and names the rule that decided each row.
 
-Before saving, Cloud previews which running Code the change would pause. When
-it would pause Code, saving asks for confirmation and lists it. Saving is bound
+Before saving, the bar under the table says what changes, with the old value
+struck through, and names every automation the change would pause; the save
+button says how many it pauses. Saving is bound
 to the policy revision you read. If another administrator saved first, the
 change stays on the page and **Check my change again** applies it on top of
 the newer policy and previews it again. A refused save changes nothing and keeps
-the change for **Save again**, which previews and confirms the current change
-first. When the answer to a save or decision is lost, the page says so instead
-of claiming that nothing changed.
+the change for **Save again**. When the answer to a save or decision is lost,
+the page says so and offers **Check state** instead of claiming that nothing
+changed.
 
 **History** lists recent policy changes from the audit log: who saved, when,
-and each changed row with its old and new value. Code keeps no history store
+and each changed row with its old value struck through and its new value. Code keeps no history store
 of its own.
 
 ## Browser routes
@@ -160,9 +178,13 @@ that permission. Cleanup provides no action to remove target access.
 
 ## Runner section
 
-The runner section shows the `CodeRunnerMetrics` read model: live instances,
-their reported free slots, queued and running attempts, and the oldest waiting
-time. When the queue grows and the waiting time rises, add runner instances.
+The runner section shows the `CodeRunnerMetrics` read model as one line of
+figures (runners, free places of all places, waiting runs, longest wait) and
+one row per runner with its places: taken places filled, free ones empty, and
+"n of m places free". Places are a runner's free slots plus the runs it holds.
+When no runner is connected or the queue grows while no place is free, a notice
+says so and what follows. When the queue grows and the waiting time rises, add
+runner instances.
 Automatic scaling is not part of Phase 1.
 
 ## Unused databases
