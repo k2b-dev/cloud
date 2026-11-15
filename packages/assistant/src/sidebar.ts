@@ -7,8 +7,10 @@ import {
   aiProjects,
   listAiOpenQuestions,
 } from "@k2b/cloud/ai";
+import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { cloudResourceRefAppId } from "@k2b/cloud/contracts";
-import type { RequestAuthority } from "@k2b/cloud/server";
+import { getLocale } from "@k2b/cloud/server";
+import type { Context } from "hono";
 import type { catalogPerApp } from "./code-place";
 
 /** Names the app of a place chat's place for its row; null leaves the row with the place's title alone. */
@@ -33,9 +35,18 @@ export type AssistantSidebarSnapshot = {
   placeChats?: { total: number; items: AiConversation[] } | null;
 };
 
+/** The person's own credentials, forwarded so Core lists what waits for them (Assistant runs outside Core). */
+export const openQuestionsCaller = (c: Context): CapabilityCaller => ({
+  cookie: c.req.header("cookie"),
+  authorization: c.req.header("authorization"),
+  locale: getLocale(c),
+  signal: c.req.raw.signal,
+  requestId: c.req.header("x-request-id"),
+});
+
 export const loadAssistantSidebarSnapshot = async (
   identity: AiResourceContext,
-  context: { locale: string; timeZone: string; authority?: RequestAuthority },
+  context: { locale: string; timeZone: string; caller: CapabilityCaller },
   placeApp?: AssistantPlaceAppLookup,
 ): Promise<AssistantSidebarSnapshot> => {
   if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");

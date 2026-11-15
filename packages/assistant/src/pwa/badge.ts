@@ -1,6 +1,7 @@
 import { countAiOpenQuestions } from "@k2b/cloud/ai";
 import { type AuthContext, auth, ok, rateLimit, respond } from "@k2b/cloud/server";
 import { Hono } from "hono";
+import { openQuestionsCaller } from "../sidebar";
 
 /**
  * The count beside the part in the Cloud app: questions that wait for this person's answer, the same rows as
@@ -12,6 +13,6 @@ export const pwaApi = new Hono<AuthContext>()
     const subject = c.get("accessSubject");
     return respond(
       c,
-      ok({ count: subject.type === "user" ? await countAiOpenQuestions(subject.userId, { authority: auth.getAuthority(c) }) : 0 }),
+      ok({ count: subject.type === "user" ? await countAiOpenQuestions(subject.userId, { caller: openQuestionsCaller(c) }) : 0 }),
     );
   });

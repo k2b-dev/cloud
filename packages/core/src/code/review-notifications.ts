@@ -6,7 +6,7 @@ import { listApprovalAdminRecipients } from "@k2b/cloud/services/approvals";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { CoreNotificationSender } from "../notifications";
 import type { Code } from "./contracts";
-import { type CodeReviewDecision, CodeSubmissionOriginSchema } from "./review-contracts";
+import { type CodeReviewDecision, CodeSubmissionOriginSchema, codeVersionChatAnchor } from "./review-contracts";
 import { findCode } from "./store";
 import { listCodeWaiting } from "./waiting";
 
@@ -77,7 +77,7 @@ export async function deliverCodeReviewNotice(row: NoticeRow, sender: Pick<CoreN
   const ownChat = row.kind === "decided" && user.id === version.created_by && origin.kind === "ai_chat" && version.chat_id;
   const targetHref: `/${string}` | undefined =
     ownChat && origin.kind === "ai_chat"
-      ? `/app/assistant?conversation=${encodeURIComponent(version.chat_id!)}&question=${encodeURIComponent(origin.cardAnchor ?? `code-version-${row.version_id}`)}`
+      ? `/app/assistant?conversation=${encodeURIComponent(version.chat_id!)}&question=${encodeURIComponent(codeVersionChatAnchor(row.version_id, origin))}`
       : undefined;
   const waiting = ownChat
     ? (await listCodeWaiting({ ownerUserId: user.id, locale, timeZone: "UTC", versionId: row.version_id }, signal)).items[0]

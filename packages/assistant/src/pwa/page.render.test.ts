@@ -257,10 +257,10 @@ describe("The Assistant in the Cloud app", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ count: 2 });
     expect(countSpy).toHaveBeenCalledWith(person.id, {
-      authority: expect.objectContaining({
-        accessSubject: { type: "user", userId: person.id },
-        credentialKind: "session",
+      caller: expect.objectContaining({
+        cookie: "session_token=test-session",
       }),
     });
+    expect(countSpy.mock.calls.at(-1)?.[1]).not.toHaveProperty("authority");
   });
 });

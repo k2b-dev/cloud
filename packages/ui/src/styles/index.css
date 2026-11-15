@@ -15372,19 +15372,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    colour without an edge, so no two accent grounds touch and the white is
    the button's shape. */
 .k2b-ui .k2b-chat-decision:not([data-mode="edit"]) .k2b-chat-decision__buttons .k2b-button:not([data-variant="ai"], [data-variant="text"]),
-.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions .k2b-button {
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions .k2b-button:not([data-variant="text"]) {
   border-color: transparent;
   background: var(--k2b-surface);
 }
 
-/* Quiet answers such as "Change" and "Discard" are text in the AI colour. */
-.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"] {
+/* Quiet answers such as "Change" and "Discard" are text in the AI colour, and
+   so is a text action under a decided outcome, such as "See everything". */
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"],
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions .k2b-button[data-variant="text"] {
   padding-inline: 0.5rem;
   color: var(--k2b-ai-accent);
   font-weight: 600;
 }
 
-.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover,
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-ai-accent-hover);
   background: transparent;
 }
@@ -16855,31 +16858,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: none;
 }
 
+/* The mark stands small on its own line under the suggestion, flush with its first letter (v12 image 12): 1.25rem
+   high in the 12 px meta step, with the same 0.375rem above it in every state, so the suggestion's height never depends
+   on where the text ends. */
 .k2b-ui .k2b-chat-composer__suggestion-key,
 .k2b-ui .k2b-chat-composer__suggestion-accept {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
+  height: 1.25rem;
   align-items: center;
   gap: 0.3125rem;
-  margin-left: 0.375rem;
+  margin: 0.375rem 0 0;
+  padding: 0 0.4375rem 0 0.375rem;
   border: 0;
   border-radius: 0.375rem;
   color: var(--k2b-ai-accent);
   background: var(--k2b-ai-surface);
   font: inherit;
+  font-size: 0.75rem;
   font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
-  vertical-align: top;
   cursor: pointer;
   pointer-events: auto;
-}
-
-/* Fits inside one 1.3125rem line of text, so the hint never makes its line taller than typed text. */
-.k2b-ui .k2b-chat-composer__suggestion-key {
-  height: 1.25rem;
-  margin-top: 0.03125rem;
-  padding: 0 0.4375rem 0 0.375rem;
-  font-size: 0.75rem;
-  line-height: 1;
 }
 
 .k2b-ui .k2b-chat-composer__suggestion-cap {
@@ -16895,20 +16896,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.75rem;
 }
 
-/* Touch-only devices have no Tab key: the hint becomes a button 1.75rem high with a 2.75rem touch area. */
+/* Touch-only devices have no Tab key: the same small mark is a button, and its touch area reaches 0.75rem above and
+   below it, 2.75rem in all. */
 .k2b-ui .k2b-chat-composer__suggestion-accept {
   display: none;
   position: relative;
-  height: 1.75rem;
-  padding: 0 0.625rem 0 0.5rem;
-  font-size: 0.8125rem;
-  line-height: 1;
 }
 
 .k2b-ui .k2b-chat-composer__suggestion-accept::after {
   content: "";
   position: absolute;
-  inset: -0.5rem -0.375rem;
+  inset: -0.75rem -0.375rem;
 }
 
 .k2b-ui .k2b-chat-composer__suggestion-accept:focus-visible {
@@ -16921,8 +16919,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     display: none;
   }
 
+  /* 0.25rem below plus the field's 0.5rem padding keep the whole touch area inside the clipped suggestion. */
   .k2b-ui .k2b-chat-composer__suggestion-accept {
-    display: inline-flex;
+    display: flex;
+    margin-bottom: 0.25rem;
   }
 }
 

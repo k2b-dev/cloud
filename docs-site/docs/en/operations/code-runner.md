@@ -596,3 +596,16 @@ calls. It resolves their display names on each authorized history read.
 Forward migrations add these snapshots and activation/pause projections;
 older calls without forms keep counted Action wording, and older pauses with
 no timestamp remain undated. No runner configuration change is needed.
+
+Provider result forms may include the optional translated `countText` label
+for confirmed weekly effects. Upgrade Core before deploying an application
+that publishes this field: older Core readers reject unknown result-form
+keys and may drop that Action's translation. Existing effect snapshots
+without the label use the explicit Action/count fallback.
+
+Version-word replies may include optional `mayDo.items[].target` lookup hints.
+Upgrade applications that validate these replies to the current read-model
+contracts before upgrading Core; older strict validators reject the added field.
+Names for additional grant targets require independent viewer-authorized reader
+composition at the consuming page. The one-child-Query limit and runner settings
+are unchanged.

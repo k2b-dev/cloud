@@ -407,6 +407,11 @@ const storedItems = (
             // The person stopped it: the turn's own quiet line says so. The notice speaks only when Cloud ended the
             // answer itself (output limit, Code authoring budget, an interruption the person did not ask for).
             stopNotice: error || (stopNotice?.kind === "stopped" && segmentPhase === "stopped") ? null : stopNotice,
+            // A stopped answer offers to answer the person's message again, where it stopped.
+            answerAgain:
+              last && segmentPhase === "stopped" && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
+                ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
+                : undefined,
             continuable:
               idle &&
               !(item.loopId && reviewLoops.has(item.loopId)) &&

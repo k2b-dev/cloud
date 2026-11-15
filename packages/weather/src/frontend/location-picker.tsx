@@ -88,15 +88,6 @@ export function createLocationPicker() {
           let suggestionsQuery = "";
           return (
             <div class="flex flex-col gap-3 p-4">
-              <p class="text-xs text-dimmed">
-                <a href="https://www.geoapify.com/" class="underline" target="_blank" rel="noopener noreferrer">
-                  Geoapify
-                </a>
-                {" · "}
-                <a href="https://www.openstreetmap.org/copyright" class="underline" target="_blank" rel="noopener noreferrer">
-                  OpenStreetMap
-                </a>
-              </p>
               <Combobox
                 label={t().locationSearch}
                 placeholder={t().citySearchPlaceholder}
@@ -117,6 +108,19 @@ export function createLocationPicker() {
                     icon: "ti ti-map-pin",
                   }));
                 }}
+                // The source stands with the results it names, wherever the list opens: below the field in a dialog,
+                // above it in a phone sheet.
+                footer={
+                  <span class="text-xs text-dimmed">
+                    <a href="https://www.geoapify.com/" class="underline" target="_blank" rel="noopener noreferrer">
+                      Geoapify
+                    </a>
+                    {" · "}
+                    <a href="https://www.openstreetmap.org/copyright" class="underline" target="_blank" rel="noopener noreferrer">
+                      OpenStreetMap
+                    </a>
+                  </span>
+                }
                 onSelect={(option) => {
                   if (currentQuery.length < 3 || currentQuery !== suggestionsQuery) return;
                   const location = suggestions.find((item) => JSON.stringify([item.name, item.lat, item.lon]) === option.id);

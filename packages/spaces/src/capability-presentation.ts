@@ -3,10 +3,10 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
   results: {
-    "task.create": { targetType: "item", kind: "task", text: "Created {target}" },
-    "task.update": { targetType: "item", kind: "task", text: "Updated {target}" },
-    "event.create": { targetType: "item", kind: "event", text: "Created {target}" },
-    "item.tags.set": { targetType: "item", kind: "item", text: "Updated tags on {target}" },
+    "task.create": { countText: "Tasks created", targetType: "item", kind: "task", text: "Created {target}" },
+    "task.update": { countText: "Tasks updated", targetType: "item", kind: "task", text: "Updated {target}" },
+    "event.create": { countText: "Events created", targetType: "item", kind: "event", text: "Created {target}" },
+    "item.tags.set": { countText: "Item tags updated", targetType: "item", kind: "item", text: "Updated tags on {target}" },
   },
   // What a finished Query did, named in the chat's step list; each German translation gives its own `doneTitle`.
   doneTitles: {
@@ -732,7 +732,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "event.create": {
-          result: { targetType: "item", kind: "Termin", text: "{target} angelegt" },
+          result: { targetType: "item", kind: "Termin", text: "{target} angelegt", countText: "Termine angelegt" },
           title: "Kalenderereignis erstellen",
           sentences: {
             approval: "Termin {input.title} am {input.startsAt} erstellen",
@@ -843,7 +843,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "item.tags.set": {
-          result: { targetType: "item", kind: "Eintrag", text: "Tags für {target} geändert" },
+          result: { targetType: "item", kind: "Eintrag", text: "Tags für {target} geändert", countText: "Tags für Einträge geändert" },
           title: "Artikel-Tags festlegen",
           description:
             "Ersetzen Sie die Tags für eine beschreibbare Aufgabe oder ein beschreibbares Ereignis, ohne die anderen Felder zu ändern.",
@@ -869,7 +869,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "task.create": {
-          result: { targetType: "item", kind: "Aufgabe", text: "{target} angelegt" },
+          result: { targetType: "item", kind: "Aufgabe", text: "{target} angelegt", countText: "Aufgaben angelegt" },
           title: "Aufgabe erstellen",
           sentences: {
             approval: "Aufgabe {input.title} erstellen",
@@ -913,7 +913,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "task.update": {
-          result: { targetType: "item", kind: "Aufgabe", text: "{target} geändert" },
+          result: { targetType: "item", kind: "Aufgabe", text: "{target} geändert", countText: "Aufgaben geändert" },
           title: "Aufgabe aktualisieren",
           description:
             "Aufgabenfelder ändern. Zuständige einzeln mit addAssigneeIds/removeAssigneeIds ändern. Ein neuer Titel braucht den zuvor gelesenen expectedTitle; bei TITLE_CONFLICT neu laden und prüfen.",

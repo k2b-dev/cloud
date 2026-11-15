@@ -120,8 +120,10 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
       codeId: f.codeId,
       versionId: f.versionId,
       outcome: "approved",
-      anchor: "tool-submit",
+      anchor: `code-version-${f.versionId}`,
     });
+    const waiting = await listCodeWaiting({ ownerUserId: owner, locale: "de", timeZone: "UTC", versionId: f.versionId }, signal());
+    expect(waiting.items[0]?.anchor).toBe(messages[0]?.meta?.codeDecision?.anchor);
     expect(JSON.stringify(messages[0]?.message)).not.toContain("send mail");
     expect(messages[0]?.loopId).toBeNull();
     const fork = await aiConversations.forkConversation({
@@ -316,6 +318,17 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
       expect(prepare.mock.calls[0]?.[0].systemPrompt).toContain(`Work only on Code ${f.codeId}`);
       expect(prepare.mock.calls[0]?.[0].systemPrompt).not.toContain("send mail");
       expect(prepare.mock.calls[0]?.[0].input).not.toContain("send mail");
+      const messages = await aiConversations.listMessages({ conversationId: f.chat.id });
+      expect(messages).toHaveLength(2);
+      expect(messages.filter((message) => message.meta?.codeDecision)).toHaveLength(1);
+      const start = messages.filter((message) => message.meta?.codeReviewStart);
+      expect(start).toHaveLength(1);
+      expect(start[0]?.meta?.codeReviewStart).toEqual({ codeId: f.codeId, versionId: f.versionId });
+      expect(start[0]?.message).toEqual({
+        role: "user",
+        content: [{ type: "text", text: "Gustav überarbeitet jetzt Version 5." }],
+      });
+      expect(prepare.mock.calls[0]?.[0].input).toBe("Gustav überarbeitet jetzt Version 5.");
       const [turn] = await sql`SELECT run_config FROM ai.turns WHERE conversation_id=${f.chat.id}::uuid`;
       expect(turn?.run_config.codeReview).toEqual({ codeId: f.codeId, versionId: f.versionId });
       const [chat] = await sql`SELECT draft_content,draft_revision FROM ai.conversations WHERE id=${f.chat.id}::uuid`;

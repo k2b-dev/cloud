@@ -40,7 +40,12 @@ export const CodeVersionReadModelSchema = z.strictObject({
   locale: text,
   description: z.strictObject({ state: z.enum(["visible", "missing", "restricted"]), text: text.nullable(), modelLabel: text }),
   assurance: text,
-  mayDo: list(CodeReadModelRowSchema),
+  mayDo: list(
+    CodeReadModelRowSchema.extend({
+      /** Resolve an unavailable static target with an independent canonical reader as the viewer. */
+      target: z.strictObject({ ref: z.strictObject({ type: text, id: text }), text }).optional(),
+    }),
+  ),
   timing: list(CodeReadModelRowSchema),
   changes: z.strictObject({
     state: z.enum(["first", "changed", "access_same_behavior_changed", "same", "unavailable"]),
@@ -80,7 +85,16 @@ export type CodeRunReadModel = z.infer<typeof CodeRunReadModelSchema>;
 export const CodeActivityReadModelSchema = z.strictObject({
   week: z.iso.datetime(),
   counters: list(z.strictObject({ key: text, automationKey: text, text, count })),
-  recent: z.array(CodeReadModelRowSchema.extend({ at: z.iso.datetime(), runId: z.uuid() })).max(CODE_READ_MODEL_RECENT_LIMIT),
+  recent: z
+    .array(
+      CodeReadModelRowSchema.extend({
+        at: z.iso.datetime(),
+        runId: z.uuid(),
+        /** Resolve through a separate canonical reader as the person; never display ref identifiers. */
+        target: z.strictObject({ ref: z.strictObject({ type: text, id: text }), text }).optional(),
+      }),
+    )
+    .max(CODE_READ_MODEL_RECENT_LIMIT),
   timeline: z.strictObject({
     from: z.iso.datetime(),
     to: z.iso.datetime(),

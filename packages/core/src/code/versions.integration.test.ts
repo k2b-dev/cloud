@@ -38,6 +38,7 @@ import { codeAuthoringContracts } from "./authoring-contracts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
+import * as explanations from "./read-model/explanation";
 import { loadCodeVersionReadModel } from "./read-model/load";
 import { readCodeReview, waitCodeReview } from "./review";
 import { cancelCodeReviewRevision } from "./review-chat";
@@ -428,6 +429,28 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       code: "CONFLICT",
     });
   });
+  test("CLI submissions await the explanation step with their origin and request locale before returning", async () => {
+    const code = await newCode();
+    const generated = spyOn(explanations, "storeCodeVersionExplanation").mockImplementation(async (versionId) => {
+      const text = "Liest Aufgaben und legt einen Entwurf an.";
+      await sql`INSERT INTO code.version_explanations(version_id,locale,text) VALUES(${versionId}::uuid,'de',${text})`;
+      return { text };
+    });
+    try {
+      const submitted = await submitCodeVersion(input(code, "cli description"), {
+        ...author,
+        locale: "de",
+        submissionOrigin: { kind: "cli" },
+      });
+      expect(generated).toHaveBeenCalledTimes(1);
+      expect(generated.mock.calls[0]?.[1]).toMatchObject({ locale: "de", submissionOrigin: { kind: "cli" } });
+      expect(
+        (await sql`SELECT text FROM code.version_explanations WHERE version_id=${submitted.version.id}::uuid AND locale='de'`)[0]?.text,
+      ).toBe("Liest Aufgaben und legt einen Entwurf an.");
+    } finally {
+      generated.mockRestore();
+    }
+  });
   test("submission provenance is immutable and Code waits fourteen days while Actions keep one", async () => {
     const code = await newCode();
     const origin = { kind: "ai_chat" as const, conversationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", automaticAfterReview: true };
@@ -566,7 +589,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       codeAuthoringServices.reviewRequestAgain({ codeId: code.id, versionId: submitted.version.id }, context(strangerId)),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     const next = codeAuthoringContracts.reviewRequestAgain.data.parse(await retry());
-    expect(next.origin).toEqual(origin);
+    expect(next.origin).toEqual({ ...origin, cardAnchor: `code-version-${submitted.version.id}` });
     expect(next.binding.sourceHash).toBe(submitted.binding.sourceHash);
     expect(next.binding.bundleHash).toBe(submitted.binding.bundleHash);
     expect(next.status).toBe("pending");

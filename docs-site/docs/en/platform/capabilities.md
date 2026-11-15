@@ -1450,11 +1450,11 @@ cannot see the target. Raw input, response titles and identifiers never fill it.
 presentation: {
   baseLocale: "en",
   results: {
-    create: { text: "Created {target}", targetType: "task", kind: "task" },
+    create: { text: "Created {target}", targetType: "task", kind: "task", countText: "Tasks created" },
   },
   translations: {
     de: { actions: {
-      create: { result: { text: "{target} angelegt", targetType: "task", kind: "Aufgabe" } },
+      create: { result: { text: "{target} angelegt", targetType: "task", kind: "Aufgabe", countText: "Aufgaben angelegt" } },
     } },
   },
 },
@@ -1468,6 +1468,11 @@ is read. Use a result form only when a successful call proves that outcome.
 Queued or scheduled work must say that, rather than claim completion. Missing
 forms or ambiguous targets produce the Action title and its invocation count.
 This metadata does not change approvals, authority, or the result envelope.
+An optional `countText` supplies a translated plural result label, such as
+“Tasks created”, beside a separate weekly count. It is plain text without
+tokens or target names and is stored with the same effect evidence. Older
+records without this label retain the explicit “Action · n times” fallback;
+Cloud does not infer plural outcome wording from an Action title.
 Third-party applications use the same contract as built-in applications.
 
 #### Receipts and outcome checks
@@ -1678,6 +1683,12 @@ exports, and document bodies belong in app-owned upload or download APIs
 referenced by a capability.
 
 Each operation publishes input and data JSON Schema plus a stable schema hash.
+JSON Schema `pattern` and `patternProperties` use Unicode regular-expression
+semantics, including `\p{…}` property escapes and supplementary code points.
+Registry validation preserves those semantics. Capability compilation rejects
+invalid Unicode patterns before registration and names the operation and schema
+path. Declare regular expressions with `u` so the provider and registry agree. JSON Schema carries no JavaScript regex flags, so
+other flags such as `i`, `m` or `s` are not a portable capability constraint.
 Tuples are allowed in input schemas: the model sees a bounded array of their
 item schemas, and the app's own schema validates the exact tuple.
 The result envelope is one fixed Core contract and is not repeated in every

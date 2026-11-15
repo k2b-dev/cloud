@@ -20,11 +20,13 @@ const defaultLayout = resizePanesSplit(resizePanesSplit(stacked, [], 0.54), ["se
 const [layout, setLayout] = createSignal(defaultLayout);
 window.layout = layout;
 window.changes = 0;
+window.activated = [];
 const pane = (id, title, icon) => ({ id, title, icon, render: () => { const el = document.createElement("div"); el.className = "pane-body"; el.textContent = title; return el; } });
 render(() => createComponent(LocaleProvider, { locale: "en", get children() {
   return createComponent(Panes, {
     get layout() { return layout(); },
     onLayoutChange: (next) => { window.changes += 1; setLayout(next); },
+    onActivate: (id) => window.activated.push(id),
     defaultLayout,
     items: [pane("draft", "Draft", "ti-pencil"), pane("history", "History", "ti-history"), pane("preview", "Preview", "ti-eye")],
   });
@@ -227,6 +229,8 @@ describe(`Panes arrangement in ${browserName}`, () => {
       await tab(page, "Preview").click();
       expect(await page.locator('.k2b-panes__tab-button[aria-selected="true"]').textContent()).toBe("Preview");
       expect(await changes(page)).toBe(count);
+      // The layout stays; the choice still reaches the application, which may name it in its URL.
+      expect(await page.evaluate(() => (window as unknown as { activated: string[] }).activated.at(-1))).toBe("preview");
 
       await page.evaluate(() => {
         document.getElementById("app")!.style.width = "1200px";

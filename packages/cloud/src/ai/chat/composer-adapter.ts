@@ -13,6 +13,7 @@ import {
   readVfsFile,
   VFS_FILE_MAX_BYTES,
 } from "./message-utils";
+import { aiChatMessages } from "./messages";
 
 export type { AiComposerAttachment } from "./message-utils";
 
@@ -164,8 +165,11 @@ export const readAiComposerFiles = async (
     acceptsImages?: boolean;
     currentCount?: number;
     currentImageBytes?: number;
+    /** The reader's locale for the reasons a file cannot be attached. */
+    locale?: string;
   },
 ): Promise<AiComposerFileResult> => {
+  const t = aiChatMessages(options.locale ?? "en");
   const remaining = Math.max(0, MAX_ATTACHMENTS - (options.currentCount ?? 0));
   const candidates = files.slice(0, remaining);
   const errors: string[] = [];
@@ -174,18 +178,18 @@ export const readAiComposerFiles = async (
 
   for (const file of candidates) {
     if (file.type.startsWith("image/") && options.acceptsImages === false) {
-      errors.push(`${file.name}: choose a Vision model or configure the view_image fallback.`);
+      errors.push(t.attachImageNeedsModel({ name: file.name }));
       continue;
     }
     if (file.type.startsWith("image/") && imageBytes + file.size > AI_TURN_IMAGE_MAX_TOTAL_BYTES) {
-      errors.push(`${file.name}: image attachments exceed the ${AI_TURN_IMAGE_MAX_TOTAL_BYTES / (1024 * 1024)} MB total limit.`);
+      errors.push(t.attachImagesTooLarge({ name: file.name, megabytes: AI_TURN_IMAGE_MAX_TOTAL_BYTES / (1024 * 1024) }));
       continue;
     }
     try {
       attachments.push(file.type.startsWith("image/") ? await readImageFile(file) : await readVfsFile(file));
       if (file.type.startsWith("image/")) imageBytes += file.size;
     } catch (error) {
-      errors.push(error instanceof Error ? error.message : `${file.name}: attachment failed.`);
+      errors.push(error instanceof Error ? error.message : t.attachFailed({ name: file.name }));
     }
   }
 

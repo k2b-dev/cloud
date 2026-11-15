@@ -4,7 +4,7 @@ import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { CodeDataError } from "./access";
 import { requireCodeEventAccess } from "./event-access";
 import { type CodeManagerCandidate, currentChatManagers } from "./manager-recipients";
-import { CodeSubmissionOriginSchema } from "./review-contracts";
+import { CodeSubmissionOriginSchema, codeVersionChatAnchor } from "./review-contracts";
 import { findCode } from "./store";
 
 /** One domain source for the shared waiting list. The same read supplies badges, page and notification targets. */
@@ -76,7 +76,7 @@ export async function listCodeWaiting(
         kind,
         conversationId: row.chat_id,
         conversationTitle: row.chat_title,
-        anchor: origin.kind === "ai_chat" ? (origin.cardAnchor ?? `code-version-${row.version_id}`) : `code-version-${row.version_id}`,
+        anchor: codeVersionChatAnchor(row.version_id, origin),
         short: [...short].slice(0, 160).join(""),
         app: { name: "Code", icon: kind === "code_activate" ? "ti ti-player-play" : "ti ti-code" },
         createdAt: row.created_at.toISOString(),

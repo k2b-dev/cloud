@@ -745,3 +745,35 @@ test("version 2 whose version 1 never ran says that none is switched on yet; onl
     for (const undo of restore.splice(0)) undo();
   }
 });
+
+test.each([
+  { readiness: { state: "ready" } as const },
+  { readiness: { state: "ready" } as const, running: 5 },
+  { readiness: { state: "refused", code: "code_approval_revoked", message: "Changed" } as const },
+])("resync refreshes a settled card after a missed decision or activation: %j", async (state) => {
+  const card = await mount({
+    "activation/preview": () => ({ json: { data: preview(state) } }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
+  });
+  const initial = card.calls.length;
+  await card.live.resync();
+  expect(card.calls.length).toBeGreaterThan(initial);
+});
+
+test("a ready card follows activation in another tab without a reload", async () => {
+  let activated = false;
+  const card = await mount({
+    "activation/preview": () => ({
+      json: {
+        data: activated ? preview({ running: 5, activated: { at: "2026-11-14T12:00:00.000Z", byYou: true, byName: null } }) : preview(),
+      },
+    }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
+  });
+  expect(button(card.dom.root, "Switch on")).toBeDefined();
+  activated = true;
+  await card.live.apply([decided()]);
+  await tick();
+  expect(button(card.dom.root, "Switch on")).toBeUndefined();
+  expect(card.dom.root.textContent).toContain("switched on");
+});

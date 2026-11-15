@@ -3,6 +3,14 @@ import type { SQL } from "bun";
 /** Retained chat persistence. Existing table names preserve pending calls, claims and approvals. */
 export async function migrateChatCode(db: SQL = sql) {
   await db`CREATE SCHEMA IF NOT EXISTS assistant`.simple();
+  await db`CREATE TABLE IF NOT EXISTS assistant.chat_workspaces (
+    conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    state JSONB NOT NULL,
+    revision BIGINT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY(conversation_id,user_id)
+  )`.simple();
   await db`CREATE TABLE IF NOT EXISTS assistant.code_client_calls (
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     turn_id UUID NOT NULL, call_id TEXT NOT NULL,

@@ -150,6 +150,7 @@ const TYPE_FIELDS = {
   codeAccount: true,
   title: true,
   description: true,
+  count: true,
   icon: true,
   color: true,
   reader: true,
@@ -335,6 +336,13 @@ const assertText = (value: string, label: string, max: number): void => {
   if (value.length > max) throw new Error(`${label} must be at most ${max} characters`);
 };
 
+/** A type's nouns after a number, both required and short. */
+const typeCount = (count: { one: string; other: string }, localId: string) => {
+  assertText(count.one, `Resource type ${localId} count.one`, 60);
+  assertText(count.other, `Resource type ${localId} count.other`, 60);
+  return { one: count.one.trim(), other: count.other.trim() };
+};
+
 const schemaFieldPaths = (schema: unknown, prefix = ""): Set<string> => {
   const paths = new Set<string>();
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return paths;
@@ -431,7 +439,7 @@ const readResultForm = (value: unknown, label: string): import("../contracts/cap
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const form = value as Record<string, unknown>;
   if (
-    Object.keys(form).some((key) => key !== "text" && key !== "targetType" && key !== "kind") ||
+    Object.keys(form).some((key) => key !== "text" && key !== "targetType" && key !== "kind" && key !== "countText") ||
     typeof form.text !== "string" ||
     typeof form.targetType !== "string" ||
     typeof form.kind !== "string" ||
@@ -443,7 +451,17 @@ const readResultForm = (value: unknown, label: string): import("../contracts/cap
   assertText(form.text, `${label}.text`, 200);
   assertText(form.kind, `${label}.kind`, 80);
   if (/[{}\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.kind)) throw new Error(`${label}.kind must be plain text`);
-  return { text: form.text.trim(), targetType: form.targetType, kind: form.kind.trim() };
+  if (form.countText !== undefined) {
+    if (typeof form.countText !== "string" || /[{}\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.countText))
+      throw new Error(`${label}.countText must be plain text`);
+    assertText(form.countText, `${label}.countText`, 200);
+  }
+  return {
+    text: form.text.trim(),
+    targetType: form.targetType,
+    kind: form.kind.trim(),
+    ...(typeof form.countText === "string" ? { countText: form.countText.trim() } : {}),
+  };
 };
 
 const compileOperationPresentation = (
@@ -667,10 +685,12 @@ export const compileCapabilityPresentation = (
         }),
       ) as Readonly<Record<string, never>>;
     };
-    const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, _definition, label) => {
+    const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, definition, label) => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
       const copy = entry as Record<string, unknown>;
-      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description" && key !== "codeAccount");
+      const extraField = Object.keys(copy).find(
+        (key) => key !== "title" && key !== "description" && key !== "codeAccount" && key !== "count",
+      );
       if (strict && extraField) throw new Error(`${label} contains unsupported field "${extraField}"`);
       if (copy.title !== undefined) {
         if (typeof copy.title !== "string") throw new Error(`${label}.title must be text`);
@@ -680,10 +700,20 @@ export const compileCapabilityPresentation = (
         if (typeof copy.description !== "string") throw new Error(`${label}.description must be text`);
         assertText(copy.description, `${label}.description`, 500);
       }
+      // A translated count needs base nouns to translate.
+      const count =
+        copy.count === undefined
+          ? undefined
+          : z
+              .object({ one: z.string().trim().min(1).max(60), other: z.string().trim().min(1).max(60) })
+              .strict()
+              .parse(copy.count);
+      if (count && !definition.count) throw new Error(`${label}.count needs a count on the resource type`);
       return {
         ...(copy.codeAccount !== undefined ? { codeAccount: CodeAccountTypeLabelsSchema.parse(copy.codeAccount) } : {}),
         ...(copy.title ? { title: String(copy.title).trim() } : {}),
         ...(copy.description ? { description: String(copy.description).trim() } : {}),
+        ...(count ? { count } : {}),
       };
     });
     const translatedEvents = compileGroup(raw.events, events, "Event", (entry, _definition, label) => {
@@ -918,6 +948,7 @@ export const compileCapabilities = (
         title: definition.title.trim(),
         description: definition.description.trim(),
         ...(definition.codeAccount ? { codeAccount: CodeAccountTypeLabelsSchema.parse(definition.codeAccount) } : {}),
+        ...(definition.count ? { count: typeCount(definition.count, localId) } : {}),
         ...(definition.icon ? { icon: definition.icon } : {}),
         ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
@@ -1460,6 +1491,7 @@ export const resolveCapabilityManifestPresentation = (
               title: copy.title ?? type.title,
               description: copy.description ?? type.description,
               ...(copy.codeAccount ? { codeAccount: copy.codeAccount } : {}),
+              ...(copy.count && type.count ? { count: copy.count } : {}),
             }
           : type;
       }),

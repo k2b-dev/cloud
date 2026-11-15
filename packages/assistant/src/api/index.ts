@@ -1,13 +1,28 @@
-import { isConversationResourceCursor } from "@k2b/cloud/ai";
-import { type AuthContext, auth, err, fail, getLocale, getTimeZone, ok, rateLimit, respond, v } from "@k2b/cloud/server";
+import { aiConversations, isCloudAiFirecrawlConfigured, isConversationResourceCursor, readWebPageForPerson } from "@k2b/cloud/ai";
+import {
+  type AuthContext,
+  auth,
+  err,
+  fail,
+  getLocale,
+  getTimeZone,
+  ok,
+  REQUEST_IDLE_TIMEOUT_SECONDS,
+  rateLimit,
+  respond,
+  setRequestTimeout,
+  v,
+} from "@k2b/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
 import { chatCodeApi } from "../chat-code/api";
 import { loadAssistantChatContextSnapshot, loadAssistantChatSources } from "../chat-context";
+import { SaveChatWorkspaceSchema } from "../chat-workspace";
+import { loadAssistantChatWorkspace, saveAssistantChatWorkspace } from "../chat-workspace-service";
 import { catalogPerApp } from "../code-place";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
-import { loadAssistantSidebarSnapshot, placeAppsFromCatalog } from "../sidebar";
+import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
 import { loadAssistantSidebarPreview } from "../sidebar-preview";
 
 const actorUser = (c: Context<AuthContext>) => {
@@ -47,7 +62,7 @@ const app = new Hono<AuthContext>()
       ok(
         await loadAssistantSidebarSnapshot(
           { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
-          { locale: getLocale(c), timeZone: getTimeZone(c), authority: auth.getAuthority(c) },
+          { locale: getLocale(c), timeZone: getTimeZone(c), caller: openQuestionsCaller(c) },
           placeAppsFromCatalog(catalogPerApp(getLocale(c), auth.getAuthority(c))),
         ),
       ),
@@ -68,9 +83,17 @@ const app = new Hono<AuthContext>()
     const snapshot = await loadAssistantChatContextSnapshot(
       { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
       c.req.param("conversationId")!,
-      { timeZone: getTimeZone(c) },
+      { timeZone: getTimeZone(c), locale: getLocale(c) },
     );
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Conversation")));
+  })
+  .get("/workspace/conversations/:conversationId/tabs", async (c) => {
+    const workspace = await loadAssistantChatWorkspace(auth.getAuthority(c), c.req.param("conversationId"));
+    return workspace ? respond(c, ok(workspace)) : respond(c, fail(err.notFound("Conversation")));
+  })
+  .put("/workspace/conversations/:conversationId/tabs", v("json", SaveChatWorkspaceSchema), async (c) => {
+    const result = await saveAssistantChatWorkspace(auth.getAuthority(c), c.req.param("conversationId")!, c.req.valid("json"));
+    return result ? respond(c, ok(result)) : respond(c, fail(err.notFound("Conversation")));
   })
   .get("/workspace/conversations/:conversationId/sources", v("query", ChatSourcesQuery), async (c) => {
     const user = actorUser(c);
@@ -89,6 +112,33 @@ const app = new Hono<AuthContext>()
     );
     return page ? respond(c, ok(page)) : respond(c, fail(err.notFound("Conversation")));
   })
+  .get("/workspace/web-reader", async (c) => respond(c, ok({ available: await isCloudAiFirecrawlConfigured() })))
+  .post(
+    "/workspace/conversations/:conversationId/web-reader",
+    auth.readOnly,
+    v("json", z.object({ url: z.string().min(1).max(2_048), confirmed: z.boolean().optional() }).strict()),
+    async (c) => {
+      const user = actorUser(c);
+      if (!user) return respond(c, fail(err.forbidden("Assistant requires a user-backed actor")));
+      const conversation = await aiConversations.getConversationByShortId({
+        shortId: c.req.param("conversationId")!,
+        ownerUserId: user.id,
+      });
+      if (!conversation) return respond(c, fail(err.notFound("Conversation")));
+      setRequestTimeout(c, 120);
+      try {
+        const result = await readWebPageForPerson({
+          actor: c.get("actor"),
+          conversationId: conversation.id,
+          ...c.req.valid("json"),
+          signal: c.req.raw.signal,
+        });
+        return respond(c, ok(result));
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
+  )
   .get("/workspace/projects/:projectId/context", async (c) => {
     const snapshot = await loadAssistantProjectContextSnapshot(auth.getAuthority(c), c.req.param("projectId")!);
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Project")));

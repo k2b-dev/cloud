@@ -19,6 +19,9 @@ export const CodeSubmissionOriginSchema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 export type CodeSubmissionOrigin = z.infer<typeof CodeSubmissionOriginSchema>;
+/** A renewed review stays on its first card; legacy tool-call anchors never identify that card. */
+export const codeVersionChatAnchor = (versionId: string, origin: CodeSubmissionOrigin): string =>
+  origin.kind === "ai_chat" && origin.cardAnchor?.startsWith("code-version-") ? origin.cardAnchor : `code-version-${versionId}`;
 export const CodeReviewFollowUpSchema = z.object({ kind: z.enum(["automatic_once", "manual", "cli"]), text: z.string() }).strict();
 /** Cloud decides whether a review may start work; administrator prose cannot choose it. */
 export function codeReviewFollowUp(origin: CodeSubmissionOrigin, locale: string) {

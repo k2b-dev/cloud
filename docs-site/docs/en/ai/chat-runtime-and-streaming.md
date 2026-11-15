@@ -564,8 +564,16 @@ A worker appends it once to the original author's chat while holding the chat
 lock, after its active turn finishes. It rechecks current management and chat
 ownership before delivery. The write updates `background_received_at` and
 invalidates `conversation-detail` and `code-versions`; cards keep listening
-when ready and during a revision. Model history receives a fixed historical
+when ready and during a revision. Navigation targets the card's
+`code-version-<versionId>` DOM anchor rather than the submission tool call.
+Renewing an expired request keeps the first card's anchor, including for its
+new version's waiting item, event and notification. Model history receives a fixed historical
 fact without names, titles or administrator instructions.
+
+The following `codeReviewStart` message marks the start of the automatic
+revision. Its localized sentence says that Gustav is revising the version;
+it does not repeat the administrator's decision or name. Render the decision
+once, followed by this separate start of the review turn.
 
 A host can use `appendAiBackgroundMessages` from `@k2b/cloud/ai/runtime` for a
 bounded batch under its destination chat locks. It assigns message order and
@@ -578,20 +586,27 @@ The disposer removes that handler; ordinary turns do not invoke it.
 
 Use `listAiOpenQuestions` from `@k2b/cloud/ai` on the server to seed a personal
 chat overview. Resolve `ownerUserId` from the authenticated user; the read
-includes that person's pending approvals in chats they own. Pass the current
-`authority` to include Core's other waiting sources through its authorized
-`ai.open_questions` Query. The authority must name the same person.
+includes that person's pending approvals in chats they own. An independently
+deployed application passes a `caller` with the person's own credentials to
+read Core's other waiting sources through its authorized `ai.open_questions`
+Query. Only Core-owned code may pass `authority` for in-process dispatch; that
+authority must name the same person.
 
 ```ts
 import { listAiOpenQuestions } from "@k2b/cloud/ai";
-import { auth, expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 
 const user = expectUserBackedActor(c);
 const questions = await listAiOpenQuestions({
   ownerUserId: user.id,
   locale: getLocale(c),
   timeZone: getTimeZone(c),
-  authority: auth.getAuthority(c),
+  caller: {
+    cookie: c.req.header("cookie"),
+    authorization: c.req.header("authorization"),
+    locale: getLocale(c),
+    signal: c.req.raw.signal,
+  },
 });
 ```
 
