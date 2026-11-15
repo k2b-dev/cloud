@@ -245,19 +245,3 @@ export function BlockFoot(props: { query: string; shown: number; total: number; 
     </p>
   );
 }
-
-/** The sign a narrow island shows in place of its search; it opens the search over the title. */
-export function SearchToggle(props: { label: string; disabled?: boolean; onOpen?: () => void }) {
-  return (
-    <IconButton
-      class="cloud-table-search-toggle"
-      size="sm"
-      variant="ghost"
-      label={props.label}
-      disabled={props.disabled}
-      onClick={() => props.onOpen?.()}
-    >
-      <i class="ti ti-search" aria-hidden="true" />
-    </IconButton>
-  );
-}

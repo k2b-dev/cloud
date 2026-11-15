@@ -31,12 +31,13 @@ import {
 import { CloudChartBlock } from "#chat-charts";
 import { importOnDemand } from "../browser/reload";
 import { type DescriptionObject, descriptionObject, descriptionTable } from "../descriptions/description-table";
-import { BlockActions, SearchToggle, useBlockFrame } from "./block-actions";
+import { BlockActions, useBlockFrame } from "./block-actions";
 import { blockFileName, figuresCopy, saveBlob, tableCopy, tableCsv, wholeTable } from "./block-copy";
 import { BLOCK_PANEL_HEIGHTS, blockChartHeight, blockDescription, blockJson } from "./description";
 import { blockWords } from "./messages";
 import { blockDataAtPath } from "./path";
 import type { Block } from "./schema";
+import { SearchToggle } from "./search-toggle";
 
 /**
  * Draws checked, bound blocks with shared components: a capability result in the conversation, the details of an

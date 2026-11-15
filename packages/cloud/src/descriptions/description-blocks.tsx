@@ -5,12 +5,12 @@ import {
   type DashboardFrameState,
   type DashboardWidth,
   DataTable,
-  IconButton,
   SelectChip,
   TextInput,
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { SearchToggle } from "../blocks/search-toggle";
 import {
   type DescriptionObject,
   type DescriptionRowLinks,
@@ -120,19 +120,11 @@ export function TableBlock(props: TableBlockProps): JSX.Element {
         <>
           <Show when={props.spec.search === true}>
             <Show when={props.compactSearch}>
-              <IconButton
-                class="cloud-table-search-toggle"
-                size="sm"
-                variant="ghost"
+              <SearchToggle
                 label={t().searchIn({ title: props.title })}
                 disabled={!descriptionWithContent(props.state)}
-                onClick={(event) => {
-                  setSearching(true);
-                  event.currentTarget.parentElement?.querySelector<HTMLInputElement>("input[type=search]")?.focus();
-                }}
-              >
-                <i class="ti ti-search" aria-hidden="true" />
-              </IconButton>
+                onOpen={() => setSearching(true)}
+              />
             </Show>
             <TextInput
               type="search"

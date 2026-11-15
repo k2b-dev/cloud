@@ -1,7 +1,8 @@
 import { CopyButton, DataTable, type DataTableSort, DataTableTools, filterRows, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
-import { BlockActions, BlockFoot, SearchToggle, useBlockFrame } from "../../blocks/block-actions";
+import { BlockActions, BlockFoot, useBlockFrame } from "../../blocks/block-actions";
 import { blockFileName, saveBlob, tableCopy, tableCsv } from "../../blocks/block-copy";
+import { SearchToggle } from "../../blocks/search-toggle";
 import type { CloudAiChartRow } from "../chart-block";
 import { type CloudTableDescription, cloudAiTableTsv, cloudAiViewTable, sortCloudAiViewRows } from "../view-block";
 import { aiChatMessages } from "./messages";
@@ -84,14 +85,7 @@ export function CloudTableView(props: {
           <div class="cloud-table-tools flex min-w-0 flex-wrap items-center gap-2">
             {/* The summary reserves the tools from the first frame; they wait, disabled, for the rows. */}
             <Show when={counted()}>
-              <SearchToggle
-                label={props.input?.title ?? props.summary.title}
-                disabled={!table()}
-                onOpen={() => {
-                  setSearching(true);
-                  tools?.querySelector("input")?.focus();
-                }}
-              />
+              <SearchToggle label={props.input?.title ?? props.summary.title} disabled={!table()} onOpen={() => setSearching(true)} />
             </Show>
             <Show when={props.summary.search || props.summary.grouped}>
               <div ref={tools} class="cloud-table-search-host contents" onFocusOut={() => setSearching(false)}>

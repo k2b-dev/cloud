@@ -263,7 +263,7 @@ describe("Approval scenes", () => {
       const page = await open("baustein", width);
       try {
         expect(await noOverflow(page)).toBe(0);
-        await page.locator(".cloud-capability-view table").first().waitFor();
+        await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
         await settled(page);
         const look = await page.evaluate(() => ({
           origin: document.querySelectorAll(".cloud-capability-view__head").length,
@@ -287,7 +287,7 @@ describe("Approval scenes", () => {
     const page = await open("baustein", 1440);
     try {
       await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-      await page.locator(".cloud-capability-view table").first().waitFor();
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
       await settled(page);
       const button = page.getByRole("button", { name: "Tabelle kopieren" });
       const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
@@ -297,7 +297,7 @@ describe("Approval scenes", () => {
       await copied.waitFor();
       expect(await copied.boundingBox()).toEqual(before.button);
       expect(await frame.boundingBox()).toEqual(before.frame);
-      expect(await page.locator(".cloud-block-actions [role=status]").first().textContent()).toBe("Kopiert");
+      expect(await page.locator(".cloud-block-actions", { has: copied }).locator("[role=status]").textContent()).toBe("Kopiert");
       const text = await page.evaluate(() => navigator.clipboard.readText());
       expect(text.split("\n")[0]).toBe("Datum\tEmpfänger\tVerwendung\tBetrag");
       expect(text).toContain("Schraubenwelt\tBeschläge, 200 Stück");
@@ -311,7 +311,7 @@ describe("Approval scenes", () => {
     const page = await open("baustein", 1440);
     try {
       await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-      await page.locator(".cloud-capability-view table").first().waitFor();
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
       await settled(page);
       const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
       await frame.getByRole("searchbox").fill("Schrauben");
@@ -330,7 +330,7 @@ describe("Approval scenes", () => {
   test("searching the table keeps its island's height", async () => {
     const page = await open("baustein", 1440);
     try {
-      await page.locator(".cloud-capability-view table").first().waitFor();
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
       await settled(page);
       const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
       const before = await frame.boundingBox();
@@ -338,7 +338,7 @@ describe("Approval scenes", () => {
       expect(await foot.textContent()).toBe("5 Zeilen");
       await frame.getByRole("searchbox").fill("Schrauben");
       await settled(page);
-      expect(await frame.locator("tbody tr").count()).toBe(1);
+      expect(await frame.locator(".k2b-dashboard-frame__content tbody tr").count()).toBe(1);
       expect(await frame.boundingBox()).toEqual(before);
       // The foot names what the search finds, in the same line.
       expect(await foot.textContent()).toBe("1 Treffer");
@@ -349,7 +349,7 @@ describe("Approval scenes", () => {
       await frame.getByRole("searchbox").fill("");
       await settled(page);
       expect(await foot.textContent()).toBe("5 Zeilen");
-      expect(await frame.locator("tbody tr").count()).toBe(5);
+      expect(await frame.locator(".k2b-dashboard-frame__content tbody tr").count()).toBe(5);
       expect(await frame.boundingBox()).toEqual(before);
     } finally {
       await page.close();
@@ -359,7 +359,7 @@ describe("Approval scenes", () => {
   test("on a phone the table's search is a sign that opens over the title and keeps the head's height", async () => {
     const page = await open("baustein", 390);
     try {
-      await page.locator(".cloud-capability-view table").first().waitFor();
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
       await settled(page);
       const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
       const head = frame.locator(".k2b-dashboard-frame__header");
@@ -373,8 +373,9 @@ describe("Approval scenes", () => {
       expect(await search.evaluate((input) => input === document.activeElement)).toBe(true);
       await search.fill("Schrauben");
       await settled(page);
-      // The search lies over the title, which keeps its room: neither the head nor the island moves.
-      expect(await title.evaluate((node) => getComputedStyle(node.parentElement as Element).visibility)).toBe("hidden");
+      // The search lies over the title, which keeps its room and stays the island's heading: neither the head nor the
+      // island moves.
+      expect(await title.evaluate((node) => getComputedStyle(node.parentElement as Element).opacity)).toBe("0");
       expect(await head.boundingBox()).toEqual(before.head);
       expect(await frame.boundingBox()).toEqual(before.frame);
       const box = await search.boundingBox();
@@ -387,7 +388,7 @@ describe("Approval scenes", () => {
       await page.getByRole("button", { name: "Tabelle kopieren" }).focus();
       await settled(page);
       expect(await frame.getByRole("searchbox").isVisible()).toBe(false);
-      expect(await title.isVisible()).toBe(true);
+      expect(await title.evaluate((node) => getComputedStyle(node.parentElement as Element).opacity)).toBe("1");
       expect(await head.boundingBox()).toEqual(before.head);
     } finally {
       await page.close();
@@ -397,12 +398,12 @@ describe("Approval scenes", () => {
   test("Maximize opens the Lightbox on that block with its name and origin, steps through the answer, and gives the focus back", async () => {
     const page = await open("baustein", 1440);
     try {
-      await page.locator(".cloud-capability-view table").first().waitFor();
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
       await settled(page);
       const opener = page.locator(".cloud-capability-view .k2b-dashboard-frame").first().getByRole("button", { name: "Maximieren" });
       await opener.click();
       const lightbox = page.locator(".k2b-lightbox[open]");
-      await lightbox.locator(".k2b-lightbox__view table").first().waitFor();
+      await lightbox.locator(".k2b-lightbox__view .k2b-dashboard-frame__content table").first().waitFor();
       const name = () => lightbox.locator(".k2b-lightbox__name").textContent();
       expect(await name()).toContain("PayPal-Buchungen im November");
       expect(await name()).toContain("Mail · Tabelle · Stand");

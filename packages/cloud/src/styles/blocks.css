@@ -68,6 +68,13 @@
   gap: 0.125rem;
 }
 
+/* 30 px like the selection toolbar's compact buttons; a coarse pointer keeps every button's own 44 px hit area. */
+.k2b-ui .cloud-block-actions .k2b-icon-button,
+.k2b-ui .cloud-table-search-toggle.k2b-icon-button {
+  inline-size: 1.875rem;
+  min-height: 1.875rem;
+}
+
 .k2b-ui .cloud-block-actions [data-copied] {
   color: var(--k2b-success-text);
 }
@@ -633,7 +640,7 @@
   line-height: 1.25rem;
 }
 
-.k2b-ui .cloud-table-search-toggle {
+.k2b-ui .cloud-table-frame .cloud-table-search-toggle {
   display: none;
 }
 
@@ -646,26 +653,26 @@
     display: none;
   }
 
+  /* Opened, the sign keeps its place unseen and the title its width, so the head keeps its height. */
   .k2b-ui .cloud-table-frame--searching .cloud-table-search-toggle {
-    display: none;
+    visibility: hidden;
   }
 
   .k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) {
     position: relative;
   }
 
+  /* Out of sight, but still the island's heading for a screen reader. */
   .k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) > div:first-child {
-    visibility: hidden;
+    opacity: 0;
   }
 
-  .k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__tools, .cloud-table-tools) {
+  .k2b-ui .cloud-table-frame--searching :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools__search) {
     position: absolute;
-    inset: 0 0 auto;
-    flex-wrap: nowrap;
-  }
-
-  .k2b-ui .cloud-table-frame--searching :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools, .cloud-table-search-host .k2b-data-table-tools__search) {
-    flex: 1 1 auto;
-    min-width: 0;
+    z-index: 1;
+    inset-block-start: 0;
+    inset-inline: 0 var(--cloud-search-end, 0);
+    width: auto;
+    max-width: none;
   }
 }

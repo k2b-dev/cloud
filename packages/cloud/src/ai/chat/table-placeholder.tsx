@@ -1,7 +1,8 @@
 import { CopyButton, Skeleton, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
-import { BlockActions, BlockFoot, SearchToggle, useBlockFrame } from "../../blocks/block-actions";
+import { BlockActions, BlockFoot, useBlockFrame } from "../../blocks/block-actions";
 import { tableCopy, wholeTable } from "../../blocks/block-copy";
+import { SearchToggle } from "../../blocks/search-toggle";
 import type { CloudAiViewSummary } from "../view-block";
 import { aiChatMessages } from "./messages";
 import { ViewHeading } from "./view-heading";
