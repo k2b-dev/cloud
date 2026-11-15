@@ -13949,9 +13949,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface);
 }
 
-/* A quoted passage found in its message (VirtualFeed's highlightText). */
+/* A quoted passage found in its message (VirtualFeed's highlightText): the found-text tint of search hits, and an
+   underline in the action colour so it stands out on a grey bubble too. Neither changes the layout. */
 .k2b-ui ::highlight(k2b-virtual-feed-passage) {
   background-color: var(--k2b-selected);
+  text-decoration: underline 2px var(--k2b-action);
+  text-underline-offset: 3px;
 }
 
 /* Where the message belongs, as a quiet chip of fixed height under it. */
