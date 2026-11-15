@@ -36,6 +36,11 @@ Review the schedule, inputs and
 grants before activating the Code. No definition imports authority or activates
 a replacement automatically.
 
+For an explicitly requested new destination, personal Code can call
+`core.ai.chat.create` once with a stable key and reuse its returned chat ref.
+Creation is `silent_you` and starts no model; sending remains a separate Action.
+Replaying a key never replaces an archived or deleted chat.
+
 A chat turn started by Code follows the owner's current access, model budget and
 normal approvals. Approval requests wait in the chat; the scheduling Code can
 finish without polling. Old routine HTTP or Studio RSQL grants do not transfer.

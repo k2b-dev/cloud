@@ -1435,11 +1435,13 @@ export const saveAiDraftInTransaction = async (
 };
 
 export class AiConversationCreationError extends Error {
-  constructor(readonly reason: "conflict" | "unavailable") {
+  constructor(readonly reason: "conflict" | "unavailable" | "project_unavailable") {
     super(
       reason === "conflict"
         ? "This creation request was already used with different input."
-        : "The conversation from this request is no longer available.",
+        : reason === "project_unavailable"
+          ? "The Project is no longer available."
+          : "The conversation from this request is no longer available.",
     );
   }
 }
@@ -1523,7 +1525,7 @@ export const aiConversations: AiConversationService = {
       RETURNING *
       `,
       );
-      if (!rows[0]) throw new Error("Project does not exist.");
+      if (!rows[0]) throw new AiConversationCreationError("project_unavailable");
       return rowToConversation(rows[0]);
     };
     if (!input.requestId) return insert(sql);

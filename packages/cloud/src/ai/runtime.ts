@@ -79,6 +79,7 @@ import { validateAiTurnRequest } from "./validate";
 
 export { createAiTurnCodeAndClientTools } from "./default-tools";
 export type { AiStoredMessageOrigin } from "./queue-contracts";
+export { AiConversationCreationError } from "./store";
 export type { ValidateAiTurnInput } from "./validate";
 export { isAiSettingsError, validateAiTurnRequest } from "./validate";
 

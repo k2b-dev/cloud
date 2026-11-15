@@ -1510,3 +1510,16 @@ it as `AiTurnError.message` and renders it without interpreting host domains.
 A failed call without response bytes uses zero or its recorded estimate; other
 unknown usage stays fail-closed. Provider diagnostics remain log-only. Third-party hosts can supply their own
 explanations through the same contract.
+
+### Idempotent empty-chat creation
+
+Core's `ai.chat.create` Action and `POST /api/ai/conversations` share
+`aiConversations.createConversation`. A stable `requestId` claims one durable
+`ai.conversation_creations` receipt per owner, with normalized input hash.
+Concurrent retries return the same active chat. Conflicting input fails;
+archiving or deleting the original never creates a replacement.
+`AiConversationCreationError` from `@k2b/cloud/ai/runtime` distinguishes
+`conflict` from `unavailable` for hosts translating transport errors.
+Core derives a domain-separated UUIDv8 from owner, operation and idempotency key;
+it checks full source authority and current Project read access before invoking
+the service. Creation writes an empty chat and does not submit an AI turn.
