@@ -13,11 +13,12 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const [
   { LocaleProvider },
-  { approvalCheck, approvalReviewProps, CodeAreaView, ownerLabel },
+  { approvalReason, CodeAreaView, ownerLabel },
   { codeAdminMessages },
   { parseCodeAreaQuery },
   { codeFixtureData },
   data,
+  { codeReviewMessages },
 ] = await Promise.all([
   import("@k2b/ui"),
   import("./view"),
@@ -25,6 +26,7 @@ const [
   import("./area"),
   import("./CodeArea.fixture-data"),
   import("./CodeArea.fixture-data"),
+  import("./review-messages"),
 ]);
 
 type State = Parameters<typeof codeFixtureData>[0];
@@ -41,24 +43,21 @@ const render = (query: Record<string, string>, state: State = "normal", locale =
           data: state === "noperm" ? null : codeFixtureData(state, query, locale),
           noPermission: state === "noperm",
           retryHref: "/admin/code",
+          viewerId: data.FIXTURE_PEOPLE.jana,
           appNames: { mail: "Mail", spaces: "Spaces", werkstatt: "Werkstattbuch" },
         });
       },
     }),
   );
-test("approval lists every declared origin, including requests without secrets", () => {
-  const html = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 });
-  expect(html).toContain("Ursprünge im Internet");
-  expect(html).toContain("https://bank.example");
-  expect(html).toContain("https://status.example:8443");
-  expect(html).toContain("Secret-Bindungen");
-  expect(html).toContain("BUCHHALTUNG_TOKEN");
-  expect(html).toContain("https://api.buchhaltung-beispiel.de/v1");
-  expect(html).toContain("Kopfzeilen: authorization");
+test("approval says in words what the version may do, its internet addresses included", () => {
+  const text = renderedText(render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 }), " ");
+  expect(text).toContain("Alles, was Version 3 darf");
+  expect(text).toContain("Internet: api.buchhaltung-beispiel.de, ohne Secret");
+  expect(text).toContain("Läuft");
+  expect(text).toContain("Mo–Fr um 08:00");
 });
 
 const review = { sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 };
-const t = codeAdminMessages.resolve(["de"]).t;
 
 test("the area column names every section with waiting counts", () => {
   const html = render({});
@@ -80,63 +79,26 @@ test("the area column names every section with waiting counts", () => {
   expect(english).toContain("Code in this Cloud");
 });
 
-test("approvals render list, review, decided, empty, error and missing states", () => {
-  const list = render({ sec: "approvals" });
-  expect(list).toContain("4 Versionen warten");
-  expect(list).toContain("+3 −1 Zeilen");
-  expect(list).toContain("neu · 20 Zeilen");
-  expect(list).toContain("2 Dateien geändert");
-  expect(list).toContain("Wähle eine Version.");
+test("approvals are a page: a list with who, owner, main change and reason, and states", () => {
+  const list = renderedText(render({ sec: "approvals" }), " ");
+  expect(list).toContain("4 Versionen warten auf eine Entscheidung.");
+  expect(list).toContain("Rückruf bestätigen");
+  expect(list).toContain("Version 1 · erste");
+  expect(list).toContain("Postfach info@moebel-beispiel.de");
+  expect(list).toContain("Tom Beispiel");
+  expect(list).toContain("ein Ort in Spaces, den du nicht öffnen darfst");
+  expect(list).toContain("Darf neu Aufgaben anlegen im Space Logistik");
+  expect(list).toContain("Für andere sichtbar");
+  expect(list).toContain("Ins Internet");
+  expect(list).not.toContain("k7qm2x9a");
 
-  const detail = render(review);
-  expect(detail).toContain("Rückruf bestätigen · Version 3");
-  expect(detail).toContain("1 von 4");
-  expect(detail).toContain("Warum du freigibst");
-  expect(detail).toContain("„Für andere sichtbar“ steht für Lea Muster auf Admin gibt frei, aus dem Standard.");
-  expect(detail).toContain("Aufgabe anlegen");
-  expect(detail).toContain("spaces.task.create · an Space sp_2lg8");
-  expect(detail).toContain("entfällt");
-  expect(detail).toContain("Version 2 (freigegeben");
-  expect(detail).toContain("Gilt genau für Version 3");
-  expect(detail).toContain("https://api.buchhaltung-beispiel.de");
-  expect(detail).toContain("von dieser Version deklariert");
-  expect(detail).not.toContain("dürfen jede öffentliche HTTPS-Adresse");
-  expect(detail).not.toContain("am Tag");
-  expect(detail).toContain("Nutzt Datenbank");
-  expect(render(review, "normal", "en")).toContain("Uses database");
-  expect(detail).toContain("Was passiert");
-  expect(detail).toContain("KI-Erklärung, nur ein Hinweis");
-  expect(detail).toContain("Bittet jemand in info@ um Rückruf");
-  expect(detail).toContain("Prüfung");
-  expect(detail).toContain("Typen geprüft · 9 Tests grün");
-  expect(detail).toContain("Probelauf mit den Testdaten: 9 Läufe, 15 Aufrufe, ohne echte Wirkung");
-  expect(detail).toContain("Vergleich");
-  expect(detail).toContain("Version 3 freigeben");
-  expect(detail).toContain("Ablehnen …");
+  const decided = renderedText(render({ sec: "approvals", tab: "decided" }), " ");
+  expect(decided).toContain("Freigegeben von Ben Schulz");
+  expect(decided).toContain("Änderungen angefordert von dir");
+  expect(decided).toContain("Zuletzt entschieden.");
 
-  const first = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.lieferzeit1 });
-  expect(first).toContain("Erste Freigabe");
-  expect(first).toContain("Kein Vorgänger: der ganze Code von Version 1");
-  expect(first).toContain("Diese Version ruft keine Adresse außerhalb von Cloud auf.");
-
-  expect(render(review, "newer")).toContain("Version 3 ist überholt");
-  expect(render(review, "own")).toContain("Du hast diese Version geschrieben.");
-  expect(render(review, "sole")).toContain("Du gibst deinen eigenen Code frei");
-  expect(render(review, "difffail")).toContain("Code nicht geladen");
-  const approved = render(review, "approved");
-  expect(approved).toContain("Version 3 ist freigegeben.");
-  expect(approved).not.toContain("Ablehnen …");
-  expect(approved).toContain("Zurücknehmen geht über „Pausieren“ am Code.");
-  expect(approved).toContain("Code öffnen");
-  expect(approved).not.toContain("zurückziehen");
-
-  const decided = render({ sec: "approvals", tab: "decided" });
-  expect(decided).toContain("Termin-Antworten");
-  expect(decided).toContain("selbst freigegeben (einziger Admin)");
-  expect(decided).toContain("Abgelehnt");
-
-  const empty = render({ sec: "approvals" }, "empty");
-  expect(empty).toContain("Nichts freizugeben");
+  const empty = renderedText(render({ sec: "approvals" }, "empty"), " ");
+  expect(empty).toContain("Keine Version wartet auf dich.");
   expect(empty).toContain("Richtlinie ansehen");
   const failed = render({ sec: "approvals" }, "fail");
   expect(failed).toContain("Konnte nicht geladen werden");
@@ -144,37 +106,67 @@ test("approvals render list, review, decided, empty, error and missing states", 
   expect(render(review, "missing")).toContain("Diese Anfrage ist geschlossen.");
 });
 
-test("a version's check says plainly when tests failed, did not run, or nothing was recorded", () => {
-  const wording = (evidence: ReturnType<typeof data.fixtureApprovalDetail>["evidence"]) =>
-    approvalCheck(t, { ...data.fixtureApprovalDetail(), evidence });
-  const tests = (state: "failed" | "none" | "unavailable") => ({
-    version: 1 as const,
-    tests: { state, passed: state === "failed" ? 2 : 0, total: state === "failed" ? 3 : 0, error: null },
-    trial: null,
-  });
-  expect(wording(tests("failed"))).toMatchObject({ tests: "1 von 3 Tests fehlgeschlagen", testsOk: false, trial: null });
-  expect(wording(tests("none"))).toMatchObject({ tests: "keine Tests eingereicht", testsOk: false });
-  expect(wording(tests("unavailable"))).toMatchObject({ tests: "Tests konnten nicht laufen", testsOk: false });
-  expect(wording(null)).toBeNull();
-  // A call only the earlier version made stays visible with a count of zero now.
-  expect(approvalCheck(t, data.fixtureApprovalDetail())?.calls).toContainEqual({
-    label: "Entwurf anlegen",
-    operation: "mail.draft.create",
-    now: 0,
-    before: 6,
-  });
+test("a review has one row of tabs, a head with who, how and whose, and the approval with three decisions", () => {
+  const html = render(review);
+  const text = renderedText(html, " ");
+  expect(text).toContain("Rückruf bestätigen · Version 3");
+  expect(text).toContain("mit Gustav eingereicht · gehört zu: info@moebel-beispiel.de");
+  expect(text).toContain("1 von 4");
+  for (const tab of ["Übersicht", "Code", "Diff"]) expect(html).toContain(`>${tab}<`);
+  expect(text).toContain("Sie darf etwas tun, das andere sehen. Das gibt laut Richtlinie Standard ein Admin frei.");
+  expect(text).toContain("Details von Code · gegenüber Version 2");
+  expect(text).toContain("Darf neu Aufgaben anlegen im Space Logistik");
+  expect(text).toContain("3 weitere bleiben gleich.");
+  expect(text).toContain("Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.");
+  expect(text).toContain("3 von 3 Beispielen erfolgreich");
+  expect(text).toContain("Gilt genau für Version 3");
+  for (const answer of ["Ablehnen …", "Änderungen anfordern …", "Version 3 freigeben"]) expect(text).toContain(answer);
+  expect(text).toContain("Was sie damit tut");
+  expect(text).toContain("KI-Erklärung, nicht von Cloud geprüft");
+  expect(text).toContain("Kommentare am Code");
+  expect(text).toContain("Hier bekommt jede ungelesene Mail eine Aufgabe");
+  expect(text).toContain("Mit deiner Entscheidung sieht Lea Muster die Kommentare als Text.");
+  // No hashes, no line references, no technical identifiers outside the marked code field.
+  expect(text).not.toMatch(/[0-9a-f]{4}…[0-9a-f]{2}|Z\. \d+|sp_2lg8/);
+  expect(renderedText(render(review, "cli"), " ")).toContain("über die Kommandozeile eingereicht");
+  expect(renderedText(render({ ...review, tab: "code" }), " ")).toContain("3 Kommentare gehen mit deiner Entscheidung mit");
 });
 
-test("a version's Code reads without an open approval, with error and missing states", () => {
-  const version = "a0000000-0000-4000-8000-000000000003";
-  const detail = render({ sec: "code", id: "c_rechn" });
-  expect(detail).toContain("Code ansehen");
-  expect(detail).toContain(`version=${data.FIXTURE_VERSIONS.rechnungen2}`);
-  const source = render({ sec: "code", id: "c_rechn", version });
-  expect(source).toContain("Version 2 · nur lesen");
-  expect(source).toContain("Code schließen");
-  expect(render({ sec: "code", id: "c_rechn", version }, "fail")).toContain("Konnte nicht geladen werden");
-  expect(render({ sec: "code", id: "c_rechn", version }, "missing")).not.toContain("nur lesen");
+test("the first version locks its Diff tab, and a decided version freezes its comments", () => {
+  const first = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.lieferzeit1 });
+  expect(first).toMatch(/role="tab"[^>]*disabled[^>]*>(?:(?!<\/button>).)*Diff/s);
+  expect(renderedText(first, " ")).toContain("Erste Version: Es gibt keinen Unterschied.");
+  expect(renderedText(first, " ")).toContain("Details von Code · erste Version, alles ist neu");
+  const changes = renderedText(render(review, "changes"), " ").replaceAll(/\s+/g, " ");
+  expect(changes).toContain("Änderungen angefordert");
+  expect(changes).toContain("Du hast Änderungen an Version 3 angefordert.");
+  expect(changes).toContain("Deine Nachricht");
+  expect(changes).toContain("Bitte nur für Mails mit einem Rückrufwunsch eine Aufgabe anlegen");
+  expect(changes).not.toContain("Version 3 freigeben");
+  expect(renderedText(render(review, "rejected"), " ")).toContain("Version 3 lässt sich nicht mehr einschalten.");
+  const decidedCode = render({ ...review, tab: "code" }, "changes");
+  expect(decidedCode).not.toContain("Antworten …");
+  expect(decidedCode).toContain("Der entschiedene Stand.");
+  expect(renderedText(render(review, "followup"), " ")).toContain("Du hattest bei Version 2 Änderungen angefordert");
+  expect(render(review, "newer")).toContain("Lea Muster hat Version 4 eingereicht.");
+  expect(render(review, "own")).toContain("Du hast diese Version geschrieben.");
+  expect(render(review, "sole")).toContain("Du gibst deinen eigenen Code frei");
+});
+
+test("the reason names the policy that asks: the default or the groups", () => {
+  const r = codeReviewMessages.resolve(["de"]).t;
+  const detail = data.fixtureApprovalDetail();
+  expect(approvalReason(r, detail)).toBe("Sie darf etwas tun, das andere sehen. Das gibt laut Richtlinie Standard ein Admin frei.");
+  expect(approvalReason(r, { ...detail, why: [{ row: "internet", source: "group", groups: ["Praktikum"] }] })).toBe(
+    "Sie ruft Adressen im Internet auf. Das gibt laut Regel der Gruppe Praktikum ein Admin frei.",
+  );
+});
+
+test("the former source view points to the version's review", () => {
+  const html = render({ sec: "code", id: "c_rechn", version: data.FIXTURE_VERSIONS.rechnungen2 });
+  expect(html).toContain("Den Code einer Version zeigt jetzt ihre Freigabe-Prüfung.");
+  expect(html).toContain(`sec=approvals&amp;id=${data.FIXTURE_VERSIONS.rechnungen2}&amp;tab=code`);
+  expect(render({ sec: "code", id: "c_rechn" })).not.toContain("Code ansehen");
 });
 
 test("all Code renders owners, status and last run, with empty, filtered and error states", () => {
@@ -182,11 +174,11 @@ test("all Code renders owners, status and last run, with empty, filtered and err
   expect(list).toContain("8 Code von 5 Besitzern");
   expect(list).toContain("Lea Muster · Pausiert: Richtlinie");
   // A place by the name its reader gave this admin; without one, by its ID.
-  expect(list).toContain("Mail · info@moebel-beispiel.de · Aktiv");
+  expect(list).toContain("info@moebel-beispiel.de · Aktiv");
   expect(list).not.toContain("m_rechn");
   expect(
     ownerLabel(codeAdminMessages.resolve(["de"]).t, { kind: "resource", ref: { type: "mail.mailbox", id: "m_x" } }, null, { mail: "Mail" }),
-  ).toBe("Mail · m_x");
+  ).toBe("ein Ort in Mail, den du nicht öffnen darfst");
   expect(list).toContain("App Werkstattbuch · Entwurf");
   expect(list).toContain("noch kein Lauf");
   const detail = render({ sec: "code", id: "c_rechn" });
@@ -205,12 +197,13 @@ test("all Code renders owners, status and last run, with empty, filtered and err
 test("policy, groups and effective rows render with their sources", () => {
   const policy = render({ sec: "policy" });
   expect(policy).toContain("Zuletzt geändert von Jana Probe");
-  expect(policy).toContain("Was Code ohne Menschen tun darf.");
+  expect(policy).toContain("Was Automationen ohne Menschen tun dürfen.");
   expect(policy).toContain("Admin gibt frei");
   expect(policy).toContain("Für andere sichtbar");
-  expect(policy).toContain("silent: shared");
-  expect(policy).toContain("4 Code");
-  expect(policy).toContain("nicht genutzt");
+  expect(policy).not.toContain("silent: shared");
+  expect(policy).toContain("Braucht immer einen Menschen");
+  expect(policy).toContain("Was die Automation tun darf");
+  expect(policy).toContain('role="radio"');
   const groups = render({ sec: "groups", id: data.FIXTURE_GROUPS.buchhaltung });
   expect(groups).toContain("2 Regeln · 6 Personen · Untergruppe von Verwaltung");
   expect(groups).toContain("Wie Standard");
@@ -226,12 +219,16 @@ test("policy, groups and effective rows render with their sources", () => {
   expect(history).toContain("Jana Probe");
   expect(history).toContain("Sendet (Praktikum)");
   expect(history).toContain("wie Standard");
-  expect(history).toContain("Voreinstellung Admin gibt frei → Eigene");
+  expect(renderedText(history, " ").replaceAll(/\s+/g, " ")).toContain("Voreinstellung: Admin gibt frei Eigene");
   // A preset change lists every changed row, also beyond six.
   for (const label of ["Löscht", "Nicht rückgängig", "Bezieht Personen ein", "Ändert Zugriff", "Läuft weiter", "Sensibel"])
     expect(history).toContain(label);
-  expect(render({ sec: "history" }, "empty")).toContain("Noch keine Änderung aufgezeichnet");
-  expect(render({ sec: "history" }, "fail")).toContain("Konnte nicht geladen werden");
+  expect(render({ sec: "history" }, "empty")).toContain("Die Richtlinie wurde noch nie geändert.");
+  const older = render({ sec: "history" }, "long");
+  expect(older).toContain("Ältere Änderungen laden");
+  expect(older).toContain('href="/admin/code?sec=history&amp;after=2"');
+  expect(render({ sec: "history" })).not.toContain("Ältere Änderungen laden");
+  expect(render({ sec: "history" }, "fail")).toContain("Der Verlauf konnte nicht geladen werden.");
 });
 
 test("cleanup shows orphaned Code deletion and retries, while access stays in the target's normal share dialog", () => {
@@ -242,7 +239,9 @@ test("cleanup shows orphaned Code deletion and retries, while access stays in th
   expect(cleanup).toContain("Den Zugriff eines Dienstkontos änderst du im normalen Teilen-Dialog des Ziels, wenn du das Ziel verwaltest.");
   expect(cleanup).toContain("Wartet auf Wiederholung");
   expect(cleanup).toContain("3 Versuche");
-  expect(cleanup).toContain("letzter Fehler: code_activation_draining");
+  expect(cleanup).toContain("Der letzte Versuch ist fehlgeschlagen.");
+  expect(cleanup).not.toContain("code_activation_draining");
+  expect(cleanup).not.toContain("c_altpost");
   const empty = render({ sec: "cleanup" }, "empty");
   expect(empty).toContain("Nichts aufzuräumen");
   expect(empty).toContain("Es warten keine Löschaufträge für Code.");
@@ -275,42 +274,28 @@ test("limits and runners render their data, empty and error states", () => {
   expect(render({ sec: "limits" }, "normal", "en")).toContain("AI reference budget per attempt (USD)");
   const runners = render({ sec: "runners" });
   expect(runners).toContain('data-section="code-runners"');
-  for (const label of ["Instanzen", "Freie Plätze", "Warteschlange", "Längste Wartezeit", "4 s", "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60"])
-    expect(runners).toContain(label);
-  const none = render({ sec: "runners" }, "empty");
-  expect(none).toContain("Kein Runner meldet sich");
+  const runnerText = renderedText(runners, " ").replaceAll(/\s+/g, " ");
+  for (const label of [
+    "3 Runner",
+    "5 von 12 Plätzen frei",
+    "5 Läufe warten",
+    "4 s längste Wartezeit",
+    "Runner 1 · 8a3c",
+    "1 von 4 Plätzen frei",
+    "Verbunden",
+  ])
+    expect(runnerText).toContain(label);
+  expect(runners).not.toContain("8a3c1e20");
+  const none = renderedText(render({ sec: "runners" }, "empty"), " ");
+  expect(none).toContain("Kein Runner ist verbunden. Keine Automation läuft.");
   expect(none).toContain("2 Min.");
-  expect(render({ sec: "runners" }, "fail")).toContain("Konnte nicht geladen werden");
+  expect(render({ sec: "runners" }, "fail")).toContain("Die Runner konnten nicht geladen werden.");
 });
 
 test("people without the Cloud-admin role see only the no-permission state", () => {
   const html = render({ sec: "approvals" }, "noperm");
   expect(html).toContain("Nur Cloud-Admins verwalten Code");
   expect(html).not.toContain("Freigaben");
-});
-
-test("approvals name automations as the Code page does: title and schedule, event and place; a manual one keeps its identifier", () => {
-  const html = render(review);
-  const text = renderedText(html, " ").replaceAll(/\s+/g, " ");
-  expect(text).toContain("Lieferungen eintragen · Mo–Fr 08:00");
-  expect(html).toContain(">lieferungenEintragen</code>");
-  expect(text).toContain("Montags 08:00");
-  expect(text).toContain("Aufgabe fällig · Space k7qm2x9a");
-  expect(text).not.toContain("event:spaces.item.due");
-  expect(text).not.toContain("wochenbericht");
-  expect(html).toContain("legacyJob");
-});
-
-test("pages of an app's Code run with its service account, named after the app", () => {
-  const t = codeAdminMessages.resolve(["de"]).t;
-  const detail = data.fixtureApprovalDetail();
-  const app = { ...detail, code: { ...detail.code, owner: { kind: "app" as const, appId: "werkstatt" } } };
-  expect(approvalReviewProps(t, app, [], (iso) => iso, { werkstatt: "Werkstattbuch" }).routeOwner).toEqual({
-    kind: "account",
-    name: "Code von Werkstattbuch",
-  });
-  // A place's own name is not the admin's to see here; its service account stays unnamed.
-  expect(approvalReviewProps(t, detail, [], (iso) => iso, {}).routeOwner).toEqual({ kind: "account", name: null });
 });
 
 test("Code of an app has its Code page here: its service account and a refused call like any Code page", () => {
@@ -338,12 +323,6 @@ test("Code of an app has its Code page here: its service account and a refused c
   expect(detail).not.toContain("Zielrechte");
   // Code of a place or a person keeps its Code page at its owner.
   expect(render({ sec: "code", id: "c_rechn" })).not.toContain("Läuft als Dienstkonto");
-});
-
-test("approval describes calls rather than suggesting a grant change", () => {
-  const html = render({ sec: "approvals", id: data.FIXTURE_VERSIONS.rueckruf3 });
-  expect(html).toContain("Was der Code aufruft");
-  expect(html).not.toContain("Was sich an den Rechten ändert");
 });
 
 test("administrator detail shows database size, owner capacity and the shared export link", () => {

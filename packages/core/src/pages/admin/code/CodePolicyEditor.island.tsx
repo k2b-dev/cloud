@@ -1,4 +1,4 @@
-import { Button, ButtonLink, NoticeCard, prompts, SegmentedControl, useLocale } from "@k2b/ui";
+import { Button, ButtonLink, ChoiceList, NoticeCard, Section, StatusBadge, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { z } from "zod";
 import {
@@ -11,7 +11,7 @@ import {
   codePolicyContracts,
   codePolicyPreset,
 } from "../../../code/policy-contracts";
-import { CODE_POLICY_ROW_GROUPS, codePolicyRowCode } from "./area";
+import { CODE_POLICY_ROW_GROUPS } from "./area";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
 import { codeAdminMessages } from "./messages";
 
@@ -26,7 +26,6 @@ export type CodePolicyEditorProps = {
 
 type Cell = CodePolicyValue | "inherit";
 const VALUES: CodePolicyValue[] = ["automatic", "admin", "never"];
-const VALUE_ICON: Record<CodePolicyValue, string> = { automatic: "ti ti-circle-check", admin: "ti ti-user-shield", never: "ti ti-ban" };
 const PreviewSchema = codePolicyContracts.preview.data.extend({ owners: z.record(z.string(), z.string().nullable()) });
 type Preview = z.infer<typeof PreviewSchema>;
 type Status = { kind: "idle" } | { kind: "saved"; paused: number } | { kind: "failed" } | { kind: "unknown" } | { kind: "conflict" };
@@ -76,11 +75,6 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
   const changedRows = createMemo(() =>
     CODE_POLICY_ROWS.filter((row) => cellOf(draft(), props.groupId, row) !== cellOf(baseline(), props.groupId, row)),
   );
-  const changeCount = createMemo(() => {
-    const before = new Map(baseline().rules.map((rule) => [keyOf(rule), rule.value]));
-    const after = new Map(draft().rules.map((rule) => [keyOf(rule), rule.value]));
-    return [...new Set([...before.keys(), ...after.keys()])].filter((key) => before.get(key) !== after.get(key)).length;
-  });
 
   // Ask the server what the draft would pause; the newest draft wins.
   let controller: AbortController | undefined;
@@ -131,35 +125,8 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
   const save = async () => {
     const checked = ready();
     if (saving() || !checked) return;
+    // The bar names every automation that pauses before saving, so saving needs no second question.
     const paused = checked.result.total;
-    if (paused > 0) {
-      const items = checked.result.items;
-      const owners = checked.result.owners;
-      const confirmed = await prompts.confirm(
-        <div class="grid gap-3 text-sm">
-          <p>{t().confirmLead}</p>
-          <ul class="grid gap-1">
-            <For each={items}>
-              {(item) => (
-                <li class="flex items-center justify-between gap-3">
-                  <span class="min-w-0 truncate font-medium">
-                    <i class="ti ti-bolt" aria-hidden="true" /> {item.title}
-                  </span>
-                  <span class="shrink-0 text-(--k2b-text-muted)">{owners[item.codeId] ?? t().ownerUnknown}</span>
-                </li>
-              )}
-            </For>
-          </ul>
-          <Show when={paused > items.length}>
-            <p class="text-(--k2b-text-muted)">{t().confirmMore({ n: paused - items.length })}</p>
-          </Show>
-          <p>{t().confirmTail}</p>
-        </div>,
-        { title: t().confirmTitle({ n: paused }), confirmText: t().confirmSave({ n: paused }), cancelText: t().cancel },
-      );
-      // A change made while the dialog was open needs its own preview and confirmation.
-      if (!confirmed || ready() !== checked) return;
-    }
     setSaving(true);
     try {
       const result = await postCodeAdmin(
@@ -220,52 +187,165 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
   };
 
   const presetOptions = () => [
-    { value: "off" as const, icon: "ti ti-power", label: t().presetOff, description: t().presetOffSub },
-    { value: "admin" as const, icon: "ti ti-user-shield", label: t().presetAdmin, description: t().presetAdminSub },
-    { value: "open" as const, icon: "ti ti-lock-open", label: t().presetOpen, description: t().presetOpenSub },
-    { value: "custom" as const, icon: "ti ti-adjustments", label: t().presetCustom, description: t().presetCustomSub },
+    { value: "off" as const, icon: "ti ti-power", label: t().presetOff, status: t().presetOffSub },
+    { value: "admin" as const, icon: "ti ti-user-check", label: t().presetAdmin, status: t().presetAdminSub },
+    { value: "open" as const, icon: "ti ti-lock-open", label: t().presetOpen, status: t().presetOpenSub },
+    { value: "custom" as const, icon: "ti ti-adjustments", label: t().presetCustom, status: t().presetCustomSub },
   ];
+  /** Columns of the table: "As default" first for a group, then the three values. */
+  const columns = (): Cell[] => [...(props.groupId ? (["inherit"] as const) : []), ...VALUES];
+  const tableGroups = () => CODE_POLICY_ROW_GROUPS.filter((group) => group.key !== "grpAsk");
+  const askRows = () => CODE_POLICY_ROW_GROUPS.find((group) => group.key === "grpAsk")?.rows ?? [];
 
-  const options = () => [
-    ...(props.groupId ? [{ value: "inherit" as const, label: <span class="whitespace-nowrap">{t().inherit}</span> }] : []),
-    ...VALUES.map((value) => ({
-      value,
-      icon: VALUE_ICON[value],
-      label: (
-        <>
-          <span class="hidden whitespace-nowrap @3xl:inline">{t().value({ value })}</span>
-          <span class="whitespace-nowrap @3xl:hidden">{t().valueShort({ value })}</span>
-        </>
-      ),
-      disabled: false,
-    })),
-  ];
+  /** One radio group per row: one tab stop, arrow keys move between the values, as native radios do. */
+  const keyDown = (event: KeyboardEvent, row: CodePolicyRow) => {
+    const keys: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    const step = keys[event.key];
+    const list = columns();
+    const at = list.indexOf(cellOf(draft(), props.groupId, row));
+    const next =
+      event.key === "Home" ? 0 : event.key === "End" ? list.length - 1 : step === undefined ? -1 : (at + step + list.length) % list.length;
+    if (next < 0) return;
+    event.preventDefault();
+    const value = list[next]!;
+    edit(withCell(draft(), props.groupId, row, value));
+    const group = (event.currentTarget as HTMLElement).closest('[role="radiogroup"]');
+    queueMicrotask(() => group?.querySelector<HTMLElement>(`[data-value="${value}"]`)?.focus());
+  };
+
+  /** What the draft changes, one sentence per row, the old value struck through. */
+  const changeLines = () =>
+    changedRows().map((row) => ({
+      row,
+      label: t().rowLabel({ row }),
+      before: cellLabel(cellOf(baseline(), props.groupId, row)),
+      after: cellLabel(cellOf(draft(), props.groupId, row)),
+    }));
 
   return (
-    <div class="flex min-h-full flex-col">
-      <div class="grid flex-1 content-start gap-4 px-2 pt-1 pb-6">
-        <Show when={savedPaused() !== null}>
-          <NoticeCard
-            tone="success"
-            title={t().savedTitle}
-            detail={
-              <>
-                <p>{savedPaused() ? t().savedPaused({ n: savedPaused() ?? 0 }) : t().savedNone}</p>
-                <Show when={savedPaused()}>
-                  <div class="mt-2">
-                    <ButtonLink size="sm" variant="secondary" href={props.pausedHref}>
-                      {t().showPaused}
-                    </ButtonLink>
-                  </div>
-                </Show>
-              </>
-            }
-          />
-        </Show>
+    <div class="core-code-policy">
+      <Show when={savedPaused() !== null}>
+        <NoticeCard
+          tone="success"
+          title={t().savedTitle}
+          detail={
+            <>
+              <p>{savedPaused() ? t().savedPaused({ n: savedPaused() ?? 0 }) : t().savedNone}</p>
+              <Show when={savedPaused()}>
+                <div class="mt-2">
+                  <ButtonLink size="sm" variant="secondary" href={props.pausedHref}>
+                    {t().showPaused}
+                  </ButtonLink>
+                </div>
+              </Show>
+            </>
+          }
+        />
+      </Show>
+
+      <Show when={!props.groupId}>
+        <ChoiceList
+          label={t().presets}
+          options={presetOptions().map((option) => ({
+            value: option.value,
+            label: option.label,
+            description: option.status,
+            icon: option.icon,
+          }))}
+          value={() => draft().preset}
+          onValueChange={(preset) => {
+            if (preset !== "custom") edit(codePolicyPreset(preset));
+          }}
+          disabled={saving()}
+        />
+      </Show>
+
+      <Section frame="line" title={props.groupId ? t().groupDeviates : t().policyTable} class="core-code-policy__frame">
+        <table class="core-code-policy__table">
+          <thead>
+            <tr>
+              <th scope="col">{t().policyTable}</th>
+              <For each={columns()}>{(cell) => <th scope="col">{cellLabel(cell)}</th>}</For>
+            </tr>
+          </thead>
+          <For each={tableGroups()}>
+            {(group) => (
+              <tbody>
+                <tr class="core-code-policy__group">
+                  <th scope="rowgroup" colSpan={columns().length + 1}>
+                    {t()[group.key]}
+                  </th>
+                </tr>
+                <For each={group.rows}>
+                  {(row) => {
+                    const changed = () => changedRows().includes(row);
+                    return (
+                      <tr role="radiogroup" aria-label={t().rowLabel({ row })} data-row={row} data-changed={changed() ? "true" : undefined}>
+                        <th scope="row">
+                          <span class="core-code-policy__row">
+                            {t().rowLabel({ row })}
+                            <Show when={changed()}>
+                              <StatusBadge tone="warning" variant="text" icon={null} label={t().changedMark} />
+                            </Show>
+                          </span>
+                          <span class="core-code-policy__sub">
+                            {t().rowExample({ row })} · {t().automationCount({ n: props.usage[row] ?? 0 })}
+                          </span>
+                        </th>
+                        <For each={columns()}>
+                          {(cell) => {
+                            const on = () => cellOf(draft(), props.groupId, row) === cell;
+                            return (
+                              <td data-label={cellLabel(cell)}>
+                                <span
+                                  role="radio"
+                                  class="core-code-policy__radio"
+                                  data-value={cell}
+                                  aria-checked={on() ? "true" : "false"}
+                                  aria-label={cellLabel(cell)}
+                                  aria-disabled={saving() ? "true" : undefined}
+                                  tabIndex={on() ? 0 : -1}
+                                  onClick={() => {
+                                    if (!saving()) edit(withCell(draft(), props.groupId, row, cell));
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (saving()) return;
+                                    if (event.key === " " || event.key === "Enter") {
+                                      event.preventDefault();
+                                      edit(withCell(draft(), props.groupId, row, cell));
+                                    } else keyDown(event, row);
+                                  }}
+                                />
+                              </td>
+                            );
+                          }}
+                        </For>
+                      </tr>
+                    );
+                  }}
+                </For>
+              </tbody>
+            )}
+          </For>
+        </table>
+      </Section>
+
+      <Show when={!props.groupId}>
+        <Section frame="line" title={t().alwaysHuman} count={askRows().length} description={t().alwaysHumanSub}>
+          <p class="core-code-policy__locked">
+            <For each={askRows()}>
+              {(row) => <StatusBadge tone="neutral" variant="chip" icon="ti ti-lock" label={t().rowLabel({ row })} />}
+            </For>
+          </p>
+        </Section>
+      </Show>
+
+      {/* The bar keeps its height when empty, so the table never moves when a change appears. */}
+      <div class="core-code-policy__bar" aria-live="polite">
         <Show when={status().kind === "conflict"}>
           <NoticeCard
             tone="warning"
-            icon="ti ti-git-merge"
+            icon="ti ti-users"
             title={t().conflictTitle}
             detail={
               <>
@@ -285,14 +365,15 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
         <Show when={status().kind === "unknown"}>
           <NoticeCard
             tone="warning"
-            title={t().unknownTitle}
+            icon="ti ti-alert-triangle"
+            title={t().policyUnknownTitle}
             detail={
               <>
                 <p>{t().unknownPolicySub}</p>
                 <div class="mt-2">
                   <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
                     <i class="ti ti-refresh" aria-hidden="true" />
-                    {t().showTheirs}
+                    {t().checkState}
                   </Button>
                 </div>
               </>
@@ -302,125 +383,63 @@ export default function CodePolicyEditor(props: CodePolicyEditorProps) {
         <Show when={status().kind === "failed"}>
           <NoticeCard
             tone="danger"
+            icon="ti ti-alert-circle"
             title={t().saveFailedTitle}
             detail={
               <>
                 <p>{t().saveFailedSub}</p>
-                <div class="mt-2">
-                  <Button size="sm" variant="secondary" disabled={!ready() || saving()} onClick={() => void save()}>
-                    <i class="ti ti-refresh" aria-hidden="true" />
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" disabled={!ready() || saving()} onClick={() => void save()}>
                     {t().retrySave}
+                  </Button>
+                  <Button size="sm" variant="secondary" disabled={saving()} onClick={() => edit(baseline())}>
+                    {t().discard}
                   </Button>
                 </div>
               </>
             }
           />
         </Show>
-
-        <Show when={!props.groupId}>
-          <div class="grid gap-1">
-            <SegmentedControl
-              label={t().presets}
-              options={presetOptions().map((option) => ({ value: option.value, label: option.label, icon: option.icon }))}
-              value={() => draft().preset}
-              onValueChange={(preset) => {
-                if (preset !== "custom") edit(codePolicyPreset(preset));
-              }}
-              disabled={saving()}
-            />
-            <p class="text-xs text-(--k2b-text-muted)">{presetOptions().find((option) => option.value === draft().preset)?.description}</p>
-          </div>
-        </Show>
-
-        <div class="@container grid gap-1" role="table" aria-label={props.groupId ? t().groupDeviates : t().standard}>
-          <For each={CODE_POLICY_ROW_GROUPS}>
-            {(group) => (
-              <div role="rowgroup" class="grid gap-1">
-                <div role="row">
-                  <span role="columnheader" class="block px-3 pt-3 pb-1 text-xs font-semibold text-(--k2b-text-muted)">
-                    {t()[group.key]}
-                  </span>
-                </div>
-                <For each={group.rows}>
-                  {(row) => {
-                    const changed = () => changedRows().includes(row);
-                    const before = () => cellOf(baseline(), props.groupId, row);
-                    return (
-                      <div
-                        role="row"
-                        class="grid grid-cols-1 items-center gap-2 rounded-lg px-3 py-2 @lg:grid-cols-[minmax(0,1fr)_max-content] @4xl:grid-cols-[minmax(0,1fr)_6rem_max-content]"
-                        classList={{ "bg-(--k2b-warning-surface)": changed() }}
-                        data-row={row}
-                        data-changed={changed() ? "true" : undefined}
-                      >
-                        <span role="cell" class="min-w-0">
-                          <span class="flex flex-wrap items-baseline gap-x-2">
-                            <span class="text-sm font-semibold">{t().rowLabel({ row })}</span>
-                            <code class="hidden text-xs text-(--k2b-text-muted) @3xl:inline">{codePolicyRowCode(row)}</code>
-                          </span>
-                          <span class="block text-xs text-(--k2b-text-muted)">
-                            <Show when={changed()}>
-                              <b class="font-semibold">{t().before({ value: cellLabel(before()) })}</b>
-                              {" · "}
-                            </Show>
-                            <span>{row.startsWith("ask_") ? t().unattendedUnavailable : t().rowExample({ row })}</span>
-                            <span class="@4xl:hidden"> · {t().usage({ n: props.usage[row] ?? 0 })}</span>
-                          </span>
-                        </span>
-                        <span role="cell" class="hidden text-xs text-(--k2b-text-muted) @4xl:block">
-                          {t().usage({ n: props.usage[row] ?? 0 })}
-                        </span>
-                        <span
-                          role="cell"
-                          class={props.groupId ? "block w-full @lg:w-[20rem] @3xl:w-[27rem]" : "block w-full @lg:w-[18rem] @3xl:w-[21rem]"}
-                        >
-                          <Show
-                            when={!row.startsWith("ask_")}
-                            fallback={<span class="text-sm font-medium">{t().value({ value: "never" })}</span>}
-                          >
-                            <SegmentedControl
-                              size="sm"
-                              ariaLabel={t().valueFor({ label: t().rowLabel({ row }) })}
-                              options={options()}
-                              value={() => cellOf(draft(), props.groupId, row)}
-                              onValueChange={(value) => edit(withCell(draft(), props.groupId, row, value))}
-                              disabled={saving()}
-                            />
-                          </Show>
-                        </span>
-                      </div>
-                    );
-                  }}
-                </For>
-              </div>
-            )}
-          </For>
-        </div>
-      </div>
-
-      {/* The bar keeps its height when empty, so the table never moves when a change appears. */}
-      <div class="sticky bottom-0 flex min-h-14 flex-wrap items-center gap-2 bg-(--k2b-surface) px-2 py-3" aria-live="polite">
-        <Show when={dirty()}>
-          <span class="text-sm">{t().changes({ n: changeCount() })}</span>
-          <span class="text-sm font-medium" classList={{ "text-(--k2b-warning-text)": (ready()?.result.total ?? 0) > 0 }}>
-            <Show
-              when={previewState() === "idle" && ready()?.result}
-              fallback={previewState() === "failed" ? t().previewFailed : t().checking}
-            >
-              {(result) => (
-                <>
-                  <i class="ti ti-player-pause" aria-hidden="true" /> {t().pauses({ n: result().total })}
-                </>
+        <Show when={dirty() && status().kind === "idle"}>
+          <div class="core-code-policy__changes">
+            <p class="core-code-policy__changes-title">{t().whatChanges}</p>
+            <For each={changeLines()}>
+              {(line) => (
+                <p class="core-code-policy__change">
+                  „{line.label}“: <s>{line.before}</s> <i class="ti ti-arrow-right" aria-hidden="true" /> <strong>{line.after}</strong>
+                </p>
               )}
-            </Show>
+            </For>
+            <p class="core-code-policy__affected" data-tone={(ready()?.result.total ?? 0) > 0 ? "warning" : undefined}>
+              <Show
+                when={previewState() === "idle" && ready()?.result}
+                fallback={previewState() === "failed" ? t().previewFailed : t().checking}
+              >
+                {(result) => (
+                  <Show when={result().total} fallback={t().pausesNone}>
+                    <i class="ti ti-player-pause" aria-hidden="true" /> {t().pausesNamed({ n: result().total })}{" "}
+                    <strong>
+                      {result()
+                        .items.map((item) => item.title)
+                        .join(", ")}
+                    </strong>
+                    <Show when={result().total > result().items.length}>
+                      {" "}
+                      {t().confirmMore({ n: result().total - result().items.length })}
+                    </Show>
+                  </Show>
+                )}
+              </Show>
+            </p>
+          </div>
+          <span class="core-code-policy__buttons">
+            <Button variant="secondary" disabled={saving()} onClick={() => edit(baseline())}>
+              {t().discard}
+            </Button>
+            <Button loading={saving()} disabled={!ready()} onClick={() => void save()}>
+              {(ready()?.result.total ?? 0) > 0 ? t().saveAndPause({ n: ready()?.result.total ?? 0 }) : t().saveNow}
+            </Button>
           </span>
-          <span class="flex-1" />
-          <Button variant="secondary" disabled={saving()} onClick={() => edit(baseline())}>
-            {t().discard}
-          </Button>
-          <Button loading={saving()} disabled={!ready()} onClick={() => void save()}>
-            {(ready()?.result.total ?? 0) > 0 ? t().save : t().saveNow}
-          </Button>
         </Show>
       </div>
     </div>
