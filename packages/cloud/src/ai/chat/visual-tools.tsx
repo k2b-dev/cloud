@@ -1,6 +1,18 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, MarkdownEditor, prompts, Slider, StatCell, type StatCellAccent, StatGrid, useLocale } from "@k2b/ui";
-import { createSignal, createUniqueId, For, Show } from "solid-js";
+import {
+  Button,
+  CheckboxCard,
+  ChoiceList,
+  MarkdownEditor,
+  prompts,
+  Slider,
+  StatCell,
+  type StatCellAccent,
+  StatGrid,
+  useLocale,
+} from "@k2b/ui";
+import { createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
+import { blockWords } from "../../blocks/messages";
 import { CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS, CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "../default-tool-contracts";
 import { isRecord, jsonPreview } from "./message-utils";
 import { aiChatMessages } from "./messages";
@@ -98,150 +110,126 @@ export function CloudSurveyBlock(props: {
   };
   const disabled = () => Boolean(props.disabled || submitted() || submission.loading() || !props.onSubmit);
 
+  // One question with options counts its choice in the foot, like a view's choice.
+  const counted = () => {
+    const list = questions();
+    const only = list.length === 1 ? list[0]! : undefined;
+    if (!only || (only.type !== "single" && only.type !== "multiple")) return undefined;
+    const value = answers()[String(only.id ?? "")];
+    return Array.isArray(value) ? value.length : value === undefined || value === "" ? 0 : 1;
+  };
+
+  // The same flat choice as a view's `Choice` block: no hull, the question in bold, options as flat cards with the 2 px
+  // edge that tint when chosen, then the state and one quiet answer button.
   return (
-    <div class="w-full min-w-0 overflow-hidden rounded-xl border border-[var(--k2b-border)] bg-[var(--k2b-surface)]">
-      <div class="p-4">
-        <div class="flex items-center gap-3">
-          <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--k2b-ai-accent)_10%,var(--k2b-surface))] text-base text-[var(--k2b-ai-accent)]">
-            <i class="ti ti-forms" aria-hidden="true" />
-          </span>
-          <div class="min-w-0">
-            <p class="truncate text-sm font-semibold text-primary">{String(survey()?.title ?? t().surveyKind)}</p>
-            <p class="text-xs text-dimmed">{t().surveyKind}</p>
-          </div>
-        </div>
-        <div class="min-w-0">
-          <Show when={typeof survey()?.description === "string"}>
-            <p class="mt-4 text-xs text-secondary">{String(survey()?.description)}</p>
-          </Show>
-
-          <div class="mt-4 space-y-4">
-            <For each={questions()}>
-              {(question, index) => {
-                const id = () => String(question.id ?? "");
-                // The answer key may hold spaces or repeat; the DOM label ID comes from the question's place instead.
-                const labelId = () => `${surveyId}-question-${index()}`;
-                const options = () => (Array.isArray(question.options) ? (question.options as unknown[]).filter(isRecord) : []);
-                return (
-                  <div>
-                    <p id={labelId()} class="text-xs font-medium text-primary">
-                      {String(question.label ?? "")}
-                      <Show when={question.required}>
-                        <span class="text-red-500"> *</span>
-                      </Show>
-                    </p>
-                    <Show when={question.type === "single"}>
-                      <div class="mt-2 grid gap-1.5" role="radiogroup" aria-labelledby={labelId()}>
-                        <For each={options()}>
-                          {(option) => (
-                            <label
-                              class="flex min-h-9 cursor-pointer items-center gap-2.5 rounded-lg border border-[var(--k2b-border)] px-3 py-2 text-xs text-secondary transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--k2b-focus-ring)]"
-                              classList={{
-                                "border-[var(--k2b-ai-accent)] text-primary": answers()[id()] === option.value,
-                                "cursor-not-allowed opacity-60": disabled(),
-                              }}
-                            >
-                              <input
-                                type="radio"
-                                name={`${surveyId}-${id()}`}
-                                value={String(option.value ?? "")}
-                                checked={answers()[id()] === option.value}
-                                disabled={disabled()}
-                                class="accent-[var(--k2b-ai-accent)]"
-                                onChange={() => setAnswer(id(), option.value)}
-                              />
-                              {String(option.label ?? option.value ?? "")}
-                            </label>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                    <Show when={question.type === "multiple"}>
-                      <div class="mt-2 grid gap-1.5" role="group" aria-labelledby={labelId()}>
-                        <For each={options()}>
-                          {(option) => (
-                            <label
-                              class="flex min-h-9 cursor-pointer items-center gap-2.5 rounded-lg border border-[var(--k2b-border)] px-3 py-2 text-xs text-secondary transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--k2b-focus-ring)]"
-                              classList={{
-                                "border-[var(--k2b-ai-accent)] text-primary":
-                                  Array.isArray(answers()[id()]) && (answers()[id()] as string[]).includes(String(option.value)),
-                                "cursor-not-allowed opacity-60": disabled(),
-                              }}
-                            >
-                              <input
-                                type="checkbox"
-                                disabled={disabled()}
-                                checked={Array.isArray(answers()[id()]) && (answers()[id()] as string[]).includes(String(option.value))}
-                                class="accent-[var(--k2b-ai-accent)]"
-                                onChange={(event) => toggleAnswer(id(), String(option.value), event.currentTarget.checked)}
-                              />
-                              {String(option.label ?? option.value ?? "")}
-                            </label>
-                          )}
-                        </For>
-                      </div>
-                    </Show>
-                    <Show when={question.type === "text"}>
-                      <input
-                        class="input mt-1 h-9 w-full text-sm"
-                        aria-labelledby={labelId()}
-                        disabled={disabled()}
-                        placeholder={typeof question.placeholder === "string" ? question.placeholder : ""}
-                        value={String(answers()[id()] ?? "")}
-                        onInput={(event) => setAnswer(id(), event.currentTarget.value)}
-                      />
-                    </Show>
-                    <Show when={question.type === "rating"}>
-                      <Slider
-                        class="mt-2"
-                        aria-label={String(question.label ?? "") || t().surveyKind}
-                        disabled={disabled()}
-                        min={typeof question.min === "number" ? question.min : 1}
-                        max={typeof question.max === "number" ? question.max : 5}
-                        value={() => Number(answers()[id()] ?? question.min ?? 1)}
-                        showValue={false}
-                        onValueChange={(value) => setAnswer(id(), value)}
-                      />
-                    </Show>
+    <section class="cloud-blocks__choice w-full min-w-0" aria-labelledby={`${surveyId}-title`}>
+      <p class="cloud-blocks__question" id={`${surveyId}-title`}>
+        {String(survey()?.title ?? t().surveyKind)}
+      </p>
+      <Show when={typeof survey()?.description === "string"}>
+        <p class="cloud-blocks__hint">{String(survey()?.description)}</p>
+      </Show>
+      <div class="mt-2 space-y-4">
+        <For each={questions()}>
+          {(question, index) => {
+            const id = () => String(question.id ?? "");
+            // The answer key may hold spaces or repeat; the DOM label ID comes from the question's place instead.
+            const labelId = () => `${surveyId}-question-${index()}`;
+            const options = () => (Array.isArray(question.options) ? (question.options as unknown[]).filter(isRecord) : []);
+            const chosen = () => (Array.isArray(answers()[id()]) ? (answers()[id()] as string[]) : []);
+            return (
+              <div class="grid gap-2">
+                <p id={labelId()} class="text-xs font-medium text-primary">
+                  {String(question.label ?? "")}
+                  <Show when={question.required}>
+                    <span class="text-[var(--k2b-danger-text)]"> *</span>
+                  </Show>
+                </p>
+                <Show when={question.type === "single"}>
+                  <ChoiceList
+                    aria-label={String(question.label ?? "") || String(survey()?.title ?? t().surveyKind)}
+                    value={answers()[id()] === undefined ? null : String(answers()[id()])}
+                    disabled={disabled()}
+                    options={options().map((option) => ({
+                      value: String(option.value ?? ""),
+                      label: String(option.label ?? option.value ?? ""),
+                    }))}
+                    onValueChange={(value) =>
+                      setAnswer(id(), options().find((option) => String(option.value ?? "") === value)?.value ?? value)
+                    }
+                  />
+                </Show>
+                <Show when={question.type === "multiple"}>
+                  <div class="cloud-survey__checks" role="group" aria-labelledby={labelId()}>
+                    <For each={options()}>
+                      {(option) => (
+                        <CheckboxCard
+                          label={String(option.label ?? option.value ?? "")}
+                          value={chosen().includes(String(option.value))}
+                          disabled={disabled()}
+                          onValueChange={(on) => toggleAnswer(id(), String(option.value), on)}
+                        />
+                      )}
+                    </For>
                   </div>
-                );
-              }}
-            </For>
-          </div>
-
-          <Show when={error()}>
-            <p class="mt-2 text-xs text-red-600 dark:text-red-300">{error()}</p>
-          </Show>
-        </div>
+                </Show>
+                <Show when={question.type === "text"}>
+                  <input
+                    class="input h-9 w-full text-sm"
+                    aria-labelledby={labelId()}
+                    disabled={disabled()}
+                    placeholder={typeof question.placeholder === "string" ? question.placeholder : ""}
+                    value={String(answers()[id()] ?? "")}
+                    onInput={(event) => setAnswer(id(), event.currentTarget.value)}
+                  />
+                </Show>
+                <Show when={question.type === "rating"}>
+                  <Slider
+                    aria-label={String(question.label ?? "") || t().surveyKind}
+                    disabled={disabled()}
+                    min={typeof question.min === "number" ? question.min : 1}
+                    max={typeof question.max === "number" ? question.max : 5}
+                    value={() => Number(answers()[id()] ?? question.min ?? 1)}
+                    showValue={false}
+                    onValueChange={(value) => setAnswer(id(), value)}
+                  />
+                </Show>
+              </div>
+            );
+          }}
+        </For>
       </div>
-      <footer class="flex min-h-12 items-center gap-3 px-4 pb-3">
-        <Show when={submitted()}>
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-secondary">
-            <i class="ti ti-check text-[var(--k2b-ai-accent)]" aria-hidden="true" />
-            {t().surveySubmitted}
-          </span>
-        </Show>
-        <Show
-          when={!props.disabled && !submitted() && props.onSubmit}
-          fallback={
-            <Show when={!submitted()}>
-              <p class="ml-auto text-xs text-dimmed">{props.disabledLabel ?? t().surveyWaiting}</p>
-            </Show>
-          }
-        >
-          <Button
-            variant="ai"
-            size="sm"
-            class="ml-auto"
-            loading={submission.loading()}
-            loadingLabel={t().answerSubmitting}
-            onClick={() => void submit()}
-          >
+      <div class="cloud-blocks__choice-foot">
+        <Switch fallback={<span />}>
+          <Match when={error()}>
+            <span class="cloud-blocks__choice-state" role="alert" data-tone="error">
+              {error()}
+            </span>
+          </Match>
+          <Match when={submitted()}>
+            <span class="cloud-blocks__choice-state" data-tone="done">
+              <i class="ti ti-circle-check" aria-hidden="true" />
+              {t().surveySubmitted}
+            </span>
+          </Match>
+          <Match when={props.disabled || !props.onSubmit}>
+            <span class="cloud-blocks__choice-state">
+              <i class="ti ti-clock" aria-hidden="true" />
+              {props.disabledLabel ?? t().surveyWaiting}
+            </span>
+          </Match>
+          <Match when={counted() !== undefined}>
+            <span class="cloud-blocks__choice-state">{blockWords(locale()).chosenCount({ count: counted()! })}</span>
+          </Match>
+        </Switch>
+        <Show when={!props.disabled && !submitted() && props.onSubmit}>
+          <Button variant="secondary" loading={submission.loading()} loadingLabel={t().answerSubmitting} onClick={() => void submit()}>
+            <i class="ti ti-check" aria-hidden="true" />
             {String(survey()?.submitLabel ?? t().surveySubmit)}
           </Button>
         </Show>
-      </footer>
-    </div>
+      </div>
+    </section>
   );
 }
 
