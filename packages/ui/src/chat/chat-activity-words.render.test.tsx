@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
@@ -51,7 +51,19 @@ test("the server renders exactly one word, the one for its time, silent beside o
     const slot = html.match(/<span class="k2b-chat-activity__words" aria-hidden="true">([\s\S]*?)<\/span><\/span>/)?.[1] ?? "";
     expect((slot.match(/k2b-chat-activity__word"/g) ?? []).length, String(elapsedMs)).toBe(1);
     expect(slot.match(/data-phase="still">([^<]*)/)?.[1], String(elapsedMs)).toBe(word);
+    // The resting first word is in the server's HTML too; only the stylesheet decides which of the two shows.
+    expect(slot.match(/k2b-chat-activity__word-rest">([^<]*)/)?.[1], String(elapsedMs)).toBe(FIRST);
     expect(html.match(/role="status"/g)?.length).toBe(1);
     expect(html).toContain(">Gustav denkt nach<");
   }
+});
+
+test("with reduced motion the stylesheet alone shows the resting first word and hides the changing one", () => {
+  const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
+  expect(css).toContain(".k2b-ui .k2b-chat-activity__word-rest {\n  display: none;\n}");
+  expect(css).toContain(
+    "@media (prefers-reduced-motion: reduce) {\n  .k2b-ui .k2b-chat-activity__word-rest {\n    display: inline;\n  }\n\n  .k2b-ui .k2b-chat-activity__word {\n    display: none;\n  }\n}",
+  );
+  expect(css).toContain(':where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity__word-rest {\n  display: inline;\n}');
+  expect(css).toContain(':where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity__word {\n  display: none;\n}');
 });

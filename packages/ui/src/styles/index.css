@@ -14976,9 +14976,34 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   vertical-align: top;
 }
 
-.k2b-ui .k2b-chat-activity__word {
+.k2b-ui .k2b-chat-activity__word,
+.k2b-ui .k2b-chat-activity__word-rest {
   grid-area: 1 / 1;
   white-space: nowrap;
+}
+
+/* The resting first word stands in for the changing one only with reduced motion, by the stylesheet alone, so the
+   server's HTML and the first frame already agree. */
+.k2b-ui .k2b-chat-activity__word-rest {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-chat-activity__word-rest {
+    display: inline;
+  }
+
+  .k2b-ui .k2b-chat-activity__word {
+    display: none;
+  }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity__word-rest {
+  display: inline;
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity__word {
+  display: none;
 }
 
 .k2b-ui .k2b-chat-activity__word[data-phase="out"] {

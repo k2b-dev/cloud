@@ -72,11 +72,14 @@ const open = async (width: number, reducedMotion: "reduce" | "no-preference" = "
 /** Every word element in the place, with its phase and opacity, and the box of the time beside it. */
 const sample = (page: Page) =>
   page.evaluate(() => {
-    const words = [...document.querySelectorAll<HTMLElement>(".k2b-chat-activity__word")].map((node) => ({
-      text: node.textContent,
-      phase: node.dataset.phase,
-      opacity: Number(getComputedStyle(node).opacity),
-    }));
+    // Every word in the place that the page shows: the changing word and the resting first word, if visible.
+    const words = [...document.querySelectorAll<HTMLElement>(".k2b-chat-activity__word, .k2b-chat-activity__word-rest")]
+      .filter((node) => getComputedStyle(node).display !== "none")
+      .map((node) => ({
+        text: node.textContent,
+        phase: node.dataset.phase,
+        opacity: Number(getComputedStyle(node).opacity),
+      }));
     const time = document.querySelector(".k2b-chat-activity__trailing")!.getBoundingClientRect();
     const row = document.querySelector(".k2b-chat-activity__row")!.getBoundingClientRect();
     return { words, time: [time.left, time.top, time.width, time.height], row: [row.left, row.top, row.width, row.height] };
@@ -138,10 +141,11 @@ describe("Chat.Activity.Words in the browser", () => {
   );
 
   test(
-    "with reduced motion the first word stays and only the seconds count on",
+    "with reduced motion the first word stands from the first frame and only the seconds count on",
     async () => {
       const page = await open(1440, "reduce");
       try {
+        expect((await sample(page)).words.map((word) => word.text)).toEqual([FIRST]);
         await page.clock.runFor(30_000);
         expect((await sample(page)).words.map((word) => word.text)).toEqual([FIRST]);
       } finally {

@@ -94,14 +94,15 @@ else {
     view.close();
   });
 
-  test("reduced motion keeps the first word", async () => {
-    const view = await mount(5_400, { reduced: true });
+  test("reduced motion changes nothing; the resting first word is there from the first frame", async () => {
+    const view = await mount(2_950, { reduced: true });
     try {
-      // The first frame matches the server, which cannot know the setting; right after it the first word stands.
-      await wait(0);
-      expect(view.words()).toEqual([FIRST]);
-      await wait(150);
-      expect(view.words()).toEqual([FIRST]);
+      const rest = () => view.dom.root.querySelector(".k2b-chat-activity__word-rest")?.textContent;
+      expect(rest()).toBe(FIRST);
+      await wait(250);
+      // No fade starts: the stylesheet shows the resting word, and the hidden word does not churn.
+      expect(view.dom.root.querySelector(".k2b-chat-activity__word")?.getAttribute("data-phase")).toBe("still");
+      expect(rest()).toBe(FIRST);
     } finally {
       view.close();
     }

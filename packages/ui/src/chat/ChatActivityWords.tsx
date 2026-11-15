@@ -30,7 +30,8 @@ export const chatActivityWordAt = (first: string, words: readonly string[], elap
 
 /**
  * A word in a running activity label that changes with time, one word in its place at any moment: the old word fades out
- * completely, only then the next fades in. Reduced motion keeps `first`. A pointer or the focus on the row holds the word;
+ * completely, only then the next fades in. With reduced motion the stylesheet shows a resting `first` instead, from the
+ * server's HTML on, and nothing changes. A pointer or the focus on the row holds the word;
  * a hidden tab changes nothing and shows the word of the current time on return, without catching up. Place it in the
  * label of `Chat.Activity`; the host owns the words and the clock, this owns the timing and the announcement.
  */
@@ -57,11 +58,11 @@ export function ChatActivityWords(props: ChatActivityWordsProps): JSX.Element {
     let tickTimer: ReturnType<typeof setTimeout> | undefined;
     let swapTimer: ReturnType<typeof setTimeout> | undefined;
     const row = slot?.closest(".k2b-chat-activity") ?? slot;
-    /** Shows the word of the current time at once, without a fade; reduced motion keeps the first word. */
+    /** Shows the word of the current time at once, without a fade. */
     const settle = () => {
       clearTimeout(swapTimer);
       setPhase("still");
-      setShown(prefersReducedMotion() ? props.first : wordAt(elapsedNow()));
+      setShown(wordAt(elapsedNow()));
     };
     const schedule = () => {
       clearTimeout(tickTimer);
@@ -105,7 +106,6 @@ export function ChatActivityWords(props: ChatActivityWordsProps): JSX.Element {
     row?.addEventListener("focusout", release);
     document.addEventListener("visibilitychange", visibility);
     base = { elapsed: props.elapsedMs, at: now() };
-    if (prefersReducedMotion()) setShown(props.first);
     schedule();
     onCleanup(() => {
       clearTimeout(tickTimer);
@@ -121,6 +121,9 @@ export function ChatActivityWords(props: ChatActivityWordsProps): JSX.Element {
   return (
     <>
       <span ref={slot} class="k2b-chat-activity__words" aria-hidden="true">
+        {/* With reduced motion the stylesheet shows this resting first word instead of the changing one, already in
+            the server's HTML, so the first frame never jumps. */}
+        <span class="k2b-chat-activity__word-rest">{props.first}</span>
         <span
           class="k2b-chat-activity__word"
           data-phase={phase()}
