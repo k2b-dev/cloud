@@ -477,7 +477,7 @@
   font-weight: 600;
   color: var(--k2b-ai-accent, var(--k2b-text));
 }
-.core-code-review__link {
+.k2b-ui .core-code-review__link {
   font-size: var(--k2b-type-13, 0.8125rem);
 }
 .core-code-review__overview-threads {
