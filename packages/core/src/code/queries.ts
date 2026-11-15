@@ -5,7 +5,7 @@ import { type CodeContext, CodeDataError, CodeOwnerUnavailableError } from "./ac
 import { CodeJobError } from "./job-errors";
 import { CodeVersionDecisionError, CodeVersionError } from "./versions";
 
-const contextFor = (context: CapabilityExecutionContext): CodeContext => {
+const contextFor = (context: CapabilityExecutionContext, readOnly: boolean): CodeContext => {
   if (!context.authority) throw new CodeDataError("FORBIDDEN", "Code requires request authority.");
   return {
     authority: context.authority,
@@ -13,13 +13,15 @@ const contextFor = (context: CapabilityExecutionContext): CodeContext => {
     signal: context.signal,
     requestId: context.requestId,
     query: context.query,
-    // One query invocation may ask another app once; its permission checks share that one owner read.
-    ownerReads: new Map(),
+    // A read-only query may ask another app once; its permission checks share that one owner read. Actions never share
+    // it: every check before and inside their writes asks again.
+    ...(readOnly ? { ownerReads: new Map() } : {}),
   };
 };
-export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: (context: CodeContext) => Promise<T>) {
+/** `readOnly`: a Query that writes nothing; only such calls share one owner read across their permission checks. */
+export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: (context: CodeContext) => Promise<T>, readOnly = false) {
   try {
-    const data = await run(contextFor(context));
+    const data = await run(contextFor(context, readOnly));
     const next = data && typeof data === "object" && "nextCursor" in data ? data.nextCursor : undefined;
     return ok({ data, ...(typeof next === "string" || next === null ? { page: capabilityPage(next) } : {}) });
   } catch (error) {
