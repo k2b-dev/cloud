@@ -205,20 +205,21 @@ const scenes: Record<string, () => JSX.Element> = {
       { kind: "chip", chip: { kind: "object", title: "Code von info@" } },
       { kind: "text", text: " einschalten?" },
     ];
-    const details = {
+    // A function: each frame draws its own list.
+    const details = () => ({
       label: "Details von Code · gegenüber Version 4",
       note: { text: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.", icon: "ti ti-info-circle" },
       content: (
         <ChangeList
           label="Änderungen"
           items={[
-            { tone: "added", label: "Läuft zusätzlich Mo–Fr um 08:00" },
-            { tone: "added", label: "Darf neu Dateien ablegen im Ordner Lieferscheine 2026" },
-            { tone: "removed", label: "Darf nicht mehr Unterhaltungen markieren im Postfach info@" },
+            { tone: "add", content: "Läuft zusätzlich Mo–Fr um 08:00" },
+            { tone: "add", content: "Darf neu Dateien ablegen im Ordner Lieferscheine 2026" },
+            { tone: "remove", content: "Darf nicht mehr Unterhaltungen markieren im Postfach info@" },
           ]}
         />
       ),
-    };
+    });
     return (
       <>
         <Label>Bereit</Label>
@@ -228,7 +229,7 @@ const scenes: Record<string, () => JSX.Element> = {
           source={code}
           sentence={sentence}
           reason={{ text: "Sie darf danach mehr als Version 4: Sie legt Dateien ab, die andere sehen.", icon: "ti ti-eye" }}
-          details={details}
+          details={details()}
           meta={[
             { text: "3 von 3 Beispielen erfolgreich", icon: "ti ti-circle-check", tone: "success" },
             { text: "Bis dahin bleibt Version 4 eingeschaltet", icon: "ti ti-history" },
@@ -243,7 +244,7 @@ const scenes: Record<string, () => JSX.Element> = {
           source={code}
           sentence={[...sentence.slice(0, 3), { kind: "text", text: " wartet auf die Freigabe eines Admins." }]}
           reason={{ text: "In eurer Cloud gibt ein Admin jede Automation frei, die etwas tut, das andere sehen.", icon: "ti ti-eye" }}
-          details={details}
+          details={details()}
           notes={[
             { text: "Die Admins wissen Bescheid. Du bekommst eine Mitteilung, sobald einer entschieden hat.", icon: "ti ti-bell" },
             { text: "Bis dahin bleibt Version 4 eingeschaltet. Du musst nichts tun.", icon: "ti ti-history" },

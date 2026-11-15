@@ -15051,10 +15051,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     justify-content: center;
   }
 
+  /* Under the full-width answers the facts wrap at the text edge instead of fading out at both ends. */
   .k2b-ui .k2b-chat-decision__meta {
     order: 2;
     flex-basis: 100%;
-    justify-content: center;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    white-space: normal;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .k2b-ui .k2b-chat-decision__fact {
+    flex: 0 1 auto;
+    min-width: 0;
   }
 }
 
