@@ -45,15 +45,20 @@ grants. Reading that administration grant does not require a write-scoped creden
 list, independently of Code editorship. Other people get access through
 explicit editor or reader shares. An editor can add or remove shares using
 the common access-entry model. Cloud administration provides reader visibility
-for all Code. Writing and reading run contents require ordinary editor rights,
+for all Code. Writing, reading source or bundles, comparing source versions, pulling source and reading run contents require ordinary editor rights,
 including for administrators. Resource readability alone does not grant access
 to its Code.
 
-| Permission | Code and version source | Run metadata | Run inputs, outputs and calls |
-| --- | --- | --- | --- |
-| Editor | Yes | Yes | Yes |
-| Reader | Yes | Yes | No |
-| No Code access | No | No | No |
+| Permission | Code and version metadata | Source, bundles and source differences | Run metadata | Run inputs, outputs and calls |
+| --- | --- | --- | --- | --- |
+| Editor | Yes | Yes | Yes | Yes |
+| Reader | Yes | No | Yes | No |
+| No Code access | No | No | No | No |
+
+A read-scoped credential can read source when its person has editor rights.
+Cloud administrators without those rights use only the separate, read-only
+administration source reader for approval review. Administration alone never
+permits source reads through the ordinary APIs or CLI.
 
 There are no reader shares by default. Service accounts of kind `code` cannot
 use the Code management Queries, including Queries about their own Code.

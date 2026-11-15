@@ -331,7 +331,7 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
             <span>{meta()}</span>
           </Show>
         </p>
-        <div class="k2b-lightbox__actions k2b-overlay-surface" role="group" aria-label={t().actions}>
+        <div class="k2b-lightbox__actions k2b-pill k2b-overlay-surface" role="group" aria-label={t().actions}>
           <Show when={item()?.open}>
             {(open) => (
               <Button size="sm" class="k2b-lightbox__open" onClick={() => open().onOpen()}>
@@ -371,7 +371,7 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
       </div>
       {/* The pill keeps its place for every file, so nothing moves; files without zoom or pages leave it hidden. */}
       <div class="k2b-lightbox__bar" style={{ visibility: zoomable(kind()) || pages() > 1 ? "visible" : "hidden" }}>
-        <Toolbar label={t().view} class="k2b-lightbox__tools k2b-overlay-surface">
+        <Toolbar label={t().view} class="k2b-lightbox__tools k2b-pill k2b-overlay-surface">
           <Toolbar.Action
             label={t().zoomOut}
             icon="ti ti-minus"

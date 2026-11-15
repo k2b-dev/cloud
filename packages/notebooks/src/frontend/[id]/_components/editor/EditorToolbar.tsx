@@ -273,7 +273,7 @@ export default function EditorToolbar(props: Props) {
       editor={props.editor}
       label={t().formatting}
       class="notebooks-editor-toolbar text-base text-dimmed"
-      mainClass="notebooks-editor-pill notebooks-editor-pill--format"
+      mainClass="k2b-pill notebooks-editor-pill notebooks-editor-pill--format"
       toolsClass="notebooks-editor-toolbar__tools no-scrollbar min-w-0 flex-1 overflow-x-auto"
       liftAboveKeyboard
       groups={[
@@ -339,7 +339,7 @@ export default function EditorToolbar(props: Props) {
       dictation={props.dictation ? { source: props.dictation } : undefined}
       start={<NavigationButton />}
       end={
-        <div class="notebooks-editor-pill notebooks-editor-pill--page">
+        <div class="k2b-pill notebooks-editor-pill notebooks-editor-pill--page">
           <Show when={showDisconnected()}>
             <span class="flex shrink-0 items-center gap-1 text-xs" role="status">
               <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />

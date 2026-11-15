@@ -116,6 +116,20 @@ export type CodeTestCase = z.infer<typeof CodeTestCaseSchema>;
 export type CodeTestCall = z.infer<typeof CodeTestCallSchema>;
 export type CodeTestRun = z.infer<typeof CodeTestRunSchema>;
 
+/** Four assertion fields, each with a bounded pair; full values remain in calls/value. */
+export const CodeTestDifferenceSchema = z.strictObject({
+  path: z.enum(["ok", "error", "value", "calls"]),
+  expected: z.string().max(240),
+  actual: z.string().max(240),
+});
+export function codeTestDifference(path: z.infer<typeof CodeTestDifferenceSchema>["path"], expected: unknown, actual: unknown) {
+  const preview = (value: unknown) => {
+    const text = JSON.stringify(value) ?? "null";
+    return text.length <= 240 ? text : `${text.slice(0, 239)}…`;
+  };
+  return { path, expected: preview(expected), actual: preview(actual) };
+}
+
 /** Stable version-1 CLI/chat wire result. No durations, process IDs, random IDs, stacks or credentials. */
 export const CodeTestResultSchema = z
   .object({
@@ -156,6 +170,7 @@ export const CodeTestResultSchema = z
                 calls: z.array(CodeTestCallSchema),
                 /** Paths of failed assertions, without duplicating potentially large values. */
                 failures: z.array(z.string()),
+                differences: z.array(CodeTestDifferenceSchema).max(4).optional(),
               })
               .strict(),
           ),
