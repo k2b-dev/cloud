@@ -62,8 +62,6 @@ export type CodeAreaData = {
   code: Loaded<CodeAdminCodeDetail>;
   /** Open reports on the selected automation's pages. */
   reports?: Loaded<CodePageReportPage>;
-  /** One version's source, read-only, when the URL selects it. */
-  source: Loaded<CodeAdminVersionSource>;
   policy: Loaded<CodeAdminPolicy>;
   effective: Loaded<CodeAdminEffective>;
   history: Loaded<CodeAdminPolicyChange[]>;

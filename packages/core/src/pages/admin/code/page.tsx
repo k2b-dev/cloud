@@ -73,10 +73,6 @@ export default ssr<AuthContext>(async (c) => {
             : null,
         code: sec === "code" && query.id ? await attempt(() => readCodeAdminCode(query.id ?? "", context)) : null,
         reports: sec === "code" && query.id ? await attempt(() => listCodePageReports({ codeId: query.id ?? "" }, context)) : null,
-        source:
-          sec === "code" && query.id && query.version
-            ? await attempt(() => readCodeAdminVersionSource(query.id ?? "", query.version ?? "", context))
-            : null,
         policy: sec === "policy" || sec === "groups" || sec === "effective" ? await attempt(() => readCodeAdminPolicy(context)) : null,
         effective: sec === "effective" && query.id ? await attempt(() => readCodeAdminEffective(query.id ?? "", context)) : null,
         history: sec === "history" ? await attempt(() => readCodeAdminPolicyHistory(context)) : null,
