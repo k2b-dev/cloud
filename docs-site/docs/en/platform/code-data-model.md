@@ -107,13 +107,18 @@ same Code.
   chat: null
     | { state: "available"; id: string; title: string;
         project: { id: string; title: string } | null; href: string }
-    | { state: "unavailable" }
+    | { state: "unavailable"; reason: "archived" | "deleted";
+        id?: string; title?: string }
     | { state: "hidden" };
 }
 ```
 
 `null` means no binding. The owner receives an available chat's short ID, title,
-Project and open link, or `unavailable` for an archived or deleted chat. Other
+Project and open link. An archived chat returns `unavailable` with
+`reason: "archived"`, its short `id` and `title`, so the owner can offer
+“Restore chat” through `POST /api/ai/conversations/:id/restore`.
+A deleted chat returns `unavailable` with `reason: "deleted"` and no identity
+or title. If the optional AI schema is absent, it also counts as deleted. Other
 readers receive `hidden` for a bound chat, without its title, ID or Project.
 Project metadata appears only while the caller can read that Project;
 otherwise `project` is `null` even for the chat owner.

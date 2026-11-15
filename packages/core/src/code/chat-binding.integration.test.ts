@@ -208,6 +208,9 @@ databaseSuite()("personal Code chat binding", () => {
   test("archived and deleted chats fail before dispatch and supply one recoverable waiting entry plus live attention", async () => {
     const destination = await chat("Missing433");
     const item = await code("Morning report", destination);
+    const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${editor}::uuid,'read') RETURNING id`;
+    if (!grant) throw new Error("Missing reader grant");
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${item.id},${grant.id}::uuid)`;
     const version = await createCodeVersion(
       {
         codeId: item.id,
@@ -219,7 +222,18 @@ databaseSuite()("personal Code chat binding", () => {
       context(),
     );
     await sql`UPDATE ai.conversations SET archived_at=${fixed} WHERE id=${destination}::uuid`;
-    expect(await readCodeChatBinding({ codeId: item.id }, context())).toMatchObject({ chat: { state: "unavailable" } });
+    expect((await readCodeChatBinding({ codeId: item.id }, context())).chat).toEqual({
+      state: "unavailable",
+      reason: "archived",
+      id: "Missing433",
+      title: "Chat Missing433",
+    });
+    expect(await readCodeChatBinding({ codeId: item.id }, context(editor))).toEqual({
+      codeId: item.id,
+      revision: 1,
+      canChange: false,
+      chat: { state: "hidden" },
+    });
     await expect(resolveCodeBoundChat(item.id)).rejects.toMatchObject({ code: "chat_unavailable" });
     expect(await codeChatMissing(item.id)).toBe(true);
     expect((await readCodeAttention({ owner: item.owner }, context())).items).toContainEqual({
@@ -241,9 +255,15 @@ databaseSuite()("personal Code chat binding", () => {
       }),
     ]);
     await sql`UPDATE ai.conversations SET archived_at=NULL WHERE id=${destination}::uuid`;
+    expect(await readCodeChatBinding({ codeId: item.id }, context())).toMatchObject({
+      revision: 1,
+      chat: { state: "available", id: "Missing433" },
+    });
     expect(await codeChatMissing(item.id)).toBe(false);
     expect((await waiting()).items.some((row) => row.id === `code-attention:${item.id}`)).toBe(false);
     await sql`DELETE FROM ai.conversations WHERE id=${destination}::uuid`;
+    expect((await readCodeChatBinding({ codeId: item.id }, context())).chat).toEqual({ state: "unavailable", reason: "deleted" });
+    expect((await readCodeChatBinding({ codeId: item.id }, context(editor))).chat).toEqual({ state: "hidden" });
     await expect(resolveCodeBoundChat(item.id)).rejects.toMatchObject({ code: "chat_unavailable" });
     expect(await codeChatMissing(item.id)).toBe(true);
   });

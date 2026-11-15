@@ -23,7 +23,13 @@ export const CodeChatBindingSchema = z.strictObject({
         project: z.strictObject({ id: z.string(), title: z.string() }).nullable(),
         href: z.string(),
       }),
-      z.strictObject({ state: z.literal("unavailable") }),
+      z.strictObject({
+        state: z.literal("unavailable"),
+        reason: z.literal("archived"),
+        id: z.string().optional(),
+        title: z.string().optional(),
+      }),
+      z.strictObject({ state: z.literal("unavailable"), reason: z.literal("deleted") }),
       z.strictObject({ state: z.literal("hidden") }),
     ])
     .nullable(),
@@ -89,25 +95,25 @@ async function presentBinding(row: BindingRow, context: CodeContext, db: SQL): P
   const base = { codeId: row.id, revision: row.chat_binding_revision, canChange };
   if (!row.chat_conversation_id) return { ...base, chat: null };
   if (!canChange) return { ...base, chat: { state: "hidden" } };
-  if (!(await codeChatSchemaAvailable(db))) return { ...base, chat: { state: "unavailable" } };
-  const [chat] = await db<{ short_id: string; title: string; project_id: string | null }[]>`
-    SELECT chat.short_id,chat.title,chat.project_id
+  if (!(await codeChatSchemaAvailable(db))) return { ...base, chat: { state: "unavailable", reason: "deleted" } };
+  const [chat] = await db<{ short_id: string; title: string; project_id: string | null; archived_at: Date | null }[]>`
+    SELECT chat.short_id,chat.title,chat.project_id,chat.archived_at
     FROM ai.conversations chat
-    WHERE chat.id=${row.chat_conversation_id}::uuid AND chat.created_by_user_id=${row.owner_user_id}::uuid AND chat.archived_at IS NULL`;
-  const project = chat?.project_id
+    WHERE chat.id=${row.chat_conversation_id}::uuid AND chat.created_by_user_id=${row.owner_user_id}::uuid`;
+  if (!chat) return { ...base, chat: { state: "unavailable", reason: "deleted" } };
+  if (chat.archived_at) return { ...base, chat: { state: "unavailable", reason: "archived", id: chat.short_id, title: chat.title } };
+  const project = chat.project_id
     ? await aiProjects.get(chat.project_id, { actor: context.authority.actor, accessSubject: context.authority.accessSubject })
     : null;
   return {
     ...base,
-    chat: chat
-      ? {
-          state: "available",
-          id: chat.short_id,
-          title: chat.title,
-          project: project ? { id: project.shortId, title: project.name } : null,
-          href: `/app/assistant?conversation=${encodeURIComponent(chat.short_id)}`,
-        }
-      : { state: "unavailable" },
+    chat: {
+      state: "available",
+      id: chat.short_id,
+      title: chat.title,
+      project: project ? { id: project.shortId, title: project.name } : null,
+      href: `/app/assistant?conversation=${encodeURIComponent(chat.short_id)}`,
+    },
   };
 }
 export async function readCodeChatBinding(input: z.infer<typeof codeChatBindingContracts.read.input>, context: CodeContext) {

@@ -40,12 +40,24 @@ test("only personal ownership permits changing the chat, independently of editor
   }
 });
 
-test("hidden and unavailable bindings carry no chat identity or title", () => {
-  for (const state of ["hidden", "unavailable"] as const) {
-    const base = { codeId: "c_1234", revision: 1, canChange: false, chat: { state } };
+test("hidden and deleted bindings carry no chat identity or title", () => {
+  for (const chat of [{ state: "hidden" }, { state: "unavailable", reason: "deleted" }]) {
+    const base = { codeId: "c_1234", revision: 1, canChange: false, chat };
     expect(CodeChatBindingSchema.parse(base)).toEqual(base);
-    expect(CodeChatBindingSchema.safeParse({ ...base, chat: { state, title: "Private chat" } }).success).toBe(false);
+    for (const field of [{ title: "Private chat" }, { id: "cHt234" }])
+      expect(CodeChatBindingSchema.safeParse({ ...base, chat: { ...chat, ...field } }).success).toBe(false);
   }
+});
+
+test("unavailable bindings require a reason and archived bindings may identify the restorable chat", () => {
+  const base = { codeId: "c_1234", revision: 1, canChange: true };
+  const archived = { state: "unavailable", reason: "archived", id: "cHt234", title: "Morning report" };
+  expect(CodeChatBindingSchema.parse({ ...base, chat: archived }).chat).toEqual(archived);
+  expect(CodeChatBindingSchema.parse({ ...base, chat: { state: "unavailable", reason: "archived" } }).chat).toEqual({
+    state: "unavailable",
+    reason: "archived",
+  });
+  expect(CodeChatBindingSchema.safeParse({ ...base, chat: { state: "unavailable" } }).success).toBe(false);
 });
 
 test.each(["de", "en"])("a missing chat has a visible recovery notice in %s", (locale) => {
