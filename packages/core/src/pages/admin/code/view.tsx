@@ -60,7 +60,7 @@ export type CodeAreaData = {
   code: Loaded<CodeAdminCodeDetail>;
   policy: Loaded<CodeAdminPolicy>;
   effective: Loaded<CodeAdminEffective>;
-  history: Loaded<CodeAdminPolicyChange[]>;
+  history: Loaded<{ items: CodeAdminPolicyChange[]; nextPage: number | null }>;
   databases?: Loaded<{ items: UnusedCodeDatabase[]; nextCursor: string | null }>;
   cleanup: Loaded<{ items: CodeCleanupJob[]; nextCursor: string | null }>;
   runners: Loaded<CodeRunnerMetrics>;
@@ -420,7 +420,7 @@ export function CodeAreaView(props: Props) {
                         ) : (
                           <StatusBadge tone="neutral" variant="chip" icon="ti ti-x" label={r.rejectedBy({ who })} />
                         ),
-                      when: when(entry.decidedAt),
+                      when: ago(entry.decidedAt),
                     });
                   }}
                 </For>
@@ -938,7 +938,8 @@ export function CodeAreaView(props: Props) {
   };
 
   const historySection = (): JSX.Element => {
-    const entries = data.history;
+    const loaded = data.history;
+    const entries = ok(loaded) ? loaded.items : loaded;
     if (!ok(entries))
       return (
         <Placeholder
@@ -1001,6 +1002,14 @@ export function CodeAreaView(props: Props) {
               </For>
             </ol>
           </Section>
+          <Show when={ok(loaded) ? loaded.nextPage : null}>
+            {(next) => (
+              <ButtonLink variant="secondary" size="sm" href={codeAreaHref({ sec: "history", after: String(next()) })}>
+                <i class="ti ti-chevron-down" aria-hidden="true" />
+                {t.olderChanges}
+              </ButtonLink>
+            )}
+          </Show>
         </Show>
       </div>
     );
@@ -1295,6 +1304,7 @@ export function CodeAreaView(props: Props) {
       {isWideCodeSection(section) ? (
         <AppWorkspace.MainPane
           id="section"
+          heading="page"
           label={section === "approvals" ? approvalHeadTitle() : sectionLabel}
           description={section === "approvals" ? approvalHeadSub() : sectionDescription()}
           lead={section === "approvals" && query.id ? approvalLead() : undefined}

@@ -4629,14 +4629,15 @@
     width: 2rem;
     height: 1.75rem;
     font-size: 0.875rem;
-    color: var(--k2b-text-muted);
+    color: var(--k2b-text-subtle, var(--k2b-text-muted));
     background: transparent;
-    opacity: 1;
+    opacity: 0.6;
   }
 
   .k2b-ui .k2b-code-diff__action:is(:active, :focus-visible) {
     color: #ffffff;
     background: var(--k2b-action-solid);
+    opacity: 1;
   }
 
   .k2b-ui .k2b-code-diff__noted {

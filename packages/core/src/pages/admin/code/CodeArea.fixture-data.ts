@@ -930,7 +930,7 @@ export const fixtureData = (): CodeAreaData => ({
   code: null,
   policy: fixturePolicy(),
   effective: null,
-  history: fixtureHistory(),
+  history: { items: fixtureHistory(), nextPage: null },
   databases: {
     items: [
       {
@@ -1014,7 +1014,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       codes: { items: [], total: 0, owners: 0, nextCursor: null },
       databases: { items: [], nextCursor: null },
       cleanup: { items: [], nextCursor: null },
-      history: [],
+      history: { items: [], nextPage: null },
       runners: fixtureRunners(true),
       policy: data.policy !== null && data.policy !== "failed" && data.policy !== "missing" ? { ...data.policy, groups: [] } : data.policy,
     };
@@ -1052,6 +1052,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
     ];
     data.approval = state === "missing" ? "missing" : fixtureApprovalDetail(variants.find((entry) => entry === variant) ?? "normal");
   }
+  if (state === "long" && query.sec === "history") data.history = { items: [...fixtureHistory(), ...fixtureHistory()], nextPage: 2 };
   if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
   if (query.sec === "code" && query.status) {
     const codes = data.codes;

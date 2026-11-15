@@ -474,7 +474,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const [file, setFile] = createSignal<string>();
 
   const codeField = (view: "code" | "diff") => (
-    <section class="core-code-review__field" aria-label={t().codeLabel} data-code-source-region="admin-approval">
+    <Section frame="line" title={t().codeLabel} class="core-code-review__field" data-code-source-region="admin-approval">
       <CodeDiff
         files={view === "code" ? codeFiles() : diffFiles()}
         file={file()}
@@ -504,7 +504,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         <i class="ti ti-lock" aria-hidden="true" />
         <span>{closed() ? t().footDecided : t().footOpen}</span>
       </p>
-    </section>
+    </Section>
   );
 
   // ---------- Approval ----------
@@ -867,7 +867,8 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         actions={
           <span class="core-code-review__ai-mark">
             <i class="ti ti-sparkles" aria-hidden="true" />
-            {model?.modelLabel ?? t().aiMark}
+            {/* The read model's label may bring its own sign; the mark draws it once. */}
+            {(model?.modelLabel ?? t().aiMark).replace(/^\s*✦\s*/, "")}
           </span>
         }
       >
@@ -935,8 +936,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const mayDo = () => {
     const model = props.readModel;
     if (!model) return null;
+    // Two automations with the same wording (two pages for members, say) read as one line.
     const rows = (items: readonly { text: string; note?: string }[]) => (
-      <For each={items}>
+      <For each={items.filter((row, index) => items.findIndex((other) => other.text === row.text && other.note === row.note) === index)}>
         {(row) => (
           <span class="core-code-review__may-row">
             {row.text}

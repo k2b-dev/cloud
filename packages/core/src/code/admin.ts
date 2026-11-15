@@ -963,8 +963,20 @@ const PolicyAuditSchema = z.object({
 
 /** Policy history from the existing audit entries of `core.code.policy.updated`; Code keeps no own history store. */
 export async function readCodeAdminPolicyHistory(context: CodeContext, limit = 10): Promise<CodeAdminPolicyChange[]> {
+  return (await readCodeAdminPolicyHistoryPage(context, { limit })).items;
+}
+
+/** One page of policy changes, newest first; `nextPage` is the page with older changes, when there are any. */
+export async function readCodeAdminPolicyHistoryPage(
+  context: CodeContext,
+  options: { page?: number; limit?: number } = {},
+): Promise<{ items: CodeAdminPolicyChange[]; nextPage: number | null }> {
   requireCodePolicyAdmin(context);
-  const page = await audit.list({ filter: { action: "core.code.policy.updated" }, pagination: { page: 1, perPage: limit } });
+  const pageNumber = Math.max(1, Math.min(options.page ?? 1, 1000));
+  const page = await audit.list({
+    filter: { action: "core.code.policy.updated" },
+    pagination: { page: pageNumber, perPage: options.limit ?? 10 },
+  });
   const parsed = page.items.map((event) => ({ event, metadata: PolicyAuditSchema.safeParse(event.metadata) }));
   const groupIds = parsed.flatMap(({ metadata }) =>
     Object.keys(metadata.success ? (metadata.data.changes ?? {}) : {}).filter((key) => key !== "default"),
@@ -973,7 +985,7 @@ export async function readCodeAdminPolicyHistory(context: CodeContext, limit = 1
   const people = new Map<string, string | null>();
   for (const { event } of parsed)
     if (event.actor.userId && !people.has(event.actor.userId)) people.set(event.actor.userId, await userName(event.actor.userId));
-  return parsed.map(({ event, metadata }) => {
+  const items = parsed.map(({ event, metadata }) => {
     const data = metadata.success ? metadata.data : {};
     return {
       at: event.createdAt,
@@ -1000,6 +1012,7 @@ export async function readCodeAdminPolicyHistory(context: CodeContext, limit = 1
       ),
     };
   });
+  return { items, nextPage: page.hasNext ? pageNumber + 1 : null };
 }
 
 /** An unavailable owner must not hide the Code review; omit its name until its authorized reader answers. */

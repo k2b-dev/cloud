@@ -87,6 +87,8 @@ export const parseCodeAreaQuery = (query: Record<string, string | undefined>): C
     };
   }
   if (sec === "groups" || sec === "effective") return { sec, ...(UUID.test(id) ? { id } : {}) };
+  // The history page with older changes, as a page number.
+  if (sec === "history") return { sec, ...(/^[2-9]$|^[1-9]\d{1,2}$/.test(query.after ?? "") ? { after: query.after } : {}) };
   return { sec };
 };
 

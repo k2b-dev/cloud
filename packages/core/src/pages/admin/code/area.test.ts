@@ -24,6 +24,8 @@ test("the URL keeps only valid selections, so reload and back return to the same
   expect(parseCodeAreaQuery({ sec: "code", id: "c_abcd", version: "x" })).toEqual({ sec: "code", id: "c_abcd" });
   expect(parseCodeAreaQuery({ sec: "code", version: id })).toEqual({ sec: "code" });
   expect(parseCodeAreaQuery({ sec: "policy", id })).toEqual({ sec: "policy" });
+  expect(parseCodeAreaQuery({ sec: "history", after: "2" })).toEqual({ sec: "history", after: "2" });
+  expect(parseCodeAreaQuery({ sec: "history", after: "x" })).toEqual({ sec: "history" });
   expect(codeAreaHref({ sec: "code", status: "paused", id: undefined })).toBe("/admin/code?sec=code&status=paused");
   expect(codeAreaHref({})).toBe("/admin/code");
   expect(codeAreaLevel({ sec: "groups", id })).toBe("detail");

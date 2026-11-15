@@ -224,6 +224,10 @@ test("policy, groups and effective rows render with their sources", () => {
   for (const label of ["Löscht", "Nicht rückgängig", "Bezieht Personen ein", "Ändert Zugriff", "Läuft weiter", "Sensibel"])
     expect(history).toContain(label);
   expect(render({ sec: "history" }, "empty")).toContain("Die Richtlinie wurde noch nie geändert.");
+  const older = render({ sec: "history" }, "long");
+  expect(older).toContain("Ältere Änderungen laden");
+  expect(older).toContain('href="/admin/code?sec=history&amp;after=2"');
+  expect(render({ sec: "history" })).not.toContain("Ältere Änderungen laden");
   expect(render({ sec: "history" }, "fail")).toContain("Der Verlauf konnte nicht geladen werden.");
 });
 
