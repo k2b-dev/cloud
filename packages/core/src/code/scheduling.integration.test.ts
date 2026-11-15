@@ -1604,6 +1604,7 @@ suiteFor(
     expect(metrics.instances).toBe(1);
     expect(metrics.freeSlots).toBe(3);
     expect(metrics.oldestWaitingMs).toBeGreaterThanOrEqual(0);
-    expect(Object.keys(metrics.runners[0]!).sort()).toEqual(["freeSlots", "instanceId", "lastSeenAt"]);
+    expect(Object.keys(metrics.runners[0]!).sort()).toEqual(["busySlots", "freeSlots", "instanceId", "lastSeenAt"]);
+    expect(metrics.runners[0]!.busySlots).toBe(0);
   });
 });
