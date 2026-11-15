@@ -1331,6 +1331,39 @@ describe("capability MCP projection", () => {
     });
   });
 
+  test("puts summary and bound blocks before JSON while keeping the whole structured result", async () => {
+    const body = {
+      data: { id: "one" },
+      summary: "Read one object",
+      view: { version: 1, blocks: [{ kind: "Detail", title: "Object", items: [{ label: "ID", value: "one" }] }] },
+      refs: [{ type: "demo.item", id: "one" }],
+      page: { hasMore: false },
+      links: [{ rel: "open", href: "/app/demo/one" }],
+    };
+    const routes = createMcpRoutes({
+      getCapability: async () => app,
+      getApp: async () => summary(app),
+      fetch: async () => Response.json(body),
+    });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 86,
+      method: "tools/call",
+      params: { name: "demo__query__get", arguments: { id: "one" } },
+    });
+    const result = (await response.json()).result;
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject(body);
+    expect(result.content[0]).toEqual({ type: "text", text: "Read one object\n\nObject\nID: one" });
+    expect(JSON.parse(result.content[1].text)).toMatchObject(body);
+    const listed = await rpc(routes, { jsonrpc: "2.0", id: 87, method: "tools/list" });
+    const tools = (await listed.json()).result.tools;
+    expect(tools.find((tool: Tool) => tool.name === "demo__query__get").outputSchema.properties.view).toMatchObject({
+      type: "object",
+      additionalProperties: {},
+    });
+  });
+
   test("drops optional receipt text when only the original Action result fits", async () => {
     const body = { data: { id: "" }, receipt: { text: "Result delivered." } };
     const bytes = () =>

@@ -1801,3 +1801,55 @@ describe("ACP session/load", () => {
     expect(await h.store.chat("gone-session")).toBeUndefined();
   });
 });
+
+describe("ACP capability choices", () => {
+  const choiceResult = (): AiStoredMessage => ({
+    id: "choice-result",
+    shortId: "Chs234",
+    conversationId: "chat",
+    seq: 2,
+    kind: "message",
+    loopId: "turn",
+    message: { role: "tool_result", callId: "choice-source", name: "art__query__categories", result: { data: {} } },
+    modelId: null,
+    providerModel: null,
+    usage: null,
+    stopReason: null,
+    loopAggregate: null,
+    loopDoneReason: null,
+    compactedAt: null,
+    createdAt: "2026-11-08T12:00:00Z",
+    meta: {
+      resultChoice: { state: "open" },
+      resultView: {
+        version: 1,
+        blocks: [
+          {
+            kind: "Choice",
+            id: "category",
+            title: "Category?",
+            submit: "Choose",
+            mode: "one",
+            options: [
+              { id: "jug", title: "Jugendstil" },
+              { id: "modern", title: "Modern" },
+            ],
+            option: { id: ["id"], title: ["title"] },
+          },
+        ],
+      },
+    },
+  });
+  test.each([false, true])("prints choices with a browser link without elicitation or submission (forms: %s)", async (forms) => {
+    const h = await harness({ forms, form: () => ({ action: "accept", content: { ids: "jug" } }) });
+    h.streams.push([{ ...h.done(), messages: [choiceResult()] }]);
+    expect(await h.send("Categories")).toEqual({ stopReason: "end_turn" });
+    expect(h.forms).toHaveLength(0);
+    expect(h.requests.some((request) => request.path.endsWith("/choices"))).toBe(false);
+    expect(h.text()).toContain(
+      "Category?\n1. Jugendstil [jug]\n2. Modern [modern]\nAnswer in Cloud: https://cloud.test/app/assistant?conversation=chat\n",
+    );
+    expect(h.requests.filter((request) => request.path.endsWith("/stream"))).toHaveLength(1);
+    expect(h.requests.some((request) => request.path.includes("/actions/"))).toBe(false);
+  });
+});

@@ -19,6 +19,10 @@
     "#chat-charts": {
       "browser": "./src/ai/chat/chart-lazy.tsx",
       "default": "./src/ai/chat/chart-eager.tsx"
+    },
+    "#block-view-schema": {
+      "browser": "./src/blocks/view-schema-light.ts",
+      "default": "./src/blocks/view-schema.ts"
     }
   },
   "files": [
@@ -68,6 +72,8 @@
     "./browser/storage-bucket-select": "./src/browser/storage-bucket-select.tsx",
     "./browser/composer-insert": "./src/browser/composer-insert.ts",
     "./browser/files": "./src/browser/files.tsx",
+    "./blocks": "./src/blocks/index.ts",
+    "./blocks/ui": "./src/blocks/ui.ts",
     "./code": "./src/code/index.ts",
     "./code/schedule": "./src/code/schedule.ts",
     "./code/events": "./src/code/event-tools.ts",

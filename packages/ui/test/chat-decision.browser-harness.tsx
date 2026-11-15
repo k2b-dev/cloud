@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Button, Chat, type ChatDecisionState, type ChatOutcomeLine, ReferenceChip } from "../src/index";
+import { Button, Chat, type ChatDecisionState, type ChatOutcomeLine, ReferenceChip, StatusBadge } from "../src/index";
 
 export const fullTitle = `${"Quarterly".repeat(8)}.pdf`;
 export const runningSentence = "Sending the mail to Lea.";
@@ -15,7 +15,6 @@ declare global {
     __expire: () => void;
     __check: () => void;
     __fail: () => void;
-    __mark: () => void;
     __errors: string[];
     __calls: number;
     __request: () => void;
@@ -39,6 +38,8 @@ function TimelineWidthFixture() {
               content: (
                 <Chat.Decision
                   state="open"
+                  kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+                  source={{ name: "Tasks", icon: "ti ti-checklist" }}
                   sentence="Create these tasks?"
                   reason={{ text: "You asked to review them first." }}
                   confirm={{ label: "Create tasks", onSelect: () => {} }}
@@ -53,6 +54,27 @@ function TimelineWidthFixture() {
   );
 }
 
+/** A short fact next to three answers, with a status chip in the details. */
+function FactsFixture() {
+  return (
+    <main>
+      <Chat.Decision
+        class="three-answers"
+        state="open"
+        kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+        source={{ name: "Code", icon: "ti ti-code" }}
+        sentence="Turn on version 5?"
+        reason={{ text: "It may do more than version 4." }}
+        details={{ label: "Details from Code", content: <StatusBadge label="New access" tone="warning" variant="chip" /> }}
+        meta={[{ text: "Applies to exactly version 3", icon: "ti ti-pin" }]}
+        back={{ label: "Change", onSelect: () => {} }}
+        decline={{ label: "Keep version 4", onSelect: () => {} }}
+        confirm={{ label: "Turn on version 5", onSelect: () => {} }}
+      />
+    </main>
+  );
+}
+
 function Fixture() {
   const [state, setState] = createSignal<ChatDecisionState>("open");
   const [current, setCurrent] = createSignal("running");
@@ -60,12 +82,8 @@ function Fixture() {
     setCurrent("done");
     setState("decided");
   };
-  const [mark, setMark] = createSignal<"added" | undefined>();
-  // A retained element: marking its line later must not move it out of the page.
-  const retained = <b id="retained">Retained words</b>;
   window.__errors = [];
   window.__calls = 0;
-  window.__mark = () => setMark("added");
   window.__check = () => setCurrent("checkfail");
   window.__request = () => {
     setCurrent("requested");
@@ -170,6 +188,9 @@ function Fixture() {
     <main>
       <Chat.Decision
         state={state()}
+        kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+        source={{ name: "Mail", icon: "ti ti-mail" }}
+        status={{ label: current() === "declined" ? "Declined" : "Running", icon: "ti ti-circle", tone: "running" }}
         sentence={
           <>
             Send <ReferenceChip kind="object" title={fullTitle} icon="ti ti-file-type-pdf" href="#file" accent="var(--k2b-reference-pdf)" />{" "}
@@ -177,40 +198,15 @@ function Fixture() {
           </>
         }
         reason={{ text: "You asked to check the draft before sending.", icon: "ti ti-info-circle" }}
-        preview={
-          <Chat.Preview>
-            <Chat.Preview.Header
-              rows={[
-                { label: "From", people: [{ name: "Robin Example", address: `${"long.sender.".repeat(9)}@example.test` }] },
-                { label: "To", people: [{ name: "Lea Berg", address: `${"long.recipient.".repeat(9)}@example.test` }] },
-                { label: "Cc", people: [{ address: "team@example.test" }] },
-                { label: "Bcc", emphasis: true, people: [{ name: "Tom Weber", address: "tom@example.test" }] },
-              ]}
-              note="Sends immediately after your answer."
-            />
-            <Chat.Preview.Title meta="Draft · version 3">Workshop delivery</Chat.Preview.Title>
-            <Chat.Preview.Excerpt>
-              {"Hello Lea,\nThe delivery is ready for Friday.\nPlease find the full report attached.\nThank you for checking the details."}
-            </Chat.Preview.Excerpt>
-            <Chat.Preview.Line icon="ti ti-file-type-pdf" accent="var(--k2b-reference-pdf)" meta="PDF · 240 KB">
-              Delivery report.pdf
-            </Chat.Preview.Line>
-            <Chat.Preview.Line icon="ti ti-alert-triangle" tone="warning">
-              The draft contains outside content.
-            </Chat.Preview.Line>
-            <Chat.Preview.ReadMore href="#draft" title="Open this version of the draft">
-              Read full draft
-            </Chat.Preview.ReadMore>
-            <Chat.Preview.Lines label="Consequences">
-              <Chat.Preview.Line icon="ti ti-send" mark="added">
-                Lea receives the report.
-              </Chat.Preview.Line>
-              <Chat.Preview.Line icon="ti ti-x" mark="removed" tone="muted">
-                The previous attachment is removed.
-              </Chat.Preview.Line>
-            </Chat.Preview.Lines>
-          </Chat.Preview>
-        }
+        details={{
+          label: "Details from Mail",
+          content: (
+            <p style={{ "overflow-wrap": "anywhere" }}>
+              Workshop delivery to Lea Berg ({`${"long.recipient.".repeat(9)}@example.test`}), from Robin Example (
+              {`${"long.sender.".repeat(9)}@example.test`}). Sends immediately after your answer.
+            </p>
+          ),
+        }}
         confirm={{
           label: "Send to Lea",
           icon: "ti ti-send",
@@ -228,13 +224,10 @@ function Fixture() {
         }}
         outcome={<Chat.Outcome lines={lines} current={current()} onActionError={(error) => window.__errors.push(String(error))} />}
       />
-      <Chat.Preview>
-        <Chat.Preview.Line icon="ti ti-pencil" mark={mark()}>
-          {retained}
-        </Chat.Preview.Line>
-      </Chat.Preview>
       <Chat.Decision
         state="open"
+        kind={{ label: "Approval", icon: "ti ti-shield-check" }}
+        source={{ name: "Files", icon: "ti ti-folder" }}
         sentence={
           <>
             Share <ReferenceChip kind="object" title="四半期報告書の最終版と全ての添付資料" icon="ti ti-folder" href="#cjk" /> and{" "}
@@ -251,6 +244,13 @@ function Fixture() {
   );
 }
 render(
-  () => (document.documentElement.hasAttribute("data-timeline-width") ? <TimelineWidthFixture /> : <Fixture />),
+  () =>
+    document.documentElement.hasAttribute("data-timeline-width") ? (
+      <TimelineWidthFixture />
+    ) : document.documentElement.hasAttribute("data-facts") ? (
+      <FactsFixture />
+    ) : (
+      <Fixture />
+    ),
   document.getElementById("root")!,
 );

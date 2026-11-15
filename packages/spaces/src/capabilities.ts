@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
+import type { BlockView } from "@k2b/cloud/blocks";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CalendarEventsDataSchema,
@@ -541,11 +542,11 @@ const boundReactionNames = (reactions: SpaceItemReaction[]) =>
   }));
 
 const mapRelations = (item: SpaceItem) => ({
-  reactions: item.reactions && boundReactionNames(item.reactions),
+  ...(item.reactions ? { reactions: boundReactionNames(item.reactions) } : {}),
   assignees: (item.assignees ?? []).slice(0, 100).map((entry) => ({
     id: entry.id,
     kind: entry.kind,
-    serviceAccountKind: entry.serviceAccountKind,
+    ...(entry.serviceAccountKind ? { serviceAccountKind: entry.serviceAccountKind } : {}),
     displayName: truncateText(entry.displayName, 200).text,
   })),
   tags: (item.tags ?? [])
@@ -1133,7 +1134,50 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
   const column = data.kind === "task" && !data.completedAt ? await spacesService.column.get({ id: resolved.data.internalColumnId }) : null;
   const status = data.kind === "task" ? (data.completedAt ? t.done : column?.name)?.replace(/\s+/g, " ").trim() : undefined;
   const resourceContext = `${place.slice(0, 200 - (fact ? fact.length + 3 : 0))}${fact ? ` · ${fact}` : ""}`;
+  const view: BlockView | undefined =
+    data.kind === "task"
+      ? {
+          version: 1,
+          blocks: [
+            {
+              kind: "Detail",
+              title: t.task,
+              items: [
+                {
+                  label: t.previewStatus,
+                  value: data.completedAt ? "done" : "open",
+                  type: "status",
+                  states: {
+                    open: { label: column?.name.replace(/\s+/g, " ").trim().slice(0, 80) || t.previewOpen, tone: "info" },
+                    done: { label: t.done, tone: "ok" },
+                  },
+                },
+                {
+                  label: t.deadline,
+                  value: data.deadline
+                    ? isDateOnlyDeadline(data.deadline)
+                      ? dates.formatDate(data.deadline, { ...dateConfig, timeZone: "UTC" })
+                      : dates.formatDateTime(data.deadline, dateConfig)
+                    : t.none,
+                },
+                {
+                  label: t.assignees,
+                  // Use the same three-name preview as task summaries; all relations remain in data.
+                  value: data.assignees.length
+                    ? i18n.formatList(
+                        data.assignees.slice(0, 3).map((entry) => entry.displayName),
+                        context.locale,
+                      ) + (data.assignees.length > 3 ? t.previewMoreAssignees({ count: data.assignees.length - 3 }) : "")
+                    : t.none,
+                },
+                { label: t.space, value: resolved.data.space.name },
+              ],
+            },
+          ],
+        }
+      : undefined;
   const result = {
+    ...(view ? { view } : {}),
     data: {
       ...data,
       view: {

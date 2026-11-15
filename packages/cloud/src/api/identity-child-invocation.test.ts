@@ -134,7 +134,9 @@ async function fixture(
     deadline: now.getTime() + 10_000,
     origin: options.origin ?? "http",
     proof: { kind: "oauth", payload: { exp: Math.floor(now.getTime() / 1000) + 60 } },
-    ...(options.origin === "assistant" ? { assistantTurn: { conversationId: person.id, turnId: parentId } } : {}),
+    ...(options.origin === "assistant" || options.origin === "choice"
+      ? { assistantTurn: { conversationId: person.id, turnId: parentId } }
+      : {}),
   };
   let active = true;
   let used = false;
@@ -372,11 +374,11 @@ test("child tokens cannot be exchanged, forged or widened at signing", async () 
   );
 });
 
-test("Assistant tool restrictions survive the hop", async () => {
-  const f = await fixture({ origin: "assistant", allowedTool: false });
+test.each(["assistant", "choice"] as const)("%s tool restrictions survive the hop", async (origin) => {
+  const f = await fixture({ origin, allowedTool: false });
   expect((await f.request()).status).toBe(403);
   expect(f.providerCalls()).toBe(0);
-  expect((await (await fixture({ origin: "assistant", allowedTool: true })).request()).status).toBe(200);
+  expect((await (await fixture({ origin, allowedTool: true })).request()).status).toBe(200);
 });
 
 test("a cancelled parent request never starts a child provider request", async () => {

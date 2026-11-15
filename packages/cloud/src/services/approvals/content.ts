@@ -1,5 +1,7 @@
 import type { SQL } from "bun";
-import { parseStoredReviewContent } from "../../capabilities/review-storage";
+import { compactReviewSql } from "../../ai/review-content";
+import { presentReview } from "../../capabilities/legacy-review-view";
+import { restoreReviewSnapshot } from "../../capabilities/review-storage";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
 import { type ApprovalRoleContext, hasApprovalRoleAccess } from "./authority";
@@ -34,7 +36,7 @@ export const openRecipientRequests = async (
 /** Keep the original approval's digest and reader even when the turn has moved to a newer question. */
 export const compactApprovalDetailsSql = (row = "r") => {
   const details = sql`${sql(`${row}.details`)}`;
-  return sql`CASE WHEN jsonb_typeof(${details}) = 'object' THEN (${details} - 'content') || CASE WHEN ${details} ? 'content' THEN jsonb_build_object(
+  return sql`CASE WHEN jsonb_typeof(${details}) = 'object' THEN (${compactReviewSql(details)}) || CASE WHEN ${details} ? 'content' OR ${details} ? 'view' THEN jsonb_build_object(
     'contentRef', jsonb_build_object('href', '/api/approvals/' || ${sql(`${row}.id`)}::text || '/content', 'digest', ${sql(`${row}.review_digest`)})
   ) ELSE '{}'::jsonb END ELSE ${details} END`;
 };
@@ -51,9 +53,9 @@ export const readApprovalContent = async (input: {
     input.signal?.throwIfAborted();
     const open = await openRecipientRequests(input.approverUserId, input.id, input.roleContext, tx);
     const query = tx<{ content: unknown }[]>`
-    SELECT r.details->'content' AS content FROM (${open.query}) r
+    SELECT r.details AS content FROM (${open.query}) r
     WHERE r.review_digest=${input.digest}
-      AND octet_length((r.details->'content')::text) <= ${2 * CAPABILITY_MAX_REVIEW_CONTENT_BYTES + 2} LIMIT 1`;
+      AND octet_length(r.details::text) <= ${2 * CAPABILITY_MAX_REVIEW_CONTENT_BYTES + 65536} LIMIT 1`;
     const abort = () => void query.cancel().catch(() => {});
     input.signal?.addEventListener("abort", abort, { once: true });
     if (input.signal?.aborted) abort();
@@ -65,6 +67,6 @@ export const readApprovalContent = async (input: {
     }
     input.signal?.throwIfAborted();
     const row = rows[0];
-    const parsed = parseStoredReviewContent(row?.content);
-    return parsed.success ? parsed.data : null;
+    const parsed = presentReview(restoreReviewSnapshot(row?.content));
+    return parsed && typeof parsed === "object" && "view" in parsed ? parsed.view : null;
   });

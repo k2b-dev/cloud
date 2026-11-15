@@ -354,17 +354,19 @@ test("Core binds turn streams to their continuation and rechecks operation polic
   expect((await response.arrayBuffer()).byteLength).toBe(payload.length);
 });
 
-const shortenedReceipt = {
-  text: "Imported {archive}",
-  slots: { archive: { kind: "object", title: "archive.zip" } },
+const receipt = { text: "Imported {archive}", slots: { archive: { kind: "object", title: "archive.zip" } } };
+// A receipt no longer carries a preview: a result shows its view instead. A provider that still sends one is refused.
+const previewReceipt = {
+  ...receipt,
   preview: { kind: "page", title: "archive.zip", body: "First lines", format: "plain", truncated: true },
 };
 
 test("a stream completion follows the same receipt rules as an ordinary Action result", async () => {
   try {
     for (const [extra, status] of [
-      [{ receipt: shortenedReceipt }, 409],
-      [{ receipt: shortenedReceipt, links: [{ rel: "open", href: "/archives/upload-1" }] }, 200],
+      [{ receipt: previewReceipt }, 409],
+      [{ receipt }, 200],
+      [{ receipt, links: [{ rel: "open", href: "/archives/upload-1" }] }, 200],
     ] as const) {
       writeExtra = extra;
       saved.clear();
@@ -379,8 +381,8 @@ test("a stream completion follows the same receipt rules as an ordinary Action r
 test("Core rejects a stream completion receipt that the provider did not check", async () => {
   const ref = await open("action", "archive.import");
   for (const [body, status] of [
-    [{ data: { id: "upload-1" }, receipt: shortenedReceipt }, 502],
-    [{ data: { id: "upload-1" }, receipt: shortenedReceipt, links: [{ rel: "open", href: "/archives/upload-1" }] }, 200],
+    [{ data: { id: "upload-1" }, receipt: previewReceipt }, 502],
+    [{ data: { id: "upload-1" }, receipt, links: [{ rel: "open", href: "/archives/upload-1" }] }, 200],
     [{ data: { id: "upload-1" }, receipt: { text: "{missing}" } }, 502],
   ] as const) {
     const response = await dispatchCapabilityStream(request(ref, payload), authority, "write", {

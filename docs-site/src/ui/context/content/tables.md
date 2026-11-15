@@ -69,7 +69,7 @@ values instead of formatted strings:
 | --- | --- | --- |
 | `text` | the string; breaks between words inside its cell | left |
 | `number` | the number in the reader's language, by `format` | right |
-| `amount` | money in `format.currency` | right |
+| `amount` | money in `format.currency`; a negative amount reads in the danger ink and keeps its sign | right |
 | `date` | ISO text, a timestamp, or a `Date` in the reader's language and in `timeZone` when given; a day without a time stays that day | left |
 | `status` | a status badge with the label and tone from `states[value]` | left |
 | `bar` | the value and a short track filled to `max`, or to the column's largest value | right |

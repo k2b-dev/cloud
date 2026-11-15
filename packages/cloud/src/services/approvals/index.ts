@@ -2,6 +2,7 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { approvalMessages } from "../../approvals/messages";
 import { capabilityRequestHash } from "../../capabilities/claims";
+import { presentReview } from "../../capabilities/legacy-review-view";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../../capabilities/review-storage";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
 import type { CapabilityActionReviewData } from "../../contracts/capabilities";
@@ -199,7 +200,7 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
         kind, approver_role, author_user_id, requester_href)
       VALUES (${input.appId}, ${input.action}, ${input.approvalScope ?? null}, ${input.requester.kind}, ${input.requester.ref},
         ${input.requester.appId}, ${input.requester.title ?? null}, ${subjectId}::uuid, ${recipient}::uuid,
-        (SELECT auth_epoch FROM auth.users WHERE id=${recipient}::uuid), ${role ? "confirm" : input.assurance}, ${input.sentence}, ${serializeReviewSnapshot(input.review ?? null)}::text::jsonb,
+        (SELECT auth_epoch FROM auth.users WHERE id=${recipient}::uuid), ${role ? "confirm" : input.assurance}, ${storableText(input.sentence)}, ${serializeReviewSnapshot(input.review ?? null)}::text::jsonb,
         ${approvalArgsDigest(input.input)}, ${approvalReviewDigest(input.review)}, now() + (${expiresInMs} * interval '1 millisecond'),
         ${input.kind ?? "action"}, ${role ? input.approverRole : null}, ${role ? input.authorUserId : null}::uuid, ${role ? input.requester.href : null})
       ON CONFLICT (requester_kind, requester_ref) DO NOTHING
@@ -218,6 +219,9 @@ export const request = async (input: ApprovalRequestInput, db?: SQL): Promise<Ap
   });
 };
 
+/** Postgres text holds no NUL; an app's words may. The sentence keeps every other character as it was. */
+const storableText = (value: string) => value.replaceAll("\u0000", "\uFFFD");
+
 /** Read the recorded snapshot for trusted server-side callers; HTTP readers must check the recipient. */
 export const get = async (id: string, db?: SQL, compactReview = false): Promise<ApprovalRequest | null> =>
   transaction(db, async (tx) => {
@@ -225,7 +229,10 @@ export const get = async (id: string, db?: SQL, compactReview = false): Promise<
     return row
       ? {
           ...row,
-          details: row.details === null ? null : CapabilityActionReviewPresentationSchema.parse(restoreReviewSnapshot(row.details)),
+          details:
+            row.details === null
+              ? null
+              : CapabilityActionReviewPresentationSchema.parse(presentReview(restoreReviewSnapshot(row.details), compactReview)),
         }
       : null;
   });
@@ -234,7 +241,16 @@ export type ApprovalDecisionResult =
   | { ok: true; status: ApprovalStatus; replay: boolean }
   | {
       ok: false;
-      code: "EXPIRED" | "NOT_FOUND" | "REJECT_ONLY" | "SELF_APPROVAL" | "UNAVAILABLE" | "NOT_REMEMBERABLE" | "REAUTHENTICATE" | "BUSY";
+      code:
+        | "REVIEW_CHANGED"
+        | "EXPIRED"
+        | "NOT_FOUND"
+        | "REJECT_ONLY"
+        | "SELF_APPROVAL"
+        | "UNAVAILABLE"
+        | "NOT_REMEMBERABLE"
+        | "REAUTHENTICATE"
+        | "BUSY";
     }
   | { ok: false; code: "ALREADY_DECIDED"; status: ApprovalStatus };
 /** A kind owner refuses a stale/invalid review. The transaction rolls back; transports return a visible conflict.
@@ -277,7 +293,7 @@ export const registerApprovalDecisionHandler = (kind: "code_version", handler: A
 /** Decide once under the current recipient policy, recording the decider and the owner's transition atomically. */
 export const decide = async (
   id: string,
-  decision: { approved: boolean; remember?: "chat" | "always"; detail?: unknown },
+  decision: { approved: boolean; remember?: "chat" | "always"; digest?: string; detail?: unknown },
   actor: ApprovalDecisionActor,
   db?: SQL,
 ): Promise<ApprovalDecisionResult> => {
@@ -319,6 +335,11 @@ export const decide = async (
     const [row] = await tx<ApprovalRequest[]>`SELECT ${columns()} FROM approvals.requests
       WHERE id=${id}::uuid AND (approver_user_id=${actor.userId}::uuid OR approver_role='admin') FOR UPDATE`;
     if (!row) return { ok: false, code: "NOT_FOUND" };
+    if (!role && decision.approved && row.status === "pending") {
+      const details = restoreReviewSnapshot(row.details);
+      const edited = !!details && typeof details === "object" && "editedFields" in details;
+      if ((decision.digest !== undefined || edited) && decision.digest !== row.reviewDigest) return { ok: false, code: "REVIEW_CHANGED" };
+    }
     let soleAdmin = false;
     if (role) {
       if (decision.remember) return { ok: false, code: "NOT_REMEMBERABLE" };
@@ -358,7 +379,10 @@ export const decide = async (
         tx,
         {
           ...won,
-          details: won.details === null ? null : CapabilityActionReviewPresentationSchema.parse(restoreReviewSnapshot(won.details)),
+          details:
+            won.details === null
+              ? null
+              : CapabilityActionReviewPresentationSchema.parse(presentReview(restoreReviewSnapshot(won.details), true)),
         },
         actor,
         detail,

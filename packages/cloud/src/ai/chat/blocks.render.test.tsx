@@ -20,6 +20,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { AiReaderTimeZoneProvider } = await import("./action-sentences");
 const { AiTurnBlockView } = await import("./blocks");
+const { capabilityResultView } = await import("../result-view");
 const { AiChatActionsProvider } = await import("./message-actions");
 const { createAiChatTimeline } = await import("./presentation");
 const { AiTurnView } = await import("./turn-view");
@@ -81,22 +82,25 @@ const block = (status: "running" | "awaiting_approval" | "completed" | "failed")
 });
 
 describe("capability tool presentation", () => {
-  test("table preview handles empty, capped, invalid and failed results honestly", () => {
+  test("a result shows the view the server bound, and an old table converts on read; unknown, unbound and failed results show none", () => {
+    // The server binds `view` on every completed result (`capabilityResultView`); an old stored `presentation` converts there.
     const render = (result: unknown, failed = false) => {
       const completed = block(failed ? "failed" : "completed");
       if (completed.kind !== "tool") throw new Error("tool expected");
       completed.result = result;
+      completed.view = capabilityResultView(result) ?? undefined;
       return renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
     };
     const presentation = { kind: "table", rowsPath: [], columns: [{ path: ["name"], label: "Name" }] };
-    expect(render({ data: [], presentation })).toContain("No matching rows");
     const many = Array.from({ length: 101 }, (_, index) => ({ name: `item-${index}` }));
-    expect(render({ data: many, presentation })).toContain("first 100 returned rows");
+    const shown = render({ data: many, presentation });
+    expect(shown).toContain("<table");
+    expect(shown).toContain("item-99");
     expect(render({ data: [], presentation: { ...presentation, kind: "future" } })).not.toContain("<table");
     expect(render({ data: {}, presentation })).not.toContain("<table");
-    expect(render({ data: [], presentation }, true)).not.toContain("<table");
+    expect(render({ data: many, presentation }, true)).not.toContain("<table");
   });
-  test("renders metadata from actual values, including exact decimals, safe links and partial results", () => {
+  test("an old table keeps exact decimals and its safe row links", () => {
     const completed = block("completed");
     if (completed.kind !== "tool") throw new Error("tool expected");
     completed.result = {
@@ -109,16 +113,12 @@ describe("capability tool presentation", () => {
       },
       page: { hasMore: true },
       summary: "Query preview",
-      links: [{ rel: "open", href: "/app/grids/Base01/query?q=test", title: "Open query editor" }],
     };
+    completed.view = capabilityResultView(completed.result) ?? undefined;
     const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
     expect(html).toContain("12345678901234567890.123400");
     expect(html).toContain("<table");
-    expect(html).toContain("/app/grids/Base01");
-    expect(html).toContain("More rows");
-    expect(html).toMatch(/<a(?=[^>]*href="\/app\/grids\/Base01")(?=[^>]*target="_blank")[^>]*>/);
-    expect(html).toMatch(/<a(?=[^>]*href="\/app\/grids\/Base01\/query\?q=test")(?=[^>]*target="_blank")[^>]*>/);
-    expect(html).toContain('rel="noopener noreferrer"');
+    expect(html).toContain('href="/app/grids/Base01"');
   });
   test("renders compact capability rows with only the capability title", () => {
     for (const status of ["running", "completed", "failed"] as const) {
@@ -896,8 +896,8 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("ai-approval");
     expect(html).not.toContain("k2b-split-button");
     expect(html).not.toContain("Always approve");
-    // The call's input stays one click away when the question has nothing else to show.
-    expect(html).toContain("Show input");
+    // A question with nothing else to show shows the call's input in its details, as plain text.
+    expect(html).toContain('<p class="cloud-blocks__text">{\n  "limit": 10\n}</p>');
 
     const rememberable = block("awaiting_approval");
     if (rememberable.kind !== "tool" || !rememberable.approval) throw new Error("approval block missing");
@@ -923,19 +923,15 @@ describe("capability tool presentation", () => {
       approvalScope: "book:default",
     };
     const customHtml = renderApproval(customReview);
-    // The old message is the question as it is; every detail is a row, Markdown is one block.
+    // The old message is the question as it is; its details read as its lines did, as plain text, and times read in
+    // the reader's zone instead of as ISO text.
     expect(customHtml).toContain("The draft includes an external recipient.");
-    expect(customHtml).toContain("<strong>Read calendar</strong>");
-    expect(customHtml).toContain("Spaces · Read only");
-    expect(customHtml).toContain("<dt>Subject</dt>");
-    expect(customHtml).toContain("Release follow-up");
-    expect(customHtml).toContain("<dt>Recipients</dt>");
-    expect(customHtml).toContain('<time datetime="2026-08-20">');
-    expect(customHtml).toContain('<time datetime="2026-08-20T09:00:00+02:00">');
-    expect(customHtml).toContain("<dt>Proposed body</dt>");
-    expect(customHtml).toContain("Hello **Ada**");
+    expect(customHtml).toContain("Subject: Release follow-up\nRecipients: Ada\nSend on: Aug 20, 2026\nSend at: Aug 20, 2026, 07:00");
+    expect(customHtml).toContain("Proposed body: Hello **Ada**");
     expect(customHtml).toContain("&lt;script>alert('plain text')&lt;/script>");
-    expect(customHtml).not.toContain("<strong>Ada</strong>");
+    expect(customHtml).toContain("Spaces · Read only");
+    expect(customHtml).not.toContain("<strong>");
+    expect(customHtml).not.toContain("<script>");
     // Read it all opens the thing the review links, and every other link of the review stays before the answer.
     expect(customHtml).toContain('href="/app/contacts"');
     expect(customHtml).toContain('href="/app/mail/MbA123/drafts/DrG789"');
@@ -993,7 +989,7 @@ describe("capability tool presentation", () => {
     };
     const reviewedHtml = render(reviewed, "de");
     expect(reviewedHtml).toContain("Entwurf im Postfach Vertrieb speichern.");
-    expect(reviewedHtml).toContain("<dt>Betreff</dt>");
+    expect(reviewedHtml).toContain("Betreff: Angebot");
 
     // An app Action's outcome is one line in the same place: running, done, failed, rejected.
     const running = render(german("running"), "de");
@@ -1052,7 +1048,7 @@ describe("capability tool presentation", () => {
         }),
       );
     const action = render({ message: "Spaces: Create task", allowAlways: true, allowChat: true });
-    expect(action).toContain("Yes, and don't ask again in this chat");
+    expect(action).toContain("Don't ask again in this chat");
     expect(action).not.toContain("Always approve");
     const website = render({
       message: "HTTP request: GET https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA",
@@ -1060,14 +1056,14 @@ describe("capability tool presentation", () => {
       allowChat: true,
       website: "https://query1.finance.yahoo.com",
     });
-    expect(website).toContain("Yes, and allow this website in this chat");
+    expect(website).toContain("Allow this website in this chat");
     expect(website).toContain("https://query1.finance.yahoo.com/v7/finance/quote?symbols=NVDA");
     expect(website).not.toContain("Always approve");
-    expect(website).not.toContain("don't ask again in this chat");
+    expect(website).not.toContain("ask again in this chat");
     expect(render({ message: "POST", allowAlways: false, allowChat: false })).not.toContain("k2b-chat-decision__remember");
     const german = render({ message: "GET", allowAlways: false, allowChat: true, website: "https://example.com" }, "de");
-    expect(german).toContain("Ja, und diese Website in diesem Chat erlauben");
-    expect(render({ message: "Spaces", allowAlways: true, allowChat: true }, "de")).toContain("Ja, und in diesem Chat nicht mehr fragen");
+    expect(german).toContain("Diese Website in diesem Chat erlauben");
+    expect(render({ message: "Spaces", allowAlways: true, allowChat: true }, "de")).toContain("In diesem Chat nicht mehr fragen");
   });
   test("shows every request a website approval let through with its full URL and a revoke action", () => {
     const run: AiTurnBlock = {
@@ -1909,7 +1905,7 @@ describe("turn places in the reader's language", () => {
     expect(renderPlaces([mail(result)], { locale: "en" })).toContain(">Open</span>");
   });
 
-  test("keeps the summary and links of a query table above it, and shows them once for an action", () => {
+  test("a query's table stands under Cloud's head, and an action's table shows its summary and links once", () => {
     const query: AiTurnBlock = {
       id: "tool-query",
       kind: "tool",
@@ -1917,6 +1913,7 @@ describe("turn places in the reader's language", () => {
       name: "grids__query__gql_dot_execute",
       status: "completed",
       result: table("3 Zeilen aus Inventar"),
+      view: capabilityResultView(table("3 Zeilen aus Inventar")) ?? undefined,
       presentation: {
         kind: "capability",
         appId: "grids",
@@ -1927,14 +1924,18 @@ describe("turn places in the reader's language", () => {
       },
     };
     const html = renderPlaces([query], { locale: "de" });
-    expect(html).toContain("3 Zeilen aus Inventar");
-    expect(html).toContain('href="/app/grids/query?id=q1"');
-    expect(html).toContain(">Öffnen</span>");
+    // The head is Cloud's: app and view, then "Open large" and "Data"; Gustav's text says what the rows mean.
+    expect(html).toContain("<strong>Grids</strong>");
+    expect(html).toContain("· Abfrage ausführen");
+    expect(html).toContain('aria-label="Groß öffnen"');
     expect(html).toContain("<table");
-    expect(html.indexOf("3 Zeilen aus Inventar")).toBeLessThan(html.indexOf("<table"));
+    expect(html.indexOf("<strong>Grids</strong>")).toBeLessThan(html.indexOf("<table"));
 
     // An action that returns a table shows its summary and links in its receipt, not twice.
-    const action = renderPlaces([mail(table("Export erstellt"))], { locale: "de" });
+    const action = renderPlaces(
+      [{ ...mail(table("Export erstellt")), view: capabilityResultView(table("Export erstellt")) ?? undefined }],
+      { locale: "de" },
+    );
     expect(action.split("Export erstellt").length).toBe(2);
     expect(action.split('href="/app/grids/query?id=q1"').length).toBe(2);
     expect(action).toContain("<table");

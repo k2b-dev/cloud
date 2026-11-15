@@ -4,11 +4,14 @@ import { reviewFixture } from "../../_internal/capability-review.test-fixture";
 import { migrateCloudAi } from "../../ai/migrate";
 import { aiConversations, recordAiToolReview } from "../../ai/store";
 import { createDeviceActions } from "../../api/app-approval-actions";
+import { boundReviewView } from "../../capabilities/reviews";
 import { APPROVALS_PAGE_SIZE } from "../../contracts/approvals";
 import { CAPABILITY_MAX_REVIEW_CONTENT_BYTES } from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
 import { type ActionApprovalRequestInput, approvalReviewDigest, approvals, countPending, listPending, presentPendingApproval } from ".";
 import { readApprovalContent } from "./content";
+
+const view = (text: string) => ({ version: 1 as const, blocks: [{ kind: "Text" as const, text }] });
 
 const insertUser = async () => {
   const uid = `approval-list-${crypto.randomUUID()}`;
@@ -74,8 +77,9 @@ databaseSuite()("pending approval lists", () => {
   test("full approval content round-trips JSONB with exact approver, digest, expiry and epoch checks", async () => {
     const { userId, ask } = await fixture();
     const other = await fixture();
-    const content = { kind: "page" as const, title: "Draft", body: `${"x".repeat(65_536)}\u0000\ud800END\udc00`, format: "plain" as const };
-    const review = { ...reviewFixture(), preview: { ...content, body: "Short" }, content };
+    const review = { ...reviewFixture(), view: view(`${"x".repeat(65_536)}\u0000\ud800END\udc00`) };
+    const content = boundReviewView(review);
+    expect(content).not.toBeNull();
     const id = await ask({ review });
     const digest = approvalReviewDigest(review);
     expect((await approvals.get(id))?.details).toEqual(review);
@@ -102,19 +106,18 @@ databaseSuite()("pending approval lists", () => {
 
   test("the exact 16 MiB escaped content budget survives the authorized JSONB reader and compact list", async () => {
     const { userId, ask } = await fixture();
-    const empty = { kind: "page" as const, title: "Complete", body: "", format: "plain" as const };
-    const remaining = CAPABILITY_MAX_REVIEW_CONTENT_BYTES - Buffer.byteLength(JSON.stringify(empty));
+    const remaining = CAPABILITY_MAX_REVIEW_CONTENT_BYTES - Buffer.byteLength(JSON.stringify(view("")));
     // Quotes take two bytes in public JSON and expand again in the existing JSONB string encoding.
-    const content = { ...empty, body: '"'.repeat(Math.floor(remaining / 2)) + "x".repeat(remaining % 2) };
-    expect(Buffer.byteLength(JSON.stringify(content))).toBe(CAPABILITY_MAX_REVIEW_CONTENT_BYTES);
-    const review = { ...reviewFixture(), content };
+    const review = { ...reviewFixture(), view: view('"'.repeat(Math.floor(remaining / 2)) + "x".repeat(remaining % 2)) };
+    expect(Buffer.byteLength(JSON.stringify(review.view))).toBe(CAPABILITY_MAX_REVIEW_CONTENT_BYTES);
+    const content = boundReviewView(review);
     const id = await ask({ review });
     const digest = approvalReviewDigest(review);
     expect(await readApprovalContent({ id, digest, approverUserId: userId })).toEqual(content);
     const listed = JSON.stringify(await listPending({ approverUserId: userId }));
     expect(listed.length).toBeLessThan(32 * 1024);
     expect(listed).toContain(digest);
-    expect(listed).not.toContain(content.body.slice(0, 1_000));
+    expect(listed).not.toContain('"'.repeat(1_000));
   }, 30_000);
 
   test("filters owner, requester and exact review links, and excludes requests nobody can continue", async () => {
@@ -241,8 +244,9 @@ databaseSuite()("pending approval lists", () => {
     await recordAiToolReview({ ...target, callId: pending.callId, review: storedReview });
     await recordAiToolReview({ ...target, callId: "other-call", review: { ...review, ask: "deletes" } });
     const row = (await listPending(query)).items[0]!;
-    expect(row.storedReview).toEqual(storedReview);
-    expect(row.details).toEqual(review);
+    // The chat stores the review with a reference to its full content; the approval details stay as they were.
+    expect(row.storedReview).toEqual({ ...storedReview, contentRef: expect.objectContaining({ digest: expect.any(String) }) });
+    expect(row.details).toEqual({ ...review, contentRef: expect.objectContaining({ href: `/api/approvals/${id}/content` }) });
     expect(row.argsDigest).toBe(before.argsDigest);
     expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual(storedReview);
     expect(presentPendingApproval(row, []).review).toEqual(storedReview);
@@ -259,7 +263,7 @@ databaseSuite()("pending approval lists", () => {
     const storedReview = { ...review, ask: "sensitive" as const };
     await recordAiToolReview({ conversationId: chat.id, turnId: turn.id, callId: "write-1", review: storedReview });
     const row = (await listPending({ approverUserId: userId, id })).items[0]!;
-    expect(row.storedReview).toEqual(storedReview);
+    expect(row.storedReview).toEqual({ ...storedReview, contentRef: expect.objectContaining({ digest: expect.any(String) }) });
     expect(presentPendingApproval(row, [], { ask: "sends" }).review).toEqual(storedReview);
   });
 });

@@ -23,6 +23,8 @@ export default function ExecutionDetails(props: { entry: ActivityEntry; timeZone
         return t().originHttp;
       case "app":
         return t().originApp;
+      case "choice":
+        return t().originChoice;
       default:
         return t().unknownSource;
     }

@@ -87,7 +87,8 @@ describe("Mail reviews through the public Cloud card renderer", () => {
         expect(html).toContain("k2b-reference");
         expect(text).toContain("plan.pdf");
         expect(text).toContain("calendar.ics");
-        expect(html).toContain(`<b>${warning.title}</b>`);
+        expect(text).toContain(warning.title);
+        expect(text).toContain(warning.description);
         expect(text).toContain(locale === "de" ? "An Lea Berg senden" : "Send to Lea Berg");
         expect(text).toContain(locale === "de" ? "Nicht senden" : "Don't send");
         if (scheduled) expect(html).toContain("2026-10-20T06:00:00.000Z");
@@ -100,7 +101,7 @@ describe("Mail reviews through the public Cloud card renderer", () => {
       const review = mailActionReviews["draft.discard"](
         locale,
         { draft: reviewObject("Update", { type: "mail.draft", id: source.draftId }) },
-        { preview: draftPreview(source.draft, locale), links: [{ rel: "open", href: source.href }] },
+        { view: draftPreview(source.draft, locale), links: [{ rel: "open", href: source.href }] },
       );
       const html = renderReview(review, "draft.discard");
       const text = visibleText(html);

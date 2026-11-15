@@ -2473,15 +2473,7 @@ suite("isolated app approval protocol", () => {
         sentence: { action: "Send message", running: "Sending message", done: "Sent message", confirm: "Send", decline: "Don't send" },
         slots: {},
         links: [{ rel: "open", href: "/mail/drafts/maintenance?revision=7" }],
-        preview: {
-          from: { name: "Team Ops", address: "ops@example.com" },
-          kind: "message",
-          to: [{ name: "Lea", address: "lea@example.com" }],
-          subject: "Maintenance",
-          body: "Full body is in Cloud",
-          format: "plain",
-          truncated: true,
-        },
+        view: { version: 1, blocks: [{ kind: "Text", text: "x".repeat(APP_ACTION_LIMITS.valueChars + 1) }] },
       };
       assertCapabilityReview(review);
       assertCapabilityReview({ ...review, ask: "app_asks" });
@@ -2516,9 +2508,8 @@ suite("isolated app approval protocol", () => {
       );
       const owner = await account();
       const review = reviewFixture();
-      if (review.preview?.kind !== "message") throw new Error("Expected message fixture");
       review.ask = "involves_people";
-      review.preview.body = "x".repeat(APP_ACTION_LIMITS.valueChars + 1);
+      review.view = { version: 1, blocks: [{ kind: "Text", text: "x".repeat(APP_ACTION_LIMITS.valueChars + 1) }] };
       const waiting = await askAction(owner, { review });
       const inbox = await deviceActions.inbox({ userId: owner.id, issuer: cfg.issuer });
       expect(inbox.actions).toEqual([]);
@@ -2546,15 +2537,7 @@ suite("isolated app approval protocol", () => {
         sentence: { action: "Send message", running: "Sending message", done: "Sent message", confirm: "Send", decline: "Don't send" },
         slots: {},
         links: [{ rel: "open", href: "/mail/drafts/maintenance?revision=7" }],
-        preview: {
-          from: { name: "Team Ops", address: "ops@example.com" },
-          kind: "message",
-          to: [{ name: "Lea", address: "lea@example.com" }],
-          subject: "Maintenance",
-          body: "Full body is in Cloud",
-          format: "plain",
-          truncated: true,
-        },
+        view: { version: 1, blocks: [{ kind: "Text", text: "x".repeat(APP_ACTION_LIMITS.valueChars + 1) }] },
       };
       const older = await askAction(owner, { review: { ...review, ask: "app_asks" } });
       for (let index = 0; index <= APP_APPROVAL_LIMITS.pageSize; index += 1) await askAction(owner, { review });

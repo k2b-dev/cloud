@@ -36,10 +36,12 @@ import {
 import { aiChatMessages } from "./chat/messages";
 import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
+import { createChoiceCapabilityOrigin, projectAiChoices, viewChoice } from "./choices";
 import { CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
 import { aiCodeReviewToolAllowed } from "./code-review-turn";
 import { createCloudCompactFn } from "./compaction";
 import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
+import { editedDraftArguments } from "./draft-edit";
 import { aiFileStore } from "./files-store";
 import { readAiTurnCallUsage } from "./inference-calls";
 import { AI_LIVE_ARGS_INTERVAL_MS, createLiveArgsReader } from "./live-tool-args";
@@ -74,6 +76,7 @@ import {
 import { retryTransientProviderErrors } from "./provider-retry";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { collectConversationResourceObservations } from "./resource-refs";
+import { capabilityResultView } from "./result-view";
 import { assertInteractiveChatTurn } from "./retired-routines";
 import { compactCapabilityReview } from "./review-content";
 import { AiRunTimeout } from "./run-timeout";
@@ -325,12 +328,18 @@ const createChatSteering =
 // Baseline rebuild — reconstruct the full active-turn view from persisted rounds
 // ---------------------------------------------------------------------------
 
+const withResultView = (block: AiTurnBlock): AiTurnBlock => {
+  if (block.kind !== "tool" || block.status !== "completed" || block.isError) return block;
+  const view = capabilityResultView(block.result) ?? undefined;
+  return { ...block, view, ...(viewChoice(view ?? null) ? { choice: block.choice ?? { state: "open" } } : {}) };
+};
+
 const rebuildBlocksFromMessages = (
   messages: AiStoredMessage[],
   pending: AiPendingTurnActionRecord[],
   steers: AiTurnSteer[] = [],
 ): AiTurnBlock[] => {
-  const blocks = buildBlocksFromMessages(messages);
+  const blocks = buildBlocksFromMessages(projectAiChoices(messages)).map(withResultView);
   const indexByCallId = new Map(blocks.map((block, index) => [block.kind === "tool" ? block.callId : `_${index}`, index]));
 
   for (const action of pending) {
@@ -346,6 +355,8 @@ const rebuildBlocksFromMessages = (
           action.kind === "client_tool"
             ? undefined
             : {
+                requestId: action.approvalId,
+                digest: action.digest,
                 message: action.message,
                 review: action.review,
                 allowAlways: action.allowAlways,
@@ -552,6 +563,10 @@ const createEventMapper = (
       ...(approvedCallIds.has(callId) || approvedCallIds.has(displayCallId) || existing?.approved ? { approved: true } : {}),
       ...(receiptsOf(displayCallId) ? { receipts: receiptsOf(displayCallId) } : {}),
     };
+    if (block.status === "completed" && !block.isError) {
+      block.view = capabilityResultView(block.result) ?? undefined;
+      if (viewChoice(block.view ?? null)) block.choice = { state: "open" };
+    }
     toolBlocks.set(callId, block);
     return { type: "block_set", block };
   };
@@ -1113,6 +1128,8 @@ export class AiTurnExecutor {
     const capabilityOperations = new Map<string, AiCapabilityCatalogEntry>();
     const storedReviews = new Map<string, AiStoredActionReview>();
     const dynamicToolRuntimeContext = {
+      effectiveArguments: (callId: string, name: string, args: unknown) =>
+        editedDraftArguments({ conversationId, turnId, callId, name, args }),
       turnId,
       reportToolProgress: (callId: string, message: string) => pipeline.reportToolProgress(callId, message),
       reportToolResult: (callId: string, result: unknown) => pipeline.reportToolResult(callId, result),
@@ -1263,10 +1280,24 @@ export class AiTurnExecutor {
       pipeline.seedBaseline(rebuildAttemptBaseline({ loopMessages, pendingRecords, resolvedRecords, turnSteers }));
       await pipeline.emitTurnStarted(resolved.profile.id);
       await pipeline.emitBaseline();
+      // The choice message was committed before execution; publish it too so other tabs update its source block.
+      const choiceMessage = loopMessages.find((stored) => stored.message.role === "user" && stored.meta?.choice);
+      if (choiceMessage) await pipeline.emitMessage(choiceMessage);
     }
 
     const appliedSteers: AiTurnSteer[] = [];
 
+    if (config.choiceCall) {
+      await aiConversations.loadTools({
+        conversationId,
+        names: [config.choiceCall.query],
+        maxLoadedTools: resolved.profile.maxLoadedTools,
+      });
+    }
+    const choiceOrigin = createChoiceCapabilityOrigin(
+      config.choiceCall,
+      loopMessages.some((stored) => stored.message.role === "tool_result" && stored.message.callId === config.choiceCall?.callId),
+    );
     const tools = toolActor
       ? createAiToolResolver({
           conversationId,
@@ -1325,6 +1356,7 @@ export class AiTurnExecutor {
                     const result = await executeAiCapability({
                       conversationId,
                       turnId,
+                      origin: choiceOrigin(entry, context.callId),
                       authority: capabilityAuthority!,
 
                       actionApproval:
@@ -1547,7 +1579,7 @@ export class AiTurnExecutor {
     });
     // The turn policy counts the whole turn, including rounds that compaction archived.
     const turnMessages = await aiConversations.listTurnMessages({ conversationId, loopId: turnId, includeCompacted: true });
-    const turnBlocks = buildBlocksFromMessages(turnMessages);
+    const turnBlocks = buildBlocksFromMessages(projectAiChoices(turnMessages)).map(withResultView);
     const providerNamesByCallId = new Map(
       turnMessages.flatMap(({ message }) =>
         message.role === "assistant"
@@ -1970,7 +2002,6 @@ export class AiTurnExecutor {
     signal: AbortSignal;
   }): Promise<boolean> {
     const {
-      event,
       loop,
       pipeline,
       conversationId,
@@ -1982,6 +2013,14 @@ export class AiTurnExecutor {
       capabilityActionReviews,
       approvalTargets,
     } = input;
+    const effective = await editedDraftArguments({
+      conversationId,
+      turnId,
+      callId: customApprovalParentCallId(input.event.callId) ?? input.event.callId,
+      name: prepared.canonicalNames.get(input.event.name) ?? input.event.name,
+      args: input.event.args,
+    });
+    const event = { ...input.event, args: effective.args };
     const approvalPolicy = prepared.approvalPolicies.get(event.name);
     const toolName = prepared.canonicalNames.get(event.name) ?? event.name;
     const frontendMode: AiFrontendToolMode | undefined =
@@ -2131,6 +2170,10 @@ export class AiTurnExecutor {
     }
 
     await pipeline.apply(presented);
+    if (approvalId) {
+      const record = await approvals.get(approvalId, undefined, true);
+      await pipeline.setApprovalRequest(event.callId, approvalId, record?.reviewDigest);
+    }
     if (
       event.kind === "client_tool" &&
       frontendMode === "client" &&
@@ -2490,6 +2533,13 @@ class StreamPipeline {
     const block = this.blocks.find((block) => block.kind === "tool" && block.id === toolBlockId(callId));
     if (block?.kind !== "tool") return;
     await this.emitOp({ type: "block_set", block: { ...block, receipts: merged } });
+    await this.maybeSnapshot();
+  }
+
+  async setApprovalRequest(callId: string, requestId: string, digest?: string): Promise<void> {
+    const block = this.blocks.find((block) => block.kind === "tool" && block.callId === callId);
+    if (block?.kind !== "tool" || !block.approval) return;
+    await this.emitOp({ type: "block_set", block: { ...block, approval: { ...block.approval, requestId, digest } } });
     await this.maybeSnapshot();
   }
 

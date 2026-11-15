@@ -119,6 +119,7 @@ export type PreparedAiTools = {
 };
 
 export type AiToolPreparationContext = {
+  effectiveArguments?: (callId: string, name: string, args: unknown) => Promise<{ args: unknown; fields: string[] }>;
   actor?: RequestActor;
   conversationId?: string;
   turnId?: string;
@@ -252,7 +253,12 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
         if (!input.actor) throw new Error(`AI server tool "${tool.def.name}" requires a request actor.`);
         const report = input.reportToolProgress;
         const callId = ctx.callId;
-        return tool.run(toolInput, {
+        const effective =
+          callId && input.effectiveArguments
+            ? await input.effectiveArguments(callId, tool.def.canonicalName ?? tool.def.name, toolInput)
+            : { args: toolInput, fields: [] };
+        toolInput = tool.def.inputSchema.parse(effective.args);
+        const result = await tool.run(toolInput, {
           ...(await approvalContext(toolInput, ctx, aiToolNeedsApproval(tool.def.approval))),
           actor: input.actor,
           conversationId: input.conversationId,
@@ -279,6 +285,12 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
             callId && input.reportWebsiteReceipts ? (receipts) => input.reportWebsiteReceipts!(callId, receipts) : undefined,
           loadTools: input.loadTools,
         });
+        return effective.fields.length && result && typeof result === "object" && !Array.isArray(result)
+          ? {
+              ...result,
+              cloudNote: `The person edited fields ${effective.fields.join(", ")} before approving. The action used these edited values.`,
+            }
+          : result;
       });
     }
 
