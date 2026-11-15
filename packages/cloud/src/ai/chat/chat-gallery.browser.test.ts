@@ -373,3 +373,36 @@ test("the Gustav column is 812 px with 764 px for turns and composer, and prose 
     await close();
   }
 }, 60_000);
+
+for (const width of [1440, 390])
+  test(`everything on the right of the opened work stands on one axis, also in folded rows (${width} px)`, async () => {
+    const { page, close } = await open("schritte", width);
+    try {
+      const line = ".ai-turn-work > summary";
+      await page.locator(line).click();
+      await settled(page);
+      const place = async () => {
+        const { top, bottom, left, right } = await box(page, line);
+        return { top, bottom, left, right };
+      };
+      const lineBox = await place();
+      // Open the folded rows: housekeeping and the file read in parts.
+      for (const row of await page.locator(".ai-turn-steps summary.k2b-chat-activity__row").all()) await row.click();
+      await settled(page);
+      // Opening a row moves nothing above it.
+      expect(await place()).toEqual(lineBox);
+      const edges = await page.locator(".ai-turn-work").evaluate((work) => {
+        const right = (selector: string) =>
+          Array.from(work.querySelectorAll<HTMLElement>(selector))
+            .filter((node) => node.getClientRects().length > 0)
+            .map((node) => node.getBoundingClientRect().right);
+        return { chevrons: right(".k2b-chat-activity__chevron"), metas: right(".ai-turn-work__meta") };
+      });
+      // The work line, its steps and the folded rows: at least three chevrons and three counts or times.
+      expect(edges.chevrons.length).toBeGreaterThanOrEqual(3);
+      expect(edges.metas.length).toBeGreaterThanOrEqual(3);
+      for (const list of [edges.chevrons, edges.metas]) expect(Math.max(...list) - Math.min(...list)).toBeLessThanOrEqual(0.5);
+    } finally {
+      await close();
+    }
+  }, 60_000);

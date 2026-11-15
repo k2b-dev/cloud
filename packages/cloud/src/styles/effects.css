@@ -51,11 +51,11 @@
   font-size: 0.8125rem;
 }
 
-/* The row is as wide as its words (v12): the time follows the sentence in a fixed-width cell, then the chevron, at most
-   the row measure. The hover surface reaches 4 px past the text edge. */
+/* The opened work keeps one right axis (Valentin, 15.11.): the work line, every step and every folded row end on the
+   same edge, and their times, counts and chevrons stand right-aligned on it. The work line spans the row measure; the
+   hover surface reaches 4 px past the text edge, so its right edge is the steps' right edge. */
 .k2b-ui .ai-turn-work > .k2b-chat-activity__row {
-  width: fit-content;
-  max-width: min(calc(100% + 0.25rem), var(--k2b-row-measure, 40rem));
+  width: min(calc(100% + 0.25rem), var(--k2b-row-measure, 40rem));
   min-height: 1.75rem;
   margin-inline-start: -0.25rem;
   padding: 0.1875rem 0.5rem 0.1875rem 0.25rem;
@@ -194,12 +194,19 @@
   visibility: hidden;
 }
 
-.k2b-ui .ai-work-step .k2b-chat-activity__row {
-  gap: 0.625rem;
+/* One gap before the time and the chevron in every row of the work, so they share the axis; a step's tile keeps its
+   10 px to the words with its own margin. */
+.k2b-ui .ai-turn-work .k2b-chat-activity__row {
+  column-gap: 0.5rem;
 }
 
-/* A step that opens, such as thinking, ends its row where the work line ends its own, chevron under chevron. */
-.k2b-ui .ai-turn-steps > .ai-work-step > summary.k2b-chat-activity__row {
+.k2b-ui .ai-work-step .k2b-chat-activity__leading {
+  margin-inline-end: 0.125rem;
+}
+
+/* Every row that opens, at any depth (thinking, housekeeping, a file read in parts), ends where the work line ends its
+   own: chevron under chevron, time under time. */
+.k2b-ui .ai-turn-steps summary.k2b-chat-activity__row {
   width: min(100%, calc(var(--k2b-row-measure, 40rem) - 0.25rem));
   padding-inline-end: 0.5rem;
 }
