@@ -3,9 +3,11 @@ import { sql } from "@k2b/cloud";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CloudResourceReaderViewSchema, type User } from "@k2b/cloud/contracts";
+import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
 import { countPending } from "@k2b/cloud/services/approvals";
 import { z } from "zod";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
+import { aiCapabilities } from "../capabilities";
 import type { CodeContext } from "./access";
 import * as access from "./access";
 import {
@@ -28,6 +30,7 @@ import {
 import * as authoringChecks from "./authoring-check";
 import type { CodeSourceFiles } from "./contracts";
 import { readCodePolicySnapshot, updateCodePolicy } from "./policy";
+import { createCodeReviewComment } from "./review-comments";
 import * as runnerJobs from "./runner-jobs";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, insertCodeRun, listCodeRuns, readCodeRun } from "./store";
@@ -150,6 +153,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
       ok: true,
       data: { appId: "example", appName: "Example", appIcon: "ti ti-code", appDescription: "Fixture", manifest: catalog },
     });
+    createAppEventTestHarness("core", aiCapabilities);
     dispose = startCodeVersionApprovals();
   }, 180_000);
   afterAll(async () => {
@@ -232,7 +236,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
       versions: [{ status: "pending" }],
     });
 
-    await decideCodeVersion(first.binding, true, reviewer);
+    await decideCodeVersion(first.binding, { outcome: "approved" }, reviewer);
     expect((await codeVersions()).total).toBe(0);
     expect(
       (
@@ -468,5 +472,55 @@ databaseSuite()("C22 Administration › Code read model", () => {
     } finally {
       owner.mockRestore();
     }
+  });
+  test("approval rows hide an inaccessible place name and the next version retains my published feedback", async () => {
+    await sql`UPDATE code.policy_rules SET value='admin' WHERE group_id=${groupId}::uuid AND row='silent_shared'`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at) VALUES('c_feedback','person',${authorId}::uuid,'Feedback fixture',${authorId}::uuid,${fixed})`;
+    const first = await submitCodeVersion(submission("c_feedback", "export const one = 1;\nexample.item.change();", null), author);
+    await createCodeReviewComment(
+      { codeId: "c_feedback", versionId: first.version.id, path: "code.ts", line: 2, body: "Use the right destination." },
+      reviewer,
+    );
+    await decideCodeVersion(first.binding, { outcome: "changes_requested", comment: "Restrict the destination." }, reviewer);
+    const next = await submitCodeVersion(
+      submission("c_feedback", "export const two = 2;\nexample.item.change();", first.version.id),
+      author,
+    );
+    const own = await readCodeAdminApproval(next.version.id, reviewer);
+    expect(own.previousChangesRequest).toMatchObject({
+      number: 1,
+      message: "Restrict the destination.",
+      comments: [{ body: "Use the right destination." }],
+    });
+    expect(own.previousChangesRequest?.comments[0]).not.toHaveProperty("path");
+    const [privateAccount] = await sql<{ id: string }[]>`INSERT INTO auth.service_accounts(name,kind,created_by)
+      VALUES('code:example.item:private-place','code',${authorId}::uuid) RETURNING id`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,created_by,created_at)
+      VALUES('c_private1','resource','example.item','private-place',${privateAccount!.id}::uuid,'Private review',${authorId}::uuid,${fixed})`;
+    const owner = spyOn(access, "readCodeOwner").mockResolvedValue({ title: "Private place title", admin: true });
+    try {
+      const privateVersion = await submitCodeVersion(
+        submission("c_private1", "export const one = 1;\nexample.item.change();", null),
+        author,
+      );
+      owner.mockResolvedValue(null);
+      const row = (await listCodeAdminApprovals(reviewer)).items.find((item) => item.codeId === "c_private1");
+      expect(row).toMatchObject({
+        ownerName: null,
+        title: "Private review",
+        number: 1,
+        author: { name: "Lea Muster", avatarHash: null },
+        mainChange: "Diese Version ändert etwas, das andere sehen.",
+        reason: { row: "silent_shared", label: "braucht die Freigabe" },
+      });
+      expect(JSON.stringify(row)).not.toContain("Private place title");
+      owner.mockRejectedValue(new access.CodeOwnerUnavailableError("down"));
+      expect((await listCodeAdminApprovals(reviewer)).items.find((item) => item.codeId === "c_private1")?.ownerName).toBeNull();
+      expect((await readCodeAdminApproval(privateVersion.version.id, reviewer)).ownerName).toBeNull();
+    } finally {
+      owner.mockRestore();
+    }
+    // Keep this fixture out of later unfiltered list/count assertions.
+    await decideCodeVersion(next.binding, { outcome: "rejected", comment: "Fixture complete." }, reviewer);
   });
 });

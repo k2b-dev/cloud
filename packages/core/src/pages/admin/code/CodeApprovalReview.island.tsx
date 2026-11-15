@@ -6,6 +6,7 @@ import { Button, ButtonLink, CodeDiff, type CodeDiffLocation, NoticeCard, prompt
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import type { CodeAutomationView } from "../../../code/automation-view";
+import { CODE_REVIEW_COMMENT_LENGTH } from "../../../code/review-contracts";
 import { type CodeVersionBinding, type CodeVersionDiffFile, codeVersionContracts } from "../../../code/version-contracts";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
 import { codeAdminMessages } from "./messages";
@@ -41,7 +42,7 @@ export type CodeApprovalReviewProps = {
   check: CodeApprovalCheck | null;
   number: number;
   binding: CodeVersionBinding;
-  status: "submitted" | "pending" | "approved" | "rejected" | "expired" | "cancelled";
+  status: import("../../../code/version-contracts").CodeVersionSubmission["status"];
   canApprove: boolean;
   own: boolean;
   soleAdminNotice: string | null;
@@ -82,6 +83,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const [mark, setMark] = createSignal<CodeDiffLocation>();
   const [busy, setBusy] = createSignal<"approve" | "reject" | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
+  const [rejectDraft, setRejectDraft] = createSignal("");
   const [failureCode, setFailureCode] = createSignal<string>();
   const [signingOut, setSigningOut] = createSignal(false);
   const [signOutFailed, setSignOutFailed] = createSignal(false);
@@ -150,21 +152,40 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   };
 
   const decide = async (approved: boolean) => {
+    let comment: string | undefined;
     if (!approved) {
-      const confirmed = await prompts.confirm(t().rejectBody, {
+      const confirmed = await prompts.form({
         title: t().rejectTitle({ n: props.number }),
         confirmText: t().rejectConfirm,
         cancelText: t().cancel,
         variant: "danger",
+        fields: {
+          info: { type: "info", content: () => <p>{t().rejectBody}</p> },
+          comment: {
+            type: "text",
+            multiline: true,
+            label: t().reviewMessage,
+            required: true,
+            maxLength: CODE_REVIEW_COMMENT_LENGTH,
+            default: rejectDraft(),
+            validate: (value) => (value?.trim() ? null : t().reviewMessageRequired),
+          },
+        },
       });
       if (!confirmed) return;
+      comment = confirmed.comment.trim();
+      setRejectDraft(comment);
     }
     setBusy(approved ? "approve" : "reject");
     setFailure(null);
     setFailureCode(undefined);
     setSignOutFailed(false);
     try {
-      await postCodeAdmin("decide", { binding: props.binding, approved }, codeVersionContracts.decide.data);
+      await postCodeAdmin(
+        "decide",
+        { binding: props.binding, approved, ...(comment ? { comment } : {}) },
+        codeVersionContracts.decide.data,
+      );
       try {
         sessionStorage.setItem(DECIDED_KEY, props.versionId);
       } catch {
@@ -208,14 +229,20 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   };
 
   const decidedNotice = () => {
-    const state = props.status === "approved" || props.status === "rejected" ? props.status : null;
+    const state = props.status === "approved" || props.status === "rejected" || props.status === "changes_requested" ? props.status : null;
     if (!state) return null;
     return (
       <NoticeCard
         id={RESULT_ID}
         tabIndex={-1}
         tone={state === "approved" ? "success" : "neutral"}
-        title={state === "approved" ? t().approvedTitle({ n: props.number }) : t().rejectedTitle({ n: props.number })}
+        title={
+          state === "approved"
+            ? t().approvedTitle({ n: props.number })
+            : state === "changes_requested"
+              ? t().versionStatus({ s: state })
+              : t().rejectedTitle({ n: props.number })
+        }
         detail={
           <>
             <p>{state === "approved" ? `${t().approvedSub} ${t().undoHint}` : t().rejectedSub}</p>
@@ -281,7 +308,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           </section>
         </Show>
 
-        <Show when={props.status === "expired" || props.status === "cancelled"}>
+        <Show when={["expired", "cancelled", "withdrawn", "superseded"].includes(props.status)}>
           <NoticeCard tone="neutral" title={t().closedTitle} detail={t().closedSub} />
         </Show>
         <Show when={pending() && props.newer}>

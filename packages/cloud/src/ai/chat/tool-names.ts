@@ -90,6 +90,7 @@ const toolNames = i18n.define({
       code_simulate: "Tries one run with made-up data",
       code_submit: "Submits a new version",
       code_diff: "Compares a version",
+      code_review: "Reads the review feedback",
       code_remove: "Remove app file",
     },
     de: {
@@ -175,6 +176,7 @@ const toolNames = i18n.define({
       code_simulate: "Probiert einen Lauf mit erfundenen Daten",
       code_submit: "Reicht eine neue Version ein",
       code_diff: "Vergleicht eine Version",
+      code_review: "Liest die Rückmeldung",
       code_remove: "App-Datei entfernen",
     },
   },

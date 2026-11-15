@@ -313,9 +313,10 @@ authentication. Use the
 For [resource discussions](/en/docs/platform/resource-types-and-discussions),
 `CloudResourceReaderViewSchema`, `ResourcePrincipalSchema`,
 `ResourceReadableInputSchema`, `ResourceReadableDataSchema`,
+`ResourceManagersInputSchema`, `ResourceManagersDataSchema`,
 `ResourceActivityEventSchema`, the `Discussion*Schema` values,
 `typeViewIssues`, and `discussionsIssues` come from `@k2b/cloud/contracts`.
-`discussionProviders`, `readResourcePrincipals`, and `ResourceReaderRateLimited` come from
+`discussionProviders`, `readResourcePrincipals`, `listResourceManagers`, and `ResourceReaderRateLimited` come from
 `@k2b/cloud/capabilities/server`; `assertResourceView` comes from
 `@k2b/cloud/capabilities/testing`. The generated Query's context is
 `CapabilityAppExecutionContext`.

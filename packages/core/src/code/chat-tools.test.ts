@@ -30,6 +30,7 @@ const project = {
 
 test("chat tool schemas are provider object schemas and expose no activation or access writes", () => {
   expect(tools.map((tool) => tool.def.name)).toEqual([
+    "code_review",
     "code_init",
     "code_pull",
     "code_sdk",

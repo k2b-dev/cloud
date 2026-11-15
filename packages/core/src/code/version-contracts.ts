@@ -10,22 +10,23 @@ export {
 import { z } from "zod";
 import { CodeIdSchema, CodeSourceFilesSchema, CodeVersionSchema } from "./contracts";
 import { CodePolicyRowSchema } from "./policy-contracts";
+import { CodeReviewOutcomeSchema, CodeSubmissionOriginSchema } from "./review-contracts";
 
 const hash = z
   .string()
   .regex(/^[a-f0-9]{64}$/)
-  .describe("Lowercase SHA-256 digest from the unchanged version binding.");
+  .describe("Unchanged lowercase SHA-256.");
 /** Exact comparison evidence. Decisions must send this unchanged from version.diff or submit. */
 export const CodeVersionBindingSchema = z
   .object({
     codeId: CodeIdSchema,
-    versionId: z.uuid().describe("Immutable version UUID returned by submission or version history."),
+    versionId: z.uuid().describe("Version UUID from submit/list."),
     sourceHash: hash,
     bundleHash: hash,
     manifestHash: hash,
-    comparisonVersionId: z.uuid().nullable().describe("Exact previous version UUID, or null for an empty comparison."),
-    comparisonSourceHash: hash.nullable().describe("Previous source digest, or null for an empty comparison."),
-    comparisonBundleHash: hash.nullable().describe("Previous bundle digest, or null for an empty comparison."),
+    comparisonVersionId: z.uuid().nullable().describe("Baseline UUID; null for none."),
+    comparisonSourceHash: hash.nullable().describe("Baseline source hash; null for none."),
+    comparisonBundleHash: hash.nullable().describe("Baseline bundle hash; null for none."),
   })
   .strict();
 /** Hash and baseline binding, also persisted independently of expiring platform requests. */
@@ -42,6 +43,8 @@ export type CodeVersionDiffFile = z.infer<typeof CodeVersionDiffFileSchema>;
 export const CodeVersionDecisionSchema = z
   .object({
     approved: z.boolean(),
+    outcome: CodeReviewOutcomeSchema,
+    comment: z.string().nullable(),
     decidedBy: z.uuid().nullable(),
     decidedAt: z.iso.datetime(),
     soleAdmin: z.boolean(),
@@ -54,9 +57,20 @@ const submission = z
   .object({
     version: CodeVersionSchema,
     binding: CodeVersionBindingSchema,
-    status: z.enum(["submitted", "pending", "approved", "rejected", "expired", "cancelled"]),
+    status: z.enum([
+      "submitted",
+      "pending",
+      "approved",
+      "rejected",
+      "changes_requested",
+      "withdrawn",
+      "superseded",
+      "expired",
+      "cancelled",
+    ]),
     approvalId: z.uuid().nullable(),
     decision: CodeVersionDecisionSchema.nullable(),
+    origin: CodeSubmissionOriginSchema.optional(),
   })
   .strict();
 /** Submission metadata consumed by version lists, activation, CLI and approval UI. */
@@ -97,8 +111,8 @@ export const codeVersionContracts = {
     input: z
       .object({
         codeId: CodeIdSchema,
-        versionId: z.uuid().describe("Immutable version UUID returned by submission or version history."),
-        comparisonVersionId: z.uuid().nullable().describe("Exact previous version UUID, or null for an empty comparison."),
+        versionId: z.uuid().describe("Version UUID from submit/list."),
+        comparisonVersionId: z.uuid().nullable().describe("Baseline UUID; null for none."),
         offset: z.number().int().nonnegative().default(0).describe("UTF-16 offset returned by the previous content chunk; start at zero."),
         // At most 3 UTF-8 bytes per UTF-16 character (JSON escaping costs at most 2), leaving room under 256 KiB.
         length: z.number().int().min(1).max(65_536).default(65_536).describe("Maximum UTF-16 characters in this chunk, up to 65536."),

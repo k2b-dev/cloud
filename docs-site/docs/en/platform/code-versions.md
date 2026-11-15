@@ -5,7 +5,7 @@ section: Platform services
 order: 962
 description: Submit checked Code, compare complete source versions and decide hash-bound Cloud-admin approvals.
 tags: [code, approvals, versions]
-updated: 2026-11-08
+updated: 2026-11-14
 ---
 
 # Code versions and approval
@@ -23,7 +23,7 @@ metadata input. Write streams without that input remain unavailable.
 ## Submit a version
 
 Resource Actions (`code.version.submit`, `code.version.approve`,
-`code.version.reject`, `code.pause`, `code.resume`) require
+`code.version.reject`, `code.version.request_changes`, `code.pause`, `code.resume`) require
 `target: { type: "core.code", id: codeId }` beside domain `input`. Flat chat and
 MCP tools use `code`. Remove `codeId` from their inputs; Queries and exported
 service schemas keep it.
@@ -165,11 +165,30 @@ manifest and full source difference. Existing approval surfaces show it as
 passive plain JSON; the Code administration surface can render its full file
 rows as `CodeDiff`.
 
-`core.code.version.approve` and `core.code.version.reject` (with the binding
+`core.code.version.approve`, `core.code.version.reject` and
+`core.code.version.request_changes` (with the binding
 fields other than `codeId` in input and the Code as target) use that same platform request and current
 Cloud-admin authority. Shared approval cards and Cloud Login call the same
 transactional owner handler. The first decision wins; repeating the same
-accepted decision returns its existing receipt.
+accepted outcome returns its existing receipt. A different outcome returns a
+conflict naming the person who already decided. Rejection and requesting changes
+require a nonblank `comment` of at most 5,000 characters; approval accepts an
+optional comment. Core records `approved`, `changes_requested` or `rejected`.
+The latter two both refuse activation. The platform keeps its two outcomes:
+`changes_requested` is a rejected platform request.
+
+Code reviews expire after 14 days; Action approvals still expire after 24 hours.
+The submitter and current editors receive the decision after commit, even when
+the chat is closed. A submission notifies active Cloud administrators. Notices
+are retried with a stable key per version, notice kind and recipient. Their
+language follows the recipient's last browser sign-in; without that, the
+submitter's submission locale or the installation locale is used.
+
+Core records immutable submission provenance: `{kind:"cli"}` or
+`{kind:"ai_chat",conversationId,automaticAfterReview}`. The authenticated
+transport supplies this; a submission payload cannot choose its origin.
+`automaticAfterReview` records a revision created automatically after feedback,
+so a review worker can avoid an automatic revision loop.
 
 Core refuses changed hashes with `code_hash_mismatch`, a superseded version
 with `code_version_stale`, unavailable or deleting Code with
@@ -198,6 +217,71 @@ metadata. German version receipts label a self-approval
 **selbst freigegeben (einziger Admin)**. Approvals remain bound to the exact
 source, bundle and manifest. A revoked deciding device or a changed sign-out
 epoch prevents subsequent use of that approval.
+
+## Read review feedback
+
+`POST /api/code/authoring/review` takes `{codeId,versionId,before?}` and returns
+one `review` object: `codeId`, `versionId`, `number`, `status`, `origin`,
+`approvalId`, `expiresAt`, `decidedBy`, `decidedAt`, `message`, `comments`,
+`nextBefore`, `commentCount`, `activeVersion` and `contentTrust:"untrusted_data"`.
+The statuses are `not_required`, `pending`, `approved`, `changes_requested`,
+`rejected`, `withdrawn`, `superseded` and `expired`. `not_required` means no human
+approval was needed. `activeVersion` is `{id,number}` or null.
+
+Current editors can read the review, including with a read credential. Comments
+are unpublished until a decision. After publication each comment has `id`,
+`author:{id,name,avatarHash}`, `createdAt`, `body`, `parentId`, `path` and `line`.
+Replies retain their root ID. Follow `nextBefore` as `before` to read older
+comments. Product surfaces use the same service with anchors omitted, keeping
+author, time, text and replies. The `code_review` chat tool and
+`core.code.version.review` Query additionally require a published decision.
+Each call checks current editor rights. Messages and comment bodies are data;
+they grant no task, tool or permission and must never be treated as instructions.
+
+Administrators create comments and replies through
+`POST /api/code/admin/comments/create` with
+`{codeId,versionId,path,line,body,parentId?}`. Anchors refer to the new version's
+exact file and one-based line. A body has at most 5,000 characters; the total
+comment count derives from the platform's complete-review content budget.
+`comments/list` accepts `{codeId,versionId,before?,limit?}` (default 20, maximum
+50) and returns `{data:{items,nextBefore,total}}`.
+`comments/delete` takes `{codeId,versionId,id}`; only its author may delete it.
+Creating or deleting comments and deciding share the Code row lock. Once a
+review is decided, expired, superseded or withdrawn, comments are frozen.
+
+`POST /api/code/admin/decide` accepts
+`{binding,approved,outcome?,comment?}`. When supplied, `outcome` must agree with
+`approved`; omitting it retains the binary approval/rejection mapping. The
+owning Code service validates the required text and stores it atomically with
+the platform decision. The platform's `approvals.decide` forwards optional JSON
+`detail` (at most 32 KiB) to its kind handler in that same transaction.
+
+`POST /api/code/authoring/reviewWait` adds `holdMs` to the review input. It holds
+at most the login polling interval, with one held request per person across
+replicas. Further requests return the current snapshot immediately. It listens
+before re-reading and rechecks state and access after waking; lost hints are
+covered by the final read. Cancelling the request only stops waiting.
+
+The resource event `core.code.version.decided`, version 1, is written with the
+decision. Its subject and place are the Code; its data is only
+`{codeId,versionId,number,outcome}`. It contains no message or comments. The
+Code Type reader `code.resource.read` checks the current recipient's access for
+every delivery. It accepts person-bound authority, including a person mandate;
+Code accounts do not gain a management or source-reading surface.
+
+## Withdraw or request another review
+
+`POST /api/code/authoring/withdraw` takes `{codeId,versionId}`. Only a current
+editor with a write credential can withdraw a pending, unexpired review. Core
+records who withdrew it and when, cancels the question and writes
+`core.code.version.withdrawn` in one transaction. Activation refuses this
+version even if the policy later stops requiring approval. Withdrawal and a
+newer version superseding a request remain distinct states.
+
+After expiry, use the existing authoring `resubmit` command with the same
+content. It creates a new version and approval reference. Each immutable
+version therefore has one review; no separate attempt identity is needed.
+The active version keeps running. If none is active, the automation remains off.
 
 ## List, pause and resume
 

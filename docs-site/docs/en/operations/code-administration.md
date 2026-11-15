@@ -57,8 +57,23 @@ to **Admin approval** for its author or owner. The review shows:
 The decision is bound to the exact version, source hash, bundle hash and
 comparison shown in the footer. Cloud rechecks all of them when you decide. A
 newer submission, a moved comparison or a Code difference that could not be
-loaded disables **Approve** and names the reason. Rejecting asks for
-confirmation. After a decision the review reloads with its result at the top
+loaded disables **Approve** and names the reason. Requesting changes and rejecting require a message. Approval accepts an
+optional message. Negative decisions keep the proposed version off; the current
+active version keeps running. The first version leaves the automation off.
+Cloud administrators receive a submission notice; the submitting person and
+current Code editors receive the decision, with a link to that version.
+Reviews expire after 14 days.
+
+Administrators can add line comments and replies while a review is pending.
+Only the author may delete a comment before the decision; publication freezes
+the comments. Ordinary Code surfaces show the comments as text without file
+names or line numbers. The CLI and Gustav can read the exact anchors.
+
+The approval list includes the author, avatar, submission time, owner, strictest
+policy reason and a sentence describing it. A place name is resolved only when
+the administrator can read that place; otherwise only its type is available.
+A follow-up version also carries the current administrator's request for changes
+and comments from the directly preceding version. After a decision the review reloads with its result at the top
 and moves focus there. A decision cannot be withdrawn. To take an approval back, pause
 the Code: Cloud administrators can pause and resume any Code from its detail
 under **Code in this Cloud**. Resuming checks the active version's approval

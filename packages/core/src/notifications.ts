@@ -268,6 +268,49 @@ const accessTitle = (data: { kind: "command_line" | "app"; clientName: string },
   data.kind === "command_line" ? text(locale).accessCommandTitle : text(locale).accessAppTitle({ app: data.clientName });
 
 export const NOTIFICATIONS = {
+  codeReview: notification({
+    recipient: "user",
+    label: "Code version reviews",
+    description: "Pending Code reviews and decisions on versions you manage.",
+    delivery: { recommended: ["browser"] },
+    presentation: presentation("Prüfung einer Code-Version", "Offene Prüfungen und Entscheidungen zu deinen Automationen."),
+    data: z.object({
+      codeId: z.string(),
+      title: z.string(),
+      versionId: z.uuid(),
+      number: z.number().int().positive(),
+      kind: z.enum(["submitted", "decided"]),
+      outcome: z.enum(["approved", "changes_requested", "rejected"]).nullable(),
+      by: z.string().nullable(),
+    }),
+    render: (data, { locale }) => {
+      const de = locale.startsWith("de");
+      const by = data.by ?? (de ? "Ein Admin" : "An admin");
+      return {
+        title:
+          data.kind === "submitted"
+            ? de
+              ? `Version ${data.number} wartet auf Admin-Freigabe`
+              : `Version ${data.number} is waiting for admin approval`
+            : data.outcome === "changes_requested"
+              ? de
+                ? `${by} hat Änderungen an Version ${data.number} angefordert`
+                : `${by} requested changes to version ${data.number}`
+              : data.outcome === "approved"
+                ? de
+                  ? `${by} hat Version ${data.number} freigegeben`
+                  : `${by} approved version ${data.number}`
+                : de
+                  ? `${by} hat Version ${data.number} abgelehnt`
+                  : `${by} rejected version ${data.number}`,
+        body: data.title,
+        targetHref:
+          data.kind === "submitted"
+            ? `/admin/code?sec=approvals&id=${data.versionId}`
+            : `/app/assistant/code/${data.codeId}?tab=versions&version=${data.versionId}`,
+      };
+    },
+  }),
   oauthNewAccess: notification({
     recipient: "user",
     label: "New access",
@@ -466,6 +509,19 @@ const fingerprint = (value: string): string => createHash("sha256").update(value
 
 export type CoreNotificationSender = AuthNotificationSender &
   AccountLifecycleNotificationSender & {
+    sendCodeReview: (notice: {
+      userId: string;
+      codeId: string;
+      title: string;
+      versionId: string;
+      number: number;
+      kind: "submitted" | "decided";
+      outcome: "approved" | "changes_requested" | "rejected" | null;
+      by: string | null;
+      locale: string;
+      origin: import("./code/review-contracts").CodeSubmissionOrigin;
+      key: string;
+    }) => Promise<unknown>;
     sendCodeDatabaseExpiry: (notice: { userId: string; codeId: string; title: string; deleteAt: string; key: string }) => Promise<unknown>;
     sendOAuthNewAccess: (notice: OAuthNewAccessNotice) => Promise<unknown>;
     sendDeviceEnrollment: (notice: AppDeviceEnrollmentNotice) => Promise<unknown>;
@@ -473,6 +529,12 @@ export type CoreNotificationSender = AuthNotificationSender &
   };
 
 export const createCoreNotificationSender = (definitions: CoreNotificationDescriptors): CoreNotificationSender => ({
+  sendCodeReview: async ({ userId, locale, key, origin: _origin, ...data }) => {
+    const result = await notifications.send(definitions.codeReview, { recipient: { userId }, data, locale, idempotencyKey: key });
+    if (result.status === "suppressed" && result.deliveries.some((delivery) => delivery.errorCode === "preparation_failed"))
+      throw new Error("Code review notice could not be prepared");
+    return result;
+  },
   sendCodeDatabaseExpiry: async ({ userId, codeId, title, deleteAt, key }) => {
     const result = await notifications.send(definitions.codeDatabaseExpiry, {
       recipient: { userId },

@@ -19,6 +19,7 @@ import { combineCapabilitySignals } from "./signals";
 import type { CapabilityCatalogAppClientResult, CapabilityInvocation, CapabilityReviewClientResult } from "./types";
 
 export type { CapabilityActionWording } from "../_internal/capability-sentences";
+export { listResourceManagers } from "./resource-readers";
 export {
   appCaller,
   type CapabilityCaller,

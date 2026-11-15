@@ -51,7 +51,7 @@ const VersionSchema = z.object({
 });
 const VersionReceiptSchema = z.object({
   version: VersionSchema,
-  status: z.enum(["submitted", "pending", "approved", "rejected", "expired", "cancelled"]),
+  status: z.enum(["submitted", "pending", "approved", "changes_requested", "rejected", "withdrawn", "superseded", "expired", "cancelled"]),
   decision: z.object({ approved: z.boolean(), decidedBy: z.string().nullable(), decidedAt: z.string(), label: z.string() }).nullable(),
 });
 export const VersionListSchema = z.object({ items: z.array(VersionReceiptSchema), nextBefore: z.number().int().nullable() });
@@ -347,7 +347,7 @@ export type CodePageReady = {
   versionsFailed: boolean;
   moreVersions: boolean;
   active: CodePageVersion | null;
-  /** The newest version when it is newer than the running one and not rejected, expired, or cancelled. */
+  /** The newest version awaiting approval or activation, when newer than the running one. */
   waiting: CodePageVersion | null;
   automations: CodePageAutomation[] | null;
   /** Core's attention reasons for this Code, the same answer the owner's navigation uses; null when unavailable. */

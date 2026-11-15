@@ -3,10 +3,12 @@ import * as registry from "@k2b/cloud";
 import { connections, sql } from "@k2b/cloud";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { CodeHttpRequestSchema, type CodeSecretVersionBinding, type User } from "@k2b/cloud/contracts";
+import { createAppEventTestHarness, installLiveOutbox } from "@k2b/cloud/events/testing";
 import { mandates, requestPublicHttps as publicHttps, purposeSecretCipher, type requestPublicHttps } from "@k2b/cloud/services";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { resolvePublicNetworkAddresses } from "@k2b/cloud/services/network-security";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
@@ -80,6 +82,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("code_secrets_c11");
     await migrateAuth();
+    await installLiveOutbox(sql);
     await migrateRailPreferences();
     await migrateRailShortcuts();
   });
@@ -107,6 +110,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
       routes: [],
       access: { kind: "signedIn" },
     }));
+    createAppEventTestHarness("core", aiCapabilities);
     stopApprovals = startCodeVersionApprovals();
   });
   afterAll(async () => {
@@ -158,7 +162,7 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
   async function running(codeId: string, binding: CodeSecretVersionBinding, internet = [destination.origin]) {
     const submission = await submit(codeId, binding, null, internet);
     expect(submission.status).toBe("pending");
-    await decideCodeVersion(submission.binding, true, context(reviewerId));
+    await decideCodeVersion(submission.binding, { outcome: "approved" }, context(reviewerId));
     await sql`UPDATE code.codes SET active_version_id=${submission.version.id}::uuid,state='active' WHERE id=${codeId}`;
     const mandate = await mandates.create({
       authority: { kind: "admin", userId: authorId },

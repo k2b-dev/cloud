@@ -160,6 +160,7 @@ describe("feat/code tools", () => {
       "code_simulate",
       "code_submit",
       "code_diff",
+      "code_review",
       "code_read",
       "code_write",
       "code_check",

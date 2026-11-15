@@ -20,6 +20,8 @@ export type CodeContext = {
   requestId?: string;
   /** Under a capability invocation, the one way to ask another app: an invocation cannot be exchanged for a new one. */
   query?: CapabilityExecutionContext["query"];
+  /** Authenticated submission provenance; chat tools set this from their actual conversation. */
+  submissionOrigin?: import("./review-contracts").CodeSubmissionOrigin;
 };
 export class CodeDataError extends Error {
   constructor(

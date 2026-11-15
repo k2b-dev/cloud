@@ -165,7 +165,7 @@ for the Code version service and administration surfaces:
   with different input or review digests returns `CONFLICT`.
 - `registerApprovalDecisionHandler("code_version", handler)` installs the
   owning service's transition once at startup and returns a disposer. Its
-  `ApprovalDecisionHandler` receives `(tx, request, actor)`, where
+  `ApprovalDecisionHandler` receives `(tx, request, actor, detail?)`, where
   `ApprovalDecisionActor` identifies the deciding person, channel, and
   `authority` from the authenticated request. Cloud Login instead requires
   an active signed device. The
@@ -175,11 +175,14 @@ for the Code version service and administration surfaces:
   It runs once for the winning decision, never for a replay. Do not send
   external effects from it. `ApprovalRequest.soleAdmin` is true only for the
   winning sole-admin self-approval. Copy it to the domain `version_decisions`
-  row (`sole_admin`) and `version.approved` / `version.rejected` events; the platform approval rule
+  row (`sole_admin`) and domain audit metadata; the platform approval rule
   is the sole owner of the exception. Other decisions carry false. Cloud records
   audit metadata `soleAdmin: true` and reason `self_approved_sole_admin`.
-- `decide(id, { approved }, actor, tx?)` applies the current recipient rules
-  and invokes that handler in the same transaction. It returns `NOT_FOUND`
+- `decide(id, { approved, detail? }, actor, tx?)` applies the current recipient rules
+  and invokes that handler in the same transaction. Optional `detail` is passive
+  JSON, limited to the 32 KiB review-metadata budget. It is forwarded as the
+  handler's fourth argument; the kind owner validates its shape. The platform
+  still has only approved/rejected outcomes. It returns `NOT_FOUND`
   to non-admins, `SELF_APPROVAL` when the author is not the sole eligible admin,
   `REAUTHENTICATE` when self-approval needs a recent full sign-in, `REJECT_ONLY` for
   an ACP approval, `BUSY` during a competing population write or self-approval,
