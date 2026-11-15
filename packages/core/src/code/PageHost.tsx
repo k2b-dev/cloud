@@ -3,6 +3,7 @@ import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { i18n } from "@k2b/stdlib";
 import { Button } from "@k2b/ui";
 import CodePageTreeView from "./PageTree.island";
+import type { CodePageProvenanceSeed } from "./page-provenance-contracts";
 
 const provenanceMessages = i18n.define({
   baseLocale: "en",
@@ -65,7 +66,15 @@ const hasForm = (nodes: readonly CodePageNode[]): boolean =>
  * A Code page as Core hosts it in every layout: the tree, in its own stacking context, and the feat/code label after
  * it. Only the tree is an island; the label stays server markup.
  */
-export default function CodePageHost(props: { tree: CodePageTree; codeId: string; csrf: string | null; locale: string; timeZone: string }) {
+export default function CodePageHost(props: {
+  tree: CodePageTree;
+  codeId: string;
+  csrf: string | null;
+  /** The label for this viewer and the delivered version (`HostedCodePage.provenance`). */
+  provenance: CodePageProvenanceSeed;
+  locale: string;
+  timeZone: string;
+}) {
   return (
     // The host is the print region, so a printed or saved page keeps its label.
     <div class="code-page-host" data-code-page-host="" data-print-region="">
