@@ -116,7 +116,11 @@ const STATUS: Record<CodeCardStatus, { tone: string; icon: string; word: (t: Mes
 const cardSchedule = (item: CodeOverviewItem, t: Messages, locale: string) => {
   const automations = item.automations ?? [];
   if (automations.length > 1) return t.codeAutomationCount({ count: automations.length });
-  return automations[0] ? automationTiming(automations[0], locale) : t.codeKind;
+  if (automations[0]) return automationTiming(automations[0], locale);
+  // A draft that runs nothing yet: when its newest version would run, in Core's words.
+  const proposed = item.proposedTiming ?? [];
+  if (proposed.length > 1) return t.codeAutomationCount({ count: proposed.length });
+  return proposed[0] ?? t.codeKind;
 };
 
 /** "Last: …": why the last run failed, else its newest confirmed effect, else the newest run itself. */

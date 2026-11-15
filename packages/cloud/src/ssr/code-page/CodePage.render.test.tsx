@@ -12,7 +12,9 @@ import { currentLibrary } from "../../../test/future-capability-manifest";
 import * as capabilityProvider from "../../capabilities/server";
 import { capabilityResultSchema } from "../../contracts/capabilities";
 import { cloudResourcePageHref } from "../../contracts/resource-pages";
+import type { RequestAuthority } from "../../server/middleware/auth";
 import * as coreLocation from "../../services/identity/core-origin";
+import { buildProjectedUser } from "../../services/session/user";
 import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { CODE_PAGE_FIXTURE_STATES, type CodePageFixtureState, codePageFixture } from "./code-page.fixture";
 import type { CodePageInvoke } from "./data";
@@ -25,7 +27,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePage } = await import("./CodePage");
-const { describeTarget, loadCodePage, permissionRef, visiblePersonIds } = await import("./load");
+const { catalogCache, describeTarget, loadCodePage, permissionRef, visiblePersonIds } = await import("./load");
 const capabilityServer = await import("../../capabilities/server");
 const { loadCodeAttention } = await import("./attention");
 const { codePageNeedsAttention } = await import("./CodePage");
@@ -1108,4 +1110,29 @@ test("what it did for you names only the results the reader may read", async () 
   const feed = markup.slice(markup.indexOf("cloud-code__feed"));
   expect(feed).toMatch(/<span class="cloud-code__feed-text">Aufgabe angelegt<\/span>/);
   expect(markup).not.toMatch(/HidN3x|\{name\}/);
+});
+
+// #65 at the live instance: the catalog answers only for apps the person may use. Read without the request's
+// authority, every app with an entry rule (Spaces: no guests) came back empty, so no recent result had a reader.
+test("the page reads the registry catalog with the person's authority", async () => {
+  const user = buildProjectedUser({
+    id: "11111111-1111-4111-8111-111111111111",
+    provider: "local",
+    profile: "user",
+    effective_admin: false,
+  });
+  const authority: RequestAuthority = {
+    actor: { kind: "user", user },
+    accessSubject: { type: "user", userId: user.id },
+    credentialKind: "session",
+    scopes: [],
+  };
+  const catalog = spyOn(capabilityProvider, "getCapabilityCatalogApp").mockResolvedValue({ ok: true, data: null });
+  try {
+    const read = catalogCache("de", authority);
+    await Promise.all([read("spaces"), read("spaces")]);
+    expect(catalog.mock.calls).toEqual([["spaces", "de", authority]]);
+  } finally {
+    catalog.mockRestore();
+  }
 });
