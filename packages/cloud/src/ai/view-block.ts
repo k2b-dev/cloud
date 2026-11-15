@@ -686,6 +686,19 @@ export const parseCloudAiChartToolView = (args: unknown): CloudAiChartView | Clo
   const parsed = ChartViewSchema.safeParse({ ...value, view: "chart" });
   return parsed.success ? parsed.data : undefined;
 };
+/** The sign of a delivered view in lists, by what it shows; the chat's result index records it with the delivery. */
+export const CLOUD_AI_VIEW_ICONS = {
+  chart: "ti ti-chart-bar",
+  group: "ti ti-chart-arcs",
+  explorer: "ti ti-chart-dots",
+  table: "ti ti-table",
+  stats: "ti ti-numbers",
+  details: "ti ti-list-details",
+} as const satisfies Record<CloudAiView["view"], string>;
+export type CloudAiViewKind = keyof typeof CLOUD_AI_VIEW_ICONS;
+/** What a delivered view shows, from the sign its result carries; null for a result indexed before Cloud recorded it. */
+export const cloudAiViewKindOfIcon = (icon: string): CloudAiViewKind | null =>
+  (Object.keys(CLOUD_AI_VIEW_ICONS) as CloudAiViewKind[]).find((kind) => CLOUD_AI_VIEW_ICONS[kind] === icon) ?? null;
 export const isAiViewPath = (path: string) => path === CLOUD_AI_VIEW_DIRECTORY || path.startsWith(`${CLOUD_AI_VIEW_DIRECTORY}/`);
 export const isAiViewFile = (file: { path: string; origin: string }) =>
   file.origin === "assistant" && file.path.startsWith(`${CLOUD_AI_VIEW_DIRECTORY}/`) && file.path.endsWith(CLOUD_AI_VIEW_SUFFIX);

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { AssistantChatResult } from "../chat-context";
 import { fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source } from "./AssistantChatSidebar.fixture";
 import { buildContextBoxModel, CONTEXT_BOX_ROW_LIMIT, contextBoxPending, contextBoxWhen } from "./chat-context-box";
 
@@ -26,6 +27,29 @@ describe("box model", () => {
     expect(file).toMatchObject({ trailing: "1400000 B", open: { kind: "file" }, hover: { kind: "download" } });
     // Studio apps are gone on feat/code: an app result leads back to its place in the chat.
     expect(app).toMatchObject({ open: { kind: "jump" }, hover: { kind: "jump" } });
+  });
+
+  test("a view says what it shows with its own sign, never a size, and points back to the chat", () => {
+    const view = (key: string, kind: AssistantChatResult["view"], icon: string, seq: number) => ({
+      ...fileResult(key, { at: minutesAgo(seq), turn: `t${seq}`, seq, size: 0, mediaType: "application/json" }),
+      icon,
+      view: kind,
+    });
+    const rows = build(
+      sidebarSnapshot({
+        results: [
+          view("/views/aufgaben.view.json", "chart", "ti ti-chart-bar", 1),
+          view("/views/liste.view.json", "table", "ti ti-table", 2),
+          view("/views/alt.view.json", "view", "ti ti-file", 3),
+        ],
+      }),
+    ).results.rows;
+    expect(rows.map((row) => [row.trailing, row.icon, row.open.kind, row.hover?.kind])).toEqual([
+      ["Diagramm", "ti ti-chart-bar", "file", "jump"],
+      ["Tabelle", "ti ti-table", "file", "jump"],
+      ["Ansicht", "ti ti-presentation-analytics", "file", "jump"],
+    ]);
+    expect(rows.some((row) => row.trailing.endsWith(" B"))).toBe(false);
   });
 
   test("a visualization leads back to its place in the chat", () => {

@@ -1,5 +1,7 @@
 import type { AiProject } from "@k2b/cloud/ai";
+import { CLOUD_AI_VIEW_SUFFIX, isAiViewPath } from "@k2b/cloud/ai/browser";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
+import { CloudViewFile } from "@k2b/cloud/ai/ui";
 import { SAVE_FILES_ICON, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
   Button,
@@ -33,6 +35,7 @@ import { AssistantChatContextContent, type ContextView } from "../frontend/Assis
 import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
 import { dismissAssistantPanesHint } from "../frontend/chat-sidebar-layout";
 import { chatSidebarMessages } from "../frontend/chat-sidebar-messages";
+import { GENERIC_VIEW_ICON, viewKindMessages } from "../frontend/view-kind-messages";
 import { artifactMessages } from "./messages";
 import { WebReaderTab } from "./WebReaderTab";
 import type { ChatWorkspaceController } from "./workspace-controller";
@@ -41,6 +44,10 @@ import { type WorkspaceTab, webTab, workspaceSelectionHref, workspaceTabId } fro
 
 function ChatFile(props: { tab: Extract<WorkspaceTab, { kind: "file" }>; refreshKey: string; dirty: (value: boolean) => void }) {
   const source = conversationFileSource("/api/ai", props.tab.conversationId);
+  // A view file (chart, table, key figures …) is drawn as in the chat, never shown as its JSON.
+  const viewHref =
+    isAiViewPath(props.tab.path) && props.tab.path.endsWith(CLOUD_AI_VIEW_SUFFIX) ? source.downloadHref?.(props.tab.path) : undefined;
+  if (viewHref) return <CloudViewFile path={props.tab.path} url={viewHref} />;
   const [dirty, setDirty] = createSignal(false);
   const [revision, setRevision] = createSignal(props.refreshKey);
   createEffect(() => {
@@ -165,10 +172,24 @@ export function ChatWorkspace(props: {
       ? w().todayAt({ time })
       : new Intl.DateTimeFormat(locale(), { day: "numeric", month: "numeric" }).format(date);
   };
+  /** A view's tab carries the sign of what it shows, as its row in the box does. */
+  const viewIcon = (tab: WorkspaceTab) => {
+    const result = tab.kind === "file" ? resultOf(tab.path) : null;
+    return result?.view ? (result.view === "view" ? GENERIC_VIEW_ICON : result.icon) : undefined;
+  };
   const meta = (tab: WorkspaceTab): string | null => {
     if (tab.kind === "file") {
       const result = resultOf(tab.path);
       const upload = props.snapshot?.()?.files.find((entry) => entry.path === tab.path) ?? null;
+      // A view says what it shows ("Diagramm"), not its JSON's extension and size.
+      if (result?.view)
+        return [
+          viewKindMessages.resolve([locale()]).t[result.view],
+          w().madeByGustav({ when: when(result.deliveredAt) }),
+          result.description,
+        ]
+          .filter(Boolean)
+          .join(" · ");
       const size = result?.file?.size ?? upload?.size;
       // Kind and size, then who made it and when: "CSV · 605 KB · von Gustav erstellt · heute, 13:40".
       const origin = result
@@ -281,7 +302,7 @@ export function ChatWorkspace(props: {
         : section,
     );
   const actions = (tab: WorkspaceTab): JSX.Element => {
-    if (tab.kind !== "file") return undefined;
+    if (tab.kind !== "file" || isAiViewPath(tab.path)) return undefined;
     const href = conversationFileSource("/api/ai", tab.conversationId).downloadHref?.(tab.path);
     return href ? (
       <IconButtonLink
@@ -394,7 +415,7 @@ export function ChatWorkspace(props: {
     state().tabs.map((tab) => ({
       id: workspaceTabId(tab.key),
       title: title(tab),
-      icon: tabIcon(tab),
+      icon: viewIcon(tab) ?? tabIcon(tab),
       render: () => paneOf(tab.key),
       onClose: () => void close(tab.key),
     })),

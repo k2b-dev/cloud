@@ -216,6 +216,35 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
       if (!abort.signal.aborted) setView(loaded);
     });
   });
+  return <ViewOf path={props.path} summary={props.summary} view={view()} />;
+}
+
+/**
+ * A view file on its own, such as a result opened in a tab beside the chat: the same views as in the chat, drawn from
+ * the file alone. It loads and checks the file with the viewer's access like a presented one, and takes its size from
+ * the file once loaded; a file that is no view, or no longer valid, says it is unavailable.
+ */
+export function CloudViewFile(props: { path: string; url: string }) {
+  // undefined while loading, null when unavailable.
+  const [file, setFile] = createSignal<{ summary: CloudAiViewSummary; view: CloudViewDescription } | null | undefined>(undefined);
+  onMount(() => {
+    const abort = new AbortController();
+    onCleanup(() => abort.abort());
+    void importOnDemand(() => import("./view-file")).then(async (reader) => {
+      if (abort.signal.aborted) return;
+      const loaded = reader ? await reader.loadViewFile(props.url, props.path, abort.signal) : null;
+      if (!abort.signal.aborted) setFile(loaded);
+    });
+  });
+  return (
+    <Show when={file()} fallback={<ViewStatus loading={file() === undefined} />}>
+      {(loaded) => <ViewOf path={props.path} summary={loaded().summary} view={loaded().view} />}
+    </Show>
+  );
+}
+
+function ViewOf(props: { path: string; summary: CloudAiViewSummary; view: CloudViewDescription | null | undefined }) {
+  const view = () => props.view;
   const chartSummary = (): ChartSummary | undefined => (props.summary.view === "chart" ? props.summary : undefined);
   const tableSummary = (): TableSummary | undefined => (props.summary.view === "table" ? props.summary : undefined);
   const groupSummary = (): GroupSummary | undefined => (props.summary.view === "group" ? props.summary : undefined);

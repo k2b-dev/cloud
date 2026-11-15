@@ -1,5 +1,6 @@
 import type { AssistantChatContextGroup, AssistantChatContextSnapshot, AssistantChatResult } from "../chat-context";
 import { fileKind } from "./chat-sidebar-model";
+import { GENERIC_VIEW_ICON, viewKindMessages } from "./view-kind-messages";
 
 /** Entries a group shows in the box before "Show all". */
 export const CONTEXT_BOX_GROUP_LIMIT = 3;
@@ -108,12 +109,22 @@ export const contextBoxResultRow = (
   input: { now: string; timeZone: string; locale: string; formatSize: (bytes: number) => string; copy: Pick<ContextBoxCopy, "showInChat"> },
 ): ContextBoxRow => {
   const jump = resultJump(result);
-  const trailing = result.file
-    ? input.formatSize(result.file.size)
-    : contextBoxWhen(result.deliveredAt, input.now, input.timeZone, input.locale);
+  // A view (chart, table …) says what it shows with its own sign; only other files have a size worth naming.
+  const view = result.view;
+  const trailing = view
+    ? viewKindMessages.resolve([input.locale]).t[view]
+    : result.file
+      ? input.formatSize(result.file.size)
+      : contextBoxWhen(result.deliveredAt, input.now, input.timeZone, input.locale);
   return {
     key: `result:${result.key}`,
-    icon: result.file ? kindIcon[fileKind(result.file.mediaType, result.file.path)] : result.icon,
+    icon: view
+      ? view === "view"
+        ? GENERIC_VIEW_ICON
+        : result.icon
+      : result.file
+        ? kindIcon[fileKind(result.file.mediaType, result.file.path)]
+        : result.icon,
     title: result.title,
     trailing,
     tooltip: result.description ? `${result.title} · ${result.description}` : result.title,
@@ -122,12 +133,13 @@ export const contextBoxResultRow = (
       : jump
         ? { kind: "jump", target: jump }
         : { kind: "none" },
-    // Files download from the row; anything else shows where it came from.
-    hover: result.file
-      ? { kind: "download", path: result.file.path, name: fileName(result.file.path) }
-      : jump
-        ? { kind: "jump", target: jump }
-        : null,
+    // Files download from the row; a view and anything else show where they came from.
+    hover:
+      result.file && !view
+        ? { kind: "download", path: result.file.path, name: fileName(result.file.path) }
+        : jump
+          ? { kind: "jump", target: jump }
+          : null,
   };
 };
 

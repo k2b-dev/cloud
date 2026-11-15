@@ -9,7 +9,10 @@ import {
   aiConversations,
   aiMemories,
   aiSkills,
+  type CloudAiViewKind,
+  cloudAiViewKindOfIcon,
   describeAiResourceTypeCounts,
+  isAiViewPath,
   loadAiConversationFileOverview,
 } from "@k2b/cloud/ai";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
@@ -47,6 +50,11 @@ export type AssistantChatResult = {
   /** Chat position of the delivery, for `?message=`; null when its turn is gone. */
   messageSeq: number | null;
   file?: { path: string; mediaType: string; size: number };
+  /**
+   * A view file (chart, table, key figures …) the assistant delivered: lists name what it shows instead of a size, and
+   * it opens drawn as in the chat. `view` stands for a view delivered before Cloud recorded what it shows.
+   */
+  view?: CloudAiViewKind | "view";
   presentationId?: string;
 };
 
@@ -218,6 +226,7 @@ export const loadAssistantChatContextSnapshot = async (
           title: source.title,
           icon: source.icon,
           file: { path: source.path, mediaType: source.mediaType, size: source.size },
+          ...(isAiViewPath(source.path) ? { view: cloudAiViewKindOfIcon(source.icon) ?? "view" } : {}),
         },
       ];
     }
