@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { CodeActivityReadModelSchema, CodeRunReadModelSchema } from "@k2b/cloud/contracts";
-import { effectTarget, presentEffect } from "./effects";
+import { effectTarget, presentEffect, presentEffectCount } from "./effects";
 import { codeActivityReadModelFixture, codeRunReadModelFixture } from "./fixtures";
 import type { ReadModelNames } from "./present";
 
@@ -44,4 +44,22 @@ test("all consumer fixtures use the same bounded de/en contracts", () => {
     expect(CodeActivityReadModelSchema.safeParse(codeActivityReadModelFixture(locale)).success).toBe(true);
     expect(CodeRunReadModelSchema.safeParse(codeRunReadModelFixture(locale)).success).toBe(true);
   }
+});
+
+test("weekly counters use persisted plural results and never a permission title as a result", () => {
+  expect(codeActivityReadModelFixture("de").counters.items[0]?.text).toBe("Aufgaben angelegt");
+  expect(codeActivityReadModelFixture("en").counters.items[0]?.text).toBe("Tasks created");
+  const counted = {
+    ...evidence,
+    forms: {
+      de: { ...evidence.forms.de, countText: "Aufgaben angelegt" },
+      en: { ...evidence.forms.en, countText: "Tasks created" },
+    },
+  };
+  expect(presentEffectCount(counted, "de", "Aufgabe anlegen", 35)).toBe("Aufgaben angelegt");
+  expect(presentEffectCount(counted, "en", "Create task", 35)).toBe("Tasks created");
+  expect(presentEffectCount(evidence, "de", "Aufgabe anlegen", 35)).toBe("Aufgabe anlegen · 35 Mal");
+  expect(presentEffectCount({ ...counted, forms: { de: { ...counted.forms.de, countText: "{private}" } } }, "de", "Action", 2)).toBe(
+    "Action · 2 Mal",
+  );
 });

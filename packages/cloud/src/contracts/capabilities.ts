@@ -808,7 +808,13 @@ export type CapabilityActionSentences = {
 };
 
 /** Evidence-backed result wording. Only {target} is substituted, through the caller's resource reader. */
-export type CapabilityActionResultForm = { text: string; targetType: string; kind: string };
+export type CapabilityActionResultForm = {
+  text: string;
+  targetType: string;
+  kind: string;
+  /** Plural past-tense label beside a separate confirmed-effect count; no target names or tokens. */
+  countText?: string;
+};
 
 export type CapabilityOperationPresentationTranslation = {
   /** Past-tense result for one confirmed effect; targetType is an app-local Type. */

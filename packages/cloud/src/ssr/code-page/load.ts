@@ -452,6 +452,9 @@ const loadReady = async (
   );
   // A skipped tick or a cancelled start is not a run's result.
   const nextRuns = new Map(automationResult?.ok ? automationResult.data.data.items.map((item) => [item.entrypoint, item.nextRunAt]) : []);
+  const nextRunStates = new Map(
+    automationResult?.ok ? automationResult.data.data.items.map((item) => [item.entrypoint, item.nextRunState]) : [],
+  );
   const lastRunOf = (entrypoint: string) =>
     runs?.find((run) => run.entrypoint === entrypoint && run.state !== "skipped" && run.state !== "cancelled") ?? null;
   const defaultTimeZone = c.get("settings")?.app?.timezone ?? CORE_SETTINGS["app.timezone"].default;
@@ -479,6 +482,10 @@ const loadReady = async (
       isNew: isNew(entry.entrypoint),
       lastRun: lastRunOf(entry.entrypoint),
       nextRunAt: isNew(entry.entrypoint) ? null : (nextRuns.get(entry.entrypoint) ?? null),
+      nextRunState: isNew(entry.entrypoint)
+        ? "none"
+        : (nextRunStates.get(entry.entrypoint) ??
+          (nextRuns.get(entry.entrypoint) ? "planned" : code.state === "active" && entry.kind === "schedule" ? "unavailable" : "none")),
     }));
   const activeEntrypoints = new Map(activeManifest?.entrypoints.map((entry) => [entry.entrypoint, JSON.stringify(entry.route)]) ?? []);
   const automations =

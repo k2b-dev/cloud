@@ -32,6 +32,27 @@ export const describeCodeSchedule = (cron: string, locale: string): string => {
   const fields = cron.trim().split(/\s+/);
   if (fields.length !== 5) return cron;
   const [minute, hour, dayOfMonth, month, dayOfWeek] = fields as [string, string, string, string, string];
+  // Hour ranges include every minute of their final hour (7-20 ends at 20:59).
+  const hours = /^(\d{1,2})(?:-(\d{1,2}))?$/.exec(hour);
+  const firstHour = Number(hours?.[1]);
+  const lastHour = Number(hours?.[2] ?? hours?.[1]);
+  const step = /^\*\/(\d+)$/.exec(minute);
+  if (dayOfMonth === "*" && month === "*" && (minute === "*" || (step && Number(step[1]) >= 1 && Number(step[1]) <= 59))) {
+    const frequency =
+      minute === "*" || Number(step?.[1]) === 1
+        ? lang === "de"
+          ? "Jede Minute"
+          : "Every minute"
+        : lang === "de"
+          ? `Alle ${step![1]} Minuten`
+          : `Every ${step![1]} minutes`;
+    const days = dayOfWeek === "*" ? "" : dayList(dayOfWeek, lang);
+    if (days !== null && (hour === "*" || (hours && firstHour <= lastHour && lastHour <= 23))) {
+      if (hours)
+        return `${frequency}${lang === "de" ? ` von ${firstHour}:00 bis ${lastHour}:59 Uhr` : ` between ${firstHour}:00 and ${lastHour}:59`}${days ? ` · ${days}` : ""}`;
+      if (minute === "*" || days) return `${frequency}${days ? ` · ${days}` : ""}`;
+    }
+  }
   const every = /^\*\/(\d+)$/.exec(minute);
   if (every && hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*")
     return lang === "de" ? `alle ${every[1]} Minuten` : `every ${every[1]} minutes`;

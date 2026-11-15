@@ -431,7 +431,7 @@ const readResultForm = (value: unknown, label: string): import("../contracts/cap
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object`);
   const form = value as Record<string, unknown>;
   if (
-    Object.keys(form).some((key) => key !== "text" && key !== "targetType" && key !== "kind") ||
+    Object.keys(form).some((key) => key !== "text" && key !== "targetType" && key !== "kind" && key !== "countText") ||
     typeof form.text !== "string" ||
     typeof form.targetType !== "string" ||
     typeof form.kind !== "string" ||
@@ -443,7 +443,17 @@ const readResultForm = (value: unknown, label: string): import("../contracts/cap
   assertText(form.text, `${label}.text`, 200);
   assertText(form.kind, `${label}.kind`, 80);
   if (/[{}\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.kind)) throw new Error(`${label}.kind must be plain text`);
-  return { text: form.text.trim(), targetType: form.targetType, kind: form.kind.trim() };
+  if (form.countText !== undefined) {
+    if (typeof form.countText !== "string" || /[{}\p{Cc}\p{Cf}\p{Cs}\u2028\u2029]/u.test(form.countText))
+      throw new Error(`${label}.countText must be plain text`);
+    assertText(form.countText, `${label}.countText`, 200);
+  }
+  return {
+    text: form.text.trim(),
+    targetType: form.targetType,
+    kind: form.kind.trim(),
+    ...(typeof form.countText === "string" ? { countText: form.countText.trim() } : {}),
+  };
 };
 
 const compileOperationPresentation = (

@@ -1424,11 +1424,11 @@ cannot see the target. Raw input, response titles and identifiers never fill it.
 presentation: {
   baseLocale: "en",
   results: {
-    create: { text: "Created {target}", targetType: "task", kind: "task" },
+    create: { text: "Created {target}", targetType: "task", kind: "task", countText: "Tasks created" },
   },
   translations: {
     de: { actions: {
-      create: { result: { text: "{target} angelegt", targetType: "task", kind: "Aufgabe" } },
+      create: { result: { text: "{target} angelegt", targetType: "task", kind: "Aufgabe", countText: "Aufgaben angelegt" } },
     } },
   },
 },
@@ -1442,6 +1442,11 @@ is read. Use a result form only when a successful call proves that outcome.
 Queued or scheduled work must say that, rather than claim completion. Missing
 forms or ambiguous targets produce the Action title and its invocation count.
 This metadata does not change approvals, authority, or the result envelope.
+An optional `countText` supplies a translated plural result label, such as
+“Tasks created”, beside a separate weekly count. It is plain text without
+tokens or target names and is stored with the same effect evidence. Older
+records without this label retain the explicit “Action · n times” fallback;
+Cloud does not infer plural outcome wording from an Action title.
 Third-party applications use the same contract as built-in applications.
 
 #### Receipts and outcome checks
