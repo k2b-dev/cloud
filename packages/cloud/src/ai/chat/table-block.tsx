@@ -13,7 +13,13 @@ const VISIBLE_ROWS = 100;
  * A table view: title, Copy data and a sortable table in a viewport whose height follows the row count of its
  * `present` summary, so loading, the table and the unavailable state take the same room.
  */
-export function CloudTableView(props: { id: string; summary: TableSummary; input: CloudTableDescription | null | undefined }) {
+export function CloudTableView(props: {
+  id: string;
+  summary: TableSummary;
+  input: CloudTableDescription | null | undefined;
+  /** `plain` inside an island, which is the table's frame; `paper` on its own. */
+  surface?: "paper" | "plain";
+}) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const table = createMemo(() => (props.input ? cloudAiViewTable(props.input, locale()) : null));
@@ -107,7 +113,11 @@ export function CloudTableView(props: { id: string; summary: TableSummary; input
                 // Row keys are row indexes, so a reference cell finds its object in the loaded view.
                 const cells = props.input?.rows[Number(row.key)];
                 const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
-                return cell && typeof cell === "object" ? <ReferenceText text={String(text)} reference={cell} /> : render(text);
+                return cell && typeof cell === "object" && cell.title?.trim() ? (
+                  <ReferenceText text={String(text)} reference={cell} />
+                ) : (
+                  render(text)
+                );
               }}
               getRowId={(row) => row.key}
               sort={sort()}
@@ -120,7 +130,11 @@ export function CloudTableView(props: { id: string; summary: TableSummary; input
                         const text = typeof value === "string" ? value : "";
                         const cells = props.input?.footer;
                         const cell = refColumns().has(col.id) && cells && Object.hasOwn(cells, col.id) ? cells[col.id] : undefined;
-                        return cell && typeof cell === "object" ? <ReferenceText text={text} reference={cell} /> : text;
+                        return cell && typeof cell === "object" && cell.title?.trim() ? (
+                          <ReferenceText text={text} reference={cell} />
+                        ) : (
+                          text
+                        );
                       },
                     }
                   : undefined
@@ -133,7 +147,7 @@ export function CloudTableView(props: { id: string; summary: TableSummary; input
                 tools?.querySelector("input")?.focus();
               }}
               density="compact"
-              surface="paper"
+              surface={props.surface ?? "paper"}
               stickyHeader
               class="h-full"
               empty={<span>{t().tableEmpty}</span>}

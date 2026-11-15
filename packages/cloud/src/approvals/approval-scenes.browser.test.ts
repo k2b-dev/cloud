@@ -101,7 +101,7 @@ const open = async (scene: string, width: number, theme: "light" | "dark" = "lig
     });
   });
   await page.goto(`${origin}/?scene=${scene}`);
-  await page.locator(".k2b-chat-decision, .cloud-blocks__choice").first().waitFor();
+  await page.locator(".k2b-chat-decision, .cloud-blocks__choice, .cloud-capability-view").first().waitFor();
   await settled(page);
   return page;
 };
@@ -122,6 +122,135 @@ const shot = async (page: Page, name: string) => {
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 describe("Approval scenes", () => {
+  for (const width of [1440, 390])
+    test(`Gustav's chart at ${width} px is an island under Cloud's head, like an app's result`, async () => {
+      const page = await open("gustav", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        await page.locator('.cloud-blocks__cell[data-kind="Chart"] .k2b-dashboard-frame').first().waitFor();
+        await settled(page);
+        const look = await page.evaluate(() => {
+          const head = document.querySelector(".cloud-capability-view__head");
+          const frame = document.querySelector<HTMLElement>('.cloud-blocks__cell[data-kind="Chart"] .k2b-dashboard-frame');
+          return {
+            head: head?.textContent?.replace(/\s+/g, " ").trim(),
+            tools: [...(head?.querySelectorAll("button") ?? [])].map((button) => button.getAttribute("aria-label")),
+            island: frame ? getComputedStyle(frame).boxShadow !== "none" || getComputedStyle(frame).borderTopWidth !== "0px" : false,
+          };
+        });
+        await shot(page, `06-gustav-diagramm-light-${width}`);
+        expect(look.head).toContain("Gustav");
+        expect(look.head).toContain("Diagramm");
+        expect(look.tools).toEqual(["Groß öffnen", "Daten zeigen"]);
+        expect(look.island).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+
+  for (const width of [1440, 390])
+    test(`Gustav's key figures at ${width} px stand flat in one row under one head, his chart as an island`, async () => {
+      const page = await open("konten", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        await page.locator(".k2b-stat-cell:not([data-status='loading'])").first().waitFor();
+        await settled(page);
+        const look = await page.evaluate(() => ({
+          heads: [...document.querySelectorAll(".cloud-capability-view__head")].map((head) =>
+            head.textContent?.replace(/\s+/g, " ").trim(),
+          ),
+          stats: document.querySelectorAll('.cloud-blocks__cell[data-kind="Stats"]').length,
+          negative: getComputedStyle(document.querySelectorAll(".k2b-stat-cell__value")[3]!).color,
+          positive: getComputedStyle(document.querySelectorAll(".k2b-stat-cell__value")[0]!).color,
+          cells: [...document.querySelectorAll(".k2b-stat-cell")].map((cell) => [
+            cell.textContent?.replace(/\s+/g, " ").trim(),
+            getComputedStyle(cell).boxShadow,
+            getComputedStyle(cell).borderTopWidth,
+          ]),
+          // Every key figure has its small sign before its name (v12, "Kennzahlen flach"): a plain glyph, no chip.
+          signs: [...document.querySelectorAll(".k2b-stat-cell__head")].map((head) => {
+            const sign = head.querySelector<HTMLElement>(":scope > .k2b-stat-cell__icon");
+            const label = head.querySelector(".k2b-stat-cell__label")!.getBoundingClientRect();
+            if (!sign) return null;
+            const box = sign.getBoundingClientRect();
+            return { before: box.right <= label.left, fill: getComputedStyle(sign).backgroundColor, size: Math.round(box.height) };
+          }),
+        }));
+        await shot(page, `06-gustav-konten-light-${width}`);
+        expect(look.heads).toHaveLength(2);
+        expect(look.heads[0]).toContain("Kennzahlen");
+        expect(look.heads[1]).toContain("Diagramm");
+        expect(look.stats).toBe(1);
+        expect(look.cells.map(([text]) => text)).toEqual([
+          expect.stringContaining("2.481,20 €"),
+          expect.stringContaining("12.050,00 €"),
+          expect.stringContaining("640,00 €"),
+          expect.stringContaining("−312,45 €"),
+        ]);
+        expect(look.signs).toHaveLength(4);
+        for (const sign of look.signs) expect(sign).toMatchObject({ before: true, fill: "rgba(0, 0, 0, 0)" });
+        // A negative figure reads red, given as text with its minus sign.
+        expect(look.negative).not.toBe(look.positive);
+        // Flat: no tile shadow and no frame around a key figure.
+        for (const [, shadow, border] of look.cells) {
+          expect(["none", "rgba(0, 0, 0, 0) 0px 0px 0px 0px"]).toContain(shadow ?? "");
+          expect(border).toBe("0px");
+        }
+      } finally {
+        await page.close();
+      }
+    });
+
+  for (const width of [1440, 390])
+    test(`key figures Gustav drew as stat charts or as cards stand as one flat row under his head at ${width} px`, async () => {
+      const page = await open("kennzahlen", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        await page.locator(".k2b-stat-cell:not([data-status='loading'])").first().waitFor();
+        await settled(page);
+        const look = await page.evaluate(() => ({
+          heads: [...document.querySelectorAll(".cloud-capability-view__head")].map((head) =>
+            head.textContent?.replace(/\s+/g, " ").trim(),
+          ),
+          rows: document.querySelectorAll('.cloud-blocks__cell[data-kind="Stats"]').length,
+          charts: document.querySelectorAll('.cloud-blocks__cell[data-kind="Chart"]').length,
+          cells: document.querySelectorAll(".k2b-stat-cell").length,
+          signs: document.querySelectorAll(".k2b-stat-cell__head > .k2b-stat-cell__icon").length,
+        }));
+        await shot(page, `78-kennzahlen-light-${width}`);
+        expect(look.heads).toHaveLength(2);
+        for (const head of look.heads) expect(head).toContain("Kennzahlen");
+        // Both rows carry the sign before each name (v12), the stat charts through their icon like the cards.
+        expect(look).toMatchObject({ rows: 2, charts: 0, cells: 6, signs: 6 });
+      } finally {
+        await page.close();
+      }
+    });
+
+  // "Open large" shows the same view in the Lightbox from the data the chat holds; closing returns to the button.
+  for (const [scene, content] of [
+    ["gustav", ".k2b-chart svg path"],
+    ["kennzahlen", ".k2b-stat-cell"],
+  ] as const)
+    test(`"Open large" shows the ${scene} view itself in the Lightbox, and closing gives the focus back`, async () => {
+      const page = await open(scene, 1440);
+      try {
+        const opener = page.getByRole("button", { name: "Groß öffnen" }).first();
+        await opener.click();
+        const lightbox = page.locator(".k2b-lightbox[open]");
+        await lightbox.locator(`.k2b-lightbox__view ${content}`).first().waitFor();
+        await settled(page);
+        expect(await lightbox.textContent()).not.toContain("nicht mehr verfügbar");
+        if (scene === "gustav" && process.env.CAPBLOCKS_SHOTS)
+          await page.screenshot({ path: resolve(process.env.CAPBLOCKS_SHOTS, "lightbox-diagramm-light-1440.png") });
+        await page.keyboard.press("Escape");
+        await lightbox.waitFor({ state: "detached" });
+        expect(await opener.evaluate((button) => button === document.activeElement)).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+
   for (const width of [1440, 390])
     test(`Gustav's survey at ${width} px is a flat choice: no hull, flat cards, the chosen one tinted`, async () => {
       const page = await open("survey", width);

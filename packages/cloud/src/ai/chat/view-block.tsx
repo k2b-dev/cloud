@@ -1,5 +1,5 @@
 import { DescriptionList, StatCell, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { type Accessor, createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { CloudChartGroupView, CloudChartView, CloudExplorerView } from "#chat-charts";
 import { importOnDemand } from "../../browser/reload";
 import {
@@ -24,7 +24,7 @@ type GroupSummary = Extract<CloudAiViewSummary, { view: "group" }>;
 type ExplorerSummary = Extract<CloudAiViewSummary, { view: "explorer" }>;
 
 /** A table's controls and row renderer load only when a Chat first presents a table. */
-function CloudTableView(props: { summary: TableSummary; input: CloudTableDescription | null | undefined }) {
+function CloudTableView(props: { summary: TableSummary; input: CloudTableDescription | null | undefined; surface?: "paper" | "plain" }) {
   const id = `cloud-view-${createUniqueId()}`;
   const [module, setModule] = createSignal<typeof import("./table-block") | null | undefined>();
   onMount(() => {
@@ -43,7 +43,7 @@ function CloudTableView(props: { summary: TableSummary; input: CloudTableDescrip
     >
       {(loaded) => {
         const Table = loaded().CloudTableView;
-        return <Table id={id} summary={props.summary} input={props.input} />;
+        return <Table id={id} summary={props.summary} input={props.input} surface={props.surface} />;
       }}
     </Show>
   );
@@ -101,7 +101,7 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescrip
         fallback={
           <div class="relative min-w-0">
             <div class="invisible" aria-hidden="true">
-              <StatGrid columns={columns()}>
+              <StatGrid columns={columns()} surface="flat">
                 <Index each={props.summary.items}>
                   {(item) => (
                     <StatCell
@@ -181,7 +181,7 @@ function CloudDetailsView(props: { summary: DetailsSummary; input: CloudDetailsD
                 layout="rows"
                 items={value().map((row) => ({
                   term: row.label,
-                  description: row.ref ? (
+                  description: row.ref?.title?.trim() ? (
                     <ReferenceText text={row.text} reference={row.ref} />
                   ) : (
                     row.text || <span class="text-dimmed">—</span>
@@ -201,21 +201,41 @@ function CloudDetailsView(props: { summary: DetailsSummary; input: CloudDetailsD
  * with the viewer's access; a missing file or one that no longer matches its summary shows the unavailable state in
  * the same frame.
  */
-export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummary }) {
+/**
+ * Loads a presented view file once, with the viewer's access: undefined while it loads, null when it is unavailable.
+ * The view in the chat and its large view share it, so "Open large" never loads the file again.
+ */
+export function createCloudViewFile(path: string, summary: CloudAiViewSummary): Accessor<CloudViewDescription | null | undefined> {
   const actions = useAiChatActions();
-  // undefined while loading, null when unavailable.
   const [view, setView] = createSignal<CloudViewDescription | null | undefined>(undefined);
   onMount(() => {
-    const url = actions.fileUrl?.(props.path);
+    const url = actions.fileUrl?.(path);
     if (!url) return setView(null);
     const abort = new AbortController();
     onCleanup(() => abort.abort());
     void importOnDemand(() => import("./view-file")).then(async (reader) => {
       if (abort.signal.aborted) return;
-      const loaded = reader ? await reader.loadView(url, props.path, props.summary, abort.signal) : null;
+      const loaded = reader ? await reader.loadView(url, path, summary, abort.signal) : null;
       if (!abort.signal.aborted) setView(loaded);
     });
   });
+  return view;
+}
+
+export function CloudViewBlock(props: {
+  path: string;
+  summary: CloudAiViewSummary;
+  /** Inside an island, which is already the frame: a table drops its own. */
+  island?: boolean;
+  /** The file as the chat already loaded it (`createCloudViewFile`); without it the block loads the file itself. */
+  file?: Accessor<CloudViewDescription | null | undefined>;
+}) {
+  const view =
+    untrack(() => props.file) ??
+    createCloudViewFile(
+      untrack(() => props.path),
+      untrack(() => props.summary),
+    );
   const chartSummary = (): ChartSummary | undefined => (props.summary.view === "chart" ? props.summary : undefined);
   const tableSummary = (): TableSummary | undefined => (props.summary.view === "table" ? props.summary : undefined);
   const groupSummary = (): GroupSummary | undefined => (props.summary.view === "group" ? props.summary : undefined);
@@ -236,7 +256,9 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
     <div data-view-path={props.path} class="min-w-0">
       <Switch>
         <Match when={chartSummary()}>{(summary) => <CloudChartView summary={summary()} input={loaded("chart")} />}</Match>
-        <Match when={tableSummary()}>{(summary) => <CloudTableView summary={summary()} input={loaded("table")} />}</Match>
+        <Match when={tableSummary()}>
+          {(summary) => <CloudTableView summary={summary()} input={loaded("table")} surface={props.island ? "plain" : undefined} />}
+        </Match>
         <Match when={groupSummary()}>{(summary) => <CloudChartGroupView summary={summary()} group={loaded("group")} />}</Match>
         <Match when={statsSummary()}>{(summary) => <CloudStatsView summary={summary()} input={loaded("stats")} />}</Match>
         <Match when={detailsSummary()}>{(summary) => <CloudDetailsView summary={summary()} input={loaded("details")} />}</Match>

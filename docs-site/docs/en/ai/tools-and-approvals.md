@@ -186,8 +186,14 @@ one stat tile, the same look as a stats view. `tone` is accepted but not shown,
 and the trend stays neutral because a card does not say whether up is better.
 Its title, value, caption and trend wrap instead of being cut off; the tool
 asks for a short value of about 20 characters and a one-line caption.
+Optional `icon` is a Tabler icon name, such as `wallet`, drawn as the small
+sign before the title; a name that is no Tabler icon name is left out.
 Several figures computed in `code_run` belong in `cloud.view.stats` in that
-run, followed by `present({path})`.
+run, followed by `present({path})`. Consecutive cards stand together as one
+flat row of key figures under one head, and a chart call whose charts are all
+plain `stat` figures (title, value, subtitle, recent values, `icon`) stands as
+the same row; a stat's `icon` is its sign as a card's is. Both are results of the chat: the box "In this chat" lists them and jumps
+to them.
 
 The built-in `chart` tool is a `clientView()` for a few values the model already
 has that did not come from a code run. It shares the chart contract of
@@ -207,7 +213,7 @@ of points.
 | Kind | Data and options |
 | --- | --- |
 | `bar` | `data: [{label, value}]`; `xAxis: {label}` (category title), `yAxis`, `colorByBar`, `showValues`, `legend`, `references` |
-| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `legendValues` (opt-in cursor values), `area`, `smooth`, series `style`, `step: "after" | "before" | "middle"`, `zero`, `forecast: {from, band?: [low, high][]}`, `threshold: {value, label}` and `marker: {at, label}`. Forecast bounds match the first series from `from`, sorted by X, including null gaps; every low must be at most its high. |
+| `line`, `scatter` | `series: [{label?, data: [{x, y}], role?}]`; `xAxis`, `yAxis`, `legend`, `references`. Line also accepts `legendValues` (opt-in cursor values), `area`, `smooth`, `points` (a hollow point on every value, off by default), series `style`, `step: "after" | "before" | "middle"`, `zero`, `forecast: {from, band?: [low, high][]}`, `threshold: {value, label}` and `marker: {at, label}`. Forecast bounds match the first series from `from`, sorted by X, including null gaps; every low must be at most its high. |
 | `waterfall` | `start: {label, value}`, `steps: [{label, value}]`, `end: {label}`. Positive steps are inflows, negative steps outflows; the closing balance is calculated. `format`. |
 | `area` | `layout: "stacked"`, ordered `x: (string | number)[]`, `series: [{label, data: (number | null)[]}]`; equal lengths, nonnegative values. `normalize: true` shows 100 %; tooltip retains share and amount. Nulls interrupt the stack; a zero total is a gap only in normalized mode. `legend`, `format`. |
 | `pie`, `donut` | `data: [{label, value}]`; `legend`, `showLabels`, `format` |
