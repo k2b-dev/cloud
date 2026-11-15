@@ -365,7 +365,9 @@ describe("ReactionBar in the browser", () => {
     expect(await page.evaluate(() => fixture.listeners())).toBeGreaterThan(before);
     await page.evaluate(() => fixture.unmount());
     expect(await page.locator(":popover-open").count()).toBe(0);
-    expect(await page.evaluate(() => fixture.listeners())).toBe(0);
+    // The bar's own listeners go. A listener the library keeps for the whole page stays, such as the text selection
+    // tracker that the phone sheet's code brings along when a phone loads it in the background after this count began.
+    expect(await page.evaluate(() => fixture.listeners())).toBe(before);
     await page.locator("#outside").click();
     await page.evaluate(() => window.scrollTo(0, 100));
     await page.waitForTimeout(600);
