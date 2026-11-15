@@ -33,7 +33,8 @@ test("folder and root pages name the container, including persisted long-path re
   expect(filesPageScope(snapshot)).toEqual({ type: "filesv2.folder", id: "stable-folder" });
   expect(filesPageScope({ ...snapshot, directory: { base, path: "", items: [], next: null } })).toEqual({
     type: "filesv2.folder",
-    id: entryRefId(base.id, ""),
+    // A root that has no ref id would fail here: no page reports a scope with an empty id.
+    id: entryRefId(base.id, "") ?? "",
   });
   expect(
     filesPageScope({ ...snapshot, directory: { base, path: "x/".repeat(1000), items: [], next: null, resourceId: "p:persisted" } }),
