@@ -16,7 +16,7 @@ const root = mkdtempSync(join(tmpdir(), "core-code-page-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 const { default: Page } = await import("./PageTree.island");
 const { createCodeHostingRoutes } = await import("./hosting");
-const { codePageFixture } = await import("./page.test-fixture");
+const { codePageFixture, codePageProvenanceSeedFixture } = await import("./page.test-fixture");
 const { CODE_INITIAL_PAGE_SOURCE } = await import("./authoring-contracts");
 const { CODE_NEWSLETTER_DEMO_SOURCE } = await import("./page.newsletter-demo");
 const { buildCodePage } = await import("./page.test-source");

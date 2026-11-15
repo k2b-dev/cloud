@@ -12,7 +12,7 @@ import { renderToString } from "solid-js/web";
 import { meterType } from "../../../../scripts/fixtures/type-meter";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { CODE_NEWSLETTER_DEMO_SOURCE } from "./page.newsletter-demo";
-import { codePageFixture } from "./page.test-fixture";
+import { codePageFixture, codePageProvenanceSeedFixture } from "./page.test-fixture";
 import { buildCodePage } from "./page.test-source";
 import type { CodePageLabel, CodePageProvenance } from "./page-provenance-contracts";
 
