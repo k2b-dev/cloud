@@ -71,6 +71,31 @@ render(
     }),
   document.getElementById("app"),
 );
+// A modal dialog that moves by transform, as a sheet does: its menu must still open at the pointer and take clicks.
+const modal = document.createElement("dialog");
+modal.className = "modal";
+modal.style.transform = "translateY(24px)";
+document.body.append(modal);
+window.chosen = 0;
+render(
+  () =>
+    createComponent(LocaleProvider, {
+      locale: "en",
+      get children() {
+        return createComponent(ContextMenu, {
+          label: "Modal actions",
+          items: [{ label: "Modal item", action: () => window.chosen++ }],
+          get children() {
+            const text = document.createElement("p");
+            text.className = "modal-text";
+            text.textContent = "Inside a modal dialog";
+            return text;
+          },
+        });
+      },
+    }),
+  modal,
+);
 // Captured first and read once dispatch ended, since the app menu stops the event before it bubbles back up.
 window.events = [];
 window.addEventListener("contextmenu", (event) => window.events.push(event), true);
@@ -169,6 +194,28 @@ describe("ContextMenu keepNativeMenu", () => {
       await page.keyboard.press("Enter");
       await page.locator(".k2b-context-menu").waitFor({ state: "detached" });
       expect(await page.evaluate(() => document.activeElement?.className)).toBe("row-button");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("inside a modal dialog the menu opens at the pointer and its entries work", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => document.querySelector<HTMLDialogElement>("dialog.modal")!.showModal());
+      const box = (await page.locator(".modal-text").boundingBox())!;
+      const x = Math.round(box.x + 20);
+      const y = Math.round(box.y + box.height / 2);
+      await page.mouse.click(x, y, { button: "right" });
+      const menu = page.locator(".k2b-context-menu");
+      await menu.waitFor();
+      // The dialog's transform does not move the menu away from the pointer.
+      const rect = (await menu.boundingBox())!;
+      expect({ x: Math.round(rect.x), y: Math.round(rect.y) }).toEqual({ x, y });
+      // Playwright clicks only what takes pointer events: an inert menu outside the modal would time out here.
+      await menu.getByRole("menuitem", { name: "Modal item" }).click({ timeout: 2_000 });
+      await menu.waitFor({ state: "detached" });
+      expect(await page.evaluate(() => (window as unknown as { chosen: number }).chosen)).toBe(1);
     } finally {
       await page.close();
     }
