@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { invokeCapabilityWithDataSchema } from "../capabilities/server";
 import { APPROVALS_PAGE_SIZE } from "../contracts/approvals";
 import { CapabilityActionReviewPresentationSchema, CapabilitySemanticLinkSchema } from "../contracts/capabilities";
 import { sql } from "../runtime/clients";
+import type { RequestAuthority } from "../server";
 import { openRequests } from "../services/approvals/content";
 import { logger } from "../services/logging";
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
@@ -9,7 +11,12 @@ import { aiToolIcon } from "./chat/message-utils";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
 import { type AiTurnBlock, toolBlockId } from "./protocol";
 
+export type AiOpenQuestionKind = "approval" | "code_activate" | "code_changes" | "code_expired" | "code_attention";
+
 export type AiOpenQuestion = {
+  kind: AiOpenQuestionKind;
+  /** An entry without a chat opens its authorized source page. */
+  href?: string;
   /** The approval request id (approvals.requests.id). */
   id: string;
   /** Short id of the chat the question waits in. */
@@ -30,6 +37,26 @@ export type AiOpenQuestions = {
   /** All open questions of the person, across pages. */
   count: number;
 };
+
+export const AiOpenQuestionsSchema = z.object({
+  count: z.number().int().nonnegative(),
+  items: z
+    .array(
+      z.object({
+        id: z.string(),
+        kind: z.enum(["approval", "code_activate", "code_changes", "code_expired", "code_attention"]),
+        href: z.string().startsWith("/").optional(),
+        conversationId: z.string(),
+        conversationTitle: z.string().nullable(),
+        anchor: z.string(),
+        short: z.string(),
+        app: z.object({ name: z.string(), icon: z.string(), accent: z.string().optional() }),
+        createdAt: z.iso.datetime(),
+      }),
+    )
+    .max(APPROVALS_PAGE_SIZE),
+});
+export type AiOpenQuestionSource = (input: { ownerUserId: string; locale: string; timeZone: string }) => Promise<AiOpenQuestions>;
 
 type QuestionRow = {
   id: string;
@@ -61,19 +88,41 @@ const ownedRequests = (ownerUserId: string) => sql`
   )`;
 
 /** How many questions wait for their owner's answer, such as a badge on the Assistant; the same rows as the list. */
-export const countAiOpenQuestions = async (ownerUserId: string): Promise<number> => {
+const countApprovalQuestions = async (ownerUserId: string): Promise<number> => {
   const [counts] = await sql<{ count: number }[]>`
     SELECT count(*)::int AS count FROM (${ownedRequests(ownerUserId)}) r`;
   return counts?.count ?? 0;
 };
 
 /** One bounded, owner-scoped snapshot, using exactly the chat's stored question card. */
-export const listAiOpenQuestions = async (input: { ownerUserId: string; locale: string; timeZone: string }): Promise<AiOpenQuestions> => {
-  const count = await countAiOpenQuestions(input.ownerUserId);
+export const countAiOpenQuestions = async (ownerUserId: string, options?: { authority: RequestAuthority }): Promise<number> =>
+  options
+    ? (await listAiOpenQuestions({ ownerUserId, locale: "en", timeZone: "UTC", ...options })).count
+    : countApprovalQuestions(ownerUserId);
+
+export const listAiOpenQuestions = async (input: {
+  ownerUserId: string;
+  locale: string;
+  timeZone: string;
+  authority?: RequestAuthority;
+  sources?: readonly AiOpenQuestionSource[];
+}): Promise<AiOpenQuestions> => {
+  if (input.authority) {
+    if (input.authority.accessSubject.type !== "user" || input.authority.accessSubject.userId !== input.ownerUserId)
+      throw new Error("Question owner and authority disagree");
+    const result = await invokeCapabilityWithDataSchema(
+      { appId: "core", capabilityId: "ai.open_questions", kind: "query", input: { timeZone: input.timeZone } },
+      AiOpenQuestionsSchema,
+      { authority: input.authority, locale: input.locale },
+    );
+    if (!result.ok) throw new Error(`Open questions unavailable: ${result.error.code}`);
+    return result.data.data;
+  }
+  const count = await countApprovalQuestions(input.ownerUserId);
   const rows = await sql<QuestionRow[]>`
     WITH page AS (
       SELECT * FROM (${ownedRequests(input.ownerUserId)}) r
-      ORDER BY r.created_at DESC, r.id DESC LIMIT ${APPROVALS_PAGE_SIZE}
+      ORDER BY r.created_at ASC, r.id ASC LIMIT ${APPROVALS_PAGE_SIZE}
     )
     SELECT r.id, r.app_id AS "appId", r.sentence, r.created_at AS "createdAt",
       question.short_id AS "conversationId", question.title AS "conversationTitle",
@@ -93,11 +142,14 @@ export const listAiOpenQuestions = async (input: { ownerUserId: string; locale: 
         AND c.created_by_user_id=${input.ownerUserId}::uuid
       ORDER BY p.created_at DESC, p.id DESC LIMIT 1
     ) question ON true
-    ORDER BY r.created_at DESC, r.id DESC`;
+    ORDER BY r.created_at ASC, r.id ASC`;
 
+  const sources = await Promise.all((input.sources ?? []).map((source) => source(input)));
   return {
-    count,
-    items: rows.map((row) => openQuestionFromRow(row, input)),
+    count: count + sources.reduce((sum, source) => sum + source.count, 0),
+    items: [...rows.map((row) => openQuestionFromRow(row, input)), ...sources.flatMap((source) => source.items)]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .slice(0, APPROVALS_PAGE_SIZE),
   };
 };
 
@@ -117,6 +169,7 @@ export const openQuestionFromRow = (row: QuestionRow, input: { locale: string; t
   const presentation = block?.presentation;
   const question: AiOpenQuestion = {
     id: row.id,
+    kind: "approval",
     conversationId: row.conversationId,
     conversationTitle: row.conversationTitle === null ? null : boundedText(row.conversationTitle, 200),
     // The id the chat renders the card under: a custom approval's card carries its parent call, also when a stored

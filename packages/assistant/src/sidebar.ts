@@ -8,6 +8,7 @@ import {
   listAiOpenQuestions,
 } from "@k2b/cloud/ai";
 import { cloudResourceRefAppId } from "@k2b/cloud/contracts";
+import type { RequestAuthority } from "@k2b/cloud/server";
 import type { catalogPerApp } from "./code-place";
 
 /** Names the app of a place chat's place for its row; null leaves the row with the place's title alone. */
@@ -34,7 +35,7 @@ export type AssistantSidebarSnapshot = {
 
 export const loadAssistantSidebarSnapshot = async (
   identity: AiResourceContext,
-  context: { locale: string; timeZone: string },
+  context: { locale: string; timeZone: string; authority?: RequestAuthority },
   placeApp?: AssistantPlaceAppLookup,
 ): Promise<AssistantSidebarSnapshot> => {
   if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");

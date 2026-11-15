@@ -5,7 +5,7 @@ section: Platform services
 order: 564
 description: Declare resource containment, a standard reader presentation, and a discussions provider without application-specific consumers.
 tags: [capabilities, resources, discussions, authorization]
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Resource types and discussions
@@ -169,8 +169,20 @@ this callback so their owner administrators receive notices too.
 
 Apply the application's account-profile policy before pagination too. For
 example, Mail excludes guests even when a stored group grant names them.
-`listUsersWithAccess` supports `profile` and stable UUID pagination with
-`afterId` for this purpose.
+`listAccessRecipientUserIds` from `@k2b/cloud/server` expands direct and
+recursive group grants and grants to all signed-in people for background
+recipients. It accepts `accessIds`, `afterId?`, `userId?`, `limit` (maximum 50)
+and `minimumPermission` (`admin` by default, or `write`). It returns member
+profile UUIDs; the sender rechecks account eligibility before delivery. A
+provider with precedence or deny rules must narrow candidates through its own
+permission resolver before pagination. `listUsersWithAccess` remains the
+share/member picker and does not expand all-signed-in grants.
+
+Built-in projections cover Spaces and items, Notebooks and notes, Contacts
+books, Grids and Pulse bases, ordinary Chat conversations, Venue venues and
+Files machine storage and templates. Child resources inherit their parent's
+grants. Grids applies its own grant precedence; Chat discoverability grants
+nothing. Files administration surfaces use installation administrators.
 
 Core uses this contract to notify Code owner administrators after a decision,
 and rechecks each recipient's current management before delivery. The sender

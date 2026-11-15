@@ -30,6 +30,30 @@ const stored = (input: {
 });
 
 describe("AI message timeline", () => {
+  test("Code decisions and revision starts are separate activities, never assistant answers or user bubbles", () => {
+    const entry = (id: string, seq: number) => stored({ id, seq, message: { role: "assistant", content: [{ type: "text", text: id }] } });
+    const decision: AiStoredMessage = {
+      ...entry("decision", 2),
+      meta: {
+        codeDecision: {
+          codeId: "c_review",
+          versionId: "v",
+          number: 5,
+          outcome: "approved",
+          person: { id: null, name: null },
+          anchor: "tool-submit",
+        },
+      },
+    };
+    const start: AiStoredMessage = {
+      ...entry("start", 3),
+      message: { role: "user", content: [{ type: "text", text: "Cloud starts once" }] },
+      meta: { codeReviewStart: { codeId: "c_review", versionId: "v" } },
+    };
+    const timeline = buildAiMessageTimeline([entry("before", 1), decision, start, entry("after", 4)]);
+    expect(timeline.map((item) => item.type)).toEqual(["assistant", "code-decision", "code-review-start", "assistant"]);
+    expect(timeline.filter((item) => item.type === "assistant").map((item) => item.actionEntry?.id)).toEqual(["before", "after"]);
+  });
   test("keeps each delivered routine run its own response, also when runs follow each other", () => {
     const run = (id: string, seq: number, occurrenceId: string): AiStoredMessage => ({
       ...stored({ id, seq, message: { role: "assistant", content: [{ type: "text", text: id }] } }),

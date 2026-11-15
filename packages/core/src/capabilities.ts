@@ -8,6 +8,7 @@ import {
   AI_SKILL_REFERENCE_PATH_PATTERN,
   type AiConversation,
   type AiConversationResourceRef,
+  AiOpenQuestionsSchema,
   AiResourceCredentialError,
   type AiSkill,
   AiSkillAppForbiddenError,
@@ -19,6 +20,7 @@ import {
   aiConversations,
   aiSkills,
   isConversationResourceCursor,
+  listAiOpenQuestions,
 } from "@k2b/cloud/ai";
 import { CodeEventCatchupInputSchema, CodeEventCatchupStatusSchema } from "@k2b/cloud/code";
 import {
@@ -35,7 +37,7 @@ import {
   PrincipalSchema,
   UniversalSearchDataSchema,
 } from "@k2b/cloud/contracts";
-import { accessRevision, type RequestAuthority, resolveDisplayNames } from "@k2b/cloud/server";
+import { accessRevision, type RequestAuthority, resolveDisplayNames, userFromActor } from "@k2b/cloud/server";
 import { type AuditActor, accountsAppService, audit, coreGeo, coreGeoMap } from "@k2b/cloud/services";
 import { coreUserEvents, coreUserEventTypes } from "@k2b/cloud/services/core-user-events";
 import { principalLabel } from "@k2b/cloud/shared";
@@ -80,6 +82,7 @@ import {
   setCodePaused,
   submitCodeVersion,
 } from "./code/versions";
+import { listCodeWaiting } from "./code/waiting";
 import { codeWorkloadReaderContract, readCodeWorkload } from "./code/workload-reader";
 import { runGeoQuery } from "./geo-capability-result";
 
@@ -636,6 +639,26 @@ export const aiCapabilities = defineCapabilities({
     },
 
     "ai.chat.run.read": aiChatRunReadQuery,
+    "ai.open_questions": {
+      title: "Read what waits for you",
+      description: "Read your current authorized questions and Code next steps in one bounded list. Resolved entries disappear.",
+      input: z.object({ timeZone: z.string().max(100).describe("Reader time zone for displayed dates.") }).strict(),
+      data: AiOpenQuestionsSchema,
+      openWorld: false,
+      async run(input, context) {
+        const person = userFromActor(context.actor);
+        if (context.accessSubject.type !== "user" || !person || person.id !== context.accessSubject.userId)
+          return fail(err.forbidden("Your own waiting list requires a person"));
+        return ok({
+          data: await listAiOpenQuestions({
+            ownerUserId: context.accessSubject.userId,
+            locale: context.locale,
+            timeZone: input.timeZone,
+            sources: [(request) => listCodeWaiting(request, context.signal)],
+          }),
+        });
+      },
+    },
     "ai.decide": aiDecisionQuery,
     "ai.generate": aiGenerationQuery,
     "code.secret.list": {

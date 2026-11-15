@@ -105,7 +105,7 @@ export default ssr<AuthContext>(async (c) => {
     getLiveDictationStatus(c.get("accessSubject")),
     loadAssistantSidebarSnapshot(
       { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
-      { locale, timeZone },
+      { locale, timeZone, authority: auth.getAuthority(c) },
       placeAppsFromCatalog(catalog),
     ),
     coreSettings.get<string>("app.url"),

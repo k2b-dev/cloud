@@ -9,9 +9,61 @@ export const CODE_REVIEW_COMMENT_LIMIT = Math.floor(CAPABILITY_MAX_REVIEW_CONTEN
 /** Set by the authenticated transport, never accepted from a submission payload. */
 export const CodeSubmissionOriginSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("cli") }).strict(),
-  z.object({ kind: z.literal("ai_chat"), conversationId: z.uuid(), automaticAfterReview: z.boolean() }).strict(),
+  z
+    .object({
+      kind: z.literal("ai_chat"),
+      conversationId: z.uuid(),
+      automaticAfterReview: z.boolean(),
+      cardAnchor: z.string().max(200).optional(),
+    })
+    .strict(),
 ]);
 export type CodeSubmissionOrigin = z.infer<typeof CodeSubmissionOriginSchema>;
+export const CodeReviewFollowUpSchema = z.object({ kind: z.enum(["automatic_once", "manual", "cli"]), text: z.string() }).strict();
+/** Cloud decides whether a review may start work; administrator prose cannot choose it. */
+export function codeReviewFollowUp(origin: CodeSubmissionOrigin, locale: string) {
+  const de = locale.startsWith("de");
+  if (origin.kind === "cli")
+    return {
+      kind: "cli" as const,
+      text: de
+        ? "Die einreichende Person bekommt deine Nachricht in der Kommandozeile, mit den Kommentaren an ihren Zeilen."
+        : "The author receives your message in the command line, with comments at their lines.",
+    };
+  if (origin.automaticAfterReview)
+    return {
+      kind: "manual" as const,
+      text: de
+        ? "Gustav hat schon einmal von selbst überarbeitet. Jetzt entscheidet die Person."
+        : "Gustav already revised it automatically once. The person decides what happens next.",
+    };
+  return {
+    kind: "automatic_once" as const,
+    text: de ? "Gustav überarbeitet die Version danach einmal von selbst." : "Gustav then revises the version automatically once.",
+  };
+}
+/** Durable status of the one unattended review turn, also consumed by version cards. */
+export const CodeReviewRevisionSchema = z
+  .object({
+    state: z.enum(["none", "queued", "running", "submitted", "completed", "stopped", "skipped"]),
+    reason: z
+      .enum([
+        "already_automatic",
+        "superseded",
+        "withdrawn",
+        "conversation_gone",
+        "access_lost",
+        "quota",
+        "unavailable",
+        "stopped",
+        "needs_person",
+      ])
+      .nullable(),
+    turnId: z.uuid().nullable(),
+    submittedVersionId: z.uuid().nullable(),
+    submittedNumber: z.number().int().positive().nullable(),
+  })
+  .strict();
 export const CodeReviewOutcomeSchema = z.enum(["approved", "changes_requested", "rejected"]);
 export const CodeReviewDecisionSchema = z
   .object({
@@ -95,6 +147,8 @@ export const CodeReviewSchema = z
     commentCount: z.number().int().nonnegative(),
     activeVersion: z.object({ id: z.uuid(), number: z.number().int().positive() }).strict().nullable(),
     contentTrust: z.literal("untrusted_data"),
+    revision: CodeReviewRevisionSchema.nullable().optional(),
+    changesRequestedEffect: CodeReviewFollowUpSchema.optional(),
   })
   .strict();
 export type CodeReview = z.infer<typeof CodeReviewSchema>;
