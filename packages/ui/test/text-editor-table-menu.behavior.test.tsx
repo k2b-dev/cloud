@@ -37,6 +37,8 @@ else
       };
       const { TextEditor } = await import("../src/text-editor/TextEditor");
       const { dialogCore } = await import("../src/feedback/dialog-core");
+      // A phone loads the sheet's code with its menus; from then on a tap opens the sheet within the tap.
+      if (phone) await (await import("../src/actions/menu-sheet-open")).loadMenuSheet();
       const dispose = render(() => <TextEditor label="Note" initialValue={doc} maxLength={10_000} />, dom.root);
       const cell = (r: number, c: number) => dom.root.querySelector<HTMLElement>(`.k2b-ste-cell[data-r="${r}"][data-c="${c}"]`)!;
       // Grips, right-click and keys open the cell menu without a trigger; find the open one.

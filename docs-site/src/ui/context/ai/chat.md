@@ -55,6 +55,19 @@ only links, buttons, and other controls inside it stay their own targets. With
 a controlled `open`, the body renders as soon as the row opens, before the host
 passes its new state back.
 
+Put `Chat.Activity.Words` in the `label` of a running activity whose word may
+change with time, such as thinking. It shows `first` for 3 s, then one of
+`words` every 2.4 s, round after round. The old word fades out completely
+before the next one fades in, so one word stands in its place at any moment.
+`elapsedMs` is how long the phase has run by the host's clock: the server
+renders the word for that time, and the first browser frame shows the same
+word. A pointer or the focus on the row holds the word, a hidden tab changes
+nothing, and with reduced motion the stylesheet shows a resting `first`, already in the server's HTML. The words are `aria-hidden`; screen
+readers hear `announce` once, from one status element. Keep the time beside it
+in `trailing`, so a longer or shorter word moves nothing. The host owns the
+words and their order; key the component by the phase, so each phase starts
+over.
+
 ## Import
 
 ```tsx
@@ -69,7 +82,7 @@ The assistant prompt is one card around the field and its footer. It carries the
 
 Use `state="running"` to show Stop when the draft is empty. In the assistant composer Stop stands where Send stands and takes the same AI colour; the conversation composer keeps a red Stop. Once the user types, Send replaces Stop and submits a steer. `menuActions` populate the Plus menu unless `addOpensCommands` opens the command list. One usage ring sits right of Plus: it holds the context from `contextUsage` and the application parts from `contextSections`, such as a budget, see [Context usage](/en/ui/ai/context-usage). `contextActions` follow the ring as icon controls. `contextPopupAction` places one small icon action next to the context share in the usage details and keeps the ring available before token usage is reported. Model options can provide an icon or provider image. Use `submitTools` for compact application controls immediately before Send or Stop; `footerTools` remains beside the add/model controls. `modelDetails` places compact application-owned details immediately after the model selector. The application owns these controls and their state. On touch screens the footer keeps 0.625rem from the message field, so the touch areas of its compact controls never take taps from the field. `footerContent` replaces the footer during an application-owned interaction, such as audio recording, while preserving the editor. Pass `undefined` to restore the standard controls.
 
-`suggestion` offers a suggested next message, for example one the assistant proposes with its answer. It stands in the empty field instead of the placeholder, in muted plum (`--k2b-ai-suggestion`), as one line of text whose line breaks read as spaces. It wraps like typed text and grows the field the same way, up to 19.3125rem, from the first paint on. A small mark on its own line under it reads "Tab accept" after a sparkles icon, in the 12 px meta step; on touch-only devices the same small mark is an Accept button with a 2.75rem touch area. Tab or the hint puts the text into the field as an edit that undo takes back, calls `onAccept`, and sends nothing. Tab keeps moving the focus when no suggestion stands, with Shift, Ctrl, Alt or ⌘, during an input method's composition, and while a command, emoji, or people list is open. Typing replaces the suggestion and an empty field shows it again; the field keeps the suggestion's height until it is empty or sent, so neither the first character nor accepting shrinks it. Escape sets it aside and calls `onDismiss`, and sending sets it aside as well; a different `text` shows again. Screen readers hear it once per suggestion when the field has focus, and the field describes it with `aria-describedby` while it stands. The application decides when a suggestion fits and drops it when a new response starts.
+`suggestion` offers a suggested next message, for example one the assistant proposes with its answer. It stands in the empty field instead of the placeholder, in muted plum (`--k2b-ai-suggestion`), as one line of text whose line breaks read as spaces. It wraps like typed text and grows the field the same way, up to 19.3125rem, from the first paint on. A pill follows it inline after one space, "Tab accept" after a sparkles icon, 1.25rem high in the 12 px meta step; it wraps only as a whole, and because it is lower than the line a short suggestion keeps the field at its empty height. On touch-only devices the same pill is an Accept button with a 2.75rem touch area. Tab or the hint puts the text into the field as an edit that undo takes back, calls `onAccept`, and sends nothing. Tab keeps moving the focus when no suggestion stands, with Shift, Ctrl, Alt or ⌘, during an input method's composition, and while a command, emoji, or people list is open. Typing replaces the suggestion and an empty field shows it again; the field keeps the suggestion's height until it is empty or sent, so neither the first character nor accepting shrinks it. Escape sets it aside and calls `onDismiss`, and sending sets it aside as well; a different `text` shows again. Screen readers hear it once per suggestion when the field has focus, and the field describes it with `aria-describedby` while it stands. The application decides when a suggestion fits and drops it when a new response starts.
 
 Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
@@ -641,6 +654,12 @@ type ChatActivityToggleProps = { children: JSX.Element };
 
 `Chat.Activity.Toggle` takes `ChatActivityToggleProps`. Put it in an activity's
 `label` to open only that activity's body.
+
+```ts
+type ChatActivityWordsProps = { first: string; words: readonly string[]; elapsedMs: number; announce: string };
+```
+
+`Chat.Activity.Words` takes `ChatActivityWordsProps`.
 
 `ChatRootProps` belongs to `Chat`, the other component props to `.Timeline`, `.Composer`, `.Message`, and `.Activity`. `ChatActionBase` is the common shape shown here; consumers import `ChatAction`. For usage data see [Context usage](/en/ui/ai/context-usage#api-reference).
 

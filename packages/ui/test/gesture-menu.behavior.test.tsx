@@ -122,8 +122,10 @@ const closeSheets = async () => {
 if (isServer) test.skip("requires browser conditions", () => {});
 else
   describe("GestureMenu", () => {
-    beforeAll(() => {
+    beforeAll(async () => {
       dom = createDomTestHarness();
+      // A phone loads the sheet's code with its menus; from then on a tap opens the sheet within the tap.
+      await (await import("../src/actions/menu-sheet-open")).loadMenuSheet();
       Object.defineProperty(dom.window, "innerWidth", { configurable: true, value: 390 });
       // ContextMenu measures its menu.
       Object.defineProperty(globalThis, "DOMRect", { configurable: true, writable: true, value: dom.window.DOMRect });
