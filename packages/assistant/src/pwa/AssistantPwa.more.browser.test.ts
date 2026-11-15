@@ -345,23 +345,23 @@ describe("A recording in the Cloud app", () => {
 });
 
 describe("Code in the Cloud app", () => {
-  test("a submitted Code version shows its card with what it calls, and a question is answered on the phone", async () => {
+  test("a submitted Code version shows the one approval card with what changes, and a question is answered on the phone", async () => {
     const page = await open("screen=chat-x&chat=pflege&code=1");
     try {
-      const card = page.locator(".assistant-code-version");
-      await card.waitFor();
+      const card = page.locator(".assistant-code-version .k2b-chat-decision");
+      await card.locator(".k2b-chat-decision__sentence").waitFor();
+      expect(await card.locator(".k2b-chat-decision__sentence").innerText()).toBe("Version 3 von Rechnungen ablegen einschalten?");
       const text = await card.innerText();
-      expect(text).toContain("Version 3 von „Rechnungen ablegen“ ist fertig.");
-      expect(text).toContain("Was diese Version darf");
-      expect(await card.locator(".assistant-code-version__target").allInnerTexts()).toEqual([
-        expect.stringMatching(/^Datei importieren · Dateien\s*an Ordner fo_rechnungen/),
-        expect.stringMatching(/^Nachricht lesen · Mail\s*wo der Code es beim Lauf wählt/),
-      ]);
+      expect(text).toContain("Details von Code · gegenüber Version 2");
+      expect(text).toContain("Darf neu Dateien importieren im Ordner Rechnungen");
+      expect(text).toContain("Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.");
       // A phone cannot switch on; the card says where it works instead of hiding the version.
-      expect(text).toContain("Am Telefon lässt sich nicht einschalten.");
-      expect(await card.getByRole("button", { name: "Einschalten" }).isDisabled()).toBe(true);
+      expect(text).toContain("Am Telefon lässt sich nicht einschalten. Das geht am Computer.");
+      expect(await card.getByRole("button", { name: "Version 3 einschalten" }).isDisabled()).toBe(true);
+      expect(text).not.toMatch(/fo_rechnungen|code\.ts|Unterschied/);
       // Nothing on the card is wider than the phone.
       expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await shot(page, "f-pwa-karte-bereit-390");
 
       await page.getByPlaceholder("Ordnername").fill("Rechnungen 2026");
       await page.getByRole("button", { name: "Antworten" }).click();
@@ -373,72 +373,47 @@ describe("Code in the Cloud app", () => {
     }
   }, 30_000);
 
-  test("on the phone the card loads, waits for a Cloud administrator, says a rejection, and retries an outage", async () => {
+  test("on the phone the card loads, waits for an admin, says a rejection with its reason, and retries an outage", async () => {
     const fits = (page: Page) => page.locator(".assistant-code-version").evaluate((element) => element.scrollWidth <= element.clientWidth);
-    // Loading: the card holds its place with a skeleton until Core answers.
+    const word = (page: Page) => page.locator(".assistant-code-version .k2b-chat-decision__status").innerText();
+    // Loading: the card holds its place with the word "Lädt" until Core answers.
     const loading = await open("screen=chat-x&chat=pflege&code=pending&hold=activation/preview");
     try {
-      await loading.locator('.assistant-code-version[data-state="loading"]').waitFor();
-      await shot(loading, "l26-pwa-karte-laedt-390");
+      await loading.locator(".assistant-code-version .k2b-chat-decision__status", { hasText: "Lädt" }).waitFor();
+      await shot(loading, "f-pwa-karte-laedt-390");
       await loading.evaluate(() => (window as unknown as { harness: { release(): void } }).harness.release());
-      await loading.getByText("Die Karte zeigt die Entscheidung, sobald sie fällt.").waitFor();
-      const card = loading.locator(".assistant-code-version");
-      expect(await card.locator(".assistant-code-version__checks").innerText()).toMatch(/^Prüfung bestanden\s*Tests 3\/3$/);
-      expect(await card.innerText()).toContain("Diese Version muss erst ein Cloud-Admin freigeben.");
-      expect(await card.getByRole("button", { name: "Einschalten" }).count()).toBe(0);
+      await loading.getByText("Die Admins wissen Bescheid. Du bekommst eine Mitteilung, sobald einer entschieden hat.").waitFor();
+      expect((await word(loading)).trim()).toBe("Wartet auf Admin");
+      expect(await loading.locator(".assistant-code-version").innerText()).toContain("Bis dahin bleibt Version 2 eingeschaltet. Du musst nichts tun.");
+      expect(await loading.locator(".assistant-code-version").getByRole("button", { name: /einschalten/ }).count()).toBe(0);
       expect(await fits(loading)).toBe(true);
-      await shot(loading, "l26-pwa-karte-wartet-390");
+      await shot(loading, "f-pwa-karte-wartet-390");
     } finally {
       await loading.context().close();
     }
     const rejected = await open("screen=chat-x&chat=pflege&code=rejected");
     try {
-      const card = rejected.locator(".assistant-code-version");
-      await card.locator('[data-state="rejected"]').waitFor();
-      expect(await card.locator('[data-state="rejected"]').innerText()).toBe(
-        "Ein Cloud-Admin hat diese Version nicht freigegeben. Nichts geändert, Version 2 läuft weiter.",
-      );
-      expect(await card.locator('[data-tone="warning"]').innerText()).toBe("Tests 2/3");
-      expect(await card.innerText()).not.toContain("rejected or revoked");
+      await rejected.getByText("Rechnungen bitte weiter von Hand ablegen.").waitFor();
+      expect((await word(rejected)).trim()).toBe("Abgelehnt");
+      const text = await rejected.locator(".assistant-code-version").innerText();
+      expect(text).toContain("Jana Probe hat sie nicht freigegeben. Version 2 bleibt eingeschaltet.");
+      expect(text).not.toContain("rejected or revoked");
       expect(await fits(rejected)).toBe(true);
-      await shot(rejected, "l26-pwa-karte-abgelehnt-390");
+      await shot(rejected, "f-pwa-karte-abgelehnt-390");
     } finally {
       await rejected.context().close();
     }
-    // An outage says so with Retry, which reads the card again once Core answers.
+    // An outage says so with "Erneut versuchen", which reads the card again once Core answers.
     const down = await open("screen=chat-x&chat=pflege&code=pending&fail=activation/preview");
     try {
-      const alert = down.locator('.assistant-code-version[data-state="error"]');
-      await alert.waitFor();
-      expect(await alert.innerText()).toContain("Diese Version konnte nicht geprüft werden.");
-      await shot(down, "l26-pwa-karte-fehler-390");
+      await down.getByText("Diese Version konnte nicht geladen werden. Cloud hat dabei nichts geändert.").waitFor();
+      expect((await word(down)).trim()).toBe("Nicht geladen");
+      await shot(down, "f-pwa-karte-fehler-390");
       await down.evaluate(() => (window as unknown as { harness: Harness }).harness.fail.clear());
-      await alert.getByRole("button", { name: "Erneut" }).click();
-      await down.getByText("Die Karte zeigt die Entscheidung, sobald sie fällt.").waitFor();
+      await down.locator(".assistant-code-version").getByRole("button", { name: "Erneut versuchen" }).click();
+      await down.getByText("Die Admins wissen Bescheid.", { exact: false }).waitFor();
     } finally {
       await down.context().close();
     }
   }, 60_000);
-
-  test("the card names everything a version may do, and nothing is wider than the phone", async () => {
-    const page = await open("screen=chat-x&chat=pflege&code=full");
-    try {
-      const card = page.locator(".assistant-code-version");
-      await card.waitFor();
-      expect(await card.locator(".assistant-code-version__target").allInnerTexts()).toEqual([
-        expect.stringMatching(/^Datei importieren · Dateien\s*an Ordner fo_rechnungen/),
-        expect.stringMatching(/^Nachricht lesen · Mail\s*wo der Code es beim Lauf wählt/),
-        expect.stringMatching(/^Übersicht\s*Alle Angemeldeten \(ohne Gäste\) · läuft mit deinen Rechten$/),
-        expect.stringMatching(/^POST \/eingang\s*Öffentlich · ohne Anmeldung$/),
-        expect.stringMatching(/^Startet bei „Aufgabe fällig“\s*an Bereich Spc001$/),
-        expect.stringMatching(/^https:\/\/api\.lexoffice\.example\s*im Internet, sendet LEXOFFICE_TOKEN$/),
-        expect.stringMatching(/^Liest und schreibt\s*in der eigenen Datenbank$/),
-      ]);
-      expect(await card.innerText()).toContain("Aufgabe fällig · Bereich Spc001");
-      expect(await card.innerText()).not.toContain("event:");
-      expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-    } finally {
-      await page.context().close();
-    }
-  }, 30_000);
 });

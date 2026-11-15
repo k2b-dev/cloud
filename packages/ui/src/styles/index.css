@@ -15051,6 +15051,30 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* What changes, inside a question's details: plain signs on one text edge, new in the AI colour, dropped and kept grey. */
+.k2b-ui .k2b-chat-decision__details .k2b-change-list {
+  gap: 0.125rem;
+}
+
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item {
+  grid-template-columns: 1rem minmax(0, 1fr);
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.5rem;
+}
+
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item > .k2b-change-list__icon {
+  width: 1rem;
+  height: 1.5rem;
+  background: none;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item[data-tone="add"] > .k2b-change-list__icon {
+  color: var(--k2b-ai-accent);
+}
+
 /* Cloud works on the given answer for an unknown time: a shimmer runs over the filled button, never a fill level. */
 .k2b-ui .k2b-button.k2b-chat-decision__answer[data-busy] {
   cursor: progress;
