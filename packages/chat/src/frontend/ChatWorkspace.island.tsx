@@ -1,6 +1,6 @@
 import type { DictationSource } from "@k2b/cloud/ai/browser";
 import { refreshAppBadges } from "@k2b/cloud/browser/app-badges";
-import { onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { getContext, onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
@@ -124,6 +124,8 @@ export type ChatWorkspaceProps = {
   embedded?: boolean;
   /** In the panel: the discussion about the host page's resource, which the panel opens first and leads back to. */
   resourceChat?: ResourceChat | null;
+  /** In the panel: the place the server read from the shared context, the start the browser's context is compared to. */
+  panelScope?: ResourceChat["ref"] | null;
   /** Live dictation is set up and allowed for this person; the composer then shows Dictate. */
   liveDictation?: boolean;
   /** The Cloud app's Chat below `/pwa/chat`: the list beside the open chat from 64 rem, one after the other below. */
@@ -1631,7 +1633,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     return "chatInfoFromChat" in state && state.chatInfoFromChat === true ? 2 : 1;
   };
   const listDepth = () => predecessorDepth("chatFromList");
-  const backToThreadDirectory = () => threaded() && !listPredecessor();
+  // The panel starts in a resource's discussion; its way back is always "All chats", the thread picker stays in the head.
+  const backToThreadDirectory = () => !props.embedded && threaded() && !listPredecessor();
   const backToList = async (navigation: LinkNavigateEvent) => {
     const depth = listDepth();
     // Refused before history moves: a refused Back would show the list's address until it returned (#2503).
@@ -2186,31 +2189,43 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       live.dispose();
     });
     if (props.embedded) {
-      // The host page changed its place: the panel follows to that resource's discussion only from the previous one.
+      // The host page changed its place: the panel follows to that resource's discussion only from the previous one,
+      // or while it is still following there. Each change invalidates every earlier one, also a return to the shown
+      // place; an open started for an earlier place is superseded by the next open, or keeps its address in step.
       let scopeToken = 0;
-      onCleanup(
-        onContextChange((context) => {
-          const scope = context?.scope;
-          const previous = resourceChat();
-          if (scope && previous && scope.type === previous.ref.type && scope.id === previous.ref.id) return;
-          const token = ++scopeToken;
-          if (!scope) return void setResourceChat(null);
-          const following = atResource();
-          openResourceDiscussion(scope)
-            .then(async (found) => {
-              if (disposed || token !== scopeToken) return;
-              store?.includeSystemChats([found.conversation]);
-              const next = { id: found.conversation.id, thread: found.thread, ref: scope, title: found.title };
-              setResourceChat(next);
-              const view = next.thread ?? "all";
-              if (following && (await open(chatRoute(next.id, view))) === "applied")
+      let followPending = false;
+      const follow = (context: ReturnType<typeof getContext>) => {
+        const scope = context?.scope;
+        const shown = resourceChat();
+        const token = ++scopeToken;
+        if (scope && shown && scope.type === shown.ref.type && scope.id === shown.ref.id) return;
+        if (!scope) return void setResourceChat(null);
+        const following = atResource() || followPending;
+        openResourceDiscussion(scope)
+          .then(async (found) => {
+            if (disposed || token !== scopeToken) return;
+            store?.includeSystemChats([found.conversation]);
+            const next = { id: found.conversation.id, thread: found.thread, ref: scope, title: found.title };
+            setResourceChat(next);
+            if (!following) return;
+            const view = next.thread ?? "all";
+            followPending = true;
+            try {
+              if ((await open(chatRoute(next.id, view))) === "applied" && !disposed)
                 navigate(viewHref(threadHref(next.id, view)), { replace: true, scroll: "preserve" });
-            })
-            .catch(() => {
-              if (token === scopeToken) setResourceChat(null);
-            });
-        }),
-      );
+            } finally {
+              if (token === scopeToken) followPending = false;
+            }
+          })
+          .catch(() => {
+            if (token === scopeToken) setResourceChat(null);
+          });
+      };
+      onCleanup(onContextChange(follow));
+      // A change the panel runtime accepted while this island loaded has no event of its own.
+      const loaded = getContext()?.scope ?? null;
+      const served = props.panelScope ?? null;
+      if (loaded?.type !== served?.type || loaded?.id !== served?.id) follow(getContext());
       try {
         const selected = props.chatId ?? savedDrafts?.selection();
         if (props.chatId) savedDrafts?.select(props.chatId);

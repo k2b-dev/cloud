@@ -123,7 +123,7 @@ export async function startConversationPanelFixture() {
           const assistantPage = url.pathname.startsWith("/app/assistant");
           const chatPage = url.pathname.startsWith("/app/chat");
           // The real Chat page's start in the discussion about the host page's resource, against the synthetic backend.
-          const { resourceChat, redirect } =
+          const { resourceChat, redirect, scope } =
             chatPage && embedded
               ? await panelResourceChat(c, async (ref) => {
                   const response = await fetch(new URL("api/chat/system-chats/for-resource", backend.url), {
@@ -135,7 +135,7 @@ export async function startConversationPanelFixture() {
                   const found = (await response.json()) as { conversation: { id: string }; thread: string | null; title: string };
                   return { id: found.conversation.id, thread: found.thread, title: found.title };
                 })
-              : { resourceChat: null, redirect: null };
+              : { resourceChat: null, redirect: null, scope: null };
           if (redirect) return c.redirect(redirect, 302);
           const board = /^\/app\/fixture\/board\/([^/]+)$/.exec(url.pathname)?.[1];
           const id = /\/c\/([^/]+)/.exec(url.pathname)?.[1];
@@ -148,6 +148,7 @@ export async function startConversationPanelFixture() {
             }),
             embedded,
             resourceChat,
+            panelScope: scope,
           };
           const content = () =>
             assistantPage ? (
@@ -273,6 +274,8 @@ document.documentElement.dataset.fixtureReady = "true";
         if (assistantResponse) return assistantResponse;
         if (!url.pathname.startsWith("/app/")) return fetch(new Request(new URL(url.pathname + url.search, backend.url), request));
         const response = await routes.fetch(request);
+        // Redirects, such as the panel's move into a resource's discussion, pass unchanged.
+        if (response.status >= 300 && response.status < 400) return response;
         const html = await new HTMLRewriter()
           .on('script[src], script[type="module"], link[rel="stylesheet"], link[rel="preload"], link[rel="modulepreload"]', {
             element: (element) => void element.remove(),

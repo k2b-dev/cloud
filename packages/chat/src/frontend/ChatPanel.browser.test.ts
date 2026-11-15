@@ -223,6 +223,91 @@ for (const width of [1440, 390]) {
   }, 30_000);
 }
 
+test("Chat follows only the latest host place when earlier places answer late", async () => {
+  fixture.backend.reset();
+  fixture.allowChatContext(true);
+  const ids: Record<string, string> = {};
+  for (const [place, name] of [
+    ["Shelf-7", "Lager Ost"],
+    ["Yard-2", "Hof West"],
+    ["Dock-3", "Rampe Nord"],
+  ] as const) {
+    ids[place] = fixture.backend.addChat({ members: [viewer, nora], name, count: 1, end: fixture.backend.now() });
+    fixture.backend.setSystem(ids[place], { type: "inventory.collection", id: place });
+  }
+  const context = await newContext({ reducedMotion: "reduce" });
+  const page = await context.newPage();
+  page.setDefaultTimeout(8_000);
+  const gates = new Map<string, () => void>();
+  const hold = (place: string) =>
+    new Promise<void>((resolve) => {
+      gates.set(place, resolve);
+    });
+  const held = new Map<string, Promise<void>>();
+  await page.route("**/api/chat/system-chats/for-resource", async (route) => {
+    const place = (JSON.parse(route.request().postData() ?? "{}") as { ref?: { id?: string } }).ref?.id ?? "";
+    await held.get(place);
+    await route.continue();
+  });
+  try {
+    await page.goto(fixture.url + "app/fixture/board/Shelf-7");
+    await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
+    await page.locator("#open-chat").click();
+    const panel = page.frameLocator("[data-cloud-panel-frame]");
+    const header = panel.locator(".chat-conversation__header");
+    await header.getByText("Lager Ost", { exact: true }).waitFor();
+    await panel.locator('html[data-fixture-ready="true"]').waitFor();
+    const frame = () => page.frames().find((candidate) => candidate.url().includes("/app/chat/panel"))!;
+    const shared = JSON.parse(new URL(frame().url()).searchParams.get("cloud_panel_context")!) as { pageId: string; seq: number };
+    let seq = shared.seq;
+    const move = (id: string) =>
+      page.evaluate(
+        ({ pageId, id, seq }) => {
+          document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")!.contentWindow!.postMessage(
+            {
+              type: "cloud.panel.context",
+              v: 1,
+              context: { v: 1, seq, pageId, app: "fixture", scope: { type: "inventory.collection", id } },
+            },
+            location.origin,
+          );
+        },
+        { pageId: shared.pageId, id, seq: ++seq },
+      );
+    // A -> B (late) -> A: the late answer for B neither moves the panel nor changes the way back.
+    held.set("Yard-2", hold("Yard-2"));
+    await move("Yard-2");
+    await move("Shelf-7");
+    gates.get("Yard-2")!();
+    await page.waitForResponse("**/api/chat/system-chats/for-resource");
+    await settled(page);
+    expect(new URL(frame().url()).pathname).toBe(`/app/chat/panel/c/${ids["Shelf-7"]}`);
+    expect(await header.getByRole("link", { name: /^Chat about/ }).count()).toBe(0);
+    // B opens slowly, then C arrives: the panel ends at C, with its address in step.
+    held.delete("Yard-2");
+    let releaseSnapshot!: () => void;
+    const snapshot = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+    await page.route(`**/api/chat/conversations/${ids["Yard-2"]}/snapshot**`, async (route) => {
+      await snapshot;
+      await route.continue();
+    });
+    await move("Yard-2");
+    await page.waitForRequest(`**/api/chat/conversations/${ids["Yard-2"]}/snapshot**`);
+    await move("Dock-3");
+    await header.getByText("Rampe Nord", { exact: true }).waitFor();
+    releaseSnapshot();
+    await settled(page);
+    expect(new URL(frame().url()).pathname).toBe(`/app/chat/panel/c/${ids["Dock-3"]}`);
+    expect(await header.getByText("Rampe Nord", { exact: true }).count()).toBe(1);
+  } finally {
+    for (const release of gates.values()) release();
+    fixture.allowChatContext(false);
+    await context.close();
+  }
+}, 30_000);
+
 for (const width of [1440, 390]) {
   test(`Assistant saves a new panel draft, resumes it and resolves a lost send at ${width}px`, async () => {
     fixture.assistant.reset();

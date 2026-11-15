@@ -269,7 +269,10 @@ test("the panel keeps a chat's threads below the panel route", () => {
       focus: null,
     },
   });
-  expect(html).toContain('href="/app/chat/panel/c/Chat01/threads"');
+  // In the panel the head's way back is "All chats"; the thread picker beside the title leads to the overview.
+  expect(html).toMatch(
+    /<a[^>]*href="\/app\/chat\/panel"[^>]*aria-label="All chats"|<a[^>]*aria-label="All chats"[^>]*href="\/app\/chat\/panel"/,
+  );
   expect(html).not.toContain('href="/app/chat/c/Chat01/threads"');
 });
 

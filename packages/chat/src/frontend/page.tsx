@@ -24,12 +24,12 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = chatMessages.resolve([locale]);
   const accessSubject = c.get("accessSubject");
   if (accessSubject.type !== "user") return ssr.error(c, 403);
-  const { resourceChat, redirect } = embedded
+  const { resourceChat, redirect, scope } = embedded
     ? await panelResourceChat(c, async (ref) => {
         const opened = await chatService.systemChats.openFor({ ...chatRequestContext(c), ref });
         return opened.ok ? { id: opened.data.conversation.id, thread: opened.data.thread, title: opened.data.title } : null;
       })
-    : { resourceChat: null, redirect: null };
+    : { resourceChat: null, redirect: null, scope: null };
   if (redirect) return c.redirect(redirect, 302);
   const archived = c.req.path.endsWith("/archive") || c.req.query("list") === "archive";
   let unread = (c.req.query("listFilter") ?? c.req.query("filter")) === "unread";
@@ -79,6 +79,7 @@ export default ssr<AuthContext>(async (c) => {
     <ChatWorkspace
       embedded={embedded}
       resourceChat={resourceChat}
+      panelScope={scope}
       archived={archived}
       filter={unread ? "unread" : "all"}
       collapsed={collapsed}
