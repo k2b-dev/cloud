@@ -921,7 +921,8 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             </Button>
           )}
         </Show>
-        <Show when={layout().showWork}>
+        {/* A turn that "Send now" interrupted says "paused" in its summary line, also without steps: no system line. */}
+        <Show when={layout().showWork || (props.segment().queueInterrupted && !props.segment().earlier)}>
           {/* The live label and clock change every second; the conversation log must not read them out. */}
           <div class="ai-turn__work" aria-live="off">
             <AiWorkLine segment={props.segment} />
@@ -969,16 +970,6 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
         <Show when={props.segment().reconnect === "row"}>
           {/* Calm by design: no busy sweep while the turn reconnects. */}
           <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
-        </Show>
-        {/* Without a work line, a turn that "Send now" interrupted still says so, quietly and without a button. */}
-        <Show
-          when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().queueInterrupted && !layout().showWork}
-        >
-          <Chat.Activity
-            class="ai-turn__paused"
-            icon="ti ti-player-pause"
-            label={aiChatMessages(locale()).workedPaused({ duration: "" })}
-          />
         </Show>
         <Show when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().stoppedByPerson}>
           {/* Calm by design: the person stopped it, so this is a quiet line, not a warning. */}
