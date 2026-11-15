@@ -181,6 +181,16 @@ test("what a message brings along stands above it: images as previews, files as 
     try {
       const image = await box(page, '.k2b-chat-message__attachment[data-kind="image"]');
       expect([image.width, image.height, image.radius]).toEqual([148, 110, "12px"]);
+      // Without its preview the image shows its sign in the quiet third grey, not in full ink.
+      const ink = await page.locator('.k2b-chat-message__attachment[data-kind="image"] > i').evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-text-subtle)";
+        node.parentElement!.append(probe);
+        const subtle = getComputedStyle(probe).color;
+        probe.remove();
+        return { icon: getComputedStyle(node).color, subtle };
+      });
+      expect(ink.icon).toBe(ink.subtle);
       const file = page.locator('.k2b-chat-message__attachment[data-kind="file"]');
       expect((await file.innerText()).replace(/\s+/g, " ").trim()).toMatch(/^Nachlass-Liste\.pdf 12\d\S* [KkM]i?B$/);
       const tile = await box(page, '.k2b-chat-message__attachment[data-kind="file"]');

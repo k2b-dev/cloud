@@ -14629,8 +14629,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 2.125rem;
 }
 
-/* An image whose preview cannot load shows its sign in the preview's place, at the preview's size. */
+/* An image whose preview cannot load shows its sign in the preview's place, at the preview's size and in a quiet ink. */
 .k2b-ui .k2b-chat-message__attachment[data-kind="image"] > i {
+  color: var(--k2b-text-subtle);
   font-size: 2.125rem;
 }
 
