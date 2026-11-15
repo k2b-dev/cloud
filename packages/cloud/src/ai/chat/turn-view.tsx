@@ -829,7 +829,12 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             class="ai-turn__stopped"
             wrap
             icon="ti ti-player-stop"
-            label={layout().text.length > 0 ? aiChatMessages(locale()).stoppedTextStays : aiChatMessages(locale()).stoppedByYou}
+            label={
+              // A stopped turn may fold its text into the work line; that text stays as well.
+              layout().text.length > 0 || layout().work.some((block) => block.kind === "text" && block.text.trim() !== "")
+                ? aiChatMessages(locale()).stoppedTextStays
+                : aiChatMessages(locale()).stoppedByYou
+            }
             trailing={
               <Show when={props.segment().answerAgain}>
                 {(again) => (
