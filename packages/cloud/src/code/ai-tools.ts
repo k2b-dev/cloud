@@ -10,12 +10,14 @@ export function codeAiToolCovered(
   binding: CodeAiToolBinding,
   permissions: readonly Pick<CodeVersionPermission, "operation" | "target">[],
 ): boolean {
+  if (binding.bound && (binding.capability !== "core.ai.chat.send" || binding.target !== null)) return false;
+  const target = binding.bound ? { type: "core.ai.chat", id: null } : binding.target;
   return permissions.some(
     (permission) =>
       permission.operation === binding.capability &&
-      (binding.target === null
+      (target === null
         ? permission.target === null
-        : permission.target?.type === binding.target.type && (permission.target.id === null || permission.target.id === binding.target.id)),
+        : permission.target?.type === target.type && (permission.target.id === null || permission.target.id === target.id)),
   );
 }
 export async function createCodeAiTools(options: {
@@ -38,7 +40,7 @@ export async function createCodeAiTools(options: {
         entry?.manifest.queries.find((op) => op.localId === localId) ?? entry?.manifest.actions.find((op) => op.localId === localId);
       if (
         !operation ||
-        (operation.target ?? null) !== (binding.target?.type.slice(appId.length + 1) ?? null) ||
+        (operation.target ?? null) !== (binding.bound ? "ai.chat" : (binding.target?.type.slice(appId.length + 1) ?? null)) ||
         Object.keys(operation.refs ?? {}).length
       )
         throw new Error("code_ai_tool_invalid");
@@ -61,6 +63,7 @@ export async function createCodeAiTools(options: {
             : {};
         const result = await options.invoke({
           call: { capability: binding.capability, target: binding.target, refs: {}, input: args },
+          ...(binding.bound ? { bound: binding.bound } : {}),
           metadata,
         });
         options.registerFiles(result);

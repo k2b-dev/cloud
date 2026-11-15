@@ -189,7 +189,7 @@ const AttentionSchema = z.object({
           z.object({ kind: z.literal("person") }),
         ]),
       }),
-      reasons: z.array(z.enum(["paused", "run_failed", "access_missing", "approval_pending"])),
+      reasons: z.array(z.enum(["paused", "run_failed", "access_missing", "approval_pending", "chat_missing"])),
       lastRunAt: z.string().nullable(),
     }),
   ),
@@ -221,14 +221,17 @@ export const loadCodeAttention = async (invoke: CodeQueryInvoke, cursor?: string
   for (let window = 0; window < CODE_ATTENTION_WINDOWS; window++) {
     const result = await invoke(query("code.attention.list", next ? { cursor: next } : {}), AttentionSchema);
     if (!result.ok) throw new CodeSummaryError(result.error.message);
-    for (const item of result.data.data.items)
+    for (const item of result.data.data.items) {
+      // Personal Code already has one actionable item in the shared Waiting feed.
+      if (item.code.owner.kind === "person") continue;
       items.push({
         codeId: item.code.id,
         title: item.code.title,
-        owner: item.code.owner.kind === "person" ? null : item.code.owner,
-        reasons: item.reasons,
+        owner: item.code.owner,
+        reasons: item.reasons.filter((reason): reason is CodeAttentionReason => reason !== "chat_missing"),
         lastRunAt: item.lastRunAt,
       });
+    }
     next = result.data.data.nextCursor;
     if (!next) break;
   }

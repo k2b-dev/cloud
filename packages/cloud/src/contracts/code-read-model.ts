@@ -24,7 +24,12 @@ export const CodeReadModelChangeSchema = z.strictObject({
   approvalReason: text.optional(),
   accessLabel: text.optional(),
 });
-export const CodeReadModelNoticeSchema = z.strictObject({ severity: z.enum(["warning", "block"]), text, consequence: text });
+export const CodeReadModelNoticeSchema = z.strictObject({
+  severity: z.enum(["warning", "block"]),
+  text,
+  consequence: text,
+  code: z.literal("chat_missing").optional(),
+});
 export const CodeReadModelExampleSchema = z.strictObject({
   name: text,
   modelLabel: text,

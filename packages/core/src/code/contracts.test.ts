@@ -80,6 +80,7 @@ describe("Core Code data contracts", () => {
       "code.attention",
       "code.attention.list",
       "code.automation.list",
+      "code.chat_binding.read",
       "code.event.catchup.read",
       "code.list",
       "code.policy.effective",
@@ -107,6 +108,7 @@ describe("Core Code data contracts", () => {
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
     ).toEqual(
       [
+        "code.chat_binding.set",
         "code.event.catchup",
         "code.event.catchup.cancel",
         "code.event.catchup.resume",

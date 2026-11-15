@@ -29,11 +29,12 @@ export function hasFileInput(schema: Record<string, unknown>): boolean {
 export const CodeAiToolBindingSchema = z
   .object({
     capability: z.string().min(1).max(256).describe("Generated SDK capability ID."),
+    bound: z.literal("chat").optional().describe("Resolve the personal Code's current chat at each tool call."),
     target: z
       .object({ type: z.string().min(1).describe("Bound resource type."), id: z.string().min(1).describe("Bound resource ID.") })
       .strict()
       .nullable()
-      .describe("Fixed SDK target; null for app-level operations."),
+      .describe("Fixed SDK target; null for app-level operations or a bound chat."),
   })
   .strict();
 export type CodeAiToolBinding = z.infer<typeof CodeAiToolBindingSchema>;

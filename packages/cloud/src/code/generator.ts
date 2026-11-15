@@ -248,6 +248,8 @@ export function generateCodeSdk(manifests: readonly CapabilityManifest[], option
     }
     declarations.push(`export declare const ${app.exportName}: ${render(factories)};`);
   }
+  const chatSend = options.mode === "personal" ? manifest.operations.find((op) => op.capability === "core.ai.chat.send") : undefined;
+  if (chatSend) declarations.push(`export declare const chat: { readonly send: ${methods.get(chatSend)} };`);
   if (options.owner) {
     const owner = options.owner;
     const type = owner.kind === "app" ? handleNames.get(`app:${owner.appId}`) : handleNames.get(owner.ref.type);
@@ -318,6 +320,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     "export { __codeSdk };",
     "export const CodeError = __codeSdk.CodeError;",
     ...manifest.apps.map((app) => `export const ${app.exportName} = __codeSdk.namespaces[${quote(app.exportName)}];`),
+    ...(chatSend ? ["export const chat = __codeSdk.chat;"] : []),
     ...(options.owner ? ["export const owner = __codeSdk.owner;"] : []),
     ...(options.mode === "code_run" ? [] : ["export const app = __codeSdk.app;", "export const db = __codeSdk.db;"]),
   ];
@@ -347,6 +350,7 @@ export type CodeRouteOptions = { public?: boolean; layout?: "plain" };`,
     }
   }
   const runtimeManifest = {
+    mode: manifest.mode,
     apps: manifest.apps.map(({ exportName }) => ({ exportName })),
     handles: manifest.handles,
     operations: manifest.operations.map(({ capability, appId, kind, target, refs, methodPath, idempotency }) => ({

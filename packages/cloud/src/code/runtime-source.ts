@@ -50,7 +50,7 @@ function coordinate(handle, type) {
   if (!ref || ref.type !== type) throw new CodeError("code_sdk_invalid_handle");
   return { type: ref.type, id: ref.id };
 }
-function handle(appId, type, id) {
+function handle(appId, type, id, bound) {
   if (typeof id !== "string" || id.length === 0 || id.length > RESOURCE_ID_MAX) throw new CodeError("code_sdk_invalid_id");
   const result = node();
   const ref = Object.freeze({ type: type ?? "cloud.app", id });
@@ -92,15 +92,15 @@ function handle(appId, type, id) {
         if (key !== undefined) metadata.idempotencyKey = key.trim();
         delete input.idempotencyKey;
       }
-      const call = { capability: op.capability, target: type === null ? null : coordinate(result, type), refs, input };
-      const response = await invoke(op.capability, { call, metadata });
+      const call = { capability: op.capability, target: bound ? null : type === null ? null : coordinate(result, type), refs, input };
+      const response = await invoke(op.capability, { call, metadata, ...(bound ? { bound } : {}) });
       if (op.capability === "core.ai.decide" && response?.data?.answers)
         return { ...response, data: { ...response.data, answers: Object.fromEntries(Object.entries(response.data.answers).map(([key, answer]) =>
           [key, answer.type === "noul" ? { ...answer, confidence: answer.probability } : answer])) } };
       return response;
     };
     if (Object.keys(op.refs).length === 0) aiTools.set(method, Object.freeze({ capability: op.capability,
-      target: type === null ? null : Object.freeze(coordinate(result, type)) }));
+      target: bound || type === null ? null : Object.freeze(coordinate(result, type)), ...(bound ? { bound } : {}) }));
     setPath(result, op.methodPath, method);
   }
   return result;
@@ -121,6 +121,8 @@ if (manifest.owner) {
   owner = Object.freeze(value.kind === "app" ? handle(value.appId, null, value.appId)
     : handle(value.ref.type.slice(0, value.ref.type.indexOf(".")), value.ref.type, value.ref.id));
 }
+const chat = manifest.mode === "personal" && manifest.operations.some(op => op.capability === "core.ai.chat.send")
+  ? Object.freeze({ send: handle("core", "core.ai.chat", "bound", "chat").send }) : undefined;
 const app = node();
 app.use = (...args) => {
   const [path, handler] = args.length === 1 ? ["/", args[0]] : args;
@@ -210,7 +212,7 @@ const http = Object.freeze({
 const builtPages = new WeakSet();
 const __codeSdk = Object.freeze({
   markPage: page => { builtPages.add(page); return page; },
-  namespaces, owner, app, secrets, http, db, CodeError,
+  namespaces, chat, owner, app, secrets, http, db, CodeError,
   bind(cloud) {
     if (bridge || !cloud || typeof cloud.call !== "function") throw new CodeError("code_sdk_invalid_bridge");
     bridge = cloud;

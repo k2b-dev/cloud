@@ -6,6 +6,8 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
+      chat_missing: "This automation needs a chat.",
+      chat_missing_consequence: "The owner can choose another chat or restore the archived chat.",
       code_checker_unavailable: "The checking service is unavailable.",
       code_checker_unavailable_consequence: "Try the check again when the service is available.",
       code_analysis_failed: "Cloud could not analyse this version.",
@@ -102,6 +104,8 @@ const messages = i18n.define({
       code_route_unchecked_consequence: "All signed-in members except guests can open it unless the automation restricts access itself.",
     },
     de: {
+      chat_missing: "Diese Automation braucht einen Chat.",
+      chat_missing_consequence: "Der Besitzer kann einen anderen Chat wählen oder den archivierten Chat wiederherstellen.",
       code_checker_unavailable: "Der Prüfdienst ist nicht verfügbar.",
       code_checker_unavailable_consequence: "Versuche die Prüfung erneut, sobald der Dienst verfügbar ist.",
       code_analysis_failed: "Cloud konnte diese Version nicht untersuchen.",

@@ -827,6 +827,44 @@ activation. The automation list shows its `at`, `timeZone`, and a null
 
 ## Write to your Gustav chat
 
+Personal Code can write to its currently bound chat with `chat.send`. Code
+created through `code_init` starts bound to the chat where Gustav created it:
+
+```ts
+import { app, chat } from "@sdk";
+
+app.schedule({ cron: "0 9 * * 1", name: "morning-briefing" }, async ({ runId }) => {
+  await chat.send({
+    text: "Prepare my morning briefing using these facts.",
+    context: "Fictional source data",
+    idempotencyKey: `morning-briefing:${runId}`,
+  });
+});
+export default app;
+```
+
+`chat.send` has exactly the same input and result as `core.ai.chat(id).send`.
+The `chat` export is available only for personal Code, when the live catalog
+offers `core.ai.chat.send`; resource Code and one-off `code_run` do not export it.
+The binding is read at each call, so choosing another chat needs no source
+change, new version or administrator approval. The chat's Project, model and
+files determine the resulting turn. Already queued messages keep their target.
+The binding is a default destination; explicit chat handles remain available.
+
+Only the personal owner may change the binding; a shared Code editor cannot.
+Read its revision and state through
+[`code.chat_binding.read`](/en/docs/platform/code-data-model#choose-a-personal-codes-chat).
+`chat_unbound` means that no chat is bound. `chat_unavailable` means that the
+bound chat was archived or deleted, or is no longer the owner's active chat.
+Both return before invoking Send. Choose another own active chat or restore the
+archived chat. A missing bound chat supplies the `chat_missing` attention reason
+and a recoverable notice on the Code page and in Waiting for you.
+
+The checker records `chat.send` as `core.ai.chat.send` with dynamic target
+`{ type: "core.ai.chat", id: null }`; normal policy, authority and chain checks
+still apply. For fake test fixtures, match this bound call with `target: null`;
+no real chat is looked up during testing.
+
 Use `core.ai.chat(chatId).send` to write one exact message to an owned active
 chat. Gustav answers using the person's current model grants, tools and approval
 rules. Discover the actual chat ID and generated handle first:

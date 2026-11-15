@@ -145,7 +145,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
   function sdkOperation(expression: ts.Expression) {
     for (const signature of checker.getTypeAtLocation(expression).getCallSignatures()) {
       const op = signature.declaration && appOperations.get(signature.declaration);
-      if (op) return { op, target: null };
+      if (op) return { op, target: op.target ? { type: op.target, ids: null } : null };
     }
     const { base, path } = member(expression);
     const target = handle(base);
@@ -247,6 +247,18 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       if (signature.declaration) {
         appOperations.set(signature.declaration, op);
         operationDeclarations.add(signature.declaration);
+      }
+  }
+  if (request.sdk.manifest.mode === "personal") {
+    const op = request.sdk.manifest.operations.find((op) => op.capability === "core.ai.chat.send");
+    const namespace = sdkMemberType("chat", []);
+    if (namespace) sdkNamespaces.add(namespace);
+    if (op)
+      for (const signature of sdkMemberType("chat", ["send"])?.getCallSignatures() ?? []) {
+        if (signature.declaration) {
+          appOperations.set(signature.declaration, op);
+          operationDeclarations.add(signature.declaration);
+        }
       }
   }
   // Generated file helper aliases are SDK namespaces too. Keep their calls
@@ -618,7 +630,7 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       if (declaration && factoryDeclarations.has(declaration)) {
         // A typed resource factory creates a handle; it does not call a capability.
       } else if (appOperation && receiverCall) {
-        operationCall(node, appOperation, null);
+        operationCall(node, appOperation, appOperation.target ? { type: appOperation.target, ids: null } : null);
       } else if (target) {
         const appId = target.type === "cloud.app" ? target.ids?.[0] : target.type.split(".")[0];
         const method = path.join(".");

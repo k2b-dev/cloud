@@ -10,6 +10,7 @@ import type { CodeSdkManifest } from "./types";
 const InvocationSchema = z
   .object({
     call: NormalizedCapabilityCallSchema,
+    bound: z.literal("chat").optional(),
     metadata: z.object({ idempotencyKey: CapabilityIdempotencyKeySchema.optional() }).strict(),
   })
   .strict();
@@ -51,7 +52,14 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
         failure ??= "code_test_invalid_call";
         throw new RunnerCallError(failure);
       }
-      const { call, metadata } = parsed.data;
+      const { call, metadata, bound } = parsed.data;
+      if (
+        bound &&
+        (manifest.mode !== "personal" || operation !== "core.ai.chat.send" || call.target !== null || Object.keys(call.refs).length)
+      ) {
+        failure ??= "code_test_invalid_call";
+        throw new RunnerCallError(failure);
+      }
       const row: CodeTestCall = {
         sequence: calls.length + 1,
         operation,
@@ -78,7 +86,11 @@ export function createCodeTestBridge(manifest: CodeSdkManifest, mocks: CodeTestM
             stream: undefined,
           }
         : manifest.operations.find((value) => value.capability === operation);
-      if (!spec || call.capability !== operation || (spec.target === null ? call.target !== null : call.target?.type !== spec.target))
+      if (
+        !spec ||
+        call.capability !== operation ||
+        (!bound && (spec.target === null ? call.target !== null : call.target?.type !== spec.target))
+      )
         return refuse("code_test_invalid_call");
       if (
         Object.keys(spec.refs).sort().join("\0") !== Object.keys(call.refs).sort().join("\0") ||

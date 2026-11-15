@@ -15,6 +15,22 @@ checks every actual call before forwarding it to a capability provider. A
 checked manifest supplies review evidence; it grants no execution authority.
 The provider still resolves the subject's current resource access.
 
+## Resolve the bound personal chat
+
+The personal SDK's `chat.send` carries `bound: "chat"` next to its normalized
+call and metadata, with `target: null`. The marker is valid only for
+`core.ai.chat.send` without refs. Core fences the current Code run, requires
+personal ownership and resolves the current binding to a short chat ID before
+the ordinary capability dispatch and receipt path. Neither the checked bundle
+nor the runner lease contains that destination.
+
+No binding returns `chat_unbound`; an archived, deleted or no longer owned
+binding returns `chat_unavailable` (409). Neither invokes Send. SDK AI tools
+also keep the bound marker when `chat.send` is offered as a tool; each tool
+execution resolves the current binding through the same bridge. A resolved call
+uses the same declaration, current mandate, policy, approval, authority and chain
+checks as an explicit `core.ai.chat(id).send` call.
+
 ## One-off chat authority
 
 The platform-owned `@k2b/cloud/code/chat-run` export defines the private

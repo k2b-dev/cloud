@@ -308,6 +308,9 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       }));
       try {
         const initialized = codeAuthoringContracts.init.data.parse(await invoke("code_init", { title: "Shared draft" }));
+        expect(
+          (await sql`SELECT chat_conversation_id,chat_binding_revision FROM code.codes WHERE id=${initialized.config.codeId}`)[0],
+        ).toEqual({ chat_conversation_id: id, chat_binding_revision: 1 });
         const { codeId } = initialized.config;
         const source = "export const monday = async () => {}; // edited";
         const firstWrite = CodeChatDraftSummarySchema.parse(await invoke("code_write", { codeId, path: "code.ts", content: source }));

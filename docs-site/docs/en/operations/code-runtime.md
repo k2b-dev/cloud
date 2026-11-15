@@ -236,3 +236,13 @@ removes `code.chat_deliveries`, its recovery path, `code.chat_runs` and old
 `meta.codeDelivery` markers. Existing message text stays readable. Send uses
 the normal turn-completion notification path. Rollback requires the pre-upgrade
 database backup together with its matching application release.
+
+## Personal Code chat bindings
+
+Core's additive Code migration adds a nullable chat UUID and binding revision.
+It requires no AI schema or foreign key. Changing the owner clears the binding
+and advances its revision. `chat.send` resolves the current destination on each
+call; the runner lease carries no chat ID. Missing bound chats appear as
+`chat_missing` in attention and fail with `chat_unavailable`. Restore the chat
+or have the personal Code owner choose another active chat through
+[`code.chat_binding.set`](/en/docs/platform/code-data-model#choose-a-personal-codes-chat).
