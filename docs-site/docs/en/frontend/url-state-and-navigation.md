@@ -200,7 +200,7 @@ limit.
 Right before such a document load, `window` receives `ssr:nav-fallback` with
 `detail: { reason, url, status? }`. `reason` is a stable code: `network`,
 `timeout`, `status`, `content-type`, `redirect`, `shell`, `assets`, `head`,
-`module`, `commit`, `history`, or `error`; `status` names a non-200 response.
+`module`, `commit`, `history`, `history-limit`, or `error`; `status` names a non-200 response.
 Hosts count it to find pages that keep falling back. `url` is the requested URL;
 strip it before reporting. Links outside the scope are not failures and emit
 nothing.

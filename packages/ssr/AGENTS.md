@@ -243,7 +243,12 @@ on `window` with `detail: { reason, url, status? }`: one stable
 `SwapFallbackReason` per failure class. Out-of-scope targets are not failures
 and emit nothing. `installPageSwap({ timeout })` sets one deadline over fetch,
 body, and module loading; when it passes on an active swap, the swap fails
-with `timeout` and then aborts its fetch. The first installation's options
+with `timeout` and then aborts its fetch. A swap writes history exactly once:
+browsers rate-limit writes (WebKit throws a `SecurityError` past 100 per 10
+seconds; Chromium drops them with a console warning), so the departing scroll
+stays in the in-memory map that pagehide mirrors, never in an extra replace.
+A thrown or dropped write (the URL did not change) fails the commit with
+`history-limit` and loads the document. The first installation's options
 win for the document. The click listener sits on `window` in the bubble
 phase, so island and delegated Solid handlers can prevent a swap first.
 
@@ -266,7 +271,7 @@ Symbol.for flag. The wrappers remain after uninstall but call the originals
 unchanged. While installed they preserve caller fields in a shallow copy of
 plain-object state, mark null/undefined state, overwrite caller copies of nav's
 key, and leave other state unchanged and unmarked so it fails safe on return.
-Push saves the departing scroll and increments the position; replace retains
+Push remembers the departing scroll in the in-memory map (no extra history write) and increments the position; replace retains
 the current marker while a swap still loads (an unmarked entry stays
 unmarked), so a pending traversal can commit; otherwise the shown page wrote
 it and the entry takes the shown page's id, also over the marker of a

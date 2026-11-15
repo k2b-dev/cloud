@@ -44,6 +44,14 @@ const markerKey = "@k2b/ssr/nav";
 const scrollKey = "@k2b/ssr/nav:scroll";
 // Chromium and Firefox keep at most 50 session history entries.
 const scrollLimit = 50;
+/** WebKit throws a SecurityError past its history write budget; Chromium drops the write (HistoryLimitError). */
+class HistoryLimitError extends Error {
+  constructor() {
+    super("The browser did not apply a history write; it limits how often a page may write history.");
+  }
+}
+const historyLimited = (error: unknown): boolean =>
+  error instanceof HistoryLimitError || (error instanceof DOMException && error.name === "SecurityError");
 const loadDocument = (href: string, options: { replace?: boolean }): void => {
   try {
     documentNavigate(href, options);
@@ -62,8 +70,12 @@ const recover = (href: string, replace: boolean): void => {
       return;
     }
     if (url.href !== here.href) {
-      if (replace) window.history.replaceState(window.history.state, "", url.href);
-      else window.history.pushState(window.history.state, "", url.href);
+      try {
+        if (replace) window.history.replaceState(window.history.state, "", url.href);
+        else window.history.pushState(window.history.state, "", url.href);
+      } catch {
+        // Past the browser's history budget the hash stays behind; the page itself still loads.
+      }
     }
     window.location.reload();
   } catch (error) {
@@ -159,8 +171,8 @@ const patchHistory = (): HistoryWrites => {
     const snapshot = captureShownScroll(state, state.departure);
     state.stopRestore();
     const shown = shownEntry(state);
-    const stored = marker(history.state);
-    if (stored && entryKey(stored) === entryKey(shown)) persistScroll(writes, stored, snapshot);
+    // One history write per navigation: browsers rate-limit them. The departing scroll lives in the in-memory map,
+    // which pagehide mirrors to sessionStorage.
     const entry = { page: state.currentPage, position: departing.position + 1 };
     writes.push.call(history, mergeMarker(value, entry), ...args);
     state.moves++;
@@ -291,6 +303,8 @@ const wrappers = (root: HTMLElement): HTMLElement[] => [
  * - `module`: an island module of the fetched column failed to load;
  * - `commit`: the column could not be replaced, or a cleanup took it away;
  * - `history`: history moved under the swap or its rollback, so only a document load matches the URL;
+ * - `history-limit`: the browser refused or dropped the swap's history write, because the page wrote history too
+ *   often (WebKit allows 100 writes per 10 seconds);
  * - `error`: any other unexpected failure.
  */
 export type SwapFallbackReason =
@@ -305,6 +319,7 @@ export type SwapFallbackReason =
   | "module"
   | "commit"
   | "history"
+  | "history-limit"
   | "error";
 /** `detail` of the `ssr:nav-fallback` window event. `url` is the requested URL: hosts must strip it before reporting. */
 export type SwapFallbackDetail = { reason: SwapFallbackReason; url: string; status?: number };
@@ -940,9 +955,9 @@ const commit = (
   // A swap they start finds its captured root detached and loads its document; cleanups should not navigate.
   state.active = undefined;
   const owned = () => shared[swapKey] === state && context.root.isConnected && context.shell.contains(context.root);
-  const recoverCommit = (replace: boolean): void => {
+  const recoverCommit = (replace: boolean, reason: SwapFallbackReason = "commit"): void => {
     if (traversal && !stillCurrent(state, traversal)) return;
-    reportFallback("commit", requested.href);
+    reportFallback(reason, requested.href);
     if (!traversal) recover(requested.href, replace);
     else window.location.reload();
   };
@@ -997,12 +1012,13 @@ const commit = (
       traversal.entry = entry;
     } else {
       const departing = currentEntry(state);
-      const stored = marker(window.history.state);
-      if (!options.replace && stored && entryKey(stored) === entryKey(shown)) persistScroll(writes, stored, snapshot);
       entry = { page: newPage(state), position: departing.position + (options.replace ? 0 : 1) };
-      // History first: inserted resources with relative URLs resolve against the new page's URL.
+      // History first: inserted resources with relative URLs resolve against the new page's URL. This is the swap's
+      // only history write (browsers rate-limit them); remember() above keeps the departing scroll.
       const write = options.replace ? writes.replace : writes.push;
       write.call(window.history, { [markerKey]: entry }, "", target.href);
+      // A browser that throttles history writes can drop one silently: only the URL tells.
+      if (window.location.href !== target.href) throw new HistoryLimitError();
     }
     committed = true;
     state.currentPage = entry.page;
@@ -1042,7 +1058,7 @@ const commit = (
     swappedRoot = root;
   } catch (error) {
     console.error("[@k2b/ssr/nav] Page swap failed; falling back to document navigation.", error);
-    recoverCommit(Boolean(options.replace) || committed);
+    recoverCommit(Boolean(options.replace) || committed, historyLimited(error) ? "history-limit" : "commit");
   }
   if (swappedRoot) window.dispatchEvent(new CustomEvent("ssr:nav-swapped", { detail: { root: swappedRoot } }));
 };

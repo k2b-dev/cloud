@@ -343,7 +343,7 @@ Any failure loads the requested URL once as a document and leaves the old
 column untouched until then. Right before, `window` receives `ssr:nav-fallback`
 with `detail: { reason, url, status? }`; `reason` is a stable code (`network`,
 `timeout`, `status`, `content-type`, `redirect`, `shell`, `assets`, `head`,
-`module`, `commit`, `history`, `error`) for counting fallbacks. Strip `url`
+`module`, `commit`, `history`, `history-limit`, `error`) for counting fallbacks. Strip `url`
 before reporting it. `installPageSwap({ timeout })` bounds fetch and module
 loading in milliseconds; past it the document loads instead. The head stays:
 title and `<meta name="description">` follow the fetched page. Nav compares

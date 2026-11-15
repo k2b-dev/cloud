@@ -251,8 +251,10 @@ self-service API's rate limit.
 A few fallbacks are expected: a new release (`assets`, `module`), an expired
 session (`status` 401 or 403, `redirect`), a changed language or profile
 (`shell`). Look at an application whose rate keeps rising, or at `timeout`,
-`network`, `commit`, `history`, and `error`, which point to slow pages, failing
-modules, or page code that fights the swap. See
+`network`, `commit`, `history`, `history-limit`, and `error`, which point to slow
+pages, failing modules, or page code that fights the swap; `history-limit`
+means the page wrote browser history too often, for example an island that
+replaces the URL on every keystroke. See
 [Swap stability](/en/docs/frontend/url-state-and-navigation#swap-stability).
 
 ## Inspect routes and background work

@@ -624,7 +624,18 @@ test(`${browserName}: 50 swaps keep window and document listeners, the head and 
         if ((this === window || this === document) && listener) active.delete(key(this, type, listener, options));
         return remove.call(this, type, listener, options);
       };
+      // Every history write, nav's own included: nav keeps the prototype methods it finds at install.
+      const writes: number[] = [];
+      for (const name of ["pushState", "replaceState"] as const) {
+        const original = History.prototype[name];
+        History.prototype[name] = function (...args: Parameters<History["pushState"]>) {
+          writes.push(performance.now());
+          return original.apply(this, args);
+        };
+      }
       Object.assign(window, {
+        historyWrites: () => writes.length,
+        recentHistoryWrites: () => writes.filter((time) => performance.now() - time < 10_000).length,
         footprint: () => ({
           listeners: active.size,
           head: document.head.children.length,
@@ -643,10 +654,19 @@ test(`${browserName}: 50 swaps keep window and document listeners, the head and 
     const documents = trackDocuments(page);
     const footprint = () => page.evaluate(() => (window as unknown as { footprint: () => Record<string, number> }).footprint());
     let step = 0;
+    const historyWrites = () => page.evaluate(() => (window as unknown as { historyWrites: () => number }).historyWrites());
     const swap = async (label: string) => {
       step++;
+      // This test measures leaks, not the browser's history budget (WebKit: 100 writes per 10 s, see the
+      // history-limit test): stay below it, paced by the writes that really happened.
+      await page.waitForFunction(() => (window as unknown as { recentHistoryWrites: () => number }).recentHistoryWrites() < 40, undefined, {
+        timeout: 15_000,
+      });
+      const before = await historyWrites();
       await page.click(`#${label}`);
       await page.waitForFunction((value) => document.querySelector("main [data-mounted]")?.textContent === value, label);
+      // A swap writes history exactly once, so fast navigation spends the browser's budget as slowly as possible.
+      expect({ step, writes: (await historyWrites()) - before }).toEqual({ step, writes: 1 });
       // Name the step and the reason at once: a document load anywhere in 52 swaps breaks the contract.
       if (documents.length > 0)
         expect({ step, label, documents, fallbacks: await fallbacks(page), consoleErrors }).toEqual({
@@ -687,3 +707,64 @@ test(`${browserName}: focus goes to the first heading a person can see, not to o
     await context.close();
   }
 });
+
+/** Opens a page whose history writes can be dropped on demand, as a throttling browser does. */
+const dropHistoryWrites = (page: Page) =>
+  page.addInitScript(() => {
+    for (const name of ["pushState", "replaceState"] as const) {
+      const original = History.prototype[name];
+      History.prototype[name] = function (...args: Parameters<History["pushState"]>) {
+        if ((window as unknown as { dropHistory?: boolean }).dropHistory) return;
+        return original.apply(this, args);
+      };
+    }
+  });
+
+test(`${browserName}: a history write the browser drops loads the document and reports history-limit`, async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await dropHistoryWrites(page);
+    await recordFallbacks(page);
+    await open(page);
+    const documents = trackDocuments(page);
+    await page.evaluate(() => Object.assign(window, { dropHistory: true }));
+    await page.click("#B");
+    await page.waitForFunction(() => location.pathname === "/app/B" && document.documentElement.dataset.ready === "yes");
+    expect(documents).toEqual([`${origin}/app/B`]);
+    expect(await fallbacks(page)).toEqual([{ reason: "history-limit", url: "/app/B", column: "old" }]);
+  } finally {
+    await context.close();
+  }
+});
+
+test.if(browserName === "webkit")(
+  `${browserName}: past WebKit's history budget a swap loads the document and reports history-limit`,
+  async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await recordFallbacks(page);
+      await open(page);
+      const documents = trackDocuments(page);
+      // Spend the budget with raw writes until WebKit refuses one.
+      const refusedAt = await page.evaluate(() => {
+        for (let index = 0; index < 1_000; index++) {
+          try {
+            History.prototype.replaceState.call(history, history.state, "", `#spent-${index}`);
+          } catch {
+            return index;
+          }
+        }
+        return -1;
+      });
+      expect(refusedAt).toBeGreaterThan(0);
+      await page.click("#B");
+      await page.waitForFunction(() => location.pathname === "/app/B" && document.documentElement.dataset.ready === "yes");
+      expect(documents).toEqual([`${origin}/app/B`]);
+      expect(await fallbacks(page)).toEqual([{ reason: "history-limit", url: "/app/B", column: "old" }]);
+    } finally {
+      await context.close();
+    }
+  },
+);

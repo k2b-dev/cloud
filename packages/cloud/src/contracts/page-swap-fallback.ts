@@ -21,6 +21,7 @@ export const PageSwapFallbackReportSchema = z
       "module",
       "commit",
       "history",
+      "history-limit",
       "error",
     ]),
     status: z.number().int().min(100).max(599).optional(),
