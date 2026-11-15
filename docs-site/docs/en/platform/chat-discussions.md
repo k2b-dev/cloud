@@ -5,7 +5,7 @@ section: Platform services
 order: 75
 tags: [chat, capabilities, permissions]
 description: Read Chat messages and conversation permissions, post results, and work with provider-owned item discussions.
-updated: 2026-11-07
+updated: 2026-11-15
 ---
 
 # Item discussion capabilities
@@ -16,6 +16,9 @@ IDs are opaque strings up to 512 characters. Built-in and third-party providers
 use the same contract. Discussion listing, posting, editing and deletion stay
 limited to provider-owned item threads. `message.read` also reads ordinary Chat
 messages as described below. An application's existing page comments remain separate.
+Built-in item types include `spaces.item`, `notebooks.note`, and `filesv2.entry`.
+For Files, the item reader supplies the current parent `filesv2.folder` ref;
+keep both `entry.read` and `folder.read` available to the incoming authority.
 
 | Operation | Input | Result |
 | --- | --- | --- |

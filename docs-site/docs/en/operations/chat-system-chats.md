@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to resource providers.
-updated: 2026-10-30
+updated: 2026-11-15
 ---
 
 # Chat system conversations
@@ -16,6 +16,14 @@ third-party providers use the same contract. Chat lists these conversations
 under **Discussions**. Item directories and message links work in the full
 page and below `/app/chat/panel`. Providers can also offer an activity feed.
 Existing comments stay in their owning application.
+
+Built-in providers include Spaces (`item` in `space`), Notebooks (`note` in
+`notebook`), and Files (`entry` in `folder`). Files containers are storage roots
+and folders, with files discussed in their current parent folder. Deploy the
+updated Files application after Core supports the discussions role; no new
+configuration is required. Files does not yet offer discussion activity or
+reader checks for push notifications. Its interactive readers and container
+list use the same current storage permissions as Files.
 
 The [item discussion capabilities](/en/docs/platform/chat-discussions) expose
 only provider-backed item threads. Keep the item and container types' declared
