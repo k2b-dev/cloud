@@ -164,6 +164,11 @@ const decisionCompiled = compileCapabilities("core", {
 });
 const baseEntry: CapabilityRegistryEntry = {
   appId: "example",
+  presentation: {
+    baseLocale: "en",
+    results: { write: { text: "Updated {target}", kind: "folder", targetType: "folder" } },
+    translations: { de: { actions: { write: { result: { text: "{target} geändert", kind: "Ordner", targetType: "folder" } } } } },
+  },
   appName: "Example",
   appIcon: "ti ti-folder",
   appDescription: "Fixture",
@@ -345,6 +350,7 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
           return Response.json({ code: targetFailure.code, message: targetFailure.message }, { status: targetFailure.status });
         return Response.json({
           data: { value: body.target.id },
+          refs: [{ type: "example.folder", id: body.target.id, title: "Private provider title" }],
           ...(queryCursor === undefined ? {} : { page: { hasMore: true, nextCursor: queryCursor } }),
         });
       },
@@ -638,6 +644,22 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     capabilitySpy?.mockRestore();
     await database?.drop();
     setSystemTime();
+  });
+
+  test("confirmed effects retain localized provider forms and identities in the call's settlement", async () => {
+    expect(await (await send()).json()).toMatchObject({ ok: true });
+    const [call] = await sql`SELECT effect,confirmed_effect FROM code.calls WHERE run_id=${claims.runId}::uuid`;
+    expect(call).toMatchObject({
+      confirmed_effect: true,
+      effect: {
+        forms: {
+          de: { text: "{target} geändert", kind: "Ordner", targetType: "example.folder" },
+          en: { text: "Updated {target}", kind: "folder", targetType: "example.folder" },
+        },
+        refs: [{ type: "example.folder", id: item.id }],
+      },
+    });
+    expect(JSON.stringify(call.effect)).not.toMatch(/value|Private provider title/);
   });
 
   test("SQL budget of one runner capability request", async () => {

@@ -7,18 +7,21 @@ import {
   type CodeVersionReadModel,
 } from "@k2b/cloud/contracts";
 import { describeCodeTiming } from "@k2b/cloud/ssr/code-page/schedule";
+import { codeAdminPermissionChanges } from "../permission-changes";
+import { type CodePolicyRow, type CodePolicyValue, isCodeAiOperation } from "../policy-contracts";
 import type { CodeVersionEvidence } from "../version-evidence";
+import { approvalReason } from "./approval";
 import { codeReadModelMessages } from "./messages";
 import { describeCodeNotices } from "./notices";
 
 export type ReadModelTarget = { name: string; readable: boolean; href?: string; app?: string; icon?: string };
 export type ReadModelNames = {
   target: (ref: { type: string; id: string | null }) => ReadModelTarget;
-  operation: (id: string) => { title: string; app?: string; icon?: string };
+  operation: (id: string) => { title: string; app?: string; icon?: string; policyRow?: CodePolicyRow; accessLabel?: string };
   event: (type: string) => string;
 };
-export const readModelList = <T>(items: T[], locale: string) => {
-  const more = Math.max(0, items.length - CODE_READ_MODEL_LIST_LIMIT);
+export const readModelList = <T>(items: T[], locale: string, omitted = 0) => {
+  const more = omitted + Math.max(0, items.length - CODE_READ_MODEL_LIST_LIMIT);
   return {
     items: items.slice(0, CODE_READ_MODEL_LIST_LIMIT),
     more,
@@ -47,12 +50,14 @@ export function describeReadModelTiming(
   const timing = describeCodeTiming(entry, locale);
   return timing && timing !== entry.cron ? timing : t.schedule;
 }
-type Fact = { key: string; text: string; note?: string };
+type Fact = { key: string; text: string; note?: string; policyRow?: CodePolicyRow; accessLabel?: string };
 function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, locale: string): Fact[] {
   const { t } = codeReadModelMessages.resolve([locale]);
   return [
     ...manifest.permissions.map(({ operation, target }) => ({
       key: `permission:${stable({ operation, target })}`,
+      policyRow: names.operation(operation).policyRow,
+      accessLabel: names.operation(operation).title,
       text: t.mayDo({
         action: names.operation(operation).title,
         target: names.target(target ?? { type: "app", id: operation.split(".")[0]! }).name,
@@ -64,9 +69,14 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
         key: `trigger:${stable({ kind: entry.kind, event: entry.event, cron: entry.cron, at: entry.at, timeZone: entry.timeZone })}`,
         text: describeReadModelTiming(entry, names, locale),
       })),
-    ...(manifest.internet ?? []).map((origin) => ({ key: `internet:${origin}`, text: t.internet({ origin }) })),
+    ...(manifest.internet ?? []).map((origin) => ({
+      key: `internet:${origin}`,
+      policyRow: "internet" as const,
+      text: t.internet({ origin }),
+    })),
     ...(manifest.secrets ?? []).map((secret) => ({
       key: `secret:${stable(secret)}`,
+      policyRow: "internet",
       text: t.secret({ name: secret.name, origin: secret.origin, path: secret.pathPrefix }),
       note: t.secretNote,
     })),
@@ -74,10 +84,13 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
       .filter((entry) => entry.route)
       .map((entry) => ({
         key: `page:${stable(entry.route)}`,
+        ...(entry.route?.public ? { policyRow: "public_routes" as const } : {}),
         text: `${t.page({ audience: entry.route?.public ? t.public : t.members })} · ${entry.route?.method} ${entry.route?.path}`,
       })),
     ...(manifest.database ? [{ key: "database", text: t.database }] : []),
-    ...(manifest.ai ? [{ key: "ai", text: t.ai }] : []),
+    ...(manifest.ai && !manifest.permissions.some((permission) => isCodeAiOperation(permission.operation))
+      ? [{ key: "ai", policyRow: "ai" as const, text: t.ai }]
+      : []),
   ];
 }
 
@@ -94,6 +107,7 @@ export function presentCodeVersion(input: {
   names: ReadModelNames;
   locale: string;
   limits: Pick<CodeTestLimits, "cases">;
+  policy?: Partial<Record<CodePolicyRow, CodePolicyValue>>;
 }): CodeVersionReadModel {
   const { t, locale } = codeReadModelMessages.resolve([input.locale]);
   const { manifest, names } = input;
@@ -117,10 +131,26 @@ export function presentCodeVersion(input: {
   ];
   const before = new Map((input.comparison ? facts(input.comparison, names, locale) : []).map((row) => [row.key, row]));
   const after = new Map(facts(manifest, names, locale).map((row) => [row.key, row]));
+  const addedPermissions = new Set(
+    codeAdminPermissionChanges(manifest.permissions, input.comparison?.permissions ?? null)
+      .filter((permission) => permission.change === "added")
+      .map((permission) => `permission:${stable({ operation: permission.operation, target: permission.target })}`),
+  );
+  const approvals = new Map<string, { requiresApproval: true; approvalReason: string; accessLabel: string }>();
+  for (const [key, fact] of after) {
+    if (before.has(key) || !fact.policyRow || input.policy?.[fact.policyRow] !== "admin") continue;
+    if (key.startsWith("permission:") && !addedPermissions.has(key)) continue;
+    approvals.set(key, {
+      requiresApproval: true,
+      approvalReason: approvalReason(fact.policyRow, locale),
+      accessLabel: fact.accessLabel ?? fact.text,
+    });
+  }
   const rows: CodeReadModelChange[] = [
     ...[...after].map(([key, row]) => ({
       kind: before.has(key) ? ("same" as const) : ("add" as const),
       text: row.text,
+      ...(approvals.get(key) ?? {}),
       ...(row.note ? { note: row.note } : {}),
     })),
     ...[...before]
@@ -157,6 +187,15 @@ export function presentCodeVersion(input: {
     ),
     changes: {
       state,
+      approval:
+        state !== "unavailable" && approvals.size
+          ? {
+              count: approvals.size,
+              reason: [...approvals.values()][0]!.approvalReason,
+              accessLabel: approvals.size === 1 ? [...approvals.values()][0]!.accessLabel : null,
+              withoutLabel: approvals.size === 1 ? t.withoutAccess({ access: [...approvals.values()][0]!.accessLabel }) : t.withoutApproval,
+            }
+          : null,
       text:
         state === "access_same_behavior_changed"
           ? t.sameBehavior
