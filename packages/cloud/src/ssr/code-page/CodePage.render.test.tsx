@@ -16,6 +16,7 @@ import * as coreLocation from "../../services/identity/core-origin";
 import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { CODE_PAGE_FIXTURE_STATES, type CodePageFixtureState, codePageFixture } from "./code-page.fixture";
 import type { CodePageInvoke } from "./data";
+import { codePageMessages } from "./messages";
 import { describeCodeSchedule } from "./schedule";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-code-page-render-"));
@@ -185,7 +186,7 @@ describe("Code page: overview (Bild 19 to 21)", () => {
     expect(page).toContain("Pausiert");
     expect(page).toContain("Version 4 · pausiert am 12.11.");
     expect(page).toContain("Fortsetzen");
-    expect(page).toContain("keiner, solange pausiert ist");
+    expect(page).toContain("Nächster Lauf pausiert");
     expect(page).toContain("Letzte 30 Läufe vor der Pause");
     expect(page).not.toContain("Jetzt ausführen");
     const data = codePageFixture("paused");
@@ -1059,4 +1060,12 @@ test.each(["de", "en"])("an unused database keeps its deletion date and confirme
   );
   expect(markup).toContain(locale === "de" ? "Diese Datenbank wird am" : "This database will be deleted on");
   expect(markup).toContain(locale === "de" ? "Jetzt löschen" : "Delete now");
+});
+
+// 6b: "Next run" sits in a fixed 10.5rem column at 18 px; each word for a missing next run fits it whole (#66).
+test("every word for a missing next run fits the situation's first column", () => {
+  for (const locale of ["de", "en"]) {
+    const t = codePageMessages.resolve([locale]).t;
+    for (const word of [t.nextNone, t.nextUnknown, t.nextPaused]) expect(word.length).toBeLessThanOrEqual(14);
+  }
 });
