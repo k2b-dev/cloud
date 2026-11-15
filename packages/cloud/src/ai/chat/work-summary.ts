@@ -107,7 +107,8 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
     else if (FILE_WRITE_TOOLS.has(tool.name)) wroteFiles = true;
     else if (CODE_WORK[tool.name]) code.add(CODE_WORK[tool.name]!);
   }
-  const codeWork = CODE_ORDER.filter((work) => code.has(work)).map((work) => t.workCode[work]);
+  const codeWords = { write: t.workCodeWrite, check: t.workCodeCheck, try: t.workCodeTry, submit: t.workCodeSubmit };
+  const codeWork = CODE_ORDER.filter((work) => code.has(work)).map((work) => codeWords[work]);
   const phrases = [
     looked.length > 0 ? t.workLookedIn({ apps: list(looked) }) : "",
     changed.length > 0 ? t.workChangedIn({ apps: list(changed) }) : "",
