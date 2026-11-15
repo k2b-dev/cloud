@@ -201,93 +201,464 @@
   }
 }
 
-/* A Code page and its feat/code label. The tree is its own stacking context, so nothing a page draws can rise above
-   the label. From 48rem the label sticks to the bottom edge of the page's scroll area (the app card, or the window on
-   plain pages) and sits after the page once its end is reached, so it never covers the last block. It is there from
-   the first paint: nothing moves when it appears. */
+/* A Code page and its footer with the feat/code label (concept gustav-ui-neu v12, 3n). The host fills the page's
+   scroll area (the app card's Main, or the window on plain pages) and stacks the tree and the footer. The footer sticks
+   to the bottom edge on the page's own surface: content runs behind it and fades out above it, and at the page's end
+   every block sits above it. A short page keeps the footer at the bottom edge, not right under its content. The
+   scroll area itself stays as it is. */
 .code-page-host {
-  --code-provenance-edge: max(0.75rem, env(safe-area-inset-bottom));
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+/* Main is a flex column and hands its height down; the window needs it spelled out. */
+main > .code-page-host {
+  min-height: 100dvh;
+}
+/* The footer takes the surface the page lies on: the app card, or the window's canvas on plain pages. */
+.k2b-app-workspace__main > .code-page-host {
+  --code-page-surface: var(--k2b-surface);
 }
 .code-page-host__tree {
+  flex: 1 0 auto;
+  min-width: 0;
   isolation: isolate;
+}
+/* A focused field or an anchor in the page scrolls into view above the footer and its fade, in either scroll area.
+   A margin on the page's elements rather than padding on the scroll area, so the pill in the footer never scrolls
+   the page when it takes the focus. */
+.code-page-host__tree * {
+  scroll-margin-bottom: 4.25rem;
 }
 .code-page-provenance {
   position: sticky;
   bottom: 0;
   z-index: 10;
   display: flex;
-  flex-wrap: wrap;
+  flex: none;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 0 0.75rem var(--code-provenance-edge);
+  height: 2.75rem;
+  padding: 0 1rem;
+  background: var(--code-page-surface, var(--k2b-surface-canvas));
+}
+.code-page-provenance::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 100%;
+  height: 1.125rem;
+  background: linear-gradient(to bottom, transparent, var(--code-page-surface, var(--k2b-surface-canvas)));
   pointer-events: none;
 }
-/* Both chips are light glass over the page, like other floating layers. */
-.k2b-ui .code-page-provenance .k2b-button.code-page-provenance__label {
-  pointer-events: auto;
-  gap: 0.375rem;
-  border-color: transparent;
-  background: var(--k2b-overlay-surface);
+/* One pill, two parts: while the page has a form, "no passwords" leads, then who the page belongs to. The whole pill
+   opens the card. */
+.k2b-ui .k2b-hover-card-trigger.code-page-provenance__pill {
+  gap: 0.5625rem;
+  height: 1.75rem;
+  max-width: 100%;
+  padding: 0 0.625rem 0 0.6875rem;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--k2b-motion-fast) ease-out,
+    color var(--k2b-motion-fast) ease-out;
 }
-/* While the page has a form, a quiet line says not to enter passwords, without a press and without alarm colour.
-   The server decides the first paint (`hidden`); when the island brings or removes a form, CSS follows the tree. */
-.k2b-ui .code-page-provenance__warning {
+.k2b-ui .k2b-hover-card-trigger.code-page-provenance__pill:is(:hover, [data-open]) {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+.k2b-ui .k2b-hover-card-trigger.code-page-provenance__pill:focus-visible {
+  outline: var(--k2b-focus-width, 2px) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+.code-page-provenance__segment {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  min-height: 1.75rem;
-  margin: 0;
-  padding: 0.25rem 0.75rem;
-  border-radius: 999px;
-  color: var(--k2b-text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.3;
-  pointer-events: auto;
+  min-width: 0;
 }
-.k2b-ui .code-page-host:has([data-code-block="Form"]) .code-page-provenance__warning[hidden] {
-  display: inline-flex;
+.code-page-provenance__segment > i {
+  flex: none;
+  color: var(--k2b-text-subtle);
+  font-size: 0.875rem;
 }
-.k2b-ui .code-page-host:not(:has([data-code-block="Form"])) .code-page-provenance__warning {
+.code-page-provenance__owner .cloud-featcode {
+  flex: none;
+}
+.code-page-provenance__divider {
+  flex: none;
+  width: 1px;
+  height: 0.875rem;
+  background: var(--k2b-border-strong);
+}
+.code-page-provenance__short {
   display: none;
 }
-/* On phones the window or the card may scroll, depending on the layout; there the chips hold the window's bottom
-   edge, the warning above the label, and the host keeps their height free after the last block. */
+/* The server decides the first paint (`data-form`); afterwards the tree decides, so a form that arrives or leaves later
+   brings or takes the part without a script of the label's own. */
+.code-page-provenance__password {
+  display: none;
+  align-items: center;
+  gap: 0.5625rem;
+  min-width: 0;
+}
+.code-page-provenance__password[data-form],
+.code-page-host:has([data-code-block="Form"]) .code-page-provenance__password {
+  display: inline-flex;
+}
+.code-page-host:has([data-code-page]):not(:has([data-code-block="Form"])) .code-page-provenance__password {
+  display: none;
+}
+/* The card: HoverCard with actions above the pill. Title 14/600, entries 13/400, labels and meta 12/400 (6d). */
+.k2b-ui .code-page-provenance__card .k2b-hover-card__detail {
+  color: var(--k2b-text-subtle);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+.k2b-ui .code-page-provenance__card .k2b-hover-card__hint {
+  color: var(--k2b-text-subtle);
+  white-space: nowrap;
+}
+.k2b-ui .code-page-provenance__card .k2b-hover-card__hint .cloud-featcode {
+  color: var(--k2b-text-secondary);
+}
+.code-page-provenance__facts {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 0.25rem 0.75rem;
+  margin: 0 0 0.625rem;
+}
+.code-page-provenance__facts dt {
+  color: var(--k2b-text-subtle);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+.code-page-provenance__facts dd {
+  min-width: 0;
+  min-height: 1.25rem;
+  margin: 0;
+  color: var(--k2b-text);
+}
+.code-page-provenance__placeholder {
+  width: 9rem;
+  height: 0.75rem;
+  margin-top: 0.25rem;
+  border-radius: 0.25rem;
+}
+.code-page-provenance__placeholder--wide {
+  width: 12rem;
+}
+.code-page-provenance__owner-row {
+  display: flex;
+  align-items: flex-start;
+  min-height: 1.25rem;
+  gap: 0.375rem;
+  min-width: 0;
+}
+/* A long name, such as a mailbox address, wraps below its own first line and grows the row; nothing overlaps. */
+.code-page-provenance__owner-row > span:last-child {
+  min-width: 0;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+.code-page-provenance__owner-row > i {
+  flex: none;
+  color: var(--k2b-text-subtle);
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+.code-page-provenance__owner-row[data-tone="warning"],
+.code-page-provenance__owner-row[data-tone="warning"] > i {
+  color: var(--k2b-warning-text);
+}
+.code-page-provenance__avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 1.25rem;
+}
+.k2b-ui .code-page-provenance__avatar .k2b-avatar[data-size] {
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 0.5625rem;
+}
+/* The three promises share one axis with the notices above them. */
+.code-page-provenance__promises {
+  display: grid;
+  gap: 0.4375rem;
+  margin: 0;
+  padding: 0.625rem 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+  list-style: none;
+}
+.code-page-provenance__promises li,
+.code-page-provenance__notice {
+  display: grid;
+  grid-template-columns: 1.125rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+.code-page-provenance__promises li > i,
+.code-page-provenance__notice > i {
+  justify-self: center;
+  margin-top: 0.125rem;
+  color: var(--k2b-text-subtle);
+  font-size: 1rem;
+}
+.code-page-provenance__promises li[data-promise="checked"] > i {
+  color: var(--k2b-success-text);
+}
+.code-page-provenance__lead {
+  color: var(--k2b-text);
+}
+.code-page-provenance__notice {
+  margin: 0 0 0.625rem;
+}
+.code-page-provenance__notice[data-tone="success"],
+.code-page-provenance__notice[data-tone="success"] > i {
+  color: var(--k2b-success-text);
+}
+.code-page-provenance__notice[data-tone="danger"],
+.code-page-provenance__notice[data-tone="danger"] > i {
+  color: var(--k2b-danger-text);
+}
+.code-page-provenance__notice[data-tone="warning"],
+.code-page-provenance__notice[data-tone="warning"] > i {
+  color: var(--k2b-warning-text);
+}
+.code-page-provenance__open {
+  margin: 0.625rem 0 0;
+}
+.code-page-provenance__open a,
+.code-page-provenance__link {
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  font: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: var(--k2b-link-accent);
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+.code-page-provenance__open a {
+  color: var(--k2b-action);
+}
+.code-page-provenance__report {
+  display: inline-flex;
+  min-width: 0;
+  color: var(--k2b-text-secondary);
+}
+.code-page-provenance__reported {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  color: var(--k2b-text-subtle);
+}
+.code-page-provenance__reported > i {
+  width: 1.125rem;
+  font-size: 0.8125rem;
+  text-align: center;
+}
+/* The report dialog: a 30rem decision dialog, a sheet from below on phones (BottomSheet). */
+.code-page-report {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.code-page-report__title {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+.code-page-report__lead {
+  margin: 0;
+}
+.code-page-report__group {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.code-page-report__label {
+  color: var(--k2b-text-subtle);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+.code-page-report__label > span {
+  margin-inline-start: 0.25rem;
+}
+.code-page-report__reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  /* A chosen reason takes the action colour, like every chosen choice inside a form. */
+  --k2b-app-workspace-active: var(--k2b-action);
+}
+.k2b-ui .code-page-report__reasons .k2b-filter-chip {
+  min-height: 1.875rem;
+  padding: 0 0.6875rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+.k2b-ui .code-page-report__reasons .k2b-filter-chip:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.k2b-ui .code-page-report .k2b-text-input__textarea {
+  font-size: 0.8125rem;
+  /* The dialog keeps one size in every state; the field does not grow by hand either. */
+  resize: none;
+}
+/* Always there and one line high, so the dialog keeps its size while it is empty, filled, sending, or failed. */
+.code-page-report__status {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  gap: 0.4375rem;
+  align-items: center;
+  min-height: 1.25rem;
+  margin: -0.25rem 0 0;
+  color: var(--k2b-text-subtle);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+.code-page-report__status > i {
+  font-size: 0.875rem;
+}
+.code-page-report__short {
+  display: none;
+}
+.code-page-report__status[data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
+.code-page-report__spinner {
+  animation: code-page-report-spin calc(var(--k2b-motion-base) * 5.5) linear infinite;
+}
+@keyframes code-page-report-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.code-page-report__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+/* Title and buttons share one style in this dialog (6d): 14/600. Their height is @k2b/ui's regular button. */
+.k2b-ui .code-page-report__actions .k2b-button {
+  font-size: 0.875rem;
+}
+.code-page-report__arrived {
+  display: grid;
+  grid-template-columns: 1.125rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0;
+  color: var(--k2b-success-text);
+}
+.code-page-report__arrived > i {
+  font-size: 1.0625rem;
+}
+.code-page-report__who {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 0.125rem 0.75rem;
+  margin: 0;
+}
+.code-page-report__who dt {
+  color: var(--k2b-text-subtle);
+  font-size: 0.75rem;
+}
+.code-page-report__who dd {
+  margin: 0;
+  color: var(--k2b-text);
+}
+@media (min-width: 48rem) {
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive.code-page-report-frame {
+    width: min(var(--k2b-dialog-available-width), 30rem);
+  }
+}
+/* Phones: one line of 40px plus the safe area at the window's edge, centred; the page keeps that room free. */
 @media (max-width: 47.999rem) {
   .code-page-provenance {
     position: fixed;
     inset-inline: 0;
-    flex-direction: column;
-    align-items: flex-end;
+    height: calc(2.5rem + env(safe-area-inset-bottom));
+    padding: 0 0.625rem env(safe-area-inset-bottom);
+    justify-content: center;
   }
   .code-page-host {
-    padding-bottom: calc(var(--code-provenance-edge) + 2.5rem);
+    padding-bottom: calc(2.5rem + env(safe-area-inset-bottom));
   }
-  .code-page-host:has([data-code-block="Form"]),
-  .code-page-host:has(.code-page-provenance__warning:not([hidden])) {
-    padding-bottom: calc(var(--code-provenance-edge) + 4.75rem);
+  .code-page-host__tree * {
+    scroll-margin-bottom: calc(4rem + env(safe-area-inset-bottom));
+  }
+  .k2b-ui .k2b-hover-card-trigger.code-page-provenance__pill {
+    gap: 0.4375rem;
+  }
+  .code-page-provenance__long {
+    display: none;
+  }
+  .code-page-provenance__short {
+    display: inline;
+  }
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.code-page-report-frame {
+    border-radius: 1rem 1rem 0 0;
+  }
+  .code-page-report {
+    padding: 1.25rem 1.375rem;
+  }
+  .code-page-report__actions > * {
+    flex: 1 1 0;
+  }
+  /* One line of 20px in every state: failures use their short sentence; a longer translation never wraps. */
+  .code-page-report__status {
+    height: 1.25rem;
+  }
+  .code-page-report__status > span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .code-page-report__long {
+    display: none;
+  }
+  .code-page-report__short {
+    display: inline;
   }
 }
-/* The note is the browser's popover in the top layer, at the bottom edge above the label, like a small sheet. */
-.k2b-ui .code-page-provenance__note {
-  position: fixed;
-  inset: auto 0.75rem calc(var(--code-provenance-edge, 0.75rem) + 2.5rem) auto;
-  width: min(20rem, calc(100vw - 1.5rem));
-  margin: 0;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-surface);
-  color: var(--k2b-text);
-  background: var(--k2b-surface-elevated);
-  box-shadow: var(--k2b-shadow-float);
-  font-size: 0.875rem;
-  line-height: 1.4;
+@media (prefers-reduced-motion: reduce) {
+  .code-page-report__spinner {
+    animation: none;
+  }
 }
-.k2b-ui .code-page-provenance__note:not(:popover-open) {
-  display: none;
-}
+/* Printing keeps the label after the page. */
 @media print {
   .code-page-provenance {
     position: static;
+    height: auto;
+    padding-block: 0.5rem;
+    background: none;
+  }
+  .code-page-provenance::before {
+    display: none;
+  }
+  main > .code-page-host {
+    min-height: 0;
+  }
+  .code-page-host {
+    padding-bottom: 0;
   }
 }
