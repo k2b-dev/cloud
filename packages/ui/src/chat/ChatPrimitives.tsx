@@ -13,6 +13,7 @@ import {
 } from "solid-js";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
+import { Format } from "../intl/Format";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ProgressBar } from "../surfaces/ProgressBar";
@@ -231,7 +232,13 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
                     />
                   </Show>
                   <Show when={attachment.kind !== "image"}>
-                    <span>{attachment.name}</span>
+                    {/* A file reads as its name and, below it quietly, its size. */}
+                    <span class="k2b-chat-message__attachment-text">
+                      <strong>{attachment.name}</strong>
+                      <Show when={typeof attachment.size === "number" && attachment.size > 0}>
+                        <Format.Bytes value={attachment.size} />
+                      </Show>
+                    </span>
                   </Show>
                 </>
               );

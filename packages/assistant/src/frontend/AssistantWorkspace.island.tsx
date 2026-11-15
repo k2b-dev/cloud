@@ -158,8 +158,9 @@ import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
 import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
+import { finishedPlanShown, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
-import { waitingQuestionsView } from "./waiting-questions";
+import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
 
 type Status = AiPeopleModels & {
   ok: boolean;
@@ -1117,6 +1118,8 @@ export default function AssistantWorkspace(props: Props) {
   };
   // "Waiting for you" above the composer: the server's read of every open question, corrected by what this chat shows.
   const waitingConversationId = () => (projectView() || approvalsOpen() ? null : chat.activeConversationId());
+  // What stopped in the open chat and waits for the person (routines, failed app runs); set once the chat's details exist.
+  const [waitingAttention, setWaitingAttention] = createSignal<() => WaitingAttention[]>(() => []);
   const waiting = createMemo(() => {
     const conversationId = waitingConversationId();
     const loaded = conversationId !== null && chat.conversation()?.id === conversationId && !chat.loadingConversation();
@@ -1124,6 +1127,7 @@ export default function AssistantWorkspace(props: Props) {
       questions: openQuestions(),
       conversationId,
       local: loaded ? (chat.activeTurn()?.blocks ?? []) : null,
+      attention: loaded ? waitingAttention()() : [],
     });
   });
   const waitingFocus = createWaitingQuestionFocus({
@@ -1462,7 +1466,6 @@ export default function AssistantWorkspace(props: Props) {
 
   const activeConversation = () =>
     conversations().find((conversation) => conversation.id === chat.activeConversationId()) ?? chat.conversation();
-  const [todoOpen, setTodoOpen] = createSignal(false);
   const todoItems = () => {
     const checkpoint = chat.conversation()?.todoPlan;
     let todos = checkpoint?.todos ?? [];
@@ -1484,20 +1487,63 @@ export default function AssistantWorkspace(props: Props) {
     return todos;
   };
   const hasOpenTodos = createMemo(() => todoItems().some((item) => item.status === "pending" || item.status === "in_progress"));
-  const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
-  createEffect(() => {
-    chat.activeConversationId();
-    hasOpenTodos();
-    setShowCompletedTodos(false);
-    setTodoOpen(false);
-  });
-  const todoProgress = () => {
-    const todos = todoItems(),
-      done = todos.filter((item) => item.status === "completed").length;
-    const cancelled = todos.filter((item) => item.status === "cancelled").length;
-    const de = locale().startsWith("de");
-    return `${done}/${todos.length - cancelled} ${de ? "erledigt" : "complete"}${cancelled ? ` · ${cancelled} ${de ? "verworfen" : "cancelled"}` : ""}`;
+  /**
+   * The plan above the field (Bauplan 3a): open while Gustav works on it; once every task is done its header says so and
+   * the list folds, unless the person opened it. Their own choice per chat stays for the session. A plan that was
+   * already done when the chat opened stays out of the way behind "Show tasks", as before.
+   */
+  const todoChoiceKey = () => `assistant.tasks-open:${chat.activeConversationId() ?? ""}`;
+  const readTodoChoice = (): TaskHostChoice => {
+    try {
+      const value = window.sessionStorage.getItem(todoChoiceKey());
+      return value === "open" || value === "closed" ? value : null;
+    } catch {
+      return null;
+    }
   };
+  const [todoChoice, setTodoChoice] = createSignal<TaskHostChoice>(null);
+  const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
+  createEffect(
+    on(
+      () => chat.activeConversationId(),
+      () => {
+        setTodoChoice(readTodoChoice());
+        setShowCompletedTodos(false);
+      },
+    ),
+  );
+  // Work that finishes while the person watches keeps its folded "All tasks done" header in place instead of vanishing.
+  createEffect(
+    on([hasOpenTodos, () => chat.activeConversationId()] as const, ([open, id], before) => {
+      if (before && before[1] === id && before[0] && !open) setShowCompletedTodos(true);
+    }),
+  );
+  const todoOpen = () => taskHostOpen({ hasOpenTasks: hasOpenTodos(), choice: todoChoice() });
+  const setTodoOpen = (open: boolean) => {
+    const choice = open ? "open" : "closed";
+    setTodoChoice(choice);
+    try {
+      window.sessionStorage.setItem(todoChoiceKey(), choice);
+    } catch {
+      /* Without storage the choice holds until the chat changes. */
+    }
+  };
+  /** A finished plan shows when it just finished here or when the person opened it in this chat. */
+  const completedPlanShown = () => finishedPlanShown({ finishedHere: showCompletedTodos(), choice: todoChoice() });
+  /** "2 of 4": done tasks of those that count; cancelled ones do not. */
+  const todoProgress = () => {
+    const counted = todoItems().filter((item) => item.status !== "cancelled");
+    const done = counted.filter((item) => item.status === "completed").length;
+    return locale().startsWith("de") ? `${done} von ${counted.length}` : `${done} of ${counted.length}`;
+  };
+  const todoLabel = () =>
+    hasOpenTodos()
+      ? locale().startsWith("de")
+        ? "Aufgaben"
+        : "Tasks"
+      : locale().startsWith("de")
+        ? "Alle Aufgaben erledigt"
+        : "All tasks done";
   const activeConversationProject = () => {
     const projectId = activeConversation()?.projectId;
     return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
@@ -1535,6 +1581,34 @@ export default function AssistantWorkspace(props: Props) {
       onOpenSecrets: openChatSecrets,
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
     });
+  // "Needs attention" in this chat becomes entries of "Waiting for you", with the same targets as its details had.
+  setWaitingAttention(() => () => {
+    const snapshot = contextState.snapshot();
+    if (!snapshot || snapshot.chatId !== chat.activeConversationId()) return [];
+    const actions = sidebarActions();
+    return [
+      ...snapshot.tasks
+        .filter((task) => task.state === "needs_attention")
+        .map((task) => ({
+          key: `task:${task.id}`,
+          kind: "routine" as const,
+          short: sidebarCopy().taskNeedsAttention({ title: assistantTaskTitle(task) }),
+          open: () => actions.onOpenTask?.(task),
+        })),
+      ...snapshot.results.flatMap((result) =>
+        result.app?.lastRun === "error"
+          ? [
+              {
+                key: `app:${result.key}`,
+                kind: "app_run" as const,
+                short: sidebarCopy().appRunFailed({ title: result.title }),
+                open: () => actions.onOpenApp(result.app!.id, result.title),
+              },
+            ]
+          : [],
+      ),
+    ];
+  });
   // The box "In this chat": a click opens the thing as a tab beside the chat, or jumps to it.
   const contextBoxActions = (): ContextBoxActions => ({
     onOpen: (target) => {
@@ -1936,6 +2010,18 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
 
+  /** "Waiting for you": over the chat's free end above the field, in flow on the start screen and in a project. */
+  const WaitingRow = () => (
+    <Show when={waiting().total > 0}>
+      <AssistantWaitingStrip
+        view={waiting()}
+        conversationId={waitingConversationId()}
+        quiet={waitingFocus.quiet()}
+        onJump={(question) => void jumpToQuestion(question)}
+        onShowMore={openApprovals}
+      />
+    </Show>
+  );
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
@@ -2223,13 +2309,15 @@ export default function AssistantWorkspace(props: Props) {
           addOpensCommands
           accessory={
             <>
-              <Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
+              <Show when={!projectComposer() && (hasOpenTodos() || completedPlanShown())}>
                 <Chat.Tasks
                   items={todoItems()}
                   open={todoOpen()}
                   onOpenChange={setTodoOpen}
-                  label={locale().startsWith("de") ? "Aufgaben" : "Tasks"}
+                  label={todoLabel()}
                   progressLabel={todoProgress()}
+                  // A plan whose turn is not running (stopped, failed, or waiting for the person) stands still.
+                  paused={chat.activeTurn()?.status !== "running"}
                   statusLabels={
                     locale().startsWith("de")
                       ? {
@@ -2245,16 +2333,6 @@ export default function AssistantWorkspace(props: Props) {
                           cancelled: "Cancelled",
                         }
                   }
-                />
-              </Show>
-              {/* Right above the field, under the thumb on phones. */}
-              <Show when={waiting().total > 0}>
-                <AssistantWaitingStrip
-                  view={waiting()}
-                  conversationId={waitingConversationId()}
-                  quiet={waitingFocus.quiet()}
-                  onJump={(question) => void jumpToQuestion(question)}
-                  onShowMore={openApprovals}
                 />
               </Show>
             </>
@@ -2487,15 +2565,15 @@ export default function AssistantWorkspace(props: Props) {
                     id: "toggle-completed-tasks",
                     icon: "ti ti-list-check",
                     label: locale().startsWith("de")
-                      ? showCompletedTodos()
+                      ? completedPlanShown()
                         ? "Aufgaben ausblenden"
                         : "Aufgaben anzeigen"
-                      : showCompletedTodos()
+                      : completedPlanShown()
                         ? "Hide tasks"
                         : "Show tasks",
-                    pressed: showCompletedTodos(),
+                    pressed: completedPlanShown(),
                     onSelect: () => {
-                      const visible = !showCompletedTodos();
+                      const visible = !completedPlanShown();
                       setShowCompletedTodos(visible);
                       setTodoOpen(visible);
                     },
@@ -2862,7 +2940,12 @@ export default function AssistantWorkspace(props: Props) {
                               }
                             >
                               <AssistantEmptyChat
-                                composer={<AssistantComposer />}
+                                composer={
+                                  <div class="flex flex-col gap-2">
+                                    <WaitingRow />
+                                    <AssistantComposer />
+                                  </div>
+                                }
                                 notices={<ComposerNotices />}
                                 modelNote={modelNote()}
                                 projects={projects()}
@@ -2880,7 +2963,10 @@ export default function AssistantWorkspace(props: Props) {
 
                           <Show when={!emptyChat()}>
                             <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
-                              <div class="mx-auto flex max-w-3xl flex-col gap-2">
+                              <div class="assistant-chat-composer__column mx-auto flex max-w-3xl flex-col gap-2">
+                                {/* Right above everything over the field, under the thumb on phones. It lies over the
+                                    timeline's free end, so it comes and goes without moving the field or the chat. */}
+                                <WaitingRow />
                                 <ComposerNotices />
                                 {modelNote()}
                                 <AssistantComposer />
@@ -2913,6 +2999,7 @@ export default function AssistantWorkspace(props: Props) {
                           initialContext={view.context}
                           composer={
                             <div class="flex flex-col gap-2">
+                              <WaitingRow />
                               {modelNote()}
                               <AssistantComposer projectId={project().id} projectName={project().name} />
                               <Show when={props.embedded}>

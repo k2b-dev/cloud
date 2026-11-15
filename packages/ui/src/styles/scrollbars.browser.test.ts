@@ -119,7 +119,7 @@ const html = `<!doctype html><html lang="en"><head><style>${css}</style><style>
  * A scroller, the element whose box must stay put inside it, and the axis its scrollbar takes room on. A probe that
  * follows new content down, as the chat's does, or grows with it keeps only its inline position and width.
  */
-type Surface = { name: string; scroller: string; probe: string; axis: "y" | "x"; inlineOnly?: boolean; plain?: boolean };
+type Surface = { name: string; scroller: string; probe: string; axis: "y" | "x"; inlineOnly?: boolean };
 const surfaces: Surface[] = [
   { name: "sidebar (vertical)", scroller: ".k2b-app-workspace__sidebar-body", probe: ".k2b-app-workspace__sidebar-item", axis: "y" },
   { name: "sidebar (horizontal)", scroller: ".k2b-app-workspace__sidebar-body", probe: ".k2b-app-workspace__sidebar-item", axis: "x" },
@@ -130,9 +130,8 @@ const surfaces: Surface[] = [
     probe: '[data-workspace-level="2"] .probe',
     axis: "y",
   },
-  // A plain ScrollArea often never scrolls, so it draws no empty track. Safari reserves no gutter before content
-  // overflows: there its content narrows by the track once, at its end edge, and nothing else moves.
-  { name: "notebook content", scroller: "#notebook", probe: "#notebook .probe", axis: "y", plain: true },
+  // A plain ScrollArea keeps its track from the start in every engine, so growing content never narrows it.
+  { name: "notebook content", scroller: "#notebook", probe: "#notebook .probe", axis: "y" },
   { name: "chat timeline", scroller: ".k2b-chat-timeline__viewport", probe: ".k2b-chat-timeline__content", axis: "y", inlineOnly: true },
   // A filling table stretches its few rows; only the columns' inline geometry belongs to the scrollbar.
   { name: "data table", scroller: ".k2b-table-wrap", probe: ".k2b-data-table thead th", axis: "y", inlineOnly: true },
@@ -234,26 +233,15 @@ describe(`one shared scrollbar (${browserName})`, () => {
       });
       await settled(page);
       const after = await readAll(page);
-      const lateGutter = (surface: Surface) => surface.plain === true && browserName === "webkit";
-      for (const surface of surfaces) {
-        const { name } = surface;
+      for (const { name } of surfaces) {
         expect([name, before[name]!.overflows]).toEqual([name, false]);
         expect([name, after[name]!.overflows]).toEqual([name, true]);
+        expect([name, after[name]!.probe]).toEqual([name, before[name]!.probe]);
         expect([name, after[name]!.scroller]).toEqual([name, before[name]!.scroller]);
-        if (!lateGutter(surface)) {
-          expect([name, after[name]!.probe]).toEqual([name, before[name]!.probe]);
-          continue;
-        }
-        const [x, y, width, height] = before[name]!.probe;
-        const narrowed = after[name]!.room - before[name]!.room;
-        expect([name, narrowed]).toEqual([name, 8]);
-        expect([name, after[name]!.probe]).toEqual([name, [x, y, width - narrowed, height]]);
       }
       // A vertical scrollbar keeps the same room from the start. A sideways one inside a scroller of fixed height
       // takes its room from that scroller's own height, which moves nothing above it.
-      for (const surface of surfaces)
-        if (surface.axis === "y" && !lateGutter(surface))
-          expect([surface.name, after[surface.name]!.room]).toEqual([surface.name, before[surface.name]!.room]);
+      for (const { name, axis } of surfaces) if (axis === "y") expect([name, after[name]!.room]).toEqual([name, before[name]!.room]);
       // A classic scrollbar is the shared 0.5rem, or takes no room where an overlay draws it (DataTable, Panes).
       for (const { name } of surfaces) expect([name, after[name]!.room === 0 || after[name]!.room === 8]).toEqual([name, true]);
     } finally {

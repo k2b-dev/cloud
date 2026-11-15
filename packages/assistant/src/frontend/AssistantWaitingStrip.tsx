@@ -1,16 +1,36 @@
 import type { AiOpenQuestion } from "@k2b/cloud/ai";
-import { Button, useLocale } from "@k2b/ui";
-import { type Accessor, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { Dropdown, type DropdownItem, useLocale } from "@k2b/ui";
+import { type Accessor, createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantMessages } from "./messages";
-import type { WaitingQuestionsView } from "./waiting-questions";
+import type { WaitingAttention, WaitingQuestionsView } from "./waiting-questions";
+
+/** The sign of each kind of entry; a new source adds its kind here. */
+const KIND_ICON: Record<AiOpenQuestion["kind"] | WaitingAttention["kind"], string> = {
+  approval: "ti ti-shield-check",
+  routine: "ti ti-alert-circle",
+  app_run: "ti ti-alert-circle",
+};
+
+/** The row shows at most this many entries; the rest are behind "+n". A narrow chat shows one. */
+const WAITING_CHIPS = 3;
+
+type Entry = {
+  key: string;
+  kind: AiOpenQuestion["kind"] | WaitingAttention["kind"];
+  short: string;
+  /** "in <chat>" for an entry of another chat. */
+  where: string | null;
+  open: () => void;
+};
 
 /**
- * "Waiting for you" above the composer: every open question in its short form, those of other chats with the chat's
- * name. A press jumps to the question. There is deliberately no way to answer several questions at once: each answer
- * belongs to its own card, where the person sees what it does.
+ * "Waiting for you" above the composer: everything that waits for the person, each entry with the sign of its kind and
+ * a short sentence, those of other chats with the chat's name. A press goes to the thing itself. There is deliberately
+ * no way to answer several at once: each answer belongs to its own card, where the person sees what it does.
  *
- * The strip is one row of fixed height that scrolls sideways, so a question opening or closing elsewhere never moves
- * the composer. `quiet` keeps that row in place but hides it.
+ * The row is 32 px high and never wraps: what does not fit is behind "+n", which opens the whole list as a menu (a sheet
+ * on phones), grouped into this chat and other chats, with "See all". It lies over the free margin at the timeline's
+ * end, so it appears and leaves without moving the field or the conversation. `quiet` keeps it in place but hides it.
  */
 export function AssistantWaitingStrip(props: {
   view: WaitingQuestionsView;
@@ -19,45 +39,124 @@ export function AssistantWaitingStrip(props: {
   quiet: boolean;
   onJump: (question: AiOpenQuestion) => void;
   onShowMore: () => void;
+  /**
+   * The list's last entry. Assistant opens Approvals there, always, as "See all"; the PWA goes to the next waiting
+   * chat and names it after the questions the read left out, only while there are such.
+   */
+  more?: { label: string; always: boolean };
 }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
+  const entryList = createMemo((): Entry[] => [
+    ...props.view.attention.map((item) => ({ key: item.key, kind: item.kind, short: item.short, where: null, open: item.open })),
+    ...props.view.entries.map((question) => ({
+      key: question.id,
+      kind: question.kind,
+      short: question.short,
+      where:
+        question.conversationId === props.conversationId
+          ? null
+          : question.conversationTitle
+            ? t().waitingInChat({ title: question.conversationTitle })
+            : t().waitingInOtherChat,
+      open: () => props.onJump(question),
+    })),
+  ]);
+  const entries = entryList;
+  const byKey = createMemo(() => new Map(entries().map((entry) => [entry.key, entry])));
+  // Chips are keyed by their entry, so a live update that leaves an entry in place keeps its element and focus.
+  const shownKeys = createMemo(
+    () =>
+      entries()
+        .slice(0, WAITING_CHIPS)
+        .map((entry) => entry.key),
+    undefined,
+    {
+      equals: (a, b) => a.length === b.length && a.every((key, index) => key === b[index]),
+    },
+  );
+  /** Behind "+n": what the row leaves out, and what the server's bounded read did not send. */
+  const hidden = (visible: number) => Math.max(0, entries().length - visible) + props.view.more;
+  const menu = (): DropdownItem[] => {
+    const item = (entry: Entry) => ({
+      // The kind's colour, as on the chip: the menu renders in its own layer, so the entry carries it.
+      class:
+        entry.kind === "approval"
+          ? "assistant-waiting__menu-entry"
+          : "assistant-waiting__menu-entry assistant-waiting__menu-entry--attention",
+      icon: KIND_ICON[entry.kind],
+      label: entry.short,
+      description: entry.where ?? undefined,
+      action: entry.open,
+    });
+    const here = entries().filter((entry) => entry.where === null);
+    const elsewhere = entries().filter((entry) => entry.where !== null);
+    return [
+      ...(here.length ? [{ sectionLabel: t().waitingHere, items: here.map(item) }] : []),
+      ...(elsewhere.length ? [{ sectionLabel: t().waitingElsewhere, items: elsewhere.map(item) }] : []),
+      ...((props.more?.always ?? true) || props.view.more > 0
+        ? [{ items: [{ label: props.more?.label ?? t().waitingAll, action: () => props.onShowMore() }] }]
+        : []),
+    ];
+  };
   return (
     <nav class="assistant-waiting" aria-label={t().needsAttention} data-quiet={props.quiet ? "" : undefined} inert={props.quiet}>
       <span class="assistant-waiting__label" aria-hidden="true">
-        {t().needsAttention}
+        <i class="ti ti-hand-stop" />
+        <span class="assistant-waiting__title">{t().needsAttention}</span>
       </span>
       <ul class="assistant-waiting__list">
-        <For each={props.view.entries}>
-          {(question) => (
-            <li>
-              <Button
-                variant="ghost"
-                class="assistant-waiting__entry"
-                style={question.app.accent ? { "--assistant-waiting-accent": question.app.accent } : undefined}
-                data-question={question.id}
-                onClick={() => props.onJump(question)}
-              >
-                <i class={`assistant-waiting__icon ${question.app.icon}`} aria-hidden="true" />
-                <span class="assistant-waiting__short k2b-truncate-fade">{question.short}</span>
-                <Show when={question.conversationId !== props.conversationId}>
-                  {/* Read as one name, "… in Team Ops"; the row's gap sets the visible space. */}{" "}
-                  <small class="assistant-waiting__chat k2b-truncate-fade">
-                    {question.conversationTitle ? t().waitingInChat({ title: question.conversationTitle }) : t().waitingInOtherChat}
-                  </small>
-                </Show>
-              </Button>
-            </li>
+        <For each={shownKeys()}>
+          {(key) => (
+            <Show when={byKey().get(key)}>
+              {(current) => {
+                const entry = current();
+                return (
+                  <li class="assistant-waiting__item">
+                    <button
+                      type="button"
+                      class="assistant-waiting__entry"
+                      data-kind={entry.kind}
+                      data-entry={entry.key}
+                      title={entry.where ? `${entry.short} ${entry.where}` : entry.short}
+                      onClick={() => entry.open()}
+                    >
+                      <i class={`assistant-waiting__icon ${KIND_ICON[entry.kind]}`} aria-hidden="true" />
+                      <span class="assistant-waiting__short k2b-truncate-fade">{entry.short}</span>
+                      <Show when={entry.where}>
+                        {(where) => (
+                          <>
+                            {/* Read as one name, "… in Team Ops"; the chip's gap sets the visible space. */}{" "}
+                            <small class="assistant-waiting__chat k2b-truncate-fade">{where()}</small>
+                          </>
+                        )}
+                      </Show>
+                    </button>
+                  </li>
+                );
+              }}
+            </Show>
           )}
         </For>
-        <Show when={props.view.more > 0}>
-          <li>
-            <Button variant="ghost" class="assistant-waiting__entry" onClick={() => props.onShowMore()}>
-              {t().waitingMore({ count: props.view.more })}
-            </Button>
-          </li>
-        </Show>
       </ul>
+      {/* Wide, "+n" counts what the row leaves out; narrow, the row shows one entry and "+n" counts the rest. */}
+      <Show when={entries().length > 1 || props.view.more > 0}>
+        <Dropdown.Root position="top-left" phone="sheet" label={t().needsAttention} items={menu()}>
+          <Dropdown.Trigger
+            appearance="plain"
+            class="assistant-waiting__more"
+            data-wide={hidden(WAITING_CHIPS) > 0 ? "" : undefined}
+            label={t().waitingShowAll({ count: entries().length + props.view.more })}
+          >
+            <span class="assistant-waiting__count" data-width="wide">
+              +{hidden(WAITING_CHIPS)}
+            </span>
+            <span class="assistant-waiting__count" data-width="narrow">
+              +{hidden(1)}
+            </span>
+          </Dropdown.Trigger>
+        </Dropdown.Root>
+      </Show>
     </nav>
   );
 }

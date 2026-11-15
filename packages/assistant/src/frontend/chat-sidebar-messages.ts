@@ -22,7 +22,6 @@ export const chatSidebarMessages = i18n.define({
       couldNotLoad: "Could not load this chat’s content",
       retry: "Retry",
 
-      attention: "Needs attention",
       taskNeedsAttention: ({ title }: { title: string }) => `Routine “${title}” needs attention`,
       appRunFailed: ({ title }: { title: string }) => `The last run of “${title}” failed`,
 
@@ -159,7 +158,6 @@ export const chatSidebarMessages = i18n.define({
       couldNotLoad: "Inhalte dieses Chats konnten nicht geladen werden",
       retry: "Erneut versuchen",
 
-      attention: "Braucht Aufmerksamkeit",
       taskNeedsAttention: ({ title }: { title: string }) => `Routine „${title}“ braucht Aufmerksamkeit`,
       appRunFailed: ({ title }: { title: string }) => `Der letzte Lauf von „${title}“ ist fehlgeschlagen`,
 
