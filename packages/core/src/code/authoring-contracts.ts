@@ -153,7 +153,7 @@ const check = z
 const pulled = z.object({ version: z.literal(1), config: CodeProjectSchema, files: CodeSourceFilesSchema }).strict();
 /** The next human step, never an instruction for Gustav to approve or activate. */
 export const CodeSubmissionNextStepSchema = z.discriminatedUnion("next", [
-  z.object({ next: z.literal("admin_approval"), who: z.literal("cloud_admin") }).strict(),
+  z.object({ next: z.literal("admin_approval"), who: z.enum(["cloud_admin", "you"]) }).strict(),
   z.object({ next: z.literal("switch_on"), who: z.enum(["personal_owner", "owner_manager"]) }).strict(),
   z.object({ next: z.literal("revise"), who: z.literal("code_editor") }).strict(),
   z.object({ next: z.literal("check_status"), who: z.literal("code_editor") }).strict(),
@@ -187,6 +187,17 @@ export const CodeWorkspaceStatusSchema = z.object({ version: z.literal(1), items
  */
 export const codeAuthoringContracts = {
   review: { input: CodeReviewInputSchema, data: CodeReviewSchema },
+  reviewRequestAgain: { input: CodeReviewInputSchema.omit({ before: true }), data: codeVersionContracts.submit.data },
+  reviewStop: {
+    input: CodeReviewInputSchema.omit({ before: true }),
+    data: z
+      .object({
+        status: z.enum(["stopped", "too_late"]),
+        submittedVersionId: z.uuid().nullable(),
+        submittedNumber: z.number().int().positive().nullable(),
+      })
+      .strict(),
+  },
   reviewWait: { input: CodeReviewWaitInputSchema, data: CodeReviewSchema },
   withdraw: { input: CodeReviewInputSchema.omit({ before: true }), data: codeVersionContracts.submit.data },
   init: {

@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-11
+updated: 2026-11-15
 ---
 
 # API surface
@@ -527,7 +527,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls; `principalLabel` for localized principal names (also in `@k2b/cloud/shared`); `isManagerEntry` and `ManagerCandidate` for paged grant lists; `codeSharing` for a Code's editors and readers; `ServiceAccountSection` with `AccessRowFrame`, `AccessRowControls`, `AccessLevelMenu`, `serviceAccountLine` and `serviceAccountLevels` for the access dialog's Service accounts section beside additional grant fields; `ServiceAccountLookup` for the add button and handle field alone | [Resource API keys](/en/docs/identity/resource-api-keys), [Last manager](/en/docs/identity/authorization#show-the-last-manager), [Code with access](/en/docs/identity/authorization#code-with-access) |
 | `@k2b/cloud/browser/live` | Supported, browser | `liveConnection` for an application's live channels; `createLiveWebSocket` transport for other sockets | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@k2b/cloud/events` | Supported, server-only | `appEvents`: publish declared app events in a transaction; `defineLive`: transactional live updates; `routes(channels)` serves them over one socket per application with access checked at delivery | [App events](/en/docs/platform/app-events), [Live updates](/en/docs/automation/live-updates) |
-| `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; `installLiveOutbox(db)` installs Core’s events schema in `*_test` databases; real live engine, memory topic controls and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
+| `@k2b/cloud/events/testing` | Supported, tests only | `appEventFixture` and `deliverAppEvent` validate event fixtures and subscriber handlers; `installLiveOutbox(db)` installs Core’s events schema in `*_test` databases; real live engine, memory topic controls, the live outbox publisher and topic configuration, and integration outbox startup | [Test app events](/en/docs/platform/app-events#test-a-handler-locally), [Test channels](/en/docs/automation/live-updates#test-channels) |
 | `@k2b/cloud/browser/app-badges` | Supported, browser | `refreshAppBadges` reads the app bar's badge counts again after a change | [Layout and navigation](/en/docs/frontend/layout-and-navigation#show-a-count-on-the-app-icon) |
 | `@k2b/cloud/browser/app-approval` | Supported, browser | Authenticator namespace for pairing links, device keys and signed API calls | [App approval](/en/docs/operations/app-approval) |
 | `@k2b/cloud/browser/mermaid` | Supported, browser | Mermaid configuration that follows Cloud's light and dark colors | [Styling and accessibility](/en/docs/frontend/styling-and-accessibility#render-mermaid-diagrams-with-cloud-colors) |
@@ -562,6 +562,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ssr/code-nav-status` | Supported, browser | `CodeNavStatus` and `codeNavAttentionLabel`: the warning dot of an owner's "Code" navigation entry | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/code/schedule` | Supported, portable | `describeCodeSchedule`, `describeCodeTiming`: localized schedule sentences shared by server read models and browser surfaces | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/code-schedule` | Supported, browser | `describeCodeSchedule`: a five-field schedule as a short localized sentence | [Code page](/en/docs/platform/code-page) |
+| `@k2b/cloud/ssr/code-live` | Supported, browser | `followCodeRuns`: follow payload-free Core run hints, with resync and disposal | [Code run updates](/en/docs/platform/code-page#follow-run-updates) |
 | `@k2b/cloud/ssr/code-page` | Supported, browser | `CodePage`: the shared Code page of a resource, rendered in an island; `CodeDatabaseStatus`: authorized database usage, deadline and export controls; `CodeDatabaseDelete`: confirmed unused-database removal | [Code page](/en/docs/platform/code-page) |
 | `@k2b/cloud/ssr/islands` | Supported, server-only | Shared SSR island helpers | [In-product help](/en/docs/platform/help) |
 | `@k2b/cloud/ssr/WorkspaceNavigation.island` | Supported | SSR-first workspace links for the Cloud mobile menu | [Application shells](/en/docs/frontend/application-shells) |
@@ -745,6 +746,10 @@ model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
 
 
+`readWebPageForPerson`, `WebReaderResult`, and `WebReaderResultSchema` from
+`@k2b/cloud/ai` support a person's [web reading view](/en/docs/ai/tools-and-approvals#offer-a-reading-view-to-the-person)
+after the application checks chat ownership.
+
 ## Workspace speedtest consumers
 
 The private `@k2b/speedtest` workspace shares one measurement contract between
@@ -797,3 +802,11 @@ rename transaction. `resolveDisplayNames` and `CodeAccountDisplayContext` from
 `@k2b/cloud/server` present names inside locally authorized target lists.
 `codeAccountPresenter` supports adapters that already join account metadata in
 one query. See [Code account handles](/en/docs/identity/code-service-account-handles).
+
+The chat runtime also exports `appendAiBackgroundMessages` and
+`registerAiTurnAbortHandler` from `@k2b/cloud/ai/runtime` for host-owned durable
+[Code review activity](/en/docs/ai/chat-runtime-and-streaming#code-decision-activity).
+`AiOpenQuestionsSchema`, `AiOpenQuestionKind` and `AiOpenQuestionSource` from
+`@k2b/cloud/ai` describe the shared waiting snapshot.
+`listAccessRecipientUserIds` from `@k2b/cloud/server` supplies bounded
+[background manager candidates](/en/docs/platform/resource-types-and-discussions#resolve-managers-for-background-notices).

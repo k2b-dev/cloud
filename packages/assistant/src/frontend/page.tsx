@@ -14,23 +14,19 @@ import { auth, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprova
 import { coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout, loadCodePage, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
+import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
+import { loadAssistantChatWorkspace } from "../chat-workspace-service";
 import { catalogPerApp, loadCodePlace } from "../code-place";
-import {
-  type CodePlace,
-  type CodeQueryInvoke,
-  countOwnRunsSince,
-  hasPersonalCode,
-  loadCodeAttention,
-  loadCodeSummaries,
-  startOfDayIn,
-} from "../code-summary";
+import { type CodePlace, type CodeQueryInvoke, hasPersonalCode, loadCodeAttention, loadCodeSummaries } from "../code-summary";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
-import { loadAssistantSidebarSnapshot, placeAppsFromCatalog } from "../sidebar";
+import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";
+import { ASSISTANT_PANES_HINT_COOKIE } from "./chat-sidebar-layout";
+import { loadCodeOverview } from "./code-overview";
 import { assistantMessages } from "./messages";
 
 /** Code that waits for the person, each with its place's name and link, read through the place's own reader. */
@@ -95,7 +91,6 @@ export default ssr<AuthContext>(async (c) => {
     codeExists,
     codeBlockPage,
     codeDetail,
-    runsToday,
     attention,
     placeState,
   ] = await Promise.all([
@@ -103,7 +98,7 @@ export default ssr<AuthContext>(async (c) => {
     getLiveDictationStatus(c.get("accessSubject")),
     loadAssistantSidebarSnapshot(
       { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
-      { locale, timeZone },
+      { locale, timeZone, caller: openQuestionsCaller(c) },
       placeAppsFromCatalog(catalog),
     ),
     coreSettings.get<string>("app.url"),
@@ -111,15 +106,13 @@ export default ssr<AuthContext>(async (c) => {
     // Also without the view: the sidebar shows its Approvals row from the first paint, so it never shifts the workspace.
     loadPendingApprovals(c, { app: "assistant" }),
     // The list's first page when the page opens on it; otherwise only whether the person has any Code. Null: unknown.
-    codeOpen && !detailCodeId ? loadCodeSummaries(invokeCode, owner).catch(() => null) : undefined,
+    codeOpen && !detailCodeId ? loadCodeOverview(invokeCode, owner, { timeZone, now: new Date() }).catch(() => null) : undefined,
     codeOpen && !detailCodeId ? undefined : hasPersonalCode(invokeCode, owner.userId).catch(() => null),
     panelScope ? loadCodeSummaries(invokeCode, { kind: "resource", ref: panelScope }).catch(() => null) : undefined,
     // The shared Code page reads its Code, versions, runs and switch-on state itself and shows each failure in place.
     detailCodeId
       ? loadCodePage(c, { owner: { codeId: detailCodeId }, href: `/app/assistant/code/${detailCodeId}`, canManageOwner: false })
       : undefined,
-    // A missing count only leaves the line without numbers.
-    codeOpen && !detailCodeId ? countOwnRunsSince(invokeCode, startOfDayIn(timeZone, new Date())).catch(() => null) : undefined,
     approvalsOpen ? loadCodeAttentionView(invokeCode, catalog).catch(() => null) : undefined,
     // Gustav at a place: the same loader as navigation, so the first paint and a later switch show the same thing.
     panelScope ? loadPlaceAssistant(c, panelScope).catch(() => null) : null,
@@ -189,15 +182,18 @@ export default ssr<AuthContext>(async (c) => {
   const initialConversations = conversations.map((conversation) =>
     conversation.id === activeConversation?.shortId ? { ...conversation, unreadCompletion: false } : conversation,
   );
-  const [initialDetail, initialTimeline, initialContext] = activeConversation
+  const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
+  const [initialDetail, initialTimeline, initialContext, initialTabs] = activeConversation
     ? await Promise.all([
         loadAiStreamState(activeConversation, c.get("actor").kind === "user" ? user.id : null),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
         loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
           timeZone,
+          locale,
         }),
+        loadAssistantChatWorkspace(identity, activeConversation.shortId),
       ])
-    : [null, [], null];
+    : [null, [], null, null];
 
   const workspace = () => (
     <AssistantWorkspace
@@ -234,6 +230,8 @@ export default ssr<AuthContext>(async (c) => {
           : null
       }
       initialContext={initialContext}
+      initialTabs={activeConversation && initialTabs ? { chatId: activeConversation.shortId, snapshot: initialTabs } : null}
+      arrangeHintSeen={getCookie(c, ASSISTANT_PANES_HINT_COOKIE) === "seen"}
       projects={projects}
       initialProject={activeProject}
       initialProjectChats={
@@ -251,7 +249,6 @@ export default ssr<AuthContext>(async (c) => {
         open: codeOpen,
         ...(codeList !== undefined ? { page: codeList } : {}),
         ...(codeDetail ? { detail: codeDetail } : {}),
-        ...(runsToday !== undefined ? { today: runsToday } : {}),
       }}
       {...(attention !== undefined ? { initialAttention: attention } : {})}
       initialCodeBlock={panelScope && codeBlockPage !== undefined ? { ref: panelScope, page: codeBlockPage, place: codePlace } : null}

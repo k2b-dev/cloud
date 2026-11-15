@@ -31,7 +31,7 @@ afterEach(() => {
 
 /** Mounts the card with Core's routes answered by `routes`; a missing route is an outage. */
 type Answer = { status?: number; json?: unknown };
-const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<Answer>>) => {
+const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<Answer>>, locale = "en") => {
   const dom = createDomTestHarness();
   const calls: Array<{ route: string; body: unknown }> = [];
   const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (url: string, init?: RequestInit) => {
@@ -42,14 +42,18 @@ const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<
     if (!answer) return new Response("{}", { status: 503 });
     return new Response(JSON.stringify(answer.json ?? {}), { status: answer.status ?? 200 });
   }) as unknown as typeof fetch);
+  // Browser UI modules register delegated events while loading, so await them inside this DOM lifetime.
+  const { LocaleProvider } = await import("@k2b/ui");
   const { default: Card } = await import("./AssistantCodeVersionCard");
   const activated: number[] = [];
   const live = createAssistantLiveHub();
   const dispose = render(
     () => (
-      <AssistantLiveProvider value={live}>
-        <Card codeId={codeId} versionId={versionId} number={5} timeZone="UTC" onActivated={() => activated.push(1)} />
-      </AssistantLiveProvider>
+      <LocaleProvider locale={locale}>
+        <AssistantLiveProvider value={live}>
+          <Card codeId={codeId} versionId={versionId} number={5} timeZone="UTC" onActivated={() => activated.push(1)} />
+        </AssistantLiveProvider>
+      </LocaleProvider>
     ),
     dom.root,
   );
@@ -236,6 +240,25 @@ test("a phone sees why it cannot switch on; waiting for approval offers no switc
   expect(pending.dom.root.textContent).toContain("A Cloud administrator must approve this version first.");
   expect(button(pending.dom.root, "Switch on")).toBeUndefined();
 });
+
+for (const [locale, selfText, otherText] of [
+  ["de", "Du kannst sie selbst freigeben.", "Diese Version muss erst ein Cloud-Admin freigeben."],
+  ["en", "You can approve it yourself.", "A Cloud administrator must approve this version first."],
+] as const) {
+  for (const selfApproval of [true, false]) {
+    test(`pending version addresses its server-selected approver (${locale}, self=${selfApproval})`, async () => {
+      const card = await mount(
+        {
+          "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending", selfApproval } }) } }),
+        },
+        locale,
+      );
+      expect(card.dom.root.textContent).toContain(selfApproval ? selfText : otherText);
+      expect(card.dom.root.textContent).not.toContain(selfApproval ? otherText : selfText);
+      expect(button(card.dom.root, "Switch on")).toBeUndefined();
+    });
+  }
+}
 
 test("an older version, no access and an outage each say so; the outage retries", async () => {
   const older = await mount({ "activation/preview": () => ({ json: { data: preview({ latest: 6 }) } }) });
@@ -495,9 +518,9 @@ test("a version waiting for a Cloud administrator shows their decision when it a
   await tick();
   expect(card.calls.map((call) => call.route)).toEqual(["activation/preview", "activation/preview"]);
   expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
-  // Once decided, the card no longer follows decisions: its next step is this person's own.
+  // Ready cards keep following activation and replacement in another tab.
   await card.live.apply([decided()]);
-  expect(card.calls).toHaveLength(2);
+  expect(card.calls).toHaveLength(3);
 });
 
 test("a rejected version says so in the person's words and that nothing changed", async () => {
@@ -559,14 +582,14 @@ test.each([
   { readiness: { state: "ready" } as const },
   { readiness: { state: "ready" } as const, running: 5 },
   { readiness: { state: "refused", code: "code_approval_revoked", message: "Changed" } as const },
-])("resync does not reload a settled card: %j", async (state) => {
+])("resync refreshes a settled card after a missed decision or activation: %j", async (state) => {
   const card = await mount({
     "activation/preview": () => ({ json: { data: preview(state) } }),
     "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
   });
   const initial = card.calls.length;
   await card.live.resync();
-  expect(card.calls).toHaveLength(initial);
+  expect(card.calls.length).toBeGreaterThan(initial);
 });
 
 test("a generic decision invalidation recovers a failed card through an authorized read", async () => {
@@ -579,4 +602,22 @@ test("a generic decision invalidation recovers a failed card through an authoriz
   await card.live.apply([decided()]);
   expect(card.calls).toHaveLength(3);
   expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
+});
+
+test("a ready card follows activation in another tab without a reload", async () => {
+  let activated = false;
+  const card = await mount({
+    "activation/preview": () => ({
+      json: {
+        data: activated ? preview({ running: 5, activated: { at: "2026-11-14T12:00:00.000Z", byYou: true, byName: null } }) : preview(),
+      },
+    }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
+  });
+  expect(button(card.dom.root, "Switch on")).toBeDefined();
+  activated = true;
+  await card.live.apply([decided()]);
+  await tick();
+  expect(button(card.dom.root, "Switch on")).toBeUndefined();
+  expect(card.dom.root.textContent).toContain("switched on");
 });

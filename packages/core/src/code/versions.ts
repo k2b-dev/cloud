@@ -35,12 +35,14 @@ import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
 import { storeCodeVersionExplanation } from "./read-model/explanation";
 import { readModelNames } from "./read-model/names";
+import { assertCodeReviewTurn, enqueueCodeReviewChat } from "./review-chat-state";
 import {
   CODE_REVIEW_MAX_WAIT_MS,
   type CodeReviewDecision,
   CodeReviewDecisionSchema,
   type CodeSubmissionOrigin,
   CodeSubmissionOriginSchema,
+  codeVersionChatAnchor,
 } from "./review-contracts";
 import { codeReviewEventPublisher } from "./review-events";
 import { createRunnerCodeTestingHost } from "./runner-jobs";
@@ -310,10 +312,54 @@ async function submissionEvidence(
     return unavailableEvidence("code_test_runner_unavailable");
   }
 }
+/** Only a still-expired, undecided submission may start a fresh human-requested attempt. */
+async function expiredSubmission(codeId: string, versionId: string, db: SQL) {
+  const [submission] = await db<{ origin: unknown; created_by: string | null; expired: boolean; withdrawn: boolean; decided: boolean }[]>`
+    SELECT s.origin,v.created_by,(r.status='expired' OR (r.status='pending' AND r.expires_at<=now())) AS expired,
+      EXISTS(SELECT 1 FROM code.version_withdrawals w WHERE w.version_id=v.id) AS withdrawn,
+      EXISTS(SELECT 1 FROM code.version_decisions d WHERE d.version_id=v.id) AS decided
+    FROM code.version_submissions s JOIN code.versions v ON v.id=s.version_id
+      JOIN approvals.requests r ON r.id=s.approval_id AND r.kind='code_version'
+    WHERE s.code_id=${codeId} AND s.version_id=${versionId}::uuid`;
+  if (!submission?.expired || submission.withdrawn || submission.decided)
+    throw new CodeDataError("CONFLICT", "Only an expired, undecided version can be requested again.");
+  return submission;
+}
+
+/** Reuse the checked immutable project as a new version and approval reference; never extend an old approval. */
+export async function requestCodeVersionApprovalAgain(input: { codeId: string; versionId: string }, context: CodeContext) {
+  const person = codePerson(context, true);
+  const { code } = await readCode(input.codeId, context);
+  await requireCodeSourcePermission(code, context);
+  const submission = await expiredSubmission(code.id, input.versionId, sql);
+  const snapshot = await versionSnapshot(code.id, input.versionId, sql);
+  const origin = CodeSubmissionOriginSchema.parse(submission.origin);
+  const [chat] =
+    origin.kind === "ai_chat" && submission.created_by === person.id
+      ? await sql`SELECT id FROM ai.conversations WHERE id=${origin.conversationId}::uuid AND created_by_user_id=${person.id}::uuid`
+      : [];
+  return submitCodeVersion(
+    {
+      codeId: code.id,
+      sourceFiles: snapshot.source_files,
+      bundle: snapshot.bundle,
+      manifest: CodeCheckedVersionManifestSchema.parse(snapshot.manifest),
+      baseVersionId: input.versionId,
+    },
+    {
+      ...context,
+      submissionOrigin:
+        chat && origin.kind === "ai_chat" ? { ...origin, cardAnchor: codeVersionChatAnchor(input.versionId, origin) } : { kind: "cli" },
+    },
+    { retryExpired: true },
+  );
+}
+
 /** Submit the exact checked source and bundle atomically. Pending approval never changes the running version. */
 export async function submitCodeVersion(
   raw: z.input<typeof codeVersionContracts.submit.input>,
   context: CodeContext,
+  options?: { retryExpired: true },
 ): Promise<CodeVersionSubmission> {
   const startedAt = performance.now();
   const input = checkedSubmission(raw, context);
@@ -334,6 +380,11 @@ export async function submitCodeVersion(
       ORDER BY r.id FOR UPDATE OF r`;
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     const code = await lockCodeForEdit(input.codeId, context, tx);
+    await assertCodeReviewTurn(code.id, context, tx);
+    if (options?.retryExpired) {
+      if (!input.baseVersionId) throw new CodeDataError("BAD_INPUT", "A retry requires its expired version.");
+      await expiredSubmission(code.id, input.baseVersionId, tx);
+    }
     const [latest] = await tx<{ id: string }[]>`SELECT id FROM code.versions WHERE code_id=${code.id} ORDER BY number DESC LIMIT 1`;
     if ((latest?.id ?? null) !== input.baseVersionId) {
       const before = input.baseVersionId ? await versionSnapshot(code.id, input.baseVersionId, tx) : null;
@@ -394,6 +445,9 @@ export async function submitCodeVersion(
     }
     await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest,evidence,origin,locale)
       VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest},${JSON.stringify(evidence)}::text::jsonb,${JSON.stringify(CodeSubmissionOriginSchema.parse(context.submissionOrigin ?? { kind: "cli" }))}::text::jsonb,${context.locale ?? "en"})`;
+    if (context.reviewTurn)
+      await tx`UPDATE code.review_chat_work SET state='submitted',submitted_version_id=${version.id}::uuid,updated_at=now()
+        WHERE version_id=${context.reviewTurn.versionId}::uuid AND turn_id=${context.reviewTurn.turnId}::uuid`;
     if (approvalId)
       await tx`INSERT INTO code.review_notification_outbox(version_id,kind) VALUES(${version.id}::uuid,'submitted') ON CONFLICT DO NOTHING`;
     await audit.record(
@@ -622,6 +676,7 @@ export async function applyCodeVersionDecision(
     data: { codeId: code.id, versionId: version.id, number: number!.number, outcome: decision.outcome },
   });
   await tx`INSERT INTO code.review_notification_outbox(version_id,kind) VALUES(${version.id}::uuid,'decided') ON CONFLICT DO NOTHING`;
+  await enqueueCodeReviewChat(version.id, "decision", tx);
   await replaceCodePolicyCoverage(version.id, request.status === "approved" ? manifest.policyRows : [], tx);
   if (request.status === "approved") await recordCodeVersionBaseline(code.id, version.id, tx);
   await audit.record(
@@ -776,15 +831,30 @@ export async function requireCodeVersionApproval(code: Code, versionId: string, 
   return { policyRevision: policy.revision };
 }
 /** Shared approval readiness for the version card and authoring handover. Never changes access. */
-export async function codeVersionReadiness(code: Code, versionId: string, db: SQL): Promise<CodeActivationPreview["readiness"]> {
+export async function codeVersionReadiness(
+  code: Code,
+  versionId: string,
+  db: SQL,
+  context: CodeContext,
+): Promise<CodeActivationPreview["readiness"]> {
   try {
     await requireCodeVersionApproval(code, versionId, db);
     return { state: "ready" };
   } catch (error) {
     if (!(error instanceof CodeVersionError)) throw error;
-    return error.code === "code_approval_required"
-      ? { state: "approval_pending" }
-      : { state: "refused", code: error.code, message: error.message };
+    if (error.code !== "code_approval_required") return { state: "refused", code: error.code, message: error.message };
+    const person = codePerson(context, true);
+    if (!person.roles.includes("admin")) return { state: "approval_pending" };
+    const [submission] = await db<
+      { approval_id: string | null }[]
+    >`SELECT approval_id FROM code.version_submissions WHERE version_id=${versionId}::uuid`;
+    const request = submission?.approval_id ? await approvals.get(submission.approval_id, db, true) : null;
+    const selfApproval = Boolean(
+      request?.status === "pending" &&
+        request.expiresAt.getTime() > Date.now() &&
+        (await codeVersionSoleAdminNotice(request, person.id, context.authority, context.locale, db)),
+    );
+    return { state: "approval_pending", selfApproval };
   }
 }
 async function requireExecutionEditor(code: Code, context: CodeContext, tx: SQL) {

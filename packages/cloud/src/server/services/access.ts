@@ -701,6 +701,35 @@ export const getEffectivePermissions = async (
   return permissions;
 };
 
+/** Bounded background recipient projection, including all-signed-in grants.
+ * Unlike a share/member picker, this enumerates actual people who currently hold the requested right.
+ * Apps with precedence/deny rules must narrow these candidates with their own permission resolver.
+ */
+export async function listAccessRecipientUserIds(
+  params: {
+    accessIds: readonly string[];
+    afterId?: string;
+    userId?: string;
+    limit: number;
+    minimumPermission?: "write" | "admin";
+  },
+  db: AccessDb = sql,
+): Promise<string[]> {
+  if (!params.accessIds.length) return [];
+  const rows = await db<{ id: string }[]>`WITH RECURSIVE memberships(user_id,group_id) AS (
+    SELECT user_id,group_id FROM auth.user_groups_v2
+    UNION
+    SELECT m.user_id,g.parent_group_id FROM memberships m JOIN auth.group_groups_v2 g ON g.child_group_id=m.group_id
+  ) SELECT u.id FROM auth.users u WHERE u.profile='user'
+    AND u.id>${params.afterId ?? "00000000-0000-0000-0000-000000000000"}::uuid
+    AND (${params.userId ?? null}::uuid IS NULL OR u.id=${params.userId ?? null}::uuid)
+    AND EXISTS(SELECT 1 FROM auth.access a WHERE a.id=ANY(${toPgUuidArray([...params.accessIds])}::uuid[])
+      AND (a.permission='admin' OR (${params.minimumPermission === "write"} AND a.permission='write'))
+      AND (a.user_id=u.id OR a.authenticated_only OR a.group_id IN (SELECT group_id FROM memberships WHERE user_id=u.id)))
+    ORDER BY u.id LIMIT ${Math.min(50, Math.max(1, params.limit))}`;
+  return rows.map((row) => row.id);
+}
+
 /**
  * Lists concrete users reachable from auth.access entries.
  *

@@ -2,6 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -74,5 +75,35 @@ test("the server renders the waiting row of every case as the first client frame
       expect(html.match(/<i class="assistant-chat-waiting"/g)?.length).toBe(4);
       expect(html.match(/"status":\{"icon":"assistant-chat-waiting"/g)?.length).toBe(2);
     }
+  }
+});
+
+test("Code waiting kinds keep their own sign in the shared chip row", async () => {
+  const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
+  const signs = {
+    code_activate: "ti ti-power",
+    code_changes: "ti ti-message-2",
+    code_expired: "ti ti-clock-off",
+    code_attention: "ti ti-alert-circle",
+  } as const;
+  for (const kind of ["code_activate", "code_changes", "code_expired", "code_attention"] as const) {
+    const icon = signs[kind];
+    const question: AiOpenQuestion = { ...waitingFixture.questions.items[0]!, kind };
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AssistantWaitingStrip, {
+            view: { attention: [], entries: [question], total: 1, more: 0, onlyHere: null },
+            conversationId: question.conversationId,
+            quiet: false,
+            onJump: () => {},
+            onShowMore: () => {},
+          });
+        },
+      }),
+    );
+    expect(html).toContain(`data-kind="${kind}"`);
+    expect(html).toContain(`assistant-waiting__icon ${icon}`);
   }
 });

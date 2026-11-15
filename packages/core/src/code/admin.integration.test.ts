@@ -4,7 +4,12 @@ import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CloudResourceReaderViewSchema, type User } from "@k2b/cloud/contracts";
 import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
+import type { AuthContext } from "@k2b/cloud/server";
 import { countPending } from "@k2b/cloud/services/approvals";
+import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
+import { preloadAdminCodeApprovals } from "@k2b/cloud/ssr/admin-status";
+import type { CodeAdminCounts } from "@k2b/cloud/ssr/code-admin-counts";
+import { Hono } from "hono";
 import { z } from "zod";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
@@ -126,8 +131,8 @@ const submission = (codeId: string, source: string, baseVersionId: string | null
   return { codeId, sourceFiles, bundle, manifest, baseVersionId };
 };
 
+let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
 databaseSuite()("C22 Administration › Code read model", () => {
-  let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
   let dispose: (() => void) | undefined;
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   let catalogSpy: ReturnType<typeof spyOn<typeof provider, "getCapabilityCatalogApp">>;
@@ -135,6 +140,8 @@ databaseSuite()("C22 Administration › Code read model", () => {
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useMigratedDatabase("core_code_admin");
+    // Flush the schema clone during setup; teardown must only flush this file's small fixture writes.
+    await sql`CHECKPOINT`;
     for (const [id, name] of [
       [authorId, "Lea Muster"],
       [reviewerId, "Ben Schulz"],
@@ -161,7 +168,6 @@ databaseSuite()("C22 Administration › Code read model", () => {
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     serverCheck?.mockRestore();
-    await database?.drop();
     setSystemTime();
   });
 
@@ -170,7 +176,7 @@ databaseSuite()("C22 Administration › Code read model", () => {
     const first = await submitCodeVersion(submission("c_admin1", "export const one = 1;\nexample.item.change();", null), author);
     expect(first.status).toBe("pending");
 
-    expect(await readCodeAdminSummary(reviewer)).toEqual({ approvals: 1, codes: 1, groups: 0, cleanup: 0 });
+    expect(await readCodeAdminSummary(reviewer)).toEqual({ approvals: 1, reports: 0, codes: 1, groups: 0, cleanup: 0 });
     const codeVersions = () =>
       countPending({ approverUserId: reviewerId, roleContext: { kind: "request", authority: reviewer.authority }, kind: "code_version" });
     expect((await codeVersions()).total).toBe(1);
@@ -523,4 +529,67 @@ databaseSuite()("C22 Administration › Code read model", () => {
     // Keep this fixture out of later unfiltered list/count assertions.
     await decideCodeVersion(next.binding, { outcome: "rejected", comment: "Fixture complete." }, reviewer);
   });
+  test("review SSR uses the common human population for ordinary and emergency authors", async () => {
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at)
+      VALUES('c_sole1','person',${authorId}::uuid,'Only admin review',${authorId}::uuid,${fixed})`;
+    const pending = await submitCodeVersion(submission("c_sole1", "export const one = 1;\nexample.item.change();", null), author);
+    const review = () => readCodeAdminApproval(pending.version.id, author);
+    const allowed = { own: true, canApprove: true, soleAdminNotice: expect.any(String) };
+    const denied = { own: true, canApprove: false, soleAdminNotice: null };
+    try {
+      expect(await review()).toMatchObject(denied);
+      // The emergency identity never provides an independent human reviewer.
+      await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${reviewerId}::uuid`;
+      expect(await review()).toMatchObject(allowed);
+      await sql`UPDATE auth.users SET uid='dev-admin',emergency_admin=false WHERE id=${reviewerId}::uuid`;
+      await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${authorId}::uuid`;
+      expect(await review()).toMatchObject(denied);
+      await sql`UPDATE auth.users SET account_expires='2000-01-01' WHERE id=${reviewerId}::uuid`;
+      expect(await review()).toMatchObject(allowed);
+    } finally {
+      await sql`UPDATE auth.users SET uid=id::text,emergency_admin=false,account_expires=NULL WHERE id IN (${authorId}::uuid,${reviewerId}::uuid)`;
+    }
+  });
+  test("Code badge sums the sole author's open request and report, with a shared breakdown and approvals-only bar", async () => {
+    await sql`UPDATE approvals.requests SET expires_at=created_at-interval '1 second' WHERE status='pending'`;
+    await sql`UPDATE auth.users SET admin=false WHERE id<>${authorId}::uuid`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by,created_at)
+      VALUES('c_count1','person',${authorId}::uuid,'Sole admin count',${authorId}::uuid,${fixed})`;
+    const pending = await submitCodeVersion(submission("c_count1", "export const count = 1;\nexample.item.change();", null), author);
+    await sql`INSERT INTO code.page_reports(code_id,reporter_id,path,text,locale,idempotency_key)
+      VALUES('c_count1',${strangerId}::uuid,'/','Check this page','en',gen_random_uuid())`;
+    const app = new Hono<AuthContext & { Variables: { adminCodeApprovals?: number; adminCodeCounts?: CodeAdminCounts } }>().get(
+      "/admin/code",
+      async (c) => {
+        if (author.authority.actor.kind !== "user") throw new Error("Expected person");
+        c.set("user", author.authority.actor.user);
+        c.set("actor", author.authority.actor);
+        c.set("accessSubject", author.authority.accessSubject);
+        c.set("credentialKind", "session");
+        await preloadAdminCodeApprovals(c);
+        const summary = await readCodeAdminSummary(author, c.get("adminCodeCounts"));
+        const bar = await countPending({ approverUserId: authorId, roleContext: { kind: "request", authority: author.authority } });
+        return c.json({ sidebar: c.get("adminCodeApprovals"), bar: bar.total, approvals: summary.approvals, reports: summary.reports });
+      },
+    );
+    expect(await (await app.request("/admin/code")).json()).toEqual({ sidebar: 2, bar: 1, approvals: 1, reports: 1 });
+    const signIn = await createTestBrowserSignIn(authorId);
+    await decideCodeVersion(
+      pending.binding,
+      { outcome: "approved" },
+      {
+        ...author,
+        authority: {
+          ...author.authority,
+          credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+        },
+      },
+    );
+    expect(await (await app.request("/admin/code")).json()).toEqual({ sidebar: 1, bar: 0, approvals: 0, reports: 1 });
+  });
+});
+
+// Imported session-fixture cleanup runs at file scope; keep its database until it has finished.
+afterAll(async () => {
+  await database?.drop();
 });

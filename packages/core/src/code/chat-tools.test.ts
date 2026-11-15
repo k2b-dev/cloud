@@ -9,6 +9,10 @@ test("submit guidance follows the authoritative next step instead of always prom
   expect(description).toContain("nextStep");
   expect(description).toContain("admin_approval");
   expect(description).toContain("nextStep {next, who}");
+  expect(description).toContain("who=you");
+  expect(description).toContain("You can approve it yourself.");
+  expect(description).toContain("Du kannst sie selbst freigeben.");
+  expect(description).toContain("who=cloud_admin");
 });
 const schema = (name: string) => {
   const tool = tools.find((item) => item.def.name === name);

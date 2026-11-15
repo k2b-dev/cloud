@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import * as cloudRuntime from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import * as catalog from "@k2b/cloud/capabilities/server";
@@ -203,8 +203,8 @@ databaseSuite()("Core Code data and Query authorization", () => {
     const target = { type: "fictional.task", id: "private-task-id" };
     const effect = {
       forms: {
-        de: { text: "{target} angelegt", kind: "Aufgabe", targetType: target.type },
-        en: { text: "Created {target}", kind: "task", targetType: target.type },
+        de: { text: "{target} angelegt", kind: "Aufgabe", targetType: target.type, countText: "Aufgaben angelegt" },
+        en: { text: "Created {target}", kind: "task", targetType: target.type, countText: "Tasks created" },
       },
       refs: [target],
     };
@@ -274,26 +274,46 @@ databaseSuite()("Core Code data and Query authorization", () => {
           }
         : original(app, ...rest),
     );
-    const reader = spyOn(catalog, "invokeCapabilityWithDataSchema").mockImplementation(async (_invocation, schema) => ({
-      ok: true as const,
-      data: {
-        data: schema.parse({ view: { title: "Private delivery", permission: "read" } }),
-        links: [{ rel: "open" as const, href: "/fictional/task" }],
-      },
-    }));
+    const reader = spyOn(catalog, "invokeCapabilityWithDataSchema").mockImplementation(async (_invocation, schema, caller) => {
+      const subject = caller.authority?.accessSubject;
+      if (subject?.type !== "user" || subject.userId !== ids.reader)
+        return { ok: false as const, error: { code: "FORBIDDEN", message: "Hidden", status: 403 } };
+      return {
+        ok: true as const,
+        data: {
+          data: schema.parse({ view: { title: "Private delivery", permission: "read" } }),
+          links: [{ rel: "open" as const, href: "/fictional/task" }],
+        },
+      };
+    });
     try {
       const runWords = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
       expect(runWords.title).toBe("Created task “Private delivery”");
       expect(runWords.untilThen.items.map((item) => item.text)).toEqual(["Created task “Private delivery”"]);
       const named = await loadCodeActivityReadModel({ codeId: code.id, day: "2026-10-31", timeZone: "UTC" }, ctx(ids.reader));
+      expect(named.counters.items.find((item) => item.key === "fictional.create")).toMatchObject({ count: 1, text: "Tasks created" });
       expect(named.recent.find((item) => item.runId === id)).toMatchObject({
-        text: "Created task “Private delivery”",
-        href: "/fictional/task",
+        text: "Created task",
+        target: { ref: target, text: "Created task “{name}”" },
         app: "Fictional",
         at: fixed.toISOString(),
       });
+      expect(JSON.stringify(named.recent)).not.toMatch(/Private delivery|fictional\/task/);
+      const childReader = mock(async () => {
+        throw new Error("Recent effects must not spend a child Query");
+      });
+      const deferred = await loadCodeActivityReadModel(
+        { codeId: code.id, day: "2026-10-31", timeZone: "UTC" },
+        {
+          ...ctx(ids.reader),
+          authority: { ...ctx(ids.reader).authority, credentialKind: "invocation", scopes: ["core:read"] },
+          query: childReader,
+        },
+      );
+      expect(deferred.recent.find((item) => item.runId === id)?.target).toEqual({ ref: target, text: "Created task “{name}”" });
+      expect(childReader).not.toHaveBeenCalled();
       reader.mockImplementation(async () => ({ ok: false as const, error: { code: "FORBIDDEN", message: "Hidden", status: 403 } }));
-      const hidden = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
+      const hidden = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.editor));
       expect(hidden.title).toBe("Created task");
       expect(JSON.stringify(hidden)).not.toMatch(/Private delivery|private-task-id|fictional\/task/);
     } finally {
@@ -301,6 +321,44 @@ databaseSuite()("Core Code data and Query authorization", () => {
       reader.mockRestore();
       provider.mockRestore();
       await sql`DELETE FROM code.runs WHERE id=${id}::uuid`;
+    }
+  });
+
+  test("counter wording comes only from succeeded effects in the counted run week", async () => {
+    const runs: string[] = [];
+    const insert = async (at: Date, label: string, state: "succeeded" | "failed") => {
+      const id = await insertCodeRun({ codeId: code.id, versionId, trigger: "manual", entrypoint: "wording-guard", input: null });
+      runs.push(id);
+      await sql`UPDATE code.runs SET created_at=${fixed},started_at=${fixed} WHERE id=${id}::uuid`;
+      const effect = {
+        forms: { en: { text: "Created {target}", kind: "task", targetType: "fictional.task", countText: label } },
+        refs: [],
+      };
+      const ordinal = await sql.begin((tx) =>
+        appendCodeCall({ runId: id, kind: "action", call: { capability: "fictional.create", target: null, refs: {}, input: {} } }, tx),
+      );
+      await sql.begin((tx) =>
+        finishCodeCall(
+          { runId: id, ordinal, state, result: { ok: state === "succeeded", data: null }, confirmedEffect: true, effect, endedAt: at },
+          tx,
+        ),
+      );
+      // Even a malformed historical flag cannot make a failed call's prose into result evidence.
+      if (state === "failed") await sql`UPDATE code.calls SET confirmed_effect=true WHERE run_id=${id}::uuid`;
+      await sql`UPDATE code.runs SET state=${state},ended_at=${at} WHERE id=${id}::uuid`;
+    };
+    try {
+      await insert(fixed, "Tasks created", "succeeded");
+      await insert(new Date(+fixed + 7 * 86400000), "Next week's wording", "succeeded");
+      await insert(new Date(+fixed + 60000), "Failed call wording", "failed");
+      const data = await readCodeActivityData({ codeId: code.id, day: "2026-10-31", timeZone: "UTC" });
+      expect(data.counters.find((item) => item.automationKey === "wording-guard")).toMatchObject({
+        count: 1,
+        evidence: { forms: { en: { countText: "Tasks created" } } },
+      });
+    } finally {
+      for (const id of runs) await sql`DELETE FROM code.runs WHERE id=${id}::uuid`;
+      await sql`DELETE FROM code.activity_weeks WHERE code_id=${code.id} AND entrypoint='wording-guard'`;
     }
   });
 
@@ -798,7 +856,18 @@ databaseSuite()("Core Code data and Query authorization", () => {
         );
       }),
     ).rejects.toThrow("storage limit");
+    await sql`INSERT INTO code.ai_daily_budget(day,scope_kind,scope_key,reference_cost) VALUES
+      ('2026-09-30','code',${code.id},1),('2026-10-01','code',${code.id},2),('2026-10-02','code',${code.id},3),
+      ('2026-09-30','owner',${ids.owner},4)`;
     expect(await expireCodeRuns({ now: new Date("2026-10-31T11:59:59.000Z"), limit: 100 })).toBe(0);
+    expect(
+      await sql<{ day: string; cost: number }[]>`SELECT day::text AS day,reference_cost::int AS cost FROM code.ai_daily_budget
+      WHERE scope_kind='code' AND scope_key=${code.id} ORDER BY day`,
+    ).toEqual([
+      { day: "2026-10-01", cost: 2 },
+      { day: "2026-10-02", cost: 3 },
+    ]);
+    expect(await sql`SELECT scope_key FROM code.ai_daily_budget WHERE scope_kind='owner' AND scope_key=${ids.owner}`).toHaveLength(0);
     expect(await expireCodeRuns({ now: fixed, limit: 100 })).toBe(1);
     expect(await sql`SELECT * FROM code.calls WHERE run_id=${runId}::uuid`).toHaveLength(0);
     expect(await sql`SELECT * FROM code.runs WHERE id=${active}::uuid`).toHaveLength(1);

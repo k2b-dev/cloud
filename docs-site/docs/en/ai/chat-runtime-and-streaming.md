@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-11-13
+updated: 2026-11-15
 ---
 
 # Chat runtime and streaming
@@ -550,11 +550,47 @@ Project context can be shared through normal Cloud access grants, but each
 conversation remains owned by its creator and only appears in that user's
 updates and queries.
 
+### Code decision activity
+
+`meta.codeDecision` identifies a factual timeline entry with `codeId`,
+`versionId`, `number`, `outcome`, `person:{id,name}`, `anchor`, `at` and optional
+`nextRunAt`. Outcomes are `approved`, `changes_requested`, `rejected` and
+`activated`. Decision and activation are separate historical rows. They have
+no turn and never join the active assistant answer. The host can render their
+card link through `AiChatActions.renderCodeDecision`.
+
+Core records each delivery intent in the decision or activation transaction.
+A worker appends it once to the original author's chat while holding the chat
+lock, after its active turn finishes. It rechecks current management and chat
+ownership before delivery. The write updates `background_received_at` and
+invalidates `conversation-detail` and `code-versions`; cards keep listening
+when ready and during a revision. Navigation targets the card's
+`code-version-<versionId>` DOM anchor rather than the submission tool call.
+Renewing an expired request keeps the first card's anchor, including for its
+new version's waiting item, event and notification. Model history receives a fixed historical
+fact without names, titles or administrator instructions.
+
+The following `codeReviewStart` message marks the start of the automatic
+revision. Its localized sentence says that Gustav is revising the version;
+it does not repeat the administrator's decision or name. Render the decision
+once, followed by this separate start of the review turn.
+
+A host can use `appendAiBackgroundMessages` from `@k2b/cloud/ai/runtime` for a
+bounded batch under its destination chat locks. It assigns message order and
+updates chat markers in one statement; the caller owns durable deduplication
+and admission. `registerAiTurnAbortHandler` lets the host close its durable
+review submission gate before a review turn's cancellation becomes visible.
+The disposer removes that handler; ordinary turns do not invoke it.
+
 ### List the person's open questions
 
 Use `listAiOpenQuestions` from `@k2b/cloud/ai` on the server to seed a personal
 chat overview. Resolve `ownerUserId` from the authenticated user; the read
-includes only that person's pending approvals in chats they own.
+includes that person's pending approvals in chats they own. An independently
+deployed application passes a `caller` with the person's own credentials to
+read Core's other waiting sources through its authorized `ai.open_questions`
+Query. Only Core-owned code may pass `authority` for in-process dispatch; that
+authority must name the same person.
 
 ```ts
 import { listAiOpenQuestions } from "@k2b/cloud/ai";
@@ -565,13 +601,17 @@ const questions = await listAiOpenQuestions({
   ownerUserId: user.id,
   locale: getLocale(c),
   timeZone: getTimeZone(c),
+  caller: {
+    cookie: c.req.header("cookie"),
+    authorization: c.req.header("authorization"),
+    locale: getLocale(c),
+    signal: c.req.raw.signal,
+  },
 });
 ```
 
-`AiOpenQuestions` contains at most 20 `items`, newest first, and a `count` of
-all matching questions. Each `AiOpenQuestion` carries its `kind` (today
-`approval`; a further source of things that wait for the person adds its own
-kind, and Assistant gives each kind its sign in "Waiting for you"), the approval ID, chat
+`AiOpenQuestions` contains at most 20 `items`, oldest first, and a `count` of
+all matching questions. Each `AiOpenQuestion` carries its ID, required `kind`, chat
 short ID and current title, tool-block `anchor`, short plain text, app
 presentation, and ISO creation time. The short text uses the review's `short`
 template when provided, otherwise its action sentence, rendered like the card's
@@ -580,6 +620,14 @@ time labels. Legacy reviews and calls without a review keep the card's literal
 question text. Missing or unreadable tool blocks fall back to the first line of
 the request sentence and a tool anchor; one damaged question does not prevent
 the others from loading.
+
+Kinds are `approval`, `code_activate`, `code_changes`, `code_expired` and
+`code_attention`. A Code change appears only when no automatic revision is
+queued or running; withdrawn, replaced or activated versions leave the list.
+Operational attention names a missing Secret, access or mandate and carries an
+`href` to the Code page. Entries without a chat use an empty `conversationId`
+and `anchor`. Use this same snapshot for the page, sidebar and badge. Domain
+notification senders reuse the source's text and target.
 
 `short` is limited to 160 Unicode code points and `conversationTitle` to 200.
 Truncated values end with `…`, included in the limit, without splitting a code

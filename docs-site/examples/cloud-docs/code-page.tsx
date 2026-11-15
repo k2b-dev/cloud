@@ -1,4 +1,5 @@
 import { FEAT_CODE_NAME, FeatCodeMark } from "@k2b/cloud/code/ui";
+import { followCodeRuns } from "@k2b/cloud/ssr/code-live";
 import { CodeNavStatus } from "@k2b/cloud/ssr/code-nav-status";
 import CodePage, { type CodePageData } from "@k2b/cloud/ssr/code-page";
 import { AppWorkspace } from "@k2b/ui";
@@ -29,3 +30,15 @@ export const StoreCodeOrigin = (props: { automation: string }) => (
 );
 
 export const storeCodeTitle = `${FEAT_CODE_NAME} · Store`;
+
+/** "Follow run updates": an island outside the Code page follows Core's run hints and reloads its snapshot on a gap. */
+export function followStoreRuns(codeId: string, cursor: string | null, animate: (runId: string, state: string) => void) {
+  return followCodeRuns(
+    codeId,
+    (event) => animate(event.runId, event.state),
+    async () => {
+      location.reload();
+    },
+    cursor,
+  );
+}

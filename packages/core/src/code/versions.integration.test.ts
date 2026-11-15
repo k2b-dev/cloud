@@ -14,6 +14,7 @@ import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
 import { auth } from "@k2b/cloud/server";
 import { approvalArgsDigest, approvalDecisionHints, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
+import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -32,12 +33,17 @@ import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CoreNotificationSender } from "../notifications";
 import type { CodeContext } from "./access";
 import * as access from "./access";
+import { codeAuthoringServices } from "./authoring";
 import * as authoringChecks from "./authoring-check";
+import { codeAuthoringContracts } from "./authoring-contracts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
+import * as explanations from "./read-model/explanation";
 import { loadCodeVersionReadModel } from "./read-model/load";
 import { readCodeReview, waitCodeReview } from "./review";
+import { cancelCodeReviewRevision } from "./review-chat";
+import { stopCodeReviewTurn } from "./review-chat-state";
 import { createCodeReviewComment, deleteCodeReviewComment, listCodeReviewComments } from "./review-comments";
 import { CODE_REVIEW_COMMENT_LIMIT } from "./review-contracts";
 import { createCodeReviewNotificationOutbox, deliverCodeReviewNotice } from "./review-notifications";
@@ -185,12 +191,16 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_versions");
     await migrateAuth();
+  });
+  beforeAll(async () => {
     await migrateEvents();
     await migrateAppEvents();
     await migratePwa();
     await migrateAppApproval();
     await migrateSettings();
     await migrateAudit();
+  });
+  beforeAll(async () => {
     await migrateCode();
     await migratePolicy();
     await migrateApprovals();
@@ -222,6 +232,9 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await sql`UPDATE auth.users SET admin=(id<>${strangerId}::uuid),account_expires=NULL,auth_epoch=0`;
     await sql`UPDATE code.policy_rules SET value=CASE WHEN row IN ('read','silent_you','silent_draft') THEN 'automatic' ELSE 'admin' END WHERE group_id IS NULL`;
   });
+  beforeAll(async () => {
+    await ai.migrateCloudAi();
+  });
   afterAll(async () => {
     dispose?.();
     hints?.mockRestore();
@@ -229,6 +242,41 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     settingsSpy?.mockRestore();
     catalogSpy?.mockRestore();
     setSystemTime();
+  });
+
+  test("Composer stop and real submission serialize on the same review gate", async () => {
+    for (const stopped of [true, false]) {
+      const code = await newCode();
+      const original = await submitCodeVersion(input(code, "first"), author);
+      const chat = await ai.aiConversations.createConversation({ ownerUserId: authorId });
+      const { turn } = await ai.aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "fixture",
+        runConfig: { kind: "chat", input: "fixed", codeReview: { codeId: code.id, versionId: original.version.id } },
+        userMessage: { role: "user", content: [{ type: "text", text: "fixed" }] },
+      });
+      await sql`INSERT INTO code.review_chat_work(version_id,code_id,conversation_id,user_id,state,turn_id)
+        VALUES(${original.version.id}::uuid,${code.id},${chat.id}::uuid,${authorId}::uuid,'running',${turn.id}::uuid)`;
+      const automatic: CodeContext = {
+        ...author,
+        submissionOrigin: { kind: "ai_chat", conversationId: chat.id, automaticAfterReview: true },
+        reviewTurn: { versionId: original.version.id, turnId: turn.id },
+      };
+      if (stopped) {
+        await stopCodeReviewTurn({ conversationId: chat.id, turnId: turn.id });
+        await expect(submitCodeVersion(input(code, "changed", original.version.id), automatic)).rejects.toMatchObject({ code: "CONFLICT" });
+        expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(1);
+      } else {
+        const submitted = await submitCodeVersion(input(code, "changed", original.version.id), automatic);
+        await stopCodeReviewTurn({ conversationId: chat.id, turnId: turn.id });
+        expect(submitted.origin).toMatchObject({ automaticAfterReview: true });
+        expect(await cancelCodeReviewRevision({ codeId: code.id, versionId: original.version.id }, author)).toEqual({
+          status: "too_late",
+          submittedVersionId: submitted.version.id,
+          submittedNumber: 2,
+        });
+      }
+    }
   });
 
   test("the shared version read marks the changed access that needs approval without extra SQL", async () => {
@@ -382,6 +430,28 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       code: "CONFLICT",
     });
   });
+  test("CLI submissions await the explanation step with their origin and request locale before returning", async () => {
+    const code = await newCode();
+    const generated = spyOn(explanations, "storeCodeVersionExplanation").mockImplementation(async (versionId) => {
+      const text = "Liest Aufgaben und legt einen Entwurf an.";
+      await sql`INSERT INTO code.version_explanations(version_id,locale,text) VALUES(${versionId}::uuid,'de',${text})`;
+      return { text };
+    });
+    try {
+      const submitted = await submitCodeVersion(input(code, "cli description"), {
+        ...author,
+        locale: "de",
+        submissionOrigin: { kind: "cli" },
+      });
+      expect(generated).toHaveBeenCalledTimes(1);
+      expect(generated.mock.calls[0]?.[1]).toMatchObject({ locale: "de", submissionOrigin: { kind: "cli" } });
+      expect(
+        (await sql`SELECT text FROM code.version_explanations WHERE version_id=${submitted.version.id}::uuid AND locale='de'`)[0]?.text,
+      ).toBe("Liest Aufgaben und legt einen Entwurf an.");
+    } finally {
+      generated.mockRestore();
+    }
+  });
   test("submission provenance is immutable and Code waits fourteen days while Actions keep one", async () => {
     const code = await newCode();
     const origin = { kind: "ai_chat" as const, conversationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", automaticAfterReview: true };
@@ -498,7 +568,11 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   });
   test("held review rechecks revoked editor rights and an expired version can be resubmitted unchanged", async () => {
     const code = await newCode();
-    const submitted = await submitCodeVersion(input(code, "same"), author);
+    const chat = await ai.aiConversations.createConversation({ ownerUserId: authorId });
+    const origin = { kind: "ai_chat" as const, conversationId: chat.id, cardAnchor: "original-card", automaticAfterReview: true };
+    const submitted = await submitCodeVersion(input(code, "same"), { ...author, submissionOrigin: origin });
+    const retry = () => codeAuthoringServices.reviewRequestAgain({ codeId: code.id, versionId: submitted.version.id }, author);
+    await expect(retry()).rejects.toMatchObject({ code: "CONFLICT" });
     const share = await addCodeShare(code.id, { type: "user", userId: strangerId }, "editor", author);
     const listener = spyOn(approvalDecisionHints, "wait").mockImplementation(async () => {
       await sql`DELETE FROM code.shares WHERE code_id=${code.id} AND access_id=${share}`;
@@ -512,9 +586,58 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     }
     await sql`UPDATE approvals.requests SET expires_at=created_at-interval '1 second' WHERE id=${submitted.approvalId}::uuid`;
     expect((await readCodeReview({ codeId: code.id, versionId: submitted.version.id }, author)).status).toBe("expired");
-    const next = await submitCodeVersion(input(code, "same", submitted.version.id), author);
+    await expect(
+      codeAuthoringServices.reviewRequestAgain({ codeId: code.id, versionId: submitted.version.id }, context(strangerId)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const next = codeAuthoringContracts.reviewRequestAgain.data.parse(await retry());
+    expect(next.origin).toEqual({ ...origin, cardAnchor: `code-version-${submitted.version.id}` });
+    expect(next.binding.sourceHash).toBe(submitted.binding.sourceHash);
+    expect(next.binding.bundleHash).toBe(submitted.binding.bundleHash);
+    expect(next.status).toBe("pending");
+    await expect(retry()).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(2);
     expect(next.version.number).toBe(submitted.version.number + 1);
     expect(next.approvalId).not.toBe(submitted.approvalId);
+  });
+  test("the only emergency admin receives submitted review notices and can read the decided event", async () => {
+    await sql`DELETE FROM code.review_notification_outbox`;
+    const code = await newCode();
+    const submitted = await submitCodeVersion(input(code, "emergency notification"), author);
+    const sent: Parameters<CoreNotificationSender["sendCodeReview"]>[0][] = [];
+    const outbox = createCodeReviewNotificationOutbox({
+      sendCodeReview: async (notice) => {
+        sent.push(notice);
+      },
+    });
+    try {
+      await sql`UPDATE auth.users SET admin=false WHERE id<>${reviewerId}::uuid`;
+      await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${reviewerId}::uuid`;
+      await outbox.reconcile();
+      expect(sent.map((notice) => [notice.userId, notice.kind, notice.versionId])).toEqual([
+        [reviewerId, "submitted", submitted.version.id],
+      ]);
+      await decideCodeVersion(submitted.binding, { outcome: "approved" }, reviewer);
+      const [event] = await sql<{ payload: { place: { type: string; id: string } } }[]>`SELECT payload FROM events.outbox
+        WHERE payload->>'type'='core.code.version.decided' AND payload->'data'->>'versionId'=${submitted.version.id}`;
+      expect(event?.payload.place).toEqual({ type: "core.code", id: code.id });
+      // The event's place reader must allow an admin with no ownership or share on this Code.
+      const principals = [{ type: "user" as const, userId: reviewerId }];
+      const appContext: CapabilityAppExecutionContext = {
+        actor: { kind: "app", appId: "core" },
+        accessSubject: { type: "none" },
+        user: null,
+        locale: "en",
+        origin: "app",
+        requestId: "emergency-event-reader",
+        signal: new AbortController().signal,
+      };
+      const readable = aiCapabilities.types.code.access.readable;
+      expect(await readable({ id: code.id, principals }, appContext)).toEqual(principals);
+      await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
+      expect(await readable({ id: code.id, principals }, appContext)).toEqual([]);
+    } finally {
+      await sql`UPDATE auth.users SET uid=${reviewerId},emergency_admin=false WHERE id=${reviewerId}::uuid`;
+    }
   });
   test("notification effects commit with evidence, resolve active admins, and use each recipient's locale and current rights", async () => {
     // Other tests intentionally leave durable effects without running a worker. Isolate this worker fixture.
@@ -1118,6 +1241,86 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await expect(decideCodeVersion(next.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({ code: "SELF_APPROVAL" });
     expect((await approvals.get(submission.approvalId!))?.soleAdmin).toBe(true);
   });
+  for (const other of ["emergency", "locked_ipa", "disabled_category"] as const) {
+    test(`Code self-approval ignores an ineligible second admin (${other})`, async () => {
+      if (other === "emergency") await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${reviewerId}::uuid`;
+      else {
+        await sql`UPDATE auth.users SET provider='ipa',admin=false WHERE id=${reviewerId}::uuid`;
+        await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${reviewerId}::uuid,'code-review-admins')`;
+        await sql`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
+          ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+        if (other === "locked_ipa")
+          await sql`INSERT INTO auth.user_ipa_data(user_id,locked_at) VALUES(${reviewerId}::uuid,${fixed})
+            ON CONFLICT(user_id) DO UPDATE SET locked_at=EXCLUDED.locked_at`;
+        else
+          await sql`INSERT INTO settings.entries(key,value) VALUES('user.category.freeipa.enabled',${await encryptValue(false)})
+            ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+      }
+      try {
+        const code = await newCode(),
+          submission = await submitCodeVersion(input(code, "eligible"), author);
+        const signIn = await createTestBrowserSignIn(authorId);
+        const signed: CodeContext = {
+          ...author,
+          authority: {
+            ...author.authority,
+            credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+          },
+        };
+        expect((await decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).decision).toMatchObject({
+          approved: true,
+          soleAdmin: true,
+        });
+      } finally {
+        await sql`DELETE FROM auth.user_ipa_data WHERE user_id=${reviewerId}::uuid`;
+        await sql`DELETE FROM auth.ipa_user_effective_groups WHERE user_id=${reviewerId}::uuid`;
+        await sql`DELETE FROM settings.entries WHERE key IN ('freeipa.groups.admin','user.category.freeipa.enabled')`;
+        await sql`UPDATE auth.users SET uid=${reviewerId},provider='local',emergency_admin=false WHERE id=${reviewerId}::uuid`;
+      }
+    });
+  }
+  test("emergency author self-approves only without a human reviewer; active dev-admin counts", async () => {
+    await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${authorId}::uuid`;
+    await sql`UPDATE auth.users SET uid='dev-admin',emergency_admin=false WHERE id=${reviewerId}::uuid`;
+    try {
+      const code = await newCode(),
+        submission = await submitCodeVersion(input(code, "emergency"), author);
+      const signIn = await createTestBrowserSignIn(authorId);
+      const signed: CodeContext = {
+        ...author,
+        authority: {
+          ...author.authority,
+          credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+        },
+      };
+      await expect(decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({ code: "SELF_APPROVAL" });
+      await sql`UPDATE auth.users SET account_expires='2000-01-01' WHERE id=${reviewerId}::uuid`;
+      await expect(decideCodeVersion(submission.binding, { outcome: "approved" }, author)).rejects.toMatchObject({
+        code: "REAUTHENTICATE",
+      });
+      await sql`UPDATE auth.session_families SET issued_at='2000-01-01' WHERE sid=${signIn.sid}::uuid`;
+      await expect(decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({
+        code: "REAUTHENTICATE",
+      });
+      const recent = await createTestBrowserSignIn(authorId);
+      signed.authority.credentialProof = {
+        kind: "session",
+        userId: authorId,
+        sid: recent.sid,
+        authEpoch: 0,
+        expiresAt: "2099-01-01T00:00:00Z",
+      };
+      expect((await decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).decision).toMatchObject({ soleAdmin: true });
+      expect((await listCodeVersions({ codeId: code.id, limit: 20 }, signed)).items[0]?.decision?.label).toBe(
+        "selbst freigegeben (einziger Admin)",
+      );
+      const [event] =
+        await sql`SELECT actor_user_id,reason,metadata FROM audit.events WHERE action='core.code.version.approved' AND target_id=${code.id}`;
+      expect(event).toMatchObject({ actor_user_id: authorId, reason: "self_approved_sole_admin", metadata: { soleAdmin: true } });
+    } finally {
+      await sql`UPDATE auth.users SET uid=id::text,emergency_admin=false WHERE id IN (${authorId}::uuid,${reviewerId}::uuid)`;
+    }
+  });
   test("sole-admin self-approval still requires C5's browser confirmation", async () => {
     await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
     const code = await newCode(),
@@ -1514,22 +1717,47 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await decideCodeVersion(second.binding, { outcome: "approved" }, reviewer);
     await activate(code, second);
   });
-  // Runs last: it installs Core's AI live function, which every earlier decision in this suite ran without.
-  test("each decision reaches the submitting person's version card on Core's AI live channel, in its own transaction", async () => {
-    const code = await newCode(),
-      approved = await submitCodeVersion(input(code, "live approved"), author);
-    // Before the AI schema exists a decision still commits; nobody can follow it live there.
-    await decideCodeVersion(approved.binding, { outcome: "approved" }, reviewer);
-    await sql`CREATE SCHEMA IF NOT EXISTS ai`;
-    await sql`CREATE TABLE ai.live_calls(user_id UUID, conversation TEXT, project TEXT, domains TEXT[])`;
-    await sql`CREATE FUNCTION ai.enqueue_live_for_user(p_change UUID, p_user UUID, p_conversation TEXT, p_project TEXT, p_domains TEXT[])
-      RETURNS void AS $$ INSERT INTO ai.live_calls VALUES(p_user, p_conversation, p_project, p_domains) $$ LANGUAGE sql`.simple();
-    const next = await submitCodeVersion(input(code, "live rejected", approved.version.id), author);
-    expect(await sql`SELECT * FROM ai.live_calls`).toHaveLength(0);
-    await decideCodeVersion(next.binding, { outcome: "rejected", comment: "Please revise this version." }, reviewer);
-    expect(Array.from(await sql`SELECT * FROM ai.live_calls`)).toEqual([
-      { user_id: authorId, conversation: null, project: null, domains: ["code-versions"] },
-    ]);
+  test("each decision reaches the submitting person's version card through the transactional AI live outbox", async () => {
+    const code = await newCode();
+    const submitted = await submitCodeVersion(input(code, "live decision"), author);
+    const changes = () => sql`SELECT payload->'d' AS data FROM events.outbox
+      WHERE app_id='core' AND kind='live' AND ordering_key=${`u:${authorId}`}
+      AND payload->'d'->'domains' @> '["code-versions"]'::jsonb ORDER BY seq`;
+    const before = await changes();
+    await expect(
+      decideCodeVersion({ ...submitted.binding, sourceHash: "0".repeat(64) }, { outcome: "approved" }, reviewer),
+    ).rejects.toThrow();
+    expect(await changes()).toEqual(before);
+    await decideCodeVersion(submitted.binding, { outcome: "rejected", comment: "Please revise this version." }, reviewer);
+    const after = await changes();
+    expect(after).toHaveLength(before.length + 1);
+    expect(after.at(-1)?.data).toMatchObject({
+      type: "ai.invalidated",
+      conversationId: null,
+      projectId: null,
+      domains: ["code-versions"],
+    });
+  });
+  test("withdrawal invalidates the submitting person's card immediately and rolls back with its evidence", async () => {
+    const code = await newCode();
+    const submitted = await submitCodeVersion(input(code, "live withdrawal"), author);
+    const changes = () => sql`SELECT id FROM events.outbox WHERE app_id='core' AND kind='live'
+      AND ordering_key=${`u:${authorId}`} AND payload->'d'->'domains' @> '["code-versions"]'::jsonb ORDER BY seq`;
+    const before = await changes();
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`INSERT INTO code.version_withdrawals(version_id,withdrawn_by) VALUES(${submitted.version.id}::uuid,${authorId}::uuid)`;
+        throw new Error("rollback withdrawal");
+      }),
+    ).rejects.toThrow("rollback withdrawal");
+    expect(await changes()).toEqual(before);
+    await withdrawCodeVersion({ codeId: code.id, versionId: submitted.version.id }, author);
+    expect(await changes()).toHaveLength(before.length + 1);
+    expect((await readCodeReview({ codeId: code.id, versionId: submitted.version.id }, author)).status).toBe("withdrawn");
+    await sql`UPDATE approvals.requests SET expires_at=created_at-interval '1 second' WHERE id=${submitted.approvalId}::uuid`;
+    await expect(
+      codeAuthoringServices.reviewRequestAgain({ codeId: code.id, versionId: submitted.version.id }, author),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });
 

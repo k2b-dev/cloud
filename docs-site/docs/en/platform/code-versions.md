@@ -5,7 +5,7 @@ section: Platform services
 order: 962
 description: Submit checked Code, compare complete source versions and decide hash-bound Cloud-admin approvals.
 tags: [code, approvals, versions]
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Code versions and approval
@@ -202,12 +202,46 @@ unchanged comparison.
 
 An author cannot approve their own version when another active human Cloud
 administrator exists. The platform's sole-admin rule is the only exception:
-a sole active human Cloud administrator can approve their own version after
-recent full browser sign-in or through Cloud Login. The shared question shows:
+an administrator with no other active human reviewer can approve their own
+version after recent full browser sign-in or through Cloud Login. The shared
+question shows:
 
 > Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft.
 
-Machine accounts and expired administrators do not count as a second person.
+The Administration → Code review shows “You are the only admin and approve
+your own version.” / “Du bist der einzige Admin und gibst deine eigene Version
+frei.” and enables approval. When another reviewer exists, the author's
+“Another admin approves it” hint stays and approval remains unavailable.
+
+The Code sidebar badge counts open version requests plus open page reports.
+Administration → Code shows the breakdown as **Approvals** and **Reports**
+(**Freigaben** and **Meldungen**). Both numbers come from the same server
+snapshot. The admin bar's **Approvals** badge counts only approval requests,
+including your own pending submission; expired requests do not count. Page
+reports still notify admins. Select the affected Code in administration to
+resolve its report or pause the Code.
+
+When you can approve your own pending version, Gustav's submission handover
+and version card say “You can approve it yourself.” / “Du kannst sie selbst
+freigeben.” The server selects this wording for the submitting person; with
+another human reviewer, the administrator-approval wording stays. The submit
+result identifies this next step as `admin_approval` with `who: "you"`, rather
+than `who: "cloud_admin"`; the version preview carries `readiness.selfApproval`.
+This is an advisory next step: the decision checks eligibility again.
+
+Machine accounts, expired or locked administrators, disabled account categories,
+and the emergency identity do not count as other reviewers. The platform
+recognizes that identity by a stored marker together with local Login and the
+username `admin`. Returning the account to an ordinary provider or profile ends
+that marker; the restored human admin counts as a reviewer. An ordinary IPA
+account named `admin` also remains a human reviewer after switching to local
+Login and receiving admin access. An existing emergency account without the
+marker counts conservatively as an ordinary administrator until it carries
+the marker.
+The emergency admin may approve its own version only when no active human
+admin exists, with the same recent sign-in requirement and audit evidence.
+An active ordinary account such as `dev-admin` counts as a human reviewer,
+even without a previous sign-in.
 The platform counts and locks the administrator population in the decision
 transaction. Adding a second administrator blocks new self-approvals immediately;
 an earlier approval stays valid.
@@ -223,7 +257,8 @@ epoch prevents subsequent use of that approval.
 `POST /api/code/authoring/review` takes `{codeId,versionId,before?}` and returns
 one `review` object: `codeId`, `versionId`, `number`, `status`, `origin`,
 `approvalId`, `expiresAt`, `decidedBy`, `decidedAt`, `message`, `comments`,
-`nextBefore`, `commentCount`, `activeVersion` and `contentTrust:"untrusted_data"`.
+`nextBefore`, `commentCount`, `activeVersion`, `revision`, `changesRequestedEffect`
+and `contentTrust:"untrusted_data"`.
 The statuses are `not_required`, `pending`, `approved`, `changes_requested`,
 `rejected`, `withdrawn`, `superseded` and `expired`. `not_required` means no human
 approval was needed. `activeVersion` is `{id,number}` or null.
@@ -269,6 +304,37 @@ Code Type reader `code.resource.read` checks the current recipient's access for
 every delivery. It accepts person-bound authority, including a person mandate;
 Code accounts do not gain a management or source-reading surface.
 
+### Automatic revision after requested changes
+
+For a version submitted from a chat, requesting changes records one durable
+revision intent in the decision transaction. Core starts it in the author's
+original chat, using that person's AI quota. The person's active turn and queued
+messages go first. Approval or rejection never starts a revision.
+
+The Cloud task is fixed: revise the reviewed version and submit once. Review
+messages, comments, names and source files remain untrusted data. The turn
+receives only review, source, SDK, edit, check, test, simulate and submit tools
+for that Code. It cannot activate a version or use another app's tools. The
+new submission records `origin.automaticAfterReview:true`; requesting changes
+to it never starts another automatic turn.
+
+`revision` is null without chat work. Otherwise it contains `state`, `reason`,
+`turnId`, `submittedVersionId` and `submittedNumber`. States are `none`,
+`queued`, `running`, `submitted`, `completed`, `stopped` and `skipped`. Reasons
+explain a used automatic attempt, replacement, withdrawal, missing chat, lost
+access, quota, unavailable AI, a stop or the need for the person to continue.
+`changesRequestedEffect:{kind,text}` supplies the review dialog's localized
+explanation: `automatic_once`, `manual` or `cli`.
+
+`POST /api/code/authoring/reviewStop` accepts `{codeId,versionId}` from the
+original author with current editor rights and a write credential. Both this
+call and Composer cancellation take the same Code lock as submission. A timely
+stop returns `{status:"stopped",submittedVersionId:null,submittedNumber:null}`
+and prevents submission by that turn. If submission won, the result is
+`{status:"too_late",submittedVersionId,submittedNumber}`. The new version still
+needs its normal approval and activation. Pending intent and stop state survive
+Core restarts.
+
 ## Withdraw or request another review
 
 `POST /api/code/authoring/withdraw` takes `{codeId,versionId}`. Only a current
@@ -278,9 +344,17 @@ records who withdrew it and when, cancels the question and writes
 version even if the policy later stops requiring approval. Withdrawal and a
 newer version superseding a request remain distinct states.
 
-After expiry, use the existing authoring `resubmit` command with the same
-content. It creates a new version and approval reference. Each immutable
-version therefore has one review; no separate attempt identity is needed.
+After expiry, `POST /api/code/authoring/reviewRequestAgain` accepts
+`{codeId,versionId}` from a current editor with a write credential. Core reuses
+the immutable stored project, runs the current submission checks and policy,
+and returns the normal submission receipt with a new version number and
+approval reference. The old request is never extended. Concurrent retries obey
+the existing latest-version conflict guard. A decided or withdrawn version
+cannot be requested again this way. The CLI can also resubmit the same content.
+Each immutable version therefore has one review; no separate attempt identity
+is needed. An original chat author keeps their chat anchor and automatic-attempt
+marker when that chat still belongs to them; another editor's request has CLI
+origin.
 The active version keeps running. If none is active, the automation remains off.
 
 ## List, pause and resume

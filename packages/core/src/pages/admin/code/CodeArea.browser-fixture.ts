@@ -128,7 +128,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
       data.approvals = { ...data.approvals, items: data.approvals.items.filter((item) => !decisions.has(item.versionId)) };
     const waiting = 4 - decisions.size;
     if (data && data.summary !== null && typeof data.summary === "object") data.summary = { ...data.summary, approvals: waiting };
-    c.set("adminCodeApprovals", state === "noperm" ? undefined : waiting);
+    c.set("adminCodeApprovals", data && typeof data.summary === "object" && data.summary ? waiting + data.summary.reports : undefined);
     const databaseDemo = c.req.query("surface") === "database";
     const databasePage = fixtureDatabasePage(locale);
     const body = renderToString(() =>

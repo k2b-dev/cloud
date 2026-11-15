@@ -16,7 +16,7 @@ import {
 } from "@k2b/ui";
 ```
 
-`CodeDisplayLanguage` supports TypeScript, JavaScript, script, SQL, Markdown, and plain text modes. Line numbers and copy are enabled by default and can be disabled independently.
+`CodeDisplayLanguage` supports TypeScript, JavaScript, script, SQL, Markdown, and plain text modes. TypeScript, JavaScript, and script use the linear `@k2b/stdlib` code preset (`highlight.presets.code`, classes `hl-comment`, `hl-string`, `hl-number`, `hl-keyword`, `hl-operator`), coloured with the `--k2b-code-*` tokens; operators keep the text colour. A comment or template string across lines stays highlighted on every line. Line numbers and copy are enabled by default and can be disabled independently.
 
 ## API reference
 
@@ -77,18 +77,20 @@ type CodeDiffProps = {
   mark?: CodeDiffLocation;
   file?: string; onFileChange?: (path: string) => void;
   status?: "loading" | "error"; errorDescription?: JSX.Element; onRetry?: () => void;
-  label?: string; class?: string;
+  label?: string; toolbarStart?: JSX.Element; class?: string;
 };
 ```
 
 - **Rows:** each file lists its whole content in order. `same` is in both versions, `add` only in the new one, `del` only in the old one. Old and new line numbers are counted from the rows.
-- **Layout:** one column with old number, new number, sign, and code. Added lines carry the success fill and `+`, removed lines the danger fill and `−`. Long lines wrap inside the code column. Below 30rem of its own width the number columns narrow.
+- **Layout:** one column with old number, new number, sign, and code. Added lines carry the success fill and `+`, removed lines the danger fill and `−`. Long lines stay one line and scroll sideways inside the code surface; the page never widens, and fills reach the end of the longest line. Below 30rem of its own width the number columns narrow.
+- **Height:** set `--k2b-code-diff-height` on the component or an ancestor (for example `class="[--k2b-code-diff-height:35rem]"`) to give the code surface a fixed height. The code then scrolls inside it, and loading, failure, and "The code is unchanged" keep the same height, so switching files or versions moves nothing around it. The surface is a stop in the tab order, so keyboard users can scroll it.
+- **Toolbar:** `toolbarStart` puts the application's controls, such as a version picker, at the start of the file row, before the file names. It stays in place while the code loads or fails. On a narrow component the file names wrap below it.
 - **Folding:** three unchanged lines stay around every change; longer unchanged runs fold into one row ("9 unchanged lines") that opens in place. A file without changes is one fold.
-- **Files:** with more than one file, pill tabs name each file with `+added −removed`, `unchanged`, or the line count of a new file. The choice is internal unless `file` and `onFileChange` control it, for example from the URL.
+- **Files:** with more than one file, tabs name each file: the chosen one strong on a muted fill, the others as plain text. Assistive technology also hears `+added −removed`, `unchanged`, or the line count of a new file; a file without rows (not loaded yet) has no summary. The choice is internal unless `file` and `onFileChange` control it, for example from the URL. The file names stay while the code loads or fails.
 - **New files:** a file whose rows are all `add` has no predecessor. It shows as whole code with one number column, without fills or signs. Say in the surrounding text why the whole code is shown.
 - **Marking a line:** `mark` switches to its file (also when that file arrives later), opens the fold around the line, renders the pages up to it, marks it with the info fill and an inset bar, and centres it in its nearest scrolling container; outer containers and the page do not move. A new `mark` object is a new request: marking the same line again brings it back after the person scrolled away. Use `side: "old"` for a removed line. The server render already shows the marked line. What a mark revealed stays open when the mark goes away, and the person can still choose another file.
 - **Pages:** 400 rows render at first; "Show 400 more lines" adds the next page and moves focus to its first row.
-- **States:** `status="loading"` keeps the code surface with skeleton rows and one status label. `status="error"` shows "The code difference could not be loaded", the application's `errorDescription`, and "Try again" when `onRetry` is set. Code without any change shows "The code is unchanged".
+- **States:** `status="loading"` keeps the code surface with skeleton rows and one status label. `status="error"` shows "The code could not be loaded", the application's `errorDescription`, and "Try again" when `onRetry` is set; without `onRetry` there is no retry, for a failure that trying again cannot fix. Code without any change shows "The code is unchanged".
 
 Headings, version names, and the explanation of what a reviewer decides belong to the application around the component.
 

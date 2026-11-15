@@ -9,6 +9,7 @@ import type { RailSnapshot } from "../contracts/rail-preferences";
 import type { SettingsFlat, Unflatten } from "../contracts/settings-types";
 import type { User } from "../contracts/shared";
 import type { CORE_SETTINGS } from "../services/settings/core-settings";
+import type { CodeAdminCounts } from "../ssr/code-admin-counts";
 import { preloadDisplayApps } from "../ssr/runtime";
 import { measureServerPhase } from "./server-timing";
 
@@ -18,8 +19,10 @@ type PageEnv<T extends object> = {
     user?: User;
     railPreferences?: RailSnapshot;
     panelConsent?: PanelConsentSnapshot;
-    /** Open Code-version approvals for a Cloud admin on an admin page. */
+    /** Open Code-version approvals plus page reports for a Cloud admin on an admin page. */
     adminCodeApprovals?: number;
+    /** The same server snapshot, reused by Administration › Code. */
+    adminCodeCounts?: CodeAdminCounts;
     settings?: Unflatten<SettingsFlat<typeof CORE_SETTINGS>>;
   };
 };

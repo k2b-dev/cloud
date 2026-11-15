@@ -794,7 +794,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         <NoticeCard tone="neutral" icon="ti ti-user-x" title={ta().ownTitle} detail={ta().ownSub} />
       </Show>
       <Show when={pending() && props.soleAdminNotice}>
-        {(notice) => <NoticeCard tone="warning" icon="ti ti-user-shield" title={ta().soleTitle} detail={notice()} />}
+        <NoticeCard tone="neutral" icon="ti ti-user-shield" title={ta().soleTitle} />
       </Show>
       <For each={props.readModel?.notices.items ?? []}>
         {(notice) => (

@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { aiLive } from "@k2b/cloud/ai/live";
 import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { type AppEventDeliveryContext, type AppEventEnvelope, AppEventEnvelopeSchema } from "@k2b/cloud/contracts/app-events";
 import { audit } from "@k2b/cloud/services";
@@ -18,7 +19,7 @@ export async function admitCodeEvent(
 ): Promise<void | { cancelled: true }> {
   context.signal.throwIfAborted();
   const backlog = await codeSettings.get("core.code.event_backlog");
-  return sql.begin(async (db) => {
+  const result = await sql.begin(async (db) => {
     await db`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     await db`SELECT id FROM code.codes WHERE id=${binding.key} FOR UPDATE`;
     const code = await findCode(binding.key, db);
@@ -102,6 +103,8 @@ export async function admitCodeEvent(
       VALUES(${code.id},${codeEventTargetKey(code.activeVersionId, envelope)},${runId}::uuid) ON CONFLICT DO NOTHING`;
     context.signal.throwIfAborted();
   });
+  aiLive.wake();
+  return result;
 }
 /** One historical execution per immutable version and message; live admission also reserves this identity.
  * Hash scalar fields: JSONB can reorder the subject object's properties between catch-up and live delivery.

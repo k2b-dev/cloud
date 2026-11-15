@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, BrowserContextOptions } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../../ui/test/browser";
 
 // Whether two choice labels fit beside each other in the small dialog, or have to stack, depends on real text
 // metrics, which only a real engine has.
@@ -100,6 +100,9 @@ describe("Draft open in another tab", () => {
           await page.evaluate((value) => window.openDraftCollaboration(value), locale);
           const dialog = page.getByRole("dialog");
           await dialog.waitFor();
+          // On a phone the dialog is a bottom sheet that slides in. WebKit advances that slide between two
+          // reads in one script, so boxes read before it ends sit at different heights (#3441).
+          await settled(page);
           const readonly = dialog.getByRole("button", { name: labels[locale].readonly, exact: true });
           const takeover = dialog.getByRole("button", { name: labels[locale].takeover, exact: true });
           const layout = await page.evaluate(() => {

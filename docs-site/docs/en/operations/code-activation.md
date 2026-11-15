@@ -5,7 +5,7 @@ section: Operations
 order: 1255
 description: Upgrade and recover Code activation while preserving normal shares and version entries.
 tags: [code, operations, recovery]
-updated: 2026-11-05
+updated: 2026-11-15
 ---
 
 # Code activation recovery
@@ -15,6 +15,22 @@ Activation checks the owner, version approval and the executing account’s read
 access at every declared event place, then switches the active version and its
 version entry atomically. It never creates or repairs target grants. Target managers use the normal share dialog to grant the Code
 service account View or Edit by its exact handle.
+
+## Recover review chat work
+
+Deploy matching Core and Cloud library versions together. Core's additive
+migration creates the durable review chat work and outbox tables. Its normal
+lifecycle runs decision, activation and automatic revision dispatchers; no new
+service, setting or credential is required.
+
+Decision activity waits for a free chat. Automatic revision also waits for
+queued messages and uses the original author's AI quota. Lost management or
+chat ownership suppresses delivery; replacement, withdrawal, lost access,
+missing chat, quota or unavailable AI leaves a visible revision reason. A
+restart reconciles already admitted turns instead of starting a second one.
+Read the canonical version review to diagnose queued, stopped, skipped or
+submitted work. Do not recreate an intent or delete its receipt to retry it;
+the person can continue manually.
 
 ## Upgrade the access model
 

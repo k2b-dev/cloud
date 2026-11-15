@@ -102,13 +102,13 @@ export async function auditPrimaryColors(input: string | { selector: string; foc
     "accent-color",
     "text-decoration-color",
   ];
-  // Content colours, not primary: syntax token spans in code views (`cd-*` and the
-  // stdlib code preset's `hl-*` from CodeDiff/CodeDisplay) keep their own palette under any primary scope, like
+  // Content colours, not primary: syntax token spans in code views (`hl-*` from
+  // the stdlib highlighter in CodeDiff/CodeDisplay, earlier `cd-*`) keep their own palette under any primary scope, like
   // tag or status colours. Only their text colours are exempt; focus rings,
   // selection, buttons, line marks and borders in the same view stay audited.
   const syntaxTokenTextProperties = new Set(["color", "caret-color", "text-decoration-color"]);
   const isSyntaxToken = (node: Element) =>
-    node.tagName === "SPAN" && [...node.classList].some((name) => name.startsWith("cd-") || name.startsWith("hl-"));
+    node.tagName === "SPAN" && [...node.classList].some((name) => name.startsWith("hl-") || name.startsWith("cd-"));
   const values = new Map<string, boolean>();
   const hasBlue = (value: string) => {
     const cached = values.get(value);

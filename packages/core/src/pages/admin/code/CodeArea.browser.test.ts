@@ -216,7 +216,7 @@ test("a refused decision keeps the dialog with its text; approving sends the bin
   await dialog.getByRole("button", { name: "Abbrechen" }).click();
   fixture.reset();
   await goto(review);
-  expect(await sidebarCode().innerText()).toContain("4");
+  expect(await sidebarCode().innerText()).toContain("5");
   await page.getByRole("button", { name: "Version 3 freigeben" }).click();
   await page.waitForLoadState("load");
   await page.getByText("Du hast", { exact: false }).waitFor();
@@ -224,7 +224,7 @@ test("a refused decision keeps the dialog with its text; approving sends the bin
   expect(fixture.requests).toEqual([
     { path: "decide", body: { binding: fixtureApprovalDetail().binding, approved: true, outcome: "approved" } },
   ]);
-  expect(await sidebarCode().innerText()).toContain("3");
+  expect(await sidebarCode().innerText()).toContain("4");
 }, 30_000);
 
 test("a lost answer leaves only Check state; a conflict and a withdrawal say what happened", async () => {
@@ -254,7 +254,7 @@ test("an outdated, own or unloaded version cannot be approved and says why", asy
   await page.getByText("Du hast diese Version geschrieben.").waitFor();
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).isDisabled()).toBe(true);
   await goto(`${review}&state=sole`);
-  await page.getByText("Es gibt keinen zweiten Cloud-Admin", { exact: false }).waitFor();
+  await page.getByText("Du bist der einzige Admin und gibst deine eigene Version frei.").waitFor();
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).isEnabled()).toBe(true);
   await goto(`${review}&state=difffail&tab=code`);
   await page.getByText("Der Code konnte nicht geladen werden").waitFor();

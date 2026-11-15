@@ -70,28 +70,43 @@
    open; otherwise a button at the top of the chat that opens the same box below
    it; on phones the button opens a sheet. The island never moves the chat. */
 .k2b-ui .assistant-context-boxcol { display: none; }
-.k2b-ui .assistant-context-button {
-  position: absolute;
-  z-index: 2;
-  inset-block-start: 0.5rem;
-  inset-inline-end: 1.25rem;
-  background: var(--k2b-surface);
+/* The button's head row above the timeline: it takes its own grid row, so the timeline scrolls below it and no message
+   passes under the button. */
+.k2b-ui .assistant-chat-layout:has(> .assistant-context-head) { grid-template-rows: auto minmax(0, 1fr) auto; }
+.k2b-ui .assistant-chat-layout:has(> .assistant-context-head) .assistant-chat-messages { grid-row: 2; }
+.k2b-ui .assistant-chat-layout:has(> .assistant-context-head) .assistant-chat-composer { grid-row: 3; }
+.k2b-ui .assistant-context-head {
+  display: flex;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.375rem 1.25rem 0;
 }
+.k2b-ui .assistant-context-head__title { display: none; }
 @media (max-width: 47.999rem) {
   .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
   .k2b-ui .assistant-context-button .k2b-button__label > span { display: none; }
-}
-/* Below 56rem the button always shows at the top of a full-width timeline: the first message starts below it, so the
-   button never covers it. From 56rem the timeline's centered column keeps clear of the button by itself. */
-@container assistant-chat (max-width: 55.999rem) {
-  .k2b-ui .assistant-chat-layout:has(> .assistant-context-button) .k2b-chat-timeline__content { padding-block-start: 2.75rem; }
+  /* On a phone the head names the chat, as the app's head names only the app. */
+  .k2b-ui .assistant-context-head { justify-content: space-between; padding: 0.25rem 0.5rem 0 1rem; }
+  .k2b-ui .assistant-context-head__title {
+    display: block;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
 }
 @container assistant-chat (min-width: 56rem) {
   .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) { --assistant-context-mode: column; }
   .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol) {
     --assistant-chat-context-width: 19.5rem;
   }
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-button { display: none; }
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-head { display: none; }
   /* Above the messages' full-width scrollport, which spans this column too; only the island takes the pointer. */
   .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol {
     display: block;
@@ -109,8 +124,8 @@
 /* The third grey for meta text (F8), light and dark. */
 .k2b-ui { --assistant-context-meta: #71717a; }
 :is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark .k2b-ui, .dark.k2b-ui) { --assistant-context-meta: #8d8d98; }
-.k2b-ui .k2b-button.assistant-context-button { color: var(--k2b-ai-accent); font-size: 0.8125rem; font-weight: 600; }
-.k2b-ui .k2b-button.assistant-context-button[aria-expanded="true"] { background: var(--k2b-surface); }
+.k2b-ui .k2b-button.assistant-context-button[data-variant] { color: var(--k2b-ai-accent); font-size: 0.8125rem; font-weight: 600; }
+.k2b-ui .k2b-button.assistant-context-button[data-variant][aria-expanded="true"] { background: var(--k2b-surface); }
 .k2b-ui .assistant-context-box__head .k2b-button i,
 .k2b-ui .assistant-context-box__act .k2b-button i { font-size: 0.9375rem; }
 .k2b-ui .assistant-context-box {
@@ -327,6 +342,8 @@
 .k2b-ui .assistant-context-sidebar__actions { display: flex; flex: none; gap: 0.125rem; margin-inline-start: auto; }
 /* In the phone sheet, the sheet's body owns scrolling; the panel only lays out its sections. */
 .k2b-ui .k2b-detail-panel.assistant-context-sheet { height: auto; overflow: visible; }
+/* The box's sheet lies over the chat without dimming it (v12, picture 66); a tap beside it still closes it. */
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame:has(.assistant-context-sheet)::backdrop { backdrop-filter: none; background: transparent; }
 .k2b-ui .assistant-context-sheet .k2b-detail-panel__body { overflow: visible; }
 /* The workspace Files tab: the sidebar's surface, filling the tab. */
 .k2b-ui .assistant-context-tab {
@@ -487,7 +504,122 @@
   .k2b-ui .assistant-dictation-control[data-cancelable="true"] .assistant-dictation-trash { display: inline-block; position: absolute; right: -0.125rem; bottom: -0.125rem; font-size: 0.625rem; }
 }
 
-/* Assistant-owned artifact workspace. Tabs remain mounted while inactive. */
+/* The tabs beside the chat (concept gustav-ui-neu 3k): Panes from @k2b/ui, unchanged. Each pane has the same head
+   (title 14/600, one meta line 12/400, at most two actions and "…"), its content flat on the pane's surface. A tab's
+   content is made once and moves between panes, so a run or an editor survives switching and arranging. */
+.artifact-workspace { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: var(--k2b-surface); }
+.artifact-workspace__panes { flex: 1; min-height: 0; }
+.k2b-ui .artifact-workspace .artifact-mobile-toggle { display: none; align-self: flex-start; margin: 0.5rem 0.5rem 0; color: var(--k2b-ai-accent); font-weight: 600; }
+@media (max-width: 767px) { .k2b-ui .artifact-workspace .artifact-mobile-toggle { display: inline-flex; } }
+.artifact-pane { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; }
+.artifact-pane__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0.375rem 0.75rem 0.625rem 1rem;
+}
+.artifact-pane__heading { min-width: 0; }
+.artifact-pane__title { margin: 0; overflow: hidden; font-size: 0.875rem; font-weight: 600; line-height: 1.35; white-space: nowrap; }
+.artifact-pane__meta {
+  min-height: 1rem;
+  margin: 0.0625rem 0 0;
+  overflow: hidden;
+  color: var(--assistant-context-meta);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.artifact-pane__actions { display: inline-flex; align-items: center; gap: 0.25rem; }
+.k2b-ui .artifact-pane__actions .k2b-button { width: 1.75rem; height: 1.75rem; min-height: 0; }
+.k2b-ui .artifact-pane__actions .k2b-button i { font-size: 1rem; }
+.artifact-pane__hint { color: var(--assistant-context-meta); font-size: 0.75rem; }
+.artifact-pane__body { display: flex; flex: 1; flex-direction: column; min-height: 0; overflow: auto; padding: 0 1rem 1rem; }
+/* A file tab is the file itself: the head names it, and the plain preview fills the rest without a second frame, so an
+   editor takes the whole pane and a long file scrolls inside the preview. */
+.k2b-ui .artifact-pane__body > .k2b-content-file-view[data-variant] { flex: 1 1 auto; min-height: 0; }
+/* Read-only source code has no scrolling preview around it; it keeps its full height and the pane scrolls it. */
+.k2b-ui .artifact-pane__body > .k2b-content-file-view[data-variant] > .k2b-content-code-display { flex: none; }
+.k2b-ui .artifact-pane__body > .k2b-content-file-view[data-variant] > .k2b-content-code-display > .k2b-content-code-display__header { justify-content: flex-end; padding-inline: 0; }
+.k2b-ui .artifact-pane__body > .assistant-context-tab { margin: 0 -1rem -1rem; }
+.k2b-ui .artifact-pane[data-kind="web"] > .artifact-pane__body { padding: 0; }
+
+/* A web page in the reading view (concept 3l, stage 1): the address bar is the pane's head. */
+.web-reader { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.web-reader__bar { display: flex; align-items: center; gap: 0.25rem; padding: 0.375rem 0.75rem 0.5rem; }
+.k2b-ui .web-reader__address {
+  display: flex;
+  min-width: 0;
+  height: 2rem;
+  flex: 1;
+  align-items: center;
+  gap: 0.375rem;
+  margin-inline: 0.25rem;
+  padding: 0 0.625rem;
+  border-radius: 0.5rem;
+  box-shadow: inset 0 0 0 2px var(--k2b-control-border-soft, var(--k2b-border));
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+}
+.web-reader__address > i { flex: none; color: var(--assistant-context-meta); }
+.web-reader__address > span { min-width: 0; overflow: hidden; white-space: nowrap; }
+.k2b-ui .web-reader__mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 7.5rem;
+  justify-content: center;
+  height: 1.625rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted, var(--k2b-edge-hover-bg));
+  color: var(--k2b-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.web-reader__body { flex: 1; min-height: 0; overflow: auto; padding: 0 1rem 1.25rem; }
+.web-reader__page { max-width: 40rem; padding: 0.25rem 0.5rem 1.75rem; line-height: 1.6; }
+.web-reader__stand,
+.web-reader__missing,
+.web-reader__meta { display: flex; align-items: center; gap: 0.4375rem; margin: 0 0 0.875rem; color: var(--assistant-context-meta); font-size: 0.75rem; }
+.web-reader__missing { margin: 0.75rem 0 0; }
+.web-reader__title { margin: 0 0 0.625rem; font-size: 1.125rem; font-weight: 600; line-height: 1.3; }
+.k2b-ui .web-reader__text { font-size: 0.875rem; }
+/* Reading text keeps the steps: the page title is 18, headings inside the page 14/600. */
+.k2b-ui .web-reader__text :is(h1, h2, h3, h4, h5, h6) { margin: 1rem 0 0.25rem; font-size: 0.875rem; font-weight: 600; line-height: 1.4; }
+.web-reader__loading { display: grid; gap: 0.75rem; max-width: 40rem; padding: 0.75rem 0.5rem; }
+.web-reader__skeleton { height: 0.75rem; border-radius: 999px; }
+.web-reader__skeleton--title { width: 55%; height: 1.125rem; }
+.web-reader__skeleton--short { width: 40%; }
+.web-reader__notice { display: grid; gap: 0.25rem; justify-items: start; max-width: 40rem; padding: 0.75rem 0.5rem; font-size: 0.8125rem; }
+.web-reader__notice p { margin: 0; }
+.k2b-ui .web-reader__link { color: var(--k2b-action); }
+/* Asking before an address from outside the chat is fetched: the approval's shape, in plum. */
+.k2b-ui .web-reader__ask {
+  display: grid;
+  gap: 0.625rem;
+  max-width: 48rem;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  background: var(--k2b-ai-surface);
+  font-size: 0.8125rem;
+}
+.web-reader__ask-kind { display: flex; align-items: center; gap: 0.375rem; margin: 0; font-weight: 600; }
+.web-reader__ask-who { color: var(--k2b-text-secondary); font-weight: 400; }
+.web-reader__ask-who > i, .web-reader__ask-label > i { color: var(--k2b-ai-accent); }
+.k2b-ui .k2b-button.web-reader__dont[data-variant] { background: var(--k2b-surface); }
+.web-reader__ask-title { margin: 0; font-size: 1.125rem; font-weight: 400; }
+.web-reader__ask-why { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; }
+.web-reader__ask-why > i { margin-top: 0.1875rem; }
+.k2b-ui .web-reader__ask-address { display: grid; gap: 0.375rem; padding: 0.75rem 0.875rem; border-radius: 0.5rem; background: var(--k2b-surface); }
+.web-reader__ask-label { font-weight: 600; }
+.web-reader__ask-address code { overflow-wrap: anywhere; font-family: var(--k2b-font-mono, ui-monospace, monospace); font-size: 0.8125rem; }
+.web-reader__ask-query { color: var(--assistant-context-meta); font-size: 0.75rem; }
+.web-reader__ask-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.5rem; }
+.web-reader__ask-note { display: flex; flex: 1; align-items: center; gap: 0.375rem; margin: 0; }
 /* Recording replaces footer controls with explicit cancel and finish actions. */
 .k2b-ui .assistant-recording-footer { display: flex; align-items: center; gap: .75rem; width: 100%; min-width: 0; }
 .k2b-ui .assistant-recording-action { flex: 0 0 auto; width: 1.875rem; height: 1.875rem; padding: 0; border-radius: 50%; background: var(--k2b-surface-muted); color: var(--k2b-text); }
@@ -628,9 +760,12 @@
 .k2b-ui .assistant-waiting__list { display: flex; flex: 0 1 auto; gap: .375rem; min-inline-size: 0; margin: 0; padding: 0; overflow-x: clip; overflow-y: visible; list-style: none; }
 /* The first entry is the next thing to do: when the row is short of room, the later chips give way five times as much.
    The factors stay at 1 or more, so a single chip still gives way in full. */
-.k2b-ui .assistant-waiting__item { display: flex; flex: 0 5 auto; min-inline-size: 4rem; max-inline-size: 15.625rem; }
-.k2b-ui .assistant-waiting__item:first-child { flex-shrink: 1; }
-.k2b-ui .assistant-waiting__entry { display: inline-flex; flex: 1 1 auto; align-items: center; gap: .375rem; min-inline-size: 0; block-size: 1.625rem; padding: 0 0 0 .5rem; border: 0; border-radius: .5rem; color: var(--k2b-text); background: var(--k2b-ai-surface); font: inherit; white-space: nowrap; cursor: pointer; }
+/* Chips keep their natural width up to 250 px (v12 image 69); what does not fit leaves the row for "+n" (measured in
+   the island). Only the first chip may give way, with its fade, when it alone is wider than the row. */
+.k2b-ui .assistant-waiting__item { display: flex; flex: none; max-inline-size: 15.625rem; }
+.k2b-ui .assistant-waiting__item:first-child:is(:last-child, :has(+ [data-cut])) { flex: 0 1 auto; min-inline-size: 4rem; }
+.k2b-ui .assistant-waiting__item[data-cut] { display: none; }
+.k2b-ui .assistant-waiting__entry { display: inline-flex; flex: 1 1 auto; align-items: center; gap: .375rem; min-inline-size: 0; block-size: 1.625rem; padding: 0 0 0 .5rem; border: 0; border-radius: .5rem; color: var(--k2b-text); background: var(--k2b-ai-surface); font: inherit; font-size: .8125rem; font-weight: 400; white-space: nowrap; cursor: pointer; }
 .k2b-ui .assistant-waiting__entry:hover { background: color-mix(in srgb, var(--k2b-ai-accent) 14%, var(--k2b-surface)); }
 .k2b-ui .assistant-waiting__entry:focus-visible,
 .k2b-ui .assistant-waiting__more:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
@@ -638,10 +773,8 @@
 .k2b-ui .assistant-waiting__entry:is([data-kind="routine"], [data-kind="app_run"]) .assistant-waiting__icon { color: var(--k2b-warning-text); }
 .k2b-ui .k2b-dropdown__item.assistant-waiting__menu-entry > i { color: var(--k2b-ai-accent); }
 .k2b-ui .k2b-dropdown__item.assistant-waiting__menu-entry--attention > i { color: var(--k2b-warning-text); }
-/* The last text of a chip ends on the chip's padding, where its fade ends, so a sentence that fits stays whole. */
-.k2b-ui .assistant-waiting__entry > :last-child { padding-inline-end: .625rem; --k2b-truncate-fade-length: .625rem; }
-.k2b-ui .assistant-waiting__short { min-inline-size: 0; }
-.k2b-ui .assistant-waiting__chat { flex: 0 2 auto; min-inline-size: 0; color: var(--k2b-text-muted); font-size: .75rem; }
+/* The sentence ends on the chip's padding, where its fade ends, so a sentence that fits stays whole. */
+.k2b-ui .assistant-waiting__short { min-inline-size: 0; padding-inline-end: .625rem; --k2b-truncate-fade-length: .625rem; }
 .k2b-ui .assistant-waiting__more { flex: none; min-inline-size: 2.125rem; block-size: 1.625rem; padding: 0 .5rem; border: 0; border-radius: .5rem; color: var(--k2b-text-secondary); background: var(--k2b-surface-muted); font: inherit; font-size: .75rem; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
 .k2b-ui .assistant-waiting__more:hover { background: var(--k2b-hover); }
 .k2b-ui .assistant-waiting__count[data-width="narrow"] { display: none; }
@@ -714,63 +847,113 @@
 .assistant-deferred-view { display: contents; }
 .assistant-deferred-feedback { display: flex; flex: 1; min-height: 0; align-items: flex-start; padding: var(--ui-space-section); }
 
-/* Gustav: the person's own Code ("My apps & automations"). One flat list; the status and the last run share the row,
-   and on a narrow surface the status moves under the name. */
-.assistant-code {
+/* Gustav's own pages ("My apps & automations", "Waiting for you"): a heading with one quiet line, and the page
+   action at the end. Type scale 12/13/14/18 px: title, entry, one meta step (concept gustav-ui-neu v12, 6d). */
+.assistant-apps,
+.assistant-waiting-page {
   container-type: inline-size;
-}
-.assistant-code__lead {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-.assistant-code__lead .ti,
-.assistant-code-block__actions .ti-moustache {
-  color: var(--ui-app-accent-text);
-}
-.assistant-code__list {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 1.125rem;
+  width: 100%;
+  padding: 1.25rem 1.75rem 1.75rem;
 }
-.assistant-code__row {
-  display: grid;
-  grid-template-columns: 1.875rem minmax(0, 1fr) 9.5rem 12rem;
-  align-items: center;
-  gap: 0.875rem;
-  min-height: 2.75rem;
-  padding: 0.375rem 0.75rem;
-  border-radius: var(--k2b-radius-control);
+.assistant-apps { max-width: 72rem; }
+.assistant-waiting-page { max-width: 58rem; }
+.assistant-page-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.625rem 1rem; }
+.assistant-page-head__copy { display: flex; flex: 1 1 16rem; flex-direction: column; gap: 0.1875rem; min-width: 0; }
+.assistant-page-head__title { margin: 0; color: var(--k2b-text); font-size: 1.125rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.015em; }
+.assistant-page-head__lead { margin: 0; color: var(--k2b-text-muted); font-size: 0.8125rem; }
+@media (max-width: 47.999rem) {
+  .assistant-apps,
+  .assistant-waiting-page { gap: 0.875rem; padding: 0.625rem 0.875rem 1.5rem; }
+  .assistant-page-head > .k2b-button { flex: 1 1 100%; }
 }
-.assistant-code__head {
-  min-height: 1.875rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--k2b-text-muted);
-}
-/* The feat/code sign of a Code row stands on the surface, never on a chip. */
-.assistant-code__mark {
-  display: grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  font-size: 1.25rem;
-  color: var(--k2b-text);
-}
-.assistant-code__narrow {
-  display: none;
+
+/* My apps & automations (picture 27): the day line "Today" as an island, the cards, and the quiet footer. */
+.assistant-apps__body { display: flex; flex-direction: column; gap: 1.125rem; min-width: 0; }
+.k2b-ui .assistant-apps__today { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.8125rem 1rem 0.75rem; }
+.assistant-apps__today-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.5rem; min-height: 1.25rem; margin: 0; }
+.assistant-apps__today-title { color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
+.assistant-apps__today-sentence { color: var(--k2b-text-subtle); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+/* The line keeps its height in every state; loading shows the axis without marks, a failed read takes the same room. */
+.assistant-apps__day { position: relative; height: 3.625rem; margin: 0.375rem 1.25rem 0; }
+.assistant-apps__axis { position: absolute; inset: 0; }
+.assistant-apps__axis-line { position: absolute; top: 22px; right: 0; left: 0; height: 1px; background: var(--k2b-border-strong); }
+.assistant-apps__axis-line > i { position: absolute; top: 0; left: 0; height: 1px; background: var(--k2b-text-secondary); }
+.assistant-apps__hour { position: absolute; top: 34px; transform: translateX(-50%); color: var(--k2b-text-subtle); font-size: 0.75rem; line-height: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.assistant-apps__hour::before { content: ""; position: absolute; top: -14px; left: 50%; width: 1px; height: 6px; background: var(--k2b-border-strong); }
+.assistant-apps__now { position: absolute; top: 4px; bottom: 16px; width: 1px; margin-left: -0.5px; background: var(--k2b-ai-accent); }
+.assistant-apps__now > span { position: absolute; top: -14px; left: 6px; color: var(--k2b-ai-accent); font-size: 0.75rem; line-height: 1; white-space: nowrap; }
+.assistant-apps__marks { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
+.assistant-apps__marks > li { position: absolute; top: 12px; width: 0; }
+/* A failed or running run is never hidden under its neighbours: it lies on top. */
+.assistant-apps__marks > li:has(> [data-state="failed"]) { z-index: 2; }
+.assistant-apps__marks > li:has(> [data-state="running"]) { z-index: 3; }
+/* Form carries the state as well as colour: a failed run is interrupted, a planned start is short and grey. */
+.assistant-apps__mark { position: absolute; top: 0; left: -2px; display: block; width: 4px; height: 20px; border-radius: 2px; background: var(--k2b-success-500); }
+.assistant-apps__mark[data-state="failed"] { background: linear-gradient(var(--k2b-danger-500) 0 4px, transparent 4px 7px, var(--k2b-danger-500) 7px); }
+.assistant-apps__mark[data-state="planned"] { top: 6px; height: 8px; background: var(--k2b-border-strong); }
+.assistant-apps__mark[data-state="skipped"] { top: 6px; height: 8px; background: transparent; box-shadow: inset 0 0 0 1.5px var(--k2b-border-strong); }
+.assistant-apps__mark[data-state="running"] { background: var(--k2b-ai-accent); }
+.assistant-apps__mark[data-state="group"] { background: var(--k2b-text-secondary); }
+/* A mark is 4 px wide; its link reaches a little further, so a pointer finds it. */
+a.assistant-apps__mark::before { content: ""; position: absolute; inset: -6px -4px; }
+a.assistant-apps__mark:hover { filter: brightness(0.86); }
+a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: 2px; }
+.assistant-apps__legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.125rem 0 0; color: var(--k2b-text-subtle); font-size: 0.75rem; }
+.assistant-apps__legend > span { display: inline-flex; align-items: center; gap: 0.3125rem; }
+.assistant-apps__legend .assistant-apps__mark { position: static; display: inline-block; height: 10px; }
+.assistant-apps__legend .assistant-apps__mark[data-state="failed"] { background: linear-gradient(var(--k2b-danger-500) 0 3px, transparent 3px 5px, var(--k2b-danger-500) 5px); }
+.assistant-apps__legend .assistant-apps__mark[data-state="planned"] { height: 6px; }
+.assistant-apps__today-failed { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-height: 5rem; margin: 0; color: var(--k2b-text-secondary); font-size: 0.8125rem; }
+.assistant-apps__filters { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+/* Three columns of cards with 14 px between them; two on a narrow pane, one on a phone. */
+.k2b-ui .assistant-apps .k2b-app-overview__cards.assistant-apps__cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+@container (max-width: 52rem) {
+  .k2b-ui .assistant-apps .k2b-app-overview__cards.assistant-apps__cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @container (max-width: 34rem) {
-  .assistant-code__row {
-    grid-template-columns: 1.875rem minmax(0, 1fr);
-  }
-  .assistant-code__wide,
-  .assistant-code__head {
-    display: none;
-  }
-  .assistant-code__narrow {
-    display: block;
-  }
+  .k2b-ui .assistant-apps .k2b-app-overview__cards.assistant-apps__cards { grid-template-columns: minmax(0, 1fr); }
+}
+.k2b-ui .assistant-apps .k2b-paper.assistant-apps__card { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; padding: 0.875rem 1rem 0.75rem; border-radius: 10px; color: inherit; text-decoration: none; }
+.assistant-apps__card-top { display: flex; align-items: flex-start; gap: 0.625rem; min-width: 0; }
+.assistant-apps__tile,
+.assistant-waiting-page__tile { display: grid; flex: none; place-items: center; width: 1.625rem; height: 1.625rem; border-radius: 7px; background: var(--k2b-surface-muted); color: var(--k2b-text); }
+.assistant-apps__card-copy { display: flex; flex: 1; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.assistant-apps__card-title { overflow: hidden; color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-apps__card-schedule { overflow: hidden; color: var(--k2b-text-subtle); font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-apps__bars { flex: none; margin-top: 3px; }
+/* "Last: …" holds two lines in every state, so cards of a row keep one height while their words arrive. */
+.assistant-apps__card-last { display: flex; align-items: flex-start; gap: 0.375rem; min-height: 2.375rem; color: var(--k2b-text-secondary); font-size: 0.8125rem; line-height: 1.1875rem; }
+.assistant-apps__card-last > .ti { flex: none; margin-top: 2px; color: var(--k2b-text-subtle); }
+.assistant-apps__card-last > span { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.assistant-apps__card-last-skeleton { width: 70%; height: 0.75rem; margin-top: 0.25rem; }
+.assistant-apps__card-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.625rem; min-height: 1.25rem; margin-top: auto; }
+/* The status word takes the card title's style with its colour (6d). */
+.assistant-apps__state { display: inline-flex; min-width: 0; align-items: center; gap: 0.3125rem; color: var(--k2b-text-secondary); font-size: 0.875rem; font-weight: 600; white-space: nowrap; }
+.assistant-apps__state[data-tone="success"] { color: var(--k2b-success-text); }
+.assistant-apps__state[data-tone="danger"] { color: var(--k2b-danger-text); }
+.assistant-apps__state[data-tone="warning"] { color: var(--k2b-warning-text); }
+.assistant-apps__state[data-tone="ai"] { color: var(--k2b-ai-accent); }
+.assistant-apps__state[data-tone="ai"] > .ti { animation: assistant-apps-running var(--k2b-motion-spin) linear infinite; }
+@keyframes assistant-apps-running { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .assistant-apps__state[data-tone="ai"] > .ti { animation: none; }
+}
+.assistant-apps__card-when { min-width: 0; overflow: hidden; color: var(--k2b-text-subtle); font-size: 0.75rem; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.assistant-apps__quiet { display: flex; align-items: flex-start; gap: 0.5rem; margin: 0; color: var(--k2b-text-subtle); font-size: 0.8125rem; }
+.assistant-apps__quiet > .ti { flex: none; margin-top: 2px; }
+.assistant-apps__more { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.assistant-apps__more-failed { color: var(--k2b-danger-text); font-size: 0.8125rem; }
+
+/* A personal Code page: on a phone the sidebar is out of sight, so a link leads back to the list. */
+.k2b-ui .k2b-button.assistant-code-detail__back { display: none; }
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-button.assistant-code-detail__back { display: inline-flex; margin-bottom: 0.5rem; }
+}
+.assistant-code-block__actions .ti-moustache {
+  color: var(--ui-app-accent-text);
 }
 
 /* "Code of …" above the panel chat: a quiet block for the place the page shows. */
@@ -995,79 +1178,29 @@
   gap: 0.375rem;
 }
 
-/* Waiting for you: list headings and Code of a place that needs the person. */
-.assistant-code-attention {
-  container-type: inline-size;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.assistant-code-attention__heading {
-  margin: 0;
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-.assistant-code-attention__list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.assistant-code-attention__row {
-  display: grid;
-  grid-template-columns: 1.875rem minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.875rem;
-  min-height: 2.75rem;
-  padding: 0.375rem 0.75rem;
-}
-.assistant-code-attention__tile {
-  display: grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: var(--k2b-radius-control);
-  background: var(--k2b-surface-muted);
-  color: var(--k2b-text-secondary);
-}
+/* Waiting for you: each topic under its own heading with its count; approvals use the shared approval card, and
+   Code that needs the person stands as rows in one island. */
+.assistant-waiting-page__section { display: flex; flex-direction: column; gap: 0.625rem; min-width: 0; }
+.assistant-waiting-page__heading { display: flex; align-items: baseline; gap: 0.375rem; margin: 0; color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
+.assistant-waiting-page__count { color: var(--k2b-text-subtle); font-size: 0.8125rem; font-weight: 400; font-variant-numeric: tabular-nums; }
+.k2b-ui .assistant-waiting-page__rows { padding: 0.375rem 0 0.25rem; }
+.assistant-waiting-page__list { margin: 0; padding: 0; list-style: none; }
+.assistant-waiting-page__row { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 1rem; }
+.assistant-waiting-page__row--more { flex-wrap: wrap; }
+.assistant-waiting-page__row-copy { display: flex; flex: 1; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.assistant-waiting-page__row-title { color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; }
+.assistant-waiting-page__row-sub { color: var(--k2b-text-subtle); font-size: 0.8125rem; }
+.assistant-waiting-page__open { flex: none; }
+.assistant-waiting-page__failed { color: var(--k2b-danger-text); font-size: 0.8125rem; }
 @container (max-width: 34rem) {
-  .assistant-code-attention__row {
-    grid-template-columns: 1.875rem minmax(0, 1fr);
-  }
-  .assistant-code-attention__open {
-    grid-column: 2;
-    justify-self: start;
-  }
+  .assistant-waiting-page__row { flex-wrap: wrap; }
+  /* The row's words take the width beside the tile, so its action moves under them, on the words' edge. */
+  .assistant-waiting-page__row-copy { flex-basis: calc(100% - 2.375rem); }
+  .assistant-waiting-page__open { margin-left: 2.375rem; }
 }
-/* The whole row opens the Code; the name is the link and stretches over the row. */
-.assistant-code__row:has(.assistant-code__name) {
-  position: relative;
-}
-.assistant-code__row:has(.assistant-code__name):hover {
-  background: var(--k2b-app-workspace-hover);
-}
-.assistant-code__name {
-  color: inherit;
-  text-decoration: none;
-}
-.assistant-code__name::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: var(--k2b-radius-control);
-}
-.assistant-code__name:focus-visible {
-  outline: none;
-}
-.assistant-code__name:focus-visible::after {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: calc(var(--k2b-focus-width) * -1);
-}
-.assistant-code__today-failed {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-}
+/* While loading, each approval holds the room of a card: sentence, reason, and its two answers. */
+.k2b-ui .assistant-waiting-page__skeleton { display: flex; flex-direction: column; gap: 0.625rem; min-height: 10.5rem; padding: 0.875rem 1rem; }
+.assistant-waiting-page__skeleton-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: auto; }
 
 /* Gustav at a place: the bar at the top of the side panel. Plum marks it as Gustav's; the first row keeps one height
    in every state (place, switch, loading, failed, gone), so nothing below it moves. */
@@ -1138,3 +1271,9 @@
 .k2b-ui .assistant-authoring-stop__meta > span { grid-area: 1 / 1; }
 .k2b-ui .assistant-authoring-stop__meta > [data-hidden] { visibility: hidden; }
 .k2b-ui .assistant-authoring-stop__alert { color: var(--k2b-danger-text); }
+
+/* Reading column (Gustav chat v12, Bauplan 4a): the conversation is at most 812 px wide and centred, so with its 24 px
+   gutters the turns and the composer share one 764 px column; prose stops at 44 rem. */
+.k2b-ui .assistant-chat-layout .k2b-chat-timeline__content { width: min(100%, 50.75rem); }
+.k2b-ui .assistant-chat-composer > div { max-width: 47.75rem; }
+.k2b-ui .assistant-chat-layout .ai-turn__text .assistant-markdown-block { max-width: 44rem; }

@@ -10,6 +10,7 @@ import { accounts, audit, authFlows, getFreeIpaConfig, logger, webauthn } from "
 import { isAccountCategoryAllowed } from "../services/account-category-policy";
 import type { AuthNotificationSender } from "../services/auth-flows/notification-sender";
 import { legalConsent } from "../services/legal-consent";
+import { EMERGENCY_ADMIN_UID } from "../services/providers/local/constants";
 import { SessionAccountMismatchError, SessionEpochChangedError } from "../services/session";
 import * as categorySettings from "../services/settings";
 import { publicCloudOrigin } from "../shared/app-url";
@@ -412,7 +413,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
               {
                 action: "auth.admin-recovery",
                 outcome: "allowed",
-                actor: { uid: "admin", provider: "local" },
+                actor: { uid: EMERGENCY_ADMIN_UID, provider: "local" },
                 target: { type: "setting", id: "user.category.login.enabled" },
                 metadata: { restoredLocalLogin: true },
               },
@@ -429,8 +430,8 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         // admin), silently bypassing the intent of the emergency endpoint.
         await sql.begin(async (tx) => {
           const [created] = await tx<{ id: string; inserted: boolean }[]>`
-        INSERT INTO auth.users (uid, provider, profile, admin, given_name, sn, display_name)
-        VALUES ('admin', 'local', 'user', true, 'Admin', '', 'Admin')
+        INSERT INTO auth.users (uid, provider, profile, admin, emergency_admin, given_name, sn, display_name)
+        VALUES (${EMERGENCY_ADMIN_UID}, 'local', 'user', true, true, 'Admin', '', 'Admin')
         ON CONFLICT (uid) DO UPDATE SET
           provider = 'local',
           profile = 'user',
@@ -444,7 +445,7 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
             });
         });
 
-        const user = await accounts.users.get({ uid: "admin" });
+        const user = await accounts.users.get({ uid: EMERGENCY_ADMIN_UID });
         if (!user) return jsonError(c, "Failed to resolve admin user.", 500);
 
         const sessionToken = await auth.session.create(c, user.id, {

@@ -36,6 +36,7 @@ import { createIdentityOAuthIssuanceRoutes } from "./api/identity-oauth-issuance
 import { aiCapabilities } from "./capabilities";
 import { createChatRunnerRoutes } from "./code/chat-runner";
 import { createCodeHostingRoutes } from "./code/hosting";
+import { codeLiveChannels } from "./code/live";
 import { createCodeBridgeRoutes, createCodeRunnerRoutes } from "./code/runner-routes";
 import { app } from "./config";
 import { coreHelp } from "./help";
@@ -85,7 +86,7 @@ const router = new Hono<AuthContext>()
   .route("/_cloud/app-access", createAppAccessRoutes())
   .route("/", identityPublicRoutes)
   .route("/", mcpProtectedResource)
-  .route("/api/ai/live", aiLive.routes(aiLiveChannels))
+  .route("/api/ai/live", aiLive.routes({ ...aiLiveChannels, ...codeLiveChannels }))
   .route("/api/_internal/geo/v1", createAnonymousGeoRoutes())
   .route("/api/_internal/identity/v1/migration-probe", createAppMigrationProbeRoutes())
   .route("/api/_internal/identity/v1", identityInvocationRoutes)

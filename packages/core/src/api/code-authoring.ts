@@ -201,6 +201,8 @@ export function createCodeAuthoringRoutes() {
     },
   );
   register("review", codeAuthoringContracts.review, codeAuthoringServices.review);
+  register("reviewRequestAgain", codeAuthoringContracts.reviewRequestAgain, codeAuthoringServices.reviewRequestAgain, true);
+  register("reviewStop", codeAuthoringContracts.reviewStop, codeAuthoringServices.reviewStop, true);
   register("reviewWait", codeAuthoringContracts.reviewWait, codeAuthoringServices.reviewWait);
   register("withdraw", codeAuthoringContracts.withdraw, codeAuthoringServices.withdraw, true);
   register("init", codeAuthoringContracts.init, codeAuthoringServices.init, true);

@@ -69,6 +69,8 @@ export type ContextView = {
   render: () => JSX.Element;
 };
 type ContextNavigation = {
+  /** Opens a web page of the chat in the reading view; without it, links open in the person's own browser. */
+  onOpenWebPage?: (url: string, title: string) => void;
   onOpenView?: (view: ContextView) => void;
   /** Called after a chat file was deleted, so the host can close its open views. */
   onFileDeleted?: (file: { conversationId: string; path: string }) => void;
@@ -400,7 +402,8 @@ function AssistantChatContextView(
           );
           if (!selected?.value) return;
           if (selected.value.kind === "source" && selected.value.source.href) {
-            await confirmOpenAssistantLink(selected.value.title, selected.value.source.href);
+            if (props.onOpenWebPage) props.onOpenWebPage(selected.value.source.href, selected.value.title);
+            else await confirmOpenAssistantLink(selected.value.title, selected.value.source.href);
           } else if (selected.value.kind === "project") {
             await openAssistantCloudReference(selected.value.title, selected.value.reference.ref);
           }
@@ -480,7 +483,7 @@ function AssistantChatContextView(
             </Show>
 
             <Show when={section("sources") && chatSources().length > 0}>
-              <AssistantContextSection title={text("Sources")}>
+              <AssistantContextSection title={props.category === "sources" ? "" : text("Sources")}>
                 <AssistantContextRows>
                   <For
                     each={chatSources()
@@ -492,7 +495,14 @@ function AssistantChatContextView(
                         icon={source.icon}
                         title={source.title}
                         description={source.preview ?? undefined}
-                        onClick={source.href ? () => void confirmOpenAssistantLink(source.title, source.href!) : undefined}
+                        onClick={
+                          source.href
+                            ? () =>
+                                props.onOpenWebPage
+                                  ? props.onOpenWebPage(source.href!, source.title)
+                                  : void confirmOpenAssistantLink(source.title, source.href!)
+                            : undefined
+                        }
                       />
                     )}
                   </For>
@@ -654,6 +664,7 @@ export const assistantChatSidebarActions = (input: {
   onJump: (target: ChatSidebarJump) => void;
   onOpenSecrets?: () => void;
   onFileDeleted?: (file: { conversationId: string; path: string }) => void;
+  onOpenWebPage?: (url: string, title: string) => void;
 }): ChatSidebarActions => {
   const overview = (category: ContextCategory, title: string) =>
     input.onOpenView({
@@ -693,6 +704,7 @@ export const assistantChatSidebarActions = (input: {
       : undefined,
     onOpenSecrets: input.onOpenSecrets,
     onFileDeleted: input.onFileDeleted,
+    onOpenWebPage: input.onOpenWebPage,
   };
 };
 
@@ -718,6 +730,7 @@ export function AssistantChatContextContent(
       onJump: (target) => props.onJump?.(target),
       onOpenSecrets: props.onOpenSecrets,
       onFileDeleted: props.onFileDeleted,
+      onOpenWebPage: props.onOpenWebPage,
     });
   // The tab "Context": what the chat works with, open, with its secrets.
   if (props.category === "context")
@@ -748,6 +761,7 @@ export function AssistantChatContextContent(
           category={props.category}
           onOpenView={props.onOpenView}
           onFileDeleted={props.onFileDeleted}
+          onOpenWebPage={props.onOpenWebPage}
         />
       }
     >

@@ -5,7 +5,7 @@ section: Data
 order: 420
 description: Evolve application schemas safely and keep related writes atomic.
 tags: [data, postgres, migrations, transactions]
-updated: 2026-10-20
+updated: 2026-11-15
 ---
 
 # Migrations and transactions
@@ -279,6 +279,16 @@ WHERE claimed_until IS NOT NULL OR attempts > 0;
   ordering column above. This holds whatever the table's statistics say, for
   example when a burst arrives after PostgreSQL analyzed the empty table. With
   `where`, put its columns first in both indexes.
+
+For set-based effects, supply `publishBatch(rows)` in addition to `publish`.
+It receives one claimed, sequence-ordered batch and must tolerate retries.
+Return nothing after success, or `{deferred:[rowId,...]}` when only those rows
+must wait for other durable work. Completed rows are acknowledged together;
+deferred rows retain their ordering keys until the next safety interval and
+do not consume error attempts. Throw `PgOutboxDeferred` for a wholly deferred
+batch. Other failures retain the normal error backoff. The claim duration
+still bounds the whole batch; do external provider checks before taking domain
+row locks.
 
 Table and column names are lowercase SQL identifiers, and the table may name
 its schema. `createPgOutbox()` throws `Invalid outbox table` or `Invalid outbox

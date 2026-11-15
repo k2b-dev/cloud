@@ -501,6 +501,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     const current = files()[key] ?? [];
     const result = await readAiComposerFiles(selected, {
       acceptsImages: props.status.visionModelConfigured,
+      locale: locale(),
       currentCount: current.length,
       currentImageBytes: current.reduce((sum, file) => sum + (file.kind === "image" ? file.size : 0), 0),
     });
@@ -654,6 +655,10 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     gone: () => void reloadList(true).catch(() => undefined),
   });
   const jump = (question: AiOpenQuestion) => {
+    if (question.href) {
+      window.location.assign(question.href);
+      return;
+    }
     const here = chat.activeConversationId() === question.conversationId;
     if (!here) go({ level: "chat", id: question.conversationId });
     void waitingFocus.focus(question.anchor, () => chat.activeConversationId() === question.conversationId);

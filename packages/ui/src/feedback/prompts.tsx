@@ -13,16 +13,9 @@ import { TextInput } from "../inputs/TextInput";
 import { KeyedFor } from "../internal/keyed-for";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
-import {
-  contentClass,
-  DialogHeader,
-  type PromptContent,
-  panelClass,
-  promptButtonVariant,
-  promptTone,
-  sharedPrompts,
-} from "./prompt-confirm";
+import { DialogHeader, type PromptContent, promptButtonVariant, promptTone, sharedPrompts } from "./prompt-confirm";
 import { resolvePromptMessages } from "./prompt-messages";
+import { openPrompt } from "./prompt-sheet";
 
 export { DialogHeader } from "./prompt-confirm";
 
@@ -713,7 +706,7 @@ const promptNumber = (
     .then((result) => result?.value ?? null);
 
 const openAlert = (content: PromptContent, options?: DialogOptions, celebrate?: boolean): Promise<void | undefined> =>
-  dialogCore.open<void>(
+  openPrompt<void>(
     (close) => (
       <div class="k2b-dialog__panel">
         <DialogHeader
@@ -731,14 +724,8 @@ const openAlert = (content: PromptContent, options?: DialogOptions, celebrate?: 
         </footer>
       </div>
     ),
-    {
-      panelClassName: panelClass(options),
-      contentClassName: contentClass(options?.surface),
-      signal: options?.signal,
-      cancelBehavior: options?.cancelBehavior,
-      history: options?.history,
-      ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().info,
-    },
+    options,
+    resolveUiMessages().info,
   );
 
 // The same object as `sharedPrompts`, which `PanelDialog` uses for its discard question: replacing `prompts.confirm`
@@ -755,13 +742,11 @@ export const prompts = Object.assign(sharedPrompts, {
   promptNumber,
 
   form: async <T extends Record<string, FieldSchema>>(config: PromptFormOptions<T>): Promise<InferFormValues<T> | null> =>
-    (await dialogCore.open<InferFormValues<T> | null>((close) => <PromptFormDialog config={config} close={(value) => close(value)} />, {
-      panelClassName: panelClass(config),
-      contentClassName: contentClass(),
-      signal: config.signal,
-      cancelBehavior: config.cancelBehavior,
-      ariaLabel: config.ariaLabel ?? config.title ?? resolvePromptMessages().form,
-    })) ?? null,
+    (await openPrompt<InferFormValues<T> | null>(
+      (close) => <PromptFormDialog config={config} close={(value) => close(value)} />,
+      config,
+      resolvePromptMessages().form,
+    )) ?? null,
 
   /**
    * Open custom content with a typed close callback and the dialog render context.
@@ -770,7 +755,7 @@ export const prompts = Object.assign(sharedPrompts, {
    * keeps its existing behavior, including a header close button independent of cancelBehavior.
    */
   dialog: <T extends unknown = unknown>(component: DialogRender<T>, options?: DialogOptions): Promise<T | undefined> =>
-    dialogCore.open<T>(
+    openPrompt<T>(
       (close, context) => {
         // A dismiss handler the component sets guards the header's close button as well as Escape and the backdrop.
         let dismiss = () => close(undefined);
@@ -791,20 +776,16 @@ export const prompts = Object.assign(sharedPrompts, {
           </div>
         );
       },
-      {
-        panelClassName: panelClass(options),
-        contentClassName: contentClass(options?.surface),
-        signal: options?.signal,
-        cancelBehavior: options?.cancelBehavior,
-        history: options?.history,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().dialog,
-      },
+      options,
+      resolveUiMessages().dialog,
+      // Without its header a custom dialog draws its own chrome and keeps the dialog frame.
+      options?.header !== false,
     ),
 
   search: openSearchPrompt,
 
   error: (content: string | HTMLElement, options?: DialogOptions) =>
-    dialogCore.open(
+    openPrompt(
       (close) => (
         <div class="k2b-dialog__panel">
           <DialogHeader title={options?.title ?? resolveUiMessages().error} icon={options?.icon} tone="danger" close={close} />
@@ -816,13 +797,7 @@ export const prompts = Object.assign(sharedPrompts, {
           </footer>
         </div>
       ),
-      {
-        panelClassName: panelClass({ ...options, variant: "danger" }),
-        contentClassName: contentClass(options?.surface),
-        signal: options?.signal,
-        cancelBehavior: options?.cancelBehavior,
-        history: options?.history,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().error,
-      },
+      { ...options, variant: "danger" },
+      resolveUiMessages().error,
     ),
 });

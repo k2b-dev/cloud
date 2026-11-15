@@ -14,7 +14,7 @@ import { approvalReason } from "./approval";
 import { codeReadModelMessages } from "./messages";
 import { describeCodeNotices } from "./notices";
 
-export type ReadModelTarget = { name: string; readable: boolean; href?: string; app?: string; icon?: string };
+export type ReadModelTarget = { name: string; readable: boolean; unavailable?: boolean; href?: string; app?: string; icon?: string };
 export type ReadModelNames = {
   target: (ref: { type: string; id: string | null }) => ReadModelTarget;
   operation: (id: string) => { title: string; app?: string; icon?: string; policyRow?: CodePolicyRow; accessLabel?: string };
@@ -112,15 +112,27 @@ export function presentCodeVersion(input: {
   const { t, locale } = codeReadModelMessages.resolve([input.locale]);
   const { manifest, names } = input;
   const allReadable = canReadVersionText(manifest, names);
+  const targets = [
+    ...manifest.permissions.map(({ operation, target }) => target ?? { type: "app", id: operation.split(".")[0]! }),
+    ...manifest.entrypoints.flatMap((entry) => (entry.event ? [entry.event.place] : [])),
+  ];
+  const denied = targets.some((ref) => {
+    const target = names.target(ref);
+    return !target.readable && !target.unavailable;
+  });
+  const restrictedText = !denied && targets.some((ref) => names.target(ref).unavailable) ? t.unresolvedDescription : t.restricted;
   const mayDo = [
     ...new Map(
       manifest.permissions.map(({ operation, target }) => {
         const action = names.operation(operation);
         const place = names.target(target ?? { type: "app", id: operation.split(".")[0]! });
+        const deferredRef =
+          place.unavailable && target && target.id !== null && !/[{}]/.test(action.title) ? { type: target.type, id: target.id } : null;
         return [
           stable({ operation, target }),
           {
             text: t.mayDo({ action: action.title, target: place.name }),
+            ...(deferredRef ? { target: { ref: deferredRef, text: t.mayDo({ action: action.title, target: "{name}" }) } } : {}),
             ...(action.app ? { app: action.app } : {}),
             ...(action.icon ? { icon: action.icon } : {}),
             ...(place.readable && place.href ? { href: place.href } : {}),
@@ -176,7 +188,7 @@ export function presentCodeVersion(input: {
     locale,
     description: {
       state: !input.explanation ? "missing" : allReadable ? "visible" : "restricted",
-      text: !input.explanation ? null : allReadable ? input.explanation : t.restricted,
+      text: !input.explanation ? null : allReadable ? input.explanation : restrictedText,
       modelLabel: t.modelLabel,
     },
     assurance: t.assurance,
@@ -216,11 +228,11 @@ export function presentCodeVersion(input: {
       summary: tests.state === "none" ? t.noExamples : tests.state === "unavailable" ? t.examplesUnavailable : t.exampleSummary(tests),
       explanation: t.exampleExplanation,
       items: (input.evidence?.examples ?? []).slice(0, input.limits.cases).map((example) => ({
-        name: allReadable ? example.name : t.restricted,
+        name: allReadable ? example.name : restrictedText,
         modelLabel: t.modelLabel,
         state: example.ok ? "succeeded" : "failed",
         status: example.ok ? t.successful : t.failed,
-        sentence: allReadable ? example.sentences[locale.startsWith("de") ? "de" : "en"] : t.restricted,
+        sentence: allReadable ? example.sentences[locale.startsWith("de") ? "de" : "en"] : restrictedText,
         differences: allReadable
           ? (example.differences ?? []).map((difference) => ({
               ...(difference.path

@@ -42,7 +42,7 @@ const V = {
 };
 export const FIXTURE_VERSIONS = V;
 
-export const fixtureSummary = (): CodeAdminSummary => ({ approvals: 4, codes: 8, groups: 2, cleanup: 2 });
+export const fixtureSummary = (): CodeAdminSummary => ({ approvals: 4, reports: 1, codes: 8, groups: 2, cleanup: 2 });
 
 export const fixtureApprovals = (): CodeAdminApproval[] => [
   {
@@ -1008,7 +1008,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
   if (state === "empty")
     return {
       ...data,
-      summary: { approvals: 0, codes: 0, groups: 0, cleanup: 0 },
+      summary: { approvals: 0, reports: 0, codes: 0, groups: 0, cleanup: 0 },
       approvals: { items: [], nextCursor: null },
       decided: [],
       codes: { items: [], total: 0, owners: 0, nextCursor: null },

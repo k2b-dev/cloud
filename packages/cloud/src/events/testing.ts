@@ -6,8 +6,8 @@ import { assertTestDatabase } from "./test-database";
 
 export { appEventFixture, createAppEventTestHarness, deliverAppEvent } from "./app-events.testing";
 
-/** Publishes an application's real outbox without starting its application. */
-export { startLiveOutbox } from "./live";
+/** Publishes an application's real outbox without starting its application; `liveOutbox` publishes it to a test topic. */
+export { liveOutbox, liveTopicConfig, startLiveOutbox } from "./live";
 export {
   /** Creates the real delivery engine for application channel tests. */
   createLiveEngine,

@@ -1212,7 +1212,7 @@ export const notebooksCapabilities = defineCapabilities({
       description: "A permission-scoped collection of Markdown notes.",
       icon: "ti ti-notebook",
       reader: "notebook.read",
-      access: { readable: readableNotebook },
+      access: { readable: readableNotebook, managers: (input) => listNotebookManagers(input) },
       pages: ["/app/notebooks/:id"],
     },
     note: {
@@ -1222,7 +1222,7 @@ export const notebooksCapabilities = defineCapabilities({
       color: "violet",
       reader: "note.read",
       container: "notebook",
-      access: { readable: readableNote },
+      access: { readable: readableNote, managers: (input) => listNotebookManagers(input, true) },
       pages: ["/app/notebooks/:notebook/notes/:id"],
     },
     comment: {
@@ -1474,11 +1474,8 @@ export const notebooksCapabilities = defineCapabilities({
         return ok(
           notebookAutomationReview("comment.create", context.locale, {
             title: resolved.data.note.title,
-            message: t.commentCreateReview({ title: resolved.data.note.title }),
-            details: [
-              { label: t.note, value: resolved.data.note.title },
-              { label: t.comment, value: input.content, display: "block" as const },
-            ],
+            details: [{ label: t.note, value: resolved.data.note.title }],
+            markdown: input.content,
             links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
             scope: notebookApprovalScope(resolved.data.notebook),
           }),
@@ -1515,28 +1512,14 @@ export const notebooksCapabilities = defineCapabilities({
         return ok(
           notebookAutomationReview("note.create", context.locale, {
             title: access.data.notebook.name,
-            message: t.createReview({ notebook: access.data.notebook.name }),
             details: [
               { label: t.notebook, value: access.data.notebook.name },
               { label: t.parent, value: parentTitle },
               ...(input.position === undefined ? [] : [{ label: t.position, value: String(input.position) }]),
-              // The preview may be cut; the hash of the whole filled-in text makes a changed template ask again.
-              ...(template
-                ? [
-                    { label: t.pageTemplate, value: template.data.name },
-                    { label: t.pageTemplateContentHash, value: noteContentHash(content) },
-                  ]
-                : []),
-              ...(input.content === undefined && !template
-                ? []
-                : [
-                    {
-                      label: t.initialMarkdown,
-                      value: `${t.characters({ count: content.length })}.\n\n${content}`,
-                      display: "block" as const,
-                    },
-                  ]),
+              ...(template ? [{ label: t.pageTemplate, value: template.data.name }] : []),
             ],
+            // The whole filled-in text is part of the view, so a changed template or content asks again.
+            markdown: content,
             links: [{ rel: "open" as const, href: notebookHref(access.data.notebook) }],
             scope: notebookApprovalScope(access.data.notebook),
           }),
@@ -1609,3 +1592,5 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
 });
+
+import { listNotebookManagers } from "./service/manager-recipients";

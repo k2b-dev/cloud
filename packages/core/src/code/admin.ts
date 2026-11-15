@@ -4,6 +4,7 @@ import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
 import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
 import { audit, coreSettings } from "@k2b/cloud/services";
 import { listPending, presentPendingApproval } from "@k2b/cloud/services/approvals";
+import { type CodeAdminCounts, readCodeAdminCounts } from "@k2b/cloud/ssr/code-admin-counts";
 import type { CodePageRefusal } from "@k2b/cloud/ssr/code-page/data";
 import { catalogCache, presentRefusedCall } from "@k2b/cloud/ssr/code-page/load";
 import { diffArrays } from "diff";
@@ -175,7 +176,7 @@ export type CodeAdminCodeDetail = {
    */
   refusal: { refusal: CodePageRefusal; editor: boolean } | null;
 };
-export type CodeAdminSummary = { approvals: number; codes: number; groups: number; cleanup: number };
+export type CodeAdminSummary = CodeAdminCounts & { codes: number; groups: number; cleanup: number };
 export type CodeAdminPolicy = {
   policy: CodePolicy;
   updatedByName: string | null;
@@ -254,15 +255,14 @@ async function userName(id: string | null): Promise<string | null> {
 }
 
 /** Counts for the area column. */
-export async function readCodeAdminSummary(context: CodeContext): Promise<CodeAdminSummary> {
-  requireCodePolicyAdmin(context);
-  const [row] = await sql<CodeAdminSummary[]>`SELECT
-    (SELECT count(*)::int FROM code.version_submissions s JOIN approvals.requests r ON r.id=s.approval_id
-      WHERE r.status='pending' AND r.expires_at>now()) AS approvals,
+export async function readCodeAdminSummary(context: CodeContext, preloadedCounts?: CodeAdminCounts): Promise<CodeAdminSummary> {
+  const person = requireCodePolicyAdmin(context);
+  const counts = preloadedCounts ?? (await readCodeAdminCounts({ approverUserId: person.id, roleContext: roleContext(context) }));
+  const [row] = await sql<Omit<CodeAdminSummary, keyof CodeAdminCounts>[]>`SELECT
     (SELECT count(*)::int FROM code.codes) AS codes,
     (SELECT count(DISTINCT group_id)::int FROM code.policy_rules WHERE group_id IS NOT NULL) AS groups,
     ((SELECT count(*)::int FROM code.cleanup_jobs)+(SELECT count(*)::int FROM code.database_deletions)) AS cleanup`;
-  return row ?? { approvals: 0, codes: 0, groups: 0, cleanup: 0 };
+  return { ...(row ?? { codes: 0, groups: 0, cleanup: 0 }), ...counts };
 }
 
 /** Open version requests, newest first, bounded to one page. */

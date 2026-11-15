@@ -1450,6 +1450,32 @@ suiteFor(
       await coreSettings.set("app.timezone", "UTC");
     }
   });
+  test("minute hour-range schedules expose the next run from the registered scheduler", async () => {
+    const code = await fixture(owner, false, false, "json", { cron: "* 7-20 * * *", timeZone: "Europe/Berlin" });
+    const sync = createSync({ connection, namespace: testSyncNamespace("c13-range"), application: "core", defaults: { replicas: 1 } });
+    syncs.push(sync);
+    const scheduler = sync.scheduler({ id: "code" });
+    await createCodeScheduleReconciler(scheduler)();
+    try {
+      setSystemTime(new Date("2026-11-16T05:59:00Z"));
+      const listing = await listCodeAutomations(
+        { codeId: code.codeId },
+        context(),
+        async (codeId, entrypoint) => (await scheduler.get({ id: codeScheduleId(codeId, entrypoint) }))?.nextRunAt.toISOString() ?? null,
+      );
+      expect(listing.items[0]).toMatchObject({ cron: "* 7-20 * * *", nextRunAt: "2026-11-16T06:00:00.000Z", nextRunState: "planned" });
+      setSystemTime(new Date("2026-11-16T19:58:00Z"));
+      expect((await scheduler.get({ id: codeScheduleId(code.codeId, code.entrypoint) }))?.nextRunAt.toISOString()).toBe(
+        "2026-11-16T19:59:00.000Z",
+      );
+      setSystemTime(new Date("2026-11-16T19:59:00Z"));
+      expect((await scheduler.get({ id: codeScheduleId(code.codeId, code.entrypoint) }))?.nextRunAt.toISOString()).toBe(
+        "2026-11-17T06:00:00.000Z",
+      );
+    } finally {
+      setSystemTime(slot);
+    }
+  });
   test("recurring zones reach Sync and next runs skip spring gaps and repeat autumn slots only once", async () => {
     const code = await fixture(owner, false, false, "json", { cron: "30 2 * * *", timeZone: "Europe/Berlin" });
     const legacy = await fixture();

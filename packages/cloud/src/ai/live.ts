@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CodeRunEventSchema } from "../code/live-events";
 import { type IdentityAccessSubject, subscribeIdentityAccessChanged } from "../events/app-access";
 import { defineLive, type LiveViewer } from "../events/live";
 import { logger } from "../services/logging";
@@ -8,9 +9,10 @@ import { AiInvalidationSchema } from "./live-events";
  * Live updates of a user's AI data. Core publishes and serves them at
  * `/api/ai/live`; the AI's database triggers write them, keyed `u:<user ID>`,
  * in the transaction of every change. Other applications, such as Assistant,
- * read `cursor()` before their snapshot.
+ * read `cursor()` before their snapshot. Core adds its Code run channel to
+ * this same definition and socket; Code's own transactions publish by Code ID.
  */
-export const aiLive = defineLive({ appId: "core", event: AiInvalidationSchema });
+export const aiLive = defineLive({ appId: "core", event: z.union([AiInvalidationSchema, CodeRunEventSchema]) });
 
 /** The user an AI request acts for: the user, or the user a credential is delegated by. */
 const ownerOf = (viewer: LiveViewer): string | null => (viewer.accessSubject.type === "user" ? viewer.accessSubject.userId : null);

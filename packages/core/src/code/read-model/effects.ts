@@ -7,7 +7,12 @@ const storedText = z
   .string()
   .refine((value) => !/[\u0000]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value));
 const ref = z.strictObject({ type: storedText, id: storedText });
-const form = z.strictObject({ text: storedText.max(200), kind: storedText.min(1).max(80), targetType: storedText });
+const form = z.strictObject({
+  text: storedText.max(200),
+  kind: storedText.min(1).max(80),
+  targetType: storedText,
+  countText: storedText.min(1).max(200).optional(),
+});
 export const CodeEffectEvidenceSchema = z.strictObject({
   forms: z.strictObject({ de: form.optional(), en: form.optional() }),
   refs: z.array(ref).max(50),
@@ -17,7 +22,7 @@ export type CodeEffectEvidence = z.infer<typeof CodeEffectEvidenceSchema>;
 export function effectTarget(evidence: unknown, locale: string, target: { type: string; id: string } | null) {
   const parsed = CodeEffectEvidenceSchema.safeParse(evidence);
   const result = parsed.success ? parsed.data.forms[locale.startsWith("de") ? "de" : "en"] : undefined;
-  if (!result || /[{}]/.test(result.text.replace("{target}", ""))) return null;
+  if (!result || /[{}]/.test(result.kind) || /[{}]/.test(result.text.replace("{target}", ""))) return null;
   const refs = [...(parsed.success ? parsed.data.refs : []), ...(target ? [target] : [])];
   const matches = new Map(refs.filter((ref) => ref.type === result.targetType).map((ref) => [ref.id, ref]));
   return matches.size === 1 ? { form: result.text, kind: result.kind, ref: [...matches.values()][0]! } : null;
@@ -44,5 +49,29 @@ export function presentEffect(
     ...(operation.icon ? { icon: operation.icon } : {}),
     ...(target?.readable && target.href ? { href: target.href } : {}),
     state: "succeeded" as const,
+  };
+}
+
+/** A counter describes only confirmed effects with persisted provider wording. */
+export function presentEffectCount(evidence: unknown, locale: string, action: string, count: number): string {
+  const parsed = CodeEffectEvidenceSchema.safeParse(evidence);
+  const label = parsed.success ? parsed.data.forms[locale.startsWith("de") ? "de" : "en"]?.countText : undefined;
+  return label && !/[{}]/.test(label) ? label : codeReadModelMessages.resolve([locale]).t.times({ action, count });
+}
+
+/** Recent activity defers names and links to independent, permission-aware reader calls at its consumer. */
+export function presentRecentEffect(input: Parameters<typeof presentEffect>[0], names: ReadModelNames, locale: string) {
+  const effect = effectTarget(input.evidence, locale, input.target);
+  const { t } = codeReadModelMessages.resolve([locale]);
+  return {
+    ...presentEffect(input, { ...names, target: () => ({ name: "", readable: false }) }, locale),
+    ...(effect?.form.includes("{target}")
+      ? {
+          target: {
+            ref: effect.ref,
+            text: effect.form.replace("{target}", () => `${effect.kind} ${t.namedTarget({ name: "{name}" })}`),
+          },
+        }
+      : {}),
   };
 }

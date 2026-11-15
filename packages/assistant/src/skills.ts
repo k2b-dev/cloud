@@ -17,6 +17,7 @@ import assistantCodeModeMoney from "./skills/assistant-code-mode/references/mone
 import assistantCodeModePdf from "./skills/assistant-code-mode/references/pdf.md" with { type: "text" };
 import assistantCodeModeRuntime from "./skills/assistant-code-mode/references/runtime.md" with { type: "text" };
 import assistantCodeModeViews from "./skills/assistant-code-mode/references/views.md" with { type: "text" };
+import assistantCodeModeZip from "./skills/assistant-code-mode/references/zip.md" with { type: "text" };
 import assistantCodeMode from "./skills/assistant-code-mode/SKILL.md" with { type: "text" };
 import assistantDataAnalysis from "./skills/assistant-data-analysis/SKILL.md" with { type: "text" };
 import cloudAssistant from "./skills/cloud-assistant/SKILL.md" with { type: "text" };
@@ -78,6 +79,7 @@ export const SKILLS = [
     markdown: assistantCodeMode,
     references: {
       "references/views.md": assistantCodeModeViews,
+      "references/zip.md": assistantCodeModeZip,
       "references/ai.md": assistantCodeModeAi,
       "references/camt.md": assistantCodeModeCamt,
       "references/capabilities.md": assistantCodeModeCapabilities,
