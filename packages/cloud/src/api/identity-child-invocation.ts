@@ -92,10 +92,11 @@ export function createIdentityChildInvocationRoutes(
         if (
           parent.credential_kind !== "mandate" &&
           lease.origin !== "assistant" &&
+          lease.origin !== "choice" &&
           (!lease.proof || !(await deadline.wait(() => (dependencies.sourceCurrent ?? isNestedSourceCurrent)(lease.proof!, parent))))
         )
           return denied();
-        if (lease.origin === "assistant") {
+        if (lease.origin === "assistant" || lease.origin === "choice") {
           if (!lease.assistantTurn || parent.principal_type !== "user") return denied();
           if (
             !(await deadline.wait(() =>

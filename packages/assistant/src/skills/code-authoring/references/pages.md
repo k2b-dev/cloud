@@ -62,7 +62,7 @@ wrong block fails with `code_page_child`.
 | `Page` | `title`, optional `subtitle`, `icon`, `color`, `follow` | blocks; the root of every page |
 | `Section` | `title`, optional `description`, `icon`, `color` | blocks |
 | `Stats` | none | 1–6 `Stat` |
-| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `delta`, `compare`, `trend` | none |
+| `Stat` | `label`, `value` (number, text or `null`), optional `format`, `delta`, `compare`, `note`, `trend` | none |
 | `Text`, `Heading` | `Heading` has optional `level: 2 \| 3 \| 4` | text |
 | `Table` | `title`, `rows` of scalar values, optional `empty`, `width` | 1–20 `Column` |
 | `Column` | `key` (the row field), `label`, optional number `format` | none |

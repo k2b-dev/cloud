@@ -160,7 +160,7 @@ export const aiDictations = {
     });
   },
   async apply(input: { conversationId: string; userId: string; id: string } & z.infer<typeof AiSaveConversationDraftInputSchema>) {
-    AiSaveConversationDraftInputSchema.parse(input);
+    AiSaveConversationDraftInputSchema.parse({ expectedRevision: input.expectedRevision, content: input.content });
     return sql.begin(async (tx) => {
       await lockConversation(tx, input.conversationId, input.userId);
       const [row] = await tx<

@@ -66,6 +66,13 @@ test("a typed cell shows what its type reads, in the reader's language", () => {
   expect(tableCellText(0.031, { type: "delta", delta: { unit: "points" } }, "de")).toBe("+3,1 Pkt.");
 });
 
+test("a decimal text longer than a JavaScript number holds reads exactly as written, a shorter one in the reader's format", () => {
+  expect(tableCellText("12345678901234567890.123400", { type: "number" }, "en")).toBe("12345678901234567890.123400");
+  expect(tableCellText("-0.000123456789012345678", { type: "amount", format: { currency: "EUR" } }, "en")).toBe("-0.000123456789012345678");
+  expect(tableCellText("1234.5", { type: "number" }, "en")).toBe("1,234.5");
+  expect(tableCellText("100000000000000000000", { type: "number" }, "en")).toBe("100,000,000,000,000,000,000");
+});
+
 test("search matches the shown text without case or accents, and an empty query keeps every row", () => {
   expect(filterRows(rows, columns, "  ", "en")).toHaveLength(4);
   expect(filterRows(rows, columns, "deliv", "en").map((row) => row.name)).toEqual(["Weekly letter 44", "Neue Ware im Lager"]);
@@ -133,6 +140,12 @@ test("typed columns align numbers right, let text wrap and draw status, bars and
   expect(html).toContain("31.4%");
   // A missing value is a dash, never a zero.
   expect(html).not.toContain("€0.00");
+});
+
+test("a negative amount is money going out in the danger ink and keeps its sign", () => {
+  const html = render({ rows: [{ ...rows[0]!, rev: -980 }, rows[1]!] });
+  expect(html).toContain('<span class="k2b-data-table__amount" data-negative>-€980.00</span>');
+  expect(html).not.toContain("data-negative>€4,610.00");
 });
 
 test("money moves with an arrow and a change carries its badge, rated only with better", () => {

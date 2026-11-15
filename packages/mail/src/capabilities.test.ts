@@ -12,6 +12,7 @@ import {
   typeViewIssues,
 } from "@k2b/cloud/contracts";
 import { resolveCapabilityResourceReader } from "@k2b/cloud/contracts/capabilities";
+import { coreSettings } from "@k2b/cloud/services";
 import { err, fail, ok } from "@k2b/stdlib";
 import type { z } from "zod";
 import { mailCapabilities } from "./capabilities";
@@ -306,16 +307,23 @@ beforeEach(() => {
     grantedTotal: 0,
     removedTotal: 0,
   }));
-  spyOn(reviewReaders, "loadSendReviewContent").mockImplementation(async ({ draft }) => ({
+  spyOn(reviewReaders, "loadSendReviewContent").mockImplementation(async ({ draft, edits }) => ({
     ok: true,
     data: {
       contentHash: "a".repeat(64),
       from: { name: "Ada", address: "ada@example.test" },
-      draft: { ...draft, format: "plain", body: draft.body + (draft.signatureTemplateId ? "\n\nBest regards" : "") },
+      draft: {
+        ...draft,
+        subject: edits?.subject ?? draft.subject,
+        format: "plain",
+        body: (edits?.body ?? draft.body) + (draft.signatureTemplateId ? "\n\nBest regards" : ""),
+      },
     },
   }));
 
   spyOn(conversationKeeps, "getConversationKeep").mockResolvedValue({ ok: true, data: null });
+  // Reader views format dates in the installation's time zone.
+  spyOn(coreSettings, "get").mockResolvedValue("Europe/Berlin" as never);
   spyOn(mailboxAccess, "requireMailboxAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "write" } });
   spyOn(mailboxAccess, "requireDraftAccess").mockResolvedValue({ ok: true, data: { scope: "mailbox", permission: "write" } });
   spyOn(focus, "listMailboxCounts").mockResolvedValue({ ok: true, data: [{ mailboxId: internalMailboxId, unread: 7, needsAction: 3 }] });
@@ -1300,17 +1308,10 @@ describe("mail capabilities", () => {
         sentence: { action: "Create the draft {draft}" },
         scope: `mailbox:${mailboxId}`,
         slots: { draft: { kind: "object", title: "Release follow-up" } },
-        preview: {
-          kind: "message",
-          subject: "Release follow-up",
-          to: [{ name: "Ada", address: "ada@example.test" }],
-          cc: [{ address: "team@example.test" }],
-          attachments: [{ name: "notes.txt", size: 5 }],
-          body: "Hello Ada,\n\nThe release is ready.",
-        },
+        view: { version: 1, blocks: [{ kind: "Detail", title: "Draft" }] },
       },
     });
-    if (review.ok) expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBeTrue();
+    if (review.ok) expect(CapabilityActionCallReviewSchema.parse(review.data)).toEqual(review.data);
     expect(drafts.prepareDraftSeed).toHaveBeenCalledWith(
       expect.objectContaining({
         mailboxId: internalMailboxId,
@@ -1344,10 +1345,16 @@ describe("mail capabilities", () => {
     if (!review.ok) return;
     expect(review.data.locale).toBe("de");
     expect(review.data.sentence.action).toBe("Entwurf {draft} anlegen");
-    expect(review.data.preview).toMatchObject({
-      subject: "Release follow-up",
-      to: [{ name: "Ada", address: "ada@example.test" }],
-      body: "Hallo Ada",
+    expect(review.data.view).toMatchObject({
+      blocks: [
+        {
+          kind: "Detail",
+          items: expect.arrayContaining([
+            { label: "Betreff", value: "Release follow-up" },
+            { label: "Text", value: "Hallo Ada" },
+          ]),
+        },
+      ],
     });
   });
 
@@ -1402,14 +1409,9 @@ describe("mail capabilities", () => {
     const review = await mailCapabilities.actions["draft.update"].review(input, context);
 
     if (!review.ok) throw new Error("Expected a draft update review");
-    expect(review.data.preview).toMatchObject({
-      kind: "message",
-      truncated: true,
-      body: proposedBody.slice(0, 10_000),
-      format: "markdown",
-    });
+    expect(JSON.stringify(review.data.view)).toContain(JSON.stringify(proposedBody).slice(1, -1));
     expect(review.data.links).toContainEqual({ rel: "open", href: `/app/mail/${mailboxId}/drafts/${draftId}?revision=2` });
-    expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBeTrue();
+    expect(CapabilityActionCallReviewSchema.parse(review.data)).toEqual(review.data);
   });
 
   test("shows the current body directly in the send approval", async () => {
@@ -1456,11 +1458,64 @@ describe("mail capabilities", () => {
     );
 
     if (!review.ok) throw new Error("Expected a send review");
-    expect(CapabilityActionCallReviewSchema.parse(review.data).preview).toMatchObject({
-      kind: "message",
-      body: "Hello Ada,\n\nThe release is ready.",
-      from: { address: "ada@example.test" },
+    expect(CapabilityActionCallReviewSchema.parse(review.data).view).toMatchObject({
+      blocks: [
+        expect.objectContaining({
+          kind: "Draft",
+          fields: expect.arrayContaining([{ name: "body", label: "Body", type: "textarea", value: "Hello Ada,\n\nThe release is ready." }]),
+          context: expect.arrayContaining([{ label: "From", value: "Ada <ada@example.test>" }]),
+        }),
+      ],
     });
+  });
+
+  test("draft.send re-reviews edited fields and passes the same edits with the base hash to the atomic command", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: mutableDraftFixture });
+    const safety = spyOn(composeSafety, "reviewDraftComposeSafety").mockResolvedValue({
+      ok: true,
+      data: { draftId: internalDraftId, contentHash: "a".repeat(64), revision: 2, fingerprint: "b".repeat(64), warnings: [] },
+    });
+    const command = spyOn(commands, "createActorCommand").mockResolvedValue({
+      ok: true,
+      data: { id: "aaaaaaaa-0000-4000-8000-000000000001", state: "queued" },
+    } as never);
+    const input = DraftSendInputSchema.parse({
+      draftId,
+      senderIdentityId,
+      expectedRevision: 2,
+      expectedContentHash: "a".repeat(64),
+      subject: "Edited subject",
+      body: "Edited body",
+      safetyApproval: { revision: 2, fingerprint: "c".repeat(64), warningIds: ["external_recipients"] },
+    });
+    const reviewed = await mailCapabilities.actions["draft.send"].review(input, context);
+    if (!reviewed.ok) throw new Error(reviewed.error.message);
+    expect(reviewed.data.view?.blocks[0]).toMatchObject({
+      kind: "Draft",
+      fields: [
+        { name: "subject", value: input.subject },
+        { name: "body", value: input.body },
+      ],
+    });
+    expect(safety).toHaveBeenCalledWith(expect.objectContaining({ subject: input.subject, body: input.body }));
+    safety.mockClear();
+    expect(await mailCapabilities.actions["draft.send"].run(input, { ...context, idempotencyKey: "edited-send" })).toMatchObject({
+      ok: true,
+    });
+    expect(safety).not.toHaveBeenCalled();
+    expect(command.mock.calls[0]?.[0].input).toMatchObject({
+      kind: "send",
+      subject: input.subject,
+      body: input.body,
+      expectedDraftRevision: 2,
+      expectedContentHash: input.expectedContentHash,
+      safetyApproval: input.safetyApproval,
+    });
+    const stale = await mailCapabilities.actions["draft.send"].review({ ...input, expectedContentHash: "c".repeat(64) }, context);
+    expect(stale).toMatchObject({ ok: false, error: { code: "SEND_CONTENT_CHANGED", status: 409 } });
+    expect(DraftSendInputSchema.safeParse({ ...input, subject: "x".repeat(999) }).success).toBe(false);
+    expect(DraftSendInputSchema.safeParse({ ...input, body: "x".repeat(65537) }).success).toBe(false);
   });
 
   test.each([
@@ -1499,10 +1554,9 @@ describe("mail capabilities", () => {
     );
 
     if (!review.ok) throw new Error("Expected a send review");
-    expect(CapabilityActionCallReviewSchema.parse(review.data).preview).toMatchObject({
-      kind: "message",
-      body: mutableDraftFixture.body + (signatureTemplateId ? "\n\nBest regards" : ""),
-    });
+    expect(JSON.stringify(CapabilityActionCallReviewSchema.parse(review.data).view)).toContain(
+      JSON.stringify(mutableDraftFixture.body + (signatureTemplateId ? "\n\nBest regards" : "")).slice(1, -1),
+    );
     expect(templates).not.toHaveBeenCalled();
   });
 
@@ -1517,7 +1571,7 @@ describe("mail capabilities", () => {
       context,
     );
     expect(review.ok).toBeTrue();
-    if (review.ok) expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBeTrue();
+    if (review.ok) expect(CapabilityActionCallReviewSchema.parse(review.data)).toEqual(review.data);
   });
 
   test("reviews a batch assignment with a bounded count and representative conversations", async () => {
@@ -1789,10 +1843,14 @@ describe("mail capabilities", () => {
     expect(review).toMatchObject({
       ok: true,
       data: {
-        preview: {
-          kind: "page",
-          body: "Replacement line\n\nNew context",
-          changes: [{ change: "removed", text: "Current line\n\nMore context" }],
+        view: {
+          version: 1,
+          blocks: [
+            {
+              kind: "Detail",
+              items: [{ label: "Body", value: "Replacement line\n\nNew context", before: "Current line\n\nMore context" }],
+            },
+          ],
         },
       },
     });
@@ -4150,7 +4208,7 @@ describe("Mail safe unattended actions", () => {
       expect(result.ok).toBeTrue();
       if (result.ok) {
         expect(CapabilityActionCallReviewSchema.safeParse(result.data).success).toBeTrue();
-        expect(result.data.content).toMatchObject({ kind: "page", body: summary, baseRevision: 2, format: "plain" });
+        expect(JSON.stringify(result.data.view)).toContain(JSON.stringify(summary).slice(1, -1));
       }
     }
   });

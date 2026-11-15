@@ -788,8 +788,12 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
           for (const paused of [true, false]) {
             const review = await reviewCodeExecutionChange(code.id, paused, manager);
             expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
-            if (review.content?.kind !== "page") throw new Error("Missing execution review");
-            expect(JSON.parse(review.content.body)).toMatchObject({ codeId: code.id, after: paused ? "paused" : "active" });
+            const block = review.view?.blocks[0];
+            if (block?.kind !== "Text") throw new Error("Missing execution review");
+            expect(JSON.parse(block.text.split("\n\n").slice(1).join("\n\n"))).toMatchObject({
+              codeId: code.id,
+              after: paused ? "paused" : "active",
+            });
           }
           expect(await sql`SELECT * FROM code.codes WHERE id=${code.id}`).toEqual(beforeCode);
           expect(await sql`SELECT * FROM auth.service_accounts WHERE id=${code.serviceAccountId}::uuid`).toEqual(beforeAccount);
@@ -819,9 +823,14 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
       expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
       expect(review).toEqual(await reviewCodeVersionSubmission(draft, ctx));
-      expect(review.content?.kind).toBe("page");
-      if (review.content?.kind === "page")
-        expect(JSON.parse(review.content.body)).toMatchObject({ codeId: code.id, manifest: draft.manifest, bundle: draft.bundle });
+      const block = review.view?.blocks[0];
+      expect(block?.kind).toBe("Text");
+      if (block?.kind === "Text")
+        expect(JSON.parse(block.text.split("\n\n").slice(1).join("\n\n"))).toMatchObject({
+          codeId: code.id,
+          manifest: draft.manifest,
+          bundle: draft.bundle,
+        });
     }
     expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(0);
     const submitted = await submitCodeVersion(draft, author);
@@ -834,9 +843,10 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
         expect(CapabilityActionCallReviewSchema.safeParse(review).success).toBe(true);
         expect(review.slots.code).toEqual({ kind: "object", title: reviewTitle });
         expect(review).toEqual(await reviewCodeExecutionChange(code.id, paused, ctx));
-        expect(review.content?.kind).toBe("page");
-        if (review.content?.kind === "page")
-          expect(JSON.parse(review.content.body)).toMatchObject({
+        const block = review.view?.blocks[0];
+        expect(block?.kind).toBe("Text");
+        if (block?.kind === "Text")
+          expect(JSON.parse(block.text.split("\n\n").slice(1).join("\n\n"))).toMatchObject({
             activeVersionId: submitted.version.id,
             after: paused ? "paused" : "active",
           });
@@ -908,7 +918,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       authorUserId: authorId,
       approverRole: "admin",
       assurance: "confirm",
-      details: { ask: "changes_access", content: { kind: "page" } },
+      details: { ask: "changes_access", view: { version: 1, blocks: [{ kind: "Text" }] } },
     });
     const { codeId, ...decisionInput } = next.binding;
     expect(request?.argsDigest).toBe(
@@ -919,8 +929,8 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
         input: decisionInput,
       }),
     );
-    const full = request?.details && "content" in request.details ? request.details.content : undefined;
-    expect(full && full.kind === "page" ? JSON.parse(full.body).files : null).toEqual(diff.files);
+    const full = request?.details && "sentence" in request.details ? request.details.view?.blocks[0] : undefined;
+    expect(full?.kind === "Text" ? JSON.parse(full.text.split("\n\n").slice(1).join("\n\n")).files : null).toEqual(diff.files);
     await expect(sql.begin((tx) => requireCodeVersionApproval(code, next.version.id, tx))).rejects.toMatchObject({
       code: "code_approval_required",
     });

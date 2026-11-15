@@ -28,6 +28,7 @@ import { httpApprovalNotice } from "../chat-code/code-approval-message";
 import type { CapabilityDecision, CodeApproval } from "../chat-code/runtime/capabilities";
 import { pendingActionQuestion, printPendingActionContent, printReviewContent } from "./action-question";
 import { readApprovalPreferences, revokeApprovalPreference } from "./approvals";
+import { assistantChoiceText, openAssistantChoices } from "./choices";
 import { createLineReader, type LineReader } from "./line-reader";
 import { createLocalContextReader, type LocalContext, type LocalSkill, localSkillCatalog, readLocalSkill } from "./local-context";
 import { type LocalFileReview, reviewLocalFile } from "./local-file";
@@ -323,7 +324,7 @@ const resolveAttention = async (input: {
       await printPendingActionContent(input.ctx, action, input.signal);
       const decision = await collectActionApproval(input.ctx, input.reader, action);
       if (decision === null) return null;
-      await submitAction(input.ctx, action, { type: "approval_response", ...decision });
+      await submitAction(input.ctx, action, { type: "approval_response", ...decision, digest: action.digest });
     } else if (action.name === "survey" || action.name === "cloud_survey") {
       const surveyResult = await collectSurveyResult(input.ctx, input.reader, action.args);
       if (surveyResult === null) {
@@ -642,6 +643,10 @@ They go to the model with every message and can steer what it does with your Clo
             clientTools,
           })) ?? undefined;
         if (!result && !abort.signal.aborted) return 2;
+      }
+      if (result?.status === "completed" && !abort.signal.aborted) {
+        const chatLink = `${ctx.options.server.replace(/\/$/, "")}/app/assistant?conversation=${chatId}`;
+        for (const choice of openAssistantChoices(result.messages)) ctx.print(terminalSafeText(assistantChoiceText(choice, chatLink)));
       }
       if (result?.status === "aborted" || (!result && abort.signal.aborted)) {
         if (turnId) await readApi(ctx, conversationPath(chatId, `/turns/${encodeURIComponent(turnId)}/abort`), { method: "POST" });

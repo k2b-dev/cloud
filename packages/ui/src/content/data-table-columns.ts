@@ -44,6 +44,15 @@ const finite = (value: unknown): number | null => {
   return null;
 };
 
+/** A decimal text with more significant digits than a JavaScript number holds: shown as written, never rounded. */
+const beyondNumber = (value: unknown): boolean =>
+  typeof value === "string" &&
+  value
+    .replace(/^[\s+-]*|[eE].*$/g, "")
+    .replace(".", "")
+    .replace(/^0+/, "")
+    .replace(/0+$/, "").length > 15;
+
 const fractionDigits = (decimals?: number) => {
   if (decimals === undefined) return {};
   const digits = Math.min(20, Math.max(0, Math.trunc(decimals) || 0));
@@ -94,7 +103,7 @@ export const tableCellText = (value: unknown, column: DataTableTypedColumn, loca
   if (type === "date") return formatTableDate(value, locale, column.timeZone) ?? String(value);
   if (isNumericColumnType(type)) {
     const number = finite(value);
-    if (number === null) return String(value);
+    if (number === null || beyondNumber(value)) return String(value);
     if (type === "delta") return deltaText({ value: number, unit: column.delta?.unit }, locale, resolveStatCellMessages(locale));
     return formatTableNumber(type === "flow" ? Math.abs(number) : number, column, locale);
   }

@@ -152,7 +152,7 @@ describe("C8 complete CodeDiff and submission contracts", () => {
         },
         slots: {},
         ask: "changes_access",
-        content: { kind: "page", title: "Full diff", body: "{}", format: "plain" },
+        view: { version: 1, blocks: [{ kind: "Text", text: "Full diff" }] },
       }).success,
     ).toBe(true);
   });

@@ -413,7 +413,7 @@ postgresTest("DATEV and SEPA require exact confirmation and complete without wor
       expect(wrong.ok).toBeFalse();
       const review = await confirm.review!(confirm.input.parse(input), context);
       expect(review.ok).toBeTrue();
-      if (review.ok && "content" in review.data) expect(review.data.content?.body).toContain("12.30");
+      if (review.ok) expect(JSON.stringify(review.data)).toContain("12.30");
       const issued = await confirm.run(confirm.input.parse(input), { ...context, idempotencyKey: uuid() });
       expect(issued.ok).toBeTrue();
       if (!issued.ok) throw issued.error;
@@ -424,7 +424,7 @@ postgresTest("DATEV and SEPA require exact confirmation and complete without wor
       expect(document?.domain_data_id).toBeString();
       const replayReview = await confirm.review!(confirm.input.parse(input), context);
       if (!replayReview.ok) throw replayReview.error;
-      if ("content" in replayReview.data) expect(replayReview.data.content?.body).toContain("12.30");
+      expect(JSON.stringify(replayReview.data)).toContain("12.30");
       const replay = await confirm.run(confirm.input.parse(input), { ...context, idempotencyKey: uuid() });
       if (!replay.ok) throw replay.error;
       expect(replay.data.data.id).toBe(issued.data.data.id);
