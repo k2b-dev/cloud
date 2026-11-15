@@ -51,7 +51,16 @@ suiteFor(
     const answer = await send(ben, chat, { quotes: [{ message: inThread.id, text: "Slides for Friday" }] });
     expect(answer.thread).toBe(planning);
     expect((await post(ben, chat, { thread: planning, quotes: [{ message: inThread.id, text: "done" }] })).status).toBe(201);
-    expect((await post(ben, chat, { quotes: [{ message: inThread.id, text: "done" }, { message: source.id, text: "ready" }] })).status).toBe(400);
+    expect(
+      (
+        await post(ben, chat, {
+          quotes: [
+            { message: inThread.id, text: "done" },
+            { message: source.id, text: "ready" },
+          ],
+        })
+      ).status,
+    ).toBe(400);
     expect((await post(ben, chat, { replyTo: source.id, quotes: [{ message: inThread.id, text: "done" }] })).status).toBe(400);
     const other = await thread(lea, chat, "Budget");
     expect((await post(ben, chat, { thread: other, quotes: [{ message: inThread.id, text: "done" }] })).status).toBe(400);

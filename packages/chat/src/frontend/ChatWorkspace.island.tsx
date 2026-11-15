@@ -55,10 +55,7 @@ import {
 import { renderSystemMessage } from "../system-messages";
 
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
-import type { DraftQuote } from "./chat-quote-selection";
-
 import ChatDeviceNotice from "./ChatDeviceNotice";
-
 import ChatList from "./ChatList";
 import ChatSystemChats, { createSystemChatList } from "./ChatSystemChats";
 import { ThreadMenu, ThreadPicker } from "./ChatThreads";
@@ -75,6 +72,7 @@ import {
 } from "./chat-dialog-openers";
 import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { messageTime, sameDay } from "./chat-format";
+import type { DraftQuote } from "./chat-quote-selection";
 import { createChatSearch } from "./chat-search-state";
 import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
@@ -2047,9 +2045,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (current.hasNewer) await store?.loadLatest();
       const answered = reply();
       const quoted = quotes();
-      const thread = answered
-        ? (answered.thread ?? "general")
-        : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view));
+      const thread = answered ? (answered.thread ?? "general") : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view));
       outbox.send(current.id, body, {
         thread,
         refs,

@@ -6,13 +6,13 @@ import { copyText } from "../actions/CopyButton";
 import { Dropdown, type DropdownAction } from "../actions/Dropdown";
 import { type GestureKind, GestureMenu, type GestureMenuAction } from "../actions/GestureMenu";
 import { type ChatMessages, useChatMessages } from "../chat/chat-messages";
-import { MessageQuote } from "./MessageQuote";
 import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { type UiMessages, useUiMessages } from "../intl/messages";
 import { Avatar } from "../surfaces/Avatar";
 import { Kbd } from "./Kbd";
 import { createSafeMarked, createSafeRenderer, escapeHtml } from "./MarkdownView";
+import { MessageQuote } from "./MessageQuote";
 import { ReactionBar, type ReactionBarItem } from "./ReactionBar";
 
 /** Messages by the same author within this time continue a group. */

@@ -62,7 +62,11 @@ afterAll(async () => {
 
 const load = async (touch = false) => {
   const page = await (
-    await browser.newContext({ viewport: touch ? { width: 390, height: 800 } : { width: 1200, height: 800 }, hasTouch: touch, isMobile: touch })
+    await browser.newContext({
+      viewport: touch ? { width: 390, height: 800 } : { width: 1200, height: 800 },
+      hasTouch: touch,
+      isMobile: touch,
+    })
   ).newPage();
   await page.setContent(html);
   await page.addScriptTag({ content: script });
@@ -165,6 +169,7 @@ describe("SelectionAction", () => {
       await settled(page);
       expect((await state(page)).open).toBe(true);
       await page.keyboard.press("Tab");
+      await settled(page);
       expect((await state(page)).focused).toBe(true);
       await page.keyboard.press("Escape");
       await settled(page);

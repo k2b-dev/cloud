@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  MAX_MESSAGE_REFS,
-  MESSAGE_MAX_CODE_POINTS,
-  SendMessageSchema,
   AddMembersSchema,
   ChatLiveEventSchema,
   ConversationCursorSchema,
@@ -11,11 +8,14 @@ import {
   CreateConversationSchema,
   ForResourceSchema,
   LeaveSchema,
+  MAX_MESSAGE_REFS,
+  MESSAGE_MAX_CODE_POINTS,
   MemberPageSchema,
   MemberPreviewSchema,
   MemberQuerySchema,
   PeopleQuerySchema,
   ReadAllSchema,
+  SendMessageSchema,
   SummaryQuerySchema,
   SystemChatParamSchema,
   ThreadQuerySchema,
@@ -359,8 +359,18 @@ test("a send quotes at most ten passages of together at most one message's lengt
   expect(send(Array.from({ length: MAX_MESSAGE_REFS }, () => ({ message: "AbCdEf1234", text: "ok" }))).success).toBe(true);
   expect(send(Array.from({ length: MAX_MESSAGE_REFS + 1 }, () => ({ message: "AbCdEf1234", text: "ok" }))).success).toBe(false);
   const half = "😀".repeat(MESSAGE_MAX_CODE_POINTS / 2);
-  expect(send([{ message: "AbCdEf1234", text: half }, { message: "AbCdEf1234", text: half }]).success).toBe(true);
-  expect(send([{ message: "AbCdEf1234", text: half }, { message: "AbCdEf1234", text: `${half}x` }]).success).toBe(false);
+  expect(
+    send([
+      { message: "AbCdEf1234", text: half },
+      { message: "AbCdEf1234", text: half },
+    ]).success,
+  ).toBe(true);
+  expect(
+    send([
+      { message: "AbCdEf1234", text: half },
+      { message: "AbCdEf1234", text: `${half}x` },
+    ]).success,
+  ).toBe(false);
   for (const text of ["", "   ", "a\u0000b", "\uD800"]) expect(send([{ message: "AbCdEf1234", text }]).success).toBe(false);
   expect(send([{ message: "not-an-id", text: "ok" }]).success).toBe(false);
 });

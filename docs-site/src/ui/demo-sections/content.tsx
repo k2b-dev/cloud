@@ -62,8 +62,8 @@ import {
   panelDialogFixedOptions,
   panelDialogOptions,
   ReactionBar,
-  SelectionAction,
   reactionPeople,
+  SelectionAction,
   StatusBadge,
   Steps,
   StructuredDataPreview,
@@ -1758,7 +1758,13 @@ const MessageQuotesDemo = () => {
           onSubmit={({ text }) => {
             setEntries((list) => [
               ...list,
-              { id: `q${list.length + 1}`, author: "You", own: true, text, quotes: quotes().map(({ id, author, text }) => ({ id, author, text })) },
+              {
+                id: `q${list.length + 1}`,
+                author: "You",
+                own: true,
+                text,
+                quotes: quotes().map(({ id, author, text }) => ({ id, author, text })),
+              },
             ]);
             setQuotes([]);
             requestAnimationFrame(() => feed?.scrollToEnd());
@@ -1774,7 +1780,8 @@ const MessageQuotesDemo = () => {
         onAction={({ text, element }) => {
           const id = element.closest<HTMLElement>(".k2b-virtual-feed__item")?.dataset.key;
           const entry = entries().find((candidate) => candidate.id === id);
-          if (entry) setQuotes((list) => [...list, { key: `${id}-${list.length}-${text.length}`, id: entry.id, author: entry.author, text }]);
+          if (entry)
+            setQuotes((list) => [...list, { key: `${id}-${list.length}-${text.length}`, id: entry.id, author: entry.author, text }]);
         }}
       />
     </DemoCard>

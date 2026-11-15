@@ -15,6 +15,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
+import { MessageQuote } from "../content/MessageQuote";
 import { dialogHistorySettled, holdDialogHistory } from "../feedback/dialog-core";
 import { Tooltip } from "../feedback/Tooltip";
 import { createDictation } from "../inputs/dictation/create-dictation";
@@ -39,7 +40,6 @@ import {
   loadEmojiIndex,
   suggestEmoji,
 } from "../inputs/emoji/emoji-index";
-import { MessageQuote } from "../content/MessageQuote";
 import { FileDropTarget } from "../inputs/FileDropTarget";
 import { toggleBulletList, toggleInlineMarker } from "../inputs/markdown/actions";
 import { openCodeFence } from "../inputs/markdown/code-zone";

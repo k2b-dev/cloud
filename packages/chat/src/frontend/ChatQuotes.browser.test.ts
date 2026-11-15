@@ -178,7 +178,15 @@ test("on a phone, where a held finger opens the menu instead of a selection, Quo
     const point = { x: box.x + 8, y: box.y + box.height / 2 };
     await page.evaluate(async (point) => {
       const target = document.elementFromPoint(point.x, point.y)!;
-      const init: PointerEventInit = { pointerType: "touch", isPrimary: true, pointerId: 1, bubbles: true, cancelable: true, clientX: point.x, clientY: point.y };
+      const init: PointerEventInit = {
+        pointerType: "touch",
+        isPrimary: true,
+        pointerId: 1,
+        bubbles: true,
+        cancelable: true,
+        clientX: point.x,
+        clientY: point.y,
+      };
       target.dispatchEvent(new PointerEvent("pointerdown", init));
       await new Promise((resolve) => setTimeout(resolve, 650)); // real clock: the long press GestureMenu waits for
       target.dispatchEvent(new PointerEvent("pointerup", init));

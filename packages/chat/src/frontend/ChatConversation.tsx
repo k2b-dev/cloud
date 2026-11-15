@@ -199,9 +199,7 @@ export type ChatConversationProps = {
  * The Lightbox and its renderers load when a reader opens an attachment, as Chat's other heavy parts do; a failed
  * load offers a reload instead of opening nothing silently.
  */
-const QuoteSelection = lazy(
-  async () => (await importOnDemand(() => import("./chat-quote-selection"))) ?? { default: () => null },
-);
+const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./chat-quote-selection"))) ?? { default: () => null });
 const Lightbox = lazy(async () => (await importOnDemand(() => import("./chat-lightbox"))) ?? { default: () => null });
 const ROW_ESTIMATE = 60;
 const SYSTEM_ESTIMATE = 36;

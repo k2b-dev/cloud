@@ -514,7 +514,10 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     const rev = entry.conversation.rev + 1;
     const original = target.replyTo ? entry.messages.find((message) => message.id === target.replyTo) : undefined;
     // As on the server, quotes and a reply lie in one thread, which the message goes to.
-    const quoted = (target.quotes ?? []).map((quote) => ({ quote, source: entry.messages.find((message) => message.id === quote.message)! }));
+    const quoted = (target.quotes ?? []).map((quote) => ({
+      quote,
+      source: entry.messages.find((message) => message.id === quote.message)!,
+    }));
     const thread = original ? original.thread : quoted.length ? quoted[0]!.source.thread : (target.thread ?? null);
     const message: Message = {
       via: null,
@@ -1294,7 +1297,9 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
         // A deleted original leaves its quotes without text; readers learn it from the original's own change.
         if (message.deletedAt)
           for (const quoting of entry.messages)
-            quoting.quotes = quoting.quotes?.map((quote) => ("id" in quote && quote.id === message.id ? { deleted: true as const } : quote));
+            quoting.quotes = quoting.quotes?.map((quote) =>
+              "id" in quote && quote.id === message.id ? { deleted: true as const } : quote,
+            );
         for (const reply of entry.messages)
           if (reply.replyTo && "id" in reply.replyTo && reply.replyTo.id === message.id)
             reply.replyTo = message.deletedAt ? { deleted: true } : { ...reply.replyTo, preview: message.body ?? "" };
