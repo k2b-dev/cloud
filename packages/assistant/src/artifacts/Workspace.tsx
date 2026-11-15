@@ -46,14 +46,7 @@ import { artifactSourceRenderers, readOnlySourceRenderers } from "./SourceRender
 import { WebReaderTab } from "./WebReaderTab";
 import type { ArtifactWorkspaceController } from "./workspace-controller";
 import { workspaceMessages } from "./workspace-messages";
-import {
-  appTab,
-  sourceTab,
-  type WorkspaceTab,
-  webTab,
-  workspaceSelectionHref,
-  workspaceTabId,
-} from "./workspace-state";
+import { appTab, sourceTab, type WorkspaceTab, webTab, workspaceSelectionHref, workspaceTabId } from "./workspace-state";
 
 function SourceFile(props: { tab: Extract<WorkspaceTab, { kind: "source" }>; dirty: (value: boolean) => void }) {
   const locale = useLocale(),
@@ -287,12 +280,28 @@ export function ArtifactWorkspace(props: {
     result && result.messageSeq !== null
       ? { messageSeq: result.messageSeq, callId: result.callId, presentationId: result.presentationId ?? null }
       : null;
+  /** "heute, 13:40" for today, otherwise the date. */
+  const when = (iso: string) => {
+    const date = new Date(iso);
+    const time = new Intl.DateTimeFormat(locale(), { hour: "2-digit", minute: "2-digit" }).format(date);
+    return date.toDateString() === new Date().toDateString()
+      ? w().todayAt({ time })
+      : new Intl.DateTimeFormat(locale(), { day: "numeric", month: "numeric" }).format(date);
+  };
   const meta = (tab: WorkspaceTab): string | null => {
     if (tab.kind === "file") {
       const result = resultOf(tab.path);
-      const file = result?.file ?? props.snapshot?.()?.files.find((entry) => entry.path === tab.path) ?? null;
-      const facts = [extensionOf(tab.path), file ? formatFileViewSize(file.size, locale()) : null].filter(Boolean).join(" · ");
-      return result?.description ? `${facts} · ${result.description}` : facts;
+      const upload = props.snapshot?.()?.files.find((entry) => entry.path === tab.path) ?? null;
+      const size = result?.file?.size ?? upload?.size;
+      // Kind and size, then who made it and when: "CSV · 605 KB · von Gustav erstellt · heute, 13:40".
+      const origin = result
+        ? w().madeByGustav({ when: when(result.deliveredAt) })
+        : upload?.origin === "user"
+          ? w().attachedByYou({ when: when(upload.updatedAt) })
+          : null;
+      return [extensionOf(tab.path), size === undefined ? null : formatFileViewSize(size, locale()), origin, result?.description]
+        .filter(Boolean)
+        .join(" · ");
     }
     if (tab.kind === "app") return w().metaApp;
     if (tab.kind === "task") return w().metaRoutine;
@@ -561,7 +570,7 @@ export function ArtifactWorkspace(props: {
   return (
     <div class="artifact-workspace">
       <Button class="artifact-mobile-toggle" size="sm" variant="ghost" onClick={() => props.controller.setMobile("chat")}>
-        <i class="ti ti-arrow-left" aria-hidden="true" />
+        <i class="ti ti-chevron-left" aria-hidden="true" />
         {w().backToChat}
       </Button>
       <Panes

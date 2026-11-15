@@ -1,6 +1,7 @@
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput } from "../chat-workspace";
+import { emptySidebarSnapshot, fileResult, upload } from "../frontend/AssistantChatSidebar.fixture";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
 import { contextTab, fileTab, webTab } from "./workspace-state";
@@ -35,6 +36,27 @@ const controller = createArtifactWorkspace(location.href, {
   web: () => controller.open(webTab(chatId, "https://paketdienst-beispiel.de/versand/frankreich", "Versand nach Frankreich")),
   ask: () => controller.open(webTab(chatId, "https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon")),
 };
+// What the chat holds: the table is a result Gustav made, the delivery note an upload.
+// real clock: the pane's meta line says "heute" against the browser's own day, as people see it.
+const today = new Date().toISOString();
+const snapshot = emptySidebarSnapshot({
+  chatId,
+  now: today,
+  results: [
+    {
+      ...fileResult("/Offene Rückfragen Kern.csv", {
+        at: new Date().toISOString(),
+        turn: "t1",
+        seq: 3,
+        mediaType: "text/csv",
+        size: 2_400,
+      }),
+      description: null,
+    },
+  ],
+  files: [upload("/Lieferavis Kern 11-2026.txt", "2026-11-12T09:30:00.000Z", "text/plain", 186_000)],
+  fileCount: 1,
+});
 const locale = new URL(location.href).searchParams.get("lang") ?? "de";
 
 render(
@@ -69,6 +91,7 @@ render(
                   onAdd={() => controller.open(contextTab(chatId, "files", "In diesem Chat"))}
                   arrangeHint={{ open: false, onDismiss: () => {} }}
                   webReader
+                  snapshot={() => snapshot}
                 />
               </AppWorkspace.MainPane>
             </AppWorkspace.Main>

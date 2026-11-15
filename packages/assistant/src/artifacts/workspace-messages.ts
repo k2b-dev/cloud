@@ -25,6 +25,9 @@ export const workspaceMessages = i18n.define({
       close: "Close",
       closeOthers: "Close others",
       metaApp: "Studio app",
+      madeByGustav: ({ when }: { when: string }) => `made by Gustav · ${when}`,
+      attachedByYou: ({ when }: { when: string }) => `attached by you ${when}`,
+      todayAt: ({ time }: { time: string }) => `today, ${time}`,
       metaRoutine: "Routine",
       metaSource: "Source text",
       metaContext: ({ category }: { category: Category }) =>
@@ -56,6 +59,9 @@ export const workspaceMessages = i18n.define({
       close: "Schließen",
       closeOthers: "Andere schließen",
       metaApp: "Studio-App",
+      madeByGustav: ({ when }: { when: string }) => `von Gustav erstellt · ${when}`,
+      attachedByYou: ({ when }: { when: string }) => `von dir angehängt am ${when}`,
+      todayAt: ({ time }: { time: string }) => `heute, ${time}`,
       metaRoutine: "Routine",
       metaSource: "Quelltext",
       metaContext: ({ category }: { category: Category }) =>

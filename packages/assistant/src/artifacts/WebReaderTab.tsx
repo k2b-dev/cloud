@@ -138,6 +138,9 @@ export function WebReaderTab(props: {
               <p class="web-reader__ask-kind">
                 <i class="ti ti-shield-check" aria-hidden="true" />
                 {t().approval}
+                <span class="web-reader__ask-who">
+                  · <i class="ti ti-sparkles" aria-hidden="true" /> Gustav
+                </span>
               </p>
               <h3 id="web-reader-ask-title" class="web-reader__ask-title">
                 {t().askTitle}
@@ -147,7 +150,9 @@ export function WebReaderTab(props: {
                 {t().askWhy}
               </p>
               <div class="web-reader__ask-address">
-                <span class="web-reader__ask-label">{t().askAddress}</span>
+                <span class="web-reader__ask-label">
+                  <i class="ti ti-sparkles" aria-hidden="true" /> {t().askAddress}
+                </span>
                 <code>{current()}</code>
                 <Show when={queryOf(current())}>
                   {(query) => <span class="web-reader__ask-query">{t().askQuery({ query: query() })}</span>}
@@ -158,7 +163,7 @@ export function WebReaderTab(props: {
                   <i class="ti ti-info-circle" aria-hidden="true" />
                   {t().askRemember}
                 </p>
-                <Button variant="secondary" onClick={() => (history().index === 0 ? props.onDismiss() : step(-1))}>
+                <Button variant="ghost" class="web-reader__dont" onClick={() => (history().index === 0 ? props.onDismiss() : step(-1))}>
                   {t().dontFetch}
                 </Button>
                 <Button variant="primary" onClick={() => setConfirmed(current())}>
