@@ -354,7 +354,7 @@ export type PageSwapContract = {
   ready: (page: Page, path: string) => Promise<void>;
   /** A page with URL state (such as `?q=`) that Back must restore; `ready` checks the state. */
   withState?: string;
-  /** Pages visited in a loop for the 50-swap footprint, each linked from the one before; defaults to first and second. */
+  /** Pages with the heaviest islands, each linked from the one before, visited three rounds for their own footprint. */
   tour?: readonly string[];
   /** Extra regions whose boxes and scroll a swap must lay out as a reload does. */
   regions?: readonly string[];
@@ -506,33 +506,37 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
     }
   });
 
-  test(`${name}: 50 swaps give back every listener, timer, socket, worker and object URL`, async () => {
-    const tour = contract.tour ?? [contract.first, contract.second];
-    const tab = await open(tour[0]!);
-    const step = async (index: number) => {
-      const target = tour[(index + 1) % tour.length]!;
-      // Measure leaks, not the browser's history budget (WebKit: 100 writes per 10 s): stay below it, paced by the
-      // writes that really happened, islands' own URL updates included.
-      await tab.page.waitForFunction(
-        () => (window as unknown as { recentHistoryWrites: () => number }).recentHistoryWrites() < 40,
-        undefined,
-        { timeout: 15_000 },
-      );
-      await click(tab.page, `[data-nav-root] a[href="${target}"]`);
-      await at(tab.page, target);
-    };
-    try {
-      // The first round loads shared modules and shell state once.
-      for (let index = 0; index < tour.length; index++) await step(index);
-      const first = await footprint(tab.page);
-      // Whole rounds of at least 50 swaps end on the starting page, so both measurements see the same page.
-      const swaps = Math.ceil(50 / tour.length) * tour.length;
-      for (let index = 0; index < swaps; index++) await step(index);
-      expect(await footprint(tab.page)).toEqual(first);
-      expect(first.announcers).toBe(1);
-      expect(tab.documents).toEqual([]);
-    } finally {
-      await tab.close();
-    }
-  });
+  /** Swaps through `pages` in a loop: one warm-up round, then `swaps`, and compares the footprint before and after. */
+  const footprintRun = (label: string, pages: readonly string[], swaps: number) =>
+    test(`${name}: ${label}`, async () => {
+      const tab = await open(pages[0]!);
+      const step = async (index: number) => {
+        const target = pages[(index + 1) % pages.length]!;
+        // Measure leaks, not the browser's history budget (WebKit: 100 writes per 10 s): stay below it, paced by the
+        // writes that really happened, islands' own URL updates included.
+        await tab.page.waitForFunction(
+          () => (window as unknown as { recentHistoryWrites: () => number }).recentHistoryWrites() < 40,
+          undefined,
+          { timeout: 15_000 },
+        );
+        await click(tab.page, `[data-nav-root] a[href="${target}"]`);
+        await at(tab.page, target);
+      };
+      try {
+        // The first round loads shared modules and shell state once.
+        for (let index = 0; index < pages.length; index++) await step(index);
+        const first = await footprint(tab.page);
+        // Whole rounds end on the starting page, so both measurements see the same page.
+        for (let index = 0; index < swaps; index++) await step(index);
+        expect(await footprint(tab.page)).toEqual(first);
+        expect(first.announcers).toBe(1);
+        expect(tab.documents).toEqual([]);
+      } finally {
+        await tab.close();
+      }
+    });
+  footprintRun("50 swaps give back every listener, timer, socket, worker and object URL", [contract.first, contract.second], 50);
+  // A leak per visit adds up over the rounds; three keep the run short enough under the history budget.
+  if (contract.tour)
+    footprintRun("three rounds through every heavy page give back what they took", contract.tour, contract.tour.length * 3);
 }
