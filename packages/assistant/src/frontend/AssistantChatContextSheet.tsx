@@ -24,3 +24,35 @@ export const openAssistantContextBoxSheet = async (props: {
           after = () => run(...args);
           close();
         };
+      const actions: ContextBoxActions = {
+        onOpen: leave(props.actions.onOpen),
+        onJump: leave(props.actions.onJump),
+        onOpenAll: leave(props.actions.onOpenAll),
+        onOpenSources: leave(props.actions.onOpenSources),
+        onOpenContext: leave(props.actions.onOpenContext),
+      };
+      const dismiss = () => void context.requestDismiss();
+      const content = () => (
+        // Half and full height, but only when the box is taller than half the screen; shorter, it rests at its height.
+        <BottomSheet onDismiss={dismiss} detents>
+          <BottomSheet.Body>
+            {/* The box brings its own head with "New · n" and "Open as tab"; the handle closes the sheet. */}
+            <div class="assistant-context-sheet">
+              <AssistantChatContextBox
+                state={props.state}
+                actions={actions}
+                project={props.project}
+                frozen={() => true}
+                variant="sheet"
+                headingId="assistant-context-sheet-title"
+              />
+            </div>
+          </BottomSheet.Body>
+        </BottomSheet>
+      );
+      return props.wrap ? props.wrap(content) : content();
+    },
+    { ...bottomSheetOptions, history: true },
+  );
+  after?.();
+};

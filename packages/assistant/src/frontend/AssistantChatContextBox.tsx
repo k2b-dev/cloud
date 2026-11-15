@@ -1,15 +1,6 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
-import {
-  AnchoredPopover,
-  BottomSheet,
-  Button,
-  formatFileViewSize,
-  IconButton,
-  IconButtonLink,
-  Skeleton,
-  useLocale,
-} from "@k2b/ui";
+import { AnchoredPopover, Button, formatFileViewSize, IconButton, IconButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, on, Show, untrack } from "solid-js";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { type ChatSidebarState, createReadingFreeze } from "./AssistantChatSidebar";
@@ -337,39 +328,6 @@ export function AssistantChatContextBox(props: {
     </aside>
   );
 }
-
-      const actions: ContextBoxActions = {
-        onOpen: leave(props.actions.onOpen),
-        onJump: leave(props.actions.onJump),
-        onOpenAll: leave(props.actions.onOpenAll),
-        onOpenSources: leave(props.actions.onOpenSources),
-        onOpenContext: leave(props.actions.onOpenContext),
-      };
-      const dismiss = () => void context.requestDismiss();
-      const content = () => (
-        // Half and full height, but only when the box is taller than half the screen; shorter, it rests at its height.
-        <BottomSheet onDismiss={dismiss} detents>
-          <BottomSheet.Body>
-            {/* The box brings its own head with "New · n" and "Open as tab"; the handle closes the sheet. */}
-            <div class="assistant-context-sheet">
-              <AssistantChatContextBox
-                state={props.state}
-                actions={actions}
-                project={props.project}
-                frozen={() => true}
-                variant="sheet"
-                headingId="assistant-context-sheet-title"
-              />
-            </div>
-          </BottomSheet.Body>
-        </BottomSheet>
-      );
-      return props.wrap ? props.wrap(content) : content();
-    },
-    { ...bottomSheetOptions, history: true },
-  );
-  after?.();
-};
 
 /**
  * The places of the box in the chat layout: the island in its column, and the button that stands in for it when there
