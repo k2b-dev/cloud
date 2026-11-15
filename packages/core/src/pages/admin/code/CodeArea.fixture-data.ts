@@ -859,6 +859,7 @@ export const fixtureRunners = (empty = false): CodeRunnerMetrics =>
         oldestWaitingMs: 4_200,
         instances: 3,
         freeSlots: 5,
+        slots: 12,
         runners: [
           {
             instanceId: "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60",

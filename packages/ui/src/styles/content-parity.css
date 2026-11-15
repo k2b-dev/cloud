@@ -4413,24 +4413,26 @@
   flex-wrap: wrap;
 }
 
-/* File names: the chosen one strong on grey, the others plain text. */
-.k2b-ui .k2b-code-diff__files .k2b-tabs__item,
-.k2b-ui .k2b-code-diff__files .k2b-tabs__item:has([aria-selected="true"]) {
+/* File names: the chosen one strong on grey, the others plain text. The tab family's
+   edge and selected tint stay off here, so the names never read as a second row of tabs. */
+.k2b-ui .k2b-code-diff__files.k2b-tabs[data-variant="pill"] .k2b-tabs__item,
+.k2b-ui .k2b-code-diff__files.k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) {
   --k2b-edge-color: transparent;
   border-radius: 0.375rem;
   padding-right: 0;
   background: transparent;
+  box-shadow: none;
 }
 
-.k2b-ui .k2b-code-diff__files .k2b-tabs__item:hover {
+.k2b-ui .k2b-code-diff__files.k2b-tabs[data-variant="pill"] .k2b-tabs__item:hover {
   background: var(--k2b-app-workspace-hover);
 }
 
-.k2b-ui .k2b-code-diff__files .k2b-tabs__item:has([aria-selected="true"]) {
+.k2b-ui .k2b-code-diff__files.k2b-tabs[data-variant="pill"] .k2b-tabs__item:has([aria-selected="true"]) {
   background: var(--k2b-surface-muted);
 }
 
-.k2b-ui .k2b-code-diff__files .k2b-tabs__list button[role="tab"] {
+.k2b-ui .k2b-code-diff__files.k2b-tabs[data-variant="pill"] .k2b-tabs__list button[role="tab"] {
   min-height: 1.75rem;
   padding: 0 0.5rem;
   border-radius: 0.375rem;
@@ -4439,9 +4441,10 @@
   color: var(--k2b-text-secondary);
 }
 
-.k2b-ui .k2b-code-diff__files .k2b-tabs__list button[role="tab"][aria-selected="true"] {
+.k2b-ui .k2b-code-diff__files.k2b-tabs[data-variant="pill"] .k2b-tabs__list button[role="tab"][aria-selected="true"] {
   font-weight: 600;
   color: var(--k2b-text);
+  --k2b-edge-color: transparent;
 }
 
 .k2b-ui .k2b-code-diff__file {
@@ -4621,11 +4624,19 @@
     line-height: 1.875rem;
   }
 
+  /* Always there, so quiet: a grey sign without a fill; the fill comes with the press or focus. */
   .k2b-ui .k2b-code-diff__action {
     width: 2rem;
     height: 1.75rem;
     font-size: 0.875rem;
+    color: var(--k2b-text-muted);
+    background: transparent;
     opacity: 1;
+  }
+
+  .k2b-ui .k2b-code-diff__action:is(:active, :focus-visible) {
+    color: #ffffff;
+    background: var(--k2b-action-solid);
   }
 
   .k2b-ui .k2b-code-diff__noted {

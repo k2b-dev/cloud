@@ -254,6 +254,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
 
   /** Sends one decision. Saved, conflicting, withdrawn, and lost answers reload into the server's state. */
   const send = async (outcome: CodeReviewOutcome, comment?: string) => {
+    // One decision at a time: a second one waits for the first to be refused, and none follows a saved or lost one.
+    if (busy() || unknown()) return;
+    setBusy(true);
     try {
       await postCodeAdmin(
         "decide",
@@ -279,13 +282,13 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         reloadCodeArea();
         return;
       }
+      setBusy(false);
       throw Object.assign(new Error(refused.text), { code: refused.code });
     }
   };
 
   const approve = async () => {
-    if (busy()) return;
-    setBusy(true);
+    if (busy() || unknown()) return;
     setFailure(null);
     setFailureCode(undefined);
     setSignOutFailed(false);
@@ -293,7 +296,6 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       await send("approved");
     } catch (error) {
       // The button keeps its place; the reason shows above the approval with its way out.
-      setBusy(false);
       setFailureCode(error instanceof Error && "code" in error ? String(error.code ?? "") : undefined);
       setFailure(error instanceof Error ? error.message : t().dialogFailed);
       queueMicrotask(() => document.getElementById(FAILURE_ID)?.focus());
@@ -301,6 +303,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   };
 
   const ask = async (kind: "changes" | "reject") => {
+    if (busy() || unknown()) return;
     setFailure(null);
     await openCodeReviewDialog({
       kind,
@@ -367,7 +370,12 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     setDeleteFailed(null);
     try {
       await postCodeAdmin("comments/delete", { codeId: props.codeId, versionId: props.versionId, id: comment.id }, z.unknown());
-      setComments(comments().filter((entry) => entry.id !== comment.id));
+      // The server keeps replies of a deleted comment as their own thread at the same line; so does the page.
+      setComments(
+        comments()
+          .filter((entry) => entry.id !== comment.id)
+          .map((entry) => (entry.parentId === comment.id ? { ...entry, parentId: null } : entry)),
+      );
       setTotal(Math.max(0, total() - 1));
     } catch {
       setDeleteFailed(comment.id);
@@ -562,9 +570,13 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       state="open"
       source={{ name: t().source, icon: "ti ti-code" }}
       sentence={sentenceOf(t().question({ n: props.number, title: props.title }))}
-      reason={short ? { text: t().commentsGo({ n: total() }), icon: "ti ti-message-2" } : { text: props.reason, icon: "ti ti-eye" }}
+      reason={{ text: props.reason, icon: "ti ti-eye" }}
       details={short ? undefined : changesDetails()}
-      meta={short ? [] : [...(examplesFact() ? [examplesFact()!] : []), { text: t().boundTo({ n: props.number }), icon: "ti ti-lock" }]}
+      meta={
+        short
+          ? [{ text: t().commentsGo({ n: total() }), icon: "ti ti-message-2" }]
+          : [...(examplesFact() ? [examplesFact()!] : []), { text: t().boundTo({ n: props.number }), icon: "ti ti-lock" }]
+      }
       {...answers()}
     />
   );
@@ -896,7 +908,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         title={t().commentsTitle}
         count={total()}
         actions={
-          <button type="button" class="k2b-text-link" onClick={() => chooseTab("code")}>
+          <button type="button" class="k2b-text-link core-code-review__link" onClick={() => chooseTab("code")}>
             {t().seeInCode}
           </button>
         }

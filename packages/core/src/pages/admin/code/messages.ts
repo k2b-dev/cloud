@@ -246,7 +246,9 @@ export const codeAdminMessages = i18n.define({
       secretBindings: "Secret bindings",
       secretHeaders: ({ names }: { names: string }) => `Headers: ${names}`,
       rowLabel: ({ row }: Row) => ROW_EN[row][0],
-      rowExample: ({ row }: Row) => `e.g. ${ROW_EN[row][1]}`,
+      // Rows that go outside describe what they do; the others give examples.
+      rowExample: ({ row }: Row) =>
+        row === "ai" || row === "internet" || row === "public_routes" ? ROW_EN[row][1] : `e.g. ${ROW_EN[row][1]}`,
       usage: ({ n }: N) => (n === 0 ? "not used" : n === 1 ? "1 Code" : `${n} Code`),
       value: ({ value }: { value: CodePolicyValue }) => ({ automatic: "Automatic", admin: "Admin approval", never: "Never" })[value],
       valueShort: ({ value }: { value: CodePolicyValue }) => ({ automatic: "Auto", admin: "Admin", never: "Never" })[value],
@@ -641,7 +643,8 @@ export const codeAdminMessages = i18n.define({
       secretBindings: "Secret-Bindungen",
       secretHeaders: ({ names }: { names: string }) => `Kopfzeilen: ${names}`,
       rowLabel: ({ row }: Row) => ROW_DE[row][0],
-      rowExample: ({ row }: Row) => `z. B. ${ROW_DE[row][1]}`,
+      rowExample: ({ row }: Row) =>
+        row === "ai" || row === "internet" || row === "public_routes" ? ROW_DE[row][1] : `z. B. ${ROW_DE[row][1]}`,
       usage: ({ n }: N) => (n === 0 ? "nicht genutzt" : n === 1 ? "1 Code" : `${n} Code`),
       value: ({ value }: { value: CodePolicyValue }) => ({ automatic: "Automatisch", admin: "Admin gibt frei", never: "Nie" })[value],
       valueShort: ({ value }: { value: CodePolicyValue }) => ({ automatic: "Auto", admin: "Admin", never: "Nie" })[value],

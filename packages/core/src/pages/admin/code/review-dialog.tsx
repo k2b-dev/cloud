@@ -35,7 +35,7 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
   const changes = input.kind === "changes";
   let field: HTMLElement | undefined;
   return dialogCore.open<boolean>(
-    (close) => {
+    (close, context) => {
       const errorId = `code-review-dialog-error-${createUniqueId()}`;
       const [text, setText] = createSignal(input.draft);
       const [error, setError] = createSignal<string | null>(null);
@@ -43,6 +43,8 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
       const leave = () => {
         if (!sending()) close(false);
       };
+      // Escape and the backdrop take the same guarded way as "Cancel": never while a decision is on its way.
+      context.setDismissHandler(leave);
       const submit = async (event: SubmitEvent) => {
         event.preventDefault();
         if (sending()) return;

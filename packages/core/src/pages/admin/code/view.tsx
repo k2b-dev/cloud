@@ -6,7 +6,6 @@ import type { DateContext } from "@k2b/stdlib";
 import {
   AppWorkspace,
   ButtonLink,
-  ChangeList,
   DataTable,
   DotStrip,
   type DotStripTone,
@@ -969,7 +968,7 @@ export function CodeAreaView(props: Props) {
           when={entries.length}
           fallback={<Placeholder icon="ti ti-history-off" title={t.historyEmpty} description={t.historyEmptySub} />}
         >
-          <Section frame="line" title={t.history}>
+          <Section frame="line" title={t.history} class="core-code-history__frame">
             <ol class="core-code-history">
               <For each={entries}>
                 {(entry) => (
@@ -980,27 +979,22 @@ export function CodeAreaView(props: Props) {
                         <strong>{entry.by ?? t.unknownAuthor}</strong>
                         <span> · {when(entry.at)}</span>
                       </p>
-                      <ChangeList
-                        label={t.historyChangesLabel}
-                        items={[
-                          ...(entry.preset
-                            ? [
-                                {
-                                  tone: "change" as const,
-                                  content: change(t.presets, presetLabel(entry.preset.before), presetLabel(entry.preset.after)),
-                                },
-                              ]
-                            : []),
-                          ...entry.changes.map((item) => ({
-                            tone: "change" as const,
-                            content: change(
-                              t.historyRow({ row: t.rowLabel({ row: item.row }), group: item.group }),
-                              value(item.before),
-                              value(item.after),
-                            ),
-                          })),
-                        ]}
-                      />
+                      <ul class="core-code-history__changes" aria-label={t.historyChangesLabel}>
+                        <Show when={entry.preset}>
+                          {(preset) => <li>{change(t.presets, presetLabel(preset().before), presetLabel(preset().after))}</li>}
+                        </Show>
+                        <For each={entry.changes}>
+                          {(item) => (
+                            <li>
+                              {change(
+                                t.historyRow({ row: t.rowLabel({ row: item.row }), group: item.group }),
+                                value(item.before),
+                                value(item.after),
+                              )}
+                            </li>
+                          )}
+                        </For>
+                      </ul>
                     </div>
                   </li>
                 )}
@@ -1117,7 +1111,7 @@ export function CodeAreaView(props: Props) {
           }
         />
       );
-    const slots = metrics.runners.reduce((sum, runner) => sum + runner.freeSlots + (runner.busySlots ?? 0), 0);
+    const slots = metrics.slots ?? metrics.freeSlots;
     const none = metrics.instances === 0;
     // The queue grows when nothing is free and runs wait.
     const behind = !none && metrics.freeSlots === 0 && metrics.queued > 0;

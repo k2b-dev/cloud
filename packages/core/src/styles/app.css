@@ -475,6 +475,9 @@
   font-weight: 600;
   color: var(--k2b-ai-accent, var(--k2b-text));
 }
+.core-code-review__link {
+  font-size: var(--k2b-type-13, 0.8125rem);
+}
 .core-code-review__overview-threads {
   display: grid;
   gap: 0.75rem;
@@ -535,7 +538,7 @@
   padding: 0.75rem 1rem;
   border-radius: var(--k2b-radius-lg, 0.75rem);
   background: var(--k2b-surface);
-  box-shadow: var(--k2b-island-shadow);
+  box-shadow: var(--k2b-island-shadow, var(--k2b-shadow-raised));
 }
 .core-code-review__files-icon {
   color: var(--k2b-text-muted);
@@ -659,6 +662,25 @@
 .core-code-history__head > span {
   font-size: var(--k2b-type-12, 0.75rem);
   color: var(--k2b-text-subtle, var(--k2b-text-muted));
+}
+.k2b-ui .core-code-history__frame > .k2b-section__header {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.core-code-history__changes {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--k2b-type-13, 0.8125rem);
+}
+.core-code-history__changes i {
+  font-size: 0.75rem;
 }
 .core-code-history__was {
   color: var(--k2b-text-muted);
@@ -798,7 +820,7 @@
   display: inline-block;
   width: 1.125rem;
   height: 1.125rem;
-  border: 2px solid var(--k2b-control-border, var(--k2b-border));
+  border: 2px solid var(--k2b-text-muted);
   border-radius: 50%;
   vertical-align: middle;
   cursor: pointer;
