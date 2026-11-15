@@ -33,7 +33,15 @@ import { checkCodeSecretBinding, currentCodeSecretBindings, deleteCodeSecret, li
 import { requireCodeSourcePermission } from "./source-access";
 import { codeSourceHash, createCode, listCodes, readCode, readCodeRun, readCodeVersion } from "./store";
 import { simulateCode, testCode } from "./testing";
-import { codeVersionReadiness, diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion, withdrawCodeVersion } from "./versions";
+import {
+  codeVersionReadiness,
+  diffCodeVersion,
+  listCodeVersions,
+  requestCodeVersionApprovalAgain,
+  setCodePaused,
+  submitCodeVersion,
+  withdrawCodeVersion,
+} from "./versions";
 
 /** Read every chunk of one immutable version through the existing permission-aware reader. */
 async function versionText(
@@ -183,6 +191,7 @@ async function check(input: CodeAuthoringInput<"check">, context: CodeContext, p
 export const codeAuthoringServices = {
   review: readCodeReview,
   reviewStop: cancelCodeReviewRevision,
+  reviewRequestAgain: requestCodeVersionApprovalAgain,
   reviewWait: waitCodeReview,
   withdraw: withdrawCodeVersion,
   async init(input: CodeAuthoringInput<"init">, context: CodeContext): Promise<CodeAuthoringData<"init">> {

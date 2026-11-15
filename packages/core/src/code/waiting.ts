@@ -157,7 +157,10 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
           await requireCodeEventAccess(code, row.version_id, signal);
           continue;
         } catch (error) {
-          if (!(error instanceof CodeDataError) || !["FORBIDDEN", "BAD_INPUT"].includes(error.code)) throw error;
+          signal.throwIfAborted();
+          // An unavailable event app is not evidence of missing access and must not
+          // take down the person's other waiting entries.
+          if (!(error instanceof CodeDataError) || !["FORBIDDEN", "BAD_INPUT"].includes(error.code)) continue;
         }
       }
       const de = input.locale.startsWith("de");

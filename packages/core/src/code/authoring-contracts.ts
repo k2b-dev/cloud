@@ -187,6 +187,7 @@ export const CodeWorkspaceStatusSchema = z.object({ version: z.literal(1), items
  */
 export const codeAuthoringContracts = {
   review: { input: CodeReviewInputSchema, data: CodeReviewSchema },
+  reviewRequestAgain: { input: CodeReviewInputSchema.omit({ before: true }), data: codeVersionContracts.submit.data },
   reviewStop: {
     input: CodeReviewInputSchema.omit({ before: true }),
     data: z

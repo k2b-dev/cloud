@@ -299,10 +299,50 @@ async function submissionEvidence(
     return unavailableEvidence("code_test_runner_unavailable");
   }
 }
+/** Only a still-expired, undecided submission may start a fresh human-requested attempt. */
+async function expiredSubmission(codeId: string, versionId: string, db: SQL) {
+  const [submission] = await db<{ origin: unknown; created_by: string | null; expired: boolean; withdrawn: boolean; decided: boolean }[]>`
+    SELECT s.origin,v.created_by,(r.status='expired' OR (r.status='pending' AND r.expires_at<=now())) AS expired,
+      EXISTS(SELECT 1 FROM code.version_withdrawals w WHERE w.version_id=v.id) AS withdrawn,
+      EXISTS(SELECT 1 FROM code.version_decisions d WHERE d.version_id=v.id) AS decided
+    FROM code.version_submissions s JOIN code.versions v ON v.id=s.version_id
+      JOIN approvals.requests r ON r.id=s.approval_id AND r.kind='code_version'
+    WHERE s.code_id=${codeId} AND s.version_id=${versionId}::uuid`;
+  if (!submission?.expired || submission.withdrawn || submission.decided)
+    throw new CodeDataError("CONFLICT", "Only an expired, undecided version can be requested again.");
+  return submission;
+}
+
+/** Reuse the checked immutable project as a new version and approval reference; never extend an old approval. */
+export async function requestCodeVersionApprovalAgain(input: { codeId: string; versionId: string }, context: CodeContext) {
+  const person = codePerson(context, true);
+  const { code } = await readCode(input.codeId, context);
+  await requireCodeSourcePermission(code, context);
+  const submission = await expiredSubmission(code.id, input.versionId, sql);
+  const snapshot = await versionSnapshot(code.id, input.versionId, sql);
+  const origin = CodeSubmissionOriginSchema.parse(submission.origin);
+  const [chat] =
+    origin.kind === "ai_chat" && submission.created_by === person.id
+      ? await sql`SELECT id FROM ai.conversations WHERE id=${origin.conversationId}::uuid AND created_by_user_id=${person.id}::uuid`
+      : [];
+  return submitCodeVersion(
+    {
+      codeId: code.id,
+      sourceFiles: snapshot.source_files,
+      bundle: snapshot.bundle,
+      manifest: CodeCheckedVersionManifestSchema.parse(snapshot.manifest),
+      baseVersionId: input.versionId,
+    },
+    { ...context, submissionOrigin: chat ? origin : { kind: "cli" } },
+    { retryExpired: true },
+  );
+}
+
 /** Submit the exact checked source and bundle atomically. Pending approval never changes the running version. */
 export async function submitCodeVersion(
   raw: z.input<typeof codeVersionContracts.submit.input>,
   context: CodeContext,
+  options?: { retryExpired: true },
 ): Promise<CodeVersionSubmission> {
   const startedAt = performance.now();
   const input = checkedSubmission(raw, context);
@@ -324,6 +364,10 @@ export async function submitCodeVersion(
     await tx`SELECT singleton FROM code.policy WHERE singleton FOR SHARE`;
     const code = await lockCodeForEdit(input.codeId, context, tx);
     await assertCodeReviewTurn(code.id, context, tx);
+    if (options?.retryExpired) {
+      if (!input.baseVersionId) throw new CodeDataError("BAD_INPUT", "A retry requires its expired version.");
+      await expiredSubmission(code.id, input.baseVersionId, tx);
+    }
     const [latest] = await tx<{ id: string }[]>`SELECT id FROM code.versions WHERE code_id=${code.id} ORDER BY number DESC LIMIT 1`;
     if ((latest?.id ?? null) !== input.baseVersionId) {
       const before = input.baseVersionId ? await versionSnapshot(code.id, input.baseVersionId, tx) : null;

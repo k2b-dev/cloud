@@ -310,9 +310,17 @@ records who withdrew it and when, cancels the question and writes
 version even if the policy later stops requiring approval. Withdrawal and a
 newer version superseding a request remain distinct states.
 
-After expiry, use the existing authoring `resubmit` command with the same
-content. It creates a new version and approval reference. Each immutable
-version therefore has one review; no separate attempt identity is needed.
+After expiry, `POST /api/code/authoring/reviewRequestAgain` accepts
+`{codeId,versionId}` from a current editor with a write credential. Core reuses
+the immutable stored project, runs the current submission checks and policy,
+and returns the normal submission receipt with a new version number and
+approval reference. The old request is never extended. Concurrent retries obey
+the existing latest-version conflict guard. A decided or withdrawn version
+cannot be requested again this way. The CLI can also resubmit the same content.
+Each immutable version therefore has one review; no separate attempt identity
+is needed. An original chat author keeps their chat anchor and automatic-attempt
+marker when that chat still belongs to them; another editor's request has CLI
+origin.
 The active version keeps running. If none is active, the automation remains off.
 
 ## List, pause and resume

@@ -20,8 +20,9 @@ import { migrate as versions } from "../migrate/core/code-versions";
 import { migrate as events } from "../migrate/core/events";
 import { migrate as pwa } from "../migrate/core/pwa";
 import { migrate as settings } from "../migrate/core/settings";
-import type { CodeContext } from "./access";
+import { type CodeContext, CodeDataError } from "./access";
 import { createCodeAuthoringChatTools } from "./chat-tools";
+import * as eventAccess from "./event-access";
 import { cancelCodeReviewRevision, deliverCodeReviewChatFacts, type ReviewChatEffect, startCodeReviewRevision } from "./review-chat";
 import { enqueueCodeReviewChat } from "./review-chat-state";
 import { codeReviewFollowUp } from "./review-contracts";
@@ -216,6 +217,24 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
       const batch = await meter.during(() => deliverCodeReviewChatFacts(manyEffects));
       expect(batch.length).toBe(one.length);
       expect(batch.length).toBeLessThanOrEqual(16);
+      for (const f of [single, ...many]) {
+        await sql`INSERT INTO code.activations(id,code_id,version_id,activating_person,locale,cloud_admin,state)
+          VALUES(gen_random_uuid(),${f.codeId},${f.versionId}::uuid,${owner}::uuid,'de',false,'active')`;
+        await sql.begin((tx) => enqueueCodeReviewChat(f.versionId, "activation", tx));
+      }
+      const activations = await sql<ReviewChatEffect[]>`SELECT * FROM code.review_chat_outbox
+        WHERE kind='activation' AND version_id=ANY(${sql.array(
+          [single, ...many].map((f) => f.versionId),
+          "uuid",
+        )})`;
+      const oneActivation = await meter.during(() =>
+        deliverCodeReviewChatFacts(activations.filter((row) => row.version_id === single.versionId)),
+      );
+      const batchActivations = await meter.during(() =>
+        deliverCodeReviewChatFacts(activations.filter((row) => row.version_id !== single.versionId)),
+      );
+      expect(batchActivations.length).toBe(oneActivation.length);
+      expect(batchActivations.length).toBeLessThanOrEqual(16);
     } finally {
       await meter.close();
     }
@@ -436,6 +455,26 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
     expect((await read()).items.find((item) => item.id === `code:${expired.versionId}`)?.kind).toBe("code_expired");
     await sql`UPDATE approvals.requests SET expires_at='infinity'::timestamptz WHERE id=${request.id}::uuid`;
     expect((await read()).items.find((item) => item.id === `code:${expired.versionId}`)).toBeUndefined();
+  });
+  test("an unavailable event app only omits its own attention entry; restored access removes it", async () => {
+    await sql`UPDATE code.codes SET state='deleting'`;
+    const failed = await fixture(),
+      other = await fixture();
+    await sql`INSERT INTO code.activations(id,code_id,version_id,activating_person,locale,cloud_admin,state,failure)
+      VALUES(gen_random_uuid(),${failed.codeId},${failed.versionId}::uuid,${owner}::uuid,'de',false,'failed','{"code":"FORBIDDEN"}')`;
+    const read = () => listCodeWaiting({ ownerUserId: owner, locale: "de", timeZone: "UTC" }, signal());
+    const check = spyOn(eventAccess, "requireCodeEventAccess").mockRejectedValue(new CodeDataError("CONFLICT", "Fixture app unavailable"));
+    try {
+      const waiting = await read();
+      expect(waiting.items.some((item) => item.id === `code:${other.versionId}`)).toBe(true);
+      expect(waiting.items.some((item) => item.id === `code-attention:${failed.codeId}`)).toBe(false);
+      check.mockRejectedValue(new CodeDataError("FORBIDDEN", "Fixture access missing"));
+      expect((await read()).items.find((item) => item.id === `code-attention:${failed.codeId}`)?.kind).toBe("code_attention");
+      check.mockResolvedValue(undefined);
+      expect((await read()).items.some((item) => item.id === `code-attention:${failed.codeId}`)).toBe(false);
+    } finally {
+      check.mockRestore();
+    }
   });
   test("unrelated broken resource owners are not scanned and one unavailable own owner cannot break waiting", async () => {
     await sql`UPDATE code.codes SET state='deleting'`;

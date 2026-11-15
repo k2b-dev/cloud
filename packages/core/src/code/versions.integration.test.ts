@@ -31,7 +31,9 @@ import { migrate as migrateSettings } from "../migrate/core/settings";
 import type { CoreNotificationSender } from "../notifications";
 import type { CodeContext } from "./access";
 import * as access from "./access";
+import { codeAuthoringServices } from "./authoring";
 import * as authoringChecks from "./authoring-check";
+import { codeAuthoringContracts } from "./authoring-contracts";
 import { createCodeAuthoringChatTools } from "./chat-tools";
 import type { Code, CodeSourceFiles } from "./contracts";
 import type { CodePolicyRow } from "./policy-contracts";
@@ -514,7 +516,11 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   });
   test("held review rechecks revoked editor rights and an expired version can be resubmitted unchanged", async () => {
     const code = await newCode();
-    const submitted = await submitCodeVersion(input(code, "same"), author);
+    const chat = await ai.aiConversations.createConversation({ ownerUserId: authorId });
+    const origin = { kind: "ai_chat" as const, conversationId: chat.id, cardAnchor: "original-card", automaticAfterReview: true };
+    const submitted = await submitCodeVersion(input(code, "same"), { ...author, submissionOrigin: origin });
+    const retry = () => codeAuthoringServices.reviewRequestAgain({ codeId: code.id, versionId: submitted.version.id }, author);
+    await expect(retry()).rejects.toMatchObject({ code: "CONFLICT" });
     const share = await addCodeShare(code.id, { type: "user", userId: strangerId }, "editor", author);
     const listener = spyOn(approvalDecisionHints, "wait").mockImplementation(async () => {
       await sql`DELETE FROM code.shares WHERE code_id=${code.id} AND access_id=${share}`;
@@ -528,7 +534,16 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     }
     await sql`UPDATE approvals.requests SET expires_at=created_at-interval '1 second' WHERE id=${submitted.approvalId}::uuid`;
     expect((await readCodeReview({ codeId: code.id, versionId: submitted.version.id }, author)).status).toBe("expired");
-    const next = await submitCodeVersion(input(code, "same", submitted.version.id), author);
+    await expect(
+      codeAuthoringServices.reviewRequestAgain({ codeId: code.id, versionId: submitted.version.id }, context(strangerId)),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const next = codeAuthoringContracts.reviewRequestAgain.data.parse(await retry());
+    expect(next.origin).toEqual(origin);
+    expect(next.binding.sourceHash).toBe(submitted.binding.sourceHash);
+    expect(next.binding.bundleHash).toBe(submitted.binding.bundleHash);
+    expect(next.status).toBe("pending");
+    await expect(retry()).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(2);
     expect(next.version.number).toBe(submitted.version.number + 1);
     expect(next.approvalId).not.toBe(submitted.approvalId);
   });
@@ -1540,6 +1555,27 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       projectId: null,
       domains: ["code-versions"],
     });
+  });
+  test("withdrawal invalidates the submitting person's card immediately and rolls back with its evidence", async () => {
+    const code = await newCode();
+    const submitted = await submitCodeVersion(input(code, "live withdrawal"), author);
+    const changes = () => sql`SELECT id FROM events.outbox WHERE app_id='core' AND kind='live'
+      AND ordering_key=${`u:${authorId}`} AND payload->'d'->'domains' @> '["code-versions"]'::jsonb ORDER BY seq`;
+    const before = await changes();
+    await expect(
+      sql.begin(async (tx) => {
+        await tx`INSERT INTO code.version_withdrawals(version_id,withdrawn_by) VALUES(${submitted.version.id}::uuid,${authorId}::uuid)`;
+        throw new Error("rollback withdrawal");
+      }),
+    ).rejects.toThrow("rollback withdrawal");
+    expect(await changes()).toEqual(before);
+    await withdrawCodeVersion({ codeId: code.id, versionId: submitted.version.id }, author);
+    expect(await changes()).toHaveLength(before.length + 1);
+    expect((await readCodeReview({ codeId: code.id, versionId: submitted.version.id }, author)).status).toBe("withdrawn");
+    await sql`UPDATE approvals.requests SET expires_at=created_at-interval '1 second' WHERE id=${submitted.approvalId}::uuid`;
+    await expect(
+      codeAuthoringServices.reviewRequestAgain({ codeId: code.id, versionId: submitted.version.id }, author),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });
 
