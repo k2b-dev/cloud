@@ -19921,7 +19921,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1rem;
   cursor: pointer;
 }
-.k2b-ui .k2b-app-workspace__sidebar-section-toggle > i { margin-inline-start: auto; }
+.k2b-ui .k2b-app-workspace__sidebar-section-chevron {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  width: 1.25rem;
+  align-self: stretch;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
 .k2b-ui .k2b-app-workspace__sidebar-section-toggle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 .k2b-ui .k2b-app-workspace__sidebar-preview-body {
   max-height: min(calc(32rem - 2px), calc(100dvh - 1rem - 2px));
