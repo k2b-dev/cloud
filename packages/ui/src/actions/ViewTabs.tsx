@@ -9,6 +9,8 @@ export type ViewTab = {
   href: string;
   icon?: string;
   count?: number | string;
+  /** The widest the count gets, such as "99": the count keeps this width, so no tab moves when the number changes. */
+  countReserve?: string;
   /** A short quiet label after the count, such as "New" for a view people have not opened yet. */
   badge?: string;
   /** Stays in the strip after More at every width, for a view of another kind than the ones that overflow. */
@@ -297,7 +299,10 @@ export function ViewTabs(props: ViewTabsProps): JSX.Element {
       <Show when={item.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
       <span class="k2b-view-tabs__label k2b-truncate-fade">{item.label}</span>
       <Show when={item.count !== undefined}>
-        <span class="k2b-view-tabs__count">{item.count}</span>
+        <span class="k2b-view-tabs__count" data-reserve={item.countReserve ? "" : undefined}>
+          <span>{item.count}</span>
+          <Show when={item.countReserve}>{(reserve) => <span aria-hidden="true">{reserve()}</span>}</Show>
+        </span>
       </Show>
       <Show when={item.badge}>{(badge) => <span class="k2b-view-tabs__badge">{badge()}</span>}</Show>
     </>

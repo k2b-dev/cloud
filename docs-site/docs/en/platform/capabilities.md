@@ -303,6 +303,32 @@ and schema field descriptions are prompt text for a model: they stay
 identical for every reader, while the model still answers in the reader's
 language.
 
+### Say what a Query did
+
+The Assistant lists the steps of a turn in words. A running Query shows its
+title ("Search mail"); a finished one shows what it did. Give each Query a
+past form under `presentation.doneTitles`, keyed by its local ID, in the base
+locale, and a `doneTitle` next to the `title` of each translation:
+
+```ts
+presentation: {
+  baseLocale: "en",
+  doneTitles: { "item.read": "Read inventory item" },
+  translations: {
+    de: { queries: { "item.read": { title: "Inventarartikel lesen", doneTitle: "Inventarartikel gelesen" } } },
+  },
+},
+```
+
+A past form is plain text like a title, never a template; what the Query
+looked for stays on the line below the step. It comes from the same locale as
+the title it stands for, so a translation with a `title` but no `doneTitle`
+does not fall back to the base past form. Without a past form, the step reads
+"<title> · done" in the reader's language. Startup rejects past forms for
+unknown or non-Query entries. Past forms live only in the presentation, not
+in the manifest: an older Cloud release ignores them and keeps the rest of
+the catalog.
+
 Action reviews and provider-authored summaries or errors are runtime output,
 not registry metadata. Resolve those inside the handler from
 `context.locale`, including every review `message` and detail `label`;
@@ -1424,11 +1450,11 @@ cannot see the target. Raw input, response titles and identifiers never fill it.
 presentation: {
   baseLocale: "en",
   results: {
-    create: { text: "Created {target}", targetType: "task", kind: "task" },
+    create: { text: "Created {target}", targetType: "task", kind: "task", countText: "Tasks created" },
   },
   translations: {
     de: { actions: {
-      create: { result: { text: "{target} angelegt", targetType: "task", kind: "Aufgabe" } },
+      create: { result: { text: "{target} angelegt", targetType: "task", kind: "Aufgabe", countText: "Aufgaben angelegt" } },
     } },
   },
 },
@@ -1442,6 +1468,11 @@ is read. Use a result form only when a successful call proves that outcome.
 Queued or scheduled work must say that, rather than claim completion. Missing
 forms or ambiguous targets produce the Action title and its invocation count.
 This metadata does not change approvals, authority, or the result envelope.
+An optional `countText` supplies a translated plural result label, such as
+“Tasks created”, beside a separate weekly count. It is plain text without
+tokens or target names and is stored with the same effect evidence. Older
+records without this label retain the explicit “Action · n times” fallback;
+Cloud does not infer plural outcome wording from an Action title.
 Third-party applications use the same contract as built-in applications.
 
 #### Receipts and outcome checks

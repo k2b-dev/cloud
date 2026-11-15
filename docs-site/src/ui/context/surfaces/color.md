@@ -65,9 +65,14 @@ box and the text never move:
 | Disabled | none | `--k2b-surface-muted` |
 
 The focus blue keeps 3:1 against the grey edge it replaces, so focus shows
-without a second width. No field casts a shadow. A control with its own edge
-reads `--k2b-edge-color`, the colour of the current state. In forced-colors
-mode the border takes the system colour and focus adds the system outline.
+without a second width. No field casts a shadow, with one approved exception:
+the assistant prompt of `Chat.Composer` takes the AI colour, a light plum edge
+at rest and the full plum edge with a soft glow outside (`--k2b-ai-glow`) on
+focus. The glow lies outside the box, so nothing moves, and the plum focus
+edge keeps 3:1 against the rest edge. Do not extend the glow to other
+controls. A control with its own edge reads `--k2b-edge-color`, the colour of
+the current state. In forced-colors mode the border takes the system colour
+and focus adds the system outline.
 
 ### Filters, buttons, and clickable cards
 
@@ -217,10 +222,6 @@ Drop targets and other control states keep the platform fill.
 | Insertion line where a moved row lands | `SortableList` | `k2b-sortable-list` |
 
 ### Links
-
-Blue text, such as a `link` or heading `text` button, stays blue on hover:
-`--k2b-action-hover` is one darker blue (accent 900 in light, accent 100 in
-dark), never the body ink and never an added underline.
 
 Link text in content stays body ink. Its underline, and the arrow of a web
 link, use `--k2b-link-accent`, which defaults to `var(--k2b-action)`. It is a

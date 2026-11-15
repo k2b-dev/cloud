@@ -26,6 +26,7 @@ export async function loadCodeRunReadModel(
   raw: z.input<typeof codeReadModelContracts.run.input>,
   context: CodeContext,
 ): Promise<CodeRunReadModel> {
+  context = { ...context, ownerReaderAnswer: null };
   const input = codeReadModelContracts.run.input.parse(raw);
   const { permission } = await readCode(input.codeId, context);
   const [row] = await sql<

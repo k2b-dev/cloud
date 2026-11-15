@@ -48,6 +48,13 @@
   --k2b-ai-solid: #8e1b6f;
   --k2b-ai-solid-hover: #701556;
   --k2b-ai-on-solid: #ffffff;
+  /* The assistant composer's edge: the AI border (#c4519f) at 60 % on white at rest (2.2:1 on the surface, 3.6:1
+     against the accent it turns into on focus) and a soft plum glow outside while it has focus. */
+  --k2b-ai-edge-rest: #dc97c5;
+  /* shadow-tokens: allow the approved glow outside the assistant composer (Composer v3), the one control exception. */
+  --k2b-ai-glow: 0 0 0 4px rgb(142 27 111 / 0.1), 0 6px 22px rgb(142 27 111 / 0.12);
+  /* A suggested next message in the empty prompt: muted plum, still 5.0:1 on the surface. */
+  --k2b-ai-suggestion: #9a5b88;
 
   --k2b-surface-canvas: var(--k2b-neutral-50);
   --k2b-surface: #ffffff;
@@ -59,17 +66,15 @@
      at least 10:1 and muted 7:1 on the surface and the muted surface. */
   --k2b-text-secondary: var(--k2b-neutral-800);
   --k2b-text-muted: #45454e;
+  /* The third grey for meta lines, axes, and times beside muted text: 4.8:1 on the surface. */
+  --k2b-text-subtle: var(--k2b-neutral-500);
   --k2b-placeholder-color: var(--k2b-neutral-500);
   --k2b-border: var(--k2b-neutral-200);
   --k2b-border-strong: var(--k2b-neutral-300);
   --k2b-hover: var(--k2b-accent-50);
   --k2b-selected: var(--k2b-accent-100);
   --k2b-action: var(--k2b-accent-700);
-  /* Hovered blue text: only a darker blue, never the body ink and never an
-     added underline. Text links, link and text buttons, and the text actions
-     of headings share it; text in an app accent reads the optional host hook
-     `--k2b-detail-panel-accent-hover` beside `--k2b-detail-panel-accent`. */
-  --k2b-action-hover: var(--k2b-accent-900);
+  --k2b-action-hover: var(--k2b-accent-800);
   /* Kind colours of icon chips (LinkCard, ResourceCard); each keeps 3:1 on its own chip. */
   --k2b-tint-blue: var(--k2b-accent-600);
   --k2b-tint-emerald: #047857;
@@ -194,6 +199,34 @@
   --k2b-ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* standard curve */
   --k2b-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* small marks only: check, switch knob, badge */
   --k2b-ease-morph: cubic-bezier(0.2, 0, 0, 1); /* with --k2b-motion-morph: a soft start and a long, calm landing */
+  /* Moments of work in progress. Each follows a change of state; only "running" loops. */
+  --k2b-motion-glide: 380ms; /* the highlight of the current step glides to the next row */
+  --k2b-motion-check: 260ms; /* a check springs open when a step is done */
+  --k2b-motion-ink: 240ms; /* finished text settles into grey */
+  --k2b-motion-progress: 400ms; /* a progress ring grows */
+  --k2b-motion-fold: 280ms; /* a list folds open or shut: its height only */
+  --k2b-motion-spin: 1100ms; /* one turn of a running ring; loops */
+  --k2b-motion-pass: 300ms; /* the check of a passing example springs open */
+  --k2b-motion-glow: 1000ms; /* a passing row glows once */
+  --k2b-motion-count: 500ms; /* a counter rolls to its next number */
+  --k2b-motion-arrive: 460ms; /* an approval rises 10 px into place */
+  --k2b-motion-ring-out: 1100ms; /* a ring around a new approval loosens outwards once */
+  --k2b-motion-busy: 1300ms; /* one pass of the shimmer over a filled button while Cloud works; loops until an answer */
+  --k2b-motion-switch-on: 340ms; /* a card changes in place to "on" */
+  --k2b-motion-pulse: 1100ms; /* one pulse of a running run; loops until its result */
+  --k2b-motion-settle: 300ms; /* a value fades over to its new text */
+  --k2b-motion-enter-row: 420ms; /* a new row slides in from above */
+  --k2b-motion-think: 2200ms; /* one pass of the shimmer over a working sentence; loops */
+  --k2b-ease-glide: cubic-bezier(0.3, 0.7, 0.2, 1); /* glide, fold */
+  --k2b-ease-pop: cubic-bezier(0.2, 1.15, 0.4, 1); /* a check or a card that springs into place */
+  --k2b-ease-pop-strong: cubic-bezier(0.2, 1.4, 0.4, 1); /* a small mark that lands with a visible spring */
+  --k2b-ease-rise: cubic-bezier(0.2, 0.8, 0.2, 1); /* something rises or slides into place */
+  --k2b-ease-settle: ease; /* colour and text settle */
+  /* Type steps of the calm surfaces: meta 12, entry 13, title 14, question 18. A text style is size plus weight. */
+  --k2b-type-12: 0.75rem;
+  --k2b-type-13: 0.8125rem;
+  --k2b-type-14: 0.875rem;
+  --k2b-type-18: 1.125rem;
   /* Cloud pins `--ui-shadow-surface: none` in both themes: flat surfaces carry
      a border, not a drop shadow, and an outer shadow is clipped anyway by the
      `overflow: hidden` parents these surfaces sit in. Only genuinely floating,
@@ -269,6 +302,23 @@
     --k2b-motion-morph: 0ms;
     --k2b-motion-celebrate: 0ms;
     --k2b-fresh-fade: 0ms;
+    --k2b-motion-glide: 0ms;
+    --k2b-motion-check: 0ms;
+    --k2b-motion-ink: 0ms;
+    --k2b-motion-progress: 0ms;
+    --k2b-motion-fold: 0ms;
+    --k2b-motion-spin: 0ms;
+    --k2b-motion-pass: 0ms;
+    --k2b-motion-glow: 0ms;
+    --k2b-motion-count: 0ms;
+    --k2b-motion-arrive: 0ms;
+    --k2b-motion-ring-out: 0ms;
+    --k2b-motion-busy: 0ms;
+    --k2b-motion-switch-on: 0ms;
+    --k2b-motion-pulse: 0ms;
+    --k2b-motion-settle: 0ms;
+    --k2b-motion-enter-row: 0ms;
+    --k2b-motion-think: 0ms;
   }
   .k2b-ui,
   .k2b-ui::before,
@@ -294,6 +344,23 @@ html[data-k2b-motion="reduced"] .k2b-ui {
   --k2b-motion-morph: 0ms;
   --k2b-motion-celebrate: 0ms;
   --k2b-fresh-fade: 0ms;
+  --k2b-motion-glide: 0ms;
+  --k2b-motion-check: 0ms;
+  --k2b-motion-ink: 0ms;
+  --k2b-motion-progress: 0ms;
+  --k2b-motion-fold: 0ms;
+  --k2b-motion-spin: 0ms;
+  --k2b-motion-pass: 0ms;
+  --k2b-motion-glow: 0ms;
+  --k2b-motion-count: 0ms;
+  --k2b-motion-arrive: 0ms;
+  --k2b-motion-ring-out: 0ms;
+  --k2b-motion-busy: 0ms;
+  --k2b-motion-switch-on: 0ms;
+  --k2b-motion-pulse: 0ms;
+  --k2b-motion-settle: 0ms;
+  --k2b-motion-enter-row: 0ms;
+  --k2b-motion-think: 0ms;
 }
 html[data-k2b-motion="reduced"] .k2b-ui,
 html[data-k2b-motion="reduced"] .k2b-ui::before,
@@ -322,13 +389,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-text: var(--k2b-neutral-50);
   --k2b-text-secondary: #f1f1f3;
   --k2b-text-muted: #bdbdc6;
+  --k2b-text-subtle: #8d8d98;
   --k2b-placeholder-color: color-mix(in srgb, var(--k2b-neutral-400) 70%, var(--k2b-neutral-500));
   --k2b-border: #29313a;
   --k2b-border-strong: #3a4552;
   --k2b-hover: #252c35;
   --k2b-selected: var(--k2b-accent-950);
   --k2b-action: var(--k2b-accent-300);
-  --k2b-action-hover: var(--k2b-accent-100);
+  --k2b-action-hover: var(--k2b-accent-200);
   --k2b-tint-blue: var(--k2b-accent-400);
   --k2b-tint-emerald: #34d399;
   --k2b-tint-violet: #a78bfa;
@@ -393,6 +461,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-ai-solid: #f0abdc;
   --k2b-ai-solid-hover: #f7cdea;
   --k2b-ai-on-solid: #3a0f2e;
+  /* Rest edge 4.7:1 against the focus accent. */
+  --k2b-ai-edge-rest: #6e3a61;
+  /* shadow-tokens: allow the approved glow outside the assistant composer (Composer v3), the one control exception. */
+  --k2b-ai-glow: 0 0 0 4px rgb(240 171 220 / 0.16), 0 6px 22px rgb(240 171 220 / 0.1);
+  --k2b-ai-suggestion: #c99abb;
   --k2b-shadow-surface: none;
   --k2b-shadow-frame:
     0 -3px 10px -8px rgb(0 0 0 / 0.32), 0 0 16px -9px rgb(0 0 0 / 0.56), 0 16px 40px -30px rgb(0 0 0 / 0.48), 0 1px 7px rgb(0 0 0 / 0.14);
@@ -1025,13 +1098,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: none;
 }
 
+/* The shared scrollbar, drawn over the tab row's bottom inset: a 0.5rem lane
+   whose thumb is 4px at rest and 6px under the pointer. */
 .k2b-ui .k2b-panes__tabs-scrollbar {
   position: absolute;
   z-index: 4;
-  top: calc(2.5rem - 0.375rem);
+  top: calc(2.5rem - 0.4375rem);
   right: 0;
   left: 0;
-  height: 0.375rem;
+  height: 0.5rem;
   border-radius: 999px;
   cursor: ew-resize;
   opacity: 0;
@@ -1051,10 +1126,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 100%;
   border: 0.125rem solid transparent;
   border-radius: 999px;
-  background: var(--k2b-border-strong);
+  background: var(--k2b-scrollbar-thumb);
   background-clip: padding-box;
   transform: translateX(var(--k2b-panes-scroll-left));
   width: var(--k2b-panes-scroll-width);
+}
+
+.k2b-ui .k2b-panes__tabs-scrollbar:hover > span {
+  border-width: 0.0625rem;
+  background: var(--k2b-scrollbar-thumb-hover);
+  background-clip: padding-box;
 }
 
 .k2b-ui .k2b-panes__tab {
@@ -2448,8 +2529,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-button[data-variant="link"]:not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-action-hover);
+  color: var(--k2b-action);
   background: transparent;
+  text-decoration: underline;
 }
 
 /* A destructive text action, such as Remove at the foot of a menu, takes the
@@ -4010,12 +4092,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-inline-end: -0.375rem;
 }
 
-/* A collapsible section's whole heading row is one disclosure button. It
-   never draws a fill, not on hover, open, or with focus: hover only colours
-   the title and the chevron in the accent, and keyboard focus draws the ring
-   around the row. The row keeps the heading's place, so the gaps are those of
-   a fixed section. The chevron and the summary keep their places in both
-   states, so opening moves only what lies below. */
+/* A collapsible section's whole heading row is one disclosure button. Flat,
+   hover only colours its text, and the row starts where the other headings
+   start. In a card it fills the card's top on hover and focus. The chevron
+   and the summary keep their places in both states, so opening moves only
+   what lies below. */
 .k2b-ui .k2b-section__toggle {
   padding: 0;
   border: 0;
@@ -4025,6 +4106,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font: inherit;
   cursor: pointer;
   user-select: none;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
 }
 
 .k2b-ui .k2b-section__toggle:disabled {
@@ -4032,7 +4114,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-section__toggle:not(:disabled):hover :is(.k2b-section__title, .k2b-section__chevron) {
-  color: var(--k2b-detail-panel-accent, var(--k2b-action));
+  color: var(--k2b-text);
 }
 
 .k2b-ui .k2b-section__toggle:focus-visible {
@@ -4046,37 +4128,46 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 2.75rem;
 }
 
-/* In a card the whole top of the card opens it: an invisible hit area reaches
-   over the card's padding, and open down to the content. */
 .k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
-  position: relative;
+  width: calc(100% + 1.75rem);
+  margin: -0.75rem -0.875rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: calc(var(--k2b-radius-surface) - 1px);
 }
 
-.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle::before {
-  content: "";
-  position: absolute;
-  inset: -0.75rem -0.875rem;
+.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle {
+  width: calc(100% + 2.25rem);
+  margin: -1rem -1.125rem;
+  padding: 1rem 1.125rem;
 }
 
-.k2b-ui .k2b-section[data-size="md"][data-frame="line"] > .k2b-section__header > .k2b-section__toggle::before {
-  inset: -1rem -1.125rem;
+.k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle {
+  margin-bottom: -0.375rem;
+  padding-bottom: 0.375rem;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
 }
 
-.k2b-ui .k2b-section[data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle::before {
-  bottom: -0.375rem;
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:not(:disabled):hover {
+  background: var(--k2b-hover);
 }
 
-.k2b-ui .k2b-section[data-size="md"][data-frame="line"][data-open="true"] > .k2b-section__header > .k2b-section__toggle::before {
-  bottom: -0.5rem;
+.k2b-ui .k2b-section[data-frame="line"] > .k2b-section__header > .k2b-section__toggle:focus-visible {
+  outline-offset: calc(-1 * var(--k2b-focus-width));
 }
 
-/* A card that stands flat inside another frame has no padding to reach over. */
+/* A card that stands flat inside another frame is a flat row again. */
 .k2b-ui
   :is(.k2b-section, .k2b-detail-panel__group, .k2b-detail-panel__summary, .k2b-paper, .k2b-panel-dialog, .k2b-settings-section)
   .k2b-section[data-frame="line"]
   > .k2b-section__header
-  > .k2b-section__toggle::before {
-  content: none;
+  > .k2b-section__toggle {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--k2b-radius-control);
+  background: transparent;
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-section__chevron {
@@ -4642,6 +4733,136 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   opacity: 1;
 }
 
+/* Discussion.Thread: a compact thread without a surface. One 1 px line runs at its start and turns 2 px in the focus
+   colour while writing; the padding gives back the extra pixel, so no text moves. Every entry is flush on one edge
+   11 px after the line: an 18 px avatar, name, role, and time in one line, the text below; replies are not indented.
+   Text lines are 19 px, so a short comment with the reply line is exactly as high as the writing field. */
+.k2b-ui .k2b-discussion-thread {
+  /* Where an entry's text starts after its avatar: the writing field measures its lines at that width. */
+  --k2b-discussion-thread-indent: 1.625rem;
+  display: grid;
+  max-width: 40rem;
+  min-width: 0;
+  gap: 0.5rem;
+  padding-block: 0.125rem;
+  padding-inline: 0.6875rem 0.75rem;
+  border-inline-start: 1px solid var(--k2b-control-border-soft);
+  font-size: var(--k2b-type-13, 0.8125rem);
+  line-height: 1.1875rem;
+  outline: none;
+}
+.k2b-ui .k2b-discussion-thread[data-writing] {
+  padding-inline-start: 0.625rem;
+  border-inline-start: 2px solid var(--k2b-edge-focus);
+}
+.k2b-ui .k2b-discussion-thread:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-width); }
+.k2b-ui .k2b-discussion-thread__list { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.k2b-ui .k2b-discussion-thread__list:empty { display: none; }
+.k2b-ui .k2b-load-more.k2b-discussion-thread__older { justify-self: start; }
+.k2b-ui .k2b-discussion-thread .k2b-discussion__item[data-has-avatar="true"] {
+  grid-template-columns: 1.125rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+.k2b-ui .k2b-discussion-thread .k2b-discussion__avatar { min-height: 1.1875rem; }
+.k2b-ui .k2b-discussion-thread .k2b-discussion__avatar .k2b-avatar[data-size] { width: 1.125rem; height: 1.125rem; font-size: 0.5rem; }
+.k2b-ui .k2b-discussion-thread .k2b-discussion__entry > header {
+  min-height: 1.1875rem;
+  gap: 0;
+  justify-content: flex-start;
+}
+.k2b-ui .k2b-discussion-thread .k2b-discussion__entry > header > strong {
+  flex: 0 1 auto;
+  font-size: var(--k2b-type-13, 0.8125rem);
+  line-height: 1.1875rem;
+}
+/* Role and time follow the name in the quiet meta step, each after a middle dot. */
+.k2b-ui .k2b-discussion-thread .k2b-discussion__entry > header > :is(.k2b-discussion__meta, .k2b-discussion__timestamp) {
+  flex: none;
+  margin: 0;
+  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  font-size: var(--k2b-type-12, 0.75rem);
+  font-weight: 400;
+  line-height: 1.1875rem;
+  white-space: nowrap;
+}
+.k2b-ui .k2b-discussion-thread .k2b-discussion__entry > header > :is(.k2b-discussion__meta, .k2b-discussion__timestamp)::before {
+  content: "\00a0·\00a0";
+}
+/* An action such as "Delete" sits at the end of the header line without making it taller. */
+.k2b-ui .k2b-discussion-thread .k2b-discussion__item-actions {
+  order: 1;
+  margin-block: -0.3125rem;
+  margin-left: 0;
+  margin-inline-start: auto;
+}
+.k2b-ui .k2b-discussion-thread .k2b-discussion__content,
+.k2b-ui .k2b-discussion-thread .k2b-discussion__content > .k2b-content-markdown {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: var(--k2b-type-13, 0.8125rem);
+  line-height: 1.1875rem;
+  overflow-wrap: anywhere;
+}
+/* A real field on the avatars' edge; the thread's line shows the focus once it opens. */
+.k2b-ui .k2b-discussion-thread__reply {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 2rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  cursor: text;
+  outline: none;
+}
+.k2b-ui .k2b-discussion-thread__reply::placeholder { color: var(--k2b-placeholder-color); opacity: 1; }
+.k2b-ui .k2b-discussion-thread__compose { display: grid; gap: 0.5rem; min-width: 0; margin: 0; }
+.k2b-ui .k2b-discussion-thread__field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.375rem;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  color: var(--k2b-text);
+  background: transparent;
+  font: inherit;
+  line-height: 1.1875rem;
+  resize: none;
+  outline: none;
+}
+.k2b-ui .k2b-discussion-thread__field::placeholder { color: var(--k2b-placeholder-color); opacity: 1; }
+.k2b-ui .k2b-discussion-thread__actions { display: flex; min-height: 2rem; align-items: center; gap: 0.375rem; min-width: 0; }
+/* At most two lines, as high as the buttons, so a long hint or failure never moves anything. */
+.k2b-ui .k2b-discussion-thread__status {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  font-size: var(--k2b-type-12, 0.75rem);
+  line-height: 1rem;
+}
+.k2b-ui .k2b-discussion-thread__status > span {
+  display: -webkit-box;
+  grid-area: 1 / 1;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.k2b-ui .k2b-discussion-thread__status > [data-hidden] { visibility: hidden; }
+.k2b-ui .k2b-discussion-thread__status > [role="alert"] { color: var(--k2b-danger-text); }
+@media (forced-colors: active) {
+  .k2b-ui .k2b-discussion-thread { border-inline-start-color: CanvasText; }
+  .k2b-ui .k2b-discussion-thread[data-writing] { border-inline-start-color: Highlight; }
+}
+
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="ghost"],
 .k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="text"],
 .k2b-ui .k2b-section__actions .k2b-button[data-variant="ghost"],
@@ -4654,12 +4875,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-section__actions .k2b-button[data-variant="ghost"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-detail-panel-accent, var(--k2b-action));
   background: color-mix(in srgb, var(--k2b-detail-panel-accent, var(--k2b-action)) 9%, transparent);
-}
-
-/* Blue text stays blue on hover: a darker blue, not the body ink. */
-.k2b-ui .k2b-detail-panel__summary-actions .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover,
-.k2b-ui .k2b-section__actions .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-detail-panel-accent-hover, var(--k2b-action-hover));
 }
 
 /* A titled group: a quiet title over secondary sections that stand flush as
@@ -8483,13 +8698,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   mask-image: linear-gradient(to right, transparent, #000 2rem, #000 calc(100% - 2rem), transparent);
 }
 
+/* The shared scrollbar below the chips: a 0.5rem lane whose thumb is 4px at
+   rest and 6px under the pointer. */
 .k2b-ui .k2b-choice-groups-scrollbar {
   position: absolute;
   z-index: 1;
   right: 0;
-  bottom: -0.3125rem;
+  bottom: -0.375rem;
   left: 0;
-  height: 0.375rem;
+  height: 0.5rem;
   border-radius: 999px;
   cursor: ew-resize;
   opacity: 0;
@@ -8510,9 +8727,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 100%;
   border: 0.125rem solid transparent;
   border-radius: 999px;
-  background: var(--k2b-border-strong);
+  background: var(--k2b-scrollbar-thumb);
   background-clip: padding-box;
   transform: translateX(var(--k2b-choice-scroll-left));
+}
+
+.k2b-ui .k2b-choice-groups-scrollbar:hover > span {
+  border-width: 0.0625rem;
+  background: var(--k2b-scrollbar-thumb-hover);
+  background-clip: padding-box;
 }
 
 .k2b-ui .k2b-choice-groups > button {
@@ -10989,7 +11212,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-y: hidden;
   padding: 0.125rem 0;
   overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
 }
 
 .k2b-ui .k2b-date-durations button {
@@ -11591,9 +11813,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-data-table__scrollbar > span {
   position: absolute;
   display: block;
-  border: 1px solid transparent;
+  border: 0.125rem solid transparent;
   border-radius: 9999px;
-  background: color-mix(in srgb, var(--k2b-scrollbar-thumb) 45%, transparent);
+  background: var(--k2b-scrollbar-thumb);
   background-clip: padding-box;
 }
 
@@ -11611,7 +11833,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   height: 100%;
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (hover: hover) and (pointer: fine) and (forced-colors: none) {
   .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap {
     scrollbar-width: none;
   }
@@ -11619,6 +11841,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap::-webkit-scrollbar {
     width: 0;
     height: 0;
+  }
+
+  /* The overlay takes the native scrollbars' place. A table that overflows sideways keeps the room the native lane had
+     (measured by DataTable, 0 where scrollbars overlay), so it has the same height in its server frame and once its
+     code arrives, and the overlay draws inside that lane. */
+  .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"][data-overflow-x="true"] > .k2b-table-wrap {
+    padding-bottom: var(--k2b-data-table-native-lane, 0px);
   }
 
   .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-data-table__scrollbar[data-overflow="true"] {
@@ -11630,8 +11859,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     pointer-events: auto;
   }
 
+  /* The shared thumb: 4px at rest, 6px under the pointer, inside the same 0.5rem. */
   .k2b-ui .k2b-data-table__scrollbar:hover > span {
-    background: var(--k2b-scrollbar-thumb);
+    border-width: 0.0625rem;
+    background: var(--k2b-scrollbar-thumb-hover);
     background-clip: padding-box;
   }
 }
@@ -12634,82 +12865,144 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex-shrink: 0;
 }
 
+/* scrollbars: central rule begin */
+/* One scrollbar for every scroller inside `.k2b-ui`: no track, no corner, no
+   arrows, only a fully round thumb in the two tokens below. The document keeps
+   the browser's own scrollbar: WebKit styles it from the body element, so a
+   `.k2b-ui` body is left out. Chromium and WebKit draw a fixed 0.5rem scrollbar whose
+   thumb is 4px wide at rest and 6px under the pointer or while dragged. The
+   thumb widens inside that fixed space, so hovering never moves content.
+   Chromium ignores every ::-webkit-scrollbar rule of an element that has a
+   `scrollbar-width` or `scrollbar-color`, so only browsers without
+   ::-webkit-scrollbar (Firefox) receive those two properties. Touch screens
+   keep their native overlay scrollbars and forced colors the system ones.
+   The rules match every element directly, because a direct match beats an
+   inherited value, and sit in the components layer with no specificity, so a
+   hidden scrollbar (`scrollbar-width: none`, a utility) always wins. Scrollers
+   that can start or stop overflowing reserve this space with
+   `scrollbar-gutter`, or take it from an end inset they already have; see
+   layout-parity.css.
+   scripts/checks/scrollbars.ts keeps other stylesheets from setting their own. */
 .k2b-ui {
-  --k2b-scrollbar-thumb: rgb(82 82 91 / 0.55);
-  --k2b-scrollbar-thumb-hover: rgb(82 82 91 / 0.75);
-  scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
+  --k2b-scrollbar-thumb: color-mix(in srgb, var(--k2b-neutral-500, #71717a) 45%, transparent);
+  --k2b-scrollbar-thumb-hover: color-mix(in srgb, var(--k2b-neutral-500, #71717a) 80%, transparent);
 }
 
 .k2b-ui[data-theme="dark"],
 .k2b-ui.k2b-dark,
 .dark .k2b-ui {
-  --k2b-scrollbar-thumb: rgb(113 113 122 / 0.55);
-  --k2b-scrollbar-thumb-hover: rgb(113 113 122 / 0.75);
+  --k2b-scrollbar-thumb: color-mix(in srgb, var(--k2b-neutral-400, #a1a1aa) 35%, transparent);
+  --k2b-scrollbar-thumb-hover: color-mix(in srgb, var(--k2b-neutral-400, #a1a1aa) 70%, transparent);
 }
 
-.k2b-ui::-webkit-scrollbar-track,
-.k2b-ui *::-webkit-scrollbar-track {
-  background: transparent;
+@layer components {
+  @media (pointer: fine) and (forced-colors: none) {
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar {
+      width: 0.5rem;
+      height: 0.5rem;
+      background: transparent;
+    }
+
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-track,
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-thumb {
+      min-width: 2rem;
+      min-height: 2rem;
+      border: 0.125rem solid transparent;
+      border-radius: 9999px;
+      background: var(--k2b-scrollbar-thumb);
+      background-clip: padding-box;
+    }
+
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-thumb:hover,
+    :where(.k2b-ui:not(body), .k2b-ui *)::-webkit-scrollbar-thumb:active {
+      border-width: 0.0625rem;
+      background: var(--k2b-scrollbar-thumb-hover);
+      background-clip: padding-box;
+    }
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    @media (forced-colors: none) {
+      :where(.k2b-ui:not(body), .k2b-ui *) {
+        scrollbar-width: thin;
+        scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
+      }
+    }
+  }
+
+  /* Large workspace scrollers, and every scroller marked `k2b-quiet-scrollbar`,
+     stay visually quiet until the pointer or keyboard enters their region.
+     Only the thumb's colour changes, never the scrollbar's geometry, so
+     nothing moves and no fade runs when it appears. */
+  @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+    .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
+      background: transparent;
+    }
+
+    /* WebKit repaints a styled scrollbar only when the scroller's own style
+       changes, not when a scrollbar part's does. This invisible change makes
+       the thumb appear and disappear there too. */
+    .k2b-ui .k2b-app-workspace__sidebar-body:hover,
+    .k2b-ui .k2b-chat-timeline__viewport:hover,
+    .k2b-ui .k2b-quiet-scrollbar:hover,
+    .k2b-ui .k2b-app-workspace__sidebar-body:focus-within,
+    .k2b-ui .k2b-chat-timeline__viewport:focus-within,
+    .k2b-ui .k2b-quiet-scrollbar:focus-within {
+      --k2b-scrollbar-revealed: 1;
+    }
+
+    .k2b-ui .k2b-app-workspace__sidebar-body:hover::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-chat-timeline__viewport:hover::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-quiet-scrollbar:hover::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-app-workspace__sidebar-body:focus-within::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-chat-timeline__viewport:focus-within::-webkit-scrollbar-thumb,
+    .k2b-ui .k2b-quiet-scrollbar:focus-within::-webkit-scrollbar-thumb {
+      background: var(--k2b-scrollbar-thumb);
+      background-clip: padding-box;
+    }
+
+    .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb:hover,
+    .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb:hover,
+    .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb:hover,
+    .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb:active,
+    .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb:active,
+    .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb:active {
+      background: var(--k2b-scrollbar-thumb-hover);
+      background-clip: padding-box;
+    }
+
+    @supports not selector(::-webkit-scrollbar) {
+      .k2b-ui .k2b-app-workspace__sidebar-body,
+      .k2b-ui .k2b-chat-timeline__viewport,
+      .k2b-ui .k2b-quiet-scrollbar {
+        scrollbar-color: transparent transparent;
+      }
+
+      .k2b-ui .k2b-app-workspace__sidebar-body:hover,
+      .k2b-ui .k2b-chat-timeline__viewport:hover,
+      .k2b-ui .k2b-quiet-scrollbar:hover,
+      .k2b-ui .k2b-app-workspace__sidebar-body:focus-within,
+      .k2b-ui .k2b-chat-timeline__viewport:focus-within,
+      .k2b-ui .k2b-quiet-scrollbar:focus-within {
+        scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
+      }
+    }
+  }
 }
 
-.k2b-ui::-webkit-scrollbar-thumb,
-.k2b-ui *::-webkit-scrollbar-thumb {
-  border-radius: 9999px;
-  background: var(--k2b-scrollbar-thumb);
-}
-
-/* Large workspace scrollers, and every scroller marked `k2b-quiet-scrollbar`,
-   stay visually quiet until the pointer or keyboard enters their region. Only
-   the colour changes, never the scrollbar geometry, so nothing moves and no
-   fade runs when it appears. Touch or coarse-pointer devices keep their native
-   treatment. */
-@media (hover: hover) and (pointer: fine) {
-  .k2b-ui .k2b-app-workspace__sidebar-body,
-  .k2b-ui .k2b-chat-timeline__viewport,
-  .k2b-ui .k2b-quiet-scrollbar {
-    scrollbar-color: transparent transparent;
-  }
-
-  .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-track,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-track,
-  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-track,
-  .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
-    background: transparent;
-  }
-
-  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within),
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within),
-  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within) {
-    scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
-  }
-
-  /* WebKit repaints a styled scrollbar, such as a fixed track, only when the
-     scrollbar's own style changes, not when its thumb's does. This invisible
-     change makes the thumb appear there too. */
-  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar,
-  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar {
-    background: transparent;
-  }
-
-  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar-thumb {
-    border: 1px solid transparent;
-    border-radius: 9999px;
-    background: var(--k2b-scrollbar-thumb);
-    background-clip: padding-box;
-  }
-
-  .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover,
-  .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover,
-  .k2b-ui .k2b-quiet-scrollbar:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover {
-    background: var(--k2b-scrollbar-thumb-hover);
-    background-clip: padding-box;
-  }
-}
+/* scrollbars: central rule end */
 
 .k2b-ui .k2b-chat-timeline__viewport:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
@@ -14202,9 +14495,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   width: 100%;
 }
 
+/* The person's own message is a neutral grey bubble whose corner toward the composer is tighter; colour stays for
+   meaning, and a sent message means nothing more than being one's own. */
 .k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__bubble {
-  padding: 0.625rem 0.75rem;
-  border-radius: var(--k2b-radius-surface);
+  padding: 0.625rem 0.875rem;
+  border-radius: 1rem 1rem 0.3125rem 1rem;
   /* The person's own words stay neutral grey in every primary scope. */
   background: var(--k2b-surface-muted);
 }
@@ -14226,7 +14521,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: center;
   gap: 0.5rem;
   color: var(--k2b-text-muted);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   line-height: 1;
 }
 
@@ -14309,34 +14604,43 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.6;
 }
 
+/* What a message brings along stands above its words: images as 148 × 110 px previews, files as grey tiles with their
+   name and size. Tiles have no edge; a row of them shares one height. */
 .k2b-ui .k2b-chat-message__attachments {
   display: flex;
   max-width: 100%;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__attachments {
+  justify-content: flex-end;
 }
 
 .k2b-ui .k2b-chat-message__attachment {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.5625rem;
   min-width: 0;
-  max-width: min(18rem, 100%);
-  min-height: 2.25rem;
-  padding: 0.375rem 0.625rem;
+  max-width: min(16.25rem, 100%);
+  min-height: 2.5rem;
+  padding: 0.4375rem 0.75rem 0.4375rem 0.5rem;
   overflow: hidden;
-  border: 1px solid var(--k2b-border);
-  border-radius: var(--k2b-radius-control);
+  border: 0;
+  border-radius: 0.75rem;
   color: var(--k2b-text-secondary);
   background: var(--k2b-surface-muted);
   text-decoration: none;
 }
 
-.k2b-ui a.k2b-chat-message__attachment:hover,
-.k2b-ui a.k2b-chat-message__attachment:focus-visible {
-  border-color: var(--k2b-border-strong);
+.k2b-ui a.k2b-chat-message__attachment:hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
+}
+
+.k2b-ui a.k2b-chat-message__attachment:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-chat-message__attachment > i {
@@ -14344,10 +14648,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-chat-message__attachment[data-kind="image"] {
-  width: 3.25rem;
-  height: 3.25rem;
+  width: 9.25rem;
+  height: 6.875rem;
   padding: 0;
   justify-content: center;
+  font-size: 2.125rem;
+}
+
+/* An image whose preview cannot load shows its sign in the preview's place, at the preview's size and in a quiet ink. */
+.k2b-ui .k2b-chat-message__attachment[data-kind="image"] > i {
+  color: var(--k2b-text-subtle);
+  font-size: 2.125rem;
 }
 
 .k2b-ui .k2b-chat-message__attachment img {
@@ -14356,12 +14667,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   object-fit: cover;
 }
 
-.k2b-ui .k2b-chat-message__attachment span {
+.k2b-ui .k2b-chat-message__attachment-text {
+  display: grid;
+  min-width: 0;
+  gap: 0.0625rem;
+}
+
+.k2b-ui .k2b-chat-message__attachment-text > * {
   min-width: 0;
   overflow: hidden;
-  font-size: 0.8125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.k2b-ui .k2b-chat-message__attachment-text > strong {
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-chat-message__attachment-text > span {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .k2b-ui .k2b-chat-message__content > :first-child {
@@ -14372,12 +14700,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-bottom: 0;
 }
 
+/* Quiet 15 px icons in 32 px buttons. Under an answer the first glyph sits on the text's edge; under the person's own
+   message the last glyph sits on the bubble's edge. */
 .k2b-ui .k2b-chat-message__actions {
   display: flex;
-  min-height: 1.5rem;
+  min-height: 2rem;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.125rem;
   color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-chat-message[data-role="assistant"] .k2b-chat-message__actions {
+  margin: -0.25rem 0 0 -0.5rem;
+}
+
+.k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__actions {
+  margin-inline-end: -0.5rem;
+}
+
+.k2b-ui .k2b-chat-message__actions > :is(button, .k2b-chat-message__menu),
+.k2b-ui .k2b-chat-message__actions .k2b-chat-message__menu {
+  min-width: 2rem;
+  min-height: 2rem;
+  font-size: 0.9375rem;
 }
 
 .k2b-ui .k2b-chat-message__menu {
@@ -15130,8 +15475,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 500;
 }
 
+.k2b-ui .k2b-button.k2b-chat-decision__remember:not(:disabled, [aria-disabled="true"]):hover,
 .k2b-ui .k2b-button.k2b-chat-outcome__link:not(:disabled, [aria-disabled="true"]):hover {
-  color: var(--k2b-action-hover);
+  color: var(--k2b-action);
+}
+
+.k2b-ui :is(.k2b-chat-decision__remember, .k2b-chat-outcome__link):not(:disabled, [aria-disabled="true"]):hover > .k2b-button__label,
+.k2b-ui .k2b-chat-preview__more:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* The outcome line. Every text of one flow sits in the same grid cell; only
@@ -15348,13 +15700,136 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     inset-inline: min(0px, calc((100% - 2.75rem) / 2));
   }
 
-  .k2b-ui button.k2b-chat-context:not(:first-child)::after {
+  .k2b-ui button.k2b-chat-context:not(:first-child)::after,
+  .k2b-ui button.k2b-chat-usage__trigger::after {
     inset-inline-start: 0;
   }
 }
 
 .k2b-ui .k2b-chat-context small {
   opacity: 1;
+}
+
+/* One usage control: a ring for the context and the application's parts, such as a budget. Its box is reserved for
+   the widest state, a ring with "100 %", so a warning never moves the controls after it. */
+.k2b-ui .k2b-chat-usage {
+  display: inline-flex;
+  min-inline-size: 4.5rem;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.k2b-ui .k2b-chat-usage__trigger {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Calm at rest: the share in the meta grey on a light track. Once a part warns, the arc turns warning orange and the
+   number appears in the meta step, semibold in the warning text colour (4.5:1). */
+.k2b-ui .k2b-chat-usage__trigger {
+  font-size: 0.75rem;
+}
+
+.k2b-ui .k2b-chat-usage__trigger .k2b-progress-ring[data-tone] {
+  color: var(--k2b-placeholder-color);
+}
+
+.k2b-ui .k2b-chat-usage__trigger .k2b-progress-ring__track {
+  stroke: var(--k2b-border);
+}
+
+.k2b-ui .k2b-chat-usage__trigger[data-warning="true"] .k2b-progress-ring[data-tone] {
+  color: var(--k2b-warning-500);
+}
+
+.k2b-ui .k2b-chat-usage__number {
+  font-weight: 600;
+}
+
+/* On a phone the box stays one touch target wide, so the footer still fits + · usage · tasks · model · microphone ·
+   send; the warning shows as the coloured ring with its mark, and the number stays in the label and the details. */
+@media (max-width: 29.999rem) {
+  .k2b-ui .k2b-chat-usage {
+    min-inline-size: 2.75rem;
+  }
+
+  .k2b-ui .k2b-chat-usage__number {
+    display: none;
+  }
+}
+
+.k2b-ui .k2b-chat-context-popup .k2b-chat-context__tooltip.k2b-chat-usage__panel {
+  width: 18.75rem;
+  gap: 0.875rem;
+}
+
+.k2b-ui .k2b-chat-usage__part {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-chat-usage__head {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-chat-usage__head h4 {
+  flex: 1;
+  margin: 0;
+  font-size: inherit;
+  font-weight: 500;
+}
+
+/* A line of a part with a small action at its end, such as a reset time with Refresh. */
+.k2b-ui .k2b-chat-usage__row {
+  display: flex;
+  min-height: 1.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.k2b-ui .k2b-chat-usage__value {
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .k2b-chat-usage__value[data-warning="true"] {
+  color: var(--k2b-warning-text);
+}
+
+.k2b-ui .k2b-chat-usage__action {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  margin-inline-start: -0.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: inherit;
+  background: var(--k2b-hover);
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-chat-usage__action:hover:not([aria-disabled="true"]) {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+/* Off while an answer runs; it stays focusable so its tooltip can say why. */
+.k2b-ui .k2b-chat-usage__action[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.k2b-ui .k2b-chat-usage__action:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
 }
 
 .k2b-ui .k2b-chat-context__tooltip {
@@ -15410,7 +15885,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The field a person types into keeps the shared field edge (see `--k2b-edge`): the card of the assistant prompt and
    the pill of the conversation composer. One 2 px border, no shadow; hover darkens the fill, focus turns the edge
    blue, an error red, and disabled drops it to a muted well. A state sets only `--k2b-edge-color` or the fill, so the
-   box and the text stay put. */
+   box and the text stay put. The assistant card takes the AI colour below. */
 .k2b-ui .k2b-chat-composer:not([data-variant="conversation"]),
 .k2b-ui .k2b-chat-composer__field {
   --k2b-edge-color: var(--k2b-edge);
@@ -15431,22 +15906,62 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-edge-hover-bg);
 }
 
-.k2b-ui .k2b-chat-composer[data-invalid="true"]:not([data-variant="conversation"]),
 .k2b-ui .k2b-chat-composer[data-invalid="true"] .k2b-chat-composer__field {
   --k2b-edge-color: var(--k2b-edge-danger);
 }
 
 /* Focus wins over an error, as in every field; the error line stays. */
-.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within,
 .k2b-ui .k2b-chat-composer .k2b-chat-composer__field:focus-within {
   --k2b-edge-color: var(--k2b-edge-focus);
   background: var(--k2b-surface);
 }
 
-.k2b-ui .k2b-chat-composer[data-disabled="true"]:not([data-variant="conversation"]),
 .k2b-ui .k2b-chat-composer[data-disabled="true"] .k2b-chat-composer__field {
   --k2b-edge-color: transparent;
   background: var(--k2b-surface-muted);
+}
+
+/* The assistant prompt carries the AI colour: a light plum edge at rest and the full plum edge while anything inside
+   has focus, with a soft glow outside. The glow is the one approved exception to "no shadow on controls"; it lies
+   outside the box, so the card, its 2 px edge and the text stay put. Red with an error (focus wins, the error line
+   stays), and a disabled card keeps a quiet grey edge on the muted well. The conversation variant stays neutral. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]) {
+  --k2b-edge-color: var(--k2b-ai-edge-rest);
+  border-radius: calc(var(--k2b-radius-surface) + 0.125rem);
+}
+
+.k2b-ui .k2b-chat-composer[data-invalid="true"]:not([data-variant="conversation"]) {
+  --k2b-edge-color: var(--k2b-edge-danger);
+}
+
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within {
+  --k2b-edge-color: var(--k2b-ai-accent);
+  background: var(--k2b-surface);
+}
+
+/* The glow is its own layer on the card's outer edge: it only fades in, so the edge keeps the shared field rule. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"])::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--k2b-edge-width));
+  border-radius: inherit;
+  box-shadow: var(--k2b-ai-glow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]):focus-within::after {
+  opacity: 1;
+}
+
+.k2b-ui .k2b-chat-composer[data-disabled="true"]:not([data-variant="conversation"]) {
+  --k2b-edge-color: var(--k2b-border);
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-chat-composer[data-disabled="true"]:not([data-variant="conversation"])::after {
+  opacity: 0;
 }
 
 .k2b-ui .k2b-chat-composer-shell { position: relative; display: grid; gap: 0.5rem; min-width: 0; }
@@ -15766,7 +16281,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.375rem;
   padding: 0.125rem;
   overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
 }
 
 .k2b-ui .k2b-chat-composer__attachment {
@@ -15960,6 +16474,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-chat-composer__highlight,
+.k2b-ui .k2b-chat-composer__suggestion,
 .k2b-ui .k2b-chat-composer__input textarea {
   display: block;
   width: 100%;
@@ -16066,6 +16581,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-danger-surface);
 }
 
+/* The assistant prompt stops where it sends and in the same AI colour: stopping an answer is not destructive. The
+   conversation composer between people keeps the neutral danger stop. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]) .k2b-chat-composer__stop {
+  color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]) .k2b-chat-composer__stop:hover:not(:disabled) {
+  color: var(--k2b-ai-accent-hover);
+  background: var(--k2b-hover);
+}
+
 .k2b-ui .k2b-chat-composer button:disabled,
 .k2b-ui .k2b-chat-composer textarea:disabled {
   opacity: 0.45;
@@ -16170,7 +16696,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 1 1 0;
 }
 
-.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input :is(textarea, .k2b-chat-composer__highlight) {
+.k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input :is(textarea, .k2b-chat-composer__highlight, .k2b-chat-composer__suggestion) {
   min-height: calc(2.25rem - 2 * var(--k2b-edge-width));
   max-height: max(calc(2.25rem - 2 * var(--k2b-edge-width)), 33.333cqh);
   padding: calc(0.40625rem - 1px) 0.25rem calc(0.40625rem - 1px) calc(0.875rem - 1px);
@@ -16187,6 +16713,99 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input textarea::placeholder {
   overflow: hidden;
   white-space: nowrap;
+}
+
+/* A suggested next message stands where typed text would and wraps like it. It shares one grid cell with the field,
+   so its height holds the composer open from the first paint, also before the script sizes the field to it (see
+   `autoResize`); both stop at 19.3125rem. Only its hint takes the pointer; the rest reaches the field. */
+.k2b-ui .k2b-chat-composer__input[data-suggestion] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.k2b-ui .k2b-chat-composer__input[data-suggestion] > :is(textarea:not(.k2b-chat-composer__measure), .k2b-chat-composer__suggestion) {
+  grid-area: 1 / 1;
+}
+
+.k2b-ui .k2b-chat-composer .k2b-chat-composer__input .k2b-chat-composer__suggestion {
+  position: relative;
+  align-self: start;
+  overflow: hidden;
+  color: var(--k2b-ai-suggestion);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  pointer-events: none;
+}
+
+.k2b-ui .k2b-chat-composer__suggestion-key,
+.k2b-ui .k2b-chat-composer__suggestion-accept {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  margin-left: 0.375rem;
+  border: 0;
+  border-radius: 0.375rem;
+  color: var(--k2b-ai-accent);
+  background: var(--k2b-ai-surface);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: top;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+/* Fits inside one 1.3125rem line of text, so the hint never makes its line taller than typed text. */
+.k2b-ui .k2b-chat-composer__suggestion-key {
+  height: 1.25rem;
+  margin-top: 0.03125rem;
+  padding: 0 0.4375rem 0 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-chat-composer__suggestion-cap {
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  box-shadow: inset 0 0 0 1px var(--k2b-ai-border);
+  font-family: var(--k2b-font-mono);
+  font-size: 0.65625rem;
+  line-height: 0.9375rem;
+}
+
+.k2b-ui .k2b-chat-composer__suggestion-mark {
+  font-size: 0.75rem;
+}
+
+/* Touch-only devices have no Tab key: the hint becomes a button 1.75rem high with a 2.75rem touch area. */
+.k2b-ui .k2b-chat-composer__suggestion-accept {
+  display: none;
+  position: relative;
+  height: 1.75rem;
+  padding: 0 0.625rem 0 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-chat-composer__suggestion-accept::after {
+  content: "";
+  position: absolute;
+  inset: -0.5rem -0.375rem;
+}
+
+.k2b-ui .k2b-chat-composer__suggestion-accept:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+@media (any-pointer: coarse) and (not (any-pointer: fine)) {
+  .k2b-ui .k2b-chat-composer__suggestion-key {
+    display: none;
+  }
+
+  .k2b-ui .k2b-chat-composer__suggestion-accept {
+    display: inline-flex;
+  }
 }
 
 /* A hidden copy of the field measures the text, so the field itself never collapses to be measured. */
@@ -16355,7 +16974,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     border-radius: 1.375rem;
   }
 
-  .k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input :is(textarea, .k2b-chat-composer__highlight) {
+  .k2b-ui .k2b-chat-composer[data-variant="conversation"] .k2b-chat-composer__input :is(textarea, .k2b-chat-composer__highlight, .k2b-chat-composer__suggestion) {
     min-height: calc(2.75rem - 2 * var(--k2b-edge-width));
     max-height: max(calc(2.75rem - 2 * var(--k2b-edge-width)), 33.333cqh);
     padding: calc(0.65625rem - 1px) 0.25rem calc(0.65625rem - 1px) calc(1rem - 1px);
@@ -17297,33 +17916,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @media (forced-colors: active) {
-  .k2b-ui,
-  .k2b-ui .k2b-app-workspace__sidebar-body,
-  .k2b-ui .k2b-chat-timeline__viewport,
-  .k2b-ui .k2b-quiet-scrollbar,
-  .k2b-ui .k2b-table-wrap {
-    scrollbar-color: auto;
-  }
-
-  .k2b-ui::-webkit-scrollbar-track,
-  .k2b-ui *::-webkit-scrollbar-track,
-  .k2b-ui::-webkit-scrollbar-thumb,
-  .k2b-ui *::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-track,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-track,
-  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-track,
-  .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb,
-  .k2b-ui .k2b-quiet-scrollbar::-webkit-scrollbar-thumb {
-    border: revert;
-    background: revert;
-  }
-
-  .k2b-ui .k2b-table-wrap::-webkit-scrollbar {
-    width: auto;
-    height: auto;
-  }
-
   .k2b-ui .k2b-data-table__scrollbar {
     display: none !important;
   }
@@ -17942,7 +18534,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 1;
   gap: 0.125rem;
   overflow: auto hidden;
-  scrollbar-width: thin;
 }
 
 .k2b-ui .k2b-tabs[data-orientation="vertical"] .k2b-tabs__list {
@@ -18101,6 +18692,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui :is(.k2b-view-tabs__count, .k2b-view-tabs__more-count) {
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A count with a reserve keeps the reserve's width: count and reserve share one cell, the reserve unseen. */
+.k2b-ui :is(.k2b-view-tabs__count[data-reserve], .k2b-tabs__count) { display: inline-grid; justify-items: start; }
+.k2b-ui :is(.k2b-view-tabs__count[data-reserve], .k2b-tabs__count) > * { grid-area: 1 / 1; }
+.k2b-ui :is(.k2b-view-tabs__count[data-reserve], .k2b-tabs__count) > [aria-hidden="true"] { visibility: hidden; }
+.k2b-ui .k2b-tabs__count {
+  margin-inline-start: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
@@ -19107,24 +19710,171 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 :where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
 :where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
 
-.k2b-ui .k2b-chat-tasks { border: 1px solid var(--k2b-border); border-radius: 0.75rem; overflow: hidden; }
-.k2b-ui .k2b-chat-tasks__header { display: flex; align-items: center; gap: 0.5rem; width: 100%; padding: 0.6rem 0.75rem; font-size: 0.8125rem; text-align: start; cursor: pointer; }
+/* The working plan above the composer (Chat.Tasks): a plum-tinted tray without edge or shadow. The header lies at
+   the composer and stays put; the list opens upwards and only its height moves. Rows keep their height in every
+   state; the white highlight glides to the measured current row. Chat.TaskList is the same rows, still. */
+@property --k2b-chat-tasks-progress {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+.k2b-ui .k2b-chat-tasks {
+  display: flex;
+  flex-direction: column-reverse;
+  padding: 0.25rem 0.375rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-ai-surface);
+}
+.k2b-ui .k2b-chat-tasks__header {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  min-height: 2.125rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: var(--k2b-text-secondary);
+  font: inherit;
+  font-size: var(--k2b-type-13);
+  line-height: 1.125rem;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+.k2b-ui .k2b-chat-tasks__header:hover { background: color-mix(in srgb, var(--k2b-ai-accent) 6%, transparent); }
 .k2b-ui .k2b-chat-tasks__header:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-action); outline-offset: calc(-1 * var(--k2b-focus-width)); }
-.k2b-ui .k2b-chat-tasks__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.k2b-ui .k2b-chat-tasks__count { white-space: nowrap; color: var(--k2b-text-secondary); font-size: 0.75rem; }
-.k2b-ui .k2b-chat-tasks__segments { display: flex; gap: 2px; width: clamp(2rem, 12vw, 6rem); flex-shrink: 0; }
-.k2b-ui .k2b-chat-tasks__segments > span { height: 4px; flex: 1; min-width: 0; border-radius: 2px; background: var(--k2b-border); }
-.k2b-ui .k2b-chat-tasks__segments > [data-status="completed"] { background: var(--k2b-success-text, #16845b); }
-.k2b-ui .k2b-chat-tasks__segments > [data-status="in_progress"] { background: var(--k2b-action); }
-.k2b-ui .k2b-chat-tasks__segments > [data-status="cancelled"] { background: repeating-linear-gradient(135deg, var(--k2b-border) 0 2px, transparent 2px 4px); }
-.k2b-ui .k2b-chat-tasks__list { max-height: 14rem; overflow-y: auto; margin: 0; padding: 0 0.75rem 0.5rem; list-style: none; }
-.k2b-ui .k2b-chat-tasks__list li { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.3rem 0; font-size: 0.8125rem; }
-.k2b-ui .k2b-chat-tasks__content { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.k2b-ui .k2b-chat-tasks__status { font-size: 0.75rem; color: var(--k2b-text-secondary); }
-.k2b-ui .k2b-chat-tasks__list [data-status="completed"] { color: var(--k2b-text-secondary); }
-.k2b-ui .k2b-chat-tasks__list [data-status="completed"] > i { color: var(--k2b-success-text, #16845b); }
-.k2b-ui .k2b-chat-tasks__list [data-status="in_progress"] > i { color: var(--k2b-action); }
-.k2b-ui .k2b-chat-tasks__list [data-status="cancelled"] .k2b-chat-tasks__content { text-decoration: line-through; color: var(--k2b-text-secondary); }
+.k2b-ui .k2b-chat-tasks__ring {
+  --k2b-chat-tasks-progress: 0%;
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: conic-gradient(
+    var(--k2b-ai-accent) var(--k2b-chat-tasks-progress),
+    color-mix(in srgb, var(--k2b-ai-accent) 18%, var(--k2b-surface)) 0
+  );
+  mask: radial-gradient(circle, transparent 4.5px, #000 5px);
+  transition: --k2b-chat-tasks-progress var(--k2b-motion-progress) var(--k2b-ease-settle);
+}
+.k2b-ui .k2b-chat-tasks__title { flex: none; color: var(--k2b-text); font-weight: 600; }
+/* The current step shows only while folded; open, it keeps its width so nothing beside it moves. */
+.k2b-ui .k2b-chat-tasks__now { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .k2b-chat-tasks[data-open="true"] .k2b-chat-tasks__now { visibility: hidden; }
+.k2b-ui .k2b-chat-tasks__count {
+  min-width: 4.2em;
+  color: var(--k2b-text-muted);
+  font-size: var(--k2b-type-12);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+.k2b-ui .k2b-chat-tasks__header > .ti { flex: none; color: var(--k2b-text-muted); font-size: 0.875rem; }
+.k2b-ui .k2b-chat-tasks__fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--k2b-motion-fold) var(--k2b-ease-glide);
+}
+.k2b-ui .k2b-chat-tasks[data-open="false"] .k2b-chat-tasks__fold {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--k2b-motion-fold) var(--k2b-ease-glide),
+    visibility 0s var(--k2b-motion-fold);
+}
+.k2b-ui .k2b-chat-tasks__clip { min-height: 0; overflow: hidden; }
+/* About six rows, then the list scrolls inside itself. */
+.k2b-ui .k2b-chat-tasks__list {
+  position: relative;
+  max-height: 12.25rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
+  list-style: none;
+}
+.k2b-ui .k2b-chat-tasks__glide {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  border-radius: 0.5625rem;
+  background: var(--k2b-surface);
+  pointer-events: none;
+}
+.k2b-ui .k2b-chat-tasks__glide[data-hidden] { opacity: 0; }
+/* Only the place glides; a taller wrapped row takes its height at once. */
+.k2b-ui .k2b-chat-tasks__glide[data-ready] {
+  transition:
+    transform var(--k2b-motion-glide) var(--k2b-ease-glide),
+    opacity var(--k2b-motion-ink) var(--k2b-ease-settle);
+}
+/* Before the highlight is measured (server HTML, first client frame) the current row carries it in place. */
+.k2b-ui .k2b-chat-tasks__list:not(:has(> .k2b-chat-tasks__glide)) > .k2b-chat-task[data-status="in_progress"] {
+  border-radius: 0.5625rem;
+  background: var(--k2b-surface);
+}
+.k2b-ui .k2b-chat-task-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.k2b-ui .k2b-chat-task {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  min-height: 2rem;
+  padding: 0.4375rem 0.5rem;
+  color: var(--k2b-text-muted);
+  font-size: var(--k2b-type-13);
+  line-height: 1.125rem;
+  overflow-wrap: anywhere;
+  transition: color var(--k2b-motion-ink) var(--k2b-ease-settle);
+}
+/* A still list sits on its container's text edge. */
+.k2b-ui .k2b-chat-task-list > .k2b-chat-task { padding-inline: 0; }
+.k2b-ui .k2b-chat-task__content { flex: 1; min-width: 0; }
+.k2b-ui .k2b-chat-task__mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.0625rem;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--k2b-border-strong);
+  font-size: 0.6875rem;
+  transition:
+    background-color var(--k2b-motion-ink) var(--k2b-ease-settle),
+    box-shadow var(--k2b-motion-ink) var(--k2b-ease-settle);
+}
+.k2b-ui .k2b-chat-task[data-status="completed"] .k2b-chat-task__mark {
+  background: color-mix(in srgb, var(--k2b-ai-accent) 16%, var(--k2b-surface));
+  box-shadow: none;
+  color: var(--k2b-ai-accent);
+}
+.k2b-ui .k2b-chat-task__mark > i[data-fresh] { animation: k2b-chat-task-check var(--k2b-motion-check) var(--k2b-ease-pop) both; }
+.k2b-ui .k2b-chat-task[data-status="in_progress"] { color: var(--k2b-text); font-weight: 600; }
+.k2b-ui .k2b-chat-task[data-status="in_progress"] .k2b-chat-task__mark {
+  background: conic-gradient(var(--k2b-ai-accent) 0 28%, color-mix(in srgb, var(--k2b-ai-accent) 22%, var(--k2b-surface)) 0);
+  box-shadow: none;
+  mask: radial-gradient(circle, transparent 5px, #000 5.5px);
+}
+.k2b-ui .k2b-chat-tasks:not([data-paused]) .k2b-chat-task[data-status="in_progress"] .k2b-chat-task__mark {
+  animation: k2b-chat-task-spin var(--k2b-motion-spin) linear infinite;
+}
+.k2b-ui .k2b-chat-task[data-status="cancelled"] .k2b-chat-task__content { text-decoration: line-through; }
+.k2b-ui .k2b-chat-task[data-status="cancelled"] .k2b-chat-task__mark { box-shadow: none; font-size: 0.8125rem; }
+@keyframes k2b-chat-task-check {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes k2b-chat-task-spin {
+  to { transform: rotate(1turn); }
+}
+@media (forced-colors: active) {
+  .k2b-ui .k2b-chat-tasks__glide,
+  .k2b-ui .k2b-chat-tasks__list:not(:has(> .k2b-chat-tasks__glide)) > .k2b-chat-task[data-status="in_progress"] { outline: 1px solid CanvasText; }
+  .k2b-ui .k2b-chat-task__mark { border: 1px solid CanvasText; }
+}
 
 /* Workspace rows accept live secondary content without changing their controls. */
 .k2b-ui .k2b-app-workspace__sidebar-item-copy {
@@ -19399,16 +20149,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-variant-numeric: tabular-nums;
 }
 
-/* The fixed-width scroll track occupies the existing right inset, even without overflow. */
+/* The shared 0.5rem scrollbar occupies the existing right inset, even without overflow. */
 .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body {
   margin-inline-end: -0.5rem;
   padding: 0;
-  scrollbar-width: auto;
-  scrollbar-color: auto;
   scrollbar-gutter: stable;
-}
-.k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body::-webkit-scrollbar {
-  width: 0.5rem;
 }
 /* Browsers that ignore that width and draw an overlay scrollbar of no width
    would let rows run into the right inset, so the body's content stops at the
@@ -19634,6 +20379,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
   .k2b-ui .k2b-text-input__textarea,
   .k2b-ui .k2b-chat-composer__highlight,
+  .k2b-ui .k2b-chat-composer__suggestion,
   .k2b-ui .k2b-chat-composer__input textarea {
     font-size: max(1rem, 16px);
     line-height: 1.3125rem;
