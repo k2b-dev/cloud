@@ -1,4 +1,3 @@
-import type { AiConversationSource } from "@k2b/cloud/ai";
 import type { AssistantChatContextGroup, AssistantChatContextSnapshot, AssistantChatResult } from "../chat-context";
 import { fileKind } from "./chat-sidebar-model";
 

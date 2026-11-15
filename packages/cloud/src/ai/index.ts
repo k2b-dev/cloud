@@ -324,6 +324,7 @@ export {
 export { createAiProvider } from "./provider";
 export { AiQuotaError } from "./quotas";
 export { isConversationResourceCursor } from "./resource-refs";
+export { describeAiResourceTypeCounts } from "./resource-type-counts";
 export type { AiRoutes } from "./routes";
 export {
   isAiVisionModelConfigured,
@@ -516,4 +517,3 @@ export {
   CloudAiViewImageOutputSchema,
 } from "./vision-tool";
 export { readWebPageForPerson, type WebReaderResult, WebReaderResultSchema } from "./web-reader";
-export { describeAiResourceTypeCounts } from "./resource-type-counts";
