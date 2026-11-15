@@ -122,7 +122,8 @@ export function CloudSurveyBlock(props: {
   // The same flat choice as a view's `Choice` block: no hull, the question in bold, options as flat cards with the 2 px
   // edge that tint when chosen, then the state and one quiet answer button.
   return (
-    <section class="cloud-blocks__choice w-full min-w-0" aria-labelledby={`${surveyId}-title`}>
+    // Gustav asks it, so it takes the AI colour wherever it stands, like an approval frame.
+    <section class="cloud-blocks__choice w-full min-w-0" data-k2b-primary="ai" aria-labelledby={`${surveyId}-title`}>
       <p class="cloud-blocks__question" id={`${surveyId}-title`}>
         {String(survey()?.title ?? t().surveyKind)}
       </p>

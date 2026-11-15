@@ -101,7 +101,7 @@ const open = async (scene: string, width: number, theme: "light" | "dark" = "lig
     });
   });
   await page.goto(`${origin}/?scene=${scene}`);
-  await page.locator(".k2b-chat-decision").first().waitFor();
+  await page.locator(".k2b-chat-decision, .cloud-blocks__choice").first().waitFor();
   await settled(page);
   return page;
 };
@@ -122,6 +122,43 @@ const shot = async (page: Page, name: string) => {
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 describe("Approval scenes", () => {
+  for (const width of [1440, 390])
+    test(`Gustav's survey at ${width} px is a flat choice: no hull, flat cards, the chosen one tinted`, async () => {
+      const page = await open("survey", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        await page.getByRole("radio", { name: "Jana Berger" }).click();
+        await settled(page);
+        const look = await page.evaluate(() => {
+          const root = document.querySelector<HTMLElement>(".cloud-blocks__choice")!;
+          const options = [...root.querySelectorAll<HTMLElement>(".k2b-choice-list__option")];
+          const style = getComputedStyle(root);
+          return {
+            hull: [style.borderTopWidth, style.backgroundColor],
+            ai: root.getAttribute("data-k2b-primary"),
+            edges: options.map((option) =>
+              [getComputedStyle(option).borderTopWidth, getComputedStyle(option).boxShadow, getComputedStyle(option).outlineWidth].join(
+                "|",
+              ),
+            ),
+            chosen: options.map((option) => getComputedStyle(option).backgroundColor),
+            state: root.querySelector(".cloud-blocks__choice-state")?.textContent,
+            answer: root.querySelector(".cloud-blocks__choice-foot .k2b-button")?.getAttribute("data-variant"),
+          };
+        });
+        await shot(page, `07-auswahl-light-${width}`);
+        expect(look.hull).toEqual(["0px", "rgba(0, 0, 0, 0)"]);
+        // Flat cards: the shared 2 px edge drawn inside, no outer border; the chosen one in the AI colour.
+        for (const edge of look.edges) expect(edge).toMatch(/^0px\|.* 0px 0px 0px 2px inset\|/);
+        expect(look.ai).toBe("ai");
+        expect(look.chosen[0]).not.toBe(look.chosen[1]);
+        expect(look.state).toBe("1 gewählt");
+        expect(look.answer).toBe("secondary");
+      } finally {
+        await page.close();
+      }
+    });
+
   for (const width of [1440, 390])
     test(`the approval frame a Code version fills at ${width} px draws the same card from data`, async () => {
       const page = await open("frame", width);

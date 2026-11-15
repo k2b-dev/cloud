@@ -6,6 +6,7 @@ import { toolActionCard } from "../ai/chat/action-card";
 import type { ActionLine } from "../ai/chat/action-question";
 import { actionFixtures, FIXTURE_AT } from "../ai/chat/action-question.fixtures";
 import { legacyOutcomeWords } from "../ai/chat/tool-action-words";
+import { CloudSurveyBlock } from "../ai/chat/visual-tools";
 import type { ApprovalPage } from "../contracts/approvals";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import { ApprovalCard } from "./ApprovalCard";
@@ -197,6 +198,33 @@ const scenes: Record<string, () => JSX.Element> = {
     </>
   ),
   // The frame a Code version fills (Gustav v12, version card): data only, no Capability.
+  // Gustav's own question with options (v12 07): the same flat choice as a view's.
+  survey: () => (
+    <>
+      <Label>Auswahl</Label>
+      <CloudSurveyBlock
+        args={{
+          title: "Welche Jana meinst du?",
+          description: "Gustav liest dann nur die Mails dieser Person.",
+          submitLabel: "Diese Jana nehmen",
+          questions: [
+            {
+              id: "jana",
+              type: "single",
+              label: "Person",
+              required: true,
+              options: [
+                { label: "Jana Berger", value: "berger" },
+                { label: "Jana Probe", value: "probe" },
+                { label: "Jana Albers", value: "albers" },
+              ],
+            },
+          ],
+        }}
+        onSubmit={() => {}}
+      />
+    </>
+  ),
   frame: () => {
     const code = { name: "Code", icon: "ti ti-code", accent: "var(--k2b-ai-accent)" };
     const sentence: ActionText = [
