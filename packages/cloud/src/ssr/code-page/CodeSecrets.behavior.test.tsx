@@ -143,17 +143,17 @@ test.skipIf(isServer)("deleting always asks first and names the Code target", as
   const notice = spyOn(modules!.toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
   const page = open("secrets");
   try {
-    page.button("Delete …").click();
+    page.button("Delete").click();
     await tick();
     expect(invoke).not.toHaveBeenCalled();
-    page.button("Delete …").click();
+    page.button("Delete").click();
     await tick();
     expect(confirm).toHaveBeenCalledTimes(2);
     expect(invoke.mock.calls[0]![1].safeParse({ deleted: true }).success).toBe(true);
     expect(invoke.mock.calls[0]![0]).toMatchObject({
       capabilityId: "code.secret.delete",
       target: { type: "core.code" },
-      input: { name: "LAGER_TOKEN", binding_revision: "00000000-0000-4000-8000-0000000000c1" },
+      input: { name: "BUCHHALTUNG_TOKEN", binding_revision: "00000000-0000-4000-8000-000300000017" },
       idempotencyKey: expect.any(String),
     });
   } finally {
@@ -164,3 +164,44 @@ test.skipIf(isServer)("deleting always asks first and names the Code target", as
     page.dom.cleanup();
   }
 });
+
+for (const [status, outcome] of [
+  [403, "refused"],
+  [503, "unknown"],
+  [409, "conflict"],
+] as const)
+  test.skipIf(isServer)(
+    `replacing a value: ${outcome} ends ${outcome === "conflict" ? "in the dialog" : "as the page's state"}`,
+    async () => {
+      const { client } = modules!;
+      const nav = await import("@k2b/ssr/nav");
+      const navigate = spyOn(nav, "documentNavigate").mockImplementation(() => {});
+      const invoke = spyOn(client, "invokeCapabilityWithDataSchema").mockResolvedValue({
+        ok: false,
+        error: { code: "FIXTURE", message: "Fixture refusal", status },
+      });
+      const page = open("secrets");
+      try {
+        page.button("Replace value").click();
+        await tick();
+        page.type("Value", privateValue);
+        page.button("Save").click();
+        await tick();
+        await tick();
+        expect(invoke).toHaveBeenCalledTimes(1);
+        if (outcome === "conflict") {
+          expect(navigate).not.toHaveBeenCalled();
+          expect(page.dom.document.body.textContent).toContain("A secret with this name exists, or it just changed.");
+        } else {
+          expect(navigate).toHaveBeenCalledWith(`/app/mail/Mb4kd2/code?tab=secrets&secret=BUCHHALTUNG_TOKEN&notice=${outcome}`);
+        }
+        // The value never stays in the page, whatever Core answered.
+        expect(page.dom.document.body.innerHTML).not.toContain(privateValue);
+      } finally {
+        page.dispose();
+        invoke.mockRestore();
+        navigate.mockRestore();
+        page.dom.cleanup();
+      }
+    },
+  );

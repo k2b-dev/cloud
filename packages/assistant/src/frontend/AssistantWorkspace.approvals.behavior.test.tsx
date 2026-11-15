@@ -89,7 +89,7 @@ test("New chat and the chat row leave the approvals view opened over an empty ch
     dom.root,
   );
   delegateEvents(["click"]);
-  const approvalsView = () => dom.root.querySelector('section.cloud-approvals, [aria-label="Approvals"].cloud-approvals');
+  const approvalsView = () => dom.root.querySelector("section.assistant-waiting-page");
   const composer = () => dom.root.querySelector('button[aria-label="Send message"]');
   try {
     expect(composer()).not.toBeNull();

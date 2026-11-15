@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-11-13
+updated: 2026-11-14
 ---
 
 # Live updates
@@ -52,6 +52,31 @@ write updates; only the application with that ID publishes and serves them.
 `app.start()` refuses to start a process that mounts `routes()` of another
 application. Assistant, for example, reads the cursor of Core's AI live
 updates for its server-rendered page.
+
+Core keeps its existing socket at `/api/ai/live`. Its `user` channel follows
+the viewer's AI data; its `code` channel takes the strict scope `{ codeId }`
+and follows that Code ID as its key. Both use the topic `cloud:live:core`.
+The `code` channel sends `{ type: "code.run", runId, state, at }`, where
+`runId` is a UUID, `state` is `queued`, `running`, `succeeded`, `failed`, or
+`skipped`, and `at` is a UTC ISO timestamp. Run creation and state changes
+produce hints; a cancelled run is reported as `skipped`. Hints contain no
+names, call arguments, or results. Read the
+authorized snapshot for details. Effects are counted at run completion:
+the transition to `succeeded` or `failed` tells the page to refresh them.
+Individual calls do not write live outbox rows (DATA-13).
+
+Code live admission uses the same read permissions as Code's HTTP service:
+the personal owner, administrators of the owning resource or application,
+Cloud administrators, and explicit Code readers or editors. If the owner
+provider is unavailable, existing reader grants remain usable; it grants no
+new access. Code share changes and deletion publish `access: true`; identity
+and group changes use Core's Identity-Access events. The channel retains the
+ten-second reauthorization sweep to detect revocation of owner administration.
+Owner checks run only during admission and reauthorization. Ordinary delivery
+and progress run no SQL.
+
+Use [`followCodeRuns`](/en/docs/platform/code-page#follow-run-updates) from a
+page served by any application; it shares the Core socket with AI subscriptions.
 
 ## Publish in the transaction
 
@@ -212,8 +237,13 @@ const api = new Hono<AuthContext>().route("/live", inventoryLive.routes(inventor
   keys. A collection may start with no keys.
 - `eventOnly: true` opts this channel out of the delivery cache and periodic
   checks. Declare it only when every input to `keys()` and `authorize()` has
-  an access event from its owner. Credential and account expiry use local
+  an access event from its owner, or use `reauthorize: true` for authorization
+  inputs without those events. Credential and account expiry use local
   timers. Subscription admission still checks credentials and access.
+- `reauthorize: true` retains the ten-second credential and authorization sweep
+  with `eventOnly: true`, for example when access depends on an external owner.
+  Delivery still uses admitted keys without calling `authorize()`. Collection
+  keys still refresh through access events.
 - `accessKey(key)` maps a delivery key to its canonical domain access key.
   For example, Mail maps both `mailbox:principal` and `mailbox:assigned` to
   `mailbox`. An access update of that root rechecks every mapped delivery key.
@@ -299,8 +329,8 @@ seconds, and collection keys refresh every sixty seconds. These bounds remain
 available for channels whose decision inputs do not all publish events.
 
 A channel declaring `eventOnly: true` retains its admitted keys until an access
-event. Its ordinary deliveries and progress frames run no SQL, regardless of
-how long the subscription has been open:
+event or an opted-in `reauthorize` sweep. Its ordinary deliveries and progress
+frames run no SQL, regardless of how long the subscription has been open:
 
 - Domain changes publish `access: true` in the transaction that changes access.
   Every replica rechecks the affected key and its `accessKey` mappings before
@@ -310,7 +340,8 @@ how long the subscription has been open:
   every connection. Group changes, ended sessions, and account changes use
   Core's existing outbox and NATS follower.
 - Known account and credential expiry times close sockets with local timers.
-  Polling is disabled only for explicitly opted-in channels. The socket's app
+  Unless `reauthorize: true` retains the credential and access sweep, polling
+  is disabled only for explicitly opted-in channels. The socket's app
   entry guard opts out only when all its channels do, and resource-derived
   app entry rules retain periodic checks.
 

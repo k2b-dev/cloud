@@ -6,13 +6,11 @@ import {
   type CodeRunSummary,
   type CodeSummary,
   codeStatus,
-  countOwnRunsSince,
   hasPersonalCode,
   loadCodeAttention,
   loadCodeNextRun,
   loadCodeSummaries,
   nextCodeRun,
-  startOfDayIn,
 } from "./code-summary";
 
 const code = (id: string, state = "active") => ({
@@ -180,20 +178,7 @@ test("one status per Code: paused and a failed last run come before on", () => {
   expect(codeStatus(summary("deleting", null))).toEqual({ key: "deleting", tone: "neutral" });
 });
 
-test("today starts at the person's local midnight, also across a time-zone change", () => {
-  expect(startOfDayIn("Europe/Berlin", new Date("2026-10-24T10:00:00.000Z"))).toBe("2026-10-23T22:00:00.000Z");
-  expect(startOfDayIn("Europe/Berlin", new Date("2026-11-01T10:00:00.000Z"))).toBe("2026-10-31T23:00:00.000Z");
-  // 25 October: the day began in summer time, before the clocks went back at 03:00.
-  expect(startOfDayIn("Europe/Berlin", new Date("2026-10-25T10:00:00.000Z"))).toBe("2026-10-24T22:00:00.000Z");
-  expect(startOfDayIn("UTC", new Date("2026-11-01T00:30:00.000Z"))).toBe("2026-11-01T00:00:00.000Z");
-  expect(startOfDayIn("America/New_York", new Date("2026-11-01T03:00:00.000Z"))).toBe("2026-10-31T04:00:00.000Z");
-  // Havana turns its clocks back at 01:00 to 00:00 on 1 November, so midnight happens twice; the day starts at the first.
-  expect(startOfDayIn("America/Havana", new Date("2026-11-01T12:00:00.000Z"))).toBe("2026-11-01T04:00:00.000Z");
-  // Where 00:00 is skipped, the day starts at its first existing minute.
-  expect(startOfDayIn("America/Santiago", new Date("2026-09-06T12:00:00.000Z"))).toBe("2026-09-06T04:00:00.000Z");
-});
-
-test("attention and run counts come from Core's public queries", async () => {
+test("attention comes from Core's public queries", async () => {
   const core = fakeCore({
     "code.attention.list": (input: { cursor?: string }) =>
       input.cursor === "c_page01"
@@ -209,7 +194,6 @@ test("attention and run counts come from Core's public queries", async () => {
           }
         : // A first window without the person's Code still continues.
           { items: [], nextCursor: "c_page01" },
-    "code.run.count": () => ({ runs: 9, failed: 1 }),
   });
   expect(await loadCodeAttention(core.invoke)).toEqual({
     items: [
@@ -223,8 +207,6 @@ test("attention and run counts come from Core's public queries", async () => {
     ],
     nextCursor: null,
   });
-  expect(await countOwnRunsSince(core.invoke, "2026-10-30T23:00:00.000Z")).toEqual({ runs: 9, failed: 1 });
-  expect(core.calls.at(-1)).toEqual({ capabilityId: "code.run.count", input: { since: "2026-10-30T23:00:00.000Z" } });
   await expect(loadCodeAttention(fakeCore({}).invoke)).rejects.toThrow("missing");
 });
 

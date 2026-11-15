@@ -5,7 +5,7 @@ section: Platform services
 order: 967
 description: Mount the shared Code page at a resource so its administrators see automations, targets, refused calls, runs, versions and switch Code on.
 tags: [code, ssr, ui, permissions]
-updated: 2026-11-11
+updated: 2026-11-14
 ---
 
 # Show a resource's Code page
@@ -287,3 +287,35 @@ confirmed control on administrator lists. Both inherit the UI locale.
 and binds confirmation to that exact database incarnation and unused period.
 The service rechecks editor or administrator permission and refuses a changed
 or in-use database with `409`. Repeating an accepted request is idempotent.
+
+## Follow run updates
+
+An island can follow run hints from Core even when its page belongs to another
+application:
+
+```ts
+import { followCodeRuns } from "@k2b/cloud/ssr/code-live";
+
+const stop = followCodeRuns(codeId, (event) => {
+  // Animate the run or invalidate its authorized snapshot.
+  animateRun(event.runId, event.state, event.at);
+}, async () => {
+  await reloadRunSnapshot();
+});
+// Call stop() when the island is disposed.
+```
+
+The optional third callback reloads canonical state once after admission and
+on `resync`; it receives no event. Without it, resync uses the guarded page
+reload and offers a manual reload when that guard prevents another automatic reload. Revocation
+or a terminal live failure also uses this recovery path. Reconnects and replay
+belong to the platform client. Repeated hints are possible, so animations must
+be idempotent. Effect counts refresh with the run's completion hint
+(`succeeded` or `failed`); individual effect calls produce no hint. `runId`
+identifies the snapshot to refresh, and `at` identifies when Core produced the hint.
+
+The subscription starts without an SSR cursor. Provide the callback to cover
+changes between the page's initial snapshot and subscription admission.
+See [Core's live channel contract](/en/docs/automation/live-updates#define-the-updates)
+for admission rules and the event schema. The helper validates each hint
+before calling `onRun`.

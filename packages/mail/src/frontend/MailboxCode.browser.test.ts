@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
+import { MAIL_CODE_CATCH_UP_STATES } from "./MailCodeTools.fixture";
 
 // The shared Code page inside Mail: layout at real widths, the switch-on flow with Core's answers, and recovery.
 const buildHarness = async (): Promise<string> => {
@@ -124,14 +125,19 @@ const contextFor = (width: number): BrowserContextOptions =>
 const shots = process.env.CODE_PAGE_SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 
-const load = async (state: string, width: number, options: { phone?: boolean; dark?: boolean } = {}): Promise<Page> => {
+const load = async (
+  state: string,
+  width: number,
+  options: { phone?: boolean; dark?: boolean; catchUp?: string; locale?: "de" | "en" } = {},
+): Promise<Page> => {
   const page = await (await browser.newContext(contextFor(width))).newPage();
   await page.goto(server.url.href);
   if (options.dark) await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((params) => window.mountMailboxCode(params as Parameters<typeof window.mountMailboxCode>[0]), {
     state,
-    locale: "de",
+    locale: options.locale ?? "de",
     phone: options.phone,
+    catchUp: options.catchUp,
   });
   await settled(page);
   return page;
@@ -330,6 +336,117 @@ describe("Mailbox Code page in a browser", () => {
       const color = await page.locator(".cloud-code__lead").evaluate((element) => getComputedStyle(element).color);
       expect(color).not.toBe("rgb(0, 0, 0)");
       await shoot(page, "refused-dark-1440");
+    } finally {
+      await page.context().close();
+    }
+  });
+});
+
+describe("Process existing mail in a browser", () => {
+  test("the overview ends with one quiet line that leads to the flow, and a paused Code offers none", async () => {
+    for (const [state, shown] of [
+      ["overview", true],
+      ["paused", false],
+      ["runs", false],
+    ] as const) {
+      const page = await load(state, 1440);
+      try {
+        const link = page.getByRole("link", { name: "Vorhandene E-Mails nachholen" });
+        expect({ state, count: await link.count() }).toEqual({ state, count: shown ? 1 : 0 });
+        if (shown) {
+          expect(await link.getAttribute("href")).toBe("/app/mail/Mb4kd2/code/catch-up");
+          // The line stands after the Code page, where "Incoming mail" stood, without a divider.
+          expect(await page.locator(".cloud-code ~ .mail-code-backfill").count()).toBe(1);
+          expect(await page.locator("main hr").count()).toBe(0);
+        }
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
+
+  for (const width of [1440, 390])
+    test(`${width}px: every step fits, keeps the type steps, and puts leading signs on one axis`, async () => {
+      for (const step of MAIL_CODE_CATCH_UP_STATES) {
+        const page = await load("overview", width, { catchUp: step });
+        try {
+          expect({ step, overflow: await overflow(page) }).toEqual({ step, overflow: 0 });
+          const measured = await page.evaluate(() => {
+            const flow = document.querySelector(".mail-code-catchup");
+            if (!flow) return null;
+            // Every element of the flow's own text that carries words itself, plus the island titles and meta.
+            const own = Array.from(
+              flow.querySelectorAll(
+                '[class*="mail-code-catchup__"], [class*="mail-code-catchup__"] > span, .k2b-section__title, .k2b-section__meta',
+              ),
+            ).filter((element) =>
+              Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()),
+            );
+            const sizes = [...new Set(own.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)))].sort((a, b) => a - b);
+            const axes = Array.from(flow.querySelectorAll(".mail-code-catchup__rows")).map(
+              (list) =>
+                new Set(Array.from(list.querySelectorAll(":scope > li > i")).map((icon) => Math.round(icon.getBoundingClientRect().left)))
+                  .size,
+            );
+            return { sizes, axes, hr: flow.querySelectorAll("hr, details").length };
+          });
+          expect(measured).not.toBeNull();
+          expect({ step, extra: measured!.sizes.filter((size) => ![12, 13, 14, 18].includes(size)) }).toEqual({ step, extra: [] });
+          expect({ step, axes: measured!.axes.filter((count) => count !== 1) }).toEqual({ step, axes: [] });
+          expect(measured!.hr).toBe(0);
+          await shoot(page, `nachholen-${step}-${width}`);
+        } finally {
+          await page.context().close();
+        }
+      }
+    }, 120_000);
+
+  test("“Load preview” sits on the row of the selection controls", async () => {
+    const page = await load("overview", 1440, { catchUp: "auswahl" });
+    try {
+      const boxes = await page.evaluate(() => {
+        const row = document.querySelector(".mail-code-catchup__pick");
+        const control = row?.querySelector(".k2b-field .k2b-select-trigger, .k2b-field button, .k2b-field input");
+        const button = row?.querySelector(".mail-code-catchup__load button");
+        return [control, button].map((element) => {
+          const box = element?.getBoundingClientRect();
+          return box ? { top: Math.round(box.top), height: Math.round(box.height) } : null;
+        });
+      });
+      const [control, button] = boxes;
+      // Same middle line, so the button reads as part of the controls' row.
+      expect({
+        control,
+        button,
+        gap: Math.abs(control!.top + control!.height / 2 - (button!.top + button!.height / 2)) <= 1,
+      }).toMatchObject({
+        gap: true,
+      });
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("the progress number keeps its place while the share grows", async () => {
+    const page = await load("overview", 1440, { catchUp: "laeuft" });
+    try {
+      const box = () => page.locator(".mail-code-catchup__progress .k2b-progress").boundingBox();
+      const before = await box();
+      await page.locator(".mail-code-catchup__percent").evaluate((element) => {
+        element.textContent = "100 %";
+      });
+      expect(await box()).toEqual(before);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("dark theme keeps the flow readable", async () => {
+    const page = await load("overview", 1440, { catchUp: "teilfehler", dark: true });
+    try {
+      const color = await page.locator(".mail-code-catchup__lead").evaluate((element) => getComputedStyle(element).color);
+      expect(color).not.toBe("rgb(0, 0, 0)");
+      await shoot(page, "nachholen-teilfehler-dark-1440");
     } finally {
       await page.context().close();
     }

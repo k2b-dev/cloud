@@ -142,8 +142,11 @@ const automationsOf = (codeId: string, accessMissing = false) => {
   if (codeId !== "c_info01") return { items: [], removedTargets: [] };
   return {
     items: [
-      automation("Anfragen sortieren", null),
-      automation("Lieferungen eintragen", null, accessMissing ? { missingTargets: [logistik] } : {}),
+      automation("anfragenSortieren", null, { title: "Anfragen sortieren" }),
+      automation("lieferungenEintragen", null, {
+        title: "Lieferungen eintragen",
+        ...(accessMissing ? { missingTargets: [logistik] } : {}),
+      }),
     ],
     removedTargets: accessMissing ? [logistik] : [],
   };
@@ -155,7 +158,26 @@ const runOf = (codeId: string) => {
     id: "77777777-7777-4777-8777-777777777777",
     state: failed ? "failed" : "succeeded",
     createdAt: at(minutesAgo),
+    startedAt: at(minutesAgo),
     endedAt: at(minutesAgo - 1),
+  };
+};
+/** The person's day in Berlin (31.10.2026) as Core's read model words it for one Code of "My apps". */
+const activityOf = (codeId: string) => {
+  const marks =
+    codeId === "c_stoff1"
+      ? [
+          { at: runOf(codeId).createdAt, state: "failed", count: 1, runId: runOf(codeId).id },
+          { at: "2026-10-31T14:00:00.000Z", state: "planned", count: 1 },
+        ]
+      : codeId === "c_rueck1"
+        ? [{ at: runOf(codeId).createdAt, state: "succeeded", count: 1, runId: runOf(codeId).id }]
+        : [];
+  return {
+    week: "2026-10-26T00:00:00.000Z",
+    counters: { items: [], more: 0, moreText: null },
+    recent: codeId === "c_woche1" ? [{ text: "1 Notiz angelegt", at: runOf(codeId).createdAt, runId: runOf(codeId).id }] : [],
+    timeline: { from: "2026-10-30T23:00:00.000Z", to: "2026-10-31T23:00:00.000Z", marks, total: marks.length },
   };
 };
 
@@ -452,6 +474,22 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       if (capabilityId === "code.automation.list")
         return route.fulfill({ json: { data: { codeId: input.codeId, ...automationsOf(input.codeId!) } } });
       if (capabilityId === "code.run.count") return route.fulfill({ json: { data: { runs: 9, failed: 1 } } });
+      if (capabilityId === "code.activity.words") return route.fulfill({ json: { data: activityOf(input.codeId!) } });
+      if (capabilityId === "code.run.words")
+        return route.fulfill({
+          json: {
+            data: {
+              runId: runOf(input.codeId!).id,
+              title: "Lauf",
+              state: "failed",
+              status: "Fehlgeschlagen",
+              at: runOf(input.codeId!).createdAt,
+              reason: "Preisliste von stoffe-nord.example nicht erreichbar",
+              untilThen: { items: [], more: 0, moreText: null },
+              complete: true,
+            },
+          },
+        });
     }
     if (url.pathname === "/api/capabilities/v1/catalog") return route.fulfill({ json: mailCatalog });
     if (url.pathname === "/api/assistant/workspace/sidebar")
@@ -545,20 +583,25 @@ describe("Gustav", () => {
     ] as const) {
       const h = await open(view, { codeOpen: true }, { theme });
       try {
-        const list = h.page.locator("section.assistant-code");
+        const list = h.page.locator("section.assistant-apps");
         await list.getByText("Wochenbericht Vertrieb").waitFor();
         expect(await list.getByRole("heading", { level: 1 }).textContent()).toBe("Meine Apps & Automationen");
-        expect(await list.getByText("Dein Code läuft als du.").count()).toBe(1);
-        expect(await list.getByText("Heute 9 Läufe · 1 fehlgeschlagen").count()).toBe(1);
-        // The list row names the schedule and the next run; a Code without a running automation stays "Automation".
-        await list.getByText(/^Automation · montags 07:00 · nächster Lauf /).waitFor();
-        // The failed run and the pause are the visible statuses; the rest are "An".
-        const rows = await list
-          .locator("li.assistant-code__row")
+        expect(await list.getByText("Dein Code läuft als du, mit deinen Rechten und nicht mehr.").count()).toBe(1);
+        // The day line reads every Code's day; its sentence counts the runs.
+        await list.getByText("1 Lauf erfolgreich, 1 fehlgeschlagen, 1 geplanter Start").waitFor();
+        expect(await list.getByRole("img", { name: /^Läufe heute: / }).count()).toBe(1);
+        // A card names the schedule as a sentence and the next run beside the status.
+        await list.getByText("Montags um 07:00").waitFor();
+        await list.getByText("Zuletzt: 1 Notiz angelegt").waitFor();
+        // The failed run and the pause are the visible statuses; the rest are "Eingeschaltet".
+        const cards = await list
+          .locator("a.assistant-apps__card")
           .evaluateAll((items) => items.map((item) => (item.textContent ?? "").replace(/\s+/g, " ").trim()));
-        expect(rows).toHaveLength(4);
-        expect(rows[2]).toContain("Letzter Lauf fehlgeschlagen");
-        expect(rows[3]).toContain("Pausiert");
+        expect(cards).toHaveLength(4);
+        expect(cards[0]).toContain("Eingeschaltet");
+        expect(cards[2]).toContain("Zuletzt: Preisliste von stoffe-nord.example nicht erreichbar");
+        expect(cards[2]).toContain("Letzter Lauf fehlgeschlagen");
+        expect(cards[3]).toContain("Pausiert");
         if (view === desktop) {
           const footer = await h.page
             .locator('footer[data-sidebar-mode="expanded"] .k2b-app-workspace__sidebar-item-label-text')
@@ -576,8 +619,8 @@ describe("Gustav", () => {
   test("a failed list keeps its place, says the Code keeps running, and recovers on retry", async () => {
     const h = await open(desktop, { codeOpen: true, listFails: true });
     try {
-      const list = h.page.locator("section.assistant-code");
-      await list.getByText("Deine Apps und Automationen konnten nicht geladen werden").waitFor();
+      const list = h.page.locator("section.assistant-apps");
+      await list.getByText("Deine Automationen konnten nicht geladen werden.").waitFor();
       await shot(h.page, "a-meine-apps-fehler-1440-light");
       h.state.listFails = false;
       await list.getByRole("button", { name: "Erneut versuchen" }).click();
@@ -864,8 +907,11 @@ describe("Gustav", () => {
       try {
         const page = h.page.locator(".cloud-code");
         await page.getByRole("heading", { level: 1, name: "Wochenbericht Vertrieb" }).waitFor();
-        expect(await page.getByText("Dein Code · läuft als du").count()).toBe(1);
-        expect(await page.getByText("Er nutzt deine Rechte, nicht mehr.", { exact: false }).count()).toBe(1);
+        // The shared Code page owns its words. On a phone the sidebar is out of sight, so a link leads back to the list.
+        const back = h.page.locator("a.assistant-code-detail__back");
+        expect(await back.isVisible()).toBe(view === phone);
+        expect(await back.getAttribute("href")).toBe("/app/assistant?code=1");
+        if (view === phone) expect((await back.textContent())?.trim()).toBe("Meine Apps & Automationen");
         if (view === desktop)
           expect(
             await h.page.locator('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?code=1"]').getAttribute("aria-current"),
@@ -889,9 +935,9 @@ describe("Gustav", () => {
       try {
         const section = h.page.locator("section.assistant-code-attention");
         await section.getByText("Code von info@moebel-beispiel.de: letzter Lauf fehlgeschlagen, Zugriff fehlt").waitFor();
-        expect(await h.page.getByRole("heading", { name: "Aus deinen Chats" }).count()).toBe(1);
+        expect(await h.page.getByRole("heading", { name: "Freigaben 1" }).count()).toBe(1);
         expect(await section.getByText("„Lieferungen eintragen“ · du verwaltest info@moebel-beispiel.de").count()).toBe(1);
-        expect(await section.getByRole("link", { name: "Postfach öffnen" }).getAttribute("href")).toBe("/app/mail/m/info");
+        expect(await section.getByRole("link", { name: "Ansehen: info@moebel-beispiel.de" }).getAttribute("href")).toBe("/app/mail/m/info");
         await shot(h.page, `d-wartet-auf-dich-${view.name}-light`);
       } finally {
         await h.close();

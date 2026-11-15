@@ -3,6 +3,13 @@ import { z } from "zod";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "../../capabilities/server";
 import type { CapabilityCaller } from "../../capabilities/server-invoke";
 import { type CloudResourceRef, cloudResourceRefAppId } from "../../contracts/capabilities";
+import {
+  CodeActivityReadModelSchema,
+  type CodeRunReadModel,
+  CodeRunReadModelSchema,
+  type CodeVersionReadModel,
+  CodeVersionReadModelSchema,
+} from "../../contracts/code-read-model";
 import { cloudResourcePageHref } from "../../contracts/resource-pages";
 import { sql } from "../../runtime/clients";
 import { getDateConfig, getLocale, isAppSessionActor } from "../../server";
@@ -31,24 +38,27 @@ import {
   type CodePageTargetRow,
   type CodePageVersion,
   CodeReadSchema,
+  type CodeRunFilter,
   coreQuery,
   ManifestSchema,
   RunListSchema,
   RunReadSchema,
   SecretListSchema,
-  VersionDiffSchema,
   VersionListSchema,
   VersionReadSchema,
 } from "./data";
+import { loadSourceTabInitial } from "./source-tab-load";
 import { type CodeOperationLabel, codeActivationRows, codeTargetsOf, permissionRef, targetKey } from "./targets";
 
 /** Core pages run metadata and versions in pages of 20. */
 const PAGE = 20;
+/** The run strip shows the last 30 runs; the runs tab lists the same page. */
+const RUN_STRIP = 30;
 /** Core's default manifest budget is 1 MiB: 64 chunks of 16 Ki code units. A larger manifest shows as unreadable. */
 const MANIFEST_CHUNKS = 64;
 /** Pages of 20 secrets read for one page view; Core bounds each page by items and bytes. */
 const SECRET_PAGES = 10;
-const SECRET_NOTICES = ["replaced", "submitted", "saved", "submit-failed"] as const;
+const SECRET_NOTICES = ["replaced", "submitted", "saved", "submit-failed", "refused", "unknown"] as const;
 
 /** The owning resource, or null for personal Code. */
 const ownerRefOf = (owner: LoadCodePageOptions["owner"]) => ("ref" in owner ? owner.ref : null);
@@ -84,7 +94,27 @@ const callerOf = (c: Context): CapabilityCaller => ({
 });
 
 const readTab = (value: string | null): CodePageTab =>
-  value === "runs" || value === "versions" || value === "secrets" ? value : "overview";
+  value === "runs" || value === "versions" || value === "secrets" || value === "code" ? value : "overview";
+const readRunFilter = (value: string | null): CodeRunFilter => (value === "failed" || value === "skipped" ? value : "all");
+
+/** The local calendar day of an instant in a time zone, as `YYYY-MM-DD`. */
+export const localDay = (iso: string, timeZone: string): string => {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
+  } catch {
+    return iso.slice(0, 10);
+  }
+};
+
+/** A read model answer, or null when Core cannot give one; the page then shows that part as not loaded. */
+const words = async <T>(promise: Promise<{ ok: true; data: { data: T } } | { ok: false }>): Promise<T | null> => {
+  try {
+    const result = await promise;
+    return result.ok ? result.data.data : null;
+  } catch {
+    return null;
+  }
+};
 const uuid = z.uuid();
 
 /** Who is looking: only members may see other people's names, as in the directory. */
@@ -244,6 +274,8 @@ const versionView = (
   createdAt: receipt.version.createdAt,
   decisionLabel: receipt.decision?.label ?? null,
   decidedBy: receipt.decision?.decidedBy ? (people.get(receipt.decision.decidedBy) ?? null) : null,
+  decisionComment: receipt.decision?.comment ?? null,
+  decidedAt: receipt.decision?.decidedAt ?? null,
   active: receipt.version.id === activeVersionId,
 });
 
@@ -280,7 +312,7 @@ const loadReady = async (
   const code = listed;
   const [versionsResult, runsResult, attentionResult, automationResult] = await Promise.all([
     invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), VersionListSchema),
-    invoke(coreQuery("code.run.list", { codeId: code.id, limit: PAGE }), RunListSchema),
+    invoke(coreQuery("code.run.list", { codeId: code.id, limit: RUN_STRIP }), RunListSchema),
     // The same answer the owner's navigation gets, so its dot and this page agree.
     invoke(coreQuery("code.attention", { owner: codeOwner }), AttentionSchema).catch(() => null),
     // Only the next run comes from here; without it the row simply does not name one.
@@ -325,11 +357,9 @@ const loadReady = async (
   const lastRun = runs?.find((run) => run.state === "succeeded" || run.state === "failed") ?? null;
   // Only a failed run with a recorded target refusal raises the notice; editors read that one call once at Core.
   const lastRefused = tab === "overview" && lastRun?.state === "failed" && lastRun.firstRefusedCallOrdinal ? lastRun : null;
-  const [runCalls, diffResult, olderActive, olderSelected, lastRead] = await Promise.all([
+  // The page shows versions in words; the source difference stays in the code tab and in `cld code diff`.
+  const [runCalls, olderActive, olderSelected, lastRead] = await Promise.all([
     selectedRunId ? loadCodeRunCallsForDetail(invoke, code.id, selectedRunId, getLocale(c)) : Promise.resolve(null),
-    selectedVersionId
-      ? invoke(coreQuery("code.version.diff", { codeId: code.id, versionId: selectedVersionId }), VersionDiffSchema)
-      : Promise.resolve(null),
     versionMeta(code.activeVersionId),
     selectedVersionId !== code.activeVersionId ? versionMeta(selectedVersionId) : Promise.resolve(null),
     lastRefused && code.permission === "editor"
@@ -341,7 +371,7 @@ const loadReady = async (
   // Targets: what the running version calls, plus what the waiting version would add, as the checker read them.
   const activeByTarget = codeTargetsOf(activeManifest);
   const waitingByTarget = codeTargetsOf(waitingManifest);
-  const diffPermissions = diffResult?.ok ? diffResult.data.data.permissions : [];
+  const diffPermissions: { operation: string; target: { type: string; id: string | null } | null }[] = [];
   const ownerRef = ownerRefOf(options.owner);
   /** The refused call of a failed run: the target refusal Core recorded, else the first policy or approval refusal loaded. */
   const refusalOf = (
@@ -573,41 +603,88 @@ const loadReady = async (
       inputTooLarge: runCalls.inputTooLarge,
       refusal: runRefusal,
     };
-  let diff: CodePageDiff | null = null;
-  if (diffResult?.ok && selectedVersionId) {
-    const value = diffResult.data.data;
-    // The comparison can also be older than the loaded history; its number comes from its own metadata then.
-    const comparisonId = value.binding.comparisonVersionId;
-    if (comparisonId && !numbers.has(comparisonId)) {
-      const older = await versionMeta(comparisonId);
-      if (older) numbers.set(older.id, older.number);
-    }
-    const selected =
-      versions.find((version) => version.id === selectedVersionId) ??
+  const selectedVersion = selectedVersionId
+    ? (versions.find((version) => version.id === selectedVersionId) ??
       (selectedVersionId === activeVersion?.id ? activeVersion : null) ??
-      (olderSelected ? versionView({ version: olderSelected }, people, code.activeVersionId) : null);
-    const selectedManifest =
-      selectedVersionId === code.activeVersionId
-        ? activeManifest
-        : selectedVersionId === waitingReceipt?.version.id
-          ? waitingManifest
-          : await loadManifest(invoke, code.id, selectedVersionId);
-    if (selected)
-      diff = {
-        version: selected,
-        comparison: comparisonId ? (numbers.get(comparisonId) ?? "unknown") : null,
-        staleComparison: value.staleComparison,
-        internet: selectedManifest ? (selectedManifest.internet ?? []) : null,
-        files: value.files,
-        permissions: value.permissions.map((permission) => ({
-          operation: permission.operation,
-          target: permissionRef(permission) ? targetOf(permissionRef(permission)!) : null,
-          file: permission.file,
-          line: permission.line,
-        })),
-      };
-  }
+      (olderSelected ? versionView({ version: olderSelected }, people, code.activeVersionId) : null))
+    : null;
+  const diff: CodePageDiff | null = selectedVersion
+    ? { version: selectedVersion, comparison: null, staleComparison: false, internet: null, files: [], permissions: [] }
+    : null;
   const secrets = tab === "secrets" && code.permission === "editor" ? await loadSecrets() : null;
+
+  // The Code in words: Core's read models carry every sentence the page shows about versions, runs and effects.
+  const proposalReceipt =
+    waitingReceipt ??
+    (latest &&
+    latest.version.id !== code.activeVersionId &&
+    latest.status === "changes_requested" &&
+    (!activeReceipt || latest.version.number > activeReceipt.version.number)
+      ? latest
+      : undefined);
+  const currentId = code.activeVersionId ?? proposalReceipt?.version.id ?? latest?.version.id ?? null;
+  const versionWords = (versionId: string | null | undefined) =>
+    versionId
+      ? words<CodeVersionReadModel>(invoke(coreQuery("code.version.words", { codeId: code.id, versionId }), CodeVersionReadModelSchema))
+      : Promise.resolve(null);
+  const runFilter = readRunFilter(url.searchParams.get("filter"));
+  const runsListed =
+    tab === "runs"
+      ? (runs ?? []).filter((run) =>
+          runFilter === "failed"
+            ? run.state === "failed" || run.state === "cancelled"
+            : runFilter === "skipped"
+              ? run.state === "skipped"
+              : true,
+        )
+      : [];
+  const wordRunIds = new Set([
+    ...runsListed.slice(0, PAGE).map((run) => run.id),
+    ...(selectedRunId ? [selectedRunId] : []),
+    ...(tab === "overview" && lastRun ? [lastRun.id] : []),
+  ]);
+  const dates = getDateConfig(c);
+  const [currentWords, proposalWords, selectedWords, activity, runWords, sourceTab] = await Promise.all([
+    versionWords(currentId),
+    proposalReceipt && proposalReceipt.version.id !== currentId ? versionWords(proposalReceipt.version.id) : Promise.resolve(null),
+    tab === "versions" && selectedVersionId && selectedVersionId !== currentId && selectedVersionId !== proposalReceipt?.version.id
+      ? versionWords(selectedVersionId)
+      : Promise.resolve(null),
+    tab === "overview" && ownerRef
+      ? words(
+          invoke(
+            coreQuery("code.activity.words", {
+              codeId: code.id,
+              day: localDay(new Date().toISOString(), dates.timeZone ?? "UTC"),
+              timeZone: dates.timeZone ?? "UTC",
+            }),
+            CodeActivityReadModelSchema,
+          ),
+        )
+      : Promise.resolve(null),
+    Promise.all(
+      [...wordRunIds].map(async (runId) => {
+        const read = await words<CodeRunReadModel>(invoke(coreQuery("code.run.words", { codeId: code.id, runId }), CodeRunReadModelSchema));
+        return read ? ([runId, read] as const) : null;
+      }),
+    ),
+    tab === "code" && code.permission === "editor" ? loadSourceTabInitial(invoke, code.id, url).catch(() => null) : Promise.resolve(null),
+  ]);
+  const byId = new Map([currentWords, proposalWords, selectedWords].flatMap((item) => (item ? [[item.versionId, item] as const] : [])));
+  const secretNames = [
+    ...new Set([...(activeManifest?.secrets ?? []), ...(waitingManifest?.secrets ?? [])].map((binding) => binding.name)),
+  ];
+  const secretOrigins: Record<string, string[]> = {};
+  for (const binding of activeManifest?.secrets ?? [])
+    secretOrigins[binding.origin] = [...(secretOrigins[binding.origin] ?? []), binding.name];
+  /** Each automation's timing in words, from the read model of the version it belongs to, by manifest position. */
+  const timingOf = (automation: CodePageAutomation): string | undefined => {
+    const manifest = automation.isNew ? waitingManifest : (activeManifest ?? waitingManifest);
+    const model = automation.isNew ? (proposalWords ?? currentWords) : currentWords;
+    const index = manifest?.entrypoints.findIndex((entry) => entry.entrypoint === automation.entrypoint) ?? -1;
+    if (!model || index < 0 || model.versionId !== (automation.isNew ? waitingReceipt?.version.id : currentId)) return undefined;
+    return model.timing.items[index]?.text;
+  };
   return {
     kind: "ready",
     code: {
@@ -625,7 +702,11 @@ const loadReady = async (
     moreVersions: versionsResult.ok && versionsResult.data.data.nextBefore !== null,
     active: activeVersion,
     waiting: waitingReceipt ? (versions.find((version) => version.id === waitingReceipt.version.id) ?? null) : null,
-    automations,
+    automations:
+      automations?.map((automation) => {
+        const timingText = timingOf(automation);
+        return timingText ? { ...automation, timingText } : automation;
+      }) ?? null,
     databaseUsed: activeManifest?.database === true || waitingManifest?.database === true,
     internet: {
       active: activeManifest ? (activeManifest.internet ?? []) : code.activeVersionId ? null : [],
@@ -642,8 +723,22 @@ const loadReady = async (
         : null,
     run,
     diff,
-    selectionFailed: Boolean((selectedRunId && !run) || (selectedVersionId && !diff)),
+    selectionFailed: Boolean((selectedRunId && !run) || (selectedVersionId && !(diff && byId.get(selectedVersionId)))),
     secrets,
+    proposal: proposalReceipt ? (versions.find((version) => version.id === proposalReceipt.version.id) ?? null) : null,
+    words: {
+      current: currentId ? (byId.get(currentId) ?? null) : null,
+      proposal: proposalReceipt ? (byId.get(proposalReceipt.version.id) ?? null) : null,
+      selected: selectedVersionId ? (byId.get(selectedVersionId) ?? null) : null,
+      activity,
+      runs: Object.fromEntries(runWords.filter((entry) => entry !== null)),
+    },
+    secretNames,
+    secretOrigins,
+    runFilter,
+    runSelected: tab === "runs" && Boolean(runParam && uuid.safeParse(runParam).success),
+    versionSelected: tab === "versions" && Boolean(versionParam && uuid.safeParse(versionParam).success),
+    sourceTab: tab === "code" ? sourceTab : null,
   };
 };
 
@@ -727,8 +822,8 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
   try {
     // Like directory search: members see other people's names, guests only their own.
     const viewer = { id: user?.id ?? null, directory: Boolean(user?.roles.includes("user")) };
-    // Secrets are for editors; anyone else following such a link lands on the overview.
-    const shown = tab === "secrets" && code.permission !== "editor" ? "overview" : tab;
+    // Secrets and the code are for editors; anyone else following such a link lands on the overview.
+    const shown = (tab === "secrets" || tab === "code") && code.permission !== "editor" ? "overview" : tab;
     return { ...base, tab: shown, state: await loadReady(c, options, invoke, code, shown, url, viewer, attentionOwner) };
   } catch {
     return { ...base, state: { kind: "error" } };
