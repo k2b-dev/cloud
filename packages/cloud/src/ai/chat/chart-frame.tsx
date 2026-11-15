@@ -58,7 +58,8 @@ export function ChartFrame(props: {
     <ChartExplorer
       title={props.title}
       headingLevel={props.nested ? 4 : 3}
-      description={props.subtitle ? <span class="text-sm text-secondary">{props.subtitle}</span> : undefined}
+      // The island's head draws the subtitle in its quiet step; a colour here would outrank it.
+      description={props.subtitle}
       height={
         props.height !== undefined && props.height > 280
           ? `min(40rem, max(${chartHeight(props.kind)}, ${props.height}px))`

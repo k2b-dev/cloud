@@ -836,6 +836,7 @@ for (const view of [
 const stock = {
   view: "table",
   title: "Stock",
+  subtitle: "Counted on 14 November",
   columns: [
     { id: "room", label: "Room", type: "text" },
     { id: "items", label: "Items", type: "number" },
@@ -855,7 +856,16 @@ for (const theme of ["light", "dark"] as const)
       await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=${theme}`);
       await page.evaluate(
         (value) => window.show(value),
-        [present("/views/stock-2b3c4d5e.view.json", { view: "table", title: stock.title, rows: 2, columns: 2, footer: false })],
+        [
+          present("/views/stock-2b3c4d5e.view.json", {
+            view: "table",
+            title: stock.title,
+            subtitle: stock.subtitle,
+            rows: 2,
+            columns: 2,
+            footer: false,
+          }),
+        ],
       );
       await page.waitForSelector("[data-view-path] table");
       await page.evaluate(
@@ -2051,7 +2061,14 @@ for (const width of [1440, 390])
             title: quiet.title,
             subtitle: quiet.subtitle,
           }),
-          present("/views/stock-2b3c4d5e.view.json", { view: "table", title: stock.title, rows: 2, columns: 2, footer: false }),
+          present("/views/stock-2b3c4d5e.view.json", {
+            view: "table",
+            title: stock.title,
+            subtitle: stock.subtitle,
+            rows: 2,
+            columns: 2,
+            footer: false,
+          }),
         ],
       );
       await page.waitForFunction(() => document.querySelector("[data-view-path] .k2b-chart[data-chart-kind] svg path"));
@@ -2072,6 +2089,21 @@ for (const width of [1440, 390])
         }),
       );
       expect(points).toHaveLength(quiet.series[0]!.data.length);
+      // The island's head: a bold title over a quiet subtitle, the same step for the chart and the table.
+      const heads = await page.evaluate(() => {
+        const muted = getComputedStyle(document.body).getPropertyValue("--k2b-text-muted").trim();
+        const probe = document.createElement("span");
+        probe.style.color = muted;
+        document.body.append(probe);
+        const quietColor = getComputedStyle(probe).color;
+        probe.remove();
+        const chart = document.querySelector(".k2b-dashboard-frame .k2b-chart-explorer__description")!;
+        const table = document.querySelector(".k2b-dashboard-frame header h3 + span")!;
+        const look = (element: Element) => ({ color: getComputedStyle(element).color, size: getComputedStyle(element).fontSize });
+        return { quietColor, chart: look(chart), table: look(table) };
+      });
+      expect(heads.chart).toEqual({ color: heads.quietColor, size: "13px" });
+      expect(heads.table).toEqual(heads.chart);
       expect(points[0]!.fill).not.toBe(points[0]!.stroke);
       if (process.env.VIEW_SHOTS)
         await page.screenshot({ path: `${process.env.VIEW_SHOTS}/gustav-insel-light-${width}.png`, fullPage: true });

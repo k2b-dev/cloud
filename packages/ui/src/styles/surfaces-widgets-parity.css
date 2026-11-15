@@ -2129,6 +2129,13 @@
   line-height: 1.25rem;
 }
 
+/* The subtitle of a chart in an island is the quiet line of the island's head, as a frame's own subtitle is. */
+:where(.k2b-ui) .k2b-dashboard-frame .k2b-chart-explorer__description {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
 :where(.k2b-ui) .k2b-dashboard-frame__header {
   display: flex;
   min-height: 2.5rem;
