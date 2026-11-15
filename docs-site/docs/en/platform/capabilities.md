@@ -1322,7 +1322,7 @@ Optional review fields describe this call:
 
 | Field | Purpose |
 | --- | --- |
-| `preview` | The thing being changed, in one of the seven shapes below |
+| `view` | The thing being changed, as view blocks; see [Capability views](/en/docs/platform/capability-views#approvals) |
 | `consequences` | Up to six `{ text, slots?, mark? }` sentences; mark a consequence `added` or `removed` |
 | `ask` | Ask for this call with a reason, on either policy; overrides the declared reason |
 | `reach` | Narrow a silent policy's reach, in order `you < draft < shared`; invalid on an asking policy |
@@ -1336,32 +1336,17 @@ once: `done` shows its receipt, `not_done` shows not run, and `pending` keeps th
 unknown line. A failed check also stays unknown; **Check again** repeats only
 the Query, never the Action, and without `check`, no repeat button is offered.
 
-The preview is one of:
+The `view` shows the complete thing the person approves: a `Draft` for a
+message or page the person may still change, or `Detail`, `Table`, and `Text`
+blocks for an event, a task, a file, a rule, or changed fields. The mapping
+from the former preview shapes, the limits, and the `Draft` rules are in
+[Capability views](/en/docs/platform/capability-views#approvals).
 
-| Kind | Content and bounds |
-| --- | --- |
-| `message` | `from?`, `to`, `cc?`, `bcc?`, `more?`, `subject`, `body`, `format`, `attachments?`, `moreAttachments?`, `sendAt?`, `warnings?`, `truncated?`; up to 50 per recipient class and 50 attachments, at least one recipient; counts at most 100,000; subject at most 998, body 10,000, attachment name 255; up to five warnings of 300 characters |
-| `event` | `title`, `start`, optional `end`, `allDay`, valid IANA `timeZone`, `place`, `location`, `recurrence`, `attendees`, `description`; title and place fields at most 200, 50 attendees, description 2,000 |
-| `task` | `title`, optional `place`, `due`, `assignees`, `status`, `checklist`, `tags`, `description`; 20 assignees and checklist rows of 200, ten tags of 60, status 60, description 2,000 |
-| `page` | `title`, optional `place`, `body`, `format`, `truncated`, `changes`; body at most 10,000, 20 added/removed changes of 2,000 |
-| `file` | `name`, optional `place`, `path`, byte `size`, `mediaType`, `to`; name at most 255, path and destination 1,024, media type 120 |
-| `rule` | `when` as a sentence, `does` (at most 4,000), up to 12 consequence sentences in `may`, `seesChat` |
-| `fields` | 1–12 `rows` with `label` (at most 60), `value`, optional complete `before` value (each at most 2,000), optional `date` or `date-time` format |
-
-Page and task titles and places are bounded to 200 characters. Message and page
-`format` is `plain` or `markdown`. Markdown uses Cloud's safe renderer without
-loading images. `before` promises the complete old value; use a revision check
-in the Action input so the review names exactly what the Action replaces.
-
-A **sends message must be complete**: show the effective `from`, every recipient
-class and attachment, scheduled `sendAt`, and the app's own safety `warnings`.
-Any positive `more.to`, `more.cc`, `more.bcc`, or `moreAttachments` requires an
-`open` link to the complete reviewed revision, on every message preview,
-including receipts. Reviews can instead supply complete `content` as described below. Every truncated preview requires that content or an `open` link.
-Cloud rejects a message preview without `from` when the declared policy or the
-review's own `ask` is `sends`; the application is responsible
-for truthfully supplying its schedule and warnings. The `from` requirement
-applies only to reviews; receipts may omit it.
+A **sends review must be complete**: its view shows the effective sender,
+every recipient class and attachment, a scheduled send time, and the app's own
+safety warnings. The application is responsible for supplying them
+truthfully. A `Draft` in a `sends` review must carry the sender as a `From`
+(or `Von`) context row.
 
 Both the application and Core use the same validation function. Invalid reviews
 or receipts follow the existing `INVALID_APP_RESPONSE` path; a dispatched
@@ -1376,53 +1361,36 @@ also checks:
   slot and renders to at most 40 characters. Button object titles and the
   name of a single person are cut to 24 characters; a group of people renders
   as a count.
-- Sentence forms, slot strings, consequences and single-line preview fields
-  reject controls, invisible format characters and line separators. Multiline
-  preview fields allow newline and tab, and reject the other unsafe characters.
-  These strings must be well-formed Unicode: do not split a surrogate pair when
-  shortening a preview. Full review content preserves the original code units.
+- Sentence forms, slot strings and consequences reject controls, invisible
+  format characters and line separators. These strings must be well-formed
+  Unicode: do not split a surrogate pair when shortening one. A view preserves
+  the original code units of its text.
 - The review locale is canonical BCP 47 and belongs to the app's presentation
   locales or falls back to one through its locale ancestors.
-- The serialized compact review is at most **32 KiB of UTF-8 JSON**, including
-  all preview fields and slots, but excluding the optional complete `content`.
+- The serialized review is at most **32 KiB of UTF-8 JSON** without its
+  `view`, including all slots and consequences.
 
 #### Supply the complete proposed content
 
-A policy review may include `content: CapabilityReviewContent` from
-`@k2b/cloud/contracts`. Use it when the proposal is unsaved or a resource link
-cannot reproduce exactly what the person is approving. Return the complete
-proposed value, including changes beyond the compact preview's limits.
+When the proposal is unsaved, or a resource link cannot reproduce exactly what
+the person approves, put the complete proposed value in the review's `view`.
+The view is bounded to **16 MiB of serialized UTF-8 JSON** (a view with a
+`Draft` to 256 KiB). An oversize view fails before approval; never shorten it
+or substitute a saved older version. Attachment bytes do not belong in a view.
+Cloud displays control and invisible characters visibly, without changing the
+stored value or digest. The view participates in the approval digest.
 
-`content` is a passive `message` or `page` with `format: "plain"`. A message
-contains `subject`, `body`, `to`, optional `from`, `cc`, `bcc`, `attachments`
-(`name`, optional byte `size`), `sendAt`, and `warnings`. It supports 600 total
-recipients, 202 attachment descriptions and seven warnings of 300 characters.
-Names are bounded to 200 characters, addresses to 320, subjects to 998 and
-attachment names to 255. A page contains `title`, optional `place`, and `body`.
-Both kinds may include the nonnegative integer `baseRevision` of the resource
-used to prepare the proposal. Recipient-free draft proposals are valid. A sends review, whether declared by
-policy or requested per call, requires a sender and at least one full recipient.
-Applications supply every attachment, schedule and safety warning themselves.
-
-The complete content is bounded to **16 MiB of serialized UTF-8 JSON**.
-Oversize content fails before approval; never shorten it or substitute a saved
-older version. HTML and attachment bytes do not belong in this field. Preserve
-source characters: Cloud displays control and invisible characters visibly,
-without changing the stored value or digest. Short and complete content both
-participate in the approval digest.
-
-Upgrade Core and callers before providers return this field. Review responses
-have a dedicated bound of 16 MiB plus the 32 KiB compact review and JSON
-structure. Ordinary Query and Action results retain their 256 KiB limit.
+Review responses have a dedicated bound of 16 MiB plus the 32 KiB review and
+JSON structure. Ordinary Query and Action results retain their 256 KiB limit.
 Direct `reviewCapabilityAction()` calls return the full bounded review without
 creating an approval or application object. `cld capabilities review <app-id>
 <action-id> --input <json>` prints the review as JSON.
 
 Cloud persists the full snapshot in its existing approval and chat records.
-Lists, chat history and streams contain a compact presentation with a
-Cloud-generated `contentRef: { href, digest }`; providers must not supply it.
-Read that exact snapshot with `readCapabilityReviewContent(ref, options)` from
-`@k2b/cloud/capabilities`. The helper accepts the normal HTTP client options and
+Lists, chat history and streams carry a view of at most 32 KiB inline; a larger
+one is replaced by a Cloud-generated `contentRef: { href, digest }`, which
+providers must not supply. Read that exact bound view with
+`readCapabilityReviewContent(ref, options)` from `@k2b/cloud/capabilities`. The helper accepts the normal HTTP client options and
 an abort signal, validates the route and response, and disables caching.
 The reference grants no access. See [approval readers](/en/docs/identity/approvals#approval-routes)
 for authorization and [storage and upgrades](/en/docs/operations/deployment-requirements#store-complete-action-review-content).
@@ -1445,8 +1413,8 @@ message, detail, and link fields; both will be removed with the next major.
 
 #### Receipts and outcome checks
 
-An Action result may return `receipt: { text, slots?, preview? }`, reusing the
-same slot, sentence, and preview rules. Every receipt slot must appear in its
+An Action result may return `receipt: { text, slots? }`, reusing the same slot
+and sentence rules; a result shows what it did in its own `view`. Every receipt slot must appear in its
 text; its slots belong to the receipt itself. Receipt completeness uses the
 result's top-level links. A Query result must not contain `receipt` in its
 envelope. Query data may use `CapabilityActionCheckSchema`, returning
@@ -1492,7 +1460,7 @@ Version approval never overrides `ask` or `unattended: false`. See
 2. Replace `approval` with `policy`, choosing the widest reach or the reason
    the Action always asks. Keep the existing effect flags and retry safety.
 3. Move catalog sentences into the review forms for every supported locale.
-   Return typed slots and, where useful, a preview; delete the migrated
+   Return typed slots and, where useful, a `view`; delete the migrated
    `presentation.sentences` entries.
 4. Replace `approvalScope` with `scope`. On silent Actions, use per-call `ask`
    where confirmation is always needed and `reach` where the call is narrower.

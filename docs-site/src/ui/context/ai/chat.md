@@ -107,9 +107,9 @@ runtime-locale text, which keeps the server HTML and the browser render identica
 Use `Chat.Decision` for one question in a conversation. The host owns the answer,
 execution, expiry, and any policy change. Use verb-and-target answers such as
 "Send to Lea" and "Keep draft"; never offer "Approve all". Answers are at
-least 44 px high and a long label wraps inside its button. In Cloud, approvals
-use `ApprovalFrame` or `ApprovalCard` from `@k2b/cloud/approvals/ui`, which draw
-this component; see [Cloud approvals](/en/ui/cloud/approvals).
+least 44 px high and a long label wraps inside its button. In Cloud, the
+approval components draw this component; see
+[Cloud approvals](/en/ui/cloud/approvals).
 
 A decision has one look in every place: a tinted ground in the AI colour
 (`--k2b-ai-surface`), 12 px corners, no rules, no shadow, and its own AI primary
