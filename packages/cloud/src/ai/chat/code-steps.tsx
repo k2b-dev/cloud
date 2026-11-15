@@ -1,393 +1,176 @@
-import { CodeDisplay, type CodeDisplayLanguage, StatusBadge, useLocale } from "@k2b/ui";
-import { createEffect, For, type JSX, Match, on, Show, Switch } from "solid-js";
+import { NoticeCard, Section, useLocale } from "@k2b/ui";
+import { For, Match, Show, Switch } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
+import { type CodeStepWords, codeStepWords } from "./code-step-words";
 import { isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { submittedCodeVersion } from "./turn-layout";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
-type Finding = { code: string; message: string; file: string; line: number };
-type Permission = {
-  operation: string;
-  title: string | null;
-  typeTitle: string | null;
-  status: "new" | "existing";
-  file: string;
-  line: number;
-};
 
-/** Lines a source shows while Gustav still writes it; the finished file keeps the same height and scrolls. */
-const LIVE_LINES = 14;
-
-/** Lasting Code steps that read as source, findings, test cases or files instead of their JSON. */
+/**
+ * Lasting Code steps. The person sees what a step did in words: never source, a file, a line, a diagnostic code or an
+ * ID. Core adds `words` to the results of check, test and simulate; the model keeps the exact data beside them.
+ */
 const CODE_STEP_TOOLS: ReadonlySet<string> = new Set([
   "code_init",
   "code_pull",
   "code_read",
+  "code_sdk",
   "code_write",
   "code_check",
   "code_test",
   "code_simulate",
   "code_submit",
+  "code_diff",
+  "code_review",
 ]);
 export const hasCodeStepView = (name: string): boolean => CODE_STEP_TOOLS.has(name);
 
-const languageOf = (path: string): CodeDisplayLanguage =>
-  path.endsWith(".tsx") ? "tsx" : path.endsWith(".ts") ? "ts" : path.endsWith(".jsx") ? "jsx" : path.endsWith(".js") ? "js" : "text";
-
-const text = (value: unknown): string | null => (typeof value === "string" ? value : null);
-
-/** Core answers a refused or failed command with `{ error: { code, message } }`; a failed call may carry plain text. */
+/** Core answers a refused or failed command with `{ error: { code, message } }`; only its message is for people. */
 const failureMessage = (block: ToolBlock): string | null => {
   const result = block.result;
   if (isRecord(result) && isRecord(result.error) && typeof result.error.message === "string") return result.error.message;
-  return block.isError && typeof result === "string" ? result : null;
+  return null;
 };
 
-const findings = (value: unknown): Finding[] =>
-  Array.isArray(value)
-    ? value.flatMap((item) =>
-        isRecord(item) && typeof item.message === "string" && typeof item.file === "string" && typeof item.line === "number"
-          ? [{ code: text(item.code) ?? "", message: item.message, file: item.file, line: item.line }]
-          : [],
-      )
-    : [];
+/** One sentence for a finished step, inside the open work line. */
+export function CodeStepBody(props: { block: ToolBlock }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  const words = () => codeStepWords(props.block);
+  const version = () => submittedCodeVersion(props.block);
+  const failed = () => (props.block.isError || failureMessage(props.block) !== null) && props.block.status === "completed";
+  return (
+    <div class="ai-code-step">
+      <Switch>
+        <Match when={failed()}>
+          <p class="ai-code-step__note" data-tone="danger" role="status">
+            <i class="ti ti-alert-circle" aria-hidden="true" />
+            <span>{t().codeStepFailed}</span>
+          </p>
+        </Match>
+        <Match when={props.block.name === "code_check" && words()}>
+          {(current) => (
+            <Show
+              when={(current().mayDo?.length ?? 0) > 0}
+              fallback={
+                <p class="ai-code-step__note">
+                  {current().notices.length ? t().codeStepNotices({ count: current().notices.length }) : t().codeStepNoNotices}
+                </p>
+              }
+            >
+              <ul class="ai-code-step__list" aria-label={t().codeStepMayDo}>
+                <For each={current().mayDo}>
+                  {(item) => (
+                    <li class="ai-code-step__item">
+                      <i class="ti ti-key" aria-hidden="true" />
+                      <span class="ai-code-step__text">{item.text}</span>
+                      <Show when={item.isNew}>
+                        <span class="ai-code-step__mark">{t().codeStepNew}</span>
+                      </Show>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          )}
+        </Match>
+        <Match when={(props.block.name === "code_test" || props.block.name === "code_simulate") && words()}>
+          {(current) => <p class="ai-code-step__note">{current().examples?.summary ?? t().codeStepNoExamples}</p>}
+        </Match>
+        <Match when={props.block.name === "code_submit" && version()}>
+          {(submitted) => <p class="ai-code-step__note">{t().codeStepSubmitted({ number: submitted().number })}</p>}
+        </Match>
+      </Switch>
+    </div>
+  );
+}
 
-const permissions = (value: unknown): Permission[] =>
-  Array.isArray(value)
-    ? value.flatMap((item) =>
-        isRecord(item) && typeof item.operation === "string" && typeof item.file === "string" && typeof item.line === "number"
-          ? [
-              {
-                operation: item.operation,
-                title: text(item.title),
-                typeTitle: text(item.typeTitle),
-                status: item.status === "existing" ? ("existing" as const) : ("new" as const),
-                file: item.file,
-                line: item.line,
-              },
-            ]
-          : [],
-      )
-    : [];
-
-const lineCount = (source: string) => (source ? source.split("\n").length - (source.endsWith("\n") ? 1 : 0) : 0);
+/** Notices with their consequence, each as one calm card in the conversation. */
+function CodeNotices(props: { notices: CodeStepWords["notices"] }) {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  return (
+    <div class="ai-code-notices">
+      <For each={props.notices}>
+        {(notice) => (
+          <NoticeCard
+            tone={notice.severity === "block" ? "danger" : "warning"}
+            icon={notice.severity === "block" ? "ti ti-ban" : "ti ti-alert-triangle"}
+            layout="card"
+            title={notice.text}
+            detail={t().codeStepConsequence({ consequence: notice.consequence })}
+          />
+        )}
+      </For>
+    </div>
+  );
+}
 
 /**
- * One file's source, scrolling inside the step at a fixed height. While Gustav writes it, the newest lines show,
- * numbered like the whole file; the written file keeps that height and starts where the writing ended, so nothing
- * jumps when the call completes.
+ * Tried examples as one topic: what an example is, then each one with its name, its result word and what it did. A
+ * failed example says what Gustav expected and what happened. The result word keeps one width, so the text beside it
+ * never reflows when "Running" becomes "Successful".
  */
-function CodeSource(props: { path: string; content: string; omittedLines?: number; live: boolean }) {
+function CodeExamples(props: { examples: NonNullable<CodeStepWords["examples"]>; trial: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
-  let frame: HTMLDivElement | undefined;
-  const lines = () => props.content.split("\n");
-  const shown = () => (props.live ? lines().slice(-LIVE_LINES) : lines());
-  const startLine = () => (props.live ? (props.omittedLines ?? 0) + lines().length - shown().length + 1 : 1);
-  const lastLine = () => startLine() + shown().length - 1;
-  // Lines the written file will show, so a very long line that hides earlier ones keeps the final height.
-  const liveLines = () => Math.min(LIVE_LINES, lastLine());
-  createEffect(
-    on(
-      () => props.live,
-      (live, wasLive) => {
-        if (live || !wasLive || !frame) return;
-        const body = frame.querySelector<HTMLElement>(".k2b-content-code-display__body");
-        if (body) body.scrollTop = body.scrollHeight;
-      },
-    ),
-  );
   return (
-    <div
-      ref={frame}
-      class="ai-code-step__source"
-      data-live={props.live ? "" : undefined}
-      style={props.live ? { "--ai-code-live-lines": String(liveLines()) } : undefined}
+    <Section
+      class="ai-code-examples"
+      title={props.trial ? t().codeStepTrial : t().codeStepExamples}
+      meta={t().codeStepExamplesCount({ passed: props.examples.passed, total: props.examples.total })}
+      description={props.examples.explanation}
     >
-      <CodeDisplay
-        title={props.live ? `${props.path} · ${t().codeStepLine({ line: lastLine() })}` : props.path}
-        code={shown().join("\n")}
-        language={languageOf(props.path)}
-        startLine={startLine()}
-        copy={!props.live}
-      />
-    </div>
-  );
-}
-
-function FindingList(props: { items: Finding[]; tone: "error" | "warning"; label: string }) {
-  return (
-    <ul class="ai-code-step__list" aria-label={props.label}>
-      <For each={props.items}>
-        {(item) => (
-          <li class="ai-code-step__item" data-tone={props.tone}>
-            <i class={props.tone === "error" ? "ti ti-alert-circle" : "ti ti-alert-triangle"} aria-hidden="true" />
-            <span class="ai-code-step__text">
-              <span>{item.message}</span>
-              <span class="ai-code-step__where">
-                {item.file}:{item.line}
-                {item.code ? ` · ${item.code}` : ""}
-              </span>
-            </span>
-          </li>
-        )}
-      </For>
-    </ul>
-  );
-}
-
-function PermissionList(props: { items: Permission[] }) {
-  const locale = useLocale();
-  const t = () => aiChatMessages(locale());
-  return (
-    <ul class="ai-code-step__list" aria-label={t().codeStepPermissions}>
-      <For each={props.items}>
-        {(item) => (
-          <li class="ai-code-step__item">
-            <i class="ti ti-key" aria-hidden="true" />
-            <span class="ai-code-step__text">
-              <span>
-                <code>{item.operation}</code>
-                {[item.typeTitle, item.title].filter(Boolean).length ? ` · ${[item.typeTitle, item.title].filter(Boolean).join(" ")}` : ""}
-              </span>
-              <span class="ai-code-step__where">
-                {item.file}:{item.line}
-              </span>
-            </span>
-            <StatusBadge
-              variant="text"
-              tone={item.status === "new" ? "info" : "neutral"}
-              icon={null}
-              label={item.status === "new" ? t().codeStepPermissionNew : t().codeStepPermissionExisting}
-            />
-          </li>
-        )}
-      </For>
-    </ul>
-  );
-}
-
-function StepSection(props: { title: string; children: JSX.Element }) {
-  return (
-    <div class="ai-code-step__section">
-      <p class="ai-code-step__heading">{props.title}</p>
-      {props.children}
-    </div>
-  );
-}
-
-function CheckView(props: { result: Record<string, unknown> }) {
-  const locale = useLocale();
-  const t = () => aiChatMessages(locale());
-  const check = () => (isRecord(props.result.result) ? props.result.result : {});
-  const errors = () => findings(check().diagnostics);
-  const warnings = () => findings(check().warnings);
-  const rights = () => permissions(props.result.permissions);
-  return (
-    <>
-      <Show when={errors().length || warnings().length} fallback={<p class="ai-code-step__note">{t().codeStepNoFindings}</p>}>
-        <Show when={errors().length}>
-          <StepSection title={t().codeStepFindings}>
-            <FindingList items={errors()} tone="error" label={t().codeStepFindings} />
-          </StepSection>
-        </Show>
-        <Show when={warnings().length}>
-          <StepSection title={t().codeStepWarnings}>
-            <FindingList items={warnings()} tone="warning" label={t().codeStepWarnings} />
-          </StepSection>
-        </Show>
-      </Show>
-      <Show when={rights().length}>
-        <StepSection title={t().codeStepPermissions}>
-          <PermissionList items={rights()} />
-        </StepSection>
-      </Show>
-    </>
-  );
-}
-
-type Case = { name: string; file: string | null; ok: boolean; failures: string[] };
-const cases = (value: unknown): Case[] =>
-  Array.isArray(value)
-    ? value.flatMap((item) => {
-        if (!isRecord(item) || typeof item.name !== "string" || typeof item.ok !== "boolean") return [];
-        const runs = Array.isArray(item.runs) ? item.runs.filter(isRecord) : [];
-        // A run can execute fine and still miss its expectations: a failed case names each run's error and failed
-        // assertion paths, whatever the run's own `ok`; a passing case shows none, also not an expected error.
-        const failures = item.ok
-          ? []
-          : runs.flatMap((run) => {
-              const paths = Array.isArray(run.failures) ? run.failures.filter((path) => typeof path === "string") : [];
-              if (run.ok === true && paths.length === 0) return [];
-              return [[text(run.entrypoint), run.ok === true ? null : text(run.error), paths.join(", ")].filter(Boolean).join(" · ")];
-            });
-        return [{ name: item.name, file: text(item.file), ok: item.ok, failures }];
-      })
-    : [];
-
-function TestView(props: { result: Record<string, unknown> }) {
-  const locale = useLocale();
-  const t = () => aiChatMessages(locale());
-  const all = () => cases(props.result.cases);
-  const passed = () => all().filter((item) => item.ok).length;
-  const problems = () => findings(props.result.diagnostics);
-  const error = () => text(props.result.error);
-  return (
-    <>
-      <Show
-        when={all().length}
-        fallback={
-          <Show when={error()} fallback={<p class="ai-code-step__note">{t().codeStepNoCases}</p>}>
-            {(code) => (
-              <p class="ai-code-step__failure">
-                <i class="ti ti-alert-circle" aria-hidden="true" />
-                <span class="ai-code-step__text">
-                  <span>{t().codeStepTestsFailed}</span>
-                  <span class="ai-code-step__where">{code()}</span>
-                </span>
-              </p>
-            )}
-          </Show>
-        }
-      >
-        <StepSection title={t().codeStepCases({ passed: passed(), total: all().length })}>
-          <ul class="ai-code-step__list" aria-label={t().codeStepCases({ passed: passed(), total: all().length })}>
-            <For each={all()}>
-              {(item) => (
-                <li class="ai-code-step__item" data-tone={item.ok ? "ok" : "error"}>
-                  <i class={item.ok ? "ti ti-circle-check" : "ti ti-circle-x"} aria-hidden="true" />
-                  <span class="ai-code-step__text">
-                    <span>{item.name}</span>
-                    <Show when={item.file || item.failures.length}>
-                      <span class="ai-code-step__where">{[item.file, ...item.failures].filter(Boolean).join(" · ")}</span>
-                    </Show>
-                  </span>
-                  <StatusBadge
-                    variant="text"
-                    tone={item.ok ? "ok" : "error"}
-                    icon={null}
-                    label={item.ok ? t().checkPassed : t().stepFailed}
-                  />
-                </li>
-              )}
-            </For>
-          </ul>
-        </StepSection>
-      </Show>
-      <Show when={problems().length}>
-        <StepSection title={t().codeStepFindings}>
-          <FindingList items={problems()} tone="error" label={t().codeStepFindings} />
-        </StepSection>
-      </Show>
-    </>
-  );
-}
-
-/** The files of a Code project or draft, with their size in lines. */
-function FileList(props: { files: { path: string; lines: number | null }[] }) {
-  const locale = useLocale();
-  const t = () => aiChatMessages(locale());
-  return (
-    <StepSection title={t().codeStepFiles({ count: props.files.length })}>
-      <ul class="ai-code-step__list" aria-label={t().codeStepFiles({ count: props.files.length })}>
-        <For each={props.files}>
-          {(file) => (
-            <li class="ai-code-step__item">
-              <i class={file.path.startsWith("test/") ? "ti ti-test-pipe" : "ti ti-file-code"} aria-hidden="true" />
-              <span class="ai-code-step__text">
-                <code>{file.path}</code>
-              </span>
-              <Show when={file.lines !== null}>
-                <span class="ai-code-step__where">{t().codeStepLines({ count: file.lines ?? 0 })}</span>
+      <ul class="ai-code-examples__list" aria-label={props.trial ? t().codeStepTrial : t().codeStepExamples}>
+        <For each={props.examples.items}>
+          {(example) => (
+            <li class="ai-code-examples__item" data-state={example.state}>
+              <i class={example.state === "succeeded" ? "ti ti-circle-check" : "ti ti-circle-x"} aria-hidden="true" />
+              <span class="ai-code-examples__name">{example.name}</span>
+              <span class="ai-code-examples__status">{example.status}</span>
+              <span class="ai-code-examples__sentence">{example.sentence}</span>
+              <Show when={example.state === "failed" && example.differences.length > 0}>
+                <dl class="ai-code-examples__differences">
+                  <For each={example.differences}>
+                    {(difference) => (
+                      <>
+                        <dt>{t().codeStepExpected}</dt>
+                        <dd>{difference.expected}</dd>
+                        <dt>{t().codeStepHappened}</dt>
+                        <dd>{difference.actual}</dd>
+                      </>
+                    )}
+                  </For>
+                </dl>
               </Show>
             </li>
           )}
         </For>
       </ul>
-    </StepSection>
+    </Section>
   );
 }
 
-const projectFiles = (result: unknown) => {
-  const files = isRecord(result) && isRecord(result.files) ? result.files : null;
-  return files
-    ? Object.entries(files)
-        .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-        .map(([path, source]) => ({ path, lines: lineCount(source) }))
-        .sort((a, b) => a.path.localeCompare(b.path))
-    : [];
-};
-
-/**
- * What a lasting Code step did, in readable form: the file Gustav wrote, the checker's
- * findings and the rights the Code needs, the test cases, or the project's files. A refusal shows Core's message.
- */
-export function CodeStepBody(props: { block: ToolBlock; raw: () => JSX.Element }) {
-  const locale = useLocale();
-  const t = () => aiChatMessages(locale());
-  const args = () => (isRecord(props.block.args) ? props.block.args : {});
-  const result = () => (isRecord(props.block.result) ? props.block.result : null);
-  const failure = () => failureMessage(props.block);
-  const finished = () => props.block.status === "completed" && !failure();
-  const path = () => text(args().path);
-  const content = () => text(args().content);
-  const version = () => submittedCodeVersion(props.block);
+/** What a finished check, test or simulation shows in the conversation: notices first, then the tried examples. */
+export function CodeStepResult(props: { block: ToolBlock }) {
+  const words = () => {
+    const current = codeStepWords(props.block);
+    return current && (current.notices.length > 0 || current.examples) ? current : null;
+  };
   return (
-    <div class="ai-code-step">
-      <Show when={props.block.name === "code_write" && path()}>
-        {(file) => (
-          <Switch>
-            <Match when={content() !== null}>
-              <CodeSource
-                path={file()}
-                content={content() ?? ""}
-                omittedLines={props.block.liveArgs?.omittedLines.content}
-                live={props.block.liveArgs !== undefined}
-              />
-            </Match>
-            <Match when={text(args().renameTo)}>
-              {(target) => <p class="ai-code-step__note">{t().codeStepRenamed({ from: file(), to: target() })}</p>}
-            </Match>
-            <Match when={args().delete === true}>
-              <p class="ai-code-step__note">{t().codeStepDeleted({ path: file() })}</p>
-            </Match>
-          </Switch>
-        )}
-      </Show>
-      <Show when={failure()}>
-        {(message) => (
-          <p class="ai-code-step__failure" role="status">
-            <i class="ti ti-alert-circle" aria-hidden="true" />
-            <span>{message()}</span>
-          </p>
-        )}
-      </Show>
-      <Show when={finished() && result()}>
-        {(value) => (
-          <Switch>
-            <Match when={props.block.name === "code_check"}>
-              <CheckView result={value()} />
-            </Match>
-            <Match when={props.block.name === "code_test" || props.block.name === "code_simulate"}>
-              <TestView result={value()} />
-            </Match>
-            <Match when={["code_init", "code_pull", "code_read"].includes(props.block.name)}>
-              <FileList files={projectFiles(value())} />
-            </Match>
-            <Match when={props.block.name === "code_submit" && version()}>
-              {(submitted) => <p class="ai-code-step__note">{t().codeStepSubmitted({ number: submitted().number })}</p>}
-            </Match>
-          </Switch>
-        )}
-      </Show>
-      {/* The exact call and result stay one click away, such as a simulation's returned value and its ordered calls. */}
-      <Show when={props.block.status !== "running" && !props.block.liveArgs}>
-        <details class="ai-code-step__raw">
-          <summary class="focus-ui">{t().codeStepRaw}</summary>
-          {props.raw()}
-        </details>
-      </Show>
-    </div>
+    <Show when={words()}>
+      {(current) => (
+        <div class="ai-code-result">
+          <Show when={current().notices.length > 0}>
+            <CodeNotices notices={current().notices} />
+          </Show>
+          <Show when={current().examples}>
+            {(examples) => <CodeExamples examples={examples()} trial={props.block.name === "code_simulate"} />}
+          </Show>
+        </div>
+      )}
+    </Show>
   );
 }

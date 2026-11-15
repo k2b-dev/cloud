@@ -66,12 +66,12 @@ test("shows built-in tools by their localized name and other tools by their name
   expect(displayToolName("code_action", "en")).toBe("Run app action");
   expect(displayToolName("code_action", "de")).toBe("App-Aktion ausführen");
   // Lasting Code took over code_write and code_check; their names say what happens.
-  expect(displayToolName("code_write", "en")).toBe("Edits a Code file");
-  expect(displayToolName("code_write", "de")).toBe("Bearbeitet eine Code-Datei");
+  expect(displayToolName("code_write", "en")).toBe("Writes the change");
+  expect(displayToolName("code_write", "de")).toBe("Schreibt die Änderung");
   expect(displayToolName("code_import", "en")).toBe("Import app files");
   expect(displayToolName("code_import", "de")).toBe("App-Dateien importieren");
-  expect(displayToolName("code_check", "en")).toBe("Checks the Code");
-  expect(displayToolName("code_check", "de")).toBe("Prüft den Code");
+  expect(displayToolName("code_check", "en")).toBe("Checks");
+  expect(displayToolName("code_check", "de")).toBe("Prüft");
   expect(displayToolName("code_review", "en")).toBe("Reads the review feedback");
   expect(displayToolName("code_review", "de")).toBe("Liest die Rückmeldung");
   expect(displayToolName("view_image", "de-AT")).toBe("Bild ansehen");

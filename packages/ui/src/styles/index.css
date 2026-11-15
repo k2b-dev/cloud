@@ -15420,6 +15420,115 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Work Gustav does by himself speaks in the AI colour; a running one turns its sign. */
+.k2b-ui .k2b-chat-decision__fact[data-tone="ai"] {
+  color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .k2b-chat-decision__fact[data-tone="ai"] > .ti-loader-2 {
+  animation: k2b-spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-chat-decision__fact[data-tone="ai"] > .ti-loader-2 {
+    animation: none;
+  }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-decision__fact[data-tone="ai"] > .ti-loader-2 {
+  animation: none;
+}
+
+/* A head keeps one line in every state, so a longer state word never moves the card: the source gives way first. */
+.k2b-ui .k2b-chat-decision__head {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-chat-decision__source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-chat-decision__status {
+  flex: none;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-chat-decision__status[data-tone="running"] {
+  color: var(--k2b-ai-accent);
+}
+
+/* The answer of a closed state stands where the answers of the open question stood: at the end, in their size. */
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions {
+  justify-content: flex-end;
+}
+
+/* What changes, inside a question's details: plain signs on one text edge, new in the AI colour, dropped and kept grey. */
+.k2b-ui .k2b-chat-decision__details .k2b-change-list {
+  gap: 0.125rem;
+}
+
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item {
+  grid-template-columns: 1rem minmax(0, 1fr);
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.5rem;
+}
+
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item[data-tone] > .k2b-change-list__icon {
+  width: 1rem;
+  height: 1.5rem;
+  background: none;
+  color: var(--k2b-text-secondary);
+  font-size: 0.875rem;
+}
+
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item[data-tone="add"][data-tone] > .k2b-change-list__icon {
+  color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item:not([data-tone="add"]) > .k2b-change-list__text {
+  color: var(--k2b-text-secondary);
+}
+
+/* Cloud works on the given answer for an unknown time: a shimmer runs over the filled button, never a fill level. */
+.k2b-ui .k2b-button.k2b-chat-decision__answer[data-busy] {
+  cursor: progress;
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, white 34%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  background-repeat: no-repeat;
+  animation: k2b-chat-decision-busy 1.3s linear infinite;
+}
+
+@keyframes k2b-chat-decision-busy {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-button.k2b-chat-decision__answer[data-busy] {
+    animation: none;
+    background-image: none;
+  }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-button.k2b-chat-decision__answer[data-busy] {
+  animation: none;
+  background-image: none;
+}
+
 /* The outcome of a decided question sits under its head; the head already
    carries the state, so the line needs no icon of its own. */
 .k2b-ui .k2b-chat-decision .k2b-chat-outcome {
@@ -15453,6 +15562,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     flex-wrap: wrap;
     justify-content: flex-start;
     white-space: normal;
+  }
+
+  /* Facts that change while the question stays open keep their two lines, so the question keeps its height. */
+  .k2b-ui .k2b-chat-decision[data-fact-lines="2"] .k2b-chat-decision__meta {
+    align-items: flex-start;
+    min-height: 2.5rem;
+    line-height: 1.25rem;
   }
 
   .k2b-ui .k2b-chat-decision__fact {
@@ -15618,9 +15734,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Bare icon buttons of the timeline. A library Button inside an activity, such as one action at the end of a line,
+   keeps its own look. */
 .k2b-ui .k2b-chat-timeline__retry,
 .k2b-ui .k2b-chat-message__actions button,
-.k2b-ui .k2b-chat-activity button {
+.k2b-ui .k2b-chat-activity button:not(.k2b-button) {
   display: inline-flex;
   min-width: 1.75rem;
   min-height: 1.75rem;
@@ -15637,7 +15755,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-timeline__retry:hover,
 .k2b-ui .k2b-chat-message__actions button:hover,
-.k2b-ui .k2b-chat-activity button:hover {
+.k2b-ui .k2b-chat-activity button:not(.k2b-button):hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
 }

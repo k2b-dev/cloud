@@ -25,6 +25,8 @@ import { AiAnswerSources, AiAppTile, answerSources } from "./answer-sources";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { hasCapabilityView } from "./capability-result";
 import { CapabilityViewBlock } from "./capability-view";
+import { codeStepWords } from "./code-step-words";
+import { CodeStepResult } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
@@ -157,7 +159,8 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   if (isCardToolName(name)) return t.stepPreparingCard;
   if (isChartToolName(name)) return t.stepPreparingChart;
   const authoring = CODE_AUTHORING_STEPS[name];
-  if (authoring) return name === "code_write" ? withTarget(t[authoring]) : t[authoring];
+  // Lasting Code steps name what happens, never a file: the person does not read the source.
+  if (authoring) return t[authoring];
   if (name === "code_run") return withTarget(t.stepRunningCode);
   if (name === "code_inspect") return t.stepCheckingRun;
   if (name.startsWith("code_")) return t.stepCode;
@@ -616,6 +619,9 @@ function AiTurnResultView(props: {
               }
             </Show>
           </Match>
+          <Match when={["code_check", "code_test", "code_simulate"].includes(current().name) && codeStepWords(current())}>
+            <CodeStepResult block={current()} />
+          </Match>
           <Match when={submittedCodeVersion(current())}>
             {(version) => (
               <Show keyed when={version().versionId}>
@@ -724,9 +730,12 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
       setContinuing(false);
     }
   };
+  // One form with the error notice (v12, 05): the sign of its tone, what happened, what stays, and a real answer.
   return (
     <NoticeCard
       tone="warning"
+      icon="ti ti-alert-triangle"
+      layout="card"
       class="ai-turn__notice"
       title={
         props.notice.kind === "output_limit"
@@ -735,13 +744,22 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
             ? t().authoringTurnStopped
             : t().turnErrorTitle
       }
-      detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : undefined}
+      detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : t().keptSoFar}
+      actions={
+        <Show when={props.continuable && actions.onContinueTurn}>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={continuing()}
+            disabled={actions.actionDisabled?.()}
+            onClick={() => void continueAnswer()}
+          >
+            <i class="ti ti-player-play" aria-hidden="true" />
+            {t().continueAnswer}
+          </Button>
+        </Show>
+      }
     >
-      <Show when={props.continuable && actions.onContinueTurn}>
-        <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueAnswer()}>
-          <i class="ti ti-player-play" aria-hidden="true" /> {t().continueAnswer}
-        </Button>
-      </Show>
       <Show when={failed()}>
         <p role="alert">{t().continueAnswerFailed}</p>
       </Show>
@@ -772,13 +790,21 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean; ke
       class="ai-turn__notice"
       title={t().turnInterrupted({ reason: t().turnErrorReason(props.error) })}
       detail={props.kept ? t().keptSoFar : undefined}
-    >
-      <Show when={canContinue()}>
-        <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueTurn()}>
-          <i class="ti ti-player-play" aria-hidden="true" /> {t().continueTurn}
-        </Button>
-      </Show>
-    </NoticeCard>
+      actions={
+        <Show when={canContinue()}>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={continuing()}
+            disabled={actions.actionDisabled?.()}
+            onClick={() => void continueTurn()}
+          >
+            <i class="ti ti-player-play" aria-hidden="true" />
+            {t().continueTurn}
+          </Button>
+        </Show>
+      }
+    />
   );
 }
 
