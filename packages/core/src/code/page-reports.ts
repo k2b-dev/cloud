@@ -2,11 +2,11 @@ import { sql } from "@k2b/cloud";
 import { accounts, coreSettings, isAccountAllowed } from "@k2b/cloud/services";
 import { listApprovalAdminRecipients } from "@k2b/cloud/services/approvals";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
-import { z } from "zod";
+import type { z } from "zod";
 import type { CoreNotificationSender } from "../notifications";
 import { type CodeContext, CodeDataError } from "./access";
-import { CodeIdSchema } from "./contracts";
-import { CODE_PAGE_REPORT_REASONS, type CodePageReportReason, CodePageReportReasonSchema } from "./page-provenance-contracts";
+import type { CodePageReportReason } from "./page-provenance-contracts";
+import { type CodePageReportPage, codePageReportContracts } from "./page-report-contracts";
 import { requireCodePolicyAdmin } from "./policy";
 import { findCode } from "./store";
 
@@ -125,36 +125,6 @@ export const createCodePageReportNotificationOutbox = (sender: Pick<CoreNotifica
     publish: (row) => deliverCodePageReportNotice(row, sender),
   });
 
-export const codePageReportContracts = {
-  list: {
-    input: z
-      .object({
-        codeId: CodeIdSchema,
-        state: z.enum(["open", "resolved"]).default("open"),
-        /** Opaque cursor of the previous page. */
-        cursor: z.string().max(100).optional(),
-      })
-      .strict(),
-  },
-  resolve: { input: z.object({ codeId: CodeIdSchema, reportId: z.uuid() }).strict() },
-} as const;
-
-export const CodePageReportSchema = z
-  .object({
-    id: z.uuid(),
-    reporter: z.object({ id: z.uuid(), name: z.string() }).strict(),
-    path: z.string(),
-    reason: z.enum(CODE_PAGE_REPORT_REASONS).nullable(),
-    text: z.string(),
-    createdAt: z.iso.datetime({ offset: true }),
-    state: z.enum(["open", "resolved"]),
-    resolvedAt: z.iso.datetime({ offset: true }).nullable(),
-  })
-  .strict();
-export type CodePageReport = z.infer<typeof CodePageReportSchema>;
-export const CodePageReportPageSchema = z.object({ items: z.array(CodePageReportSchema), nextCursor: z.string().nullable() }).strict();
-export type CodePageReportPage = z.infer<typeof CodePageReportPageSchema>;
-
 const CURSOR = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z)\|([0-9a-f-]{36})$/;
 
 /** One page of an automation's reports for Cloud admins, newest first. Who resolved one is not shown. */
@@ -191,7 +161,7 @@ export async function listCodePageReports(
       id: row.id,
       reporter: { id: row.reporter_id, name: row.reporter },
       path: row.path,
-      reason: CodePageReportReasonSchema.nullable().parse(row.reason),
+      reason: row.reason,
       text: row.text,
       createdAt: row.created_at.toISOString(),
       state: row.state,

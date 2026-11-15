@@ -18,6 +18,7 @@ import {
   readCodeAdminVersionSource,
 } from "../../../code/admin";
 import { listUnusedCodeDatabases } from "../../../code/database-retention";
+import { listCodePageReports } from "../../../code/page-reports";
 import { CODE_SETTINGS } from "../../../code/settings";
 import { ssr } from "../../../config";
 import { buildEntries } from "../settings/entries";
@@ -72,6 +73,7 @@ export default ssr<AuthContext>(async (c) => {
             ? await attempt(() => listCodeAdminCodes({ status: query.status, app: query.app, q: query.q, cursor: query.after }, context))
             : null,
         code: sec === "code" && query.id ? await attempt(() => readCodeAdminCode(query.id ?? "", context)) : null,
+        reports: sec === "code" && query.id ? await attempt(() => listCodePageReports({ codeId: query.id ?? "" }, context)) : null,
         source:
           sec === "code" && query.id && query.version
             ? await attempt(() => readCodeAdminVersionSource(query.id ?? "", query.version ?? "", context))

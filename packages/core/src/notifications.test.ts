@@ -303,3 +303,36 @@ test("Code review notices localize each outcome and link the immutable version",
     );
   }
 });
+
+test("page reports reach admins with the page and the automation, and the reporter once it is handled, never an admin's name", async () => {
+  const get = spyOn(settings, "get").mockImplementation(async (key: string) => {
+    if (key !== "app.url") throw new Error(`Unexpected fixture setting: ${key}`);
+    return "https://cloud.example.test/";
+  });
+  try {
+    const reported = app.notifications.codePageReported;
+    expect(reported.recipient).toBe("user");
+    expect(reported.delivery).toEqual({ recommended: ["email", "browser"], required: [] });
+    const data = { codeId: "c_lieferung", title: "Lieferavise der Woche", path: "/woche", reason: "security" as const, by: "Jana Probe" };
+    const de = await reported.render(data, { locale: "de" });
+    expect(de).toEqual({
+      title: "Jana Probe hat eine Seite gemeldet",
+      body: "„Lieferavise der Woche“ · /woche · Sicherheitsproblem",
+      targetHref: "/admin/code?sec=code&id=c_lieferung",
+    });
+    expect((await reported.render({ ...data, reason: null }, { locale: "en" })).body).toBe("“Lieferavise der Woche” · /woche");
+    const email = await reported.email!(data, { locale: "en" });
+    expect(email.subject).toBe("Jana Probe reported a page");
+    expect(email.content).toContain("https://cloud.example.test/code/c_lieferung/woche");
+    expect(email.content).toContain("https://cloud.example.test/admin/code?sec=code&id=c_lieferung");
+    const handled = app.notifications.codePageReportResolved;
+    for (const locale of ["de", "en"]) {
+      const rendered = await handled.render({ codeId: "c_lieferung", path: "/woche" }, { locale });
+      expect(rendered.targetHref).toBe("/code/c_lieferung/woche");
+      expect(JSON.stringify(rendered)).not.toContain("Admin ");
+    }
+    expect((await handled.render({ codeId: "c_lieferung", path: "/" }, { locale: "de" })).title).toBe("Deine Meldung ist erledigt");
+  } finally {
+    get.mockRestore();
+  }
+});
