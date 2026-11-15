@@ -7,7 +7,7 @@ import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityView } from "./capability-result";
-import { CapabilityViewBlock } from "./capability-view";
+import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, isKeyFigureView } from "./capability-view";
 import { isCodeStepResult } from "./code-step-words";
 import { CodeStepBody, CodeStepResult, hasCodeStepView } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
@@ -461,8 +461,30 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         >
           <SpecializedBuiltinToolBlock block={props.block} />
         </Match>
+        {/* Gustav's key figure and chart stand under Cloud's head as the same blocks an app's result uses, from the first
+            frame; older stored ones without a view keep their own drawing. */}
+        <Match when={isCardToolName(props.block.name) && gustavViewBlock(props.block)}>
+          {(shown) => (
+            <CapabilityViewBlock
+              block={shown()}
+              turnId={props.turnId}
+              live={props.active ?? false}
+              {...gustavOrigin(props.block, locale(), aiChatMessages(locale()).keyFigures)}
+            />
+          )}
+        </Match>
         <Match when={isCardToolName(props.block.name) && !props.block.isError}>
           <CloudCardBlock args={props.block.args} />
+        </Match>
+        <Match when={isChartToolName(props.block.name) && gustavViewBlock(props.block)}>
+          {(shown) => (
+            <CapabilityViewBlock
+              block={shown()}
+              turnId={props.turnId}
+              live={props.active ?? false}
+              {...gustavOrigin(props.block, locale(), isKeyFigureView(shown().view) ? aiChatMessages(locale()).keyFigures : undefined)}
+            />
+          )}
         </Match>
         <Match when={isChartToolName(props.block.name) && !props.block.isError}>
           <CloudChartBlock args={props.block.args} completed={status() === "completed"} />
@@ -485,7 +507,7 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
       <Show when={websiteReceipts(props.block).length > 0}>
         <WebsiteReceipts block={props.block} />
       </Show>
-      <Show when={hasCapabilityView(props.block)}>
+      <Show when={hasCapabilityView(props.block) && !isChartToolName(props.block.name) && !isCardToolName(props.block.name)}>
         <CapabilityViewBlock block={props.block} turnId={props.turnId} live={props.active ?? false} />
       </Show>
     </>

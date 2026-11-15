@@ -596,6 +596,7 @@ export function chartBaseRenderOptions(
             ...common,
             area: input.area,
             smooth: input.smooth,
+            points: input.points,
             step: input.step,
             zero: input.zero,
             legendValues: input.legendValues,
