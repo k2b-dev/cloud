@@ -16,6 +16,20 @@ Docker Compose runs infrastructure and application services. Source folders are
 mounted into the containers. Restart the affected services after edits, as
 described below.
 
+## JSON Schema pattern correction
+
+The workspace pins a Zod importer patch under `patches/` so capability and event
+patterns keep Unicode semantics, including `\p{…}` property escapes. Install
+with `bun install --frozen-lockfile` and rebuild affected images to include it;
+copying an older `node_modules` directory does not apply dependency patches.
+Registration payloads and schema hashes are unchanged.
+
+Capability compilation also checks Unicode regex syntax independently of the
+installed Zod version. A provider with an invalid pattern now fails at startup
+with its operation and schema path, before Core can omit that operation. Fix
+legacy identity escapes or character ranges in the named declaration and use
+Unicode (`u`) regular expressions. Valid existing patterns need no migration.
+
 ## Start the core stack
 
 ```bash
