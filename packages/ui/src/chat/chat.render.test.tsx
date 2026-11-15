@@ -745,6 +745,21 @@ describe("@k2b/ui portable chat family", () => {
     expect(css).not.toContain(".k2b-ui .k2b-chat-composer textarea:focus-visible");
   });
 
+  test("stops a running answer in the AI colour like send, outside the conversation composer", () => {
+    const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
+    const stopRule =
+      css.match(/\.k2b-ui \.k2b-chat-composer:not\(\[data-variant="conversation"\]\) \.k2b-chat-composer__stop \{([^}]+)\}/)?.[1] ?? "";
+    const stopHover =
+      css.match(
+        /\.k2b-ui \.k2b-chat-composer:not\(\[data-variant="conversation"\]\) \.k2b-chat-composer__stop:hover:not\(:disabled\) \{([^}]+)\}/,
+      )?.[1] ?? "";
+
+    // Composer v3: send and stop are plum, at the same place; stopping is not a destructive action.
+    expect(stopRule).toContain("color: var(--k2b-ai-accent);");
+    expect(stopHover).toContain("color: var(--k2b-ai-accent-hover);");
+    expect(stopHover).toContain("background: var(--k2b-hover);");
+  });
+
   test("uses the standard 14px chat body size for composer input", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
     const textareaRule = css.match(/\.k2b-ui \.k2b-chat-composer__input textarea \{([^}]+)\}/)?.[1] ?? "";

@@ -16287,6 +16287,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-danger-surface);
 }
 
+/* The assistant prompt stops where it sends and in the same AI colour: stopping an answer is not destructive. The
+   conversation composer between people keeps the neutral danger stop. */
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]) .k2b-chat-composer__stop {
+  color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .k2b-chat-composer:not([data-variant="conversation"]) .k2b-chat-composer__stop:hover:not(:disabled) {
+  color: var(--k2b-ai-accent-hover);
+  background: var(--k2b-hover);
+}
+
 .k2b-ui .k2b-chat-composer button:disabled,
 .k2b-ui .k2b-chat-composer textarea:disabled {
   opacity: 0.45;
