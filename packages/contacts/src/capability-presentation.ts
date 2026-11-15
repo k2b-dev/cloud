@@ -28,6 +28,15 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "book.containers": {
+          title: "Diskussionsadressbücher auflisten",
+          description: "Listet lesbare Adressbücher mit einem opaken Fortsetzungscursor auf.",
+          input: {
+            query: "Optionale Suche nach Adressbuchnamen oder -beschreibung.",
+            cursor: "Opaker Fortsetzungscursor der vorherigen Seite.",
+            limit: "Maximale Anzahl der Adressbücher auf dieser Seite.",
+          },
+        },
         "book.list": {
           title: "Adressbücher auflisten",
           description:

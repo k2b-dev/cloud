@@ -17,11 +17,22 @@ A resource discussion brings its messages together. Each item has its own thread
 3. Choose a thread to read just that item's messages.
 :::
 
-Only discussions with a chat appear here. An empty section explains when a chat appears. If the section cannot load, choose **Try again** beside the error.
+Only discussions with a chat appear here. Without any, the section does not appear. If the section cannot load, it opens with the error; choose **Try again** beside it.
 
 The short list shows recent threads, unread threads, and the open thread within one page. Choose **All N threads** or **Browse all threads** to browse more. Use **Search threads** and the **Open**, **Done**, or **Unread** filters. Choose **Show more threads** for the next page.
 
 On large screens, a separate thread column provides the same search and filters. On a phone, the back arrow in a thread opens the thread overview.
+
+## Talk beside the resource {icon="layout-sidebar-right"}
+
+Open the **Chat** panel while you look at a resource, such as a notebook. The panel opens the discussion about that resource. If nobody has written there yet, it is ready and empty; your first message starts it. When you move to another resource, the panel follows, as long as it still shows the previous resource's discussion.
+
+:::reference
+- **All chats** at the top left shows your other chats in the panel.
+- **Chat about …** at the top right returns to the resource's discussion.
+- Chat learns the resource only after you allow **Share context** for Chat in the panel.
+- You see the discussion only if you may read the resource.
+:::
 
 ## Write about an item {icon="message-plus"}
 

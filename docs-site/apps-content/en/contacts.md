@@ -5,7 +5,7 @@ section: Work
 order: 105
 description: Shared contact books with structured records, tags, notes, hierarchy, and access control.
 tags: [contacts, address-books, cli]
-updated: 2026-11-08
+updated: 2026-11-15
 ---
 
 # Contacts
@@ -34,6 +34,14 @@ phone. Contact points, addresses, relationships, and notes have their own
 sections; less frequent details sit under **More about …**. Links, reloads,
 and browser back navigation preserve the selected contact. Closing it gives
 the list the full content area again.
+
+## Discuss an address book or contact
+
+Open Chat in the panel beside an address-book page to discuss that book.
+Select a contact to open its discussion thread; close the contact to return
+to the book's discussion. Reload and browser back navigation preserve the
+current selection. Reading requires access to the book; posting requires
+write access. Contact notes remain available separately.
 
 ## Enter addresses and plan routes
 
