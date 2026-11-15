@@ -33,6 +33,8 @@ export const app = defineApp({
     },
   },
   appearance: {
+    // In Gustav plum is the primary colour: actions, focus, selection, and links follow the AI palette.
+    primary: "ai",
     accent: "#8e1b6f",
     background: {
       from: "#8e1b6f",

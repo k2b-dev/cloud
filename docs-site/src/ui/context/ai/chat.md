@@ -63,7 +63,7 @@ import { Chat, type ChatTimelineItem } from "@k2b/ui";
 
 ## Controlled behavior
 
-The assistant prompt is one card around the field and its footer. It carries the shared 2 px field edge of every input, without a shadow: grey at rest, a slightly darker fill on hover, the blue edge of the same width while anything inside has focus, red with `error`, and a muted card without an edge when `disabled`. A state changes only the edge colour and the fill, never the card's size or the text position.
+The assistant prompt is one card around the field and its footer. It carries the shared 2 px field edge in the AI colour: light plum (`--k2b-ai-edge-rest`) at rest, a slightly darker fill on hover, and the full plum (`--k2b-ai-accent`) of the same width with a soft glow outside (`--k2b-ai-glow`) while anything inside has focus. With `error` the edge is red until the card has focus again, and the error line stays; a `disabled` card is a muted well with a quiet `--k2b-border` edge. A state changes only the edge colour, the fill, and the glow, never the card's size or the text position. The glow is the one approved exception to "no control casts a shadow" (see [Field edge](/en/ui/surfaces/color#field-edge)). The conversation variant between people keeps the neutral field edge.
 
 `Chat.Composer` calls `onSubmit` with an `intent`, untrimmed text, generic attachments, and optional inline mentions. The intent is `send` while idle and `steer` while a response is running. Return `false` or throw to restore the consumed draft, attachments, and mentions; failures are passed to `onError`.
 
@@ -73,7 +73,9 @@ Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
 used by message, menu, and context actions. Set `pressed` for persistent toggle
 state such as a saved helpful rating; inline actions expose it through
-`aria-pressed`.
+`aria-pressed`. With inline actions, mark the less frequent ones `overflow`: they
+move into one trailing "More" menu, so a message shows a few quiet icons and
+keeps every action reachable.
 
 Pasted files use the same `fileSelection.onSelect` callback as the file picker
 and drag-and-drop. Use the generic `onPaste` seam only for non-file content;
@@ -233,7 +235,7 @@ type ChatActivityTone = "neutral" | "ai" | "success" | "warning" | "danger";
 
 type ChatActionBase = {
   id: string; label: string; icon?: string; variant?: "danger"; disabled?: boolean; pressed?: boolean;
-  pressedTone?: "success" | "danger";
+  pressedTone?: "success" | "danger"; overflow?: boolean;
 };
 
 type ChatAction = ChatActionBase &
@@ -710,13 +712,29 @@ user input is a separate state.
 Use `Chat.Tasks` above the composer for a compact working plan. Pass `items`
 with stable `id`, `content`, and `status` (`pending`, `in_progress`, `completed`,
 `cancelled`), controlled `open`/`onOpenChange`, a `label`, a `progressLabel`,
-and localized `statusLabels`. The component renders one colored segment per
-item and a bounded, scrollable disclosure. Status symbols and labels complement
-color; cancelled work has a striped segment and a struck-through description.
+and localized `statusLabels`. Set `paused` while the work is interrupted.
+
+The plan is a plum-tinted tray without edge or shadow. Its header lies at the
+composer and holds a progress ring, the title, the current step (only while
+folded), and the count with tabular figures. The list opens upwards from the
+header; folding changes only the list's height, so the composer and the
+conversation stay where they are. Rows are 32 px high and never change their
+height with their status: a circle for open work, a turning ring and bold text
+for the current step on a white highlight that glides to the next row, a check
+and grey text for done work, and a cross with struck-through text for dropped
+work. Long text wraps; about six rows show, then the list scrolls inside
+itself and keeps the current row in view. Dropped work does not count towards
+the ring. Each status is read out as its word; folded rows leave the tab order.
+
+`Chat.TaskList` shows the same rows still, without header, ring, or fold, on
+its container's text edge: use it for a plan that stopped, such as a notice
+that lists what is done and what is open. Name it with `aria-label` or
+`aria-labelledby`.
 
 The host decides when a plan exists, persists it, counts cancelled work
-separately, and translates execution state into labels. Do not label a paused
-current step as running. This component does not start tasks or infer progress.
+separately, translates execution state into labels, and titles a finished plan
+("All tasks done"). Do not label a paused current step as running. This
+component does not start tasks or infer progress.
 
 Message file attachments use compact horizontal chips with an icon and a single
 filename line. Long filenames truncate; the attachment row wraps when needed.
