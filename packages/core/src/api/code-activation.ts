@@ -77,7 +77,12 @@ export const createCodeActivationRoutes = () => {
       auth.requireOAuthScope("write", "admin"),
       middleware.openapi({ tags: ["Code"], summary: "Withdraw a Code version that still waits for an administrator" }),
       v("json", codeAuthoringContracts.withdraw.input),
-      (c) => run(context(c), (ctx) => withdrawCodeVersion(c.req.valid("json"), ctx)),
+      // The browser learns only that it worked; the receipt with the version's files stays with `cld`.
+      (c) =>
+        run(context(c), async (ctx) => {
+          await withdrawCodeVersion(c.req.valid("json"), ctx);
+          return { withdrawn: true as const };
+        }),
     )
     .post(
       "/activation/cancel",

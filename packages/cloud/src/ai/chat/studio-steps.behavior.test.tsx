@@ -92,7 +92,7 @@ else {
           result: { version: 1, result: { ok: true, diagnostics: [] }, manifest: null, permissions: [] },
         },
       ]);
-      expect(row.querySelector("small")!.textContent).toBe("bestanden");
+      expect(row.querySelector("small")!.textContent).toBe("erfolgreich");
       expect(row.querySelector(".ti-circle-check")).not.toBeNull();
       expect(row.querySelector(".ti-alert-triangle")).toBeNull();
     } finally {

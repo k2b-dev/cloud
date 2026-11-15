@@ -151,7 +151,10 @@ function CodeExamples(props: { examples: NonNullable<CodeStepWords["examples"]>;
 
 /** What a finished check, test or simulation shows in the conversation: notices first, then the tried examples. */
 export function CodeStepResult(props: { block: ToolBlock }) {
-  const words = () => codeStepWords(props.block);
+  const words = () => {
+    const current = codeStepWords(props.block);
+    return current && (current.notices.length > 0 || current.examples) ? current : null;
+  };
   return (
     <Show when={words()}>
       {(current) => (

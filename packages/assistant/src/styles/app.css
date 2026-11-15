@@ -667,6 +667,41 @@
   font-size: 0.75rem;
 }
 
+/* The card while it loads: the sentence, the reason and the details on white, in their own heights. */
+.assistant-code-version__loading {
+  display: grid;
+  gap: 0.5rem;
+  padding-block: 0.25rem 0.5rem;
+}
+.assistant-code-version__skeleton {
+  height: 0.875rem;
+  border-radius: 0.375rem;
+}
+.assistant-code-version__skeleton--sentence {
+  width: 62%;
+  height: 1.375rem;
+}
+.assistant-code-version__skeleton--reason {
+  width: 48%;
+}
+.assistant-code-version__skeleton--label {
+  width: 34%;
+}
+.assistant-code-version__skeleton--row {
+  width: 80%;
+}
+.assistant-code-version__skeleton--short {
+  width: 56%;
+}
+.assistant-code-version__skeleton-details {
+  display: grid;
+  gap: 0.625rem;
+  margin-top: 0.375rem;
+  padding: 0.75rem 0.875rem 0.875rem;
+  border-radius: 0.625rem;
+  background: var(--k2b-surface);
+}
+
 /* The version card is the shared approval frame; only the admin's message and comments are drawn here, flush, as
    text: avatar 18 px, name 13/600, role and time 12/400, the text 13/400 below. Never a file or a line. */
 .assistant-code-version__review {

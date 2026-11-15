@@ -1,6 +1,6 @@
 import { ApprovalFrame, type ApprovalFrameProps } from "@k2b/cloud/approvals/ui";
 import type { CodeVersionReadModel } from "@k2b/cloud/contracts/code-read-model";
-import { Avatar, Button, ChangeList, type ChangeListItem, Chat, type ChatOutcomeLine, useLocale } from "@k2b/ui";
+import { Avatar, Button, ChangeList, type ChangeListItem, Chat, type ChatOutcomeLine, Skeleton, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { loadCodeNextRun } from "../code-summary";
 import { matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
@@ -104,6 +104,8 @@ export default function AssistantCodeVersionCard(props: {
         typeof preview === "object" && preview.running === props.number ? await loadCodeNextRun(browserCodeInvoke, props.codeId) : null;
       if (read !== reads) return newest;
       if (preview === "failed" && live && loaded() !== null) return false;
+      // A decision's review that could not be read is tried again by the live channel, never shown as a guess.
+      if (live && typeof preview === "object" && review === null && loaded() !== null) return false;
       setNextRun(next);
       setLoaded(typeof preview === "object" ? { preview, review, words } : preview);
       return preview !== "failed";
@@ -259,10 +261,22 @@ export default function AssistantCodeVersionCard(props: {
     const words = current()?.words;
     if (!words) return [];
     const rows = words.changes.rows;
+    const href = page();
     const items: ChangeListItem[] = rows.items.map((row) => ({
       tone: row.kind === "add" ? "add" : row.kind === "remove" ? "remove" : "neutral",
       icon: row.kind === "same" ? "ti ti-equal" : undefined,
-      content: row.text,
+      // What stays the same is listed on the Code page; the card counts it and links there.
+      content:
+        row.kind === "same" && href ? (
+          <>
+            {row.text}.{" "}
+            <a class="k2b-text-link" href={href}>
+              {t().show}
+            </a>
+          </>
+        ) : (
+          row.text
+        ),
       detail: row.note,
     }));
     if (rows.more > 0 && rows.moreText) items.push({ tone: "neutral", icon: "ti ti-dots", content: rows.moreText });
@@ -374,7 +388,7 @@ export default function AssistantCodeVersionCard(props: {
     outcome: <Chat.Outcome lines={{ line: { tone: status.tone === "expired" ? "off" : status.tone, ...line } }} current="line" />,
   });
   const small = (label: string, onClick: () => void, icon?: string) => (
-    <Button type="button" size="sm" variant="secondary" onClick={onClick}>
+    <Button type="button" variant="secondary" class="k2b-chat-decision__answer" onClick={onClick}>
       <Show when={icon}>{(name) => <i class={name()} aria-hidden="true" />}</Show>
       {label}
     </Button>
@@ -384,7 +398,26 @@ export default function AssistantCodeVersionCard(props: {
     const value = loaded();
     const words = t();
     const base = { locale: locale(), source: { name: words.source, icon: SOURCE_ICON }, anchorId: codeVersionCardAnchor(props.versionId) };
-    if (value === null) return { ...base, state: "loading", reason: { text: words.loading } };
+    // Loading keeps the room of the question it will become: sentence, reason, and the details on white.
+    if (value === null)
+      return {
+        ...base,
+        state: "decided",
+        status: { tone: "running", label: words.loadingWord },
+        reason: { text: "" },
+        outcome: (
+          <div class="assistant-code-version__loading" role="status" aria-busy="true" aria-label={words.loading}>
+            <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--sentence" />
+            <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--reason" />
+            <div class="assistant-code-version__skeleton-details">
+              <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--label" />
+              <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--row" />
+              <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--row" />
+              <Skeleton class="assistant-code-version__skeleton assistant-code-version__skeleton--short" />
+            </div>
+          </div>
+        ),
+      };
     if (value === "failed")
       return {
         ...compact(

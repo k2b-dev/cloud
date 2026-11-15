@@ -2089,7 +2089,7 @@ describe("Code check steps", () => {
     ];
     const english = renderExpanded(blocks, { open: ["group:check-failed"] });
     expect(english).toContain("3 findings");
-    expect(english).toContain("<strong>Checks</strong><small>passed</small>");
+    expect(english).toContain("<strong>Checks</strong><small>successful</small>");
     expect(english).toContain("ti-alert-triangle");
     expect(english).toContain("ti-circle-check");
     expect(english).not.toContain('data-tone="danger"');
@@ -2097,8 +2097,8 @@ describe("Code check steps", () => {
     const german = renderExpanded(blocks, { locale: "de", open: ["group:check-failed"] });
     expect(german).toContain("Prüft");
     expect(german).toContain("3 Befunde");
-    expect(german).toContain("bestanden");
-    expect(german).not.toMatch(/Checks|findings|passed/);
+    expect(german).toContain("erfolgreich");
+    expect(german).not.toMatch(/Checks|findings|successful/);
 
     // A check that could not run answers with Core's error and is a failed step, not a passed or failed check.
     const broken = renderExpanded([

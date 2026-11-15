@@ -61,23 +61,27 @@ test("tried examples read as names, result words and counted effects, never as f
     ["Delivery note without attachment", "Fehlgeschlagen"],
   ]);
   expect(words.examples?.items[0]?.sentence).toBe("Aufgabe anlegen · 1 im Beispiel erfolgreich");
-  expect(words.examples?.items[1]?.sentence).toBe("Weicht von der Erwartung ab");
+  expect(words.examples?.items[1]?.sentence).toBe("Weicht von dem ab, was Gustav für dieses Beispiel erwartet hat.");
+  expect(words.examples?.explanation).toContain("Nichts davon passiert wirklich.");
   expect(words.examples?.items[1]?.differences[0]?.subject).toBe("Aufrufe");
   expectNoCode(words);
 });
 
-test("checker findings read as a sentence with its consequence; rights by their titles, marked when new", () => {
+test("checker findings read as a sentence with its consequence; rights by action and target name, marked when new", () => {
+  const titles: Record<string, string> = { "spaces.task.create": "Aufgabe anlegen", "spaces.task.read": "Aufgabe lesen" };
   const words = describeCodeCheckWords(
     {
       diagnostics: [{ code: "code_unresolved_call" }],
       warnings: [{ code: "code_route_unchecked" }],
       permissions: [
-        { title: "Aufgabe anlegen", typeTitle: "Space", status: "new" },
-        { title: "Aufgabe anlegen", typeTitle: "Space", status: "new" },
-        { title: null, typeTitle: null, status: "existing" },
+        { operation: "spaces.task.create", title: "Logistik", typeTitle: "Space", status: "new" },
+        { operation: "spaces.task.read", title: "Logistik", typeTitle: "Space", status: "existing" },
+        { operation: "spaces.task.create", title: "Logistik", typeTitle: "Space", status: "new" },
+        { operation: "mail.secret", title: null, typeTitle: null, status: "existing" },
       ],
     },
     "de",
+    (id) => titles[id],
   );
   expect(CodeChatStepWordsSchema.parse(words)).toEqual(words);
   expect(words.notices.map((notice) => notice.severity)).toEqual(["block", "warning"]);
@@ -86,8 +90,24 @@ test("checker findings read as a sentence with its consequence; rights by their 
     expect(notice.consequence.length).toBeGreaterThan(0);
   }
   expect(words.mayDo).toEqual([
-    { text: "Aufgabe anlegen · Space", isNew: true },
+    { text: "Aufgabe anlegen · Logistik", isNew: true },
+    { text: "Aufgabe lesen · Logistik", isNew: false },
     { text: "Nicht verfügbare Aktion", isNew: false },
   ]);
   expectNoCode(words);
+});
+
+test("a run that never got to its examples says so with its consequence", () => {
+  const words = describeCodeTestWords(
+    { version: 1, mode: "test", ok: false, error: "code_test_runner_unavailable", diagnostics: [], cases: [] } as unknown as CodeTestResult,
+    "de",
+  );
+  expect(words.examples).toBeUndefined();
+  expect(words.notices).toEqual([
+    {
+      severity: "warning",
+      text: "Die Beispiele konnten nicht laufen.",
+      consequence: "An der Automation hat sich nichts geändert; Gustav kann sie noch einmal ausprobieren.",
+    },
+  ]);
 });
