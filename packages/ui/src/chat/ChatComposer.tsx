@@ -465,6 +465,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   let textareaRef: HTMLTextAreaElement | undefined;
   let fileInputRef: HTMLInputElement | undefined;
   let measureRef: HTMLTextAreaElement | undefined;
+  let fieldToolsRef: HTMLDivElement | undefined;
+  /**
+   * The conversation pill keeps one row while the text fits beside its tools. Once it does not, the text takes the
+   * pill's whole width, so its scrollbar sits at the pill's edge, and the tools stand in a row of their own below it.
+   */
+  const [fieldLines, setFieldLines] = createSignal<"one" | "many">("one");
   let suggestionRef: HTMLDivElement | undefined;
   let microphoneRef: HTMLDivElement | undefined;
   let sawRunning = props.state === "running";
@@ -1301,7 +1307,20 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       // A hidden copy measures the text. Collapsing the field itself would shrink the composer for a frame, and
       // WebKit then clamps the scroll position of the conversation above it. CSS caps the height.
       if (!measureRef) return;
+      // Whether the text fits one row beside the tools is measured at that row's width in either layout, so taking the
+      // whole width never makes the text fit again and flip back.
+      const input = measureRef.parentElement;
+      const beside = (input?.clientWidth ?? 0) - (fieldLines() === "many" ? (fieldToolsRef?.offsetWidth ?? 0) : 0);
+      measureRef.dataset.mode = "one";
+      measureRef.style.width = `${Math.max(0, beside)}px`;
+      measureRef.value = "";
+      const oneRow = measureRef.scrollHeight;
       measureRef.value = textareaRef.value;
+      const many = measureRef.scrollHeight > oneRow;
+      setFieldLines(many ? "many" : "one");
+      // The height is measured in the layout the field now has.
+      measureRef.dataset.mode = many ? "many" : "one";
+      measureRef.style.width = "";
       height = measureRef.scrollHeight;
     } else {
       textareaRef.style.height = "auto";
@@ -3021,9 +3040,9 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           <div class="k2b-chat-composer__row">
             {attachControl()}
             {fileInput()}
-            <div class="k2b-chat-composer__field">
+            <div class="k2b-chat-composer__field" data-lines={fieldLines()}>
               {field()}
-              <div class="k2b-chat-composer__field-tools">
+              <div ref={fieldToolsRef} class="k2b-chat-composer__field-tools">
                 {formatToggle()}
                 {emojiButton()}
                 <Show when={props.dictation}>
