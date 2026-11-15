@@ -1,8 +1,17 @@
 import { PHONE_SHEET_QUERY } from "../actions/phone-sheet";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
 
-/** The prompt options that decide its frame; `size` and `surface` as in `DialogOptions`. */
-type PromptFrame = { size?: string; surface?: string };
+/** The prompt options that shape its dialog, as in `DialogOptions`. */
+type PromptFrame = {
+  size?: string;
+  surface?: string;
+  variant?: string;
+  signal?: AbortSignal;
+  cancelBehavior?: OpenDialogOptions["cancelBehavior"];
+  history?: boolean;
+  ariaLabel?: string;
+  title?: string;
+};
 
 /**
  * On a phone a prompt rises from the bottom edge as a sheet, within thumb reach, with the sheet's own motion: it
@@ -12,11 +21,41 @@ type PromptFrame = { size?: string; surface?: string };
 const opensAsSheet = (options?: PromptFrame): boolean =>
   options?.size !== "full" && options?.surface !== "bare" && typeof matchMedia === "function" && matchMedia(PHONE_SHEET_QUERY).matches;
 
+export const panelClass = (options?: PromptFrame): string =>
+  `k2b-dialog k2b-dialog--${options?.size ?? "medium"}${options?.variant && options.variant !== "primary" ? ` k2b-dialog--${options.variant}` : ""}${options?.surface === "bare" ? " is-bare" : ""}`;
+
+export const contentClass = (surface?: string): string => (surface === "bare" ? "k2b-dialog__viewport is-bare" : "k2b-dialog__viewport");
+
+type View = typeof import("./prompt-sheet-view");
+let view: View | undefined;
+const load = (): Promise<View> => import("./prompt-sheet-view").then((module) => (view = module));
+// A phone loads the sheet's code in the background when prompts load, so the first prompt opens at once and in the
+// order it was asked; a wider screen never loads it.
+if (typeof matchMedia === "function" && matchMedia(PHONE_SHEET_QUERY).matches) load().catch(() => {});
+
 /**
- * Opens a prompt: the dialog in the middle, or on a phone the same content as a bottom sheet. The sheet's code loads
- * only then, so pages that never show a prompt on a phone do not carry it.
+ * Opens a prompt with the frame, cancellation, history, and name every prompt shares: the dialog in the middle, or on
+ * a phone the same content as a bottom sheet. `label` names it when it has no title; `sheet: false` keeps the dialog.
  */
-export const openPrompt = <T,>(render: DialogRender<T>, options: OpenDialogOptions, prompt?: PromptFrame): Promise<T | undefined> =>
-  opensAsSheet(prompt)
-    ? import("./prompt-sheet-view").then((view) => view.openPromptSheet(render, options))
-    : dialogCore.open<T>(render, options);
+export const openPrompt = <T,>(
+  render: DialogRender<T>,
+  options: PromptFrame | undefined,
+  label: string,
+  sheet = true,
+  initialFocus?: OpenDialogOptions["initialFocus"],
+): Promise<T | undefined> => {
+  const frame: OpenDialogOptions = {
+    panelClassName: panelClass(options),
+    contentClassName: contentClass(options?.surface),
+    initialFocus,
+    signal: options?.signal,
+    cancelBehavior: options?.cancelBehavior,
+    history: options?.history,
+    ariaLabel: options?.ariaLabel ?? options?.title ?? label,
+  };
+  return !sheet || !opensAsSheet(options)
+    ? dialogCore.open<T>(render, frame)
+    : view
+      ? view.openPromptSheet(render, frame)
+      : load().then((module) => module.openPromptSheet(render, frame));
+};

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { launchBrowser } from "../../test/browser";
 
 // Fields with a description subgrid their rows. Only a real layout engine
 // shows whether a field keeps its control inside when its parent is not a grid,
@@ -91,8 +91,14 @@ describe("@k2b/ui fields with a description", () => {
           void (globalThis as unknown as { openForm: () => Promise<unknown> }).openForm();
         });
         await page.locator("dialog textarea").waitFor();
-        // On a phone the form is a sheet that slides in: measure it at rest.
-        await settled(page);
+        // On a phone the form is a sheet that slides in: measure it once the frame itself stands. The field's own focus
+        // transition may still run; it changes colours, not boxes.
+        await page.waitForFunction(() =>
+          document
+            .querySelector("dialog[open]")!
+            .getAnimations()
+            .every((animation) => animation.timeline !== document.timeline || animation.playState === "finished"),
+        );
         // The stacked field takes the dialog field's width, so its description
         // wraps the same way whatever font the browser falls back to.
         await page.evaluate(() => {

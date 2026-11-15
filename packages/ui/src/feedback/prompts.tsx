@@ -13,15 +13,7 @@ import { TextInput } from "../inputs/TextInput";
 import { KeyedFor } from "../internal/keyed-for";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
-import {
-  contentClass,
-  DialogHeader,
-  type PromptContent,
-  panelClass,
-  promptButtonVariant,
-  promptTone,
-  sharedPrompts,
-} from "./prompt-confirm";
+import { DialogHeader, type PromptContent, promptButtonVariant, promptTone, sharedPrompts } from "./prompt-confirm";
 import { resolvePromptMessages } from "./prompt-messages";
 import { openPrompt } from "./prompt-sheet";
 
@@ -732,15 +724,8 @@ const openAlert = (content: PromptContent, options?: DialogOptions, celebrate?: 
         </footer>
       </div>
     ),
-    {
-      panelClassName: panelClass(options),
-      contentClassName: contentClass(options?.surface),
-      signal: options?.signal,
-      cancelBehavior: options?.cancelBehavior,
-      history: options?.history,
-      ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().info,
-    },
     options,
+    resolveUiMessages().info,
   );
 
 // The same object as `sharedPrompts`, which `PanelDialog` uses for its discard question: replacing `prompts.confirm`
@@ -759,14 +744,8 @@ export const prompts = Object.assign(sharedPrompts, {
   form: async <T extends Record<string, FieldSchema>>(config: PromptFormOptions<T>): Promise<InferFormValues<T> | null> =>
     (await openPrompt<InferFormValues<T> | null>(
       (close) => <PromptFormDialog config={config} close={(value) => close(value)} />,
-      {
-        panelClassName: panelClass(config),
-        contentClassName: contentClass(),
-        signal: config.signal,
-        cancelBehavior: config.cancelBehavior,
-        ariaLabel: config.ariaLabel ?? config.title ?? resolvePromptMessages().form,
-      },
       config,
+      resolvePromptMessages().form,
     )) ?? null,
 
   /**
@@ -797,16 +776,10 @@ export const prompts = Object.assign(sharedPrompts, {
           </div>
         );
       },
-      {
-        panelClassName: panelClass(options),
-        contentClassName: contentClass(options?.surface),
-        signal: options?.signal,
-        cancelBehavior: options?.cancelBehavior,
-        history: options?.history,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().dialog,
-      },
+      options,
+      resolveUiMessages().dialog,
       // Without its header a custom dialog draws its own chrome and keeps the dialog frame.
-      options?.header === false ? { ...options, surface: "bare" } : options,
+      options?.header !== false,
     ),
 
   search: openSearchPrompt,
@@ -824,14 +797,7 @@ export const prompts = Object.assign(sharedPrompts, {
           </footer>
         </div>
       ),
-      {
-        panelClassName: panelClass({ ...options, variant: "danger" }),
-        contentClassName: contentClass(options?.surface),
-        signal: options?.signal,
-        cancelBehavior: options?.cancelBehavior,
-        history: options?.history,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().error,
-      },
-      options,
+      { ...options, variant: "danger" },
+      resolveUiMessages().error,
     ),
 });
