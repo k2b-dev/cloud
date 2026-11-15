@@ -897,7 +897,12 @@ plain plus, a quiet pill-shaped field, and a round Send button. The field has th
 shared 2 px field edge of every input: grey at rest, a slightly darker fill on
 hover, the blue edge of the same width on focus, red with `error`, and a muted
 well without an edge when `disabled`. It casts no shadow; only its paint changes.
-Formatting, emoji, and the microphone sit inside the field at its end. Send is
+Formatting, emoji, and the microphone sit inside the field at its end. While
+the text fits one row beside them, the field stays one row. Once it does not,
+the text takes the field's whole width, so its scrollbar sits at the field's
+edge, and the tools stand at the bottom right over a row of their own, so the
+text always ends above them. Whether the text fits is measured at the one-row
+width, so the field does not switch back while the text stays. Send is
 dimmed until there is something to send. With `fileSelection` alone, the
 attach button opens the file choice directly; with `menuActions`, it opens the
 add menu. With `addOpensCommands` and commands available, **+** opens the

@@ -16577,11 +16577,25 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The pill carries the shared field edge (see `.k2b-chat-composer__field` above). */
 .k2b-ui .k2b-chat-composer__field {
+  position: relative;
   display: flex;
   flex: 1 1 0;
   min-width: 0;
   align-items: flex-end;
   border-radius: 1.125rem;
+}
+
+/* Text that does not fit one row beside the tools takes the pill's whole width, so its scrollbar sits at the pill's
+   edge. The tools stand over a row of their own below the text, at the bottom right, and the text always ends above
+   them. Whether it fits is measured at the one-row width, so the layout never flips back while the text stays. */
+.k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__input {
+  padding-bottom: calc(var(--k2b-chat-composer-control) - 2 * var(--k2b-edge-width));
+}
+
+.k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__field-tools {
+  position: absolute;
+  right: 0;
+  bottom: 0;
 }
 
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__input {
