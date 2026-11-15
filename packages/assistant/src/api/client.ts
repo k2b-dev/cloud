@@ -203,6 +203,15 @@ export const assistantApi = {
     if (!response.ok) throw new Error(await readError(response, "Failed to send queued message"));
     return response.json();
   },
+  /** What became of a "Send now" whose answer was lost; `null` when Cloud does not know the entry. */
+  queuedMessageSendReceipt: async (conversationId: string, messageId: string) => {
+    const response = await client.conversations[":conversationId"].queue[":messageId"]["send-now"].$get({
+      param: { conversationId, messageId },
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(await readError(response, "Failed to check queued message"));
+    return response.json();
+  },
   loadSidebar: async (signal?: AbortSignal): Promise<AssistantSidebarSnapshot> => {
     const response = await assistantClient.workspace.sidebar.$get({}, { init: { signal } });
     if (!response.ok) throw new Error(await readError(response, "Failed to load Assistant navigation"));

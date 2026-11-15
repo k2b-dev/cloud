@@ -1,37 +1,35 @@
 import { expect, test } from "bun:test";
-import { sendQueuedEntryNow } from "./queue-send";
+import { type QueueSendResult, sendQueuedEntryNow } from "./queue-send";
 
-const entry = (id: string, state = "pending") => ({ id, state });
-
-test("a confirmed send leaves the entry to the refreshed queue", async () => {
-  const reloads: string[] = [];
-  const outcome = await sendQueuedEntryNow({
-    id: "q1",
-    send: async () => ({ state: "submitted" }),
+const lost = async (): Promise<never> => {
+  throw new Error("network");
+};
+const run = (send: () => Promise<QueueSendResult>, receipt: () => Promise<QueueSendResult | null> = lost) => {
+  const calls: string[] = [];
+  const outcome = sendQueuedEntryNow({
+    send,
+    receipt: () => {
+      calls.push("receipt");
+      return receipt();
+    },
     reload: async () => {
-      reloads.push("reload");
-      return [entry("q2")];
+      calls.push("reload");
     },
   });
-  expect(outcome).toBe("sent");
-  expect(reloads).toEqual(["reload"]);
+  return outcome.then((value) => ({ outcome: value, calls }));
+};
+
+test("Cloud's answer decides, and the queue is read again", async () => {
+  expect(await run(async () => ({ state: "submitted" }))).toEqual({ outcome: "sent", calls: ["reload"] });
+  expect(await run(async () => ({ state: "sending" }))).toEqual({ outcome: "sent", calls: ["reload"] });
+  expect(await run(async () => ({ state: "failed" }))).toEqual({ outcome: "not-sent", calls: ["reload"] });
 });
 
-test("a refused send stays queued and reads as not sent", async () => {
-  expect(await sendQueuedEntryNow({ id: "q1", send: async () => ({ state: "failed" }), reload: async () => [entry("q1")] })).toBe(
-    "not-sent",
-  );
-});
-
-test("an unclear outcome reconciles first and never claims a send the queue contradicts", async () => {
-  const lost = async () => {
-    throw new Error("network");
-  };
-  // Still waiting: not sent, so "Send again" may use the same ID.
-  expect(await sendQueuedEntryNow({ id: "q1", send: lost, reload: async () => [entry("q1"), entry("q2")] })).toBe("not-sent");
-  // Left the queue, or Cloud is sending it: it went out; nothing is offered twice.
-  expect(await sendQueuedEntryNow({ id: "q1", send: lost, reload: async () => [entry("q2")] })).toBe("sent");
-  expect(await sendQueuedEntryNow({ id: "q1", send: lost, reload: async () => [entry("q1", "sending")] })).toBe("sent");
-  // Without any answer, the entry stays and offers "Send again" with its own ID.
-  expect(await sendQueuedEntryNow({ id: "q1", send: lost, reload: lost })).toBe("not-sent");
+test("a lost answer asks for the receipt and never claims a send it cannot prove", async () => {
+  expect(await run(lost, async () => ({ state: "submitted" }))).toEqual({ outcome: "sent", calls: ["receipt", "reload"] });
+  expect(await run(lost, async () => ({ state: "sending" }))).toEqual({ outcome: "sent", calls: ["receipt", "reload"] });
+  // Still waiting, unknown, or no answer at all: not sent, so "Send again" may use the same ID.
+  expect(await run(lost, async () => ({ state: "failed" }))).toEqual({ outcome: "not-sent", calls: ["receipt", "reload"] });
+  expect(await run(lost, async () => null)).toEqual({ outcome: "not-sent", calls: ["receipt", "reload"] });
+  expect(await run(lost, lost)).toEqual({ outcome: "not-sent", calls: ["receipt", "reload"] });
 });

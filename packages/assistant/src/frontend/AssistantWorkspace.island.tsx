@@ -1453,12 +1453,9 @@ export default function AssistantWorkspace(props: Props) {
     setQueueSendingId(entry.id);
     try {
       const outcome = await sendQueuedEntryNow({
-        id: entry.id,
         send: () => assistantApi.sendQueuedMessageNow(conversationId, entry.id),
-        reload: async () => {
-          await queuedMessages.refresh();
-          return queuedMessages.data() ?? [];
-        },
+        receipt: () => assistantApi.queuedMessageSendReceipt(conversationId, entry.id),
+        reload: () => queuedMessages.refresh(),
       });
       markQueueFailed(entry.id, outcome === "not-sent");
     } finally {

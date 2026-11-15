@@ -45,16 +45,16 @@ const sendNow = async (entry) => {
   mark(entry.id, false);
   setSendingId(entry.id);
   const result = await sendQueuedEntryNow({
-    id: entry.id,
     send: async () => {
       await new Promise((done) => { release = done; });
       if (outcome === "failed") return { state: "failed" };
       if (outcome.startsWith("lost")) throw new Error("lost");
       return { state: "submitted" };
     },
+    // The receipt Cloud keeps: a lost answer that went out says submitted, one that did not says failed.
+    receipt: async () => ({ state: outcome === "lost-gone" ? "submitted" : "failed" }),
     reload: async () => {
       if (outcome === "submitted" || outcome === "lost-gone") setEntries((list) => list.filter((item) => item.id !== entry.id));
-      return entries();
     },
   });
   mark(entry.id, result === "not-sent");
