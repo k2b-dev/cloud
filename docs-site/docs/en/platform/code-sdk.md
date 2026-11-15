@@ -862,8 +862,9 @@ The Action returns `{ id, chatId, status, reason, origin }` promptly. Status is
 the message in its existing queue, without consuming the person's draft. Read
 one later snapshot with `core.ai.chat.read({ id: "Chat23", message: sent.id })`;
 the Query returns `{ data: { chat, messages, message } }`. An automatic budget
-stop remains in `messages` with `automationStop.reason` (`model_calls` or
-`input_tokens`), including an otherwise empty terminal answer. Finish the Code run
+stop remains in `messages` with `safetyStop.reason` (`model_calls`, `input_tokens` or `repeated_error`)
+and a localized notice in `text`. This also covers Code-authoring stops and
+keeps every returned message text nonempty. Finish the Code run
 when a person must answer; do not poll for approval.
 
 One required key identifies the intended message across Code runs for the same

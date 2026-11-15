@@ -37,7 +37,7 @@ import { aiChatMessages } from "./chat/messages";
 import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { createChoiceCapabilityOrigin, projectAiChoices, viewChoice } from "./choices";
-import { CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
+import { AUTOMATION_TURN_BUDGET, CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
 import { aiCodeReviewToolAllowed } from "./code-review-turn";
 import { createCloudCompactFn } from "./compaction";
 import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
@@ -1596,11 +1596,13 @@ export class AiTurnExecutor {
     const remember = (reason: AiTurnFailureReason | null) => {
       failureReason.current = reason;
     };
+    const nonPerson = config.turnTrigger?.kind !== "person";
+    const allocation = nonPerson ? AUTOMATION_TURN_BUDGET : CODE_AUTHORING_TURN_BUDGET;
     const usage = await readAiTurnCallUsage(turnId);
     authoringBudget = createCodeAuthoringTurnBudget({
       priorCalls: {
         calls: usage.calls,
-        inputTokens: usage.inputTokens + usage.unknownCalls * CODE_AUTHORING_TURN_BUDGET.unknownInputTokens,
+        inputTokens: usage.inputTokens + usage.unknownCalls * allocation.unknownInputTokens,
       },
       finishedToolCalls: turnBlocks.flatMap((block) =>
         block.kind === "tool" && !isMalformedToolCallId(block.callId)
@@ -1608,7 +1610,7 @@ export class AiTurnExecutor {
           : [],
       ),
       selected: loadedSkills.some((skill) => skill.name === "code-authoring"),
-      nonPerson: config.turnTrigger?.kind !== "person",
+      nonPerson,
       onStop: (reason) => log.info("AI chat turn reached its safety budget", { conversationId, turnId, reason }),
     });
     const turnPolicy = applyAiTurnPolicy({

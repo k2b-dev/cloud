@@ -1002,7 +1002,7 @@ tools`, both under `ai:executor` with the conversation and turn IDs.
 
 Every turn whose immutable trigger is not a person has an independent input
 and call allowance, including turns without a recorded trigger. The initial
-`AUTOMATION_TURN_BUDGET` (from `@k2b/cloud/ai/runtime` for platform hosts) allows 512,000 cumulative input tokens and 16 model
+`AUTOMATION_TURN_BUDGET` allows 512,000 cumulative input tokens and 16 model
 attempts, regardless of the model's price. Chat calls, transient provider
 retries and automatic compaction share it. Worker recovery reads the whole
 turn's usage once; a recovered call without usage reserves 64,000 tokens.
@@ -1014,7 +1014,10 @@ refill the allowance.
 At the limit Cloud persists a localized stop notice without another model
 call. Existing results remain visible. Continuing requires the person's
 explicit follow-up through the normal send path; reload and reconnect do not
-restart the work. This allocation is provisional until twenty representative
+restart the work. To keep long chats usable within this allowance, automatic
+turns ask for early compaction above 64,000 estimated history tokens even when
+the model has a larger context window. Archived messages stay visible, but
+cannot be retried in place. This allocation is provisional until twenty representative
 briefings and thirty number posts in one growing chat, including compaction,
 have been measured. A one-sentence answer does not make a long chat cheap.
 

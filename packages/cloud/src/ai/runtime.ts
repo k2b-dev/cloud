@@ -772,6 +772,4 @@ export const notifyAiConversationUnwatched = async (conversationId: string): Pro
 
 export const __aiRuntimeTest = { actionMatchesResolvedEvent, processMessage, publishSweepFinished };
 
-/** Operational allocation used by hosts to reserve the maximum automatic turn cost. */
-export { AUTOMATION_TURN_BUDGET } from "./code-authoring-turn";
 export { editAiApprovalDraft } from "./draft-edit";
