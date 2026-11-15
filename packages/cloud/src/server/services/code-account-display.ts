@@ -145,3 +145,22 @@ export const codeAccountPresenter = (context: CodeAccountDisplayContext = {}) =>
     };
   };
 };
+
+/**
+ * Registry words for a Code owner that is not a person, for labels every member of the installation may read: an
+ * app's name in the viewer's language, or a resource's localized type title ("Postfach"), never the resource's own
+ * name. Null when the registry does not know it. No owner reader, SQL, or app call.
+ */
+export const codeOwnerKindTitle = async (
+  owner: { kind: "app"; appId: string } | { kind: "resource"; ref: { type: string; id: string } },
+  locale?: string,
+): Promise<string | null> => {
+  const appId = owner.kind === "app" ? owner.appId : (owner.ref.type.split(".")[0] ?? "");
+  if (!appId) return null;
+  const resolved = await displayCatalog(appId);
+  if (owner.kind === "app") return resolved.identity ? resolveAppIdentityPresentation(resolved.identity, locale ?? "en").name : null;
+  const app = resolved.app;
+  const manifest = app && locale ? resolveCapabilityManifestPresentation(app.manifest, app.presentation, locale) : app?.manifest;
+  const localType = owner.ref.type.slice(appId.length + 1);
+  return manifest?.types.find((type) => type.localId === localType)?.title ?? null;
+};

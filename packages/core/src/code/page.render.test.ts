@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,12 +9,13 @@ import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { stubConnections } from "../../../../scripts/fixtures/platform";
 
 const root = mkdtempSync(join(tmpdir(), "core-code-page-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 const { default: Page } = await import("./PageTree.island");
 const { createCodeHostingRoutes } = await import("./hosting");
-const { codePageFixture } = await import("./page.test-fixture");
+const { codePageFixture, codePageProvenanceSeedFixture } = await import("./page.test-fixture");
 const { CODE_INITIAL_PAGE_SOURCE } = await import("./authoring-contracts");
 const { CODE_NEWSLETTER_DEMO_SOURCE } = await import("./page.newsletter-demo");
 const { buildCodePage } = await import("./page.test-source");
@@ -26,6 +27,12 @@ const layoutHelp = await import("@k2b/cloud/ssr/help");
 const panelConsent = await import("@k2b/cloud/ssr/panel-consent");
 const adminStatus = await import("@k2b/cloud/ssr/admin-status");
 const { defaultRailPreferences } = await import("@k2b/cloud/contracts/rail-preferences");
+// Hosting derives each page's opaque version value from the installation secret.
+let secret: ReturnType<typeof stubConnections> | undefined;
+beforeAll(() => {
+  secret = stubConnections();
+});
+afterAll(() => secret?.mockRestore());
 const tree = validateCodePage(
   {
     version: 1,
@@ -162,7 +169,7 @@ test("Core hosts a complete page document and rejects invalid trees before rende
     .route(
       "/",
       createCodeHostingRoutes({
-        version: async () => ({ versionId: "version", manifest, personalOwner: null }),
+        version: async () => ({ versionId: "version", manifest, owner: { kind: "app" as const, appId: "probe" } }),
         request: async () => ({ kind: "page", status: 200, tree: returned }),
       }),
     );
@@ -302,7 +309,11 @@ describe("Code pages in the Cloud layout", () => {
       .route(
         "/",
         createCodeHostingRoutes({
-          version: async () => ({ versionId: "v_hidden", manifest, personalOwner: "owner-hidden" }),
+          version: async () => ({
+            versionId: "v_hidden",
+            manifest,
+            owner: { kind: "person" as const, userId: "22222222-2222-4222-8222-222222222222", name: "owner-hidden" },
+          }),
           request: async () => ({ kind: "page", status: 200, tree }),
         }),
       );
@@ -434,7 +445,16 @@ test("a page cannot reach the feat/code label: no block accepts a class, style o
 test("the no-passwords line shows without a press while a page has a form, and is hidden without one", async () => {
   const { default: CodePageHost } = await import("./PageHost");
   const render = (page: typeof tree, locale = "en") =>
-    renderToString(() => createComponent(CodePageHost, { tree: page, codeId: "c_page", csrf: "session-bound", locale, timeZone: "UTC" }));
+    renderToString(() =>
+      createComponent(CodePageHost, {
+        tree: page,
+        codeId: "c_page",
+        csrf: "session-bound",
+        provenance: codePageProvenanceSeedFixture,
+        locale,
+        timeZone: "UTC",
+      }),
+    );
   const warning = (html: string) => html.match(/<p class="code-page-provenance__warning[^"]*"[^>]*>/)?.[0];
   // The fixture has a form inside a section; this page's form sits at the top level.
   for (const page of [validateCodePage(codePageFixture, "c_page"), tree]) {

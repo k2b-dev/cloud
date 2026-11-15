@@ -115,6 +115,25 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
   return { title: result.data.data.view.title, admin: result.data.data.view.permission === "admin" };
 };
 
+/** Who looks at a Code page, as hosting resolved the request; any part is missing for a visitor without an account. */
+export type CodePageViewerAuthority = Partial<Pick<RequestAuthority, "actor" | "accessSubject" | "credentialKind">>;
+
+/** A member of this Cloud on a Code page: a signed-in person in their own browser session who is not a guest. */
+export const isCodePageMember = ({ actor, accessSubject, credentialKind }: CodePageViewerAuthority): boolean =>
+  credentialKind === "session" &&
+  actor?.kind === "user" &&
+  accessSubject?.type === "user" &&
+  accessSubject.userId === actor.user.id &&
+  actor.user.profile !== "guest";
+
+/**
+ * F26: members may read the name of the person who owns a Code page they open, on its label and its card. Visitors
+ * without an account, guests and workload credentials never do. This is the only way a person's name reaches someone
+ * else; `readCodeOwner` keeps naming a person only to that person, also to readers of the Code.
+ */
+export const codePageOwnerPersonName = (viewer: CodePageViewerAuthority, name: string | null): string | null =>
+  isCodePageMember(viewer) && name ? name : null;
+
 /** Default editors are the personal owner or live owner administrators; explicit shares add editors/readers.
  * Unfiltered lists skip owner providers; edits fail visibly when live owner authority cannot be checked.
  */

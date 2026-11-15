@@ -5,7 +5,7 @@ section: Platform services
 order: 680
 description: Build checked TSX pages, serve routes and call application operations through a generated typed Code SDK.
 tags: [code, capabilities, sdk, handles]
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Code SDK
@@ -504,14 +504,22 @@ Cloud logo and **Sign in**, as on the legal pages; signing in returns to the
 page. Someone who opens a non-public page in a browser without a session goes
 to sign-in and comes back to it.
 
-Every Code page, with or without the layout, carries a small **Made with
-feat/code** label at the bottom edge. Cloud draws it outside the page, so a page
-cannot hide, move or restyle it. A press on it explains that someone built the
-page with feat/code and warns never to enter passwords or recovery codes there.
-While a page has a form, a quiet line beside the label says **Do not enter
-passwords here.** without a press. The label does not name the owner. Fields
-have no password or masked type and no credential autocomplete, so a page
-cannot ask for passwords like a sign-in form.
+Every Code page, with or without the layout, carries a label in a footer at
+the bottom edge. Cloud draws it outside the page, so a page cannot hide, move,
+restyle or word it. It says whose page it is, decided per viewer on the server:
+members of the Cloud see the owner, a person by name, an app by its name, and a
+mailbox or place only by its type; visitors without an account and guests see
+that someone built the page. While a page has a form, the same label says not
+to enter passwords there, without a press. A press opens a card: what Cloud
+checks, the automation and its running version for people who may see the
+Code, what Cloud passes to the page about the account (nothing on a public
+route), and for members **Report page**, which reaches the Cloud's
+administrators and never the owner
+([Reported pages](/en/docs/operations/code-administration#reported-pages)).
+The card asks Core when it opens, admitted like the page itself, and says so
+when a newer version runs by now. Fields have no password or masked type and no
+credential autocomplete, so a page cannot ask for passwords like a sign-in
+form.
 
 `{ layout: "plain" }` on a route draws its pages alone, without the layout, for
 a page you hand out. There is no setting for the whole Code; each route

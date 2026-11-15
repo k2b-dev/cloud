@@ -11,6 +11,7 @@ import { codeActivationCleanupOutbox, codeActivationOutbox } from "./code/activa
 import { createCodeAuthoringChatTools } from "./code/chat-tools";
 import { codeDatabaseRetentionRuntime } from "./code/database-retention-runtime";
 import { codeDeletionOutbox, codeOwnerDeletedOutbox } from "./code/lifecycle";
+import { createCodePageReportNotificationOutbox } from "./code/page-reports";
 import { codePolicyPauseOutbox } from "./code/policy-outbox";
 import { startCodeRunRetention } from "./code/retention";
 import { createCodeReviewChatOutboxes, finishCodeReviewRevision } from "./code/review-chat";
@@ -24,6 +25,7 @@ import { migrate as migrateCodeActivation } from "./migrate/core/code-activation
 import { migrate as migrateCodeChatDrafts } from "./migrate/core/code-chat-drafts";
 import { migrate as migrateCodeJobs } from "./migrate/core/code-jobs";
 import { migrate as migrateCodeLifecycle } from "./migrate/core/code-lifecycle";
+import { migrate as migrateCodePageReports } from "./migrate/core/code-page-reports";
 import { migrate as migrateCodePolicy } from "./migrate/core/code-policy";
 import { migrate as migrateCodeScheduling } from "./migrate/core/code-scheduling";
 import { migrate as migrateCodeSecrets } from "./migrate/core/code-secrets";
@@ -150,6 +152,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "code", run: migrateCode },
     { name: "code-policy", run: migrateCodePolicy },
     { name: "code-versions", run: migrateCodeVersions },
+    { name: "code-page-reports", run: migrateCodePageReports },
     { name: "code-chat-drafts", run: migrateCodeChatDrafts },
     { name: "code-scheduling", run: migrateCodeScheduling },
     { name: "code-jobs", run: migrateCodeJobs },
@@ -195,6 +198,7 @@ export const runCoreSetup = async (): Promise<void> => {
 let codeReviewChats: ReturnType<typeof createCodeReviewChatOutboxes> = [];
 let stopCodeReviewAbort: (() => void) | undefined;
 let codeReviewNotices: ReturnType<typeof createCodeReviewNotificationOutbox> | undefined;
+let codePageReportNotices: ReturnType<typeof createCodePageReportNotificationOutbox> | undefined;
 /** Start core background services (account lifecycle jobs). */
 export const startCoreServices = async (
   notificationSender: CoreNotificationSender,
@@ -209,6 +213,8 @@ export const startCoreServices = async (
     codeReviewChats = createCodeReviewChatOutboxes();
     for (const outbox of codeReviewChats) outbox.start();
     stopCodeReviewAbort = registerAiTurnAbortHandler(stopCodeReviewTurn);
+    codePageReportNotices = createCodePageReportNotificationOutbox(notificationSender);
+    codePageReportNotices.start();
     await initializeIdentityAuthority();
     stopAppWorkloadBroker = await startAppWorkloadBroker();
     stopAppEventBroker = await startAppEventBroker();
@@ -289,6 +295,7 @@ export const startCoreServices = async (
     await Promise.all(codeReviewChats.map((outbox) => outbox.stop()));
     stopCodeReviewAbort?.();
     stopCodeReviewAbort = undefined;
+    await codePageReportNotices?.stop();
     await codeDatabaseRetentionRuntime.stop();
     await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();
@@ -343,6 +350,7 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     await Promise.all(codeReviewChats.map((outbox) => outbox.stop()));
     stopCodeReviewAbort?.();
     stopCodeReviewAbort = undefined;
+    await codePageReportNotices?.stop();
     await codeDatabaseRetentionRuntime.stop();
     await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();
