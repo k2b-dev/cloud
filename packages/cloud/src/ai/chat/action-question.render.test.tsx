@@ -174,7 +174,7 @@ describe("ApprovalCard at the public rendering seam", () => {
   const keyValues = {
     message: ["lea.berg@example.com", "Wartungsfenster Dienstag", "Wartungsplan-KW43.pdf"],
     page: ["Woche 42", "Wartungsfenster Dienstag", "Server-Update vorbereiten"],
-    event: ["Retro", "Raum 2.14", "2026-10-17T13:00:00.000Z"],
+    event: ["Retro", "Raum 2.14", "17. Okt. 2026, 15:00"],
     task: ["Backups testen", "Offen", "Restore auf Staging", "Lea Berg"],
     file: ["Rechnungen 2026", "48 Dateien in 3 Ordnern"],
     rule: ["Drei Abschnitte", "Team Ops", "Gibt mir keine neuen Rechte"],
