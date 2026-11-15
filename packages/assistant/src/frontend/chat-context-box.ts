@@ -111,11 +111,9 @@ export const contextBoxResultRow = (
     tooltip: result.description ? `${result.title} · ${result.description}` : result.title,
     open: result.file
       ? { kind: "file", path: result.file.path, title: result.title }
-      : result.app
-        ? { kind: "app", id: result.app.id, title: result.title }
-        : jump
-          ? { kind: "jump", target: jump }
-          : { kind: "none" },
+      : jump
+        ? { kind: "jump", target: jump }
+        : { kind: "none" },
     // Files download from the row; anything else shows where it came from.
     hover: result.file
       ? { kind: "download", path: result.file.path, name: fileName(result.file.path) }
@@ -165,7 +163,8 @@ export const buildContextBoxModel = (
   };
   const counts = contextBoxSourceCounts(snapshot.sources);
   const sources = snapshot.sourceCount > 0 ? input.copy.sourcesSummary(counts) : null;
-  const routines = snapshot.tasks.filter((task) => task.state !== "completed").length;
+  // Routines are gone on feat/code; the summary keeps its slot at zero.
+  const routines = 0;
   // Always there: the tab "Context" also holds the chat's secrets and approvals.
   const context =
     input.copy.contextSummary({ project: input.project, skills: snapshot.skills.length, memories: snapshot.memories.length, routines }) ||

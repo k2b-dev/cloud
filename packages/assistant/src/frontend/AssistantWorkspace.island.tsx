@@ -1738,7 +1738,7 @@ export default function AssistantWorkspace(props: Props) {
     onOpen: (target) => {
       const actions = sidebarActions();
       if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
-      else if (target.kind === "app") actions.onOpenApp(target.id, target.title);
+      else if (target.kind === "app") return;
       else if (target.kind === "jump") actions.onJump(target.target);
       else window.location.assign(target.href);
     },

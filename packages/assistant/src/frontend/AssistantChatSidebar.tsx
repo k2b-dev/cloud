@@ -1330,23 +1330,6 @@ export function ChatContextDetails(props: {
           </ul>
         </div>
       </Show>
-      <Show when={tasks().length}>
-        <div class="assistant-sidebar-timegroup">
-          <Heading>{copy().scheduled}</Heading>
-          <For each={tasks()}>
-            {(task) => (
-              <DetailPanel.Action
-                class="assistant-sidebar-row"
-                leading={<i class="ti ti-calendar-time" aria-hidden="true" />}
-                title={assistantTaskTitle(task)}
-                description={formatAssistantTaskSchedule(task, locale())}
-                disabled={!props.actions.onOpenTask}
-                onClick={() => props.actions.onOpenTask?.(task)}
-              />
-            )}
-          </For>
-        </div>
-      </Show>
       <Show when={props.actions.onOpenSecrets}>
         <DetailPanel.Action
           class="assistant-sidebar-row"
@@ -1366,7 +1349,6 @@ function ContextSection(props: {
   actions: ChatSidebarActions;
 }) {
   const copy = useSidebarCopy();
-  const tasks = () => props.snapshot.tasks.filter((task) => task.state !== "completed");
   const summary = () =>
     [
       props.project ? copy().project({ name: props.project.name }) : null,

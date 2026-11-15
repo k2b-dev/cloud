@@ -18,7 +18,6 @@ import { type AiTurnBlock, toolBlockId } from "./protocol";
 export type AiOpenQuestionKind = "approval" | "code_activate" | "code_changes" | "code_expired" | "code_attention";
 
 export type AiOpenQuestion = {
-  kind: AiOpenQuestionKind;
   /** An entry without a chat opens its authorized source page. */
   href?: string;
   /** The approval request id (approvals.requests.id). */
