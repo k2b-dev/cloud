@@ -1,189 +1,32 @@
-import { documentNavigate, refreshCurrentPath } from "@k2b/ssr/nav";
-import { dates } from "@k2b/stdlib";
-import {
-  Button,
-  ButtonLink,
-  CodeDiff,
-  Dropdown,
-  type DropdownItem,
-  NoticeCard,
-  Placeholder,
-  prompts,
-  StatusBadge,
-  type StatusTone,
-  Tag,
-  toast,
-  useLocale,
-  ViewTabs,
-} from "@k2b/ui";
-import { createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js";
+import { refreshCurrentPath } from "@k2b/ssr/nav";
+import { Button, Dropdown, type DropdownItem, Placeholder, prompts, Skeleton, toast, ViewTabs } from "@k2b/ui";
+import { createSignal, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
-import { FeatCodeMark } from "../../code/FeatCodeMark";
-import { CodeAccountHandle } from "./CodeAccountHandle";
-import { CodeDatabaseStatus } from "./CodeDatabaseStatus";
-import { CodeRefusalNotice } from "./CodeRefusalNotice";
+import { CodeActivityReadModelSchema } from "../../contracts/code-read-model";
+import { openActivationDialog, switchOnReady } from "./CodeActivation";
+import { type CodeLive, type CodeLiveFeed, createCodeLive } from "./CodeLiveStrip";
+import { CodeLede, CodeOverview, lastFinishedRun } from "./CodeOverview";
+import { copyHandle } from "./CodeRefusalNotice";
+import { CodeRuns, Failed } from "./CodeRuns";
 import { CodeSecretsTab } from "./CodeSecrets";
-import { loadCodeRunCalls } from "./calls";
-import {
-  ActivationSchema,
-  type CodeActivationStatus,
-  type CodePageAutomation,
-  type CodePageCall,
-  type CodePageData,
-  type CodePageInvoke,
-  type CodePageReady,
-  type CodePageRefusal,
-  type CodePageRun,
-  type CodePageRunDetail,
-  type CodePageTarget,
-  type CodePageTargetRow,
-  type CodePageVersion,
-  coreQuery,
-  type EventDeliverySchema,
-  RunListSchema,
-  StartSchema,
-  wrapped,
-} from "./data";
-import { type CodePageMessages, codePageMessages } from "./messages";
-import { describeCodeTiming } from "./schedule";
-import { type CodeOperationLabels, codeAutomationName, codeOperationText, codeRunName, codeTargetLabel, codeTargetName } from "./targets";
+import { CodeSourceTab } from "./CodeSourceTab";
+import { CodeVersions } from "./CodeVersions";
+import { followCodeRuns } from "./code-live";
+import type { CodePageData, CodePageInvoke, CodePageReady } from "./data";
+import type { CodePageMessages } from "./messages";
+import { Island, type PageText, personal, type Tone, usePageText, withQuery } from "./page-kit";
+import { nameRecentResults, recentResultKey } from "./recent-names";
 
+export { switchOnReady } from "./CodeActivation";
 export { CodeDatabaseDelete, CodeDatabaseStatus } from "./CodeDatabaseStatus";
+export type { CodeLiveEffect, CodeLiveFeed, CodeLiveRun } from "./CodeLiveStrip";
 export { CodeNavStatus, codeNavAttentionLabel } from "./CodeNavStatus";
 export type { CodeAttention, CodePageData, CodePageTab } from "./data";
 
-/** The browser calls Core's public Code capabilities with the person's own session, like any page. */
-const browserInvoke: CodePageInvoke = (invocation, schema) => invokeCapabilityWithDataSchema(invocation, schema);
 /** Pause and resume return only the new state; the page reloads to show it. */
 const ChangedSchema = z.object({ state: z.string() });
-
-/** Polls bound the wait in the dialog; activation keeps going durably in Core after that. */
-const ACTIVATION_POLLS = 90;
-const ACTIVATION_POLL_MS = 1_000;
-
-type ActivationRoute = "activate" | "activation/read";
-/** Core's activation routes take only interactive credentials: the person's own browser session. */
-const activationRequest = async (
-  route: ActivationRoute,
-  body: unknown,
-): Promise<
-  | { ok: true; data: CodeActivationStatus }
-  /** `definite`: Core answered with a refusal, so it did not act. Otherwise the outcome is unknown. */
-  | { ok: false; message: string | null; definite: boolean; notFound?: boolean }
-> => {
-  try {
-    const response = await fetch(`/api/code/${route}`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify(body),
-    });
-    const json: unknown = await response.json().catch(() => null);
-    if (!response.ok) {
-      const message = json && typeof json === "object" && "message" in json && typeof json.message === "string" ? json.message : null;
-      return { ok: false, message, definite: response.status >= 400 && response.status < 500, notFound: response.status === 404 };
-    }
-    const parsed = wrapped(ActivationSchema).safeParse(json);
-    return parsed.success ? { ok: true, data: parsed.data.data } : { ok: false, message: null, definite: false };
-  } catch {
-    return { ok: false, message: null, definite: false };
-  }
-};
-
-/**
- * An activation whose outcome is unknown survives closing the dialog and reloading the page in this tab, so asking
- * again resumes it instead of starting a second one. It is cleared only by a confirmed result or a refusal.
- */
-const pendingActivation = (codeId: string, versionId: string) => {
-  const key = `cloud.code.activation:${codeId}:${versionId}`;
-  return {
-    read: (): string | null => {
-      try {
-        return sessionStorage.getItem(key);
-      } catch {
-        return null;
-      }
-    },
-    write: (id: string | null) => {
-      try {
-        if (id) sessionStorage.setItem(key, id);
-        else sessionStorage.removeItem(key);
-      } catch {
-        // Without storage the identity lives as long as the dialog.
-      }
-    },
-  };
-};
-
-const withQuery = (href: string, params: Record<string, string | undefined>): string => {
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) if (value) query.set(key, value);
-  const text = query.toString();
-  return text ? `${href}?${text}` : href;
-};
-
-const shortId = (id: string) => `#${id.replaceAll("-", "").slice(0, 6)}`;
-
-/** One context per page: messages, dates and the target names the page shows. */
-function usePageText(data: () => CodePageData) {
-  const locale = useLocale();
-  const t = createMemo(() => codePageMessages.resolve([locale()]).t);
-  const context = () => ({ ...data().dates, locale: locale() });
-  const date = (iso: string) => dates.formatDate(iso, context());
-  const when = (iso: string) => dates.formatDateTimeRelative(iso, { ...context(), base: data().dates.now });
-  /** The parts of "today at 11:20" or "on 28.10.2026 at 11:20", in the page's time zone. */
-  const moment = (iso: string) => ({
-    today: dates.formatDate(iso, context()) === dates.formatDate(data().dates.now, context()),
-    date: date(iso),
-    time: dates.formatTime(iso, context()),
-  });
-  const targetName = (target: CodePageTarget): string => codeTargetName(target, data().owner.title);
-  const targetLabel = (target: CodePageTarget): string => codeTargetLabel(target, data().owner.title, t());
-  /** The service account a place's Code runs as; personal Code has none. */
-  const account = () => (data().owner.kind === "resource" ? t().accountName({ name: data().owner.title }) : null);
-  /** Who a page that is not public admits, and whose rights it runs with. */
-  const routeAudience = (route: { public: boolean }) =>
-    route.public
-      ? t().routePublic
-      : t().routePrivate({ owner: account() === null ? { kind: "you" } : { kind: "account", name: account() } });
-  return { t, locale, date, when, moment, targetName, targetLabel, account, routeAudience };
-}
-type PageText = ReturnType<typeof usePageText>;
-
-const runTone = (run: CodePageRun): StatusTone =>
-  run.state === "succeeded"
-    ? "ok"
-    : run.state === "failed"
-      ? "error"
-      : run.state === "running" || run.state === "queued"
-        ? "running"
-        : run.state === "skipped"
-          ? "neutral"
-          : "warning";
-const runStateLabel = (run: CodePageRun, t: CodePageMessages) =>
-  ({
-    queued: t.stateQueued,
-    running: t.stateRunning,
-    succeeded: t.stateSucceeded,
-    failed: t.stateFailed,
-    cancelled: t.stateCancelled,
-    skipped: t.stateSkipped,
-  })[run.state];
-const triggerLabel = (run: CodePageRun, t: CodePageMessages) =>
-  ({ schedule: t.triggerSchedule, manual: t.triggerManual, event: t.triggerEvent, path: t.triggerPath })[run.trigger];
-
-/**
- * Switching on needs an editor, a waiting version that no administrator still has to approve, and the list of what
- * it asks for; without that list the person could not see what they confirm.
- */
-const switchOnReady = (state: CodePageReady) =>
-  state.permission === "editor" &&
-  state.waiting !== null &&
-  state.waiting.status !== "pending" &&
-  state.waitingTargets !== null &&
-  !state.versionsFailed;
 
 /** Same rule as Core's attention query: a failed last run or a version waiting for approval. */
 export const codePageNeedsAttention = (state: CodePageData["state"]): boolean =>
@@ -203,84 +46,69 @@ const copyPageLink = async (data: CodePageData, t: CodePageMessages) => {
   }
 };
 
-function Section(props: { title: string; count?: number; description?: string; children: JSX.Element; id?: string }) {
-  return (
-    <section class="cloud-code__section" aria-labelledby={props.id}>
-      <div class="cloud-code__section-head">
-        <h2 id={props.id} class="cloud-code__h2">
-          {props.title}
-          <Show when={props.count !== undefined}>
-            <span class="cloud-code__count">{props.count}</span>
-          </Show>
-        </h2>
+/** The command that fetches this automation's source; the page itself never shows source outside the code tab. */
+const pullCommand = (data: CodePageData) =>
+  data.owner.ref ? `cld code pull ${data.owner.ref.type.split(".")[0]}/${data.owner.ref.id}` : "cld code pull";
+
+const openPull = (data: CodePageData, t: CodePageMessages) =>
+  void prompts.dialog<void>(
+    (close) => (
+      <div class="cloud-code__dialog">
+        <p>{t.pullIntro}</p>
+        <p class="cloud-code__command">
+          <code>{pullCommand(data)}</code>
+        </p>
+        <div class="cloud-code__dialog-actions">
+          <Button type="button" variant="secondary" onClick={() => close()}>
+            {t.close}
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(pullCommand(data));
+                toast.success(t.commandCopied);
+              } catch {
+                toast.error(t.commandCopyFailed);
+              }
+            }}
+          >
+            <i class="ti ti-copy" aria-hidden="true" />
+            {t.pullCopy}
+          </Button>
+        </div>
       </div>
-      <Show when={props.description}>
-        <p class="cloud-code__section-sub">{props.description}</p>
-      </Show>
-      {props.children}
-    </section>
+    ),
+    { title: t.pullSource, icon: "ti ti-terminal-2" },
   );
-}
 
-function InlineError(props: { text: string; retry: string }) {
-  return (
-    <div class="cloud-code__inline-error" role="alert">
-      <i class="ti ti-cloud-off" aria-hidden="true" />
-      <span>{props.text}</span>
-      <Button type="button" size="sm" variant="secondary" onClick={() => refreshCurrentPath()}>
-        <i class="ti ti-refresh" aria-hidden="true" />
-        {props.retry}
-      </Button>
-    </div>
-  );
-}
-
-const Op = (props: { children: string }) => <code class="cloud-code__op">{props.children}</code>;
-/** A called Query or Action by its title and app, its ID in the tooltip; one the registry does not name keeps its ID. */
-const Operation = (props: { operation: string; labels: CodeOperationLabels }) => (
-  <Show when={props.labels[props.operation]} fallback={<Op>{props.operation}</Op>}>
-    <span class="cloud-code__op-title" title={props.operation}>
-      {codeOperationText(props.operation, props.labels)}
-    </span>
-  </Show>
-);
-
-/** The shared Code page of one resource: automations, targets, runs with their calls, versions, switching on. */
-/** Personal Code runs as its person; it has no place that it acts for. */
-const personal = (data: CodePageData) => data.owner.kind === "person";
-
-export default function CodePage(props: { data: CodePageData }) {
+/**
+ * The shared Code page of one place or of one person's own Code: its state in words, the last runs, what it may do,
+ * its versions and secrets. No source except in the editor-only code tab. Hosts add their own part below the overview
+ * through `footer` (Mail: "Fetch existing mails"), and connect live run updates through `onLive`.
+ */
+export default function CodePage(props: {
+  data: CodePageData;
+  /** Shown at the end of the overview, such as the owner app's link to apply the automation to what already exists. */
+  footer?: JSX.Element;
+  /** Called once in the browser with the page's live feed; return a disposer. The page itself never polls. */
+  onLive?: (feed: CodeLiveFeed) => (() => void) | undefined;
+}) {
   const text = usePageText(() => props.data);
   const t = text.t;
   return (
     <div class="cloud-code" data-tab={props.data.tab}>
-      {/* Personal Code is titled by its own name; a place's Code shows the feat/code wordmark, and the lead names the place. */}
-      <Show
-        when={personal(props.data)}
-        fallback={
-          <h1 class="cloud-code__page-title">
-            <FeatCodeMark size="title" decorative />
-            <span class="sr-only">{t().pageTitle({ name: props.data.owner.title })}</span>
-          </h1>
-        }
-      >
-        <h1 class="cloud-code__page-title">
-          <FeatCodeMark variant="glyph" size="title" decorative />
-          {props.data.owner.title || t().personalErrorTitle}
-        </h1>
-      </Show>
       <Switch>
         <Match when={props.data.state.kind === "error"}>
-          <Placeholder
-            state="error"
-            variant="panel"
-            icon="ti ti-cloud-off"
-            title={personal(props.data) ? t().personalErrorTitle : t().errorTitle({ name: props.data.owner.title })}
-            description={personal(props.data) ? t().personalErrorDescription : t().errorDescription({ name: props.data.owner.title })}
-            onRetry={() => refreshCurrentPath()}
-          />
+          <PlainHead data={props.data} text={text} />
+          <Failed title={personal(props.data) ? t().personalFailed : t().pageFailed} detail={t().loadKeeps} />
+        </Match>
+        <Match when={props.data.state.kind === "loading"}>
+          <CodePageSkeleton data={props.data} text={text} />
         </Match>
         <Match when={props.data.state.kind === "no-access"}>
+          <PlainHead data={props.data} text={text} />
           <Placeholder
             state="no-access"
             variant="panel"
@@ -290,49 +118,136 @@ export default function CodePage(props: { data: CodePageData }) {
           />
         </Match>
         <Match when={props.data.state.kind === "none"}>
-          <EmptyCode data={props.data} text={text} />
+          <PlainHead data={props.data} text={text} />
+          <Placeholder
+            variant="panel"
+            icon="ti ti-code"
+            title={t().emptyCodeTitle({ name: props.data.owner.title })}
+            description={t().emptyCodeText({ editor: props.data.canManageOwner ? (props.data.editor?.label ?? null) : null })}
+            action={
+              <Show when={props.data.canManageOwner && props.data.editor}>
+                {(editor) => (
+                  <Button type="button" variant="primary" onClick={() => openPanel(editor().provider)}>
+                    <i class={editor().icon} aria-hidden="true" />
+                    {t().createWith({ name: editor().label })}
+                  </Button>
+                )}
+              </Show>
+            }
+          />
         </Match>
         <Match when={props.data.state.kind === "ready" && (props.data.state as CodePageReady)}>
-          {(state) => <ReadyPage data={props.data} state={state()} text={text} />}
+          {(state) => <ReadyPage data={props.data} state={state()} text={text} footer={props.footer} onLive={props.onLive} />}
         </Match>
       </Switch>
     </div>
   );
 }
 
-function EmptyCode(props: { data: CodePageData; text: PageText }) {
-  const t = props.text.t;
-  const command = () =>
-    props.data.owner.ref ? `cld code pull ${props.data.owner.ref.type.split(".")[0]}/${props.data.owner.ref.id}` : "cld code pull --all";
+/** The head of a page without a loaded automation: its place, quietly. */
+function PlainHead(props: { data: CodePageData; text: PageText }) {
   return (
-    <div class="cloud-code__empty">
-      <Placeholder
-        state="empty"
-        variant="panel"
-        icon="ti ti-code"
-        title={t().emptyTitle({ name: props.data.owner.title })}
-        description={t().emptyDescription({ name: props.data.owner.title, editor: props.data.editor?.label ?? null })}
-        action={
-          <Show when={props.data.editor}>
-            {(editor) => (
-              <Button type="button" variant="primary" onClick={() => openPanel(editor().provider)}>
-                <i class={editor().icon} aria-hidden="true" />
-                {t().createWith({ name: editor().label })}
-              </Button>
-            )}
-          </Show>
-        }
-      />
-      <p class="cloud-code__terminal">
-        {t().emptyTerminal} <code>{command()}</code>
-      </p>
-    </div>
+    <header class="cloud-code__head">
+      <div class="cloud-code__head-text">
+        <h1 class="cloud-code__title">
+          {personal(props.data) ? props.data.owner.title || props.text.t().personalPlace : props.text.t().tabCode}
+        </h1>
+        <Show when={!personal(props.data)}>
+          <p class="cloud-code__meta">{place(props.data, props.text)}</p>
+        </Show>
+      </div>
+    </header>
   );
 }
 
-function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: PageText }) {
+/** "Mailbox info@…", "Your Code", "Code of Lea Muster": where the automation belongs. */
+const place = (data: CodePageData, text: PageText) => {
+  const t = text.t();
+  if (!personal(data)) return [data.owner.typeTitle, data.owner.title].filter(Boolean).join(" ");
+  if (!data.owner.runsAs) return t.personalPlace;
+  return data.owner.runsAs.name ? t.personalPlaceOf({ name: data.owner.runsAs.name }) : t.personalPlaceShared;
+};
+
+/** The automation's state in one large word with its sign and colour (Bild 19, 21). */
+const bigState = (state: CodePageReady, t: CodePageMessages): { tone: Tone; icon: string; label: string } => {
+  if (state.code.state === "paused") return { tone: "warn", icon: "ti ti-player-pause", label: t.statePaused };
+  if (state.code.state === "deleting") return { tone: "muted", icon: "ti ti-trash", label: t.stateDeleting };
+  if (state.code.state !== "active" || !state.active) return { tone: "muted", icon: "ti ti-circle-dashed", label: t.stateOff };
+  if (lastFinishedRun(state)?.state === "failed") return { tone: "danger", icon: "ti ti-alert-circle", label: t.stateNeedsYou };
+  return { tone: "ok", icon: "ti ti-circle-check", label: t.stateOn };
+};
+
+/**
+ * Default live wiring: Core's run hints move the strip; a finished run reads the week's effects once, so a new one
+ * slides in. One read per finished run and open page; the server checks access per subscription, never per event.
+ */
+/** At most one read of the week's effects per page in this window. */
+const EFFECT_REFRESH_GAP_MS = 30_000;
+/** The browser reads with the person's own session, the same rights the server used for the first names. */
+const browserInvoke: CodePageInvoke = (invocation, schema) => invokeCapabilityWithDataSchema(invocation, schema);
+const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (() => void) => {
+  const feed = live.feed;
+  const timeZone = data.dates.timeZone ?? "UTC";
+  const refreshEffects = async () => {
+    if (!state.words?.activity) return;
+    const day = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const read = await invokeCapabilityWithDataSchema(
+      { appId: "core", capabilityId: "code.activity.words", kind: "query", input: { codeId: state.code.id, day, timeZone } },
+      CodeActivityReadModelSchema,
+    ).catch(() => null);
+    if (!read?.ok) return;
+    const known = new Set(live.effects().map(recentResultKey));
+    const fresh = read.data.data.recent.filter((effect) => !known.has(recentResultKey(effect)));
+    // Only the new results are named, each by its target's reader with this person's rights.
+    const named = await nameRecentResults(fresh, browserInvoke, (type) => state.recentReaders?.[type] ?? null);
+    // Oldest first, so the newest effect ends on top.
+    for (const effect of named.reverse()) feed.effect(effect);
+  };
+  // Coalesced: the first finished run reads at once, every further one within the window joins one trailing read, so a
+  // busy automation costs one read per window and page, never one per run (DATA-13).
+  let last = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const effects = () => {
+    if (!state.words?.activity || timer) return;
+    timer = setTimeout(
+      () => {
+        timer = undefined;
+        last = Date.now();
+        void refreshEffects();
+      },
+      Math.max(0, last + EFFECT_REFRESH_GAP_MS - Date.now()),
+    );
+  };
+  const stop = followCodeRuns(
+    state.code.id,
+    (event) => {
+      feed.run({ id: event.runId, state: event.state, createdAt: event.at });
+      if (event.state === "succeeded" || event.state === "failed") effects();
+    },
+    // A gap in the live stream: the page loads its state again instead of guessing.
+    () => refreshCurrentPath(),
+    state.liveCursor ?? null,
+  );
+  return () => {
+    if (timer) clearTimeout(timer);
+    stop();
+  };
+};
+
+function ReadyPage(props: {
+  data: CodePageData;
+  state: CodePageReady;
+  text: PageText;
+  footer?: JSX.Element;
+  onLive?: (feed: CodeLiveFeed) => (() => void) | undefined;
+}) {
   const t = props.text.t;
   const editor = () => props.state.permission === "editor";
+  const live = createCodeLive(props.state);
+  onMount(() => {
+    const stop = props.onLive ? props.onLive(live.feed) : followLive(props.data, props.state, live);
+    if (stop) onCleanup(stop);
+  });
   const [busy, setBusy] = createSignal<"pause" | "resume" | null>(null);
   const setPaused = async (paused: boolean) => {
     if (busy()) return;
@@ -361,70 +276,114 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
     if (!version) return;
     void openActivationDialog({ data: props.data, state: props.state, version, text: props.text });
   };
+  const paused = () => props.state.code.state === "paused";
   const tabs = () => [
     { id: "overview", label: t().tabOverview, href: props.data.href },
     { id: "runs", label: t().tabRuns, href: withQuery(props.data.href, { tab: "runs" }) },
-    ...(editor() ? [{ id: "secrets", label: t().tabSecrets, href: withQuery(props.data.href, { tab: "secrets" }) }] : []),
+    ...(editor()
+      ? [
+          {
+            id: "secrets",
+            label: t().tabSecrets,
+            href: withQuery(props.data.href, { tab: "secrets" }),
+            count: props.state.secretNames?.length ?? undefined,
+          },
+        ]
+      : []),
     {
       id: "versions",
       label: t().tabVersions,
       href: withQuery(props.data.href, { tab: "versions" }),
-      count: props.state.versions.length || undefined,
+      count: props.state.versions.length ? `${props.state.versions.length}${props.state.moreVersions ? "+" : ""}` : undefined,
     },
+    // The code is for the people who may change the automation (F30); others see four tabs.
+    ...(editor() ? [{ id: "code", label: t().tabCode, href: withQuery(props.data.href, { tab: "code" }) }] : []),
   ];
   const menu = (): DropdownItem[] => [
     ...(editor() && props.state.code.state === "active"
       ? [{ label: t().pause, icon: "ti ti-player-pause", action: () => void setPaused(true), disabled: busy() !== null }]
       : []),
-    ...(editor() && props.state.code.state === "paused"
+    ...(editor() && paused()
       ? [{ label: t().resume, icon: "ti ti-player-play", action: () => void setPaused(false), disabled: busy() !== null }]
       : []),
+    ...(props.state.code.serviceAccountHandle
+      ? [{ label: t().copyHandle, icon: "ti ti-id-badge-2", action: () => void copyHandle(props.state.code.serviceAccountHandle!, t()) }]
+      : []),
     { label: t().copyLink, icon: "ti ti-link", action: () => void copyPageLink(props.data, t()) },
+    // Source is for editors only (F30); readers get no command that names it.
+    ...(editor() ? [{ label: t().pullSource, icon: "ti ti-terminal-2", action: () => openPull(props.data, t()) }] : []),
   ];
-  const canSwitchOn = () => switchOnReady(props.state);
+  const state = () => bigState(props.state, t());
+  const meta = () => {
+    const active = props.state.active;
+    const code = props.state.code;
+    if (paused())
+      return code.pausedAt
+        ? t().headPausedOn({ version: active?.number ?? null, date: props.text.short(code.pausedAt) })
+        : t().headPaused({ version: active?.number ?? null });
+    if (!active) return t().headNoVersion;
+    // When and by whom the running version was switched on (Bild 19); older Core answers name its author instead.
+    if (code.activatedAt)
+      return t().headActivated({ version: active.number, date: props.text.short(code.activatedAt), name: code.activatedBy?.name ?? null });
+    return t().headVersion({ version: active.number, name: active.createdBy?.name ?? null, date: props.text.short(active.createdAt) });
+  };
+  /** "Change with Gustav" is filled unless a waiting version or "Resume" takes that place. */
+  // One filled action: "Change with Gustav", unless the approval below offers switching on or "Resume" leads (#55).
+  const changeFilled = () =>
+    !paused() &&
+    !(
+      props.state.waiting &&
+      (props.state.waiting.status === "submitted" || props.state.waiting.status === "approved") &&
+      switchOnReady(props.state)
+    );
   return (
     <>
       <header class="cloud-code__head">
         <div class="cloud-code__head-text">
-          <p class="cloud-code__lead">
-            {!personal(props.data) ? (
-              <AccountLine state={props.state} text={props.text} />
-            ) : !props.data.owner.runsAs ? (
-              t().personalLead
-            ) : props.data.owner.runsAs.name ? (
-              t().personalLeadOf({ name: props.data.owner.runsAs.name })
-            ) : (
-              t().personalLeadOfSomeone
-            )}
+          <h1 class="cloud-code__title">
+            <Show when={personal(props.data)} fallback={<span class="sr-only">{t().pageOf({ name: props.data.owner.title })}: </span>}>
+              <span class="cloud-code__name">{props.data.owner.title}</span>
+            </Show>
+            <span class="cloud-code__state" data-tone={state().tone}>
+              <i class={state().icon} aria-hidden="true" />
+              {state().label}
+            </span>
+          </h1>
+          <p class="cloud-code__meta">
+            {place(props.data, props.text)} · {meta()}
           </p>
-          <VersionLine data={props.data} state={props.state} text={props.text} />
         </div>
         <div class="cloud-code__head-actions">
-          <Show when={canSwitchOn()}>
-            <Button type="button" variant="primary" onClick={() => activate()}>
-              <i class="ti ti-power" aria-hidden="true" />
-              {t().switchOnVersion({ version: props.state.waiting!.number })}
+          <Show when={editor() && paused()}>
+            <Button type="button" variant="primary" loading={busy() === "resume"} onClick={() => void setPaused(false)}>
+              <i class="ti ti-player-play" aria-hidden="true" />
+              {t().resume}
             </Button>
           </Show>
           <Show when={editor() && props.data.editor}>
-            {(panel) => (
-              <Button type="button" variant="secondary" onClick={() => openPanel(panel().provider)}>
-                <i class={panel().icon} aria-hidden="true" />
-                {t().editWith({ name: panel().label })}
-              </Button>
-            )}
-          </Show>
-          <Show when={props.state.active ?? props.state.waiting}>
-            {(version) => (
-              <ButtonLink
-                href={withQuery(props.data.href, { tab: "versions", version: version().id })}
-                variant="secondary"
-                aria-label={t().viewCode}
-              >
-                <i class="ti ti-code" aria-hidden="true" />
-                <span class="cloud-code__wide-label">{t().viewCode}</span>
-              </ButtonLink>
-            )}
+            {(panel) => {
+              const content = () => (
+                <>
+                  <i class={panel().icon} aria-hidden="true" />
+                  {t().changeWith({ name: panel().label })}
+                </>
+              );
+              // One filled action in the head: Gustav, unless a waiting version or "Resume" takes that place.
+              return (
+                <Show
+                  when={changeFilled()}
+                  fallback={
+                    <Button type="button" variant="secondary" onClick={() => openPanel(panel().provider)}>
+                      {content()}
+                    </Button>
+                  }
+                >
+                  <Button type="button" variant="primary" onClick={() => openPanel(panel().provider)}>
+                    {content()}
+                  </Button>
+                </Show>
+              );
+            }}
           </Show>
           <Dropdown.Root items={menu()} label={t().more} position="bottom-right" phone="sheet">
             <Dropdown.Trigger iconOnly type="button" variant="ghost" label={t().more} aria-busy={busy() ? "true" : undefined}>
@@ -433,1194 +392,115 @@ function ReadyPage(props: { data: CodePageData; state: CodePageReady; text: Page
           </Dropdown.Root>
         </div>
       </header>
-      <ViewTabs label={t().tabsLabel} items={tabs()} current={props.data.tab} class="cloud-code__tabs" />
+      <ViewTabs label={t().tabsLabel} items={tabs()} current={props.data.tab} max={5} class="cloud-code__tabs" />
       <Switch>
         <Match when={props.data.tab === "overview"}>
-          <Overview data={props.data} state={props.state} text={props.text} onActivate={activate} />
+          <CodeLede state={props.state} text={props.text} />
+          <CodeOverview
+            data={props.data}
+            state={props.state}
+            text={props.text}
+            live={live}
+            onActivate={activate}
+            footer={paused() ? undefined : props.footer}
+          />
         </Match>
         <Match when={props.data.tab === "runs"}>
-          <Runs data={props.data} state={props.state} text={props.text} />
+          <CodeRuns data={props.data} state={props.state} text={props.text} live={live} />
         </Match>
         <Match when={props.data.tab === "secrets"}>
           <CodeSecretsTab data={props.data} state={props.state} />
         </Match>
         <Match when={props.data.tab === "versions"}>
-          <Versions data={props.data} state={props.state} text={props.text} onActivate={() => activate()} />
+          <CodeVersions data={props.data} state={props.state} text={props.text} onActivate={activate} />
+        </Match>
+        <Match when={props.data.tab === "code"}>
+          <Show when={props.state.sourceTab} fallback={<Failed title={t().partFailed} detail={t().loadKeeps} />}>
+            {(source) => (
+              <CodeSourceTab
+                data={source()}
+                codeId={props.state.code.id}
+                href={withQuery(props.data.href, { tab: "code" })}
+                versionsHref={withQuery(props.data.href, { tab: "versions" })}
+                dates={props.data.dates}
+              />
+            )}
+          </Show>
         </Match>
       </Switch>
     </>
   );
 }
 
-function VersionLine(props: { data: CodePageData; state: CodePageReady; text: PageText }) {
+/** The page while it loads (Bild 33): placeholders at the heights of the content they stand for. */
+export function CodePageSkeleton(props: { data: CodePageData; text: PageText }) {
   const t = props.text.t;
-  return (
-    <p class="cloud-code__vline">
-      <Show
-        when={props.state.active}
-        fallback={
-          <Show when={props.state.waiting}>
-            {(waiting) => (
-              <span>
-                {waiting().createdBy
-                  ? t().draftLine({
-                      version: waiting().number,
-                      name: waiting().createdBy!.name,
-                      date: props.text.when(waiting().createdAt),
-                    })
-                  : t().draftLineNoName({ version: waiting().number, date: props.text.when(waiting().createdAt) })}
-              </span>
-            )}
-          </Show>
-        }
-      >
-        {(active) => (
-          <>
-            <span>
-              <b>{t().versionLine({ version: active().number })}</b>
-            </span>
-            <Show when={props.state.waiting}>
-              {(waiting) => (
-                <span>
-                  {waiting().createdBy
-                    ? t().draftLine({
-                        version: waiting().number,
-                        name: waiting().createdBy!.name,
-                        date: props.text.when(waiting().createdAt),
-                      })
-                    : t().draftLineNoName({ version: waiting().number, date: props.text.when(waiting().createdAt) })}
-                </span>
-              )}
-            </Show>
-          </>
-        )}
-      </Show>
-      <Show when={props.state.databaseUsed}>
+  const rows = (count: number) =>
+    Array.from({ length: count }, () => (
+      <div class="cloud-code__skel-row">
+        <Skeleton class="cloud-code__skel-tile" />
         <span>
-          <i class="ti ti-database" aria-hidden="true" /> {t().usesDatabase}
+          <Skeleton class="cloud-code__skel-line" />
+          <Skeleton class="cloud-code__skel-line cloud-code__skel-line--short" />
         </span>
-      </Show>
-      <Show when={props.state.code.database}>{(db) => <CodeDatabaseStatus codeId={props.state.code.id} database={db()} />}</Show>
-      <span>
-        <i class="ti ti-history" aria-hidden="true" /> {t().versionsCount({ count: props.state.versions.length })}
-      </span>
-      <span>
-        <i class="ti ti-link-off" aria-hidden="true" /> {t().noAddress}
-      </span>
-    </p>
-  );
-}
-
-function Overview(props: { data: CodePageData; state: CodePageReady; text: PageText; onActivate: () => void }) {
-  const t = props.text.t;
-  const editor = () => props.state.permission === "editor";
-  const newOperations = () =>
-    (props.state.waitingTargets ?? [])
-      .filter((row) => row.isNew && !row.target.own)
-      .flatMap((row) =>
-        row.operations.map(
-          (operation) => `${codeOperationText(operation, props.state.operationLabels)} ${props.text.targetLabel(row.target)}`,
-        ),
-      );
-  const running = () => props.state.active?.number ?? null;
-  return (
-    <div class="cloud-code__body">
-      <Show when={props.data.activatedNotice !== null && props.data.activatedNotice === props.state.active?.number}>
-        <NoticeCard
-          tone="success"
-          icon="ti ti-circle-check"
-          title={t().activatedTitle({ version: props.data.activatedNotice! })}
-          detail={t().activatedDescription}
-        />
-      </Show>
-      <Show when={props.state.waiting}>
-        {(waiting) => (
-          <Show
-            when={waiting().status !== "pending"}
-            fallback={
-              <NoticeCard
-                tone="neutral"
-                icon="ti ti-hourglass"
-                title={t().waitingApprovalTitle({ version: waiting().number })}
-                detail={t().waitingApproval({ running: running() })}
-              >
-                <div class="cloud-code__note-actions">
-                  <ButtonLink size="sm" variant="secondary" href={withQuery(props.data.href, { tab: "versions", version: waiting().id })}>
-                    <i class="ti ti-git-compare" aria-hidden="true" />
-                    {t().showDiff}
-                  </ButtonLink>
-                </div>
-              </NoticeCard>
-            }
-          >
-            <NoticeCard
-              tone="neutral"
-              icon="ti ti-sparkles"
-              title={t().waitingReadyTitle({ version: waiting().number })}
-              detail={[
-                newOperations().length > 0 ? t().needsNewAccess({ operations: newOperations().join(", ") }) : "",
-                running() === null ? t().waitingReadyFirst : t().waitingReadyNew({ version: waiting().number, running: running() }),
-              ]
-                .filter(Boolean)
-                .join(" ")}
-            >
-              <div class="cloud-code__note-actions">
-                <Show when={switchOnReady(props.state)}>
-                  <Button type="button" size="sm" variant="primary" onClick={() => props.onActivate()}>
-                    <i class="ti ti-power" aria-hidden="true" />
-                    {t().switchOn}
-                  </Button>
-                </Show>
-                <ButtonLink size="sm" variant="secondary" href={withQuery(props.data.href, { tab: "versions", version: waiting().id })}>
-                  <i class="ti ti-git-compare" aria-hidden="true" />
-                  {t().showDiff}
-                </ButtonLink>
-              </div>
-            </NoticeCard>
-          </Show>
-        )}
-      </Show>
-      <Show when={props.state.code.needsReconfirmation}>
-        <NoticeCard tone="warning" title={t().reconfirmTitle} detail={t().reconfirmDescription} />
-      </Show>
-      <Show when={props.state.code.state === "paused"}>
-        <NoticeCard
-          tone="warning"
-          icon="ti ti-player-pause"
-          title={t().pausedTitle}
-          detail={props.state.code.pauseReason ?? t().pausedDescription}
-        >
-          <Show when={editor()}>
-            <div class="cloud-code__note-actions">
-              <ResumeButton codeId={props.state.code.id} t={t()} />
-            </div>
-          </Show>
-        </NoticeCard>
-      </Show>
-      <Show when={props.state.refusal}>
-        {(refusal) => <LastRunRefusal data={props.data} state={props.state} refusal={refusal()} text={props.text} />}
-      </Show>
-      <Show when={props.state.versionsFailed}>
-        <InlineError text={t().versionsFailed} retry={t().tryAgain} />
-      </Show>
-      <Section id="cloud-code-automations" title={t().automations} count={props.state.automations?.length}>
-        <Show when={props.state.automations} fallback={<InlineError text={t().automationsFailed} retry={t().tryAgain} />}>
-          {(automations) => (
-            <Show when={automations().length > 0} fallback={<p class="cloud-code__quiet">{t().automationsEmpty}</p>}>
-              <div class="cloud-code__list" role="table" aria-label={t().automations}>
-                <div class="cloud-code__row cloud-code__row--automation cloud-code__row--head" role="row">
-                  <span role="columnheader" />
-                  <span role="columnheader">{t().name}</span>
-                  <span role="columnheader" class="cloud-code__wide">
-                    {t().status}
-                  </span>
-                  <span role="columnheader" class="cloud-code__wide cloud-code__num">
-                    {t().lastRun}
-                  </span>
-                </div>
-                <For each={automations()}>
-                  {(automation) => <AutomationRow data={props.data} state={props.state} automation={automation} text={props.text} />}
-                </For>
-              </div>
-            </Show>
-          )}
-        </Show>
-      </Section>
-      <Section
-        id="cloud-code-targets"
-        title={t().targets}
-        description={!personal(props.data) ? t().targetsDescription : props.data.owner.runsAs ? t().personalAccessOf : t().personalAccess}
-      >
-        <Show when={!personal(props.data)}>
-          <Show when={props.state.targets} fallback={<InlineError text={t().targetsFailed} retry={t().tryAgain} />}>
-            {(targets) => (
-              <Show
-                when={targets().some((row) => !row.target.own)}
-                fallback={<p class="cloud-code__quiet">{t().targetsEmpty({ name: props.data.owner.title })}</p>}
-              >
-                <ul class="cloud-code__list">
-                  <For each={targets()}>{(row) => <TargetRow row={row} state={props.state} text={props.text} />}</For>
-                </ul>
-              </Show>
-            )}
-          </Show>
-        </Show>
-      </Section>
-      <Show
-        when={
-          props.state.internet.active === null ||
-          props.state.internet.waiting === null ||
-          props.state.internet.active.length ||
-          props.state.internet.waiting.length
-        }
-      >
-        <Section id="cloud-code-internet" title={t().internetOrigins} description={t().internetDescription}>
-          <Show
-            when={props.state.internet.active !== null && props.state.internet.waiting !== null}
-            fallback={<InlineError text={t().internetFailed} retry={t().tryAgain} />}
-          >
-            <Show when={props.state.active && props.state.internet.active?.length}>
-              <p class="cloud-code__label">{t().internetVersion({ version: props.state.active!.number })}</p>
-              <ul class="cloud-code__list">
-                <For each={props.state.internet.active ?? []}>{(origin) => <OriginRow origin={origin} />}</For>
-              </ul>
-            </Show>
-            <Show when={props.state.waiting && props.state.internet.waiting?.length}>
-              <p class="cloud-code__label">{t().internetVersion({ version: props.state.waiting!.number })}</p>
-              <ul class="cloud-code__list">
-                <For each={props.state.internet.waiting ?? []}>
-                  {(origin) => (
-                    <OriginRow origin={origin}>
-                      <Show when={!props.state.internet.active?.includes(origin)}>
-                        <span class="cloud-code__new">{t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })}</span>
-                      </Show>
-                    </OriginRow>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </Show>
-        </Section>
-      </Show>
-      <Section id="cloud-code-pages" title={t().pagesAndRoutes} count={0}>
-        <p class="cloud-code__quiet">{t().pagesNone}</p>
-      </Section>
-    </div>
-  );
-}
-
-/** One declared internet origin, laid out like an access row; the children mark it, for example as new. */
-function OriginRow(props: { origin: string; children?: JSX.Element }) {
-  return (
-    <li class="cloud-code__row cloud-code__row--access">
-      <span class="cloud-code__kind" aria-hidden="true">
-        <i class="ti ti-world" />
-      </span>
-      <span class="cloud-code__cell break-all">
-        <Op>{props.origin}</Op>
-      </span>
-      <span class="cloud-code__right">{props.children}</span>
-    </li>
-  );
-}
-
-function ResumeButton(props: { codeId: string; t: CodePageMessages }) {
-  const [busy, setBusy] = createSignal(false);
-  const resume = async () => {
-    setBusy(true);
-    const result = await invokeCapabilityWithDataSchema(
-      {
-        appId: "core",
-        capabilityId: "code.resume",
-        kind: "action",
-        target: { type: "core.code", id: props.codeId },
-        input: {},
-        idempotencyKey: crypto.randomUUID(),
-      },
-      ChangedSchema,
-    );
-    setBusy(false);
-    if (!result.ok) return toast.error(props.t.resumeFailed);
-    refreshCurrentPath();
-  };
-  return (
-    <Button type="button" size="sm" variant="secondary" loading={busy()} onClick={() => void resume()}>
-      <i class="ti ti-player-play" aria-hidden="true" />
-      {props.t.resume}
-    </Button>
-  );
-}
-
-function AutomationRow(props: { data: CodePageData; state: CodePageReady; automation: CodePageAutomation; text: PageText }) {
-  const t = props.text.t;
-  const status = (): { tone: StatusTone; label: string } => {
-    if (props.automation.isNew) return { tone: "neutral", label: t().statusOff({ version: props.state.waiting?.number ?? 0 }) };
-    if (props.state.code.state === "paused") return { tone: "warning", label: t().statusPaused };
-    if (props.automation.lastRun?.state === "failed") return { tone: "error", label: t().statusLastFailed };
-    return { tone: "ok", label: t().statusOn };
-  };
-  const [starting, setStarting] = createSignal(false);
-  const runNow = async () => {
-    setStarting(true);
-    const result = await invokeCapabilityWithDataSchema(
-      {
-        appId: "core",
-        capabilityId: "code.run",
-        kind: "action",
-        target: { type: "core.code", id: props.state.code.id },
-        input: { entrypoint: props.automation.entrypoint, input: null },
-        idempotencyKey: crypto.randomUUID(),
-      },
-      StartSchema,
-    );
-    setStarting(false);
-    if (!result.ok) return toast.error(result.error.message);
-    toast.success(t().runStarted);
-    documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.runId }));
-  };
-  const timing = () => describeCodeTiming(props.automation, props.text.locale());
-  const schedule = () =>
-    timing() !== null
-      ? // An untitled schedule is already named by when it runs.
-        props.automation.title === undefined
-        ? ""
-        : timing()
-      : props.automation.kind === "event"
-        ? t().triggerEvent
-        : props.automation.kind === "route"
-          ? // An untitled page is already named by its method and path.
-            props.automation.title
-            ? props.automation.entrypoint.replace(/^route:/, "")
-            : ""
-          : t().manualStart;
-  return (
-    <div class="cloud-code__row cloud-code__row--automation" role="row">
-      <span class="cloud-code__kind" aria-hidden="true">
-        <i
-          class={
-            props.automation.kind === "schedule"
-              ? "ti ti-clock"
-              : props.automation.kind === "event"
-                ? "ti ti-bolt"
-                : props.automation.kind === "route"
-                  ? "ti ti-route"
-                  : "ti ti-hand-finger"
-          }
-        />
-      </span>
-      <span class="cloud-code__cell" role="cell">
-        <span class="cloud-code__title">
-          {codeAutomationName(props.automation, props.data.owner.title, props.text.locale())}
-          <Show when={props.automation.isNew}>
-            <Tag>{t().newTag}</Tag>
-          </Show>
-        </span>
-        <span class="cloud-code__sub">
-          {schedule()}
-          <Show when={props.automation.route}>
-            {(route) => (
-              <>
-                {schedule() ? " · " : ""}
-                {props.text.routeAudience(route())}
-              </>
-            )}
-          </Show>
-          <Show when={props.automation.nextRunAt}>
-            {(at) => (
-              <>
-                {schedule() || props.automation.route ? " · " : ""}
-                {t().nextRun({ when: props.text.when(at()) })}
-              </>
-            )}
-          </Show>
-        </span>
-        <span class="cloud-code__sub cloud-code__narrow">{status().label}</span>
-      </span>
-      <span class="cloud-code__wide" role="cell">
-        <StatusBadge tone={status().tone} label={status().label} variant="dot" />
-      </span>
-      <span class="cloud-code__wide cloud-code__num" role="cell">
-        <Show when={props.automation.lastRun} fallback={<span class="text-dimmed">{props.automation.isNew ? "—" : t().noRunYet}</span>}>
-          {(run) => <a href={withQuery(props.data.href, { tab: "runs", run: run().id })}>{props.text.when(run().createdAt)}</a>}
-        </Show>
-        <Show
-          when={
-            props.automation.kind === "manual" &&
-            !props.automation.isNew &&
-            props.state.permission === "editor" &&
-            props.state.code.state === "active"
-          }
-        >
-          <Button type="button" size="xs" variant="ghost" loading={starting()} onClick={() => void runNow()}>
-            {t().runNow}
-          </Button>
-        </Show>
-      </span>
-    </div>
-  );
-}
-
-/** Operations the Code calls at one target, linked when the type's page needs only the ID. */
-function TargetRow(props: { row: CodePageTargetRow; state: CodePageReady; text: PageText }) {
-  const t = props.text.t;
-  return (
-    <li class="cloud-code__row cloud-code__row--access">
-      <span class="cloud-code__kind" aria-hidden="true">
-        <i class={props.row.target.icon ?? (props.row.target.own ? "ti ti-home" : "ti ti-target-arrow")} />
-      </span>
-      <span class="cloud-code__cell">
-        <span class="cloud-code__ops">
-          <For each={[...props.row.operations, ...props.row.newOperations]}>
-            {(operation) => <Operation operation={operation} labels={props.state.operationLabels} />}
-          </For>
-        </span>
-        <span class="cloud-code__sub">
-          <TargetText target={props.row.target} text={props.text} />
-        </span>
-      </span>
-      <span class="cloud-code__right">
-        <Show when={props.row.newOperations.length > 0}>
-          <span class="cloud-code__new">
-            {props.row.operations.length === 0
-              ? t().newOnSwitchOn({ version: props.state.waiting?.number ?? 0 })
-              : t().alsoNew({
-                  operations: props.row.newOperations
-                    .map((operation) => codeOperationText(operation, props.state.operationLabels))
-                    .join(", "),
-                })}
-          </span>
-        </Show>
-      </span>
-    </li>
-  );
-}
-
-/** "at Space sp_2lg8", the ID linked where its type's page allows; the own place and apps by name. */
-function TargetText(props: { target: CodePageTarget; text: PageText }) {
-  return (
-    <Show when={props.target.href && !props.target.own} fallback={props.text.targetLabel(props.target)}>
-      <a href={props.target.href!}>{props.text.targetLabel(props.target)}</a>
-    </Show>
-  );
-}
-
-/** "Runs as service account “Code of …”", with its handle to copy once Core provides it, also before the first run. */
-function AccountLine(props: { state: CodePageReady; text: PageText }) {
-  const t = props.text.t;
-  return (
-    <>
-      {t().runsAsAccount({ name: props.text.account() ?? props.state.code.title })}
-      <Show when={props.state.code.serviceAccountHandle}>
-        {(handle) => (
-          <>
-            {" "}
-            <CodeAccountHandle handle={handle()} />
-          </>
-        )}
-      </Show>
-    </>
-  );
-}
-
-/** The newest finished run failed with a refused call: shown first, under "Last run", as the mockup's cron page does. */
-function LastRunRefusal(props: { data: CodePageData; state: CodePageReady; refusal: CodePageRefusal; text: PageText }) {
-  const t = props.text.t;
-  const run = () => props.state.runs?.items.find((item) => item.id === props.refusal.runId) ?? null;
-  return (
-    <section class="cloud-code__section" aria-labelledby="cloud-code-last-run">
-      <div class="cloud-code__section-head">
-        <h2 id="cloud-code-last-run" class="cloud-code__h2 cloud-code__h2--wrap">
-          <span>{t().lastRun}</span>
-          <Show when={run()}>
-            {(current) => (
-              <a class="cloud-code__count" href={withQuery(props.data.href, { tab: "runs", run: current().id })}>
-                {props.text.when(current().createdAt)} ·{" "}
-                {codeRunName(current(), props.state.automations, props.data.owner.title, props.text.locale())}
-              </a>
-            )}
-          </Show>
-        </h2>
       </div>
-      <CodeRefusalNotice
-        refusal={props.refusal}
-        account={props.text.account()}
-        runsAsOther={Boolean(props.data.owner.runsAs)}
-        handle={props.state.code.serviceAccountHandle ?? null}
-        editor={props.state.permission === "editor"}
-        cloudAdmin={props.data.cloudAdmin}
-      />
-    </section>
-  );
-}
-
-function EventDelivery(props: { delivery: z.infer<typeof EventDeliverySchema>; state: CodePageReady; text: PageText }) {
-  const [pending, setPending] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
-  let retryKey: string | undefined;
-  const retry = async () => {
-    if (pending()) return;
-    setPending(true);
-    setFailed(false);
-    try {
-      retryKey ??= crypto.randomUUID();
-      const result = await browserInvoke(
-        {
-          appId: "core",
-          capabilityId: "code.event.redeliver",
-          kind: "action",
-          target: { type: "core.code", id: props.state.code.id },
-          input: { deliveryId: props.delivery.id },
-          idempotencyKey: retryKey,
-        },
-        z.object({ deliveryId: z.string() }),
-      );
-      if (!result.ok) {
-        setFailed(true);
-        return;
-      }
-      retryKey = undefined;
-      refreshCurrentPath();
-    } catch {
-      setFailed(true);
-    } finally {
-      setPending(false);
-    }
-  };
+    ));
+  // The tabs and island titles are known before the data: they stand as they will, so nothing moves when it loads.
+  const tabs = () => [
+    { id: "overview", label: t().tabOverview, href: props.data.href },
+    { id: "runs", label: t().tabRuns, href: withQuery(props.data.href, { tab: "runs" }) },
+    { id: "versions", label: t().tabVersions, href: withQuery(props.data.href, { tab: "versions" }) },
+  ];
   return (
-    <li>
-      <div class="cloud-code__row">
-        <span class="cloud-code__cell">
-          <span class="cloud-code__title">
-            {props.delivery.eventType} · {shortId(props.delivery.eventId)}
-          </span>
-          <span class="cloud-code__sub">
-            {props.text.when(props.delivery.createdAt)}
-            {props.delivery.code ? ` · ${props.text.t().outcome({ code: props.delivery.code })}` : ""}
-          </span>
-          <Show when={failed()}>
-            <span role="alert" class="cloud-code__bad">
-              {props.text.t().deliveryRetryFailed}
-            </span>
-          </Show>
-        </span>
-        <StatusBadge
-          tone={props.delivery.state === "failed" ? "error" : "neutral"}
-          label={props.delivery.state === "failed" ? props.text.t().deliveryFailed : props.text.t().deliveryWaiting}
-          variant="dot"
-        />
-        <Show when={props.delivery.state === "failed" && props.state.permission === "editor" && props.state.code.state === "active"}>
-          <Button type="button" size="sm" variant="secondary" loading={pending()} onClick={() => void retry()}>
-            {props.text.t().deliveryRetry}
-          </Button>
-        </Show>
-      </div>
-    </li>
-  );
-}
-
-function Runs(props: { data: CodePageData; state: CodePageReady; text: PageText }) {
-  const t = props.text.t;
-  const [items, setItems] = createSignal(props.state.runs?.items ?? []);
-  const [cursor, setCursor] = createSignal(props.state.runs?.nextCursor ?? null);
-  const [loading, setLoading] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
-  const selected = () => props.state.run?.run.id ?? null;
-  const loadMore = async () => {
-    const next = cursor();
-    if (!next || loading()) return;
-    setLoading(true);
-    setFailed(false);
-    const result = await browserInvoke(coreQuery("code.run.list", { codeId: props.state.code.id, limit: 20, cursor: next }), RunListSchema);
-    setLoading(false);
-    if (!result.ok) return setFailed(true);
-    const numbers = new Map(props.state.versions.map((version) => [version.id, version.number]));
-    setItems([...items(), ...result.data.data.items.map((run) => ({ ...run, versionNumber: numbers.get(run.versionId) ?? null }))]);
-    setCursor(result.data.data.nextCursor);
-  };
-  return (
-    <div class="cloud-code__body cloud-code__runs">
-      <Show when={props.state.runs} fallback={<InlineError text={t().runsFailed} retry={t().tryAgain} />}>
-        <section class="cloud-code__run-list" aria-label={t().runs}>
-          <Show when={props.state.runs?.eventDeliveries?.length}>
-            <section aria-label={t().eventDeliveries}>
-              <h3>{t().eventDeliveries}</h3>
-              <ul class="cloud-code__list">
-                <For each={props.state.runs?.eventDeliveries}>
-                  {(delivery) => <EventDelivery delivery={delivery} state={props.state} text={props.text} />}
-                </For>
-              </ul>
-            </section>
-          </Show>
-          <Show when={items().length > 0} fallback={<p class="cloud-code__quiet">{t().runsEmpty}</p>}>
-            <ul class="cloud-code__list">
-              <For each={items()}>
-                {(run) => (
-                  <li>
-                    <a
-                      class="cloud-code__row cloud-code__row--run"
-                      href={withQuery(props.data.href, { tab: "runs", run: run.id })}
-                      aria-current={run.id === selected() ? "true" : undefined}
-                    >
-                      <span class="cloud-code__cell">
-                        <span class="cloud-code__title">
-                          {shortId(run.id)} · {codeRunName(run, props.state.automations, props.data.owner.title, props.text.locale())}
-                        </span>
-                        <span class="cloud-code__sub">
-                          {[
-                            props.text.when(run.createdAt),
-                            triggerLabel(run, t()),
-                            run.versionNumber ? t().runVersion({ version: run.versionNumber }) : null,
-                            run.rerunByName ? t().rerunBy({ name: run.rerunByName }) : run.rerunOf ? t().rerunUnnamed : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </span>
-                        <Show when={run.state === "skipped" && run.outcome}>
-                          <span class="cloud-code__sub">{t().outcome({ code: run.outcome! })}</span>
-                        </Show>
-                      </span>
-                      <StatusBadge tone={runTone(run)} label={runStateLabel(run, t())} variant="dot" />
-                    </a>
-                  </li>
-                )}
-              </For>
-            </ul>
-            <Show when={failed()}>
-              <p class="cloud-code__bad" role="alert">
-                {t().runsFailed}
-              </p>
-            </Show>
-            <Show when={cursor()}>
-              <Button type="button" size="sm" variant="ghost" loading={loading()} onClick={() => void loadMore()}>
-                {t().loadMore}
-              </Button>
-            </Show>
-          </Show>
-        </section>
-        <Show
-          when={props.state.run}
-          fallback={
-            <Show when={props.state.selectionFailed}>
-              <InlineError text={t().runFailedToLoad} retry={t().tryAgain} />
-            </Show>
-          }
-        >
-          {(detail) => <RunDetail data={props.data} state={props.state} detail={detail()} text={props.text} />}
-        </Show>
-      </Show>
-    </div>
-  );
-}
-
-function RunDetail(props: { data: CodePageData; state: CodePageReady; detail: CodePageRunDetail; text: PageText }) {
-  const t = props.text.t;
-  const run = () => props.detail.run;
-  const [calls, setCalls] = createSignal<CodePageCall[] | null>(props.detail.calls);
-  const [next, setNext] = createSignal(props.detail.nextCallCursor);
-  const [loading, setLoading] = createSignal(false);
-  const [failed, setFailed] = createSignal(false);
-  const [rerunning, setRerunning] = createSignal(false);
-  const afterAction = () => run().trigger !== "path" && (calls() ?? []).some((call) => call.kind === "action");
-  /** Only the complete call list proves that a failed run never reached an action. */
-  const beforeFirstAction = () => calls() !== null && !afterAction() && next() === null;
-  const canRerun = () =>
-    run().state === "failed" &&
-    (run().trigger === "event" ? run().startedAt !== null : afterAction()) &&
-    props.state.permission === "editor" &&
-    props.state.code.state === "active";
-  const loadMore = async () => {
-    const after = next();
-    if (after === null || loading()) return;
-    setLoading(true);
-    setFailed(false);
-    const result = await loadCodeRunCalls(browserInvoke, props.state.code.id, run().id, after, undefined, props.text.locale());
-    setLoading(false);
-    if (!result) return setFailed(true);
-    setCalls([...(calls() ?? []), ...result.calls]);
-    setNext(result.next);
-  };
-  /** Stable outcomes that only repeat the state add nothing to the note. */
-  const outcomeText = () => {
-    const outcome = run().outcome;
-    return outcome && outcome !== "failed" && outcome !== "succeeded" ? t().outcome({ code: outcome }) : null;
-  };
-  const rerun = async () => {
-    // The input is too large to carry along; Core keeps it, and cld code can start the run again.
-    if (props.detail.inputTooLarge) return toast.error(t().rerunNeedsInput);
-    setRerunning(true);
-    const result = await invokeCapabilityWithDataSchema(
-      {
-        appId: "core",
-        capabilityId: "code.run",
-        kind: "action",
-        target: { type: "core.code", id: props.state.code.id },
-        input: { entrypoint: run().entrypoint, input: props.detail.input ?? null, rerunOf: run().id },
-        // One rerun per failed run, also after a lost response or a double click.
-        idempotencyKey: `rerun:${run().id}`,
-      },
-      StartSchema,
-    );
-    setRerunning(false);
-    if (!result.ok) return toast.error(t().rerunFailed);
-    toast.success(t().rerunStarted);
-    documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.runId }));
-  };
-  const canViewWithPanel = () => props.state.permission === "editor" && props.data.editor !== null;
-  /** Looking at a failed run with the panel; the panel reads this page's place as its context. */
-  const viewWithPanelButton = () => (
-    <Show when={canViewWithPanel() && props.data.editor}>
-      {(panel) => (
-        <Button type="button" size="sm" variant="secondary" onClick={() => openPanel(panel().provider)}>
-          <i class={panel().icon} aria-hidden="true" />
-          {t().viewWith({ name: panel().label })}
-        </Button>
-      )}
-    </Show>
-  );
-  const rerunButton = () => (
-    <Show when={canRerun()}>
-      <Button type="button" size="sm" variant="secondary" loading={rerunning()} onClick={() => void rerun()}>
-        <i class="ti ti-repeat" aria-hidden="true" />
-        {t().rerun}
-      </Button>
-    </Show>
-  );
-  const failureActions = () => (
-    <Show when={canRerun() || canViewWithPanel()}>
-      <div class="cloud-code__note-actions">
-        {rerunButton()}
-        {viewWithPanelButton()}
-      </div>
-    </Show>
-  );
-  const target = (call: CodePageCall) => {
-    if (!call.target) return null;
-    const known = [
-      ...(props.state.targets ?? []).map((row) => row.target),
-      ...(props.state.waitingTargets ?? []).map((row) => row.target),
-    ].find((candidate) => candidate.ref.type === call.target!.type && candidate.ref.id === call.target!.id);
-    return props.text.targetLabel(known ?? { key: "", ref: call.target, title: null, typeTitle: null, icon: null, own: false, href: null });
-  };
-  return (
-    <section class="cloud-code__run-detail" aria-labelledby="cloud-code-run-title">
-      <div class="cloud-code__run-head">
-        <div class="min-w-0">
-          <h2 id="cloud-code-run-title" class="cloud-code__h2">
-            {shortId(run().id)} · {codeRunName(run(), props.state.automations, props.data.owner.title, props.text.locale())}
-          </h2>
-          <p class="cloud-code__sub">
-            {[
-              props.text.when(run().createdAt),
-              run().versionNumber ? t().runVersion({ version: run().versionNumber! }) : null,
-              triggerLabel(run(), t()),
-              run().rerunByName ? t().rerunBy({ name: run().rerunByName! }) : run().rerunOf ? t().rerunUnnamed : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </p>
+    <div class="cloud-code__skeleton" role="status" aria-busy="true" aria-label={t().loadingPage}>
+      <header class="cloud-code__head">
+        <div class="cloud-code__head-text">
+          <Skeleton class="cloud-code__skel-title" />
+          <Skeleton class="cloud-code__skel-meta" />
         </div>
-        <StatusBadge tone={runTone(run())} label={runStateLabel(run(), t())} />
-      </div>
-      <Show when={props.detail.refusal}>
-        {(refusal) => (
-          <CodeRefusalNotice
-            refusal={refusal()}
-            account={props.text.account()}
-            runsAsOther={Boolean(props.data.owner.runsAs)}
-            handle={props.state.code.serviceAccountHandle ?? null}
-            editor={props.state.permission === "editor"}
-            cloudAdmin={props.data.cloudAdmin}
-            actions={canRerun() || canViewWithPanel()}
-          >
-            {rerunButton()}
-            {viewWithPanelButton()}
-          </CodeRefusalNotice>
-        )}
+      </header>
+      <ViewTabs label={t().tabsLabel} items={tabs()} current={props.data.tab} max={5} class="cloud-code__tabs" />
+      <span class="cloud-code__skel-lede-block">
+        <Skeleton class="cloud-code__skel-lede" />
+        <Skeleton class="cloud-code__skel-lede cloud-code__skel-line--short" />
+      </span>
+      <Show when={!personal(props.data)}>
+        <div class="cloud-code__lage cloud-code__lage--skeleton">
+          <span class="cloud-code__lage-cell">
+            <Skeleton class="cloud-code__skel-label" />
+            <Skeleton class="cloud-code__skel-big" />
+          </span>
+          <span class="cloud-code__lage-cell">
+            <Skeleton class="cloud-code__skel-label" />
+            <Skeleton class="cloud-code__skel-last" />
+          </span>
+          <span class="cloud-code__runs">
+            <Skeleton class="cloud-code__skel-label" />
+            <Skeleton class="cloud-code__skel-strip" />
+            <Skeleton class="cloud-code__skel-label" />
+          </span>
+        </div>
       </Show>
-      <Show when={run().state === "failed" && !props.detail.refusal}>
-        <Show
-          when={afterAction()}
-          fallback={
-            <Show
-              when={beforeFirstAction()}
-              fallback={
-                <NoticeCard tone="danger" icon="ti ti-circle-x" title={t().stateFailed} detail={outcomeText() ?? undefined}>
-                  {failureActions()}
-                </NoticeCard>
-              }
-            >
-              <NoticeCard
-                tone="danger"
-                icon="ti ti-circle-x"
-                title={t().failedBeforeFirstTitle}
-                detail={[outcomeText(), t().failedBeforeFirst].filter(Boolean).join(". ")}
-              >
-                {failureActions()}
-              </NoticeCard>
-            </Show>
-          }
-        >
-          <NoticeCard
-            tone="danger"
-            icon="ti ti-circle-x"
-            title={t().failedAfterFirstTitle}
-            detail={[outcomeText(), t().failedAfterFirst].filter(Boolean).join(". ")}
-          >
-            {failureActions()}
-          </NoticeCard>
-        </Show>
-      </Show>
-      <Show when={run().state !== "failed" && run().outcome && run().outcome !== "succeeded"}>
-        <p class="cloud-code__quiet">{t().outcome({ code: run().outcome! })}</p>
-      </Show>
-      <Show when={run().rerunOf}>
-        {(original) => (
-          <p class="cloud-code__quiet">
-            <a href={withQuery(props.data.href, { tab: "runs", run: original() })}>{t().rerunOf({ run: shortId(original()) })}</a>
-          </p>
-        )}
-      </Show>
-      <Show when={calls()} fallback={<p class="cloud-code__quiet">{t().callsHidden}</p>}>
-        {(list) => (
-          <>
-            <p class="cloud-code__label">
-              {t().calls} <span class="cloud-code__count">{list().length}</span>
-            </p>
-            <Show when={list().length > 0} fallback={<p class="cloud-code__quiet">{t().callsEmpty}</p>}>
-              <ol class="cloud-code__calls">
-                <For each={list()}>
-                  {(call) => (
-                    <li class="cloud-code__call" data-state={call.state}>
-                      <i
-                        class={
-                          call.state === "succeeded"
-                            ? "ti ti-circle-check"
-                            : call.state === "failed"
-                              ? "ti ti-circle-x"
-                              : call.state === "running"
-                                ? "ti ti-loader-2"
-                                : "ti ti-circle-dashed"
-                        }
-                        aria-hidden="true"
-                      />
-                      <span class="cloud-code__cell">
-                        <span>
-                          <Op>{call.capability}</Op> <span class="text-secondary">{target(call)}</span>
-                        </span>
-                        <span class="cloud-code__sub">{call.state === "uncertain" ? t().callUnknown : call.summary}</span>
-                      </span>
-                    </li>
-                  )}
-                </For>
-              </ol>
-            </Show>
-            <Show when={failed()}>
-              <p class="cloud-code__bad" role="alert">
-                {t().callsFailed}
-              </p>
-            </Show>
-            <Show when={next() !== null}>
-              <Button type="button" size="sm" variant="ghost" loading={loading()} onClick={() => void loadMore()}>
-                {t().moreCalls}
-              </Button>
-            </Show>
-          </>
-        )}
-      </Show>
-    </section>
-  );
-}
-
-function Versions(props: { data: CodePageData; state: CodePageReady; text: PageText; onActivate: () => void }) {
-  const t = props.text.t;
-  const status = (version: CodePageVersion): { tone: StatusTone; label: string } =>
-    version.active
-      ? { tone: "ok", label: t().versionStatus({ status: "active" }) }
-      : {
-          tone: version.status === "pending" ? "info" : version.status === "rejected" ? "error" : "neutral",
-          label: version.status ? t().versionStatus({ status: version.status }) : "",
-        };
-  return (
-    <div class="cloud-code__body cloud-code__versions">
-      <section aria-label={t().versions} class="cloud-code__run-list">
-        <Show when={props.state.versionsFailed}>
-          <InlineError text={t().versionsFailed} retry={t().tryAgain} />
-        </Show>
-        <ul class="cloud-code__list">
-          <For each={props.state.versions}>
-            {(version) => (
-              <li>
-                <a
-                  class="cloud-code__row cloud-code__row--run"
-                  href={withQuery(props.data.href, { tab: "versions", version: version.id })}
-                  aria-current={props.state.diff?.version.id === version.id ? "true" : undefined}
-                >
-                  <span class="cloud-code__cell">
-                    <span class="cloud-code__title">{t().versionLine({ version: version.number })}</span>
-                    <span class="cloud-code__sub">
-                      {version.createdBy
-                        ? t().versionBy({ name: version.createdBy.name, date: props.text.date(version.createdAt) })
-                        : props.text.date(version.createdAt)}
-                    </span>
-                    <Show when={version.decisionLabel}>
-                      <span class="cloud-code__sub">{version.decisionLabel}</span>
-                    </Show>
-                  </span>
-                  <StatusBadge tone={status(version).tone} label={status(version).label} variant="dot" />
-                </a>
-              </li>
-            )}
-          </For>
-        </ul>
-        <Show when={props.state.moreVersions}>
-          <p class="cloud-code__quiet">{t().versionsMore}</p>
-        </Show>
-      </section>
-      <Show
-        when={props.state.diff}
-        fallback={
-          <Show when={props.state.selectionFailed}>
-            <InlineError text={t().versionFailedToLoad} retry={t().tryAgain} />
-          </Show>
-        }
-      >
-        {(diff) => (
-          <section class="cloud-code__run-detail" aria-labelledby="cloud-code-version-title">
-            <div class="cloud-code__run-head">
-              <div class="min-w-0">
-                <h2 id="cloud-code-version-title" class="cloud-code__h2">
-                  {(() => {
-                    const comparison = diff().comparison;
-                    if (comparison === null) return t().firstVersion({ version: diff().version.number });
-                    if (comparison === "unknown") return t().comparedWithEarlier({ version: diff().version.number });
-                    return t().comparedWith({ version: diff().version.number, previous: comparison });
-                  })()}
-                </h2>
-                <Show when={diff().version.decisionLabel}>
-                  <p class="cloud-code__sub">{diff().version.decisionLabel}</p>
-                </Show>
+      <div class="cloud-code__grid">
+        <div class="cloud-code__stack">
+          <Show when={!personal(props.data)}>
+            <Island title={t().didTitle} class="cloud-code__o0">
+              <div class="cloud-code__skel-counts">
+                <Skeleton class="cloud-code__skel-big" />
+                <Skeleton class="cloud-code__skel-big" />
               </div>
-              <Show when={switchOnReady(props.state) && props.state.waiting?.id === diff().version.id}>
-                <Button type="button" variant="primary" onClick={() => props.onActivate()}>
-                  <i class="ti ti-power" aria-hidden="true" />
-                  {t().switchOnVersion({ version: diff().version.number })}
-                </Button>
-              </Show>
-            </div>
-            <Show when={diff().staleComparison}>
-              <NoticeCard tone="info" icon="ti ti-info-circle" detail={t().staleComparison} title={t().codeDiff} />
-            </Show>
-            <p class="cloud-code__label">{t().permissionsTitle}</p>
-            <Show when={diff().permissions.length > 0} fallback={<p class="cloud-code__quiet">{t().noPermissions}</p>}>
-              <ul class="cloud-code__list">
-                <For each={diff().permissions}>
-                  {(permission) => (
-                    <li class="cloud-code__row cloud-code__row--access">
-                      <span class="cloud-code__kind" aria-hidden="true">
-                        <i class={permission.target?.icon ?? (permission.target?.own ? "ti ti-home" : "ti ti-target-arrow")} />
-                      </span>
-                      <span class="cloud-code__cell">
-                        <Operation operation={permission.operation} labels={props.state.operationLabels} />
-                        <span class="cloud-code__sub">{permission.target ? props.text.targetLabel(permission.target) : ""}</span>
-                      </span>
-                      <span class="cloud-code__right text-dimmed">{t().line({ file: permission.file, line: permission.line })}</span>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-            <Show when={diff().internet === null || diff().internet?.length}>
-              <p class="cloud-code__label">{t().internetOrigins}</p>
-              <Show when={diff().internet} fallback={<InlineError text={t().internetFailed} retry={t().tryAgain} />}>
-                {(origins) => (
-                  <ul class="cloud-code__list">
-                    <For each={origins()}>{(origin) => <OriginRow origin={origin} />}</For>
-                  </ul>
-                )}
-              </Show>
-            </Show>
-            <p class="cloud-code__label">{t().codeDiff}</p>
-            <CodeDiff files={diff().files} label={t().codeDiff} />
-          </section>
-        )}
-      </Show>
-    </div>
-  );
-}
-
-type ActivationView =
-  | { kind: "idle" }
-  | { kind: "progress"; state: CodeActivationStatus["state"] }
-  /** Core's answer is missing or the wait ended: the activation may still run, so nothing claims it did not. */
-  | { kind: "unknown" }
-  | { kind: "failed"; failure: NonNullable<CodeActivationStatus["failure"]> | null; message: string | null };
-
-/** "Switch on": reviews the version, then runs Core's durable activation and shows its result. */
-async function openActivationDialog(params: { data: CodePageData; state: CodePageReady; version: CodePageVersion; text: PageText }) {
-  const t = params.text.t();
-  await prompts.dialog<void>((close) => <ActivationDialog {...params} close={() => close()} />, {
-    title: t.activateTitle({ version: params.version.number }),
-    icon: "ti ti-power",
-    size: "large",
-  });
-}
-
-function ActivationDialog(props: {
-  data: CodePageData;
-  state: CodePageReady;
-  version: CodePageVersion;
-  text: PageText;
-  close: () => void;
-}) {
-  const t = props.text.t;
-  const [view, setView] = createSignal<ActivationView>({ kind: "idle" });
-  let disposed = false;
-  onCleanup(() => {
-    disposed = true;
-  });
-  const running = () => props.state.active?.number ?? null;
-  const newAutomations = () =>
-    (props.state.automations ?? [])
-      .filter((automation) => automation.isNew)
-      .map(
-        (automation) =>
-          `„${codeAutomationName(automation, props.data.owner.title, props.text.locale())}“${automation.route ? ` · ${props.text.routeAudience(automation.route)}` : ""}`,
-      );
-  // One identity per attempt: after a lost answer, asking again with it returns the same durable activation.
-  // Only a confirmed terminal result or a refusal starts a new identity.
-  const pending = pendingActivation(props.state.code.id, props.version.id);
-  const resumed = pending.read();
-  let activationId = resumed ?? crypto.randomUUID();
-  const finish = () => {
-    pending.write(null);
-    activationId = crypto.randomUUID();
-  };
-  /** Applies one status; true when it ended the wait. */
-  const settle = (status: CodeActivationStatus): boolean => {
-    if (status.state === "active") {
-      pending.write(null);
-      props.close();
-      documentNavigate(withQuery(props.data.href, { activated: String(props.version.number) }));
-      return true;
-    }
-    if (status.state === "failed" || status.state === "cancelled") {
-      finish();
-      setView({ kind: "failed", failure: status.failure, message: null });
-      return true;
-    }
-    setView({ kind: "progress", state: status.state });
-    return false;
-  };
-  const follow = async () => {
-    for (let poll = 0; poll < ACTIVATION_POLLS && !disposed; poll++) {
-      await new Promise((resolve) => setTimeout(resolve, ACTIVATION_POLL_MS));
-      if (disposed) return;
-      const read = await activationRequest("activation/read", { codeId: props.state.code.id, activationId });
-      if (read.ok && settle(read.data)) return;
-    }
-    if (!disposed) setView({ kind: "unknown" });
-  };
-  /** Reads the status only; it never starts an activation. */
-  const check = async () => {
-    setView({ kind: "progress", state: "pending" });
-    const read = await activationRequest("activation/read", { codeId: props.state.code.id, activationId });
-    if (read.ok) {
-      if (!settle(read.data)) await follow();
-      return;
-    }
-    // Core has no such activation: nothing changed, and switching on again may reuse this identity.
-    if (read.notFound) {
-      pending.write(null);
-      return setView({ kind: "failed", failure: null, message: null });
-    }
-    setView({ kind: "unknown" });
-  };
-  const start = async () => {
-    setView({ kind: "progress", state: "pending" });
-    pending.write(activationId);
-    const started = await activationRequest("activate", { codeId: props.state.code.id, versionId: props.version.id, activationId });
-    if (started.ok) {
-      if (!settle(started.data)) await follow();
-      return;
-    }
-    if (started.definite) {
-      // Core refused before acting; a later attempt is a new activation.
-      finish();
-      return setView({ kind: "failed", failure: null, message: started.message });
-    }
-    // The answer was lost: Core may have accepted. Its status says what happened.
-    await check();
-  };
-  // A dialog opened while an earlier attempt is unresolved continues with that attempt.
-  if (resumed) void check();
-  const failureText = (): string | null => {
-    const current = view();
-    if (current.kind !== "failed") return null;
-    if (!current.failure) return current.message ?? t().activationUnavailable;
-    return t().failedGeneric({ reason: current.failure.reason });
-  };
-  const progressText = () => {
-    const current = view();
-    if (current.kind === "unknown") return t().activationUnknown({ running: running() });
-    if (current.kind !== "progress") return null;
-    if (current.state === "waiting") return t().waitingOwner({ running: running() });
-    if (current.state === "applying" || current.state === "rolling_back") return t().applying;
-    return t().checking;
-  };
-  const busy = () => view().kind === "progress";
-  return (
-    <div class="cloud-code__dialog">
-      <p>{personal(props.data) ? t().personalActivateIntro : t().activateIntro({ name: props.data.owner.title })}</p>
-      <Show when={(props.state.internet.waiting?.filter((origin) => !props.state.internet.active?.includes(origin)).length ?? 0) > 0}>
-        <p class="cloud-code__label">{t().internet}</p>
-        <ul class="cloud-code__list">
-          <For each={props.state.internet.waiting?.filter((origin) => !props.state.internet.active?.includes(origin)) ?? []}>
-            {(origin) => (
-              <li class="cloud-code__row cloud-code__row--access">
-                <span class="cloud-code__kind" aria-hidden="true">
-                  <i class="ti ti-world" />
-                </span>
-                <span class="cloud-code__cell">
-                  <Op>{origin}</Op>
-                </span>
-                <span class="cloud-code__right text-secondary">{t().newAccess}</span>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
-      <Show when={newAutomations().length > 0}>
-        <p class="text-secondary">
-          {t().newAutomations({ version: props.version.number, names: newAutomations().join(", ") })}{" "}
-          <a class="k2b-text-link" href={withQuery(props.data.href, { tab: "versions", version: props.version.id })}>
-            {t().showDiff}
-          </a>
-        </p>
-      </Show>
-      <Show when={!props.data.activation.allowed}>
-        <NoticeCard
-          tone="warning"
-          icon="ti ti-device-mobile-off"
-          detail={props.data.activation.allowed ? "" : props.data.activation.reason === "phone" ? t().phoneBlocked : t().credentialBlocked}
-          title={t().switchOn}
-        />
-      </Show>
-      <Show when={progressText()}>
-        {(progress) => (
-          <p class="cloud-code__progress" role="status">
-            <i class="ti ti-loader-2 animate-spin" aria-hidden="true" /> {progress()}
-          </p>
-        )}
-      </Show>
-      <Show when={failureText()}>
-        {(failure) => (
-          <NoticeCard
-            tone="danger"
-            icon="ti ti-alert-triangle"
-            title={failure()}
-            detail={t().nothingChanged({ running: running() })}
-            role="alert"
-          />
-        )}
-      </Show>
-      <div class="cloud-code__dialog-actions">
-        <Button type="button" variant="secondary" onClick={() => props.close()}>
-          {view().kind === "idle" ? t().cancel : t().close}
-        </Button>
-        <Button
-          type="button"
-          variant="primary"
-          disabled={!props.data.activation.allowed || busy()}
-          loading={busy() && view().kind === "progress" && (view() as { state: string }).state !== "waiting"}
-          onClick={() => void (view().kind === "unknown" ? check() : start())}
-        >
-          <i class="ti ti-power" aria-hidden="true" />
-          {view().kind === "unknown"
-            ? t().checkStatus
-            : view().kind === "failed"
-              ? t().tryAgain
-              : t().switchOnVersion({ version: props.version.number })}
-        </Button>
+              {rows(4)}
+            </Island>
+          </Show>
+          <Island title={t().whenTitle} class="cloud-code__o1">
+            {rows(personal(props.data) ? 1 : 2)}
+          </Island>
+        </div>
+        <div class="cloud-code__stack">
+          <Island title={t().mayTitle} class="cloud-code__o2">
+            {rows(3)}
+          </Island>
+        </div>
       </div>
     </div>
   );
