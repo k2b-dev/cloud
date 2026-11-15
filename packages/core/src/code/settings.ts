@@ -1,5 +1,10 @@
 import { createSettingsAPI } from "@k2b/cloud/services";
 
+/** Existing defaults stay at USD 1 until the measured automation budget is decided.
+ * Both daily scopes share one default so that decision changes one line. */
+export const CODE_AI_DEFAULT_DAILY_BUDGET_USD = 1;
+export const CODE_AI_DEFAULT_ATTEMPT_BUDGET_USD = 1;
+
 /** Storage and execution budgets, adjustable in Administration › Code and with `cld admin settings apply`; all sizes are UTF-8 bytes. */
 export const CODE_SETTINGS = {
   "core.code.job_pending": {
@@ -260,7 +265,7 @@ export const CODE_SETTINGS = {
     kind: "number",
     min: 0,
     max: 100,
-    default: 1,
+    default: CODE_AI_DEFAULT_ATTEMPT_BUDGET_USD,
     label: "AI reference budget per attempt (USD)",
     description:
       "Reference allowance for text AI calls (generate/decide) in one Code attempt; zero disables those calls. Chat turns reserve their maximum against the daily budgets and settle measured cost.",
@@ -278,7 +283,7 @@ export const CODE_SETTINGS = {
     kind: "number",
     min: 0,
     max: 100,
-    default: 1,
+    default: CODE_AI_DEFAULT_DAILY_BUDGET_USD,
     label: "Daily AI reference budget per Code (USD)",
     description:
       "Aggregate reference allowance across attempts, including whole-turn reservations and settled Code-started chat costs, per installation calendar day; zero disables AI.",
@@ -296,7 +301,7 @@ export const CODE_SETTINGS = {
     kind: "number",
     min: 0,
     max: 100,
-    default: 1,
+    default: CODE_AI_DEFAULT_DAILY_BUDGET_USD,
     label: "Daily AI reference budget per owner (USD)",
     description:
       "Aggregate reference allowance across all Code of one exact owner, including whole-turn reservations and settled Code-started chat costs, per installation calendar day; zero disables AI.",
