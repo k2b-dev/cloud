@@ -67,6 +67,16 @@ beforeAll(async () => {
         });
       if (url.pathname.endsWith("/context")) return Response.json(snapshot);
       if (url.pathname.endsWith("/web-reader")) return webReader(request);
+      if (url.pathname.startsWith("/api/assistant/artifacts/presentations/"))
+        return url.searchParams.get("conversationId") === "chat01"
+          ? Response.json({
+              id: url.pathname.split("/").at(-1),
+              conversationId: "chat01",
+              title: "Lieferavise je Woche",
+              files: [],
+              artifactId: null,
+            })
+          : new Response("Not found", { status: 404 });
       if (url.pathname.endsWith("/sources")) return Response.json({ sources: snapshot.sources, total: snapshot.sources.length });
       return new Response(
         `<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/ui.css"><link rel="stylesheet" href="/app.css">${head}<body class="k2b-ui" style="margin:0"><div id="root" style="height:100vh"></div><script type="module" src="/bundle.js"></script>`,
@@ -94,7 +104,7 @@ const openPage = async (width = 1440, path = "/") => {
   await page.locator("#root > *").first().waitFor();
   return { page, errors };
 };
-const open = (page: Page, name: "report" | "table" | "sources" | "web" | "ask") =>
+const open = (page: Page, name: "report" | "table" | "sources" | "web" | "ask" | "chart") =>
   page.evaluate((key) => (window as unknown as { open: Record<string, () => void> }).open[key]!(), name);
 const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 /** The chat's place and size once the page settled. */
@@ -239,6 +249,23 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
       expect(new URL(page.url()).searchParams.get("workspace")).toContain("Lieferavis");
       await page.getByRole("button", { name: "Zum Chat" }).click();
       await page.locator(".harness-chat").waitFor({ state: "visible" });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a visualization opens as a tab with the chat's view and the same head", async () => {
+    const { page, errors } = await openPage();
+    try {
+      await open(page, "chart");
+      const pane = page
+        .locator(".artifact-pane")
+        .filter({ has: page.locator(".artifact-pane__title", { hasText: "Lieferavise je Woche" }) });
+      await pane.locator(".artifact-pane__meta", { hasText: "Visualisierung" }).waitFor();
+      await pane.locator(".artifact-pane__body").getByText("Lieferavise je Woche").first().waitFor();
+      await pane.locator(".artifact-pane__more").click();
+      await page.getByRole("menuitem", { name: "Im Chat zeigen" }).waitFor();
+      expect(errors).toEqual([]);
     } finally {
       await page.close();
     }

@@ -75,7 +75,7 @@ import { scheduleChartPreparation } from "../artifacts/html/prepare-assets";
 import { artifactMessages } from "../artifacts/messages";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
 import { createArtifactWorkspace } from "../artifacts/workspace-controller";
-import { appTab, contextTab, fileTab, taskTab, webTab } from "../artifacts/workspace-state";
+import { appTab, contextTab, fileTab, presentationTab, taskTab, webTab } from "../artifacts/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { ChatWorkspaceSnapshot } from "../chat-workspace";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
@@ -1532,7 +1532,10 @@ export default function AssistantWorkspace(props: Props) {
       const actions = sidebarActions();
       if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
       else if (target.kind === "app") actions.onOpenApp(target.id, target.title);
-      else if (target.kind === "jump") actions.onJump(target.target);
+      else if (target.kind === "presentation") {
+        const conversationId = chat.activeConversationId();
+        if (conversationId) artifactWorkspace.open(presentationTab(conversationId, target.id, target.title));
+      } else if (target.kind === "jump") actions.onJump(target.target);
       else window.location.assign(target.href);
     },
     onJump: (target) => void jumpTo(target),

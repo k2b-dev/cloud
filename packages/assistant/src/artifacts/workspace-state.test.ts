@@ -52,6 +52,8 @@ test("a tab has a stable Panes id, and stored keys open again, also the reading 
   expect(workspaceTabId(web.key)).not.toBe(workspaceTabId(fileTab("chat-one", "/a.pdf").key));
   expect(workspaceTabFromKey(web.key, "Versand nach Frankreich")).toMatchObject({ kind: "web", url: web.kind === "web" ? web.url : "" });
   expect(workspaceTabFromKey(contextTab("chat-one", "context", "Kontext").key, "")).toMatchObject({ kind: "context", category: "context" });
+  const shown = workspaceTabFromKey(JSON.stringify(["presentation", "chat-one", "00000000-0000-4000-8000-000000000009"]), "Lieferavise");
+  expect(shown).toMatchObject({ kind: "presentation", presentationId: "00000000-0000-4000-8000-000000000009", title: "Lieferavise" });
   // Only web addresses open as a reading view.
   expect(workspaceTabFromKey(JSON.stringify(["web", "chat-one", "javascript:alert(1)"]), "")).toBeNull();
   expect(workspaceTabFromKey("not json", "")).toBeNull();

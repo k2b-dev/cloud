@@ -26,6 +26,23 @@ describe("box model", () => {
     expect(app).toMatchObject({ open: { kind: "app", id: "App001" }, hover: { kind: "jump" } });
   });
 
+  test("a visualization opens as a tab of its own and still leads back to the chat", () => {
+    const visualization = {
+      key: "code_present:c9",
+      kind: "visualization" as const,
+      title: "Lieferavise je Woche",
+      description: null,
+      icon: "ti ti-chart-bar",
+      deliveredAt: minutesAgo(3),
+      turnId: "t9",
+      callId: "c9",
+      messageSeq: 9,
+      presentationId: "00000000-0000-4000-8000-000000000009",
+    };
+    const [row] = build(sidebarSnapshot({ results: [visualization] })).results.rows;
+    expect(row).toMatchObject({ open: { kind: "presentation", id: visualization.presentationId }, hover: { kind: "jump" } });
+  });
+
   test("the three newest results lead; more lead to all", () => {
     const results = Array.from({ length: 6 }, (_, index) =>
       fileResult(`/r${index}.pdf`, { at: minutesAgo(60 - index), turn: "t", seq: 1 }),

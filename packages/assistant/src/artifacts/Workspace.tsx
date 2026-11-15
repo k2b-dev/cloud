@@ -40,8 +40,10 @@ import { AssistantTaskDetail } from "../frontend/AssistantTasksDialog";
 import { useAssistantLive } from "../frontend/assistant-live";
 import { chatSidebarMessages } from "../frontend/chat-sidebar-messages";
 import { ArtifactPanel } from "./ArtifactPanel";
+import { ChatPresentation } from "./ChatPresentation";
 import { artifactClient } from "./client";
 import { artifactMessages } from "./messages";
+import { browserHttpHost } from "./SecretsDialog";
 import { artifactSourceRenderers, readOnlySourceRenderers } from "./SourceRenderer";
 import { WebReaderTab } from "./WebReaderTab";
 import type { ArtifactWorkspaceController } from "./workspace-controller";
@@ -205,7 +207,9 @@ const tabIcon = (tab: WorkspaceTab) =>
           ? "ti ti-file"
           : tab.kind === "web"
             ? "ti ti-world"
-            : "ti ti-file-code";
+            : tab.kind === "presentation"
+              ? "ti ti-chart-bar"
+              : "ti ti-file-code";
 
 /** The head of every pane: title, one meta line, at most two actions, and "…" with what Cloud can do with the thing. */
 function PaneHead(props: { title: string; meta?: string | null; actions?: JSX.Element; menu: DropdownItem[]; menuLabel: string }) {
@@ -304,6 +308,12 @@ export function ArtifactWorkspace(props: {
         .join(" · ");
     }
     if (tab.kind === "app") return w().metaApp;
+    if (tab.kind === "presentation") {
+      const result = props.snapshot?.()?.results.find((entry) => entry.presentationId === tab.presentationId);
+      return [w().metaVisualization, result ? w().madeByGustav({ when: when(result.deliveredAt) }) : null, result?.description]
+        .filter(Boolean)
+        .join(" · ");
+    }
     if (tab.kind === "task") return w().metaRoutine;
     if (tab.kind === "source") return w().metaSource;
     if (tab.kind === "context") return w().metaContext({ category: tab.category });
@@ -317,8 +327,10 @@ export function ArtifactWorkspace(props: {
         ? resultOf(tab.path)
         : tab.kind === "app"
           ? (props.snapshot?.()?.results.find((entry) => entry.app?.id === tab.artifactId) ?? null)
-          : null;
-    const jump = tab.kind === "file" || tab.kind === "app" ? jumpOf(result) : null;
+          : tab.kind === "presentation"
+            ? (props.snapshot?.()?.results.find((entry) => entry.presentationId === tab.presentationId) ?? null)
+            : null;
+    const jump = jumpOf(result);
     if (jump && props.onJump) items.push({ label: copy.showInChat, icon: "ti ti-corner-left-up", action: () => props.onJump!(jump) });
     if (props.onAsk && tab.kind !== "context")
       items.push({ label: copy.ask, icon: "ti ti-sparkles", action: () => props.onAsk!(title(tab)) });
@@ -477,6 +489,14 @@ export function ArtifactWorkspace(props: {
       />
     ) : tab.kind === "file" ? (
       <ChatFile tab={tab} refreshKey={props.refreshKey} dirty={(value) => props.controller.setDirty(key, value)} />
+    ) : tab.kind === "presentation" ? (
+      // The same view as in the chat, loaded the same way and with the chat's rights.
+      <ChatPresentation
+        result={{ presentationId: tab.presentationId, title: tab.title }}
+        conversationId={tab.conversationId}
+        httpHost={browserHttpHost}
+        openApp={(id, title) => props.controller.open(appTab(id, title))}
+      />
     ) : tab.kind === "web" ? (
       <WebReaderTab
         conversationId={tab.conversationId}

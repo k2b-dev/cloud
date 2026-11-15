@@ -4,7 +4,7 @@ import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput } from "../chat-work
 import { emptySidebarSnapshot, fileResult, upload } from "../frontend/AssistantChatSidebar.fixture";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
-import { contextTab, fileTab, webTab } from "./workspace-state";
+import { contextTab, fileTab, presentationTab, webTab } from "./workspace-state";
 
 /**
  * The chat with its tabs as the Assistant island lays them out, for browser tests and screenshots: a fake chat on the
@@ -34,6 +34,7 @@ const controller = createArtifactWorkspace(location.href, {
   table: () => controller.open(fileTab(chatId, "/Offene Rückfragen Kern.csv")),
   sources: () => controller.open(contextTab(chatId, "sources", "Quellen")),
   web: () => controller.open(webTab(chatId, "https://paketdienst-beispiel.de/versand/frankreich", "Versand nach Frankreich")),
+  chart: () => controller.open(presentationTab(chatId, "00000000-0000-4000-8000-000000000009", "Lieferavise je Woche")),
   ask: () => controller.open(webTab(chatId, "https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon")),
 };
 // What the chat holds: the table is a result Gustav made, the delivery note an upload.
@@ -52,6 +53,18 @@ const snapshot = emptySidebarSnapshot({
         size: 2_400,
       }),
       description: null,
+    },
+    {
+      key: "code_present:c9",
+      kind: "visualization",
+      title: "Lieferavise je Woche",
+      description: "Gezählt aus den Lieferavisen der letzten acht Wochen.",
+      icon: "ti ti-chart-bar",
+      deliveredAt: today,
+      turnId: "t2",
+      callId: "c9",
+      messageSeq: 5,
+      presentationId: "00000000-0000-4000-8000-000000000009",
     },
   ],
   files: [upload("/Lieferavis Kern 11-2026.txt", "2026-11-12T09:30:00.000Z", "text/plain", 186_000)],

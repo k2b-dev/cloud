@@ -16,6 +16,7 @@ export type ContextBoxJump = { messageSeq: number; callId: string | null; presen
 export type ContextBoxOpen =
   | { kind: "file"; path: string; title: string }
   | { kind: "app"; id: string; title: string }
+  | { kind: "presentation"; id: string; title: string }
   | { kind: "jump"; target: ContextBoxJump }
   | { kind: "href"; href: string }
   | { kind: "none" };
@@ -113,9 +114,11 @@ export const contextBoxResultRow = (
       ? { kind: "file", path: result.file.path, title: result.title }
       : result.app
         ? { kind: "app", id: result.app.id, title: result.title }
-        : jump
-          ? { kind: "jump", target: jump }
-          : { kind: "none" },
+        : result.presentationId
+          ? { kind: "presentation", id: result.presentationId, title: result.title }
+          : jump
+            ? { kind: "jump", target: jump }
+            : { kind: "none" },
     // Files download from the row; anything else shows where it came from.
     hover: result.file
       ? { kind: "download", path: result.file.path, name: fileName(result.file.path) }
