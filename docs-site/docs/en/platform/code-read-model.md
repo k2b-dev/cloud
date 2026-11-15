@@ -86,11 +86,21 @@ Run settlement saves its effect snapshot and updates one automation/week row
 in the same transaction. Repeating settlement cannot increment it again. A late authoritative call
 result updates the original run snapshot and the same weekly row atomically.
 `recent` returns at most six confirmed results, each with `text`, `at`,
-`runId`, optional `app` and `icon`, and an authorized `href`. Result forms are
-provider-owned, translated presentation snapshots; a target title comes only
-from the caller's current resource reader. Without a readable title the sentence
-names the resource kind. Missing forms use “Action · n times”. The same sentences
-and metadata appear in run `untilThen.items`; their `state` distinguishes
+`runId`, and optional `app` and `icon`. Its `text` names the resource kind without
+a title or link. When evidence identifies exactly one result target, an optional
+`target: { ref: { type, id }, text }` carries its reference and a localized named
+sentence with exactly one `{name}` slot, for example `Aufgabe „{name}“ angelegt`.
+Result references use opaque IDs; they must not encode names or paths.
+A reference is a lookup key, not permission or display text. The Code page resolves
+each target through a separate canonical reader with the person's authority,
+at most six calls. Only a successful reader's title replaces `{name}` (as plain
+text, never as a template), and only its `open` link becomes a link. On denial,
+missing reader or failure, retain the original kind-only `text` without a link;
+never show an identifier. Core spends no child Query resolving recent results.
+
+Result forms are provider-owned, translated presentation snapshots. Missing or
+ambiguous evidence uses “Action · n times” with no `target`. Run `untilThen.items`
+still resolves names through its current resource readers; its `state` distinguishes
 successful effects, replayed calls, refusals and unknown outcomes. `timeline` combines the local
 day's recorded runs with future schedule slots. It has at most 200 marks;
 large days are grouped with counts. Local day boundaries and planned slots

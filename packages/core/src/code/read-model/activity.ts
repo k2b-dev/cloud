@@ -10,7 +10,7 @@ import { coreSettings } from "@k2b/cloud/services";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError } from "../access";
 import { readCode } from "../store";
-import { effectTarget, presentEffect, presentEffectCount } from "./effects";
+import { presentEffectCount, presentRecentEffect } from "./effects";
 import { codeReadModelMessages } from "./messages";
 import { readModelNames } from "./names";
 
@@ -20,7 +20,6 @@ type Recent = {
   evidence: unknown;
   operation: string;
   target: { type: string; id: string } | null;
-  manifest: unknown;
   runId: string;
   at: string;
 };
@@ -61,8 +60,8 @@ export async function readCodeActivityData(input: z.infer<typeof codeReadModelCo
         ORDER BY entrypoint,kv.key LIMIT 50
       ) item),'[]'::jsonb) AS counters,
       COALESCE((SELECT jsonb_agg(item) FROM (
-        SELECT r.id AS "runId",c.ended_at AS at,c.call->>'capability' AS operation,c.call->'target' AS target,v.manifest,c.effect AS evidence
-        FROM code.runs r JOIN code.calls c ON c.run_id=r.id JOIN code.versions v ON v.id=r.version_id
+        SELECT r.id AS "runId",c.ended_at AS at,c.call->>'capability' AS operation,c.call->'target' AS target,c.effect AS evidence
+        FROM code.runs r JOIN code.calls c ON c.run_id=r.id
         WHERE c.code_id=${input.codeId} AND c.confirmed_effect AND NOT c.replayed AND c.state='succeeded'
         ORDER BY c.ended_at DESC,r.id DESC,c.ordinal DESC LIMIT 6
       ) item),'[]'::jsonb) AS recent,
@@ -104,19 +103,9 @@ export async function loadCodeActivityReadModel(
   const { code } = await readCode(input.codeId, context);
   const data = await readCodeActivityData(input);
   const manifest = CodeCheckedVersionManifestSchema.safeParse(data.manifest);
-  const manifests = [data.manifest, ...data.recent.map((item) => item.manifest)].flatMap((value) => {
-    const parsed = CodeCheckedVersionManifestSchema.safeParse(value);
-    return parsed.success ? [parsed.data] : [];
-  });
-  const names = await readModelNames(
-    manifests,
-    context,
-    data.counters.map((item) => item.key),
-    data.recent.flatMap((item) => {
-      const effect = effectTarget(item.evidence, context.locale ?? "en", item.target);
-      return [...(item.target ? [item.target] : []), ...(effect ? [effect.ref] : [])];
-    }),
-  );
+  // Each recent result carries its own reference. The consumer resolves at most six names in
+  // independent reader invocations; spending this invocation's child Query on a Space loses item names.
+  const names = await readModelNames([], context, [...data.counters.map((item) => item.key), ...data.recent.map((item) => item.operation)]);
   const { t } = codeReadModelMessages.resolve(context.locale ? [context.locale] : []);
   const planned: Mark[] = [];
   // Keep at most 200 buckets in memory even for a schedule that fires every minute.
@@ -161,7 +150,7 @@ export async function loadCodeActivityReadModel(
     },
     recent: data.recent.map((item) => {
       return {
-        ...presentEffect(item, names, context.locale ?? "en"),
+        ...presentRecentEffect(item, names, context.locale ?? "en"),
         at: new Date(item.at).toISOString(),
         runId: item.runId,
       };

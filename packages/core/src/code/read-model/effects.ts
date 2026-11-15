@@ -22,7 +22,7 @@ export type CodeEffectEvidence = z.infer<typeof CodeEffectEvidenceSchema>;
 export function effectTarget(evidence: unknown, locale: string, target: { type: string; id: string } | null) {
   const parsed = CodeEffectEvidenceSchema.safeParse(evidence);
   const result = parsed.success ? parsed.data.forms[locale.startsWith("de") ? "de" : "en"] : undefined;
-  if (!result || /[{}]/.test(result.text.replace("{target}", ""))) return null;
+  if (!result || /[{}]/.test(result.kind) || /[{}]/.test(result.text.replace("{target}", ""))) return null;
   const refs = [...(parsed.success ? parsed.data.refs : []), ...(target ? [target] : [])];
   const matches = new Map(refs.filter((ref) => ref.type === result.targetType).map((ref) => [ref.id, ref]));
   return matches.size === 1 ? { form: result.text, kind: result.kind, ref: [...matches.values()][0]! } : null;
@@ -57,4 +57,21 @@ export function presentEffectCount(evidence: unknown, locale: string, action: st
   const parsed = CodeEffectEvidenceSchema.safeParse(evidence);
   const label = parsed.success ? parsed.data.forms[locale.startsWith("de") ? "de" : "en"]?.countText : undefined;
   return label && !/[{}]/.test(label) ? label : codeReadModelMessages.resolve([locale]).t.times({ action, count });
+}
+
+/** Recent activity defers names and links to independent, permission-aware reader calls at its consumer. */
+export function presentRecentEffect(input: Parameters<typeof presentEffect>[0], names: ReadModelNames, locale: string) {
+  const effect = effectTarget(input.evidence, locale, input.target);
+  const { t } = codeReadModelMessages.resolve([locale]);
+  return {
+    ...presentEffect(input, { ...names, target: () => ({ name: "", readable: false }) }, locale),
+    ...(effect?.form.includes("{target}")
+      ? {
+          target: {
+            ref: effect.ref,
+            text: effect.form.replace("{target}", () => `${effect.kind} ${t.namedTarget({ name: "{name}" })}`),
+          },
+        }
+      : {}),
+  };
 }
