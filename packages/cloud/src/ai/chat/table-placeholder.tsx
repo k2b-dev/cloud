@@ -2,6 +2,7 @@ import { CopyButton, Skeleton, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import { BlockActions, BlockFoot, useBlockFrame } from "../../blocks/block-actions";
 import { tableCopy, wholeTable } from "../../blocks/block-copy";
+import { blockWords } from "../../blocks/messages";
 import { SearchToggle } from "../../blocks/search-toggle";
 import type { CloudAiViewSummary } from "../view-block";
 import { aiChatMessages } from "./messages";
@@ -47,7 +48,7 @@ export function CloudTablePlaceholder(props: { id: string; summary: TableSummary
         actions={
           <div class="cloud-table-tools flex min-w-0 flex-wrap items-center gap-2">
             <Show when={counted()}>
-              <SearchToggle label={props.summary.title} disabled />
+              <SearchToggle label={blockWords(locale()).searchIn({ title: props.summary.title })} disabled />
             </Show>
             <Show when={props.summary.search || props.summary.grouped}>
               <div class="cloud-table-search-host k2b-data-table-tools" aria-hidden="true">

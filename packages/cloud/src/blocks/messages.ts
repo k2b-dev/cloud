@@ -34,7 +34,7 @@ export const blockMessages = i18n.define({
       maximize: "Maximize",
       rawData: "Raw data",
       readOnly: "read only",
-      searchTable: "Search the table",
+      searchIn: ({ title }: { title: string }) => `Search ${title}`,
       matches: ({ count }: { count: number }) =>
         count === 0 ? "No matches for this search" : count === 1 ? "1 match" : `${count.toLocaleString("en")} matches`,
       rowCount: ({ count }: { count: number }) => (count === 1 ? "1 row" : `${count.toLocaleString("en")} rows`),
@@ -72,7 +72,7 @@ export const blockMessages = i18n.define({
       maximize: "Maximieren",
       rawData: "Rohdaten",
       readOnly: "nur lesen",
-      searchTable: "In der Tabelle suchen",
+      searchIn: ({ title }) => `${title} durchsuchen`,
       matches: ({ count }) => (count === 0 ? "Keine Treffer für diese Suche" : `${count.toLocaleString("de")} Treffer`),
       rowCount: ({ count }) => (count === 1 ? "1 Zeile" : `${count.toLocaleString("de")} Zeilen`),
       kindTable: "Tabelle",
