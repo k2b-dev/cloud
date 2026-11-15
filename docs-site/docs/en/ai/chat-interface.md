@@ -306,8 +306,9 @@ order:
    after a stop. A failed turn reads "Worked 4 min" too and says why in a
    notice at its end; a failed turn from an earlier release, which recorded no
    reason, reads "Worked 4 min · interrupted". Expanding it shows work at the
-   same left edge as the line: intermediate texts as quiet paragraphs and the
-   steps between them directly, each with its input and output on demand in
+   same left edge as the line: intermediate texts as quiet paragraphs, each
+   limited to three lines with a chevron for the rest like a quiet status, and
+   the steps between them directly, each with its input and output on demand in
    place. Housekeeping, loading tools, skills, and knowledge and reading a
    loaded skill's files, folds into one row such as
    "Loaded tools and guidance · 4 steps" at step level, with the reasoning
@@ -450,16 +451,23 @@ order:
    value visible (first 100 rows).
    [Tools and approvals](/en/docs/ai/tools-and-approvals) defines these contracts.
 3. **Newest text.** While the turn runs this is a status: a new text replaces
-   the previous one in the same element once its first sentence has streamed,
-   and the place keeps its height until the turn ends. A text that ends the
+   the previous one in the same element once its first sentence has streamed.
+   A text that ends the
    turn so far may still be the answer and keeps answer typography. As soon as
    a step starts after it, it reads quietly in the muted, smaller style of the
    intermediate texts in the expanded work line, also while an approval or
    survey waits for the user; its card says what is asked. It changes together
-   with the work line's new step and keeps its line height. The place keeps the
-   height the text has as the answer, also when the chat opens while a step
-   runs, so nothing moves when the text turns quiet, is replaced, or becomes
-   the final message.
+   with the work line's new step and keeps its line height. A quiet text
+   longer than three lines shows three, its last line fading, and a chevron
+   beside its first line shows the rest; the chevron keeps its place when the
+   text opens or closes, and a new status starts closed. Keyboard focus on a
+   link in the fading or hidden part opens the text and keeps the link in view. While the turn runs,
+   the place keeps the height of the text before it and the height a quiet
+   text has as the answer, also when the chat opens while a step runs, but
+   never more than a three-line status: short statuses and short answers move
+   nothing, and a long text that is replaced or turns quiet leaves no empty
+   space behind. A long quiet text that becomes the final message unfolds
+   below its first lines.
    Finished, it is the final message in answer typography: the turn's last
    text, even if a tool call followed it. A stopped or failed turn has no final
    message; its texts stay in the work line.
@@ -616,8 +624,34 @@ and any path below the chat's working folder `/temp/`, whose files its snapshot
 counts but does not list; the workspace reports such a file if it is gone.
 Conversation file paths are not website URLs; agents deliver files with `present`.
 
-Assistant shows what a chat holds in the sidebar **In this chat**, in this
-order: what needs attention, **Results** (files, Studio apps, and
+Assistant shows what a chat holds in the box **In this chat**: a small island
+of about 300 px at the top right beside the chat, with at most ten rows of
+28 px. Its head holds the title, a fixed place for **New · n**, and **Open as
+tab**. Below come the three newest **Results** with their time or size, then
+any further group the chat snapshot carries (`groups` on
+`AssistantChatContextSnapshot`: each row a sign, a title, one state word in its
+tone, and an optional ring when it waits for the viewer; at most three rows,
+then **Show all**), then one line for **Sources** and one for **Context**. A
+click on a row opens the thing as a tab beside the chat (files and apps) or
+jumps to its message; pointing at a row shows exactly one action over its
+fixed place (download for files, show in chat otherwise), never on touch. The
+box keeps what someone reads while the pointer or focus is inside, and always
+while it is open under its button or as a sheet; news raise **New · n** in its
+head. What stopped in the chat and waits for the person (a routine that needs
+attention, a failed app run) shows at the top of the tab **In this chat**, with
+the same target as before. Empty, the box says what will appear; loading
+shows rows of the same height; a failed load offers **Retry** and leaves the chat
+untouched.
+
+CSS decides where the box shows, so the server render is final: as the island
+while the chat area is at least 56 rem wide and no workspace tab is open;
+otherwise as a button **In this chat** at the top of the chat that opens the
+same box below it without moving the chat (Escape closes it); on phones the
+button opens a bottom sheet that Back closes. The former sidebar column, its
+drawer, and the `assistant_context` cookie are gone.
+
+**Open as tab** and **Show all** open the tab **In this chat** with the chat's
+whole list, in this order: what needs attention, **Results** (files, Studio apps, and
 visualizations the assistant delivered, each with the sentence it gave),
 **Your files** (uploads and voice recordings; an upload the assistant hands
 over with `present` stays here), **Sources** (read web pages,
@@ -626,16 +660,17 @@ per call, without stored previews), **Working files** (everything below
 `/temp/`, grouped by folder, with the storage used once it passes 70 % of the
 limit), and **Context** (Project, Skills the chat used, memories remembered
 from it, routines, and Secrets). Sources, Working files, and Context
-start collapsed; collapsed content is not rendered.
+start collapsed; collapsed content is not rendered. The box's Sources line
+opens the tab **Sources**, its Context line the tab **Context**.
 
 The newest results stay on top: all results of the latest turn that delivered
 one, however old, then other results of the last 24 hours up to six entries.
 Older results, and every other long list, group by day for the last seven days
 and by month before that. The grouping uses the snapshot's server time and the
 viewer's time-zone cookie, so the server render is final. While the pointer or
-focus is inside the sidebar, it keeps the state someone reads: new results
+focus is inside the tab, it keeps the state someone reads: new results
 raise a **New · N** count in the heading, other changes an **Update** control;
-leaving the sidebar or selecting the control shows them. After a touch inside,
+leaving the tab or selecting the control shows them. After a touch inside,
 the state holds until a touch outside, because touch has no hover. Opened groups
 and a working folder's loaded files stay open through live changes and
 deletions. Live changes reload the snapshot at most every 500 ms; the live
@@ -643,7 +678,7 @@ updates acknowledge a change only once that reload succeeded, so a failed one is
 tried again. Selecting a result's title loads the chat up to the message that
 delivered it, scrolls to the delivery (`data-call-id` on the present row,
 `data-presentation-id` on a visualization), and adds a `?message=` history
-entry. A search in the sidebar's header queries `GET /api/assistant/workspace/conversations/:id/sources`, which
+entry. A search at the top of the tab queries `GET /api/assistant/workspace/conversations/:id/sources`, which
 takes the sources route's parameters and shows an app only while the viewer may
 read it, under its current title. It finds results by title, description, or
 path, and files and sources the chat read; Project context it never read stays
@@ -651,14 +686,7 @@ under Context. **Sources** shows the newest 100 and loads older ones from the
 same route; a new first page starts the loaded pages over. More than 200 working
 folders or 100 loose working files are counted, and search finds the rest.
 
-CSS decides the sidebar's presentation from the chat area's width: a 20 rem
-column from 56 rem, a non-modal drawer over the chat's edge below that, and a
-bottom sheet on phones that Back closes. The column is open by default. Closing
-it is remembered in the `assistant_context=closed` cookie, which the page reads
-before rendering; reopening deletes it. The workspace's **Files** tab shows the
-same list.
-
-The sidebar offers a trash action on uploads, voice recordings, and working
+The tab offers a trash action on uploads, voice recordings, and working
 files, and in the menu of a delivered file. It appears on row hover or keyboard
 focus and stays visible on touch devices, and its label names the file. After
 confirmation, Assistant deletes the file through the conversation file route,

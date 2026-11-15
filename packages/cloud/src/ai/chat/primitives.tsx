@@ -4,7 +4,7 @@ import { rootResourceLinks } from "./answer-links";
 import { useAiChatActions } from "./message-actions";
 import { aiChatMessages } from "./messages";
 
-export function AssistantMarkdownBlock(props: { html: string }) {
+export function AssistantMarkdownBlock(props: { html: string; id?: string; ref?: (element: HTMLDivElement) => void }) {
   const actions = useAiChatActions();
   const locale = useLocale();
   let element!: HTMLDivElement;
@@ -47,7 +47,11 @@ export function AssistantMarkdownBlock(props: { html: string }) {
   });
   return (
     <div
-      ref={element}
+      ref={(node) => {
+        element = node;
+        props.ref?.(node);
+      }}
+      id={props.id}
       class="assistant-markdown-block"
       innerHTML={rootResourceLinks(props.html, (number) => aiChatMessages(locale()).citeLabel({ number }))}
     />

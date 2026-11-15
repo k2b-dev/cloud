@@ -161,10 +161,13 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
     });
   };
 
-  // A reader who opens or closes a row reads there. The row stays where it was instead of following the newest message,
-  // which would move it away from the pointer; once it has settled, the timeline keeps following only from the end.
+  // A reader who opens or closes a row or a text in place (a summary, or a button that controls what it expands; not a
+  // popup trigger, which changes nothing in the timeline) reads there. It stays where it was instead of following the
+  // newest message, which would move it away from the pointer; once it has settled, the timeline keeps following only
+  // from the end.
   const holdForDisclosure = (event: MouseEvent) => {
-    if (!(event.target instanceof Element) || !event.target.closest("summary")) return;
+    if (!(event.target instanceof Element) || !event.target.closest("summary, button[aria-expanded][aria-controls]:not([aria-haspopup])"))
+      return;
     cancelFollow();
     const hold = ++disclosureHold;
     requestAnimationFrame(() =>
