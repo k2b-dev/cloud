@@ -26,7 +26,10 @@ test("the step follows the span: minutes, hours, days, weeks and months", () => 
   expect(chartTimeStep(2 * hour, 5)).toEqual({ unit: "minute", size: 30 });
   expect(chartTimeStep(day, 5)).toEqual({ unit: "hour", size: 6 });
   expect(chartTimeStep(7 * day, 5)).toEqual({ unit: "day", size: 2 });
+  // Two weeks keep four or five dates at three-day steps, two months at two-week steps, not two at the next step.
+  expect(chartTimeStep(13 * day, 5)).toEqual({ unit: "day", size: 3 });
   expect(chartTimeStep(30 * day, 5)).toEqual({ unit: "week", size: 1 });
+  expect(chartTimeStep(59 * day, 5)).toEqual({ unit: "week", size: 2 });
   expect(chartTimeStep(90 * day, 5)).toEqual({ unit: "month", size: 1 });
 });
 

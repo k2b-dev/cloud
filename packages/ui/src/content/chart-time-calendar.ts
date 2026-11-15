@@ -15,8 +15,10 @@ export type ChartTimeStep = { unit: ChartTimeUnit; size: number };
 const STEPS: readonly ChartTimeStep[] = [
   ...[1, 2, 5, 10, 15, 30].map((size) => ({ unit: "minute" as const, size })),
   ...[1, 2, 3, 6, 12].map((size) => ({ unit: "hour" as const, size })),
-  ...[1, 2].map((size) => ({ unit: "day" as const, size })),
-  { unit: "week", size: 1 },
+  // Three days and two weeks keep a span of one or two weeks, or of one or two months, at four or five dates instead
+  // of falling to two at the next coarser step.
+  ...[1, 2, 3].map((size) => ({ unit: "day" as const, size })),
+  ...[1, 2].map((size) => ({ unit: "week" as const, size })),
   ...[1, 3, 6].map((size) => ({ unit: "month" as const, size })),
   { unit: "year", size: 1 },
 ];
