@@ -2198,33 +2198,35 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       live.dispose();
     });
     if (props.embedded) {
-      // The host page changed its place: the panel follows to that resource's discussion only from the previous one,
-      // or while it is still following there. Each change invalidates every earlier one, also a return to the shown
-      // place; an open started for an earlier place is superseded by the next open, or keeps its address in step.
+      // The host page changed its place: the panel follows to that resource's discussion only while it shows the
+      // previous one, also when a follow is still on its way there. Each change invalidates every earlier one, also a
+      // return to the shown place; a chat the reader chose meanwhile wins, and a later follow's open supersedes an
+      // earlier one. The shown resource changes only once its discussion is in place, so the next change compares
+      // against what the reader sees.
       let scopeToken = 0;
-      let followPending = false;
+      let followedRoute: Route | undefined;
       const follow = (context: ReturnType<typeof getContext>) => {
         const scope = context?.scope;
         const shown = resourceChat();
         const token = ++scopeToken;
         if (scope && shown && scope.type === shown.ref.type && scope.id === shown.ref.id) return;
         if (!scope) return void setResourceChat(null);
-        const following = atResource() || followPending;
+        const start = route();
+        const following = atResource() || start === followedRoute;
         locateResource(scope)
           .then(async (found) => {
             if (disposed || token !== scopeToken) return;
             const { conversation, ...location } = found;
             const next: ResourceChat = { ...location, id: conversation, ref: scope };
-            setResourceChat(next);
-            if (!following) return;
+            if (!following || (route() !== start && route() !== followedRoute)) return void setResourceChat(next);
             const target = resourceChatExists(next) ? chatRoute(next.id, next.thread ?? "all") : chatRoute(null, "all", { resource: true });
-            followPending = true;
-            try {
-              if ((await open(target)) === "applied" && !disposed)
-                navigate(viewHref(resourceChatPath(next, basePath)), { replace: true, scroll: "preserve" });
-            } finally {
-              if (token === scopeToken) followPending = false;
+            const result = await open(target);
+            if (disposed) return;
+            if (result === "applied") {
+              navigate(viewHref(resourceChatPath(next, basePath)), { replace: true, scroll: "preserve" });
+              followedRoute = route();
             }
+            if (token === scopeToken) setResourceChat(next);
           })
           .catch(() => {
             if (token === scopeToken) setResourceChat(null);

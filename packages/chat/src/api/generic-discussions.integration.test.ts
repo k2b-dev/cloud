@@ -620,13 +620,14 @@ suiteFor(
     expect(first.thread).not.toBeNull();
     expect(ResourceDiscussionSchema.parse(await (await openFor(item)).json()).thread).toBe(first.thread);
     expect((await locate(item)).thread).toBe(first.thread);
-    // A reader who may not write keeps the existing thread and starts none.
+    // A reader who may not write still finds the existing thread, but starts nothing.
     writable = false;
     await redis.send("DEL", trackKeys(person, collection));
     expect((await locate(collection)).canWrite).toBeFalse();
-    expect(ResourceDiscussionSchema.parse(await (await openFor(item)).json()).thread).toBe(first.thread);
+    expect((await locate(item)).thread).toBe(first.thread);
     await sql`DELETE FROM chat.threads WHERE short_id = ${first.thread}`;
-    expect(ResourceDiscussionSchema.parse(await (await openFor(item)).json()).thread).toBeNull();
+    expect((await openFor(item)).ok).toBeFalse();
+    expect((await locate(item)).thread).toBeNull();
     // Unreadable items, unknown types and malformed refs name nothing.
     readable = false;
     await redis.send("DEL", trackKeys(person, item));

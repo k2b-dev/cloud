@@ -323,12 +323,18 @@ test("Chat follows only the latest host place when earlier places answer late", 
         { pageId: shared.pageId, id, seq: ++seq },
       );
     // A -> B (late) -> A: the late answer for B neither moves the panel nor changes the way back.
+    // The frame has handled what it received once two of its frames have drawn.
+    const drawn = () =>
+      frame().evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
     held.set("Yard-2", hold("Yard-2"));
+    const late = page.waitForResponse(
+      (response) => response.url().includes("/api/chat/system-chats/for-resource?") && response.url().includes("Yard-2"),
+    );
     await move("Yard-2");
     await move("Shelf-7");
     gates.get("Yard-2")!();
-    await page.waitForResponse("**/api/chat/system-chats/for-resource");
-    await settled(page);
+    await late;
+    await drawn();
     expect(new URL(frame().url()).pathname).toBe(`/app/chat/panel/c/${ids["Shelf-7"]}`);
     expect(await header.getByRole("link", { name: /^Chat about/ }).count()).toBe(0);
     // B opens slowly, then C arrives: the panel ends at C, with its address in step.
@@ -341,12 +347,15 @@ test("Chat follows only the latest host place when earlier places answer late", 
       await snapshot;
       await route.continue();
     });
+    const slow = page.waitForRequest(`**/api/chat/conversations/${ids["Yard-2"]}/snapshot**`);
     await move("Yard-2");
-    await page.waitForRequest(`**/api/chat/conversations/${ids["Yard-2"]}/snapshot**`);
+    const pending = await slow;
     await move("Dock-3");
     await header.getByText("Rampe Nord", { exact: true }).waitFor();
     releaseSnapshot();
-    await settled(page);
+    // The superseded open may abort its read; either way the frame has its answer or its failure.
+    await pending.response().catch(() => null);
+    await drawn();
     expect(new URL(frame().url()).pathname).toBe(`/app/chat/panel/c/${ids["Dock-3"]}`);
     expect(await header.getByText("Rampe Nord", { exact: true }).count()).toBe(1);
   } finally {

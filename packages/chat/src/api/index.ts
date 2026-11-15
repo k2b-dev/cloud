@@ -311,7 +311,7 @@ const app = new Hono<AuthContext>()
       summary: "Open the discussion about a resource idempotently",
       ...requiresAuth,
       description:
-        "For a container type of a discussion provider, opens its system chat like the open route. For an item type, opens its container's chat and the item's thread, creating the thread when the caller may write there; otherwise `thread` is the existing thread or null. The ref selects only: the item and container readers authorize the caller.",
+        "Starts or returns the discussion about a resource. For a container type of a discussion provider, opens its system chat like the open route. For an item type, opens its container's chat and the item's thread; starting the thread needs write access to the container. The ref selects only: the item and container readers authorize the caller.",
       responses: {
         200: jsonResponse(ResourceDiscussionSchema, "Opened discussion"),
         404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Resource unavailable or not readable"),

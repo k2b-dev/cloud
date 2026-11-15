@@ -36,7 +36,7 @@ All paths below start with `/api/chat`.
 | `POST /conversations/:conversation/threads/for-resource` with `{ "ref": { "type": "inventory.item", "id": "…" } }` | Create or return an item thread. The type must be the provider's discussion item type. IDs are opaque strings up to 512 characters. |
 | `GET /conversations/:conversation/threads` | Authorized threads, with optional `filter=open\|done\|unread`, `q`, and `cursor`. |
 | `GET /system-chats/for-resource?type=…&id=…` | `{ conversation, thread, item, title, canWrite }`: where the discussion about a container or item is, read without creating anything. `conversation` and `thread` stay `null` until someone writes. |
-| `POST /system-chats/for-resource` with `{ "ref": { "type": "inventory.item", "id": "…" } }` | `{ conversation, thread, title }`: starts or returns the discussion. For a container type, its conversation with `thread: null`; for an item type, its container's conversation and the item's thread. The thread is created when the caller may write there; otherwise it is the existing thread or `null`. |
+| `POST /system-chats/for-resource` with `{ "ref": { "type": "inventory.item", "id": "…" } }` | `{ conversation, thread, title }`: starts or returns the discussion. For a container type, its conversation with `thread: null`; for an item type, its container's conversation and the item's thread. Starting an item's thread needs write access to the container; otherwise the request is refused. |
 
 Message uploads and downloads use the same routes and limits as ordinary chats:
 see [Chat message attachments](/en/docs/operations/build-and-deploy#chat-message-attachments-after-the-upgrade).

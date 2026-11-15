@@ -91,8 +91,8 @@ const locate = async (input: ChatContext & { ref: { type: string; id: string } }
 };
 /**
  * The discussion about one resource, as the panel beside it opens it: a container's chat, or an item's thread in its
- * container's chat. The ref is a selector only; the item and container readers decide as this reader. A reader who
- * may not write keeps an item's existing thread or, without one, the container's chat.
+ * container's chat, starting what does not exist yet. The ref is a selector only; the item and container readers
+ * decide as this reader, and starting an item's thread needs write access to its container.
  */
 const openFor = async (input: ChatContext & { ref: { type: string; id: string } }) => {
   const missing = () => fail({ code: "NOT_FOUND", status: 404, message: messages(input).notFound });
@@ -108,13 +108,9 @@ const openFor = async (input: ChatContext & { ref: { type: string; id: string } 
   if (!item || !container) return missing();
   const opened = await open({ ...input, resourceType: container.type, resourceId: container.id });
   if (!opened.ok) return opened;
+  // Starting the item's thread checks write access and the item's current container again; a refusal stays one.
   const thread = await threads.forResource({ ...input, conversationId: opened.data.id, input: { ref: input.ref } });
-  if (thread.ok) return ok({ conversation: opened.data, thread: thread.data.thread.id, title: item.title });
-  // Starting a thread needs write access; both readers already allowed reading the item's existing one.
-  const [existing] = await sql<{ short_id: string }[]>`SELECT t.short_id FROM chat.threads t
-    JOIN chat.conversations c ON c.id = t.conversation_id
-    WHERE c.short_id = ${opened.data.id} AND t.resource_type = ${input.ref.type} AND t.resource_id = ${input.ref.id}`;
-  return ok({ conversation: opened.data, thread: existing?.short_id ?? null, title: item.title });
+  return thread.ok ? ok({ conversation: opened.data, thread: thread.data.thread.id, title: item.title }) : thread;
 };
 const list = async (input: ChatContext & { query?: unknown }) => {
   const parsed = SystemChatQuerySchema.safeParse(input.query ?? {});
