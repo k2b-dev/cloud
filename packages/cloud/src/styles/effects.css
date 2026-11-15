@@ -44,11 +44,177 @@
   white-space: nowrap;
 }
 
-/* Phones keep the clock while the turn runs; the step count follows once it is finished. */
-@media (max-width: 40rem) {
-  .k2b-ui .ai-turn-work__live-steps {
+/* The work line (Gustav chat v12): ✦ and the app tiles, one sentence in 13 px, the time in 12 px tabular figures, and
+   the chevron. One line in every state and the same height whether the turn runs or has ended (Bauplan 6b). */
+.k2b-ui .ai-turn-work {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+/* The row has a fixed width, at most the row measure, so nothing in it depends on the changing words: the time stands
+   on the right in a fixed-width cell, close to the sentence, and the chevron ends the row. The hover surface reaches
+   4 px past the text edge. */
+.k2b-ui .ai-turn-work > .k2b-chat-activity__row {
+  width: min(calc(100% + 0.25rem), var(--k2b-row-measure, 40rem));
+  min-height: 1.75rem;
+  margin-inline-start: -0.25rem;
+  padding: 0.1875rem 0.5rem 0.1875rem 0.25rem;
+  border-radius: 0.5rem;
+}
+
+.k2b-ui .ai-turn-work > summary.k2b-chat-activity__row:hover {
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-edge-hover-bg);
+}
+
+/* Before the first step there is nothing to open; the chevron's place stays, so the time does not move when it comes. */
+.k2b-ui .ai-turn-work > div.k2b-chat-activity__row::after {
+  width: 1em;
+  flex: none;
+  content: "";
+}
+
+.k2b-ui .ai-turn-work .k2b-chat-activity__copy strong {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  white-space: nowrap;
+}
+
+/* The sentence gives way first: it fades at its end, while the step count and what did not go through stay whole. */
+.k2b-ui .ai-turn-work__text {
+  display: flex;
+  min-width: 0;
+}
+
+.k2b-ui .ai-turn-work__sentence {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.k2b-ui .ai-turn-work__steps {
+  flex: none;
+  white-space: pre;
+}
+
+/* On a narrow chat the sentence needs the room: the plain step count gives way, what did not go through stays. */
+@container k2b-chat (max-width: 39.999rem) {
+  .k2b-ui .ai-turn-work__count {
     display: none;
   }
+
+  .k2b-ui .ai-turn-work__steps:not([data-issues]) {
+    display: none;
+  }
+}
+
+/* A step that goes on reads that way: "Thinking …". */
+.k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence::after {
+  content: " …";
+}
+
+.k2b-ui .ai-turn-work__lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+}
+
+.k2b-ui .ai-turn-work__lead > i {
+  margin-inline-end: 0.3125rem;
+  color: var(--k2b-ai-accent);
+  font-size: 0.9375rem;
+}
+
+.k2b-ui .ai-turn-work .k2b-chat-activity__trailing {
+  margin-inline-start: auto;
+}
+
+.k2b-ui .ai-turn-work__meta {
+  min-width: 3.25rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  text-align: end;
+}
+
+/* Only the sentence shimmers while Gustav works: a plum light runs over it every 2.2 s, on the sentence itself so its
+   fade still applies. Tiles, ✦ and the step count keep their colours; with reduced motion nothing moves. The selectors
+   repeat the shared busy rule's conditions, so they win over it. */
+.k2b-ui
+  .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
+  .k2b-chat-activity__leading:has(.ai-app-tile, .ai-turn-work__lead),
+.k2b-ui
+  .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
+  .k2b-chat-activity__copy
+  strong {
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+}
+
+.k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence {
+  background-image: linear-gradient(
+    90deg,
+    var(--k2b-text-secondary) 0 40%,
+    var(--k2b-ai-accent) 50%,
+    var(--k2b-text-secondary) 60% 100%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: k2b-chat-activity-shimmer 2.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence {
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
+  }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence {
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+}
+
+/* Opened work: one step per row, its app tile on the work line's tile axis, what it did in 13 px and what came of it in
+   12 px below. Icons of steps that keep their own detail sit on the same 20 px axis. */
+.k2b-ui .ai-turn-steps .k2b-chat-activity {
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .ai-turn-steps .k2b-chat-activity__leading {
+  min-width: 1.25rem;
+}
+
+/* The work line already says that Gustav works; the message's progress dots stay for screen readers only. */
+.k2b-ui .k2b-chat-message:has(.ai-turn-work) .k2b-chat-progress-dots {
+  visibility: hidden;
+}
+
+.k2b-ui .ai-work-step .k2b-chat-activity__row {
+  gap: 0.625rem;
+}
+
+/* A step that opens, such as thinking, ends its row where the work line ends its own, chevron under chevron. */
+.k2b-ui .ai-turn-steps > .ai-work-step > summary.k2b-chat-activity__row {
+  width: min(100%, calc(var(--k2b-row-measure, 40rem) - 0.25rem));
+  padding-inline-end: 0.5rem;
+}
+
+.k2b-ui .ai-work-step .k2b-chat-activity__copy strong {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .ai-work-step .k2b-chat-activity__copy small {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .ai-work-step--failed .k2b-chat-activity__copy small {
+  color: var(--k2b-warning-text);
 }
 
 /* Expanded work: at the work line's left edge, one size, no lines or boxes; intermediate texts are quiet paragraphs. */

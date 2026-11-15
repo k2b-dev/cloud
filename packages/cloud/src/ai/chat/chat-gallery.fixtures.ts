@@ -1,4 +1,6 @@
 import type { AssistantContentBlock } from "@k2b/nessi/ai";
+import type { AiActiveTurn } from "../client/projection";
+import type { AiTurnBlock } from "../protocol";
 import type { AiStoredMessage, AiToolPresentation } from "../types";
 
 /**
@@ -111,7 +113,7 @@ export const answerChat = (): AiStoredMessage[] => {
           id: "call-space",
           name: "spaces__query__tasks",
           args: { title: "Messe" },
-          result: { error: "forbidden" },
+          result: "FORBIDDEN: Kein Zugriff auf den Space Messe.",
           isError: true,
           presentation: spaces("Aufgaben suchen"),
         },
@@ -167,10 +169,60 @@ const attachmentChat = (): AiStoredMessage[] => {
   ];
 };
 
+const QUESTION = "Was hat Jana zum Angebot für den Messestand gefragt? Und was kostet uns die Beleuchtung?";
+
+/** A live turn that started `seconds` ago with these blocks. */
+const live = (blocks: AiTurnBlock[], seconds: number): AiActiveTurn => ({
+  turnId: "turn-live",
+  attempt: 1,
+  seq: 10,
+  status: "running",
+  blocks,
+  modelId: "fictional-model",
+  createdAt: new Date(Date.now() - seconds * 1000).toISOString(),
+});
+
+const searchBlock: AiTurnBlock = {
+  id: "tool-search",
+  kind: "tool",
+  callId: "call-search",
+  name: "mail__query__search",
+  args: { query: "Messestand" },
+  status: "completed",
+  result: { summary: "3 Unterhaltungen gefunden" },
+  presentation: mail("In Mail suchen"),
+};
+
+const readingBlock: AiTurnBlock = {
+  id: "tool-file",
+  kind: "tool",
+  callId: "call-file",
+  name: "files__query__read",
+  args: { title: "Angebot-2026-118.pdf" },
+  status: "running",
+  presentation: files("Datei lesen"),
+};
+
+export type GalleryChat = { messages: AiStoredMessage[]; active?: AiActiveTurn };
+
 export const galleryScenes = {
-  anhaenge: attachmentChat,
-  antwort: answerChat,
-  routine: routineChat,
-} satisfies Record<string, () => AiStoredMessage[]>;
+  /** `#g-anhaenge` */
+  anhaenge: () => ({ messages: attachmentChat() }),
+  antwort: () => ({ messages: answerChat() }),
+  routine: () => ({ messages: routineChat() }),
+  /** `#g-antwort/denkt`: the turn started and Gustav thinks. */
+  denkt: () => {
+    seq = 0;
+    return { messages: [user(QUESTION)], active: live([], 4) };
+  },
+  /** `#g-antwort/arbeitet`: Gustav searched Mail and reads the offer. */
+  arbeitet: () => {
+    seq = 0;
+    return {
+      messages: [user(QUESTION)],
+      active: live([{ id: "thinking-1", kind: "thinking", text: "Ich suche die Mail und das Angebot." }, searchBlock, readingBlock], 7),
+    };
+  },
+} satisfies Record<string, () => GalleryChat>;
 
 export type GalleryScene = keyof typeof galleryScenes;
