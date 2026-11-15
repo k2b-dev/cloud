@@ -1,12 +1,16 @@
 import { documentNavigate, refreshCurrentPath } from "@k2b/ssr/nav";
-import { dates } from "@k2b/stdlib";
-import { Button, IconButton, NoticeCard, Placeholder, prompts, StatusBadge, TextInput, toast, useLocale } from "@k2b/ui";
+import { Button, NoticeCard, Placeholder, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { z } from "zod";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
-import { CodeSecretBindingSchema, CodeSecretNameSchema, codeSecretPlaceholder } from "../../contracts/code-secrets";
+import { CodeSecretBindingSchema, CodeSecretNameSchema } from "../../contracts/code-secrets";
+import { Failed } from "./CodeRuns";
 import { type CodePageData, type CodePageReady, type CodePageSecret, SecretSetSchema } from "./data";
 import { type CodePageMessages, codePageMessages } from "./messages";
+import { Island, Quiet, Row, Status } from "./page-kit";
+
+/** The list shows this many secrets before "Show n more". */
+const SECRET_ROWS = 6;
 
 /** Same-origin Core routes the CLI uses too; a check against a Runner may outlast an ordinary capability call. */
 const authoring = async <T extends z.ZodType>(
@@ -285,7 +289,13 @@ function ValueDialog(props: { data: CodePageData; state: CodePageReady; secret: 
     });
     if (!written.ok) {
       setBusy(false);
-      return setFailure(writeFailure(written.error.status, t));
+      const status = written.error.status;
+      // A conflict stays here; a refusal or a lost answer is the page's state, so a reload keeps it.
+      if (status === 409) return setFailure(writeFailure(status, t));
+      props.close();
+      return documentNavigate(
+        pageUrl(props.data, { secret: props.secret.name, notice: status >= 400 && status < 500 ? "refused" : "unknown" }),
+      );
     }
     props.close();
     documentNavigate(pageUrl(props.data, { secret: props.secret.name, notice: "replaced" }));
@@ -421,7 +431,8 @@ function BindingEditor(props: {
   );
 }
 
-function SecretDetail(props: {
+/** One secret: where its value may go, whether one is stored, and what the person can do with it. */
+function SecretRow(props: {
   data: CodePageData;
   state: CodePageReady;
   secret: CodePageSecret;
@@ -429,16 +440,14 @@ function SecretDetail(props: {
   date: (iso: string) => string;
 }) {
   const t = () => props.t;
-  const [editing, setEditing] = createSignal(false);
   const [deleting, setDeleting] = createSignal(false);
-  const [submitting, setSubmitting] = createSignal(false);
-  const valueText = (): string => {
-    const { configured, valueSetBy, valueSetAt } = props.secret;
-    if (!configured) return t().secretValueDeleted;
-    if (!valueSetAt) return t().secretValueHidden;
-    return valueSetBy
-      ? t().secretValueBy({ name: valueSetBy.name, date: props.date(valueSetAt) })
-      : t().secretValueOn({ date: props.date(valueSetAt) });
+  const address = () => {
+    try {
+      const url = new URL(props.secret.origin);
+      return `${url.host}${props.secret.pathPrefix === "/" ? "" : props.secret.pathPrefix}`;
+    } catch {
+      return `${props.secret.origin}${props.secret.pathPrefix}`;
+    }
   };
   const askValue = () =>
     void prompts.dialog<void>(
@@ -449,6 +458,11 @@ function SecretDetail(props: {
           : t().secretSetTitle({ name: props.secret.name }),
         icon: "ti ti-key",
       },
+    );
+  const changeAddress = () =>
+    void prompts.dialog<void>(
+      (close) => <BindingEditor data={props.data} state={props.state} secret={props.secret} t={t()} close={() => close()} />,
+      { title: t().secretChangeBinding, icon: "ti ti-world", size: "large" },
     );
   const remove = async () => {
     const confirmed = await prompts.confirm(t().secretDeleteBody, {
@@ -474,29 +488,93 @@ function SecretDetail(props: {
     toast.success(t().secretDeleted);
     refreshCurrentPath();
   };
+  return (
+    <Row
+      icon="ti ti-key"
+      tile="key"
+      title={props.secret.name}
+      sub={t().secretOnlyTo({ address: address() })}
+      extra={
+        <span class="cloud-code__row-actions">
+          <Show
+            when={props.secret.configured}
+            fallback={
+              <Button type="button" size="sm" variant="secondary" onClick={askValue}>
+                <i class="ti ti-pencil" aria-hidden="true" />
+                {t().secretEnterValue}
+              </Button>
+            }
+          >
+            <Button type="button" size="sm" variant="secondary" onClick={askValue}>
+              {t().secretReplaceValue}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              class="cloud-code__secret-delete"
+              loading={deleting()}
+              onClick={() => void remove()}
+            >
+              {t().secretRemove}
+            </Button>
+          </Show>
+          <Button type="button" size="sm" variant="ghost" onClick={changeAddress}>
+            {t().secretChangeAddress}
+          </Button>
+        </span>
+      }
+      trail={
+        <Show
+          when={props.secret.configured}
+          fallback={
+            <>
+              <Status tone="warn" icon="ti ti-alert-triangle" label={t().secretNoValue} />
+              <span class="cloud-code__meta">{t().secretMissingEffect}</span>
+            </>
+          }
+        >
+          <Status tone="ok" icon="ti ti-circle-check" label={t().secretStored} />
+          <Show when={props.secret.valueSetAt}>
+            {(at) => (
+              <span class="cloud-code__meta">
+                {t().secretChangedBy({ date: props.date(at()), name: props.secret.valueSetBy?.name ?? null })}
+              </span>
+            )}
+          </Show>
+        </Show>
+      }
+    />
+  );
+}
+
+/** What just happened to a secret, from the URL, so a reload keeps it; "unclear" offers only "Check state". */
+function SecretNotice(props: { data: CodePageData; state: CodePageReady; t: CodePageMessages; secret: CodePageSecret | null }) {
+  const t = () => props.t;
+  const notice = () => props.state.secrets?.notice ?? null;
+  const [submitting, setSubmitting] = createSignal(false);
   const submitAgain = async () => {
     const latest = props.state.secrets?.latest;
-    if (!latest) return;
+    if (!latest || !props.secret) return;
     setSubmitting(true);
     const submitted = await authoring("resubmit", { codeId: props.state.code.id, baseVersionId: latest.id }, SubmittedSchema);
     setSubmitting(false);
     if (!submitted.ok) return toast.error(submitted.status === 409 ? t().secretSubmitConflict : t().secretSubmitFailed);
     documentNavigate(pageUrl(props.data, { secret: props.secret.name, notice: "submitted" }));
   };
-  const notice = () => props.state.secrets?.notice ?? null;
+  const askAgain = () => {
+    const secret = props.secret;
+    if (!secret) return;
+    void prompts.dialog<void>(
+      (close) => <ValueDialog data={props.data} state={props.state} secret={secret} t={t()} close={() => close()} />,
+      {
+        title: t().secretReplaceTitle({ name: secret.name }),
+        icon: "ti ti-key",
+      },
+    );
+  };
   return (
-    <section class="cloud-code__run-detail" aria-labelledby="cloud-code-secret-title">
-      <div class="cloud-code__run-head">
-        <div class="min-w-0">
-          <h2 id="cloud-code-secret-title" class="cloud-code__h2 cloud-code__secret-name">
-            {props.secret.name}
-          </h2>
-          <p class="cloud-code__sub">{t().secretOfCode}</p>
-        </div>
-        <Show when={!props.secret.configured}>
-          <StatusBadge tone="warning" label={t().secretValueDeleted} />
-        </Show>
-      </div>
+    <>
       <Show when={notice() === "replaced"}>
         <NoticeCard tone="success" icon="ti ti-circle-check" title={t().secretReplacedTitle} detail={t().secretReplacedDetail} />
       </Show>
@@ -520,62 +598,70 @@ function SecretDetail(props: {
       <Show when={notice() === "submit-failed"}>
         <NoticeCard tone="danger" icon="ti ti-alert-triangle" title={t().secretSubmitFailed} role="alert" />
       </Show>
-      <Show when={props.secret.unsubmitted && !editing()}>
-        <NoticeCard tone="warning" icon="ti ti-user-shield" title={t().secretUnsubmittedTitle} detail={t().secretUnsubmittedDetail}>
-          <div class="cloud-code__note-actions">
-            <Button type="button" size="sm" variant="secondary" loading={submitting()} onClick={() => void submitAgain()}>
-              {t().secretSubmitVersion({ version: (props.state.secrets?.latest?.number ?? 0) + 1 })}
-            </Button>
-          </div>
-        </NoticeCard>
+      <Show when={notice() === "refused" && props.secret}>
+        {(secret) => (
+          <NoticeCard
+            tone="danger"
+            icon="ti ti-alert-circle"
+            layout="card"
+            role="alert"
+            title={t().secretRefused({ name: secret().name })}
+            actions={
+              <Button type="button" size="sm" variant="secondary" onClick={askAgain}>
+                {t().secretEnterAgain}
+              </Button>
+            }
+          />
+        )}
       </Show>
-      <p class="text-secondary">{t().secretRules({ placeholder: codeSecretPlaceholder(props.secret.name) })}</p>
-      <Show
-        when={!editing()}
-        fallback={<BindingEditor data={props.data} state={props.state} secret={props.secret} t={t()} close={() => setEditing(false)} />}
-      >
-        <dl class="cloud-code__facts">
-          <dt>{t().secretSentTo}</dt>
-          <dd class="cloud-code__secret-name">
-            {props.secret.origin}
-            {props.secret.pathPrefix}
-          </dd>
-          <dt>{t().secretHeader}</dt>
-          <dd class="cloud-code__secret-name">{props.secret.headers.join(", ")}</dd>
-          <dt>{t().secretValue}</dt>
-          <dd>{valueText()}</dd>
-          <dt>{t().secretUsedIn}</dt>
-          <dd>
-            {props.secret.usedIn.length > 0
-              ? props.secret.usedIn.map((use) => t().secretUsedVersion({ version: use.number, state: use.state })).join(", ")
-              : t().secretUsedNowhere}
-          </dd>
-        </dl>
-        <div class="cloud-code__secret-actions">
-          <Show when={props.secret.configured}>
-            <Button type="button" variant="ghost" class="cloud-code__secret-delete" loading={deleting()} onClick={() => void remove()}>
-              <i class="ti ti-trash" aria-hidden="true" />
-              {t().secretDelete}
+      <Show when={notice() === "unknown"}>
+        <NoticeCard
+          tone="warning"
+          icon="ti ti-alert-triangle"
+          layout="card"
+          role="alert"
+          title={t().secretUnknown}
+          detail={t().secretUnknownNext}
+          actions={
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => documentNavigate(pageUrl(props.data, props.secret ? { secret: props.secret.name } : {}))}
+            >
+              {t().checkStatus}
             </Button>
-          </Show>
-          <span class="cloud-code__secret-actions-gap" />
-          <Button type="button" variant="secondary" onClick={() => setEditing(true)}>
-            {t().secretChangeBinding}
-          </Button>
-          <Button type="button" variant="primary" onClick={askValue}>
-            {props.secret.configured ? t().secretReplace : t().secretSetValue}
-          </Button>
-        </div>
+          }
+        />
       </Show>
-    </section>
+      <Show when={notice() === null && props.state.secrets?.items.find((item) => item.unsubmitted)}>
+        {(secret) => (
+          <NoticeCard
+            tone="warning"
+            icon="ti ti-user-shield"
+            layout="card"
+            title={t().secretUnsubmittedTitle}
+            detail={`${secret().name}: ${t().secretUnsubmittedDetail}`}
+            actions={
+              <Button type="button" size="sm" variant="secondary" loading={submitting()} onClick={() => void submitAgain()}>
+                {t().secretSubmitVersion({ version: (props.state.secrets?.latest?.number ?? 0) + 1 })}
+              </Button>
+            }
+          />
+        )}
+      </Show>
+    </>
   );
 }
 
-/** The secrets of one Code, for its editors: names and destinations from Core's list, values only ever written. */
+/** The secrets of one Code, for its editors (Bild 26): names and destinations from Core's list, values only ever written. */
 export function CodeSecretsTab(props: { data: CodePageData; state: CodePageReady }): JSX.Element {
   const locale = useLocale();
   const t = createMemo(() => codePageMessages.resolve([locale()]).t);
-  const date = (iso: string) => dates.formatDate(iso, { ...props.data.dates, locale: locale() });
+  /** "30.10.": the day a value was set, short, in the page's time zone. */
+  const date = (iso: string) =>
+    new Intl.DateTimeFormat(locale(), { timeZone: props.data.dates.timeZone, day: "2-digit", month: "2-digit" }).format(new Date(iso));
+  const [all, setAll] = createSignal(false);
   const create = () =>
     void prompts.dialog<void>((close) => <CreateDialog data={props.data} state={props.state} t={t()} close={() => close()} />, {
       title: t().secretNew,
@@ -584,85 +670,51 @@ export function CodeSecretsTab(props: { data: CodePageData; state: CodePageReady
     });
   const secrets = () => props.state.secrets;
   const selected = () => secrets()?.items.find((item) => item.name === secrets()?.selected) ?? null;
+  const createButton = () => (
+    <Button type="button" size="sm" variant="secondary" onClick={create}>
+      <i class="ti ti-plus" aria-hidden="true" />
+      {t().secretNew}
+    </Button>
+  );
   return (
-    <Show
-      when={secrets()}
-      fallback={
-        <div class="cloud-code__body">
-          <Placeholder
-            state="error"
-            variant="panel"
-            icon="ti ti-cloud-off"
-            title={t().secretLoadFailedTitle}
-            description={t().secretLoadFailedDescription}
-            onRetry={() => refreshCurrentPath()}
-          />
-        </div>
-      }
-    >
-      {(list) => (
-        <Show
-          when={list().items.length > 0}
-          fallback={
-            <div class="cloud-code__body">
-              <Placeholder
-                state="empty"
-                variant="panel"
-                icon="ti ti-key"
-                title={t().secretEmptyTitle}
-                description={t().secretEmptyDescription}
-                action={
-                  <Button type="button" variant="primary" onClick={create}>
-                    <i class="ti ti-plus" aria-hidden="true" />
-                    {t().secretNew}
-                  </Button>
-                }
-              />
-            </div>
-          }
-        >
-          <div class="cloud-code__body cloud-code__secrets">
-            <section class="cloud-code__run-list" aria-label={t().tabSecrets}>
-              <div class="cloud-code__secrets-head">
-                <p class="cloud-code__sub">{t().secretsCount({ count: list().items.length })}</p>
-                <IconButton type="button" size="sm" variant="ghost" label={t().secretNew} onClick={create}>
-                  <i class="ti ti-plus" aria-hidden="true" />
-                </IconButton>
-              </div>
-              <ul class="cloud-code__list">
-                <For each={list().items}>
-                  {(secret) => (
-                    <li>
-                      <a
-                        class="cloud-code__row cloud-code__row--run"
-                        href={pageUrl(props.data, { secret: secret.name })}
-                        aria-current={secret.name === list().selected ? "true" : undefined}
-                      >
-                        <span class="cloud-code__cell">
-                          <span class="cloud-code__title cloud-code__secret-name">{secret.name}</span>
-                          <span class="cloud-code__sub cloud-code__secret-name">
-                            {secret.origin}
-                            {secret.pathPrefix} · {secret.headers.join(", ")}
-                          </span>
-                        </span>
-                        <Show when={!secret.configured}>
-                          <StatusBadge tone="warning" label={t().secretValueDeleted} variant="dot" />
-                        </Show>
-                      </a>
-                    </li>
-                  )}
-                </For>
-              </ul>
+    <div class="cloud-code__body cloud-code__secrets">
+      <p class="cloud-code__lede">{t().secretIntro}</p>
+      <Show when={secrets()} fallback={<Failed title={t().secretLoadFailedTitle} detail={t().loadKeeps} />}>
+        {(list) => (
+          <>
+            <SecretNotice data={props.data} state={props.state} t={t()} secret={selected()} />
+            <Show
+              when={list().items.length > 0}
+              fallback={
+                <Placeholder
+                  variant="panel"
+                  icon="ti ti-key-off"
+                  title={t().secretNone}
+                  description={t().secretNoneNext}
+                  action={createButton()}
+                />
+              }
+            >
+              <Island title={t().secretsTitle} meta={String(list().items.length)} actions={createButton()}>
+                <ul class="cloud-code__rows">
+                  <For each={all() ? list().items : list().items.slice(0, SECRET_ROWS)}>
+                    {(secret) => <SecretRow data={props.data} state={props.state} secret={secret} t={t()} date={date} />}
+                  </For>
+                </ul>
+                <Show when={!all() && list().items.length > SECRET_ROWS}>
+                  <button type="button" class="cloud-code__more" onClick={() => setAll(true)}>
+                    <i class="ti ti-chevron-down" aria-hidden="true" />
+                    {t().showMore({ count: list().items.length - SECRET_ROWS })}
+                  </button>
+                </Show>
+              </Island>
               <Show when={list().more}>
-                <p class="cloud-code__quiet">{t().secretMore}</p>
+                <Quiet icon="ti ti-terminal-2">{t().secretMore}</Quiet>
               </Show>
-            </section>
-            <Show when={selected()} keyed>
-              {(secret) => <SecretDetail data={props.data} state={props.state} secret={secret} t={t()} date={date} />}
             </Show>
-          </div>
-        </Show>
-      )}
-    </Show>
+          </>
+        )}
+      </Show>
+    </div>
   );
 }

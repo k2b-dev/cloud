@@ -77,7 +77,6 @@ import { createChatWorkspace } from "../chat-code/workspace-controller";
 import { contextTab, fileTab, webTab } from "../chat-code/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { ChatWorkspaceSnapshot } from "../chat-workspace";
-import type { CodeRunCount, CodeSummaryPage } from "../code-summary";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
@@ -94,7 +93,6 @@ import { AssistantChatContextPlaces, type ContextBoxActions } from "./AssistantC
 import type { ChatSidebarJump } from "./AssistantChatSidebar";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantCodeBlock, { type AssistantCodeBlockInitial } from "./AssistantCodeBlock";
-import AssistantCodeVersionCard from "./AssistantCodeVersionCard";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
@@ -143,7 +141,10 @@ import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
 import { revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
+import { AssistantCodeDecisionEntry } from "./code-decision-deferred";
 import { AssistantCodeDetail, AssistantCodeView } from "./code-deferred-views";
+import type { CodeOverviewPage } from "./code-overview";
+import { AssistantCodeVersionCard } from "./code-version-card-deferred";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
   assistantBuiltInCommands,
@@ -242,11 +243,9 @@ type Props = {
   code?: {
     has: boolean;
     open: boolean;
-    page?: CodeSummaryPage | null;
+    page?: CodeOverviewPage | null;
     /** One personal Code, at /app/assistant/code/<codeId>, rendered with the shared Code page. */
     detail?: CodePageData;
-    /** Runs and failures of the person's own Code today; null when Core could not count them. */
-    today?: CodeRunCount | null;
   };
   /** Code of a place that needs the person, when the page opened on Waiting for you; null when Core could not answer. */
   initialAttention?: CodeAttentionView | null;
@@ -1846,6 +1845,20 @@ export default function AssistantWorkspace(props: Props) {
     }
   };
 
+  /**
+   * A prepared message from a version card, such as "Revise version 5 the way Jana wants it". An empty field sends it
+   * at once; text the person already typed stays, and the message joins it in the field instead.
+   */
+  const askGustav = (text: string) => {
+    const key = composerSessionKey();
+    const current = composerDraft(key);
+    if (current.trim() || composerAttachmentsFor(key).length > 0) {
+      setComposerDraft(key, `${current.trimEnd()}\n\n${text}`);
+      focusComposer();
+      return;
+    }
+    void send({ message: text });
+  };
   const useStarter = async (starter: AssistantStarterAction) => {
     const release = holdComposerSave();
     try {
@@ -3270,7 +3283,6 @@ export default function AssistantWorkspace(props: Props) {
                             userId={props.userId}
                             timeZone={props.timeZone}
                             initial={codeRendered() ? props.code?.page : undefined}
-                            initialToday={codeRendered() ? props.code?.today : undefined}
                             onCreateInChat={createFromCodeView}
                           />
                         }
@@ -3302,11 +3314,15 @@ export default function AssistantWorkspace(props: Props) {
                                     renderCodeAuthoringStop: (state, continuable) => (
                                       <AssistantAuthoringStop state={state} continuable={continuable} />
                                     ),
+                                    renderCodeDecision: (entry) => (
+                                      <AssistantCodeDecisionEntry entry={entry} messages={chat.usageMessages} timeZone={props.timeZone} />
+                                    ),
                                     renderCodeVersion: (version) => (
                                       <AssistantCodeVersionCard
                                         {...version}
                                         timeZone={props.timeZone}
                                         onActivated={() => setCodeRevision((revision) => revision + 1)}
+                                        onAsk={askGustav}
                                       />
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",

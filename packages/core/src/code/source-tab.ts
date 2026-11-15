@@ -26,8 +26,10 @@ export const codeSourceTabContract = {
   }),
 };
 export type CodeSourceTab = z.infer<typeof codeSourceTabContract.data>;
-export async function loadCodeSourceTab(raw: z.input<typeof codeSourceTabContract.input>, context: CodeContext): Promise<CodeSourceTab> {
+export async function loadCodeSourceTab(raw: z.input<typeof codeSourceTabContract.input>, outer: CodeContext): Promise<CodeSourceTab> {
   const input = codeSourceTabContract.input.parse(raw);
+  // A read under one invocation may ask the owner app once: every check of this tab shares that answer (#31).
+  const context: CodeContext = { ...outer, ownerReaderAnswer: outer.ownerReaderAnswer ?? null };
   const { code } = await readCode(input.codeId, context);
   await requireCodeSourcePermission(code, context);
   const history = await listCodeVersions({ codeId: code.id, before: input.before, limit: 50 }, context);

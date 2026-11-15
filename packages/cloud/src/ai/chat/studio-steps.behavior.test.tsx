@@ -70,7 +70,7 @@ else {
     const view = await mount(blocks, { locale: "de" });
     try {
       const row = view.work.querySelector(".ai-turn-steps details")!;
-      expect(row.querySelector("strong")!.textContent).toBe("Prüft den Code");
+      expect(row.querySelector("strong")!.textContent).toBe("Prüft");
       expect(row.querySelector("small")).toBeNull();
 
       setBlocks([
@@ -92,7 +92,7 @@ else {
           result: { version: 1, result: { ok: true, diagnostics: [] }, manifest: null, permissions: [] },
         },
       ]);
-      expect(row.querySelector("small")!.textContent).toBe("bestanden");
+      expect(row.querySelector("small")!.textContent).toBe("erfolgreich");
       expect(row.querySelector(".ti-circle-check")).not.toBeNull();
       expect(row.querySelector(".ti-alert-triangle")).toBeNull();
     } finally {

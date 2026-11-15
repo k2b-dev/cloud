@@ -16,11 +16,19 @@ export type ChatDecisionAnswer = {
   label: string;
   /** Icon class, for example `ti ti-send`. */
   icon?: string;
+  /**
+   * The answer was given and Cloud works on it for an unknown time, such as switching something on while the question
+   * stays in place. A shimmer runs over the filled button and it takes no second press. Only `confirm` reads it.
+   */
+  busy?: boolean;
   onSelect: () => void | Promise<void>;
 };
 
-/** A quiet fact in the answer row, such as when the question expires; `success` and `warning` colour it as a result. */
-export type ChatDecisionFact = { text: string; icon: string; tone?: "neutral" | "success" | "warning" | "danger" };
+/**
+ * A quiet fact in the answer row, such as when the question expires; `success` and `warning` colour it as a result,
+ * `ai` as work Gustav does by himself, such as a revision that waits or runs.
+ */
+export type ChatDecisionFact = { text: string; icon: string; tone?: "neutral" | "success" | "warning" | "danger" | "ai" };
 
 /** Why a question is asked, or why its main answer is off. */
 export type ChatDecisionReason = {

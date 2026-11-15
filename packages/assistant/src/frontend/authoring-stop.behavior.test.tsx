@@ -63,25 +63,32 @@ for (const locale of ["de", "en"]) {
       )!;
     try {
       expect(continued).toEqual([]);
-      const lists = Array.from(dom.root.querySelectorAll<HTMLUListElement>(".assistant-authoring-stop__list"));
-      const label = (list: HTMLUListElement) => dom.root.ownerDocument.getElementById(list.getAttribute("aria-labelledby")!)?.textContent;
-      const items = (list: HTMLUListElement) => Array.from(list.querySelectorAll("li"), (item) => item.textContent);
+      // One still list of the steps (Chat.TaskList): done ones checked, open ones open, each with its status word.
+      const rows = Array.from(dom.root.querySelectorAll(".k2b-chat-task-list .k2b-chat-task"), (row) => ({
+        status: row.getAttribute("data-status"),
+        text: row.querySelector(".k2b-chat-task__content")?.textContent,
+      }));
       expect(dom.root.querySelector(".k2b-notice-card__title")?.textContent).toBe(
         locale === "de" ? "Gustav hat angehalten" : "Gustav stopped",
       );
       expect(dom.root.querySelector(".k2b-notice-card__description")?.textContent).toBe(
         locale === "de" ? "Dasselbe Problem blieb nach mehreren Versuchen." : "The same problem remained after several attempts.",
       );
-      expect(lists.map(label)).toEqual(locale === "de" ? ["Erledigt", "Noch offen"] : ["Done", "Still open"]);
-      expect(lists.map(items)).toEqual(
+      expect(rows).toEqual(
         locale === "de"
-          ? [["Entwurf geprüft"], ["Mit Beispielen testen", "Version speichern"]]
-          : [["Draft checked"], ["Test with examples", "Save a version"]],
+          ? [
+              { status: "completed", text: "Entwurf geprüft" },
+              { status: "pending", text: "Mit Beispielen testen" },
+              { status: "pending", text: "Version speichern" },
+            ]
+          : [
+              { status: "completed", text: "Draft checked" },
+              { status: "pending", text: "Test with examples" },
+              { status: "pending", text: "Save a version" },
+            ],
       );
-      expect(lists.map((list) => Array.from(list.querySelectorAll("li > i"), (icon) => icon.className))).toEqual([
-        ["ti ti-check"],
-        ["ti ti-circle", "ti ti-circle"],
-      ]);
+      // The work stopped: no ring turns.
+      expect(dom.root.querySelector('.k2b-chat-task[data-status="in_progress"]')).toBeNull();
       expect(dom.root.textContent).toContain(locale === "de" ? "Der Entwurf ist gespeichert." : "The draft is saved.");
       expect(button().getAttribute("data-variant")).toBe("secondary");
       expect(dom.root.textContent).not.toMatch(/code_test_invalid_fixture|private-id|\.tsx?/);
@@ -176,10 +183,14 @@ for (const [name, state, reason, done, open, saved] of [
       dom.root,
     );
     try {
-      const group = (status: string) => Array.from(dom.root.querySelectorAll(`[data-status="${status}"] li`), (item) => item.textContent);
+      const group = (status: string) =>
+        Array.from(
+          dom.root.querySelectorAll(`.k2b-chat-task[data-status="${status}"] .k2b-chat-task__content`),
+          (item) => item.textContent,
+        );
       expect(dom.root.querySelector(".k2b-notice-card__description")?.textContent).toBe(reason);
-      expect(dom.root.querySelector('[data-status="done"]') ? group("done") : null).toEqual(done ? [...done] : null);
-      expect(group("open")).toEqual([...open]);
+      expect(group("completed").length ? group("completed") : null).toEqual(done ? [...done] : null);
+      expect(group("pending")).toEqual([...open]);
       expect(dom.root.querySelector(".assistant-authoring-stop__meta")?.textContent).toContain(saved);
       expect(dom.root.querySelector("button")?.disabled).toBe(true);
     } finally {

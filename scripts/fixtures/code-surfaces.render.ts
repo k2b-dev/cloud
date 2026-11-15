@@ -11,7 +11,7 @@ Bun.plugin(createConfig({ dev: true, rootDir: import.meta.dir }).plugin());
 const [
   { LocaleProvider },
   { default: CodePage },
-  { codePageFixture },
+  { codePageFixture, CODE_PAGE_FIXTURE_STATES },
   { CodeAreaView },
   { codeAdminMessages },
   { parseCodeAreaQuery },
@@ -98,7 +98,8 @@ for (const locale of ["de", "en"] as const) {
       },
     }),
   );
-  for (const state of pageStates)
+  // v12 states plus the earlier names, which the fixture still renders.
+  for (const state of new Set([...pageStates, ...CODE_PAGE_FIXTURE_STATES]))
     collect("packages/cloud/src/ssr/code-page/CodePage.tsx", `page/${state}`, locale, () =>
       createComponent(CodePage, { data: codePageFixture(state, locale) }),
     );

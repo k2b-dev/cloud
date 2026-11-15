@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { aiLive } from "@k2b/cloud/ai/live";
 import type { RunnerJobLease } from "@k2b/cloud/code/runner";
 import { codeAdmissionLock } from "./admission";
 import { claimCodeJob } from "./runner-jobs";
@@ -7,7 +8,7 @@ import { codeSettings } from "./settings";
 /** Alternation is durable across Core replicas and polls. Empty classes yield their turn immediately. */
 export async function claimCodeWork(slots: number, instanceId: string, limits: Parameters<typeof claimCodeRuns>[1]) {
   const jobLimit = await codeSettings.get("core.code.runner_job_slots");
-  return sql.begin(async (db) => {
+  const result = await sql.begin(async (db) => {
     await codeAdmissionLock(db);
     const runs: Awaited<ReturnType<typeof claimCodeRuns>> = [];
     const jobs: RunnerJobLease[] = [];
@@ -36,4 +37,6 @@ export async function claimCodeWork(slots: number, instanceId: string, limits: P
     await db`UPDATE code.dispatch_turn SET job_last=${jobLast} WHERE singleton`;
     return { runs, jobs };
   });
+  aiLive.wake();
+  return result;
 }

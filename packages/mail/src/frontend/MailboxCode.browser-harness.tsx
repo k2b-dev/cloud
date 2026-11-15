@@ -5,11 +5,13 @@ import { DEFAULT_MAIL_CONTACT_DIRECTORY } from "../contact-directory-settings";
 import type { MailFolderView } from "../service/messages";
 import type { MailboxCodePageData } from "../service/workspace";
 import MailboxCode from "./MailboxCode.island";
+import { type MailCodeCatchUpFixtureState, mailCodeCatchUpFixture } from "./MailCodeTools.fixture";
 
 type State = Parameters<typeof codePageFixture>[0];
 declare global {
   interface Window {
-    mountMailboxCode: (options: { state: State; locale: "de" | "en"; phone?: boolean }) => void;
+    /** `catchUp` renders the "Process existing mail" step instead of the Code page. */
+    mountMailboxCode: (options: { state: State; locale: "de" | "en"; phone?: boolean; catchUp?: MailCodeCatchUpFixtureState }) => void;
   }
 }
 
@@ -53,7 +55,7 @@ const mailbox = (locale: "de" | "en"): MailboxCodePageData => ({
   receivingAddress: "info@moebel-beispiel.de",
 });
 
-window.mountMailboxCode = ({ state, locale, phone }) => {
+window.mountMailboxCode = ({ state, locale, phone, catchUp }) => {
   const host = document.getElementById("root");
   if (!host) throw new Error("Missing harness root");
   document.documentElement.lang = locale;
@@ -81,6 +83,7 @@ window.mountMailboxCode = ({ state, locale, phone }) => {
           code={phone ? { ...code, activation: { allowed: false, reason: "phone" } } : code}
           currentUserEmail="ben.schulz@moebel-beispiel.de"
           contactDirectory={DEFAULT_MAIL_CONTACT_DIRECTORY}
+          catchUp={catchUp ? mailCodeCatchUpFixture(catchUp, locale) : undefined}
         />
       </LocaleProvider>
     ),

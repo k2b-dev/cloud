@@ -99,12 +99,12 @@ test("a Code check has its own calm live label in the reader's language", async 
     status: "running",
   };
   const inspect: AiTurnBlock = { ...check, id: "tool-inspect", callId: "inspect", name: "code_inspect", args: { runId: "run-1" } };
-  expect(liveStepLabel(check, aiChatMessages("en"))).toBe("Checking the Code");
-  expect(liveStepLabel(check, aiChatMessages("de"))).toBe("Prüft den Code");
+  expect(liveStepLabel(check, aiChatMessages("en"))).toBe("Checking");
+  expect(liveStepLabel(check, aiChatMessages("de"))).toBe("Prüft");
   const test_: AiTurnBlock = { ...check, id: "tool-test", callId: "test", name: "code_test", args: { codeId: "c_1234" } };
-  expect(liveStepLabel(test_, aiChatMessages("de"))).toBe("Testet mit erfundenen Daten");
+  expect(liveStepLabel(test_, aiChatMessages("de"))).toBe("Probiert Beispiele aus");
   const write: AiTurnBlock = { ...check, id: "tool-write", callId: "write", name: "code_write", args: { path: "lib/rules.ts" } };
-  expect(liveStepLabel(write, aiChatMessages("en"))).toBe("Editing a Code file · rules.ts");
+  expect(liveStepLabel(write, aiChatMessages("en"))).toBe("Writing the change");
   expect(liveStepLabel(inspect, aiChatMessages("en"))).toBe("Checking the run");
   expect(liveStepLabel(inspect, aiChatMessages("de"))).toBe("Prüft den Lauf");
 });
