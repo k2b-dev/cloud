@@ -2006,3 +2006,50 @@ for (const width of [1280, 390])
       await context.close();
     }
   });
+
+// A line over dates starts its axis at its first value: the first date label is never one before the data begins.
+const returns = {
+  view: "chart",
+  kind: "line",
+  title: "Rückläufer pro Tag",
+  subtitle: "November 2026",
+  area: true,
+  series: [
+    {
+      label: "Rückläufer",
+      data: [0, 0, 0, 4, 0, 0, 0, 6, 1, 0, 0, 0, 3, 0].map((y, index) => ({ x: `2026-11-${String(index + 1).padStart(2, "0")}`, y })),
+    },
+  ],
+};
+files["/views/returns-per-day-4d5e6f7a.view.json"] = returns;
+test("a line over dates labels no date before its first value", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 700 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=de`);
+    await page.evaluate(
+      (value) => window.show(value),
+      [
+        present("/views/returns-per-day-4d5e6f7a.view.json", {
+          view: "chart",
+          kind: "line",
+          title: returns.title,
+          subtitle: returns.subtitle,
+        }),
+      ],
+    );
+    await page.waitForFunction(() => document.querySelector("[data-view-path] .k2b-chart[data-chart-kind] svg path"));
+    await settled(page);
+    const dates = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("[data-view-path] .k2b-chart svg text.stdlib-chart-tick-label[text-anchor='middle']")).map(
+        (label) => label.textContent,
+      ),
+    );
+    expect(dates.length).toBeGreaterThan(0);
+    expect(dates).not.toContain("30. Okt.");
+    expect(dates.every((date) => date?.endsWith("Nov."))).toBe(true);
+    if (process.env.VIEW_SHOTS) await page.screenshot({ path: `${process.env.VIEW_SHOTS}/79-zeitachse-light-1440.png`, fullPage: true });
+  } finally {
+    await context.close();
+  }
+});
