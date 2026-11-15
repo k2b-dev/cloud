@@ -9,9 +9,16 @@ import { aiToolIcon } from "./chat/message-utils";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
 import { type AiTurnBlock, toolBlockId } from "./protocol";
 
+/**
+ * What waits for the person, by kind: each kind has its sign in "Waiting for you" and its own way to the thing. Today
+ * Cloud lists approvals; another source adds its entries with a kind of its own (Bauplan 3m).
+ */
+export type AiOpenQuestionKind = "approval";
+
 export type AiOpenQuestion = {
   /** The approval request id (approvals.requests.id). */
   id: string;
+  kind: AiOpenQuestionKind;
   /** Short id of the chat the question waits in. */
   conversationId: string;
   /** The chat's current title, at most 200 code points; chat content, never Cloud's words. */
@@ -117,6 +124,7 @@ export const openQuestionFromRow = (row: QuestionRow, input: { locale: string; t
   const presentation = block?.presentation;
   const question: AiOpenQuestion = {
     id: row.id,
+    kind: "approval",
     conversationId: row.conversationId,
     conversationTitle: row.conversationTitle === null ? null : boundedText(row.conversationTitle, 200),
     // The id the chat renders the card under: a custom approval's card carries its parent call, also when a stored

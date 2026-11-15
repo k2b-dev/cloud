@@ -58,14 +58,18 @@ target: one allows it and one declines. An approval applies once to what the
 card shows. If that changes before the Action runs, Assistant asks again. A
 reload keeps the reviewed sentence and preview.
 
-While questions are open, **Waiting for you** above the composer lists each one
-in its short form, also those from your other chats with the chat's name.
-Select one to go to its question; Assistant opens that chat if needed and puts
-the focus on the question's sentence. A reload returns to that question. When
-more questions wait than the row lists, its last entry opens **Approvals**.
-With a single question in the open chat, the row shows only while that
-question's buttons are out of view. There is no way to approve several
-questions at once: you answer each in its own card.
+While something waits for you, **Waiting for you** above the composer shows it
+in one row: each open question in its short form, also those from your other
+chats with the chat's name, and in the open chat a routine that needs attention
+or an app whose last run failed. Each entry has a sign for its kind. Select one
+to go to it; for a question, Assistant opens that chat if needed and puts the
+focus on the question's sentence, and a reload returns to that question. What
+does not fit in the row is behind **+n**: it opens the whole list, grouped into
+this chat and other chats, with **See all** for **Approvals**. On a phone the
+row shows one entry and the list opens as a sheet. With a single question in the
+open chat, the row shows only while that question's buttons are out of view.
+There is no way to approve several questions at once: you answer each in its own
+card.
 
 Where offered, the quiet **Yes, and don't ask again in this chat** link remembers
 this scope until you delete the chat. **Always approve** is no longer offered;
