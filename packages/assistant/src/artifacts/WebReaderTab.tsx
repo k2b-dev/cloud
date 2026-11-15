@@ -2,6 +2,7 @@ import type { WebReaderResult } from "@k2b/cloud/ai";
 import { Button, Dropdown, type DropdownItem, IconButton, IconButtonLink, MarkdownView, Skeleton, useLocale } from "@k2b/ui";
 import { createResource, createSignal, Match, Show, Switch } from "solid-js";
 import { readWebPage } from "../api/web-reader-client";
+import { isWebAddress } from "../web-address";
 import { webReaderMessages } from "./web-reader-messages";
 
 /** A day and time in the reader's words: "heute, 14:12", or the date before today. */
@@ -109,7 +110,7 @@ export function WebReaderTab(props: {
         <IconButtonLink
           size="sm"
           variant="ghost"
-          href={shown()}
+          href={isWebAddress(shown()) ? shown() : undefined}
           target="_blank"
           rel="noopener noreferrer"
           label={t().openOwn}
@@ -184,7 +185,7 @@ export function WebReaderTab(props: {
             <div class="web-reader__notice" role="alert">
               <p>{t().unreadable}</p>
               <p class="web-reader__meta">{t().unreadableDetail}</p>
-              <a class="web-reader__link" href={current()} target="_blank" rel="noopener noreferrer">
+              <a class="web-reader__link" href={isWebAddress(current()) ? current() : undefined} target="_blank" rel="noopener noreferrer">
                 {t().openOwn}
               </a>
             </div>
@@ -192,7 +193,7 @@ export function WebReaderTab(props: {
           <Match when={page.latest?.status === "unavailable"}>
             <div class="web-reader__notice" role="status">
               <p>{t().unavailable}</p>
-              <a class="web-reader__link" href={current()} target="_blank" rel="noopener noreferrer">
+              <a class="web-reader__link" href={isWebAddress(current()) ? current() : undefined} target="_blank" rel="noopener noreferrer">
                 {t().openOwn}
               </a>
             </div>

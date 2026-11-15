@@ -111,3 +111,22 @@ test("revision is a nonnegative safe integer", () => {
     expect(SaveChatWorkspaceSchema.safeParse({ state: workspace(), revision }).success).toBe(false);
   expect(SaveChatWorkspaceSchema.safeParse({ state: workspace(), revision: 0 }).success).toBe(true);
 });
+
+test("stored web tabs accept only absolute HTTP and HTTPS addresses", () => {
+  const state = (url: string) => ({
+    tabs: [{ id: "web", key: JSON.stringify(["web", "chat", url]), title: "Page" }],
+    layout: null,
+    front: "web",
+  });
+  for (const url of [
+    "javascript:void(0)",
+    "data:text/plain,hello",
+    "file:///a",
+    "/relative",
+    "https://",
+    "https://user:pass@example.test/",
+  ])
+    expect(ChatWorkspaceStateSchema.safeParse(state(url)).success).toBe(false);
+  for (const url of ["http://example.test/", "https://example.test/", "HTTPS://example.test/"])
+    expect(ChatWorkspaceStateSchema.safeParse(state(url)).success).toBe(true);
+});

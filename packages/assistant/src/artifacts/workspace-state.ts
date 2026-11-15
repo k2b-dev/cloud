@@ -1,6 +1,7 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import type { JSX } from "solid-js";
 import type { ContextCategory } from "../frontend/AssistantChatContext";
+import { isWebAddress } from "../web-address";
 export type WorkspaceTab =
   | { key: string; kind: "task"; taskId: string; title: string }
   | { key: string; kind: "context"; conversationId: string; category: ContextCategory; title: string; project?: AiProject | null }
@@ -35,8 +36,9 @@ export function presentationTab(conversationId: string, presentationId: string, 
   };
 }
 /** A web page from this chat in the reading view. */
-export function webTab(conversationId: string, url: string, title?: string): WorkspaceTab {
-  const host = URL.canParse(url) ? new URL(url).host : url;
+export function webTab(conversationId: string, url: string, title?: string): WorkspaceTab | null {
+  if (!isWebAddress(url)) return null;
+  const host = new URL(url).host;
   return { key: JSON.stringify(["web", conversationId, url]), kind: "web", conversationId, url, title: title || host };
 }
 export function sourceTab(artifactId: string, path: string): WorkspaceTab {
@@ -88,7 +90,7 @@ export function workspaceSelectionFromHref(href: string): WorkspaceTab | null {
       return contextTab(id, path, path);
     if (kind === "file") return fileTab(id, path);
     if (kind === "source") return sourceTab(id, path);
-    if (kind === "web" && /^https?:\/\//u.test(path)) return webTab(id, path);
+    if (kind === "web") return webTab(id, path);
     if (kind === "presentation" && /^[0-9a-f-]{36}$/u.test(path)) return presentationTab(id, path, "");
   } catch {
     /* Invalid URL state is ignored; resource APIs still authorize every read. */
