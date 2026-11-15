@@ -220,7 +220,8 @@ describe("Approval scenes", () => {
         await shot(page, `78-kennzahlen-light-${width}`);
         expect(look.heads).toHaveLength(2);
         for (const head of look.heads) expect(head).toContain("Kennzahlen");
-        expect(look).toMatchObject({ rows: 2, charts: 0, cells: 6, signs: 3 });
+        // Both rows carry the sign before each name (v12), the stat charts through their icon like the cards.
+        expect(look).toMatchObject({ rows: 2, charts: 0, cells: 6, signs: 6 });
       } finally {
         await page.close();
       }

@@ -15,26 +15,40 @@ import { parseCloudAiChartToolView } from "./view-block";
 export const gustavLine = <T extends { kind: string; smooth?: boolean; points?: boolean }>(description: T): T =>
   description.kind === "line" ? { ...description, smooth: description.smooth ?? false, points: description.points ?? true } : description;
 
-type StatItem = { label: string; value: number; note?: string; trend?: number[] };
+type StatItem = { label: string; value: number; icon?: string; note?: string; trend?: number[] };
+/** A Tabler icon name as the card and chart tools take it; anything else is left out. */
+const tablerIcon = (name: unknown): string | undefined =>
+  typeof name === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) ? `ti ti-${name}` : undefined;
 /**
  * A `stat` chart is a key figure: it stands as one in the flat row of key figures, not as a chart island. Only a plain
  * figure translates (title, value, subtitle, recent values); one with a unit, format, change or tooltip stays a chart,
  * because a key figure's change is a share and its format a number format.
  */
-const statItem = (description: Record<string, unknown>): StatItem | null => {
+const statItem = (description: Record<string, unknown>, sign: unknown): StatItem | null => {
   if (description.kind !== "stat" || typeof description.value !== "number" || !Number.isFinite(description.value)) return null;
   if (Object.keys(description).some((key) => !["view", "kind", "title", "subtitle", "value", "sparkline"].includes(key))) return null;
   const label = cut(description.title);
   if (!label) return null;
   const note = cut(description.subtitle);
   const trend = Array.isArray(description.sparkline) ? description.sparkline.filter(Number.isFinite).slice(-60) : [];
-  return { label, value: description.value, ...(note ? { note } : {}), ...(trend.length > 1 ? { trend } : {}) };
+  const icon = tablerIcon(sign);
+  return { label, value: description.value, ...(icon ? { icon } : {}), ...(note ? { note } : {}), ...(trend.length > 1 ? { trend } : {}) };
 };
 
 export const chartToolBlocks = (args: unknown): BoundBlockView | null => {
   const parsed = parseCloudAiChartToolView(args);
   if (!parsed) return null;
-  const figures = (parsed.view === "chart" ? [parsed] : parsed.charts).map((chart) => statItem(chart as Record<string, unknown>));
+  // The sign is not part of a chart's description, so it comes from the call's own arguments.
+  const raw = args as { icon?: unknown; charts?: unknown };
+  const signs =
+    parsed.view === "chart"
+      ? [raw.icon]
+      : Array.isArray(raw.charts)
+        ? raw.charts.map((chart) => (chart as { icon?: unknown } | null)?.icon)
+        : [];
+  const figures = (parsed.view === "chart" ? [parsed] : parsed.charts).map((chart, index) =>
+    statItem(chart as Record<string, unknown>, signs[index]),
+  );
   if (figures.every((figure) => figure !== null)) {
     const rows = Array.from({ length: Math.ceil(figures.length / 6) }, (_, index) => ({
       kind: "Stats" as const,
@@ -87,6 +101,6 @@ export const cardToolBlocks = (args: unknown): BoundBlockView | null => {
   if (!label || !value) return null;
   const trend = [cut(card.trendValue, 40), cut(card.trendLabel, 40)].filter(Boolean).join(" ");
   const note = cut([trend, cut(card.caption)].filter(Boolean).join(" · "));
-  const icon = typeof card.icon === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(card.icon) ? `ti ti-${card.icon}` : undefined;
+  const icon = tablerIcon(card.icon);
   return { version: 1, blocks: [{ kind: "Stats", items: [{ label, value, ...(icon ? { icon } : {}), ...(note ? { note } : {}) }] }] };
 };

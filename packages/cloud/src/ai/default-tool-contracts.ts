@@ -323,6 +323,11 @@ const flatChartSchema = () => {
     thresholds: ChartThresholds.optional().describe("gauge, barGauge: ascending band bounds, within min/max."),
     delta: z.number().optional().describe("stat: change, in the value's units."),
     better: z.enum(["up", "down"]).optional().describe("stat: which direction improves the measure."),
+    icon: z
+      .string()
+      .max(40)
+      .optional()
+      .describe("stat: Tabler icon name for the small sign before the title, as the card tool's icon, such as list-check."),
     sparkline: z.array(z.number()).min(2).max(CLOUD_AI_CHART_MAX_VALUES).optional().describe("stat: recent values in order."),
   });
 };

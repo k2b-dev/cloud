@@ -59,6 +59,21 @@ test("plain stat charts become one flat row of key figures; a stat with its own 
     { kind: "Stats", items: [{ label: "Umsatz", value: 12, trend: [1, 2, 3] }] },
   ]);
   expect(chartToolView({ kind: "stat", title: "Umsatz", value: 12, delta: 2 })?.blocks[0]).toMatchObject({ kind: "Chart" });
+  // A stat's icon is its sign before the name, as a card's is; a name that is no Tabler icon name is left out.
+  const signed = chartToolView({
+    title: "Logistik",
+    charts: [
+      { kind: "stat", title: "Offen", value: 1366, icon: "list-check" },
+      { kind: "stat", title: "Fällig", value: 3, icon: "<b>" },
+    ],
+  });
+  expect(signed?.blocks[0]).toMatchObject({
+    children: [{ kind: "Stats", items: [{ label: "Offen", icon: "ti ti-list-check" }, { label: "Fällig" }] }],
+  });
+  expect((signed?.blocks[0] as { children: { items: Record<string, unknown>[] }[] }).children[0]!.items[1]).not.toHaveProperty("icon");
+  expect(chartToolView({ kind: "stat", title: "Umsatz", value: 12, icon: "wallet" })?.blocks).toEqual([
+    { kind: "Stats", items: [{ label: "Umsatz", value: 12, icon: "ti ti-wallet" }] },
+  ]);
 });
 
 test("a group becomes its charts under the group's title, side by side in a grid", () => {

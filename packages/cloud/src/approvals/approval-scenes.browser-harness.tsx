@@ -311,9 +311,9 @@ const scenes: Record<string, () => JSX.Element> = {
       subtitle: "Stand 15.11., 13:35",
       layout: "grid",
       charts: [
-        { kind: "stat", title: "Offene Aufgaben", value: 1366, subtitle: "Momentaufnahme" },
-        { kind: "stat", title: "Diese Woche fällig", value: 3, subtitle: "15. – 21.11." },
-        { kind: "stat", title: "Ohne Fälligkeit", value: 1363, subtitle: "Überwiegend Automation-Duplikate" },
+        { kind: "stat", title: "Offene Aufgaben", value: 1366, subtitle: "Momentaufnahme", icon: "list-check" },
+        { kind: "stat", title: "Diese Woche fällig", value: 3, subtitle: "15. – 21.11.", icon: "calendar-due" },
+        { kind: "stat", title: "Ohne Fälligkeit", value: 1363, subtitle: "Überwiegend Automation-Duplikate", icon: "calendar-off" },
       ],
     };
     const card = (id: string, args: Record<string, unknown>) => tool(id, "card", args, cardToolResult(args));
