@@ -203,7 +203,17 @@ describe("Cloud chat composer adapter", () => {
 
     expect(aiComposerFileAccept).toContain("image/png");
     expect(result.attachments).toEqual([]);
-    expect(result.errors).toEqual(["photo.png: choose a Vision model or configure the view_image fallback."]);
+    expect(result.errors).toEqual([
+      "photo.png: this model cannot look at images. Choose a model that understands images, or send without the image.",
+    ]);
+    // A German reader reads the reason and the way out in German.
+    const german = await readAiComposerFiles([new File(["image"], "foto.png", { type: "image/png" })], {
+      acceptsImages: false,
+      locale: "de",
+    });
+    expect(german.errors).toEqual([
+      "foto.png: Dieses Modell kann keine Bilder ansehen. Wähle ein Modell, das Bilder versteht, oder sende ohne das Bild.",
+    ]);
   });
 
   test("accepts every document format supported by read_file", () => {
@@ -220,7 +230,7 @@ describe("Cloud chat composer adapter", () => {
       currentImageBytes: 40 * 1024 * 1024,
     });
     expect(result.attachments).toEqual([]);
-    expect(result.errors[0]).toContain("40 MB total limit");
+    expect(result.errors[0]).toContain("larger than 40 MB");
   });
 
   test("bounds what chooseFiles reads from Cloud apps by the draft's free slots, 50 MiB each", () => {

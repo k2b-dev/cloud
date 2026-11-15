@@ -1744,6 +1744,7 @@ export default function AssistantWorkspace(props: Props) {
       const current = composerAttachmentsFor(sessionKey);
       const result = await readAiComposerFiles(files, {
         acceptsImages: acceptsImages(),
+        locale: locale(),
         currentCount: composerPartCount(sessionKey),
         currentImageBytes: current.reduce((total, attachment) => total + (attachment.kind === "image" ? attachment.size : 0), 0),
       });

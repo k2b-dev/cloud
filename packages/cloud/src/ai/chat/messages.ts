@@ -84,6 +84,11 @@ const messages = /* @__PURE__ */ i18n.define({
       workEndedStopped: "stopped",
       workEndedInterrupted: "interrupted",
       stepThought: "Thought it over",
+      attachImageNeedsModel: ({ name }: { name: string }) =>
+        `${name}: this model cannot look at images. Choose a model that understands images, or send without the image.`,
+      attachImagesTooLarge: ({ name, megabytes }: { name: string; megabytes: number }) =>
+        `${name}: the images together are larger than ${megabytes} MB. Send fewer or smaller images.`,
+      attachFailed: ({ name }: { name: string }) => `${name}: this file could not be attached. Try again.`,
       /** A finished app Query whose app gives no past form: its title, marked done. */
       stepDone: ({ title }: { title: string }) => `${title} · done`,
       stepNoAccess: "No access.",
@@ -434,6 +439,11 @@ const messages = /* @__PURE__ */ i18n.define({
       workEndedStopped: "gestoppt",
       workEndedInterrupted: "abgebrochen",
       stepThought: "Nachgedacht",
+      attachImageNeedsModel: ({ name }) =>
+        `${name}: Dieses Modell kann keine Bilder ansehen. Wähle ein Modell, das Bilder versteht, oder sende ohne das Bild.`,
+      attachImagesTooLarge: ({ name, megabytes }) =>
+        `${name}: Die Bilder sind zusammen größer als ${megabytes} MB. Sende weniger oder kleinere Bilder.`,
+      attachFailed: ({ name }) => `${name}: Diese Datei konnte nicht angehängt werden. Versuch es noch einmal.`,
       stepDone: ({ title }) => `${title} · erledigt`,
       stepNoAccess: "Kein Zugriff.",
       stepDidNotWork: "Das hat nicht geklappt.",
