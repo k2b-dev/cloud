@@ -381,7 +381,7 @@ export function ArtifactWorkspace(props: {
         });
     }
     if (tab.kind === "web")
-      items.push({ label: copy.openOwn, icon: "ti ti-external-link", action: () => window.open(tab.url, "_blank", "noopener,noreferrer") });
+      items.push({ label: copy.openOwn, icon: "ti ti-external-link", action: () => props.controller.openInBrowser(tab.url) });
     if (tab.kind === "app")
       items.push({
         label: copy.openOwn,

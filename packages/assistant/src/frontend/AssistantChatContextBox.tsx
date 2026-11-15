@@ -339,6 +339,8 @@ export function AssistantChatContextPlaces(props: {
   state: ChatSidebarState;
   actions: ContextBoxActions;
   project?: AiProject | null;
+  /** The chat's title, for the head row on phones, where the app's head names only the app. */
+  title?: string | null;
   onSheet: () => void;
 }) {
   const copy = useCopy();
@@ -361,20 +363,30 @@ export function AssistantChatContextPlaces(props: {
   };
   return (
     <>
-      <Button
-        ref={host.buttonRef}
-        class="assistant-context-button"
-        data-k2b-primary="ai"
-        size="sm"
-        variant="ghost"
-        aria-label={copy().title}
-        aria-haspopup="dialog"
-        aria-expanded={host.anchor() ? "true" : "false"}
-        onClick={host.toggle}
-      >
-        <i class="ti ti-layout-list" aria-hidden="true" />
-        <span>{copy().title}</span>
-      </Button>
+      {/* The button stands in a head row above the timeline, never over it, so it covers no message. */}
+      <div class="assistant-context-head">
+        <Show when={props.title}>
+          {(title) => (
+            <p class="assistant-context-head__title k2b-truncate-fade" title={title()}>
+              {title()}
+            </p>
+          )}
+        </Show>
+        <Button
+          ref={host.buttonRef}
+          class="assistant-context-button"
+          data-k2b-primary="ai"
+          size="sm"
+          variant="ghost"
+          aria-label={copy().title}
+          aria-haspopup="dialog"
+          aria-expanded={host.anchor() ? "true" : "false"}
+          onClick={host.toggle}
+        >
+          <i class="ti ti-layout-list" aria-hidden="true" />
+          <span>{copy().title}</span>
+        </Button>
+      </div>
       <div class="assistant-context-boxcol">
         <AssistantChatContextBox
           variant="island"

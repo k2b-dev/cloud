@@ -1,0 +1,60 @@
+diff --git a/src/v4/classic/from-json-schema.ts b/src/v4/classic/from-json-schema.ts
+--- a/src/v4/classic/from-json-schema.ts
++++ b/src/v4/classic/from-json-schema.ts
+@@ -575,4 +575,4 @@
+       if (schema.pattern) {
+-        // JSON Schema patterns are not implicitly anchored (match anywhere in string)
+-        stringSchema = stringSchema.regex(new RegExp(schema.pattern));
++        // JSON Schema patterns use Unicode semantics and are not implicitly anchored.
++        stringSchema = stringSchema.regex(new RegExp(schema.pattern, "u"));
+       }
+@@ -650,3 +650,3 @@
+           const patternValue = convertSchema(patternProps[pattern] as JSONSchema.JSONSchema, ctx);
+-          const keySchema = z.string().regex(new RegExp(pattern));
++          const keySchema = z.string().regex(new RegExp(pattern, "u"));
+           looseRecords.push(z.looseRecord(keySchema, patternValue));
+@@ -678,3 +678,3 @@
+           const propertyKeys = Object.keys(shape);
+-          const patterns = patternKeys.map((p) => new RegExp(p));
++          const patterns = patternKeys.map((p) => new RegExp(p, "u"));
+           const basePatternSchema = zodSchema;
+diff --git a/v4/classic/from-json-schema.js b/v4/classic/from-json-schema.js
+--- a/v4/classic/from-json-schema.js
++++ b/v4/classic/from-json-schema.js
+@@ -544,4 +544,4 @@
+             if (schema.pattern) {
+-                // JSON Schema patterns are not implicitly anchored (match anywhere in string)
+-                stringSchema = stringSchema.regex(new RegExp(schema.pattern));
++                // JSON Schema patterns use Unicode semantics and are not implicitly anchored.
++                stringSchema = stringSchema.regex(new RegExp(schema.pattern, "u"));
+             }
+@@ -608,3 +608,3 @@
+                     const patternValue = convertSchema(patternProps[pattern], ctx);
+-                    const keySchema = z.string().regex(new RegExp(pattern));
++                    const keySchema = z.string().regex(new RegExp(pattern, "u"));
+                     looseRecords.push(z.looseRecord(keySchema, patternValue));
+@@ -635,3 +635,3 @@
+                     const propertyKeys = Object.keys(shape);
+-                    const patterns = patternKeys.map((p) => new RegExp(p));
++                    const patterns = patternKeys.map((p) => new RegExp(p, "u"));
+                     const basePatternSchema = zodSchema;
+diff --git a/v4/classic/from-json-schema.cjs b/v4/classic/from-json-schema.cjs
+--- a/v4/classic/from-json-schema.cjs
++++ b/v4/classic/from-json-schema.cjs
+@@ -570,4 +570,4 @@
+             if (schema.pattern) {
+-                // JSON Schema patterns are not implicitly anchored (match anywhere in string)
+-                stringSchema = stringSchema.regex(new RegExp(schema.pattern));
++                // JSON Schema patterns use Unicode semantics and are not implicitly anchored.
++                stringSchema = stringSchema.regex(new RegExp(schema.pattern, "u"));
+             }
+@@ -634,3 +634,3 @@
+                     const patternValue = convertSchema(patternProps[pattern], ctx);
+-                    const keySchema = z.string().regex(new RegExp(pattern));
++                    const keySchema = z.string().regex(new RegExp(pattern, "u"));
+                     looseRecords.push(z.looseRecord(keySchema, patternValue));
+@@ -661,3 +661,3 @@
+                     const propertyKeys = Object.keys(shape);
+-                    const patterns = patternKeys.map((p) => new RegExp(p));
++                    const patterns = patternKeys.map((p) => new RegExp(p, "u"));
+                     const basePatternSchema = zodSchema;

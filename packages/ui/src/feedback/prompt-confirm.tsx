@@ -2,9 +2,9 @@ import { createSignal, type JSX, Show } from "solid-js";
 import { TextInput } from "../inputs/TextInput";
 import { showTruncatedTitle } from "../internal/truncated-title";
 import { resolveUiMessages } from "../intl/messages";
-import { dialogCore } from "./dialog-core";
 import { type DialogTone, dialogToneIcon, dialogToneLabel } from "./dialog-tone";
 import { resolvePromptMessages } from "./prompt-messages";
+import { openPrompt } from "./prompt-sheet";
 import type { ConfirmOptions, DialogOptions } from "./prompts";
 import { SuccessCheck } from "./success-check";
 
@@ -57,15 +57,6 @@ export const DialogHeader = (props: {
   </header>
 );
 
-export const panelClass = (options?: Pick<DialogOptions, "size" | "surface" | "variant">): string => {
-  const size = options?.size ?? "medium";
-  const variant = options?.variant && options.variant !== "primary" ? ` k2b-dialog--${options.variant}` : "";
-  return `k2b-dialog k2b-dialog--${size}${variant}${options?.surface === "bare" ? " is-bare" : ""}`;
-};
-
-export const contentClass = (surface?: DialogOptions["surface"]): string =>
-  surface === "bare" ? "k2b-dialog__viewport is-bare" : "k2b-dialog__viewport";
-
 export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions): Promise<boolean | undefined> => {
   const confirmationPhrase = options?.confirmationPhrase;
   if (confirmationPhrase !== undefined && (confirmationPhrase.trim().length === 0 || /[\r\n\t]/.test(confirmationPhrase))) {
@@ -73,7 +64,7 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
   }
   let confirmationInput: HTMLInputElement | undefined;
 
-  return dialogCore.open<boolean>(
+  return openPrompt<boolean>(
     (close) => {
       if (!confirmationPhrase) {
         return (
@@ -137,15 +128,10 @@ export const confirmPrompt = (content: PromptContent, options?: ConfirmOptions):
         </form>
       );
     },
-    {
-      panelClassName: panelClass(options),
-      contentClassName: contentClass(options?.surface),
-      initialFocus: confirmationPhrase ? () => confirmationInput ?? null : undefined,
-      signal: options?.signal,
-      cancelBehavior: options?.cancelBehavior,
-      history: options?.history,
-      ariaLabel: options?.ariaLabel ?? options?.title ?? resolvePromptMessages().confirmation,
-    },
+    options,
+    resolvePromptMessages().confirmation,
+    true,
+    confirmationPhrase ? () => confirmationInput ?? null : undefined,
   );
 };
 
