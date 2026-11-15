@@ -306,7 +306,10 @@ export const CodeChatDraftSummarySchema = z
  */
 export const CodeChatStepWordsSchema = z.strictObject({
   notices: z.array(CodeReadModelNoticeSchema).max(CODE_READ_MODEL_LIST_LIMIT),
-  mayDo: z.array(z.strictObject({ text: z.string(), isNew: z.boolean() })).max(CODE_READ_MODEL_LIST_LIMIT).optional(),
+  mayDo: z
+    .array(z.strictObject({ text: z.string(), isNew: z.boolean() }))
+    .max(CODE_READ_MODEL_LIST_LIMIT)
+    .optional(),
   examples: z
     .strictObject({
       passed: z.number().int().nonnegative(),

@@ -123,7 +123,8 @@ const text = (root: Element) => (root.textContent ?? "").replace(/\s+/g, " ");
 /** The patterns the code-no-source rule forbids in what a person reads. */
 const expectNoCode = (root: Element) => {
   const shown = text(root);
-  for (const pattern of [/\bcode\.tsx?\b/i, /\.[a-z]{1,8}:\d+/i, /\bcode_[a-z_]+\b/, /\b[0-9a-f]{8,}\b/i]) expect(shown).not.toMatch(pattern);
+  for (const pattern of [/\bcode\.tsx?\b/i, /\.[a-z]{1,8}:\d+/i, /\bcode_[a-z_]+\b/, /\b[0-9a-f]{8,}\b/i])
+    expect(shown).not.toMatch(pattern);
 };
 
 test("ready: one approval form with the question, what changes against the running version, the examples and the switch", async () => {
@@ -154,7 +155,9 @@ test("without examples the card warns, offers to try examples first and to switc
   const { dom } = await mount(
     {
       "activation/preview": () => ({ json: { data: preview({ tests: { state: "none", passed: 0, total: 0 } }) } }),
-      [WORDS]: () => ({ json: { data: words({ examples: { state: "none", passed: 0, total: 0, summary: "", explanation: "", items: [] } }) } }),
+      [WORDS]: () => ({
+        json: { data: words({ examples: { state: "none", passed: 0, total: 0, summary: "", explanation: "", items: [] } }) },
+      }),
     },
     { onAsk: (value) => asked.push(value) },
   );
@@ -254,7 +257,9 @@ test("waiting for admin explains who approves, what happens now and what holds u
     { onAsk: (value) => asked.push(value) },
   );
   expect(status(dom.root)).toBe("Waiting for admin");
-  expect(dom.root.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Version 5 of Code of info@ waits for an admin’s approval.");
+  expect(dom.root.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe(
+    "Version 5 of Code of info@ waits for an admin’s approval.",
+  );
   expect(text(dom.root)).toContain("In your Cloud an admin approves every automation that does something others see.");
   expect(text(dom.root)).toContain("The admins know. You get a notification as soon as one of them has decided.");
   expect(text(dom.root)).toContain("Until then version 4 stays switched on. You do not need to do anything.");
@@ -296,7 +301,9 @@ test("changes requested: the admin's message and comments as text, never a file 
   const asked: string[] = [];
   const { dom } = await mount(
     {
-      "activation/preview": () => ({ json: { data: preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }) } }),
+      "activation/preview": () => ({
+        json: { data: preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }) },
+      }),
       review: () => ({
         json: {
           data: review({
@@ -304,7 +311,9 @@ test("changes requested: the admin's message and comments as text, never a file 
             decidedBy: JANA,
             decidedAt: "2026-11-12T14:01:00.000Z",
             message: "Please store only PDF attachments.",
-            comments: [{ id: "c1", author: JANA, createdAt: "2026-11-12T14:01:00.000Z", body: "Check the file type here.", parentId: null }],
+            comments: [
+              { id: "c1", author: JANA, createdAt: "2026-11-12T14:01:00.000Z", body: "Check the file type here.", parentId: null },
+            ],
             commentCount: 1,
           }),
         },
@@ -325,7 +334,9 @@ test("changes requested: the admin's message and comments as text, never a file 
 
 test("changes requested a second time: Gustav already revised once by himself, now the person decides", async () => {
   const { dom } = await mount({
-    "activation/preview": () => ({ json: { data: preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }) } }),
+    "activation/preview": () => ({
+      json: { data: preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }) },
+    }),
     review: () => ({
       json: {
         data: review({
@@ -343,8 +354,12 @@ test("changes requested a second time: Gustav already revised once by himself, n
 
 test("rejected: the reason from the admin, and building it differently with Gustav", async () => {
   const { dom } = await mount({
-    "activation/preview": () => ({ json: { data: preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "rejected or revoked" } }) } }),
-    review: () => ({ json: { data: review({ status: "rejected", decidedBy: JANA, decidedAt: "2026-11-12T14:01:00.000Z", message: "No shared folders." }) } }),
+    "activation/preview": () => ({
+      json: { data: preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "rejected or revoked" } }) },
+    }),
+    review: () => ({
+      json: { data: review({ status: "rejected", decidedBy: JANA, decidedAt: "2026-11-12T14:01:00.000Z", message: "No shared folders." }) },
+    }),
   });
   expect(status(dom.root)).toBe("Rejected");
   expect(text(dom.root)).toContain("Reason from Jana Probe");
@@ -366,7 +381,10 @@ test("approved: who approved it and what holds until the person switches it on",
 test("expired, superseded, no access and a failed load each have their one line and at most one answer", async () => {
   const asked: string[] = [];
   const expired = await mount(
-    { "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending" } }) } }), review: () => ({ json: { data: review({ status: "expired" }) } }) },
+    {
+      "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending" } }) } }),
+      review: () => ({ json: { data: review({ status: "expired" }) } }),
+    },
     { onAsk: (value) => asked.push(value) },
   );
   expect(status(expired.dom.root)).toBe("Expired");
@@ -395,7 +413,9 @@ test("expired, superseded, no access and a failed load each have their one line 
 });
 
 test("a phone sees why it cannot switch on, in place of the reason", async () => {
-  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ allowed: { allowed: false, reason: "phone" } }) } }) });
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview({ allowed: { allowed: false, reason: "phone" } }) } }),
+  });
   expect(text(dom.root)).toContain("Switching on is not possible on a phone. It works on a computer.");
   expect(button(dom.root, "Switch on version 5")?.hasAttribute("disabled")).toBe(true);
 });
@@ -422,7 +442,9 @@ test("the card follows decisions and switch-ons from elsewhere on the live chann
   let pending = true;
   const card = await mount({
     "activation/preview": () => ({ json: { data: preview({ readiness: { state: pending ? "approval_pending" : "ready" } }) } }),
-    review: () => ({ json: { data: review({ status: pending ? "pending" : "approved", decidedBy: JANA, decidedAt: "2026-11-12T14:01:00.000Z" }) } }),
+    review: () => ({
+      json: { data: review({ status: pending ? "pending" : "approved", decidedBy: JANA, decidedAt: "2026-11-12T14:01:00.000Z" }) },
+    }),
   });
   await new Promise((resolve) => setTimeout(resolve, 120));
   expect(card.previews()).toBe(1);
@@ -443,7 +465,8 @@ test("a decision whose read fails keeps the waiting card and is tried again by t
   let down = false;
   let pending = true;
   const card = await mount({
-    "activation/preview": () => (down ? { status: 503 } : { json: { data: preview({ readiness: { state: pending ? "approval_pending" : "ready" } }) } }),
+    "activation/preview": () =>
+      down ? { status: 503 } : { json: { data: preview({ readiness: { state: pending ? "approval_pending" : "ready" } }) } },
   });
   pending = false;
   down = true;

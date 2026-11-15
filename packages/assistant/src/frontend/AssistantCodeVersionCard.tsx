@@ -295,8 +295,15 @@ export default function AssistantCodeVersionCard(props: {
     const version = keep() ?? 0;
     const kind = changeKind();
     const text = on
-      ? { first: t().reasonOnFirst, more: t().reasonOnMore({ version }), less: t().reasonOnLess({ version }), same: t().reasonOnSame({ version }) }[kind]
-      : { first: t().reasonFirst, more: t().reasonMore({ version }), less: t().reasonLess({ version }), same: t().reasonSame({ version }) }[kind];
+      ? {
+          first: t().reasonOnFirst,
+          more: t().reasonOnMore({ version }),
+          less: t().reasonOnLess({ version }),
+          same: t().reasonOnSame({ version }),
+        }[kind]
+      : { first: t().reasonFirst, more: t().reasonMore({ version }), less: t().reasonLess({ version }), same: t().reasonSame({ version }) }[
+          kind
+        ];
     return { text, icon: "ti ti-eye" };
   };
   const changeDetails = (): ApprovalFrameProps["details"] => {
@@ -346,9 +353,7 @@ export default function AssistantCodeVersionCard(props: {
       label: label({ name }),
       content: (
         <div class="assistant-code-version__review">
-          <Show when={review.message}>
-            {(message) => <ReviewEntry name={name} role={t().adminRole} at={at} text={message()} />}
-          </Show>
+          <Show when={review.message}>{(message) => <ReviewEntry name={name} role={t().adminRole} at={at} text={message()} />}</Show>
           <Show when={review.comments.length > 0}>
             <div class="assistant-code-version__comments">
               <p class="assistant-code-version__comments-label">{t().comments({ count: review.commentCount || roots.length })}</p>
@@ -427,7 +432,10 @@ export default function AssistantCodeVersionCard(props: {
         anchorId: base.anchorId,
       };
     if (value === "denied")
-      return { ...compact({ tone: "off", label: words.statusNoAccess, icon: "ti ti-lock" }, { text: words.lineNoAccess }), anchorId: base.anchorId };
+      return {
+        ...compact({ tone: "off", label: words.statusNoAccess, icon: "ti ti-lock" }, { text: words.lineNoAccess }),
+        anchorId: base.anchorId,
+      };
     const { preview, review } = value;
     const status = review?.status;
     const act = activation();
@@ -555,7 +563,10 @@ export default function AssistantCodeVersionCard(props: {
       );
     if (act.kind === "unreadable")
       return withAnchor(
-        compact({ tone: "warning", label: words.statusUnclear }, { text: words.lineCheckFailed, actions: small(words.checkNow, () => void check()) }),
+        compact(
+          { tone: "warning", label: words.statusUnclear },
+          { text: words.lineCheckFailed, actions: small(words.checkNow, () => void check()) },
+        ),
       );
     if (act.kind === "failed")
       return withAnchor(
@@ -585,7 +596,11 @@ export default function AssistantCodeVersionCard(props: {
     const noExamples = examples() === null;
     const refused = preview.readiness.state === "refused" ? preview.readiness.message : null;
     const blocked = !preview.allowed.allowed
-      ? { text: preview.allowed.reason === "phone" ? words.phone : words.credential, icon: "ti ti-device-mobile-off", tone: "warning" as const }
+      ? {
+          text: preview.allowed.reason === "phone" ? words.phone : words.credential,
+          icon: "ti ti-device-mobile-off",
+          tone: "warning" as const,
+        }
       : refused
         ? { text: refused, icon: "ti ti-alert-triangle", tone: "warning" as const }
         : undefined;
@@ -604,7 +619,8 @@ export default function AssistantCodeVersionCard(props: {
         : undefined,
       meta: approved ? facts : [...facts, keepFact()],
       link: noExamples ? undefined : seeAll(),
-      more: noExamples && props.onAsk ? [{ label: words.tryExamples, onSelect: ask(words.askExamples({ version: props.number })) }] : undefined,
+      more:
+        noExamples && props.onAsk ? [{ label: words.tryExamples, onSelect: ask(words.askExamples({ version: props.number })) }] : undefined,
       confirm: {
         label: act.kind === "progress" ? words.switching : noExamples ? words.switchAnyway : words.switchOn({ version: props.number }),
         icon: "ti ti-power",
@@ -618,7 +634,28 @@ export default function AssistantCodeVersionCard(props: {
 
   return (
     <div ref={root} class="assistant-code-version" data-version={props.number}>
-      <ApprovalFrame {...frame()} />
+      <ApprovalFrame
+        locale={frame().locale}
+        state={frame().state}
+        mode={frame().mode}
+        source={frame().source}
+        status={frame().status}
+        sentence={frame().sentence}
+        reason={frame().reason}
+        details={frame().details}
+        notes={frame().notes}
+        meta={frame().meta}
+        confirm={frame().confirm}
+        decline={frame().decline}
+        back={frame().back}
+        link={frame().link}
+        more={frame().more}
+        remember={frame().remember}
+        unavailable={frame().unavailable}
+        waiting={frame().waiting}
+        outcome={frame().outcome}
+        anchorId={frame().anchorId}
+      />
     </div>
   );
 }

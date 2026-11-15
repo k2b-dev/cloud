@@ -23,6 +23,8 @@ import { toolSubject, useReaderTimeZone } from "./action-sentences";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { hasCapabilityView } from "./capability-result";
 import { CapabilityViewBlock } from "./capability-view";
+import { codeStepWords } from "./code-step-words";
+import { CodeStepResult } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
@@ -34,8 +36,6 @@ import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
 import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
-import { codeStepWords } from "./code-step-words";
-import { CodeStepResult } from "./code-steps";
 import { type AiTurnAction, type AiTurnLayout, type AiTurnPhase, type AiTurnResult, submittedCodeVersion } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 

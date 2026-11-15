@@ -31,7 +31,9 @@ export const codeStepWords = (block: ToolBlock): CodeStepWords | null => {
       )
     : [];
   const mayDo = Array.isArray(words.mayDo)
-    ? words.mayDo.flatMap((item) => (isRecord(item) && typeof item.text === "string" ? [{ text: item.text, isNew: item.isNew === true }] : []))
+    ? words.mayDo.flatMap((item) =>
+        isRecord(item) && typeof item.text === "string" ? [{ text: item.text, isNew: item.isNew === true }] : [],
+      )
     : undefined;
   const examples = isRecord(words.examples) ? words.examples : null;
   const items = Array.isArray(examples?.items)
@@ -77,4 +79,3 @@ export const isCodeStepResult = (block: ToolBlock): boolean => {
   const words = codeStepWords(block);
   return !!words && (words.notices.length > 0 || !!words.examples);
 };
-

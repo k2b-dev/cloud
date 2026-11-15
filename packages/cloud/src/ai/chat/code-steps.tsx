@@ -54,7 +54,11 @@ export function CodeStepBody(props: { block: ToolBlock }) {
           {(current) => (
             <Show
               when={(current().mayDo?.length ?? 0) > 0}
-              fallback={<p class="ai-code-step__note">{current().notices.length ? t().codeStepNotices({ count: current().notices.length }) : t().codeStepNoNotices}</p>}
+              fallback={
+                <p class="ai-code-step__note">
+                  {current().notices.length ? t().codeStepNotices({ count: current().notices.length }) : t().codeStepNoNotices}
+                </p>
+              }
             >
               <ul class="ai-code-step__list" aria-label={t().codeStepMayDo}>
                 <For each={current().mayDo}>

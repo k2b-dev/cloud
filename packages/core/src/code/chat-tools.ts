@@ -113,7 +113,9 @@ export function createCodeAuthoringChatTools() {
   }
   /** The person reads tried examples in words; the model keeps the exact result beside them. */
   async function withTestWords(result: CodeTestResult, context: CodeContext) {
-    const operations = [...new Set(result.cases.flatMap((example) => example.runs.flatMap((run) => run.calls.map((call) => call.operation))))];
+    const operations = [
+      ...new Set(result.cases.flatMap((example) => example.runs.flatMap((run) => run.calls.map((call) => call.operation)))),
+    ];
     const titles = operations.length
       ? await operationTitles(
           operations.map((operation) => ({ operation, target: null })),

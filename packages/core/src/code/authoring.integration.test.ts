@@ -31,8 +31,8 @@ import {
   type CodeAuthoringData,
   CodeAuthoringErrorSchema,
   CodeChatCheckDataSchema,
-  CodeChatTestDataSchema,
   CodeChatDraftSummarySchema,
+  CodeChatTestDataSchema,
   codeAuthoringContracts,
 } from "./authoring-contracts";
 import { CODE_CHAT_DRAFT_LIFETIME_MS, expireCodeChatDrafts } from "./chat-drafts";

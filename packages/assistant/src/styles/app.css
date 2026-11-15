@@ -667,6 +667,18 @@
   font-size: 0.75rem;
 }
 
+/* Until its code arrives, the card holds its room on the AI tint, with the placeholder it shows while it reads. */
+.assistant-code-version__placeholder {
+  padding: 0.875rem 1rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--k2b-ai-surface);
+}
+.assistant-code-version__placeholder-failed {
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.8125rem;
+}
+
 /* The card while it loads: the sentence, the reason and the details on white, in their own heights. */
 .assistant-code-version__loading {
   display: grid;

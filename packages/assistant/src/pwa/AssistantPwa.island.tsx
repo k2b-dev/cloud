@@ -42,7 +42,6 @@ import {
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { assistantApi } from "../api/client";
 import AssistantAuthoringStop from "../frontend/AssistantAuthoringStop";
-import AssistantCodeVersionCard from "../frontend/AssistantCodeVersionCard";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantDictation } from "../frontend/assistant-dictation";
 import {
@@ -52,6 +51,7 @@ import {
   matchesAssistantInvalidation,
 } from "../frontend/assistant-live";
 import { audioMessages } from "../frontend/audio-messages";
+import { AssistantCodeVersionCard } from "../frontend/code-version-card-deferred";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
 import { pwaMessages } from "./messages";

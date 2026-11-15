@@ -691,7 +691,13 @@ describe("Gustav", () => {
   test("the version card is the one approval frame in every state and fits desktop, panel and phone without code", async () => {
     const changes = { status: "changes_requested", decidedBy: JANA, decidedAt: at(10), message: "Bitte nur PDF-Anhänge ablegen." };
     const states: { name: string; scenario: Scenario; word: string | null; sentence: string; main: string | null }[] = [
-      { name: "bereit", scenario: { cardPreview: cardPreview() }, word: null, sentence: "Version 5 von Code von info@ einschalten?", main: "Version 5 einschalten" },
+      {
+        name: "bereit",
+        scenario: { cardPreview: cardPreview() },
+        word: null,
+        sentence: "Version 5 von Code von info@ einschalten?",
+        main: "Version 5 einschalten",
+      },
       {
         name: "ohne-beispiele",
         scenario: {
@@ -711,7 +717,10 @@ describe("Gustav", () => {
       },
       {
         name: "aenderungen",
-        scenario: { cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }), cardReview: changes },
+        scenario: {
+          cardPreview: cardPreview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }),
+          cardReview: changes,
+        },
         word: "Änderungen angefordert",
         sentence: "Version 5 von Code von info@ braucht noch Änderungen.",
         main: "Gustav überarbeiten lassen",
@@ -747,7 +756,8 @@ describe("Gustav", () => {
           }
           expect(await card.getByRole("link", { name: "Unterschied", exact: true }).count()).toBe(0);
           const shown = await card.innerText();
-          for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /\bcode_[a-z_]+/, /sp_2lg8/, /\b[0-9a-f]{8,}\b/]) expect(shown).not.toMatch(pattern);
+          for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /\bcode_[a-z_]+/, /sp_2lg8/, /\b[0-9a-f]{8,}\b/])
+            expect(shown).not.toMatch(pattern);
           // The card has no frame and no shadow; the details lie on white inside the plum ground.
           const look = await card.evaluate((element) => {
             const style = getComputedStyle(element);
@@ -810,7 +820,10 @@ describe("Gustav", () => {
       at: at(0),
     };
     for (const view of [desktop, phone]) {
-      const scenario: Scenario = { cardPreview: cardPreview({ readiness: { state: "approval_pending" } }), cardReview: { status: "pending" } };
+      const scenario: Scenario = {
+        cardPreview: cardPreview({ readiness: { state: "approval_pending" } }),
+        cardReview: { status: "pending" },
+      };
       const h = await open(view, scenario, { path: "/app/assistant/panel" });
       try {
         const card = h.page.locator(".assistant-code-version .k2b-chat-decision");

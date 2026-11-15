@@ -58,7 +58,9 @@ export const codeVersionCardMessages = i18n.define({
       moreComments: ({ count }: { count: number }) => `${count} more on the Code page`,
       notesAdminKnow: "The admins know. You get a notification as soon as one of them has decided.",
       notesKeep: ({ keep }: Keep) =>
-        keep ? `Until then version ${keep} stays switched on. You do not need to do anything.` : "Until then the automation does not run. You do not need to do anything.",
+        keep
+          ? `Until then version ${keep} stays switched on. You do not need to do anything.`
+          : "Until then the automation does not run. You do not need to do anything.",
       approvedBy: ({ name, when }: Who & { when: string }) => `${name} approved it ${when}.`,
       untilYouSwitch: ({ keep }: Keep) =>
         keep ? `Until you switch it on, version ${keep} stays switched on.` : "Until you switch it on, the automation does not run.",
@@ -96,7 +98,8 @@ export const codeVersionCardMessages = i18n.define({
         `The request to the admins has expired. ${keep ? `Version ${keep} stays switched on.` : "The automation stays off."}`,
       lineFailed: ({ keep }: Keep) =>
         `Cloud refused to switch it on. ${keep ? `Version ${keep} stays switched on.` : "The automation stays off."}`,
-      lineUnclear: ({ version }: V) => `Cloud does not know yet whether version ${version} is switched on. Switching on again works once that is clear.`,
+      lineUnclear: ({ version }: V) =>
+        `Cloud does not know yet whether version ${version} is switched on. Switching on again works once that is clear.`,
       lineCheckFailed: "The status could not be checked. Cloud tries again in 30 seconds.",
       lineNotLoaded: "This version could not be loaded. Cloud changed nothing.",
       lineSuperseded: ({ version, latest }: V & { latest: number }) =>
@@ -170,7 +173,9 @@ export const codeVersionCardMessages = i18n.define({
       moreComments: ({ count }) => `${count} weitere auf der Code-Seite`,
       notesAdminKnow: "Die Admins wissen Bescheid. Du bekommst eine Mitteilung, sobald einer entschieden hat.",
       notesKeep: ({ keep }) =>
-        keep ? `Bis dahin bleibt Version ${keep} eingeschaltet. Du musst nichts tun.` : "Bis dahin läuft die Automation nicht. Du musst nichts tun.",
+        keep
+          ? `Bis dahin bleibt Version ${keep} eingeschaltet. Du musst nichts tun.`
+          : "Bis dahin läuft die Automation nicht. Du musst nichts tun.",
       approvedBy: ({ name, when }) => `${name} hat sie ${when} freigegeben.`,
       untilYouSwitch: ({ keep }) =>
         keep ? `Bis du einschaltest, bleibt Version ${keep} eingeschaltet.` : "Bis du einschaltest, läuft die Automation nicht.",
@@ -212,7 +217,8 @@ export const codeVersionCardMessages = i18n.define({
         `Cloud weiß noch nicht, ob Version ${version} eingeschaltet ist. Erneut einschalten geht erst, wenn das klar ist.`,
       lineCheckFailed: "Der Stand ließ sich nicht prüfen. Cloud versucht es in 30 Sekunden noch einmal.",
       lineNotLoaded: "Diese Version konnte nicht geladen werden. Cloud hat dabei nichts geändert.",
-      lineSuperseded: ({ version, latest }) => `Version ${version} wurde durch Version ${latest} ersetzt. Die Freigabe dafür steht weiter unten.`,
+      lineSuperseded: ({ version, latest }) =>
+        `Version ${version} wurde durch Version ${latest} ersetzt. Die Freigabe dafür steht weiter unten.`,
       lineNoAccess: "Du verwaltest diesen Code nicht mehr. Einschalten kann, wer ihn verwaltet.",
       askRework: ({ version, name }) =>
         name ? `Überarbeite Version ${version} so, wie ${name} es möchte.` : `Überarbeite Version ${version} so, wie der Admin es möchte.`,
