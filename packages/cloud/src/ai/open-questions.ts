@@ -11,6 +11,10 @@ import { aiToolIcon } from "./chat/message-utils";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
 import { type AiTurnBlock, toolBlockId } from "./protocol";
 
+/**
+ * What waits for the person, by kind: each kind has its sign in "Waiting for you" and its own way to the thing. Cloud
+ * lists approvals; Code adds its entries with kinds of its own (Bauplan 3m).
+ */
 export type AiOpenQuestionKind = "approval" | "code_activate" | "code_changes" | "code_expired" | "code_attention";
 
 export type AiOpenQuestion = {

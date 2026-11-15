@@ -136,10 +136,7 @@ export function blocksText(blocks: readonly Block[], options: TextOptions = {}):
                       ? entry.value
                       : entry.value
                           .map((person) =>
-                            [person.name, person.address]
-                              .filter(Boolean)
-                              .join(" <")
-                              .replace(/<(.+)$/, "<$1>"),
+                            person.name && person.address ? `${person.name} <${person.address}>` : person.name || person.address || "",
                           )
                           .join(", ")
                   }`,

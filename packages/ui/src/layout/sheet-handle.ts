@@ -292,7 +292,19 @@ export function attachSheetHandle(handle: HTMLElement, options: SheetHandleOptio
   handle.addEventListener("pointercancel", cancel);
   handle.addEventListener("lostpointercapture", cancel);
   handle.addEventListener("click", click);
+  // An owner that sets the detent itself while the sheet moves, as the map dialog does for a picked place, takes over:
+  // the sheet glides there from where it is instead of landing on the old detent and then jumping.
+  const external =
+    typeof MutationObserver === "function"
+      ? new MutationObserver(() => {
+          const at = sheet.dataset.sheetDetent;
+          if (!pinned || drag?.moved || !at || !detents.includes(at) || at === goal) return;
+          moveTo(at);
+        })
+      : undefined;
+  external?.observe(sheet, { attributes: true, attributeFilter: ["data-sheet-detent"] });
   return () => {
+    external?.disconnect();
     finish(false);
     clearTimeout(resume);
     unpin();
