@@ -2,6 +2,30 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
+  // What a finished Query did, named in the chat's step list; each German translation gives its own `doneTitle`.
+  doneTitles: {
+    "notebook.containers": "Listed discussion containers",
+    "annotation.list": "Listed comments on the text",
+    "annotation.read": "Read comment on the text",
+    "annotation.replies": "Listed comment replies",
+    "notebook.activity": "Read note activity",
+    "note.preview": "Checked note blocks",
+    "notebook.search": "Searched notebooks",
+    "note.search": "Searched notes",
+    "notebook.list": "Listed notebooks",
+    "notebook.browse": "Chose a notebook",
+    "notebook.read": "Read notebook",
+    "note.tree": "Listed note tree",
+    "note.children": "Browsed child notes",
+    "note.read": "Read note",
+    "note.links": "Listed note links and backlinks",
+    "comment.list": "Listed page discussion",
+    "comment.browse": "Browsed page discussion previews",
+    "comment.read": "Read page discussion post",
+    "template.list": "Listed page templates",
+    "tag.list": "Listed notebook tags",
+    "tag.notes": "Listed notes by tag",
+  },
   sentences: {
     "annotation.create": {
       approval: "Add a comment",
@@ -115,6 +139,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "notebook.containers": {
           title: "Diskussionsorte auflisten",
+          doneTitle: "Diskussionsorte aufgelistet",
           description: "Lesbare Notizbücher mit Fortsetzung auflisten.",
           input: {
             query: "Optionaler Suchtext für Orte.",
@@ -146,6 +171,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "annotation.list": {
           title: "Kommentare zum Text auflisten",
+          doneTitle: "Kommentare zum Text aufgelistet",
           description:
             "Kommentare einer Notiz mit Positionen, Status, Überschriftenpfad und verwaisten Stellen lesen. Vor der Seitenauswahl nach state und Hauptautor (author UUID oder me) filtern. Dem nextCursor folgen; Antworten sind separat paginiert. contentHash und cursor bezeichnen den zugehörigen Markdown-Stand.",
           input: {
@@ -158,6 +184,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "annotation.read": {
           title: "Kommentar zum Text lesen",
+          doneTitle: "Kommentar zum Text gelesen",
           description:
             "Einen notebooks.annotation-Verweis mit Antworten und aktuellen Rechten lesen. repliesNextCursor mit annotation.replies fortsetzen.",
           input: {
@@ -166,6 +193,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "annotation.replies": {
           title: "Kommentarantworten auflisten",
+          doneTitle: "Kommentarantworten aufgelistet",
           description: "Weitere Antworten eines Kommentars mit vollständigem Text und aktuellen Bearbeitungsrechten lesen.",
           input: {
             noteId: "Öffentliche notebooks.note-ID aus note.read, note.search oder dem Notizbuchbaum.",
@@ -176,6 +204,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "notebook.activity": {
           title: "Notizereignisse lesen",
+          doneTitle: "Notizereignisse gelesen",
           description:
             "Berechtigte Änderungen an Notizen eines Notizbuchs lesen, neueste zuerst. Optional auf eine Notiz begrenzen. Kommentare und gelöschte Notizen werden ausgelassen. Dem Cursor folgen.",
           input: {
@@ -191,6 +220,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "notebook.browse": {
           title: "Notizbuch auswählen",
+          doneTitle: "Notizbuch ausgewählt",
           description:
             "Notizbücher kompakt mit Berechtigung und Startseite auswählen. Vor dem Anlegen einer Notiz minimumPermission write verwenden. ref.id direkt mit note.children oder note.create nutzen; notebook.read ist nur für weitere Verwaltungsdaten nötig.",
           input: {
@@ -202,6 +232,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "note.children": {
           title: "Unterseiten durchsuchen",
+          doneTitle: "Unterseiten durchsucht",
           description:
             "Direkte Unterseiten eines Notizbuchs lesen, ohne den gesamten Baum zu laden. Ohne parentId werden die obersten Seiten angezeigt. Dem Cursor folgen; ref.id mit note.read oder als Elternseite für note.create nutzen.",
           input: {
@@ -213,12 +244,14 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "comment.browse": {
           title: "Vorschauen der Seitendiskussion lesen",
+          doneTitle: "Vorschauen der Seitendiskussion gelesen",
           description:
             "Kommentare anhand kurzer Vorschauen auswählen, neueste zuerst. Dem Cursor folgen. Bei previewTruncated den vollständigen Kommentar mit comment.read und ref.id lesen. canEdit und canDelete zeigen die aktuellen Bearbeitungsrechte.",
           input: { noteId: "Notiz-ID.", cursor: "Cursor der vorherigen Seite.", limit: "Höchstzahl der Kommentare." },
         },
         "note.preview": {
           title: "Notizblöcke prüfen",
+          doneTitle: "Notizblöcke geprüft",
           description:
             "Query- und Inhaltsverzeichnis-Blöcke mit der Servervorschau prüfen. Gibt kompakte Diagnosen statt HTML oder Ergebniszeilen zurück. Benötigt ein Benutzerkonto; Entwürfe benötigen Schreibzugriff. Speichert nichts und prüft nicht alle Markdown- oder Tabellenformeln.",
           input: {
@@ -229,6 +262,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "comment.list": {
           title: "Seitendiskussion auflisten",
+          doneTitle: "Seitendiskussion aufgelistet",
           description:
             "Vollständige Markdown-Kommentare zu einer Notiz lesen, neueste zuerst. Seiten können wegen der Antwortgröße kürzer ausfallen; immer page.nextCursor folgen. Für die Auswahl zunächst comment.browse verwenden.",
           input: {
@@ -239,6 +273,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "comment.read": {
           title: "Beitrag zur Seitendiskussion lesen",
+          doneTitle: "Beitrag zur Seitendiskussion gelesen",
           description:
             "Einen von comment.list zurückgegebenen notebooks.comment-Verweis lesen und den Zugriff auf die zugehörige Notiz prüfen.",
           input: {
@@ -247,6 +282,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "note.links": {
           title: "Notiz-Links und Backlinks auflisten",
+          doneTitle: "Notiz-Links und Backlinks aufgelistet",
           description:
             "Listen Sie eingehende oder ausgehende Links auf, nachdem eine Notiz bekannt ist. NoteId von einem notebooks.note ref abrufen; Unzugängliche Ziele werden weggelassen und zurückgegeben. Hinweis refs kann mit note.read geöffnet werden.",
           input: {
@@ -258,6 +294,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "note.read": {
           title: "Notiz lesen",
+          doneTitle: "Notiz gelesen",
           description:
             "Eine Notiz als Markdown-Fenster mit Hashes, Tags und Blockübersicht lesen. contentComplete ist nur wahr, wenn die gesamte Quelle enthalten ist. nextContentOffset folgen und unveränderten contentHash prüfen. Niemals eine vollständige Notiz durch ein Teilfenster ersetzen; gezielte Änderungen mit ifContentHash bevorzugen.",
           input: {
@@ -268,6 +305,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "note.search": {
           title: "Notizen durchsuchen",
+          doneTitle: "Notizen durchsucht",
           description:
             "Direkter notizbuchübergreifender Eintrag zum Auffinden von Markdown-Notizen nach Titel oder Inhalt. Verwenden Sie zurückgegebenes notebooks.note refs mit note.read. Verwenden Sie note.tree, um ein bekanntes Notizbuch ohne Volltextsuche zu durchsuchen.",
           input: {
@@ -287,6 +325,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "note.tree": {
           title: "Notizbaum auflisten",
+          doneTitle: "Notizbaum aufgelistet",
           description:
             "Die Hierarchie eines Notizbuchs ohne Markdown lesen. Pro Antwort werden höchstens 100 Einträge geliefert, auch bei höherem limit. page.nextCursor für weitere Einträge folgen. Zum Auswählen einer Elternseite note.children bevorzugen; Notizen mit note.read öffnen.",
           input: {
@@ -297,6 +336,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "notebook.list": {
           title: "Notizbücher auflisten",
+          doneTitle: "Notizbücher aufgelistet",
           description:
             "Normaler Eintrag für Arbeiten im Notebook-Bereich. Listen Sie zugängliche Notizbücher mit wirksamer Genehmigung auf. Verwenden Sie das zurückgegebene notebooks.notebook refs oder IDs mit notebook.read, note.tree, tag.list oder note.create.",
           input: {
@@ -308,6 +348,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "notebook.read": {
           title: "Notizbuch lesen",
+          doneTitle: "Notizbuch gelesen",
           description:
             "Lesen Sie einen von notebook.list oder notebook.search zurückgegebenen notebooks.notebook ref, einschließlich der Homepage-Notiz ID.",
           input: {
@@ -316,6 +357,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "notebook.search": {
           title: "Notizbücher durchsuchen",
+          doneTitle: "Notizbücher durchsucht",
           description:
             "Finden Sie zugängliche Notizbücher anhand des Namens oder der Beschreibung, wenn kein Notizbuch bekannt ist. Verwenden Sie zurückgegebene notebooks.notebook refs mit notebook.read oder deren IDs mit note.tree und tag.list.",
           input: {
@@ -335,6 +377,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "tag.list": {
           title: "Notizbuch-Tags auflisten",
+          doneTitle: "Notizbuch-Tags aufgelistet",
           description:
             "Listen Sie Tags und Notizanzahlen in einem bekannten Notizbuch auf. Holen Sie sich die Notebook-ID von notebook.list oder notebook.search. Verwenden Sie einen zurückgegebenen Tag-Wert mit tag.notes.",
           input: {
@@ -345,6 +388,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "template.list": {
           title: "Seitenvorlagen auflisten",
+          doneTitle: "Seitenvorlagen aufgelistet",
           description:
             "Listen Sie die Seitenvorlagen eines bekannten Notizbuchs auf: zuerst die eigenen nach Namen, dann die eingebauten. Verwenden Sie eine zurückgegebene ID als templateId mit note.create.",
           input: {
@@ -353,6 +397,7 @@ export const notebooksCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "tag.notes": {
           title: "Notizen nach Tags auflisten",
+          doneTitle: "Notizen nach Tags aufgelistet",
           description:
             "Listen Sie Notizen mit einem Tag in einem bekannten Notizbuch auf. Holen Sie sich die Notebook-ID von notebook.list und das Tag von tag.list. Verwenden Sie das zurückgegebene notebooks.note refs mit note.read.",
           input: {

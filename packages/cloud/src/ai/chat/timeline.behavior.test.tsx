@@ -28,6 +28,12 @@ import { aiTurnErrorText } from "./turn-error";
     dom.root,
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  // Text between steps is a note at its step; opened, every text shows exactly once.
+  const openNotes = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (const toggle of dom.root.querySelectorAll<HTMLButtonElement>('.ai-turn-note__toggle[aria-expanded="false"]')) toggle.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
   try {
     emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     for (let index = 0; index < 10; index++) {
@@ -45,7 +51,7 @@ import { aiTurnErrorText } from "./turn-error";
         type: "block_set",
         block: { id: `tool-${index}`, kind: "tool", callId: `call-${index}`, name: "code_run", args: {}, status: "running" },
       });
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await openNotes();
       for (let previous = 0; previous <= index; previous++)
         expect(dom.root.textContent?.split(`Unique message ${previous}.`).length).toBe(2);
       emit({
@@ -62,10 +68,10 @@ import { aiTurnErrorText } from "./turn-error";
       blocks: old.blocks.map((block) => ({ ...block, id: block.kind === "text" ? `persisted-${block.id}` : block.id })),
     };
     setState("activeTurn", reconcile(mergeActiveTurn(state.activeTurn, baseline)));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await openNotes();
     for (let index = 0; index < 10; index++) expect(dom.root.textContent?.split(`Unique message ${index}.`).length).toBe(2);
     setState("activeTurn", reconcile(mergeActiveTurn(state.activeTurn, old)));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await openNotes();
     for (let index = 0; index < 10; index++) expect(dom.root.textContent?.split(`Unique message ${index}.`).length).toBe(2);
   } finally {
     dispose();

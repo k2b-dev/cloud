@@ -1498,3 +1498,16 @@ for (const [locale, size, modified, folder] of [
     expect(downloads).toEqual([]);
   });
 }
+
+
+test("every Query people see says in English and German what it did once it finished", async () => {
+  const { filesCapabilityPresentation } = await import("./capability-presentation");
+  const visible = Object.entries(filesCapabilities.queries).filter(([, query]) => !("appOnly" in query && query.appOnly));
+  const queries = filesCapabilityPresentation.translations.de?.queries ?? {};
+  const missing = visible.flatMap(([id]) => {
+    const english = filesCapabilityPresentation.doneTitles?.[id];
+    const german = (queries as Record<string, { doneTitle?: string }>)[id]?.doneTitle;
+    return english && german ? [] : [id];
+  });
+  expect(missing).toEqual([]);
+});

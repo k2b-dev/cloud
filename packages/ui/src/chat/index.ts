@@ -55,6 +55,7 @@ export type {
   ChatSubmitInput,
   ChatSubmitIntent,
   ChatUsage,
+  ChatUsageSection,
 } from "./types";
 
 /**
