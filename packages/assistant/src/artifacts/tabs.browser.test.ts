@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
@@ -29,6 +29,7 @@ const webReader = async (request: Request) => {
   });
 };
 let browser: Browser;
+let publicDir = "";
 let server: ReturnType<typeof Bun.serve>;
 const shots = process.env.ASSISTANT_SCREENSHOT_DIR;
 
@@ -45,7 +46,7 @@ beforeAll(async () => {
   const css = await appCss.outputs[0]!.text();
   const snapshot = sidebarSnapshot({ chatId: "chat01" });
   // Fonts and icons as Cloud serves them, for the screenshots compared with the concept.
-  const publicDir = mkdtempSync(resolve(tmpdir(), "assistant-tabs-public-"));
+  publicDir = mkdtempSync(resolve(tmpdir(), "assistant-tabs-public-"));
   if (shots) {
     await (await import("../../../core/scripts/font-assets")).buildFontAssets(publicDir);
     await (await import("../../../core/scripts/tabler-assets")).buildTablerIconAssets(publicDir);
@@ -78,6 +79,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
   server?.stop(true);
+  if (publicDir) rmSync(publicDir, { recursive: true, force: true });
 });
 
 const openPage = async (width = 1440, path = "/") => {
