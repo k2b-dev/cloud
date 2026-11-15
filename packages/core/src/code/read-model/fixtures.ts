@@ -79,12 +79,15 @@ export function codeActivityReadModelFixture(locale: "de" | "en"): import("@k2b/
     },
     recent: [
       {
-        text: locale === "de" ? "Aufgabe „Lieferung prüfen“ angelegt" : "Created task “Check delivery”",
+        text: locale === "de" ? "Aufgabe angelegt" : "Created task",
+        target: {
+          ref: { type: "spaces.item", id: "fict01" },
+          text: locale === "de" ? "Aufgabe „{name}“ angelegt" : "Created task “{name}”",
+        },
         at: run.at,
         app: "Spaces",
         icon: "tabler:layout-kanban",
         state: "succeeded",
-        href: "/spaces/fictional",
         runId: run.runId,
       },
     ],

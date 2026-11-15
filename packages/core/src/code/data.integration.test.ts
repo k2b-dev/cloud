@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import * as cloudRuntime from "@k2b/cloud";
 import { sql } from "@k2b/cloud";
 import * as catalog from "@k2b/cloud/capabilities/server";
@@ -287,11 +287,25 @@ databaseSuite()("Core Code data and Query authorization", () => {
       expect(runWords.untilThen.items.map((item) => item.text)).toEqual(["Created task “Private delivery”"]);
       const named = await loadCodeActivityReadModel({ codeId: code.id, day: "2026-10-31", timeZone: "UTC" }, ctx(ids.reader));
       expect(named.recent.find((item) => item.runId === id)).toMatchObject({
-        text: "Created task “Private delivery”",
-        href: "/fictional/task",
+        text: "Created task",
+        target: { ref: target, text: "Created task “{name}”" },
         app: "Fictional",
         at: fixed.toISOString(),
       });
+      expect(JSON.stringify(named.recent)).not.toMatch(/Private delivery|fictional\/task/);
+      const childReader = mock(async () => {
+        throw new Error("Recent effects must not spend a child Query");
+      });
+      const deferred = await loadCodeActivityReadModel(
+        { codeId: code.id, day: "2026-10-31", timeZone: "UTC" },
+        {
+          ...ctx(ids.reader),
+          authority: { ...ctx(ids.reader).authority, credentialKind: "invocation", scopes: ["core:read"] },
+          query: childReader,
+        },
+      );
+      expect(deferred.recent.find((item) => item.runId === id)?.target).toEqual({ ref: target, text: "Created task “{name}”" });
+      expect(childReader).not.toHaveBeenCalled();
       reader.mockImplementation(async () => ({ ok: false as const, error: { code: "FORBIDDEN", message: "Hidden", status: 403 } }));
       const hidden = await loadCodeRunReadModel({ codeId: code.id, runId: id }, ctx(ids.reader));
       expect(hidden.title).toBe("Created task");
