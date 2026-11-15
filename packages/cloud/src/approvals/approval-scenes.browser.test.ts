@@ -267,12 +267,17 @@ describe("Approval scenes", () => {
         await settled(page);
         const look = await page.evaluate(() => ({
           origin: document.querySelectorAll(".cloud-capability-view__head").length,
+          amounts: [...document.querySelectorAll(".cloud-capability-view .k2b-dashboard-frame__content tbody tr")].map((row) =>
+            (row.lastElementChild?.textContent ?? "").replace(/\s+/g, " ").replace("\u2212", "-").trim(),
+          ),
           actions: [...document.querySelectorAll(".cloud-block-actions")].map((group) =>
             [...group.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
           ),
         }));
         await shot(page, `5-baustein-light-${width}`);
         expect(look.origin).toBe(0);
+        // The table keeps the money format its column declares.
+        expect(look.amounts).toEqual(["-48,90 €", "-112,00 €", "450,00 €", "-386,40 €", "-29,50 €"]);
         expect(look.actions).toEqual([
           ["Kennzahlen kopieren", "Maximieren"],
           ["Tabelle kopieren", "Maximieren"],
@@ -302,6 +307,47 @@ describe("Approval scenes", () => {
       expect(text.split("\n")[0]).toBe("Datum\tEmpfänger\tVerwendung\tBetrag");
       expect(text).toContain("Schraubenwelt\tBeschläge, 200 Stück");
       await page.getByRole("button", { name: "Tabelle kopieren" }).waitFor({ timeout: 3_000 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a refused clipboard shows a toast with Try again, and trying again copies the table", async () => {
+    const page = await open("baustein", 1440);
+    try {
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+      await settled(page);
+      // The clipboard refuses the first write, as a browser does without permission, and takes the next one.
+      await page.evaluate(() => {
+        const clipboard = navigator.clipboard;
+        const write = clipboard.write.bind(clipboard);
+        const writeText = clipboard.writeText.bind(clipboard);
+        let refuse = true;
+        const once =
+          <T>(real: (value: T) => Promise<void>) =>
+          (value: T) => {
+            if (!refuse) return real(value);
+            refuse = false;
+            return Promise.reject(new DOMException("Write permission denied.", "NotAllowedError"));
+          };
+        clipboard.write = once(write);
+        clipboard.writeText = once(writeText);
+      });
+      const button = page.getByRole("button", { name: "Tabelle kopieren" });
+      const before = await button.boundingBox();
+      await button.click();
+      const retry = page.getByRole("button", { name: "Erneut versuchen" });
+      await retry.waitFor();
+      expect(await page.getByText("Kopieren ging nicht.").count()).toBe(1);
+      // A failure never shows the check: the button keeps its name and its place.
+      expect(await page.getByRole("button", { name: "Kopiert" }).count()).toBe(0);
+      expect(await button.boundingBox()).toEqual(before);
+      await retry.click();
+      await page.getByRole("button", { name: "Kopiert" }).waitFor();
+      const text = await page.evaluate(() => navigator.clipboard.readText());
+      expect(text.split("\n")[0]).toBe("Datum\tEmpfänger\tVerwendung\tBetrag");
+      expect(text).toContain("Schraubenwelt\tBeschläge, 200 Stück");
     } finally {
       await page.close();
     }

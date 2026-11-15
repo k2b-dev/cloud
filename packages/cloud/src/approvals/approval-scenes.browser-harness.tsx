@@ -334,7 +334,7 @@ const scenes: Record<string, () => JSX.Element> = {
               { key: "date", label: "Datum", type: "date" },
               { key: "who", label: "Empfänger" },
               { key: "what", label: "Verwendung" },
-              { key: "amount", label: "Betrag", type: "amount" },
+              { key: "amount", label: "Betrag", type: "amount", format: { style: "currency", currency: "EUR" } },
             ],
             rows,
           },
