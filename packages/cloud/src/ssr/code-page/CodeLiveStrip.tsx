@@ -173,6 +173,19 @@ export function CodeLiveStrip(props: {
   );
 }
 
+/**
+ * Core's sentence around the name the reader could read, split at its `{name}` slot: only the name becomes the link.
+ * Null when the result has no checked link or its sentence does not frame the name exactly.
+ */
+export const linkedName = (effect: CodeLiveEffect) => {
+  if (!effect.href || !effect.target) return null;
+  const [before, after, ...extra] = effect.target.text.split("{name}");
+  if (before === undefined || after === undefined || extra.length > 0) return null;
+  const { text } = effect;
+  if (text.length <= before.length + after.length || !text.startsWith(before) || !text.endsWith(after)) return null;
+  return { before, name: text.slice(before.length, text.length - after.length), after, href: effect.href };
+};
+
 /** The effects list keeps its rows in a fixed number of fixed slots, so a new effect never moves what is below. */
 export function EffectRows(props: { live: CodeLive; text: PageText }) {
   return (
@@ -183,10 +196,23 @@ export function EffectRows(props: { live: CodeLive; text: PageText }) {
             <span class="cloud-code__tile k2b-icon-tile" data-tile={effect.icon ? "app" : "neutral"} data-size="sm" aria-hidden="true">
               <i class={iconClass(effect.icon, "ti ti-circle-check")} />
             </span>
-            {/* Core says what happened as one sentence; a target the reader may open makes it a link. */}
+            {/* Core says what happened as one sentence; only the name of a target the reader may open is a link. */}
             <span class="cloud-code__feed-text">
-              <Show when={effect.href} fallback={effect.text}>
-                {(href) => <a href={href()}>{effect.text}</a>}
+              <Show
+                when={linkedName(effect)}
+                fallback={
+                  <Show when={effect.href} fallback={effect.text}>
+                    {(href) => <a href={href()}>{effect.text}</a>}
+                  </Show>
+                }
+              >
+                {(linked) => (
+                  <>
+                    {linked().before}
+                    <a href={linked().href}>{linked().name}</a>
+                    {linked().after}
+                  </>
+                )}
               </Show>
             </span>
             <span class="cloud-code__feed-time">{props.text.moment(effect.at)}</span>

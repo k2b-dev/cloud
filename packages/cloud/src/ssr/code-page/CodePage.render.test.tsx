@@ -116,7 +116,8 @@ describe("Code page: overview (Bild 19 to 21)", () => {
     expect(page).toContain("Was sie für dich getan hat diese Woche");
     expect(page).toContain("41 Aufgaben angelegt");
     expect(page).toContain("44 Unterhaltungen sortiert");
-    expect(html("overview")).toContain('<a href="/app/spaces/Lg8x2q">Aufgabe „Lieferung Polsterei Weber“ angelegt</a>');
+    // #80: only the name is the link; the rest of Core's sentence stays text (v12 picture 19).
+    expect(html("overview")).toContain('Aufgabe „<a href="/app/spaces/Lg8x2q">Lieferung Polsterei Weber</a>“ angelegt');
     expect(text("personal")).not.toContain("Was sie für dich getan hat");
   });
 
@@ -1181,7 +1182,9 @@ test("what it did for you names only the results the reader may read", async () 
       },
     }),
   );
-  expect(markup).toContain('<a href="/app/spaces/GPzX93/UxrUVC">Aufgabe „Lieferung Polsterei Weber“ angelegt</a>');
+  // #80: only the name is the link, framed by the rest of Core's sentence as text.
+  expect(markup).toContain('Aufgabe „<a href="/app/spaces/GPzX93/UxrUVC">Lieferung Polsterei Weber</a>“ angelegt');
+  expect(markup).not.toMatch(/<a [^>]*>Aufgabe/);
   const feed = markup.slice(markup.indexOf("cloud-code__feed"));
   expect(feed).toMatch(/<span class="cloud-code__feed-text">Aufgabe angelegt<\/span>/);
   expect(markup).not.toMatch(/HidN3x|\{name\}/);
@@ -1235,4 +1238,27 @@ test("the approval's text actions are shared buttons, not bare links", () => {
     }),
   );
   expect(markup).toMatch(/<a[^>]*class="[^"]*k2b-button[^"]*"[^>]*data-variant="text"[^>]*>[\s\S]*?Alles ansehen/);
+});
+
+// #80: a result links only its name, and only when Core's sentence frames the name exactly once.
+test("a result's link covers only the name its sentence frames", async () => {
+  const { linkedName } = await import("./CodeLiveStrip");
+  const base = {
+    text: "Aufgabe „Lieferavise heute prüfen“ angelegt",
+    state: "succeeded" as const,
+    at: "2026-11-15T11:00:03.946Z",
+    runId: "af59ebe0-150d-4217-8028-19717d92aede",
+    href: "/app/spaces/GPzX93?item=8GSn8B",
+    target: { ref: { type: "spaces.item", id: "8GSn8B" }, text: "Aufgabe „{name}“ angelegt" },
+  };
+  expect(linkedName(base)).toEqual({
+    before: "Aufgabe „",
+    name: "Lieferavise heute prüfen",
+    after: "“ angelegt",
+    href: "/app/spaces/GPzX93?item=8GSn8B",
+  });
+  const { href: _href, ...unlinked } = base;
+  expect(linkedName(unlinked)).toBeNull();
+  expect(linkedName({ ...base, target: { ...base.target, text: "{name} und {name}" } })).toBeNull();
+  expect(linkedName({ ...base, text: "Aufgabe angelegt" })).toBeNull();
 });

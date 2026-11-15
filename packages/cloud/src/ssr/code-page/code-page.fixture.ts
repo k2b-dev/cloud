@@ -349,6 +349,7 @@ const activity = (): CodeActivityReadModel => ({
       at: minutesAgo(4),
       href: "/app/spaces/Lg8x2q",
       runId: id(2, 1),
+      target: { ref: { type: "spaces.item", id: "Lw3b8e" }, text: L("Aufgabe „{name}“ angelegt", "Created task “{name}”") },
     },
     {
       app: "Mail",
