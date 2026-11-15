@@ -4383,6 +4383,22 @@
   display: contents;
 }
 
+/* The end of the file row: after the file names on screen, before the code in
+   reading order. The code below takes the full width. */
+.k2b-ui .k2b-code-diff > .k2b-code-diff__toolbar-end {
+  flex: 0 1 auto;
+  order: 1;
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-code-diff > .k2b-code-diff__body,
+.k2b-ui .k2b-code-diff > .k2b-code-diff__state,
+.k2b-ui .k2b-code-diff__files > .k2b-tabs__panel {
+  order: 2;
+}
+
 .k2b-ui .k2b-code-diff__files > .k2b-tabs__bar,
 .k2b-ui .k2b-code-diff > .k2b-code-diff__file {
   flex: 1 1 12rem;
@@ -4449,7 +4465,7 @@
   overflow: auto;
   padding: 0.625rem 0;
   border-radius: 0.625rem;
-  font: 0.78125rem / 1.65 var(--k2b-font-mono);
+  font: 0.8125rem / 1.65 var(--k2b-font-mono);
   color: var(--k2b-text);
   background: var(--k2b-surface-muted);
 }
@@ -4479,6 +4495,140 @@
 
 .k2b-ui .k2b-code-diff__body[data-whole="true"] .k2b-code-diff__line {
   grid-template-columns: 2.5rem minmax(0, 1fr);
+}
+
+/* Line actions and the content below a line: one fixed place between the
+   numbers and the code, always there, so nothing moves when it shows. */
+.k2b-ui .k2b-code-diff__body[data-annotated="true"] {
+  --k2b-code-diff-gutter: 1.375rem;
+  --k2b-code-diff-slot-start: calc(2 * var(--k2b-code-diff-number));
+}
+
+.k2b-ui .k2b-code-diff__body[data-annotated="true"] .k2b-code-diff__line {
+  grid-template-columns:
+    var(--k2b-code-diff-number) var(--k2b-code-diff-number) var(--k2b-code-diff-gutter) var(--k2b-code-diff-sign)
+    minmax(0, 1fr);
+}
+
+.k2b-ui .k2b-code-diff__body[data-annotated="true"][data-whole="true"] {
+  --k2b-code-diff-slot-start: 2.5rem;
+}
+
+.k2b-ui .k2b-code-diff__body[data-annotated="true"][data-whole="true"] .k2b-code-diff__line {
+  grid-template-columns: 2.5rem var(--k2b-code-diff-gutter) minmax(0, 1fr);
+}
+
+.k2b-ui .k2b-code-diff__gutter {
+  position: relative;
+  display: grid;
+  place-items: center;
+  user-select: none;
+}
+
+.k2b-ui .k2b-code-diff__noted {
+  font-size: 0.8125rem;
+  color: var(--k2b-action);
+}
+
+.k2b-ui .k2b-code-diff__action {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.1875rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0.3125rem;
+  font-size: 0.75rem;
+  color: #ffffff;
+  background: var(--k2b-action-solid);
+  opacity: 0;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+}
+
+/* Shown while the pointer is over the line or the action has focus; the mark
+   gives way in the same place. Only opacity changes. */
+.k2b-ui .k2b-code-diff__line:hover .k2b-code-diff__action,
+.k2b-ui .k2b-code-diff__action:focus-visible,
+.k2b-ui .k2b-code-diff__line:focus-within .k2b-code-diff__action {
+  opacity: 1;
+}
+
+.k2b-ui .k2b-code-diff__line:hover .k2b-code-diff__noted,
+.k2b-ui .k2b-code-diff__line:focus-within .k2b-code-diff__noted {
+  opacity: 0;
+}
+
+.k2b-ui .k2b-code-diff__action:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-code-diff__body[data-annotated="true"] .k2b-code-diff__line:hover {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--k2b-text) 4%, transparent),
+    color-mix(in srgb, var(--k2b-text) 4%, transparent)
+  );
+}
+
+.k2b-ui .k2b-code-diff__line[data-noted="true"] {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--k2b-action) 7%, transparent),
+    color-mix(in srgb, var(--k2b-action) 7%, transparent)
+  );
+}
+
+.k2b-ui .k2b-code-diff__body[data-annotated="true"] .k2b-code-diff__line:focus-within {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--k2b-action) 9%, transparent),
+    color-mix(in srgb, var(--k2b-action) 9%, transparent)
+  );
+}
+
+/* The content below a line stays in view while long lines scroll sideways:
+   flush with the action's place, at the width of the view. */
+.k2b-ui .k2b-code-diff__slot {
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: 100cqw;
+  padding: 0.125rem 1rem 0.5rem var(--k2b-code-diff-slot-start, 0);
+  font-family: var(--k2b-font-sans);
+  line-height: normal;
+  white-space: normal;
+}
+
+.k2b-ui .k2b-code-diff__slot > * {
+  max-width: 40rem;
+}
+
+.k2b-ui .k2b-code-diff__note {
+  margin: 0;
+  padding: 0.25rem 0.75rem 0.25rem calc(var(--k2b-code-diff-number) + 0.625rem);
+  font: 0.75rem / 1.65 var(--k2b-font-sans);
+  color: var(--k2b-text-muted);
+}
+
+/* Touch: taller lines and an action that is always there, without tooltip. */
+@media (pointer: coarse) {
+  .k2b-ui .k2b-code-diff__body[data-annotated="true"] {
+    --k2b-code-diff-gutter: 2.25rem;
+    line-height: 1.875rem;
+  }
+
+  .k2b-ui .k2b-code-diff__action {
+    width: 2rem;
+    height: 1.75rem;
+    font-size: 0.875rem;
+    opacity: 1;
+  }
+
+  .k2b-ui .k2b-code-diff__noted {
+    opacity: 0;
+  }
 }
 
 .k2b-ui .k2b-code-diff__number {
@@ -4583,6 +4733,14 @@
 
   .k2b-ui .k2b-code-diff__body[data-whole="true"] .k2b-code-diff__line {
     grid-template-columns: 2rem minmax(0, 1fr);
+  }
+
+  .k2b-ui .k2b-code-diff__body[data-annotated="true"][data-whole="true"] {
+    --k2b-code-diff-slot-start: 2rem;
+  }
+
+  .k2b-ui .k2b-code-diff__body[data-annotated="true"][data-whole="true"] .k2b-code-diff__line {
+    grid-template-columns: 2rem var(--k2b-code-diff-gutter) minmax(0, 1fr);
   }
 }
 

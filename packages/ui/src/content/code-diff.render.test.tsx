@@ -188,4 +188,63 @@ describe("CodeDiff server rendering", () => {
     expect(empty).toMatch(/class="k2b-code-diff__state"><div[^>]*data-state="empty"/);
     expect(text(empty)).toContain("Compare with");
   });
+  describe("line actions and content below a line", () => {
+    const lineAction = { label: ({ line }: { line: number }) => `Comment on line ${line}`, onSelect: () => {} };
+    const lineSlot = ({ path, line }: { path: string; line: number }) => `Thread ${path}:${line}`;
+    const slotRow = (markup: string) => [...markup.matchAll(/data-row="(\d+)"[^>]*data-noted="true"/g)].map((match) => Number(match[1]));
+
+    test("puts one action on every line of the new version, in a fixed place, and none on removed lines", () => {
+      const markup = html({ files, lineAction });
+      expect(markup).toContain('data-annotated="true"');
+      // Nine visible rows, one removed: eight actions, named by the new line number.
+      expect(markup.match(/class="k2b-code-diff__action ?"/g)).toHaveLength(8);
+      expect(markup).toContain('aria-label="Comment on line 13"');
+      expect(markup).not.toMatch(/data-kind="del"(?:(?!data-row=).)*k2b-code-diff__action/s);
+      // One tab stop for the code: the first action; the region itself leaves the tab order.
+      expect(markup.match(/k2b-code-diff__action[^>]*tabindex="0"/gi)).toHaveLength(1);
+      expect(markup).toMatch(/class="k2b-code-diff__body" role="region"[^>]*tabindex="-1"/);
+      // Without the props nothing changes.
+      expect(html({ files })).not.toContain("k2b-code-diff__gutter");
+    });
+
+    test("a listed line is marked, tinted, shows its content directly below and never folds away", () => {
+      // New line 3 sits inside the fold of rows 0–8.
+      const markup = html({ files, lineAction, lineSlot, slotLines: [{ path: "index.ts", line: 3 }] });
+      expect(slotRow(markup)).toEqual([2]);
+      expect(markup).toContain("k2b-code-diff__noted");
+      const row = markup.indexOf('data-row="2"');
+      const slot = markup.indexOf('class="k2b-code-diff__slot"');
+      expect(slot).toBeGreaterThan(row);
+      expect(slot).toBeLessThan(markup.indexOf('data-row="9"'));
+      expect(text(markup)).toContain("Thread index.ts:3");
+      // The fold splits around the kept line.
+      expect(text(markup)).toContain("2 unchanged lines");
+      expect(text(markup)).toContain("6 unchanged lines");
+      // Another file's lines do not show here.
+      expect(html({ files, lineSlot, slotLines: [{ path: "params.ts", line: 2 }] })).not.toContain("k2b-code-diff__slot");
+    });
+
+    test("an unchanged file shows a note and only its listed lines with their content", () => {
+      const markup = html({ files: [files[2]!], lineAction, lineSlot, slotLines: [{ path: "params.ts", line: 2 }] }, "de");
+      expect(markup).not.toContain('data-state="empty"');
+      expect(text(markup)).toContain("Diese Datei ist unverändert. Unten stehen die kommentierten Zeilen.");
+      expect(rowNumbers(markup)).toEqual([1]);
+      expect(text(markup)).toContain("Thread params.ts:2");
+      expect(markup).not.toContain("k2b-code-diff__fold");
+    });
+
+    test("whole code has number, place and code; a listed line on a later page renders its page", () => {
+      const big = [{ path: "big.ts", lines: Array.from({ length: 1000 }, (_, index) => add(`line(${index});`)) }];
+      const markup = html({ files: big, lineAction, lineSlot, slotLines: [{ path: "big.ts", line: 700 }] });
+      expect(markup).toContain('data-whole="true"');
+      expect(rowNumbers(markup)).toHaveLength(800);
+      expect(text(markup)).toContain("Thread big.ts:700");
+    });
+
+    test("the end of the file row comes before the code", () => {
+      const markup = html({ files, lineAction, toolbarEnd: "Keyboard: Tab into the code" });
+      expect(markup.indexOf("k2b-code-diff__toolbar-end")).toBeGreaterThan(-1);
+      expect(markup.indexOf("k2b-code-diff__toolbar-end")).toBeLessThan(markup.indexOf('role="region"'));
+    });
+  });
 });
