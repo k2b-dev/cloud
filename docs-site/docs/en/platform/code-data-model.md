@@ -112,6 +112,7 @@ check current permissions in Core's Code service.
 | `core.code.summary` | Exact `owner` | For each readable Code: `automations` of the running or newest version, and an empty `access` array; Core does not inventory target rights. For settings and delete dialogs |
 | `core.code.attention` | Exact `owner` | Visible Code items with `reasons`: `run_failed`, `access_missing`, `approval_pending` |
 | `core.code.attention.list` | Optional `cursor` | Across owners: resource or application Code the caller may edit that needs them, with `lastRunAt` and the same `reasons` plus `paused`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
+| `core.code.chat.list` | `conversationId` of the caller's own AI conversation | Up to 20 readable Code the chat submitted, newest first, each with `versionId`, `number`, `state` (`on`, `paused`, `ready`, `waiting`, `changes`, `revising`, `rejected`), `attention` and the card's `anchor`, plus `count`; empty for another person's chat |
 
 `core.code.attention` serves an owner's navigation. The reasons per Code are
 the same for every reader, so Core keeps them for 30 seconds and computes one
@@ -120,6 +121,11 @@ comes from a recorded `target_refused` call in the latest failed run, never
 from target-rights inspection. `missingTargets` and `removedTargets` retain
 that recorded reference for editors, with no fetched title; readers receive no
 refused target IDs. A successful later run clears the indication.
+`core.code.chat.list` reads the newest non-withdrawn version each Code got from
+one chat, in one bounded read. `state` is a stable code the reading app words
+itself; `attention` marks a version the person can move on (switch it on, read
+the requested changes, or ask again after an expired approval), and `anchor` is
+the `data-chat-anchor` of the version's card in the chat.
 `core.code.attention.list` serves a person's own list when no owner is known.
 It finds candidates from stored state, so missing access shows with the failed
 run it causes, and it reuses the same reasons.

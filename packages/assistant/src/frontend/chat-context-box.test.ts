@@ -87,6 +87,35 @@ describe("box model", () => {
     expect(box.groups.every((group) => group.rows.length <= 3)).toBe(true);
   });
 
+  test("a group row jumps to its card by anchor, and the group's Show all leads where its owner says", () => {
+    const group = {
+      key: "automations",
+      label: "Automationen",
+      count: 4,
+      allHref: "/app/assistant?code=1",
+      rows: Array.from({ length: 4 }, (_, index) => ({
+        key: `c${index}`,
+        icon: "ti ti-code",
+        title: `Code ${index}`,
+        word: "Wartet auf Admin",
+        tone: "warn" as const,
+        attention: index === 0,
+        anchor: `tool-call-${index}`,
+        action: { href: `/app/assistant/code/c${index}`, label: "Code-Seite öffnen", icon: "ti ti-arrow-up-right" },
+      })),
+    };
+    const [automations] = build(sidebarSnapshot({ groups: [group] })).groups;
+    expect(automations).toMatchObject({ count: 4, more: true, allHref: "/app/assistant?code=1" });
+    expect(automations!.rows).toHaveLength(3);
+    expect(automations!.rows[0]).toMatchObject({
+      open: { kind: "anchor", anchor: "tool-call-0" },
+      hover: { kind: "href", href: "/app/assistant/code/c0" },
+      trailing: "Wartet auf Admin",
+      tone: "warn",
+      attention: true,
+    });
+  });
+
   test("counts new results and changed group rows since the held snapshot", () => {
     const held = sidebarSnapshot({
       groups: [{ key: "g", label: "G", count: 1, rows: [{ key: "a", icon: "i", title: "A", word: "Pausiert" }] }],

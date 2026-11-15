@@ -68,7 +68,9 @@ function BoxRow(props: { row: ContextBoxRow; actions: ContextBoxActions; downloa
     if (target.kind !== "none") props.actions.onOpen(target);
   };
   const label = () =>
-    props.row.open.kind === "jump" ? copy().jumpRow({ title: props.row.title }) : copy().openRow({ title: props.row.title });
+    props.row.open.kind === "jump" || props.row.open.kind === "anchor"
+      ? copy().jumpRow({ title: props.row.title })
+      : copy().openRow({ title: props.row.title });
   return (
     <li class="assistant-context-box__row" data-attention={props.row.attention ? "" : undefined} data-row={props.row.key}>
       <button
@@ -281,7 +283,12 @@ export function AssistantChatContextBox(props: {
             <BoxGroup group={box().results} actions={props.actions} downloadHref={downloadHref} onAll={() => props.actions.onOpenAll()} />
             <For each={box().groups}>
               {(group) => (
-                <BoxGroup group={group} actions={props.actions} downloadHref={downloadHref} onAll={() => props.actions.onOpenAll()} />
+                <BoxGroup
+                  group={group}
+                  actions={props.actions}
+                  downloadHref={downloadHref}
+                  onAll={() => (group.allHref ? props.actions.onOpen({ kind: "href", href: group.allHref }) : props.actions.onOpenAll())}
+                />
               )}
             </For>
             <ul class="assistant-context-box__lines">

@@ -1279,8 +1279,11 @@ export default function AssistantWorkspace(props: Props) {
     gone: focusComposer,
   });
   let questionJump = 0;
-  /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
-  const jumpToQuestion = async (question: AiOpenQuestion) => {
+  /**
+   * Jumps to a question from "Waiting for you", or to a card the box names; one in another chat opens that chat as a new
+   * history entry.
+   */
+  const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor" | "href">) => {
     const jump = ++questionJump;
     // The question replaces any message the chat was opened at, also after a reload.
     const reveal = ++revealRequest;
@@ -1751,7 +1754,11 @@ export default function AssistantWorkspace(props: Props) {
       const actions = sidebarActions();
       if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
       else if (target.kind === "jump") actions.onJump(target.target);
-      else window.location.assign(target.href);
+      else if (target.kind === "anchor") {
+        // A card of this chat, such as a Code version: the same landing as a question, so a reload and Back return to it.
+        const conversationId = chat.activeConversationId();
+        if (conversationId) void jumpToQuestion({ conversationId, anchor: target.anchor });
+      } else if (target.kind === "href") window.location.assign(target.href);
     },
     onJump: (target) => void jumpTo(target),
     onOpenAll: () => openContextOverview("files", sidebarCopy().title),

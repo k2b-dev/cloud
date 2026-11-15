@@ -1,4 +1,5 @@
 import { aiConversations, isCloudAiFirecrawlConfigured, isConversationResourceCursor, readWebPageForPerson } from "@k2b/cloud/ai";
+import { invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
 import {
   type AuthContext,
   auth,
@@ -20,6 +21,7 @@ import { chatCodeApi } from "../chat-code/api";
 import { loadAssistantChatContextSnapshot, loadAssistantChatSources } from "../chat-context";
 import { SaveChatWorkspaceSchema } from "../chat-workspace";
 import { loadAssistantChatWorkspace, saveAssistantChatWorkspace } from "../chat-workspace-service";
+import { loadCodeChatGroup } from "../code-chat-group";
 import { catalogPerApp } from "../code-place";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
@@ -83,7 +85,20 @@ const app = new Hono<AuthContext>()
     const snapshot = await loadAssistantChatContextSnapshot(
       { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
       c.req.param("conversationId")!,
-      { timeZone: getTimeZone(c), locale: getLocale(c) },
+      {
+        timeZone: getTimeZone(c),
+        locale: getLocale(c),
+        // Gustav reads the chat's Code through Core's public query with the person's own credentials.
+        groups: [
+          (conversation) =>
+            loadCodeChatGroup(
+              (invocation, schema) =>
+                invokeCapabilityWithDataSchema(invocation, schema, { ...openQuestionsCaller(c), signal: c.req.raw.signal }),
+              conversation.id,
+              getLocale(c),
+            ),
+        ],
+      },
     );
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Conversation")));
   })

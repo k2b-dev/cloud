@@ -618,7 +618,8 @@ tab**. Below come the three newest **Results** with their time or size, then
 any further group the chat snapshot carries (`groups` on
 `AssistantChatContextSnapshot`: each row a sign, a title, one state word in its
 tone, and an optional ring when it waits for the viewer; at most three rows,
-then **Show all**), then one line for **Sources** (Cloud items in their app's nouns where the
+then **Show all**, which leads to the group's `allHref` when it names one; a row
+with an `anchor` jumps to the chat element with that `data-chat-anchor`), then one line for **Sources** (Cloud items in their app's nouns where the
 resource type names them, such as "3 Mails", then web pages and searches) and
 one for **Context**. A
 click on a row opens the thing as a tab beside the chat (files and apps) or
@@ -628,15 +629,23 @@ box keeps what someone reads while the pointer or focus is inside, and always
 while it is open under its button or as a sheet; news raise **New · n** in its
 head. What stopped in the chat and waits for the person (a routine that needs
 attention, a failed app run) shows at the top of the tab **In this chat**, with
-the same target as before. Empty, the box says what will appear; loading
+the same target as before. The group **Automations** lists the Code the chat
+submitted, read through `core.code.chat.list` with the person's own rights and
+again on every `code-versions` live update: the state word of its newest
+version from the chat (Switched on, Paused, Ready, still off, Waiting for admin,
+Changes requested, Gustav is revising, Rejected), a ring when it waits for the
+person, a click that jumps to its card, the Code page as the one action while
+pointing, and **Show all** to the person's Code. Empty, the box says what will appear; loading
 shows rows of the same height; a failed load offers **Retry** and leaves the chat
 untouched.
 
 CSS decides where the box shows, so the server render is final: as the island
 while the chat area is at least 56 rem wide and no workspace tab is open;
-otherwise as a button **In this chat** at the top of the chat that opens the
-same box below it without moving the chat (Escape closes it); on phones the
-button opens a bottom sheet that Back closes. The former sidebar column, its
+otherwise as a button **In this chat** in a head row above the timeline, so the
+history scrolls below it and no message passes under it; it opens the same box
+below it (Escape closes it). On phones the head row also names the chat, and
+the button opens a bottom sheet as high as the box that leaves the chat
+undimmed; Back or a tap beside it closes it. The former sidebar column, its
 drawer, and the `assistant_context` cookie are gone.
 
 Things open as tabs in a workspace beside the chat, built from `Panes`

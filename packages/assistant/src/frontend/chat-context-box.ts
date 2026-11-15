@@ -15,6 +15,8 @@ export type ContextBoxJump = { messageSeq: number; callId: string | null; presen
 export type ContextBoxOpen =
   | { kind: "file"; path: string; title: string }
   | { kind: "jump"; target: ContextBoxJump }
+  /** Jumps to the element of the chat with this `data-chat-anchor`, such as a Code card. */
+  | { kind: "anchor"; anchor: string }
   | { kind: "href"; href: string }
   | { kind: "none" };
 
@@ -42,7 +44,15 @@ export type ContextBoxRow = {
   hover: ContextBoxHover;
 };
 
-export type ContextBoxGroup = { key: string; label: string; count: number; rows: ContextBoxRow[]; more: boolean };
+export type ContextBoxGroup = {
+  key: string;
+  label: string;
+  count: number;
+  rows: ContextBoxRow[];
+  more: boolean;
+  /** Where "Show all" leads; without it, to the chat's whole list. */
+  allHref?: string;
+};
 
 export type ContextBoxModel = {
   /** Nothing to show yet: the box says what will appear here. */
@@ -130,7 +140,13 @@ const groupRow = (row: AssistantChatContextGroup["rows"][number]): ContextBoxRow
   tone: row.tone,
   attention: row.attention,
   tooltip: row.tooltip ?? `${row.title} · ${row.word}`,
-  open: row.jump ? { kind: "jump", target: row.jump } : row.href ? { kind: "href", href: row.href } : { kind: "none" },
+  open: row.jump
+    ? { kind: "jump", target: row.jump }
+    : row.anchor
+      ? { kind: "anchor", anchor: row.anchor }
+      : row.href
+        ? { kind: "href", href: row.href }
+        : { kind: "none" },
   hover: row.action ? { kind: "href", href: row.action.href, label: row.action.label, icon: row.action.icon } : null,
 });
 
@@ -180,7 +196,7 @@ export const buildContextBoxModel = (
     if (budget <= 0) return [];
     const rows = group.rows.slice(0, Math.min(CONTEXT_BOX_GROUP_LIMIT, budget)).map(groupRow);
     budget -= Math.max(rows.length, 1);
-    return [{ key: group.key, label: group.label, count: group.count, rows, more: group.count > rows.length }];
+    return [{ key: group.key, label: group.label, count: group.count, rows, more: group.count > rows.length, allHref: group.allHref }];
   });
   return {
     empty: snapshot.results.length === 0 && groups.every((group) => group.count === 0) && !sources,

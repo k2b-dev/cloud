@@ -773,6 +773,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.attention",
     "code.attention.list",
     "code.automation.list",
+    "code.chat.list",
     "code.event.catchup.read",
     "code.list",
     "code.policy.effective",

@@ -8,6 +8,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, hoverInPlace, launchBrowser } from "../../../ui/test/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
+import { codeChatGroup } from "../code-chat-group";
 import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
 
 // Which presentation the sidebar takes, whether the server's first frame is final, and whether live updates move what
@@ -34,7 +35,7 @@ import { revealChatDelivery } from ${JSON.stringify(resolve(import.meta.dir, "ch
 const config = window.harness;
 const [snapshot, setSnapshot] = createSignal(config.snapshot);
 // \`next\`: what the following reload returns; without it a reload returns the same content anew.
-const sidebar = { setSnapshot, jumps: [], revealed: null, next: null, actions: [], opened: [] };
+const sidebar = { setSnapshot, jumps: [], revealed: null, next: null, actions: [], opened: [], targets: [] };
 window.sidebar = sidebar;
 const state = { snapshot, projectContext: () => null, error: () => undefined, refresh: async () => undefined };
 render(
@@ -52,6 +53,7 @@ render(
       pending={config.pending}
       onOpenSecrets={() => sidebar.actions.push({ name: "secrets", sheetOpen: false })}
       box={{
+        onOpen: (target) => sidebar.targets.push(target),
         onOpenAll: () => sidebar.actions.push({ name: "all", sheetOpen: document.querySelector(".assistant-context-sheet") !== null }),
         onOpenSources: () => sidebar.actions.push({ name: "sources", sheetOpen: document.querySelector(".assistant-context-sheet") !== null }),
         onOpenContext: () => sidebar.actions.push({ name: "context", sheetOpen: document.querySelector(".assistant-context-sheet") !== null }),
@@ -616,6 +618,73 @@ describe(`Box "In this chat" in ${browserName}`, () => {
         .locator(".assistant-context-box__row[data-attention] .assistant-context-box__tile")
         .evaluate((element) => getComputedStyle(element).boxShadow);
       expect(ring).not.toBe("none");
+    } finally {
+      await page.close();
+    }
+  }, 20_000);
+
+  test("the chat's automations: three with their state words in colour, then Show all; a click jumps to the card, pointing shows one action", async () => {
+    // The group as the Assistant fills it from Core's answer for this chat (`core.code.chat.list`).
+    const group = codeChatGroup(
+      {
+        count: 4,
+        items: [
+          { codeId: "c_info0001", title: "Code von info@", state: "ready", attention: true, anchor: "tool-call-1" },
+          { codeId: "c_offer001", title: "Angebote nachfassen", state: "waiting", attention: false, anchor: "tool-call-2" },
+          { codeId: "c_week0001", title: "Wochenbericht Vertrieb", state: "revising", attention: false, anchor: "tool-call-3" },
+          { codeId: "c_old00001", title: "Alte Ablage", state: "rejected", attention: false, anchor: "tool-call-4" },
+        ],
+      },
+      "de",
+    )!;
+    const page = await boxPage(1440, sidebarSnapshot({ groups: [group] }));
+    try {
+      const section = page.locator('.assistant-context-boxcol [data-group="automations"]');
+      const rows = section.locator(".assistant-context-box__row");
+      expect(await rows.count()).toBe(3);
+      const words = await rows.locator(".assistant-context-box__trailing").evaluateAll((elements) =>
+        elements.map((element) => ({
+          text: element.textContent,
+          tone: element.getAttribute("data-tone"),
+          weight: getComputedStyle(element).fontWeight,
+          color: getComputedStyle(element).color,
+        })),
+      );
+      expect(words.map((word) => [word.text, word.tone, word.weight])).toEqual([
+        ["Bereit, noch aus", "ai", "400"],
+        ["Wartet auf Admin", "warn", "400"],
+        ["Gustav überarbeitet", "ai", "400"],
+      ]);
+      expect(words[0]!.color).not.toBe(words[1]!.color);
+      // Only the automation that waits for the person carries the ring in plum.
+      const rings = await rows
+        .locator(".assistant-context-box__tile")
+        .evaluateAll((tiles) => tiles.map((tile) => getComputedStyle(tile).boxShadow));
+      expect(rings[0]).not.toBe(rings[1]);
+      expect(rings[1]).toBe(rings[2]);
+      const first = rows.first();
+      const before = await layout(page);
+      const height = (await first.boundingBox())!.height;
+      await hoverInPlace(first);
+      await frames(page);
+      expect((await first.boundingBox())!.height).toBe(height);
+      expect(await layout(page)).toEqual(before);
+      const shown = await first.evaluate(
+        (element) =>
+          Array.from(element.querySelectorAll(".assistant-context-box__act :is(a, button)")).filter(
+            (action) => action.getClientRects().length > 0,
+          ).length,
+      );
+      expect(shown).toBe(1);
+      expect(await first.getByRole("link", { name: "Code-Seite von „Code von info@“ öffnen" }).getAttribute("href")).toBe(
+        "/app/assistant/code/c_info0001",
+      );
+      await first.locator(".assistant-context-box__main").click();
+      await section.locator(".assistant-context-box__all").click();
+      expect(await page.evaluate(() => (window as unknown as { sidebar: { targets: unknown[] } }).sidebar.targets)).toEqual([
+        { kind: "anchor", anchor: "tool-call-1" },
+        { kind: "href", href: "/app/assistant?code=1" },
+      ]);
     } finally {
       await page.close();
     }

@@ -121,7 +121,8 @@ export const createAssistantChatContextState = (props: AssistantChatContextQuery
   let timer: ReturnType<typeof setTimeout> | undefined;
   const unregisterChat = live.register({
     matches: (invalidation) =>
-      matchesAssistantInvalidation(["conversation-sources", "conversation-files", "conversation-detail"])(invalidation) &&
+      // A Code version of this chat changes its state word in the group "Automations".
+      matchesAssistantInvalidation(["conversation-sources", "conversation-files", "conversation-detail", "code-versions"])(invalidation) &&
       (!invalidation.conversationIds || invalidation.conversationIds.has(props.chatId)),
     invalidate: (invalidation) => {
       if (batch) {

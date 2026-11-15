@@ -14,6 +14,9 @@ export async function migrate(db: SQL = sql): Promise<void> {
     // What Core saw at submission; null on versions submitted before it recorded this.
     await tx`ALTER TABLE code.version_submissions ADD COLUMN IF NOT EXISTS evidence JSONB`.simple();
     await tx`ALTER TABLE code.version_submissions ADD COLUMN IF NOT EXISTS origin JSONB NOT NULL DEFAULT '{"kind":"cli"}'::jsonb`.simple();
+    // The Code a chat submitted, for the chat's box "In this chat".
+    await tx`CREATE INDEX IF NOT EXISTS version_submission_chat ON code.version_submissions((origin->>'conversationId'),code_id)
+      WHERE origin->>'kind'='ai_chat'`.simple();
     await tx`CREATE TABLE IF NOT EXISTS code.version_withdrawals (
       version_id UUID PRIMARY KEY REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,
       withdrawn_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,

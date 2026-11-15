@@ -53,6 +53,7 @@ import { coreCapabilityPresentation } from "./capability-presentation";
 import { CodeDataError, codePerson } from "./code/access";
 import { codeAttentionContracts, listCodeAttention, readCodeAttention, readCodeSummary } from "./code/attention";
 import { codeAutomationContracts, listCodeAutomations } from "./code/automations";
+import { codeChatListContract, listChatCode } from "./code/chat-list";
 import { CodeIdSchema, codeQueryContracts } from "./code/contracts";
 import { readCodeDetails } from "./code/database";
 import { cancelCodeEventCatchup, readCodeEventCatchup, resumeCodeEventCatchup, startCodeEventCatchup } from "./code/event-catchup";
@@ -767,6 +768,14 @@ export const aiCapabilities = defineCapabilities({
       ...codeQueryContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodes(input, ctx)),
+    },
+    "code.chat.list": {
+      title: "List a chat's Code",
+      description:
+        "List the Code your own AI conversation submitted, each with the state of its newest version from it and its card anchor. Readable Code only.",
+      ...codeChatListContract,
+      openWorld: false,
+      run: (input, context) => runCodeQuery(context, (ctx) => listChatCode(input, ctx)),
     },
     "code.read": {
       title: "Read Code",

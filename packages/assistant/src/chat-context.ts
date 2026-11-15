@@ -48,6 +48,8 @@ export type AssistantChatContextGroup = {
   label: string;
   /** All entries; the box shows at most three, then "Show all". */
   count: number;
+  /** Where "Show all" leads; without it, to the chat's whole list. */
+  allHref?: string;
   rows: Array<{
     key: string;
     icon: string;
@@ -62,7 +64,9 @@ export type AssistantChatContextGroup = {
     tooltip?: string;
     /** A click jumps to this message of the chat. */
     jump?: { messageSeq: number; callId: string | null };
-    /** Without a jump, a click opens this Cloud address. */
+    /** Without a jump, a click jumps to the element of the chat with this `data-chat-anchor`, such as a card. */
+    anchor?: string;
+    /** Without a jump or an anchor, a click opens this Cloud address. */
     href?: string;
     /** The one action shown while pointing at the row. */
     action?: { href: string; label: string; icon: string };
@@ -93,7 +97,7 @@ export type AssistantChatContextSnapshot = {
   memories: Array<{ id: string; content: string }>;
   runCount: number;
   runs: Array<{ id: string; status: string; createdAt: string }>;
-  /** Further groups of the box, after the results; none yet. */
+  /** Further groups of the box, after the results, from their owners (`options.groups`). */
   groups?: AssistantChatContextGroup[];
   /**
    * The Cloud items among `sources`, counted by type in the viewer's words ("3 Mails"), for types whose app names its
@@ -152,14 +156,19 @@ const resultSources = async (conversationId: string) => {
 export const loadAssistantChatContextSnapshot = async (
   identity: AiResourceContext,
   chatId: string,
-  options: { timeZone: string; locale?: string },
+  options: {
+    timeZone: string;
+    locale?: string;
+    /** Owners of further groups fill them for this chat; a group that is null is left out. */
+    groups?: ReadonlyArray<(conversation: { id: string }) => Promise<AssistantChatContextGroup | null>>;
+  },
 ): Promise<AssistantChatContextSnapshot | null> => {
   if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
   const userId = identity.accessSubject.userId;
   const conversation = await aiConversations.getConversationByShortId({ shortId: chatId, ownerUserId: userId });
   if (!conversation) return null;
   const now = new Date().toISOString();
-  const [delivered, sourcePage, overview, skills, memories] = await Promise.all([
+  const [delivered, sourcePage, overview, skills, memories, groups] = await Promise.all([
     resultSources(conversation.id),
     aiConversations.listConversationSources({
       conversationId: conversation.id,
@@ -174,6 +183,7 @@ export const loadAssistantChatContextSnapshot = async (
     }),
     aiSkills.listConversationUses(conversation.id),
     aiMemories.listFromConversation(userId, conversation.id),
+    Promise.all((options.groups ?? []).map((group) => group({ id: conversation.id }))),
   ]);
   // An upload stays the person's file, also when the assistant hands it over with present.
   const uploads = new Set(overview.files.flatMap((file) => (file.origin === "user" ? [file.path] : [])));
@@ -239,5 +249,6 @@ export const loadAssistantChatContextSnapshot = async (
     memories: memories.map((memory) => ({ id: memory.shortId, content: memory.content })),
     runCount: count?.count ?? 0,
     runs,
+    ...(groups.some(Boolean) ? { groups: groups.filter((group) => group !== null) } : {}),
   };
 };

@@ -17,6 +17,7 @@ import { Layout, loadCodePage, PanelLayout, readPanelContext } from "@k2b/cloud/
 import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { loadAssistantChatWorkspace } from "../chat-workspace-service";
+import { loadCodeChatGroup } from "../code-chat-group";
 import { catalogPerApp, loadCodePlace } from "../code-place";
 import { type CodePlace, type CodeQueryInvoke, hasPersonalCode, loadCodeAttention, loadCodeSummaries } from "../code-summary";
 import { ssr } from "../config";
@@ -190,6 +191,7 @@ export default ssr<AuthContext>(async (c) => {
         loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
           timeZone,
           locale,
+          groups: [(conversation) => loadCodeChatGroup(invokeCode, conversation.id, locale)],
         }),
         loadAssistantChatWorkspace(identity, activeConversation.shortId),
       ])

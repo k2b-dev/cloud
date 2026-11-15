@@ -282,6 +282,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der auf dieser Seite geprüften Code-Kandidaten; höchstens 20.",
           },
         },
+        "code.chat.list": {
+          title: "Code eines Chats auflisten",
+          description:
+            "Listet den Code, den dein eigener KI-Chat eingereicht hat, jeweils mit dem Stand seiner neuesten Version daraus und dem Anker ihrer Karte. Nur lesbarer Code.",
+          input: { conversationId: "UUID deines eigenen KI-Chats." },
+        },
         "code.read": {
           title: "Code lesen",
           description: "Liest Besitzer, feste Code-ID und aktuelle Berechtigung.",
