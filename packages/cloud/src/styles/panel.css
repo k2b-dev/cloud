@@ -299,9 +299,8 @@
 }
 
 /* Sheet: from the bottom, at full height below the title row, so a question or a long answer is never cut off. The
-   grabber drags it between full and a little over half the height and switches with a press; while it drags it
-   follows the finger without a transition, and the snap after it takes the sheet transition, which reduced motion
-   makes instant. */
+   grabber drags it between full and a little over half the height and switches with a press. It moves by transform
+   only (`attachSheetHandle`): the height below is where it rests, and it never transitions. */
 @media not all and (min-width: 768px) {
   .cloud-app-canvas[data-panel-sheet="open"] > .cloud-panel {
     position: fixed;
@@ -310,7 +309,6 @@
     bottom: 0;
     display: block;
     height: calc(100dvh - 2.875rem - env(safe-area-inset-top, 0px));
-    transition: height var(--k2b-motion-sheet) var(--k2b-ease-out);
   }
 
   .cloud-app-canvas[data-panel-sheet="open"] > .cloud-panel[data-sheet-detent="half"] {
