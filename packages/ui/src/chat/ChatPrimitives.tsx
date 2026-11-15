@@ -14,6 +14,7 @@ import {
 import { Button } from "../actions/Button";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
+import { Format } from "../intl/Format";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ProgressBar } from "../surfaces/ProgressBar";
@@ -179,8 +180,10 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
     if (completedTimer) clearTimeout(completedTimer);
   });
 
-  const menuItems = (): readonly DropdownItem[] =>
-    actions().map((action) => ({
+  const inlineActions = () => actions().filter((action) => !action.overflow);
+  const overflowActions = () => actions().filter((action) => action.overflow);
+  const menuItems = (list: readonly ChatAction[] = actions()): readonly DropdownItem[] =>
+    list.map((action) => ({
       icon: actionIcon(action),
       label: action.label,
       variant: action.variant,
@@ -216,7 +219,13 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
                     />
                   </Show>
                   <Show when={attachment.kind !== "image"}>
-                    <span>{attachment.name}</span>
+                    {/* A file reads as its name and, below it quietly, its size. */}
+                    <span class="k2b-chat-message__attachment-text">
+                      <strong>{attachment.name}</strong>
+                      <Show when={typeof attachment.size === "number" && attachment.size > 0}>
+                        <Format.Bytes value={attachment.size} />
+                      </Show>
+                    </span>
                   </Show>
                 </>
               );
@@ -278,7 +287,7 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
           <Show when={time()}>{(label) => <time dateTime={timestamp() ?? undefined}>{label()}</time>}</Show>
           <Show when={actions().length > 0 && actionDisplay() === "inline"}>
             <span class="k2b-chat-message__actions" role="group" aria-label={chatMessages().messageActions}>
-              <For each={actions()}>
+              <For each={inlineActions()}>
                 {(action) => (
                   <Tooltip.Trigger
                     type="button"
@@ -294,6 +303,18 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
                   </Tooltip.Trigger>
                 )}
               </For>
+              <Show when={overflowActions().length > 0}>
+                <Dropdown.Root position="bottom-left" label={chatMessages().moreActions} items={menuItems(overflowActions())}>
+                  <Dropdown.Trigger
+                    appearance="plain"
+                    class="k2b-chat-message__menu"
+                    label={chatMessages().moreActions}
+                    title={chatMessages().moreActions}
+                  >
+                    <i class="ti ti-dots" aria-hidden="true" />
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
+              </Show>
             </span>
           </Show>
           <Show when={actions().length > 0 && actionDisplay() === "menu"}>

@@ -64,57 +64,234 @@
    viewport and the neighboring artifact workspace. */
 .k2b-ui .assistant-chat-pane { container: assistant-chat / inline-size; }
 
-/* The chat sidebar ("In this chat"). CSS alone decides its presentation, so the
-   server's first frame is final: a 20rem column when the chat area is at least
-   56rem wide and the person has not closed it; otherwise a drawer over the
-   chat's edge that the toggle opens without changing the chat's width; on
-   phones the toggle opens a bottom sheet instead. */
-.k2b-ui .assistant-context-sidebar { display: none; }
-.k2b-ui .assistant-context-toggle {
+/* The box "In this chat" (concept gustav-ui-neu 3k). CSS alone decides its
+   presentation, so the server's first frame is final: an island at the top right
+   beside the timeline while the chat area is at least 56rem wide and no tabs are
+   open; otherwise a button at the top of the chat that opens the same box below
+   it; on phones the button opens a sheet. The island never moves the chat. */
+.k2b-ui .assistant-context-boxcol { display: none; }
+.k2b-ui .assistant-context-button {
   position: absolute;
   z-index: 2;
   inset-block-start: 0.5rem;
   inset-inline-end: 1.25rem;
   background: var(--k2b-surface);
 }
-.k2b-ui .assistant-chat-layout[data-drawer="open"] > .assistant-context-toggle { visibility: hidden; }
-.k2b-ui .assistant-chat-layout[data-drawer="open"] > .assistant-context-sidebar {
-  display: flex;
-  position: absolute;
-  z-index: 3;
-  inset-block: 0;
-  inset-inline-end: 0;
-  width: min(20rem, 100%);
-  box-shadow: var(--k2b-shadow-side);
-  clip-path: inset(0 0 0 -4rem);
-}
-
 @media (max-width: 47.999rem) {
   .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
+  .k2b-ui .assistant-context-button .k2b-button__label > span { display: none; }
 }
-/* Below 56rem the toggle always shows at the top of a full-width timeline: the first message starts below it, so the
-   toggle never covers it. From 56rem the timeline's centered column keeps clear of the toggle by itself. */
+/* Below 56rem the button always shows at the top of a full-width timeline: the first message starts below it, so the
+   button never covers it. From 56rem the timeline's centered column keeps clear of the button by itself. */
 @container assistant-chat (max-width: 55.999rem) {
-  .k2b-ui .assistant-chat-layout:has(> .assistant-context-toggle) .k2b-chat-timeline__content { padding-block-start: 2.75rem; }
+  .k2b-ui .assistant-chat-layout:has(> .assistant-context-button) .k2b-chat-timeline__content { padding-block-start: 2.75rem; }
 }
-
 @container assistant-chat (min-width: 56rem) {
-  .k2b-ui .assistant-chat-layout { --assistant-context-mode: column; }
-  .k2b-ui .assistant-chat-layout[data-context="auto"]:has(> .assistant-context-sidebar) {
-    --assistant-chat-context-width: 20rem;
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) { --assistant-context-mode: column; }
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol) {
+    --assistant-chat-context-width: 19.5rem;
   }
-  .k2b-ui .assistant-chat-layout[data-context="auto"] > .assistant-context-toggle { display: none; }
-  /* Above the messages' full-width scrollport, which spans this column too. */
-  .k2b-ui .assistant-chat-layout[data-context="auto"] > .assistant-context-sidebar {
-    display: flex;
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-button { display: none; }
+  /* Above the messages' full-width scrollport, which spans this column too; only the island takes the pointer. */
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol {
+    display: block;
     position: relative;
     z-index: 1;
-    width: auto;
+    min-width: 0;
     grid-column: 2;
     grid-row: 1 / -1;
-    box-shadow: none;
+    padding: 0.75rem 0.75rem 0 0;
+    pointer-events: none;
   }
+  .k2b-ui .assistant-context-boxcol > .assistant-context-box { pointer-events: auto; }
 }
+
+/* The third grey for meta text (F8), light and dark. */
+.k2b-ui { --assistant-context-meta: #71717a; }
+:is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark .k2b-ui, .dark.k2b-ui) { --assistant-context-meta: #8d8d98; }
+.k2b-ui .k2b-button.assistant-context-button { color: var(--k2b-ai-accent); font-size: 0.8125rem; font-weight: 600; }
+.k2b-ui .k2b-button.assistant-context-button[aria-expanded="true"] { background: var(--k2b-surface); }
+.k2b-ui .assistant-context-box__head .k2b-button i,
+.k2b-ui .assistant-context-box__act .k2b-button i { font-size: 0.9375rem; }
+.k2b-ui .assistant-context-box {
+  display: grid;
+  min-width: 0;
+  gap: 0.125rem;
+  padding: 0.375rem 0.375rem 0.5rem;
+  color: var(--k2b-text);
+  font-size: 0.8125rem;
+}
+.k2b-ui .assistant-context-box[data-variant="island"] {
+  border-radius: 0.75rem;
+  background: var(--k2b-island-surface, var(--k2b-surface));
+  box-shadow: var(--k2b-island-shadow);
+}
+.k2b-ui .assistant-context-popover .assistant-context-box { padding: 0.375rem 0.375rem 0.5rem; }
+/* In the sheet, the text edge sits 16 px from the screen's edge, like the concept's. */
+.k2b-ui .assistant-context-box[data-variant="sheet"] { padding: 0 0 0.5rem; margin-inline: -0.5rem; }
+.k2b-ui .assistant-context-box__head {
+  display: grid;
+  height: 2rem;
+  grid-template-columns: minmax(0, 1fr) auto 1.75rem;
+  align-items: center;
+  gap: 0.25rem;
+  padding-inline-start: 0.5rem;
+}
+.k2b-ui .assistant-context-box__heading {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.k2b-ui .assistant-context-box__heading:focus { outline: none; }
+/* The fixed place for "New · n": empty, it keeps its width. */
+.k2b-ui .assistant-context-box__slot { display: inline-flex; min-width: 6.5rem; height: 1.375rem; align-items: center; justify-content: flex-end; }
+.k2b-ui .assistant-context-box__new {
+  visibility: hidden;
+  padding: 0.0625rem 0.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--k2b-action) 10%, transparent);
+  color: var(--k2b-action);
+  font: inherit;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__new[data-pending="true"] { visibility: visible; }
+.k2b-ui .assistant-context-box__new:focus-visible,
+.k2b-ui .assistant-context-box__all:focus-visible,
+.k2b-ui .assistant-context-box__retry:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+.k2b-ui .assistant-context-box__group { display: grid; min-width: 0; }
+.k2b-ui .assistant-context-box__label {
+  display: flex;
+  height: 1.5rem;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0.25rem 0 0;
+  padding: 0 0.5rem;
+  color: var(--assistant-context-meta);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.k2b-ui .assistant-context-box__count { font-variant-numeric: tabular-nums; }
+.k2b-ui .assistant-context-box__all {
+  margin-inline-start: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k2b-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__all:hover { color: var(--k2b-text); text-decoration: underline; }
+.k2b-ui .assistant-context-box__rows,
+.k2b-ui .assistant-context-box__lines { margin: 0; padding: 0; list-style: none; }
+.k2b-ui .assistant-context-box__lines {
+  margin-block-start: 0.375rem;
+  padding-block-start: 0.25rem;
+  border-block-start: 1px solid color-mix(in srgb, var(--k2b-border) 72%, transparent);
+}
+.k2b-ui .assistant-context-box__none,
+.k2b-ui .assistant-context-box__empty {
+  display: flex;
+  height: 1.75rem;
+  align-items: center;
+  margin: 0;
+  padding: 0 0.5rem;
+  color: var(--assistant-context-meta);
+  font-size: 0.75rem;
+}
+.k2b-ui .assistant-context-box__empty { height: auto; padding: 0.25rem 0.5rem 0.375rem; line-height: 1.45; }
+/* One row per thing: 28 px, sign, title, and at the end a fixed place for a word or the one action. */
+.k2b-ui .assistant-context-box__row { position: relative; height: 1.75rem; border-radius: 0.4375rem; }
+.k2b-ui .assistant-context-box__row:hover,
+.k2b-ui .assistant-context-box__row:focus-within { background: var(--k2b-edge-hover-bg, var(--k2b-hover)); }
+.k2b-ui .assistant-context-box__main {
+  display: grid;
+  width: 100%;
+  height: 1.75rem;
+  grid-template-columns: 1.125rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: start;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__main:disabled { cursor: default; }
+.k2b-ui .assistant-context-box__main:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: -2px; }
+.k2b-ui .assistant-context-box__icon { color: var(--k2b-text-secondary); font-size: 0.9375rem; text-align: center; }
+.k2b-ui .assistant-context-box__tile {
+  display: grid;
+  width: 1.125rem;
+  height: 1.125rem;
+  place-items: center;
+  border-radius: 0.3125rem;
+  background: color-mix(in srgb, var(--assistant-context-box-accent, var(--k2b-text-secondary)) 5%, var(--k2b-surface));
+  color: var(--assistant-context-box-accent, var(--k2b-text-secondary));
+  font-size: 0.75rem;
+}
+.k2b-ui .assistant-context-box__row[data-attention] .assistant-context-box__tile {
+  box-shadow: 0 0 0 2px var(--k2b-ai-surface), 0 0 0 3px var(--k2b-ai-accent);
+}
+.k2b-ui .assistant-context-box__title { min-width: 0; overflow: hidden; white-space: nowrap; }
+.k2b-ui .assistant-context-box__key { margin-inline-end: 0.375rem; color: var(--assistant-context-meta); }
+.k2b-ui .assistant-context-box__trailing {
+  min-width: 1.75rem;
+  color: var(--assistant-context-meta);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+.k2b-ui .assistant-context-box__trailing[data-tone="warn"] { color: var(--k2b-warning-text); }
+.k2b-ui .assistant-context-box__trailing[data-tone="ok"] { color: var(--k2b-success-text); }
+.k2b-ui .assistant-context-box__trailing[data-tone="ai"] { color: var(--k2b-ai-accent); }
+.k2b-ui .assistant-context-box__trailing[data-tone="danger"] { color: var(--k2b-danger-text); }
+/* The one action while pointing: over the fixed place at the end, so nothing moves. */
+.k2b-ui .assistant-context-box__act {
+  position: absolute;
+  inset-block-start: 0.125rem;
+  inset-inline-end: 0.25rem;
+  display: none;
+  border-radius: 0.375rem;
+  background: var(--k2b-edge-hover-bg, var(--k2b-hover));
+}
+.k2b-ui .assistant-context-box__act .k2b-button { width: 1.5rem; height: 1.5rem; min-height: 0; }
+.k2b-ui .assistant-context-box__row:is(:hover, :focus-within) > .assistant-context-box__act { display: block; }
+.k2b-ui .assistant-context-box__row:has(> .assistant-context-box__act):is(:hover, :focus-within) .assistant-context-box__trailing { visibility: hidden; }
+@media (hover: none) {
+  .k2b-ui .assistant-context-box__act { display: none !important; }
+  .k2b-ui .assistant-context-box__trailing { visibility: visible !important; }
+}
+.k2b-ui .assistant-context-box__loading { display: grid; gap: 0; padding: 0.25rem 0.5rem; }
+.k2b-ui .assistant-context-box__skeleton { height: 0.6875rem; margin-block: 0.53125rem; border-radius: 999px; }
+.k2b-ui .assistant-context-box__skeleton:nth-child(2) { width: 72%; }
+.k2b-ui .assistant-context-box__skeleton:nth-child(3) { width: 54%; }
+.k2b-ui .assistant-context-box__failed { display: grid; gap: 0.25rem; justify-items: start; padding: 0.375rem 0.5rem 0.5rem; }
+.k2b-ui .assistant-context-box__failed p { margin: 0; }
+.k2b-ui .assistant-context-box__meta { display: block; color: var(--assistant-context-meta); font-size: 0.75rem; }
+.k2b-ui .assistant-context-box__retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--k2b-action);
+  font: inherit;
+  cursor: pointer;
+}
+.k2b-ui .assistant-context-box__retry:hover { text-decoration: underline; }
+.k2b-ui .assistant-context-popover { padding: 0; }
 
 /* One surface, shared with the chat; sections are separated by space. */
 .k2b-ui .assistant-context-sidebar {
@@ -360,16 +537,11 @@
   font-weight: 600;
 }
 
-/* Reserve the chat list's scroll track in the surrounding inset, so rows and
-   the non-scrolling search header share the same content edge. */
+/* Reserve the chat list's shared 0.5rem scroll track in the surrounding inset,
+   so rows and the non-scrolling search header share the same content edge. */
 .k2b-ui .assistant-project-chats-scroll {
   margin-inline-end: -0.5rem;
-  scrollbar-width: auto;
-  scrollbar-color: auto;
   scrollbar-gutter: stable;
-}
-.k2b-ui .assistant-project-chats-scroll::-webkit-scrollbar {
-  width: 0.5rem;
 }
 /* An overlay scrollbar takes no width, so the list's content stops at the
    section's own edge instead of running into the inset. */
@@ -425,35 +597,68 @@
   .k2b-ui :is(.assistant-chat-waiting, .assistant-chat-unread) { background: CanvasText; forced-color-adjust: none; }
 }
 
-/* "Waiting for you" above the composer: one row of fixed height that scrolls sideways, so a question opening or
-   closing elsewhere never moves the composer. Hidden, it keeps its place. Its end fades, so a cut entry reads as more
-   to scroll to; the list's end padding keeps a row that fits out of the fade. */
+/* "Waiting for you" (Gustav chat v12, Bauplan 3m): one 32 px row that never wraps. Over the chat it lies on the
+   timeline's free end, which is always 54 px, so it comes and goes without moving the field or the conversation; on
+   the start screen and in a project it stands in the flow above the field. Hidden, it keeps its place. */
+.k2b-ui .assistant-chat-layout .k2b-chat-timeline__content { padding-block-end: 3.375rem; }
+.k2b-ui .assistant-chat-composer__column { position: relative; }
 .k2b-ui .assistant-waiting {
+  container: assistant-waiting / inline-size;
   display: flex;
   align-items: center;
-  gap: .25rem;
-  block-size: 2.5rem;
+  gap: .5rem;
+  block-size: 2rem;
   min-inline-size: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 2rem), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 2rem), transparent);
+  font-size: .8125rem;
 }
-.k2b-ui .assistant-waiting::-webkit-scrollbar { display: none; }
+.k2b-ui .assistant-chat-composer__column > .assistant-waiting {
+  position: absolute;
+  z-index: 2;
+  inset-inline: 0;
+  inset-block-end: calc(100% + .375rem);
+  /* Text that scrolls under the row fades into the page, never behind a hard edge. */
+  background: linear-gradient(to bottom, transparent, var(--k2b-surface) 55%);
+}
 .k2b-ui .assistant-waiting[data-quiet] { visibility: hidden; }
-.k2b-ui .assistant-waiting__label { display: inline-flex; flex: none; align-items: center; gap: .4375rem; padding-inline: .25rem .375rem; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; white-space: nowrap; }
-.k2b-ui .assistant-waiting__label::before { content: ""; flex: none; inline-size: .4375rem; block-size: .4375rem; border-radius: 50%; background: var(--k2b-ai-accent); }
-.k2b-ui .assistant-waiting__list { display: flex; flex: none; align-items: center; gap: .25rem; margin: 0; padding: 0 2rem 0 0; list-style: none; }
-.k2b-ui .assistant-waiting__entry { color: var(--k2b-text); font-weight: 500; }
-.k2b-ui .assistant-waiting__icon { flex: none; color: var(--assistant-waiting-accent, var(--k2b-text-muted)); font-size: .9375rem; }
-/* Long words fade at a bound, as navigation labels do; the row scrolls sideways for the rest. */
-.k2b-ui .assistant-waiting__short { max-inline-size: 20rem; }
-.k2b-ui .assistant-waiting__chat { max-inline-size: 12rem; color: var(--k2b-text-muted); font-size: .75rem; font-weight: 400; }
-/* On touch screens the row is as tall as the 44 px hit areas of its buttons, which it would otherwise clip. */
+/* The slash list opens over the row's place: the row steps back, keeping its place, until the list closes. */
+.k2b-ui .assistant-chat-composer__column:has(.k2b-chat-composer-accessory[data-commands]) > .assistant-waiting { visibility: hidden; }
+.k2b-ui .assistant-waiting__label { display: inline-flex; flex: none; align-items: center; gap: .3125rem; color: var(--k2b-text-secondary); font-size: .75rem; font-weight: 600; line-height: 1rem; white-space: nowrap; }
+.k2b-ui .assistant-waiting__label > i { color: var(--k2b-ai-accent); font-size: .875rem; }
+/* Chips shrink sideways; nothing is cut above or below, so focus rings and the touch areas of coarse pointers stay whole. */
+.k2b-ui .assistant-waiting__list { display: flex; flex: 0 1 auto; gap: .375rem; min-inline-size: 0; margin: 0; padding: 0; overflow-x: clip; overflow-y: visible; list-style: none; }
+/* The first entry is the next thing to do: when the row is short of room, the later chips give way five times as much.
+   The factors stay at 1 or more, so a single chip still gives way in full. */
+.k2b-ui .assistant-waiting__item { display: flex; flex: 0 5 auto; min-inline-size: 4rem; max-inline-size: 15.625rem; }
+.k2b-ui .assistant-waiting__item:first-child { flex-shrink: 1; }
+.k2b-ui .assistant-waiting__entry { display: inline-flex; flex: 1 1 auto; align-items: center; gap: .375rem; min-inline-size: 0; block-size: 1.625rem; padding: 0 0 0 .5rem; border: 0; border-radius: .5rem; color: var(--k2b-text); background: var(--k2b-ai-surface); font: inherit; white-space: nowrap; cursor: pointer; }
+.k2b-ui .assistant-waiting__entry:hover { background: color-mix(in srgb, var(--k2b-ai-accent) 14%, var(--k2b-surface)); }
+.k2b-ui .assistant-waiting__entry:focus-visible,
+.k2b-ui .assistant-waiting__more:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: calc(-1 * var(--k2b-focus-width)); }
+.k2b-ui .assistant-waiting__icon { flex: none; color: var(--k2b-ai-accent); font-size: .875rem; }
+.k2b-ui .assistant-waiting__entry:is([data-kind="routine"], [data-kind="app_run"]) .assistant-waiting__icon { color: var(--k2b-warning-text); }
+.k2b-ui .k2b-dropdown__item.assistant-waiting__menu-entry > i { color: var(--k2b-ai-accent); }
+.k2b-ui .k2b-dropdown__item.assistant-waiting__menu-entry--attention > i { color: var(--k2b-warning-text); }
+/* The last text of a chip ends on the chip's padding, where its fade ends, so a sentence that fits stays whole. */
+.k2b-ui .assistant-waiting__entry > :last-child { padding-inline-end: .625rem; --k2b-truncate-fade-length: .625rem; }
+.k2b-ui .assistant-waiting__short { min-inline-size: 0; }
+.k2b-ui .assistant-waiting__chat { flex: 0 2 auto; min-inline-size: 0; color: var(--k2b-text-muted); font-size: .75rem; }
+.k2b-ui .assistant-waiting__more { flex: none; min-inline-size: 2.125rem; block-size: 1.625rem; padding: 0 .5rem; border: 0; border-radius: .5rem; color: var(--k2b-text-secondary); background: var(--k2b-surface-muted); font: inherit; font-size: .75rem; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+.k2b-ui .assistant-waiting__more:hover { background: var(--k2b-hover); }
+.k2b-ui .assistant-waiting__count[data-width="narrow"] { display: none; }
+.k2b-ui .assistant-waiting__more:not([data-wide]) { display: none; }
+/* Narrow, the row shows the hand, one entry, and "+n" for the rest; the full list opens as a sheet. */
+@container assistant-waiting (max-width: 29.999rem) {
+  .k2b-ui .assistant-waiting__title { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .k2b-ui .assistant-waiting__item:nth-child(n + 2) { display: none; }
+  .k2b-ui .assistant-waiting__item { flex: 1 1 auto; max-inline-size: none; }
+  .k2b-ui .assistant-waiting__more:not([data-wide]) { display: inline-block; }
+  .k2b-ui .assistant-waiting__count[data-width="wide"] { display: none; }
+  .k2b-ui .assistant-waiting__count[data-width="narrow"] { display: inline; }
+}
+/* On touch screens each chip and "+n" take taps in 44 px, reaching past the row without changing it. */
 @media (any-pointer: coarse) {
-  .k2b-ui .assistant-waiting { block-size: 2.75rem; }
+  .k2b-ui :is(.assistant-waiting__entry, .assistant-waiting__more) { position: relative; }
+  .k2b-ui :is(.assistant-waiting__entry, .assistant-waiting__more)::after { position: absolute; inset: -.5625rem 0; content: ""; }
 }
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }

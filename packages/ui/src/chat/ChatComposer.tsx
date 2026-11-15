@@ -51,6 +51,7 @@ import { ProgressRing } from "../surfaces/ProgressRing";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import {
   chatCommandKey,
+  chatSuggestionKeyAction,
   conversationEnterAction,
   executeChatAction,
   nextChatCommandIndex,
@@ -222,6 +223,21 @@ export type ChatComposerReply = {
   onSelect?: () => void;
 };
 
+/**
+ * A suggested next message. It stands in the empty field instead of the placeholder, wraps and grows the field like
+ * typed text, and ends in a hint: "Tab accept" with a keyboard, an Accept button on touch-only devices. Tab or the hint
+ * puts the text into the field as an edit that undo takes back; nothing is sent. Typing replaces it, and an empty field
+ * shows it again. Escape dismisses it, and so does sending. The application owns where it comes from and drops it when
+ * a new response starts.
+ */
+export type ChatComposerSuggestion = {
+  text: string;
+  /** The text is now in the field. */
+  onAccept: () => void;
+  /** Escape dismissed it; the field shows the placeholder again. */
+  onDismiss: () => void;
+};
+
 export type ChatComposerProps = {
   value: string;
   onValueChange: (value: string) => void;
@@ -317,6 +333,8 @@ export type ChatComposerProps = {
    * button that cancels the reply. `onSelect` makes the quote a button, for example to jump to the original.
    */
   reply?: ChatComposerReply;
+  /** A suggested next message in the empty field; see `ChatComposerSuggestion`. */
+  suggestion?: ChatComposerSuggestion;
 };
 
 type FormatTool = {
@@ -440,6 +458,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   let textareaRef: HTMLTextAreaElement | undefined;
   let fileInputRef: HTMLInputElement | undefined;
   let measureRef: HTMLTextAreaElement | undefined;
+  let suggestionRef: HTMLDivElement | undefined;
   let microphoneRef: HTMLDivElement | undefined;
   let sawRunning = props.state === "running";
   const conversation = () => props.variant === "conversation";
@@ -1143,6 +1162,65 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const blocked = () => busy() || submitting();
   /** The conversation field stays editable while a message is sent, so it keeps the focus and a phone its keyboard. */
   const editBlocked = () => (conversation() ? busy() : blocked());
+  /** The suggestion Escape or a sent message set aside; a different one shows again. */
+  const [setAsideSuggestion, setSetAsideSuggestion] = createSignal<string>();
+  /** One line of text: a suggestion is a short next message, read in full. */
+  const suggestionText = () => props.suggestion?.text.replace(/\s+/g, " ").trim();
+  /** The suggested text standing in the field: only in an empty field that takes text now. */
+  const shownSuggestion = createMemo(() => {
+    const text = suggestionText();
+    if (!text || props.value || text === setAsideSuggestion()) return undefined;
+    if (editBlocked() || openingRow() !== undefined || dictation() === "listening" || dictation() === "refining") return undefined;
+    return text;
+  });
+  const suggestionDescriptionId = `${commandListId}-suggestion`;
+  // Known after mount, so the server and the first client render describe it alike.
+  const [touchOnly, setTouchOnly] = createSignal(false);
+  onMount(() => setTouchOnly(isTouchOnly()));
+  const suggestionDescription = (text: string) =>
+    touchOnly() ? chatMessages().suggestionAnnouncementTouch({ text }) : chatMessages().suggestionAnnouncement({ text });
+  /** Once per suggestion, when it stands in the focused field. */
+  let announcedSuggestion: string | undefined;
+  // A suggestion that went away, or another draft, starts over: the same text may be offered and heard again.
+  createEffect(() => {
+    if (props.suggestion) return;
+    setSetAsideSuggestion(undefined);
+    announcedSuggestion = undefined;
+  });
+  createEffect(
+    on(
+      () => props.draftKey,
+      () => {
+        setSetAsideSuggestion(undefined);
+        announcedSuggestion = undefined;
+      },
+      { defer: true },
+    ),
+  );
+  const announceSuggestion = () => {
+    const text = shownSuggestion();
+    if (!text || text === announcedSuggestion || !textareaRef || textareaRef.ownerDocument.activeElement !== textareaRef) return;
+    announcedSuggestion = text;
+    setSuggestionAnnouncement({ text: suggestionDescription(text) });
+  };
+  createEffect(() => {
+    if (shownSuggestion()) announceSuggestion();
+  });
+  /** Puts the text into the field as typing would, so undo takes it back; nothing is sent. */
+  const acceptSuggestion = () => {
+    const suggestion = props.suggestion;
+    const text = shownSuggestion();
+    if (!suggestion || !text || !textareaRef) return;
+    replaceTextareaRange(textareaRef, 0, textareaRef.value.length, text);
+    suggestion.onAccept();
+  };
+  const dismissSuggestion = () => {
+    const suggestion = props.suggestion;
+    const text = shownSuggestion();
+    if (!suggestion || !text) return;
+    setSetAsideSuggestion(text);
+    suggestion.onDismiss();
+  };
   // Dictation belongs to one draft in one editable field: another draft, a field that turns read-only or a host that
   // drops the source ends it; the words so far stay.
   // Memos compare values, so typing and arriving words never end it.
@@ -1207,18 +1285,27 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     return items;
   };
 
+  /** The height a suggestion gave the field; typing over it keeps that height until the field is empty again. */
+  let suggestionHeight = 0;
   const autoResize = () => {
     if (!textareaRef) return;
+    let height: number;
     if (conversation()) {
       // A hidden copy measures the text. Collapsing the field itself would shrink the composer for a frame, and
       // WebKit then clamps the scroll position of the conversation above it. CSS caps the height.
       if (!measureRef) return;
       measureRef.value = textareaRef.value;
-      textareaRef.style.height = `${measureRef.scrollHeight}px`;
-      return;
+      height = measureRef.scrollHeight;
+    } else {
+      textareaRef.style.height = "auto";
+      height = textareaRef.scrollHeight;
     }
-    textareaRef.style.height = "auto";
-    textareaRef.style.height = `${Math.min(textareaRef.scrollHeight, composerMaxInputHeight)}px`;
+    // A suggestion grows the field like text. The first typed character or accepting it does not shrink the field;
+    // only an empty field without one, after sending, clearing or Escape, lets it return to its own height.
+    if (suggestionRef && shownSuggestion()) suggestionHeight = suggestionRef.offsetHeight;
+    else if (!textareaRef.value) suggestionHeight = 0;
+    height = Math.max(height, suggestionHeight);
+    textareaRef.style.height = `${conversation() ? height : Math.min(height, composerMaxInputHeight)}px`;
   };
 
   const focus = () => textareaRef?.focus();
@@ -1260,6 +1347,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
 
   createEffect(() => {
     props.value;
+    shownSuggestion();
     queueMicrotask(autoResize);
   });
 
@@ -1405,6 +1493,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       };
       await runChatSubmission({
         clear: () => {
+          // A sent message answers the moment the suggestion belonged to.
+          setSetAsideSuggestion(suggestionText());
           props.onValueChange("");
           props.onMentionsChange?.([]);
           if (intent !== "steer") setAttachments([]);
@@ -1793,6 +1883,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       restoreHistory(event.shiftKey ? 1 : -1);
       return;
     }
+    if (shownSuggestion()) {
+      const action = chatSuggestionKeyAction(event, { composing: composing(), listOpen: suggestionsOpen() });
+      if (action) {
+        event.preventDefault();
+        if (action === "accept") acceptSuggestion();
+        else dismissSuggestion();
+        return;
+      }
+    }
     if (emojiOpen() || peopleOpen()) {
       const count = emojiOpen() ? emojiMatches().length : peopleMatches().length;
       if (event.key === "ArrowUp" || event.key === "ArrowDown") {
@@ -2178,7 +2277,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   );
 
   const field = () => (
-    <div class="k2b-chat-composer__input" role="group" aria-label={chatMessages().messageInput}>
+    <div
+      class="k2b-chat-composer__input"
+      role="group"
+      aria-label={chatMessages().messageInput}
+      data-suggestion={shownSuggestion() ? "" : undefined}
+    >
       <Show when={mentions().length > 0 || dictationView()}>
         <div ref={highlightRef} class="k2b-chat-composer__highlight" aria-hidden="true">
           <For
@@ -2208,10 +2312,17 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         readOnly={openingRow() !== undefined}
         enterkeyhint={conversation() ? "enter" : undefined}
         placeholder={
-          props.placeholder ??
-          (running() ? chatMessages().addGuidance : conversation() ? chatMessages().writeConversationMessage : chatMessages().writeMessage)
+          shownSuggestion()
+            ? ""
+            : (props.placeholder ??
+              (running()
+                ? chatMessages().addGuidance
+                : conversation()
+                  ? chatMessages().writeConversationMessage
+                  : chatMessages().writeMessage))
         }
         aria-label={props.inputLabel ?? messages().message}
+        aria-describedby={shownSuggestion() ? suggestionDescriptionId : undefined}
         // A list opened from "+" belongs to its search field.
         role={fieldOwnsList() ? "combobox" : undefined}
         aria-autocomplete={fieldOwnsList() ? "list" : undefined}
@@ -2250,6 +2361,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           props.onPaste?.(event);
         }}
         onSelect={syncCaret}
+        onFocus={announceSuggestion}
         onBlur={() => setDismissed(true)}
         onClick={() => {
           setDismissed(false);
@@ -2274,6 +2386,49 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         }}
         onKeyDown={onKeyDown}
       />
+      <Show when={shownSuggestion()}>
+        {(text) => (
+          <div
+            ref={(element) => {
+              suggestionRef = element;
+              // Its width follows the field, so a narrower composer wraps it onto more lines.
+              if (typeof ResizeObserver !== "function") return;
+              const observer = new ResizeObserver(() => autoResize());
+              observer.observe(element);
+              onCleanup(() => observer.disconnect());
+            }}
+            class="k2b-chat-composer__suggestion"
+          >
+            <span aria-hidden="true">{text()}</span>
+            <span hidden id={suggestionDescriptionId}>
+              {suggestionDescription(text())}
+            </span>
+            {/* With a keyboard Tab accepts; the hint takes a click too, without taking the focus from the field. */}
+            <span
+              class="k2b-chat-composer__suggestion-key"
+              aria-hidden="true"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                acceptSuggestion();
+              }}
+            >
+              <i class="ti ti-sparkles k2b-chat-composer__suggestion-mark" aria-hidden="true" />
+              <kbd class="k2b-chat-composer__suggestion-cap">Tab</kbd>
+              {chatMessages().suggestionKeyHint}
+            </span>
+            <button
+              type="button"
+              class="k2b-chat-composer__suggestion-accept"
+              aria-label={chatMessages().suggestionAcceptLabel({ text: text() })}
+              onMouseDown={keepFieldFocus}
+              onClick={acceptSuggestion}
+            >
+              <i class="ti ti-sparkles k2b-chat-composer__suggestion-mark" aria-hidden="true" />
+              {chatMessages().suggestionAccept}
+            </button>
+          </div>
+        )}
+      </Show>
       <Show when={conversation()}>
         <textarea ref={measureRef} class="k2b-chat-composer__measure" rows={1} tabIndex={-1} aria-hidden="true" readOnly />
       </Show>

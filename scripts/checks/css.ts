@@ -260,6 +260,7 @@ export const rule: Rule = {
       "--mail-upload-progress", // MailComposerAttachments.tsx: how far an upload got, as the fill of its bar
       "--cloud-panel-width-set", // Layout.tsx and browser/panel-slot.ts: the panel width the reader saved
       "--assistant-waiting-accent", // AssistantWaitingStrip.tsx: the accent of the app that asks
+      "--assistant-context-box-accent", // AssistantChatContextBox.tsx: the app colour of a row's tile
       "--k2b-chart-height", // @k2b/ui Chart.tsx and ChartSnapshotView.tsx: the rendered chart height
       "--notebook-chart-height", // notebooks chart-blocks.ts: the height of a drawing taller than its frame
       "--spaces-calendar-color", // Spaces calendar EventDetail.tsx and AgendaList.tsx: the color of each item's calendar

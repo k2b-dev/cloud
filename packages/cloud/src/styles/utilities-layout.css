@@ -96,39 +96,6 @@
   scrollbar-width: none;
 }
 
-.panes-tab-strip {
-  gap: 0.125rem;
-  padding: 0.125rem;
-  border-radius: var(--ui-radius-control);
-  background: var(--ui-surface-muted);
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-
-.panes-tab-strip::-webkit-scrollbar-thumb {
-  background: transparent;
-}
-
-.panes-tab-strip:hover,
-.panes-tab-strip:focus-within {
-  scrollbar-color: rgb(161 161 170 / 0.45) transparent;
-}
-
-.panes-tab-strip:hover::-webkit-scrollbar-thumb,
-.panes-tab-strip:focus-within::-webkit-scrollbar-thumb {
-  background: rgb(161 161 170 / 0.45);
-}
-
-.dark .panes-tab-strip:hover,
-.dark .panes-tab-strip:focus-within {
-  scrollbar-color: rgb(82 82 91 / 0.6) transparent;
-}
-
-.dark .panes-tab-strip:hover::-webkit-scrollbar-thumb,
-.dark .panes-tab-strip:focus-within::-webkit-scrollbar-thumb {
-  background: rgb(82 82 91 / 0.6);
-}
-
 @utility ellipsis {
   @apply overflow-hidden text-ellipsis whitespace-nowrap;
 }

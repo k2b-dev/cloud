@@ -111,6 +111,13 @@ describe("turn layout", () => {
     expect(layoutAiTurn([{ id: "s", kind: "steer_applied", steerId: "s" }], { phase: "completed" }).showWork).toBe(false);
   });
 
+  test("a running turn shows its work line before its first step and hands the place to an answer without steps", () => {
+    expect(layoutAiTurn([], { phase: "running" }).showWork).toBe(true);
+    expect(layoutAiTurn([thinking("r1")], { phase: "running" }).showWork).toBe(true);
+    expect(layoutAiTurn([thinking("r1"), text("t1", "Tokyo: 02:14.")], { phase: "running" }).showWork).toBe(false);
+    expect(layoutAiTurn([thinking("r1")], { phase: "completed" }).showWork).toBe(false);
+  });
+
   test("a stopped or failed turn folds all of its text into the work line", () => {
     for (const phase of ["stopped", "failed"] as const) {
       const layout = layoutAiTurn([text("t1", "Now I build the dashboard."), tool("run", "code_run")], { phase });
