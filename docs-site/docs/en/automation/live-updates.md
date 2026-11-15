@@ -316,11 +316,24 @@ how long the subscription has been open:
 
 Every mutable input of an event-only decision needs an access event from its
 owner. A time-to-live cache cannot supply that guarantee. Keep a channel
-periodic until that coverage exists. Admission allows one catch-up when an
-Identity-Access event affects the connection or a domain event affects one of
-its returned keys or canonical `accessKey` roots. Unrelated events do not
-restart admission. Repeated changes to those inputs close that connection
-with `1013` (`access_changing`).
+periodic until that coverage exists.
+
+When an Identity-Access hint arrives during revalidation, further checks share
+a ten-second catch-up deadline. A delayed hint from before the handshake can
+request another check without ending a valid session. The first check keeps
+its per-step deadlines; waiting for an authorization slot alone does not start
+the catch-up deadline.
+
+Delivery and replay wait for these checks; a failed check or a burst that
+outlasts the deadline closes the socket with `1011` so it can reconnect.
+Updates are processed in order, so a viewer's pending check can delay later
+updates for other viewers until the in-flight checks finish.
+
+Subscription admission allows one catch-up when an Identity-Access event
+affects the connection or a domain event affects one of its returned keys or
+canonical `accessKey` roots while the scope is being authorized. Unrelated
+events do not restart admission. Repeated changes to those inputs close that
+connection with `1013` (`access_changing`).
 
 Collection discovery retries once per subscription. Domain events can add
 unknown collection keys, so they also invalidate collection reads in progress.

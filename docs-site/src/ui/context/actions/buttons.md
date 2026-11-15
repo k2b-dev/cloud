@@ -8,7 +8,7 @@ Use `primary` for the main forward action, `secondary` for supporting actions, `
 
 A destructive action without a surface, such as Remove at the foot of a menu, is a `text` button with `data-danger="true"`; it takes the danger ink of destructive menu items. Utility color classes cannot recolor a button, because button styles sit outside the utility layer.
 
-The `link` variant uses action-coloured ink, regular weight, no horizontal inset, and no surface. Hover underlines it; keyboard focus keeps the shared focus ring. Use `size="sm"` with a chevron for list continuation. The variant describes emphasis; `Button` still performs an action and `ButtonLink` still navigates. Keep the idle or retry label unchanged while loading so the spinner preserves its width.
+The `link` variant uses action-coloured ink, regular weight, no horizontal inset, and no surface. Hover darkens it to `--k2b-action-hover`, without an underline; keyboard focus keeps the shared focus ring. Use `size="sm"` with a chevron for list continuation. The variant describes emphasis; `Button` still performs an action and `ButtonLink` still navigates. Keep the idle or retry label unchanged while loading so the spinner preserves its width.
 
 ## Import
 
