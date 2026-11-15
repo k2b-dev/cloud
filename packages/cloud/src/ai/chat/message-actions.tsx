@@ -346,66 +346,72 @@ const openNegativeFeedbackDialog = (t: ReturnType<typeof aiChatMessages>) =>
     { title: t.feedbackTitle, icon: "ti ti-message-report", size: "large" },
   );
 
+/**
+ * Quiet icons under an answer, in this order: copy, answer again, helpful, needs improvement, and "More" with the
+ * variants of the answer, continuing in a new chat, and its details. Answering again and its variants retry `prompt`,
+ * the person's message the answer belongs to.
+ */
 export function createAssistantMessageActions(props: {
   entry: AiStoredMessage;
   entries: AiStoredMessage[];
   copyText: string;
   actions: AiChatActions;
+  prompt?: AiStoredMessage | null;
 }): ChatAction[] {
   const locale = useLocale();
   const t = aiChatMessages(locale());
   const actions = props.actions;
-  const result: ChatAction[] = [
-    ...(actions.onMessageFeedback
-      ? [
-          {
-            id: "feedback-up",
-            label: props.entry.feedback?.rating === "up" ? t.actionHelpfulRemove : t.actionHelpful,
-            icon: "ti ti-thumb-up",
-            pressed: props.entry.feedback?.rating === "up",
-            pressedTone: "success" as const,
-            onSelect: () =>
-              actions.onMessageFeedback!(
-                props.entry,
-                props.entry.feedback?.rating === "up" ? null : { rating: "up", reasons: [], comment: null },
-              ),
-          },
-          {
-            id: "feedback-down",
-            label: props.entry.feedback?.rating === "down" ? t.actionImproveRemove : t.actionImprove,
-            icon: "ti ti-thumb-down",
-            pressed: props.entry.feedback?.rating === "down",
-            pressedTone: "danger" as const,
-            onSelect: async () => {
-              if (props.entry.feedback?.rating === "down") return actions.onMessageFeedback!(props.entry, null);
-              const feedback = await openNegativeFeedbackDialog(t);
-              if (feedback) await actions.onMessageFeedback!(props.entry, { rating: "down", ...feedback });
-            },
-          },
-        ]
-      : []),
-    {
-      id: "info",
-      label: t.actionMessageInfo,
-      icon: "ti ti-info-circle",
-      onSelect: () => openAssistantResponseInfo(props.entries, locale()),
-    },
-  ];
-  if (props.copyText) {
-    result.push({
-      id: "copy",
-      label: t.actionCopy,
-      icon: "ti ti-copy",
-      copyText: props.copyText,
-    });
-  }
-  if (actions.onForkMessage) {
+  const prompt = props.prompt && !props.prompt.compactedAt && actions.onRetryMessage ? props.prompt : null;
+  const retry = (mode: "retry" | "details" | "concise") => () => actions.onRetryMessage?.(prompt!, { mode });
+  const result: ChatAction[] = [];
+  if (props.copyText) result.push({ id: "copy", label: t.actionCopy, icon: "ti ti-copy", copyText: props.copyText });
+  if (prompt) result.push({ id: "retry", label: t.actionAnswerAgain, icon: "ti ti-refresh", onSelect: retry("retry") });
+  if (actions.onMessageFeedback)
+    result.push(
+      {
+        id: "feedback-up",
+        label: props.entry.feedback?.rating === "up" ? t.actionHelpfulRemove : t.actionHelpful,
+        icon: "ti ti-thumb-up",
+        pressed: props.entry.feedback?.rating === "up",
+        pressedTone: "success",
+        onSelect: () =>
+          actions.onMessageFeedback!(
+            props.entry,
+            props.entry.feedback?.rating === "up" ? null : { rating: "up", reasons: [], comment: null },
+          ),
+      },
+      {
+        id: "feedback-down",
+        label: props.entry.feedback?.rating === "down" ? t.actionImproveRemove : t.actionImprove,
+        icon: "ti ti-thumb-down",
+        pressed: props.entry.feedback?.rating === "down",
+        pressedTone: "danger",
+        onSelect: async () => {
+          if (props.entry.feedback?.rating === "down") return actions.onMessageFeedback!(props.entry, null);
+          const feedback = await openNegativeFeedbackDialog(t);
+          if (feedback) await actions.onMessageFeedback!(props.entry, { rating: "down", ...feedback });
+        },
+      },
+    );
+  if (prompt)
+    result.push(
+      { id: "details", label: t.actionMoreDetailed, icon: "ti ti-list-details", overflow: true, onSelect: retry("details") },
+      { id: "concise", label: t.actionMoreConcise, icon: "ti ti-align-left", overflow: true, onSelect: retry("concise") },
+    );
+  if (actions.onForkMessage)
     result.push({
       id: "fork",
       label: t.actionFork,
       icon: "ti ti-git-fork",
+      overflow: true,
       onSelect: () => openForkMessageDialog(props.entry, props.copyText, actions.onForkMessage!, locale()),
     });
-  }
+  result.push({
+    id: "info",
+    label: t.actionMessageInfo,
+    icon: "ti ti-info-circle",
+    overflow: true,
+    onSelect: () => openAssistantResponseInfo(props.entries, locale()),
+  });
   return result;
 }
