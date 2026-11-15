@@ -251,6 +251,16 @@ while it settles, and awaits `settled(page)` before its next press. See the Info
 reopening test in `packages/chat/src/frontend/ChatWorkspace.browser.test.ts`
 ([#2487](https://github.com/k2b-dev/cloud/issues/2487)).
 
+Media that gets its size late moves controls the same way. Without the shipped
+stylesheet, a `<video>` is 300 × 150 until its first frame arrives and then
+takes the picture's size, so a control below it moves. Playwright checks the
+hit target only for the first event of a click, so `click()` resolves even
+when the release and the click land elsewhere. A test that presses a control
+next to media lays the page out with `dist/styles.css`, as Cloud does, and
+checks that the control stays where it appeared. See the "Try again" cases in
+`packages/ui/src/inputs/qr-scanner.browser.test.ts`
+([#2187](https://github.com/k2b-dev/cloud/issues/2187)).
+
 After a pointer move, a test waits until the target matches `:hover`, or for
 the control that the hover reveals, before it reads what the hover changes.
 WebKit can apply `:hover` after `mouse.move()` resolves, and a reveal that only
