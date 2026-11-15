@@ -13,7 +13,13 @@ const VISIBLE_ROWS = 100;
  * A table view: title, Copy data and a sortable table in a viewport whose height follows the row count of its
  * `present` summary, so loading, the table and the unavailable state take the same room.
  */
-export function CloudTableView(props: { id: string; summary: TableSummary; input: CloudTableDescription | null | undefined }) {
+export function CloudTableView(props: {
+  id: string;
+  summary: TableSummary;
+  input: CloudTableDescription | null | undefined;
+  /** `plain` inside an island, which is the table's frame; `paper` on its own. */
+  surface?: "paper" | "plain";
+}) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const table = createMemo(() => (props.input ? cloudAiViewTable(props.input, locale()) : null));
@@ -133,7 +139,7 @@ export function CloudTableView(props: { id: string; summary: TableSummary; input
                 tools?.querySelector("input")?.focus();
               }}
               density="compact"
-              surface="paper"
+              surface={props.surface ?? "paper"}
               stickyHeader
               class="h-full"
               empty={<span>{t().tableEmpty}</span>}

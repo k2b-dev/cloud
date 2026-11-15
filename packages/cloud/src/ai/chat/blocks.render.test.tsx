@@ -2425,8 +2425,8 @@ test("a view file stands under Gustav's head like an app's result, and still loa
   expect(html).toContain('aria-label="Open large"');
   expect(html).toContain(`data-view-path="${path}"`);
   expect(html).toContain("Loading");
-  // A table keeps its own frame, the same as a Markdown table; a chart from a file is an island like an app's.
-  expect(html).not.toContain("k2b-dashboard-frame");
+  // A table or chart from a file is an island like an app's (v12 section 9).
+  expect(html).toMatch(/class="k2b-paper k2b-dashboard-frame\s*"[^>]*><div data-view-path/);
   const chart = renderToString(() =>
     createComponent(AiTurnBlockView, {
       block: { ...block, result: { path, view: { view: "chart", kind: "line", title: "Orders" } } },

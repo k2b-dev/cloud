@@ -848,7 +848,7 @@ const stock = {
 files["/views/stock-2b3c4d5e.view.json"] = stock;
 
 for (const theme of ["light", "dark"] as const)
-  test(`a Markdown table in a chat answer shares the view table's frame, header band and cell padding (${theme})`, async () => {
+  test(`a table view stands in an island without a frame of its own; a Markdown table keeps its frame, both share the header band and cell padding (${theme})`, async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
     try {
       const page = await context.newPage();
@@ -909,9 +909,22 @@ for (const theme of ["light", "dark"] as const)
           };
         }, kind);
       const view = await look("view");
-      expect(view.frame.shadow).not.toBe("none");
+      const markdown = await look("markdown");
+      // v12 section 9: a table view is an island, white with the island shadow, and the island is its frame, so the
+      // table draws no box inside it. A Markdown table in the answer's text keeps its own frame.
+      const island = await page.evaluate(() => {
+        const frame = document.querySelector("[data-view-path]")!.closest(".k2b-dashboard-frame");
+        return frame ? getComputedStyle(frame).boxShadow : null;
+      });
+      expect(island).not.toBeNull();
+      expect(island).not.toBe("none");
+      expect(view.frame.border.startsWith("0px")).toBe(true);
+      expect(["none", "rgba(0, 0, 0, 0) 0px 0px 0px 0px"]).toContain(view.frame.shadow);
+      expect(markdown.frame.border.startsWith("1px")).toBe(true);
+      expect(markdown.frame.shadow).not.toBe("none");
       expect(view.band.fill).not.toBe("rgba(0, 0, 0, 0)");
-      expect(await look("markdown")).toEqual(view);
+      expect(markdown.band).toEqual(view.band);
+      expect(markdown.cells).toEqual(view.cells);
     } finally {
       await context.close();
     }
@@ -2023,8 +2036,8 @@ const quiet = {
   ],
 };
 files["/views/returns-per-day-3c4d5e6f.view.json"] = quiet;
-for (const width of [1280, 390])
-  test(`a view-file chart is an island and its zeros stay on the zero line (${width})`, async () => {
+for (const width of [1440, 390])
+  test(`a view-file chart and table are islands, and the chart's zeros stay on the zero line (${width})`, async () => {
     const context = await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" });
     try {
       const page = await context.newPage();
@@ -2038,11 +2051,13 @@ for (const width of [1280, 390])
             title: quiet.title,
             subtitle: quiet.subtitle,
           }),
+          present("/views/stock-2b3c4d5e.view.json", { view: "table", title: stock.title, rows: 2, columns: 2, footer: false }),
         ],
       );
       await page.waitForFunction(() => document.querySelector("[data-view-path] .k2b-chart[data-chart-kind] svg path"));
+      await page.waitForSelector("[data-view-path] table");
       await settled(page);
-      expect(await page.locator(".k2b-dashboard-frame > [data-view-path]").count()).toBe(1);
+      expect(await page.locator(".k2b-dashboard-frame > [data-view-path]").count()).toBe(2);
       const curves = await page.evaluate(() =>
         Array.from(document.querySelectorAll("[data-view-path] .k2b-chart svg path"))
           .map((path) => path.getAttribute("d") ?? "")

@@ -24,7 +24,7 @@ type GroupSummary = Extract<CloudAiViewSummary, { view: "group" }>;
 type ExplorerSummary = Extract<CloudAiViewSummary, { view: "explorer" }>;
 
 /** A table's controls and row renderer load only when a Chat first presents a table. */
-function CloudTableView(props: { summary: TableSummary; input: CloudTableDescription | null | undefined }) {
+function CloudTableView(props: { summary: TableSummary; input: CloudTableDescription | null | undefined; surface?: "paper" | "plain" }) {
   const id = `cloud-view-${createUniqueId()}`;
   const [module, setModule] = createSignal<typeof import("./table-block") | null | undefined>();
   onMount(() => {
@@ -43,7 +43,7 @@ function CloudTableView(props: { summary: TableSummary; input: CloudTableDescrip
     >
       {(loaded) => {
         const Table = loaded().CloudTableView;
-        return <Table id={id} summary={props.summary} input={props.input} />;
+        return <Table id={id} summary={props.summary} input={props.input} surface={props.surface} />;
       }}
     </Show>
   );
@@ -201,7 +201,12 @@ function CloudDetailsView(props: { summary: DetailsSummary; input: CloudDetailsD
  * with the viewer's access; a missing file or one that no longer matches its summary shows the unavailable state in
  * the same frame.
  */
-export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummary }) {
+export function CloudViewBlock(props: {
+  path: string;
+  summary: CloudAiViewSummary;
+  /** Inside an island, which is already the frame: a table drops its own. */
+  island?: boolean;
+}) {
   const actions = useAiChatActions();
   // undefined while loading, null when unavailable.
   const [view, setView] = createSignal<CloudViewDescription | null | undefined>(undefined);
@@ -236,7 +241,9 @@ export function CloudViewBlock(props: { path: string; summary: CloudAiViewSummar
     <div data-view-path={props.path} class="min-w-0">
       <Switch>
         <Match when={chartSummary()}>{(summary) => <CloudChartView summary={summary()} input={loaded("chart")} />}</Match>
-        <Match when={tableSummary()}>{(summary) => <CloudTableView summary={summary()} input={loaded("table")} />}</Match>
+        <Match when={tableSummary()}>
+          {(summary) => <CloudTableView summary={summary()} input={loaded("table")} surface={props.island ? "plain" : undefined} />}
+        </Match>
         <Match when={groupSummary()}>{(summary) => <CloudChartGroupView summary={summary()} group={loaded("group")} />}</Match>
         <Match when={statsSummary()}>{(summary) => <CloudStatsView summary={summary()} input={loaded("stats")} />}</Match>
         <Match when={detailsSummary()}>{(summary) => <CloudDetailsView summary={summary()} input={loaded("details")} />}</Match>
