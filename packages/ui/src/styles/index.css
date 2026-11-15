@@ -15724,9 +15724,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Bare icon buttons of the timeline. A library Button inside an activity, such as one action at the end of a line,
+   keeps its own look. */
 .k2b-ui .k2b-chat-timeline__retry,
 .k2b-ui .k2b-chat-message__actions button,
-.k2b-ui .k2b-chat-activity button {
+.k2b-ui .k2b-chat-activity button:not(.k2b-button) {
   display: inline-flex;
   min-width: 1.75rem;
   min-height: 1.75rem;
@@ -15743,7 +15745,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-timeline__retry:hover,
 .k2b-ui .k2b-chat-message__actions button:hover,
-.k2b-ui .k2b-chat-activity button:hover {
+.k2b-ui .k2b-chat-activity button:not(.k2b-button):hover {
   color: var(--k2b-text);
   background: var(--k2b-hover);
 }

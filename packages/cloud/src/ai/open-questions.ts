@@ -23,7 +23,6 @@ export type AiOpenQuestion = {
   href?: string;
   /** The approval request id (approvals.requests.id). */
   id: string;
-  kind: AiOpenQuestionKind;
   /** Short id of the chat the question waits in. */
   conversationId: string;
   /** The chat's current title, at most 200 code points; chat content, never Cloud's words. */

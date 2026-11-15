@@ -2123,3 +2123,19 @@ dialog:has(.launchpad-panel)::backdrop {
 .k2b-ui .ai-turn-note__body {
   padding-block-start: 0.25rem;
 }
+
+/* A decision on a Code version at the end of the chat: the host draws the whole line (sign, sentence, time, one action
+   at the end), so the activity row lends only its place: no sign of its own, the line takes the full width. */
+.k2b-ui .ai-code-decision-line .k2b-chat-activity__leading {
+  display: none;
+}
+
+.k2b-ui .ai-code-decision-line .k2b-chat-activity__copy,
+.k2b-ui .ai-code-decision-line .k2b-chat-activity__copy > strong {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+  color: inherit;
+  font-weight: inherit;
+  white-space: normal;
+}

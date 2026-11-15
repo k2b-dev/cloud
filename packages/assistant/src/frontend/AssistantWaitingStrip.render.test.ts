@@ -94,7 +94,7 @@ test("a Code entry shows the sign of its kind and its own sentence, never the ap
       locale: "de",
       get children() {
         return createComponent(AssistantWaitingStrip, {
-          view: { entries: [question] as never, more: 0, total: 1, onlyHere: null },
+          view: { attention: [], entries: [question] as never, more: 0, total: 1, onlyHere: null },
           conversationId: base.id,
           quiet: false,
           onJump: () => undefined,

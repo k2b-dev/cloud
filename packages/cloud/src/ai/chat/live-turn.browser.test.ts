@@ -1603,6 +1603,59 @@ for (const view of [
     }, 60_000);
 
 for (const width of [1440, 390])
+  test(`a decision line at the end of the chat is one row with its action as a real small button at the right (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de&theme=light`);
+      await page.waitForFunction(() => typeof (window as unknown as { emit?: unknown }).emit === "function");
+      const decision = storedMessage(
+        1,
+        "decision",
+        { role: "assistant", content: [{ type: "text", text: "Jana Probe hat Version 5 freigegeben." }] },
+        {
+          loopId: null,
+          meta: {
+            codeDecision: {
+              codeId: "c_info01",
+              versionId: "66666666-6666-4666-8666-666666666666",
+              number: 5,
+              outcome: "approved",
+              person: { id: null, name: "Jana Probe" },
+              anchor: "code-version-66666666-6666-4666-8666-666666666666",
+            },
+          },
+        },
+      );
+      // Cloud writes the line outside any turn; the projection takes it like a finished turn's saved message.
+      await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+      await emit(page, { ...base, seq: 2, type: "turn_finished", status: "completed", error: null, messages: [decision] });
+      const line = page.locator(".ai-code-decision-line");
+      await line.waitFor();
+      // The activity lends only its place: no second sign, the line fills the row.
+      expect(await line.locator(".k2b-chat-activity__leading").isVisible()).toBe(false);
+      const action = line.getByRole("button", { name: "Einschalten …" });
+      const look = await action.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { border: style.borderTopWidth, background: style.backgroundColor, height: Math.round(node.getBoundingClientRect().height) };
+      });
+      expect(look.border).not.toBe("0px");
+      expect(look.background).not.toBe("rgba(0, 0, 0, 0)");
+      expect(look.height).toBeGreaterThanOrEqual(28);
+      const right = await page.evaluate(() => {
+        const row = document.querySelector(".ai-code-decision-line")!.getBoundingClientRect();
+        const button = document.querySelector(".ai-code-decision-line .k2b-button")!.getBoundingClientRect();
+        return Math.round(row.right - button.right);
+      });
+      expect(right).toBeLessThanOrEqual(8);
+      mkdirSync("/tmp/gustav-code-chat-shots-8", { recursive: true });
+      await page.screenshot({ path: `/tmp/gustav-code-chat-shots-8/ereigniszeile-chat-light-${width}.png` });
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+for (const width of [1440, 390])
   test(`Gustav writing Code shows no source, no file name and no line, and the work line keeps its height (${width})`, async () => {
     const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
     try {
