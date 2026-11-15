@@ -2,11 +2,13 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { AssistantLiveProvider, createAssistantLiveHub } from "./assistant-live";
-import { type CodeVersionPreview, codeVersionOwnPageHref, codeVersionPageHref } from "./code-activation";
+import { type CodeVersionPreview, type CodeVersionReview, codeVersionOwnPageHref, codeVersionPageHref } from "./code-activation";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
 const codeId = "c_info01";
 const versionId = "66666666-6666-4666-8666-666666666666";
+const WORDS = "/api/capabilities/v1/queries/core/code.version.words";
+const AUTOMATIONS = "/api/capabilities/v1/queries/core/code.automation.list";
 
 const preview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPreview => ({
   codeId,
@@ -19,10 +21,51 @@ const preview = (patch: Partial<CodeVersionPreview> = {}): CodeVersionPreview =>
   activated: null,
   allowed: { allowed: true },
   readiness: { state: "ready" },
+  tests: { state: "passed", passed: 3, total: 3 },
   place: { title: "info@example.test", typeTitle: "mailbox", href: "/app/mail/m_info" },
   page: "/app/mail/m_info/code",
   ...patch,
 });
+const review = (patch: Partial<CodeVersionReview> = {}): CodeVersionReview => ({
+  status: "not_required",
+  origin: { kind: "ai_chat", conversationId: "chat-1", automaticAfterReview: false },
+  decidedBy: null,
+  decidedAt: null,
+  message: null,
+  comments: [],
+  commentCount: 0,
+  activeVersion: { id: "v4", number: 4 },
+  ...patch,
+});
+const words = (patch: Record<string, unknown> = {}) => ({
+  versionId,
+  number: 5,
+  submittedAt: "2026-11-12T08:00:00.000Z",
+  locale: "en",
+  description: { state: "visible", text: "Files delivery notes.", modelLabel: "✦" },
+  assurance: "Cloud limits access to the apps and targets of this version.",
+  mayDo: { items: [], more: 0, moreText: null },
+  timing: { items: [], more: 0, moreText: null },
+  changes: {
+    state: "changed",
+    text: "Access or triggers changed",
+    rows: {
+      items: [
+        { kind: "add", text: "Runs additionally Mon–Fri at 08:00" },
+        { kind: "add", text: "May newly store files in folder Delivery notes 2026" },
+        { kind: "remove", text: "May no longer mark conversations in mailbox info@example.test" },
+        { kind: "same", text: "5 more stay the same" },
+      ],
+      more: 0,
+      moreText: null,
+    },
+    assurance: "Cloud checks access and triggers, not behavior.",
+  },
+  examples: { state: "passed", passed: 3, total: 3, summary: "3 of 3 examples successful", explanation: "", items: [] },
+  notices: { items: [], more: 0, moreText: null },
+  ...patch,
+});
+const JANA = { id: "u-jana", name: "Jana Probe", avatarHash: null };
 
 const restore: Array<() => void> = [];
 afterEach(() => {
@@ -31,7 +74,10 @@ afterEach(() => {
 
 /** Mounts the card with Core's routes answered by `routes`; a missing route is an outage. */
 type Answer = { status?: number; json?: unknown };
-const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<Answer>>) => {
+type Routes = Record<string, (body: unknown) => Answer | Promise<Answer>>;
+const mount = async (given: Routes, options: { onAsk?: (text: string) => void } = {}) => {
+  // The review and the words answer like Core does for an ordinary ready version, unless a test says otherwise.
+  const routes: Routes = { review: () => ({ json: { data: review() } }), [WORDS]: () => ({ json: { data: words() } }), ...given };
   const dom = createDomTestHarness();
   const calls: Array<{ route: string; body: unknown }> = [];
   const fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (url: string, init?: RequestInit) => {
@@ -48,7 +94,7 @@ const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<
   const dispose = render(
     () => (
       <AssistantLiveProvider value={live}>
-        <Card codeId={codeId} versionId={versionId} number={5} timeZone="UTC" onActivated={() => activated.push(1)} />
+        <Card codeId={codeId} versionId={versionId} number={5} timeZone="UTC" onActivated={() => activated.push(1)} onAsk={options.onAsk} />
       </AssistantLiveProvider>
     ),
     dom.root,
@@ -59,7 +105,7 @@ const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<
     dom.cleanup();
   });
   await tick();
-  return { dom, calls, activated, live };
+  return { dom, calls, activated, live, previews: () => calls.filter((call) => call.route === "activation/preview").length };
 };
 /** One update on the person's AI live channel, as Core's decision trigger writes it. */
 const decided = (domains: Array<"code-versions" | "conversation-detail"> = ["code-versions"]) => ({
@@ -71,67 +117,54 @@ const decided = (domains: Array<"code-versions" | "conversation-detail"> = ["cod
   at: "2026-11-12T08:00:00.000Z",
 });
 const button = (root: Element, name: string) =>
-  [...root.querySelectorAll("button, a")].find((element) => element.textContent?.includes(name)) as HTMLElement | undefined;
+  [...root.querySelectorAll("button, a")].find((element) => element.textContent?.trim().includes(name)) as HTMLElement | undefined;
+const status = (root: Element) => root.querySelector(".k2b-chat-decision__status")?.textContent?.trim() ?? null;
+const text = (root: Element) => (root.textContent ?? "").replace(/\s+/g, " ");
+/** The patterns the code-no-source rule forbids in what a person reads. */
+const expectNoCode = (root: Element) => {
+  const shown = text(root);
+  for (const pattern of [/\bcode\.tsx?\b/i, /\.[a-z]{1,8}:\d+/i, /\bcode_[a-z_]+\b/, /\b[0-9a-f]{8,}\b/i]) expect(shown).not.toMatch(pattern);
+};
 
-test("version preview offers switching on without inspecting or granting target rights", async () => {
+test("ready: one approval form with the question, what changes against the running version, the examples and the switch", async () => {
   const { dom, calls } = await mount({ "activation/preview": () => ({ json: { data: preview() } }) });
-  const text = dom.root.textContent ?? "";
-  expect(text).toContain("Version 5 of “Code of info@” is ready.");
-  expect(text).toContain("service account");
-  expect(text).not.toContain("Logistics");
-  expect(text).not.toContain("you manage");
-  expect(button(dom.root, "Switch on")).toBeDefined();
-  expect(button(dom.root, "Difference")?.getAttribute("href")).toBe(`/app/mail/m_info/code?tab=versions&version=${versionId}`);
-  expect(calls.map((call) => call.route)).toEqual(["activation/preview"]);
+  const card = dom.root.querySelector(".k2b-chat-decision")!;
+  expect(card.getAttribute("data-k2b-primary")).toBe("ai");
+  expect(card.getAttribute("data-chat-anchor")).toBe(`code-version-${versionId}`);
+  expect(text(card)).toContain("Approval·Code");
+  expect(card.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Version 5 of Code of info@ switch on?");
+  expect(text(card)).toContain("It may do more than version 4 afterwards.");
+  expect(text(card)).toContain("Details from Code · compared with version 4");
+  const rows = [...card.querySelectorAll(".k2b-change-list__item")].map((row) => row.getAttribute("data-tone"));
+  expect(rows).toEqual(["add", "add", "remove", "neutral"]);
+  expect(text(card)).toContain("Cloud checks access and triggers, not behavior.");
+  expect(text(card)).toContain("3 of 3 examples successful");
+  expect(text(card)).toContain("Until then version 4 stays switched on");
+  // An open question has no state word; the difference button is gone, the version opens on the Code page.
+  expect(status(dom.root)).toBeNull();
+  expect(button(dom.root, "Difference")).toBeUndefined();
+  expect(button(dom.root, "See everything")?.getAttribute("href")).toBe(`/app/mail/m_info/code?tab=versions&version=${versionId}`);
+  expect(button(dom.root, "Switch on version 5")?.getAttribute("data-variant")).toBe("ai");
+  expect(calls.some((call) => call.route === "activate")).toBe(false);
+  expectNoCode(dom.root);
 });
 
-test("the card lists what the version calls where, as the Code page does, and marks what is new", async () => {
-  const target = (id: string, own = false) => ({
-    key: `mail.mailbox\u0000${id}`,
-    ref: { type: "mail.mailbox", id },
-    title: null,
-    typeTitle: "Mailbox",
-    icon: "ti ti-mail",
-    own,
-    href: null,
-  });
-  const targets = [
-    { target: target("m_info", true), operations: [], isNew: false },
-    { target: target("m_billing"), operations: ["mail.message.read", "mail.message.move"], isNew: true },
-    { target: null, operations: ["spaces.task.create"], isNew: false },
-  ];
-  // Operations read by their titles, as the Code page names them; the registry does not name the Spaces one here.
-  const operationLabels = {
-    "mail.message.read": { title: "Read message", app: "Mail" },
-    "mail.message.move": { title: "Move message", app: "Mail" },
-  };
-  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ targets, operationLabels }) } }) });
-  const rows = [...dom.root.querySelectorAll(".assistant-code-version__target")].map((row) => row.textContent);
-  expect(dom.root.textContent).toContain("What this version may do");
-  expect(rows).toEqual([
-    "at info@example.test itself",
-    "Read message · MailMove message · Mailat Mailbox m_billingnew",
-    "spaces.task.createwhere the Code picks it while running",
-  ]);
-  // The technical ID stays in the tooltip; an unnamed one shows as an ID.
-  const operations = [...dom.root.querySelectorAll(".assistant-code-version__ops > span")];
-  expect(operations.map((operation) => [operation.getAttribute("title"), operation.hasAttribute("data-id")])).toEqual([
-    ["mail.message.read", false],
-    ["mail.message.move", false],
-    ["spaces.task.create", true],
-  ]);
-
-  // A place this person may not read is named like any target, by type and ID.
-  restore.splice(0).forEach((undo) => undo());
-  const hidden = await mount({ "activation/preview": () => ({ json: { data: preview({ targets, place: null }) } }) });
-  expect(hidden.dom.root.querySelector(".assistant-code-version__target")?.textContent).toBe("at Mailbox m_info itself");
-
-  restore.splice(0).forEach((undo) => undo());
-  const none = await mount({ "activation/preview": () => ({ json: { data: preview({ targets: [] }) } }) });
-  expect(none.dom.root.textContent).toContain("Calls no app.");
+test("without examples the card warns, offers to try examples first and to switch on anyway", async () => {
+  const asked: string[] = [];
+  const { dom } = await mount(
+    {
+      "activation/preview": () => ({ json: { data: preview({ tests: { state: "none", passed: 0, total: 0 } }) } }),
+      [WORDS]: () => ({ json: { data: words({ examples: { state: "none", passed: 0, total: 0, summary: "", explanation: "", items: [] } }) } }),
+    },
+    { onAsk: (value) => asked.push(value) },
+  );
+  expect(text(dom.root)).toContain("No examples: nobody has tried what it does");
+  expect(button(dom.root, "Switch on anyway")).toBeDefined();
+  button(dom.root, "Try examples first")!.click();
+  expect(asked).toEqual(["Try out examples for version 5 first."]);
 });
 
-test("switching on runs Core's activation and the card becomes one line, the same after a reload", async () => {
+test("switching on runs Core's activation; with nothing below the card shrinks to one line, the same after a reload", async () => {
   let on = false;
   const { dom, calls, activated } = await mount({
     "activation/preview": () => ({
@@ -143,69 +176,52 @@ test("switching on runs Core's activation and the card becomes one line, the sam
       on = true;
       return { json: { data: { state: "active", failure: null } } };
     },
+    [AUTOMATIONS]: () => ({ json: { data: { items: [], removedTargets: [] } } }),
   });
-  button(dom.root, "Switch on")!.click();
+  button(dom.root, "Switch on version 5")!.click();
   await tick();
   await tick();
-  const start = calls.find((call) => call.route === "activate")!;
-  expect(start.body).toMatchObject({ codeId, versionId });
+  expect(calls.find((call) => call.route === "activate")!.body).toMatchObject({ codeId, versionId });
   expect(activated).toEqual([1]);
-  expect(dom.root.textContent).toMatch(/Version 5 switched on · .* · by you/);
-  expect(button(dom.root, "Switch on")).toBeUndefined();
+  expect(status(dom.root)).toBe("Switched on");
+  expect(text(dom.root)).toMatch(/Version 5 has been switched on since .*\./);
+  expect(button(dom.root, "Switch on version 5")).toBeUndefined();
+  expect(button(dom.root, "See runs")).toBeDefined();
 });
 
-test("a switched-on version links its page, its next run and its runs in the same paint as its line", async () => {
-  const automation = (nextRunAt: string | null) => ({
-    entrypoint: "morning",
-    kind: "schedule",
-    cron: "0 7 * * *",
-    nextRunAt,
-    lastRun: null,
-    missingTargets: [],
-  });
-  const on = preview({
-    running: 5,
-    activated: { at: "2026-10-31T14:20:00.000Z", byYou: true, byName: null },
-    automations: [
-      { entrypoint: "morning", title: "Every morning" },
-      { entrypoint: "GET /invoices/:id", route: { method: "GET", path: "/invoices/:id", public: false } },
-      { entrypoint: "GET /", route: { method: "GET", path: "/", public: false } },
-    ],
+test("while Cloud switches on, the card says so in place, and a lost answer reads Core's status once", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
   });
   const { dom, calls } = await mount({
-    "activation/preview": () => ({ json: { data: on } }),
-    "/api/capabilities/v1/queries/core/code.automation.list": () => ({
-      json: { data: { items: [automation("2026-11-11T07:00:00.000Z"), automation(null)], removedTargets: [] } },
-    }),
+    "activation/preview": () => ({ json: { data: preview() } }),
+    activate: async () => {
+      await held;
+      return { status: 503 };
+    },
+    "activation/read": () => ({ json: { data: { state: "failed", failure: null } } }),
   });
-  const links = [...dom.root.querySelectorAll(".assistant-code-version__links a")].map((link) => [
-    link.textContent,
-    link.getAttribute("href"),
-  ]);
-  expect(links).toEqual([
-    ["Open page", "/code/c_info01/"],
-    [expect.stringMatching(/^Next run .*11.*07:00/), "/app/mail/m_info/code"],
-    ["Runs", "/app/mail/m_info/code?tab=runs"],
-  ]);
-  expect(calls.map((call) => call.route)).toEqual(["activation/preview", "/api/capabilities/v1/queries/core/code.automation.list"]);
-
-  // Without a declared Code page and without a schedule, the line stays alone.
-  restore.splice(0).forEach((undo) => undo());
-  const bare = await mount({
-    "activation/preview": () => ({ json: { data: { ...on, page: null, automations: [] } } }),
-    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
-  });
-  expect(bare.dom.root.querySelector(".assistant-code-version__links")).toBeNull();
+  button(dom.root, "Switch on version 5")!.click();
+  await tick();
+  expect(status(dom.root)).toBe("Switching on");
+  expect(text(dom.root)).toContain("Version 5 is being switched on …");
+  release();
+  await tick();
+  await tick();
+  expect(calls.filter((call) => call.route === "activate")).toHaveLength(1);
+  expect(calls.filter((call) => call.route === "activation/read")).toHaveLength(1);
 });
 
-test("a refusal says nothing changed and offers to try again with a new identity", async () => {
+test("a refusal says Cloud refused and what stays on, and trying again uses a new identity", async () => {
   const { dom, calls } = await mount({
     "activation/preview": () => ({ json: { data: preview() } }),
     activate: () => ({ json: { data: { state: "failed", failure: { reason: "Owner authority changed." } } } }),
   });
-  button(dom.root, "Switch on")!.click();
+  button(dom.root, "Switch on version 5")!.click();
   await tick();
-  expect(dom.root.textContent).toContain("Owner authority changed. Nothing changed, version 4 keeps running.");
+  expect(status(dom.root)).toBe("Failed");
+  expect(text(dom.root)).toContain("Cloud refused to switch it on. Version 4 stays switched on.");
   button(dom.root, "Try again")!.click();
   await tick();
   const ids = calls.filter((call) => call.route === "activate").map((call) => (call.body as { activationId: string }).activationId);
@@ -213,388 +229,235 @@ test("a refusal says nothing changed and offers to try again with a new identity
   expect(ids[0]).not.toBe(ids[1]);
 });
 
-test("a lost answer asks Core's status and never starts a second activation", async () => {
-  const { dom, calls } = await mount({
+test("an unclear outcome offers only to check the status, never to try again; a failed check says Cloud tries again", async () => {
+  const { dom } = await mount({
     "activation/preview": () => ({ json: { data: preview() } }),
-    "activation/read": () => ({ json: { data: { state: "active", failure: null } } }),
+    activate: () => ({ status: 503 }),
+    "activation/read": () => ({ status: 503 }),
   });
-  button(dom.root, "Switch on")!.click();
+  button(dom.root, "Switch on version 5")!.click();
   await tick();
   await tick();
-  expect(calls.filter((call) => call.route === "activate")).toHaveLength(1);
-  expect(calls.filter((call) => call.route === "activation/read")).toHaveLength(1);
+  expect(status(dom.root)).toBe("Outcome unclear");
+  expect(text(dom.root)).toContain("The status could not be checked. Cloud tries again in 30 seconds.");
+  expect(button(dom.root, "Check now")).toBeDefined();
+  expect(button(dom.root, "Try again")).toBeUndefined();
 });
 
-test("a phone sees why it cannot switch on; waiting for approval offers no switch", async () => {
-  const phone = await mount({
-    "activation/preview": () => ({ json: { data: preview({ allowed: { allowed: false, reason: "phone" } }) } }),
+test("waiting for admin explains who approves, what happens now and what holds until then, without names", async () => {
+  const asked: string[] = [];
+  const { dom } = await mount(
+    {
+      "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending" } }) } }),
+      review: () => ({ json: { data: review({ status: "pending" }) } }),
+    },
+    { onAsk: (value) => asked.push(value) },
+  );
+  expect(status(dom.root)).toBe("Waiting for admin");
+  expect(dom.root.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Version 5 of Code of info@ waits for an admin’s approval.");
+  expect(text(dom.root)).toContain("In your Cloud an admin approves every automation that does something others see.");
+  expect(text(dom.root)).toContain("The admins know. You get a notification as soon as one of them has decided.");
+  expect(text(dom.root)).toContain("Until then version 4 stays switched on. You do not need to do anything.");
+  expect(text(dom.root)).not.toContain("Jana");
+  expect(button(dom.root, "Switch on")).toBeUndefined();
+  button(dom.root, "Build without approval")!.click();
+  expect(asked).toEqual(["Build version 5 so that it needs no admin approval."]);
+});
+
+test("withdrawing a waiting version asks Core and shows the withdrawn state", async () => {
+  let withdrawn = false;
+  const { dom, calls } = await mount({
+    "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending" } }) } }),
+    review: () => ({ json: { data: review({ status: withdrawn ? "withdrawn" : "pending" }) } }),
+    withdraw: () => {
+      withdrawn = true;
+      return { json: { data: {} } };
+    },
   });
-  expect(phone.dom.root.textContent).toContain("not possible on a phone");
-  expect(button(phone.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(true);
+  button(dom.root, "Withdraw")!.click();
+  await tick();
+  await tick();
+  expect(calls.find((call) => call.route === "withdraw")!.body).toEqual({ codeId, versionId });
+  expect(status(dom.root)).toBe("Withdrawn");
+  expect(text(dom.root)).toContain("Version 5 was withdrawn. Version 4 stays switched on.");
+});
+
+test("a first version says the automation stays off until then", async () => {
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview({ running: null, readiness: { state: "approval_pending" } }) } }),
+    review: () => ({ json: { data: review({ status: "pending", activeVersion: null }) } }),
+    [WORDS]: () => ({ json: { data: words({ changes: { ...words().changes, state: "first" } }) } }),
+  });
+  expect(text(dom.root)).toContain("Until then the automation does not run. You do not need to do anything.");
+  expect(text(dom.root)).toContain("Details from Code · first version");
+});
+
+test("changes requested: the admin's message and comments as text, never a file or line, and Gustav revises on request", async () => {
+  const asked: string[] = [];
+  const { dom } = await mount(
+    {
+      "activation/preview": () => ({ json: { data: preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }) } }),
+      review: () => ({
+        json: {
+          data: review({
+            status: "changes_requested",
+            decidedBy: JANA,
+            decidedAt: "2026-11-12T14:01:00.000Z",
+            message: "Please store only PDF attachments.",
+            comments: [{ id: "c1", author: JANA, createdAt: "2026-11-12T14:01:00.000Z", body: "Check the file type here.", parentId: null }],
+            commentCount: 1,
+          }),
+        },
+      }),
+    },
+    { onAsk: (value) => asked.push(value) },
+  );
+  expect(status(dom.root)).toBe("Changes requested");
+  expect(text(dom.root)).toContain("Jana Probe reviewed it and has not approved it yet. Version 4 stays switched on.");
+  expect(text(dom.root)).toContain("Message from Jana Probe");
+  expect(text(dom.root)).toContain("Please store only PDF attachments.");
+  expect(text(dom.root)).toContain("1 comment on a place in the code · Gustav knows the places");
+  expect(text(dom.root)).toContain("Check the file type here.");
+  expectNoCode(dom.root);
+  button(dom.root, "Let Gustav revise")!.click();
+  expect(asked).toEqual(["Revise version 5 the way Jana Probe wants it."]);
+});
+
+test("changes requested a second time: Gustav already revised once by himself, now the person decides", async () => {
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } }) } }),
+    review: () => ({
+      json: {
+        data: review({
+          status: "changes_requested",
+          origin: { kind: "ai_chat", conversationId: "chat-1", automaticAfterReview: true },
+          decidedBy: JANA,
+          decidedAt: "2026-11-12T14:19:00.000Z",
+          message: "Almost. Please also limit the file size.",
+        }),
+      },
+    }),
+  });
+  expect(text(dom.root)).toContain("Gustav has already revised it once by himself. Now you decide.");
+});
+
+test("rejected: the reason from the admin, and building it differently with Gustav", async () => {
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "rejected or revoked" } }) } }),
+    review: () => ({ json: { data: review({ status: "rejected", decidedBy: JANA, decidedAt: "2026-11-12T14:01:00.000Z", message: "No shared folders." }) } }),
+  });
+  expect(status(dom.root)).toBe("Rejected");
+  expect(text(dom.root)).toContain("Reason from Jana Probe");
+  expect(text(dom.root)).toContain("No shared folders.");
+  expect(text(dom.root)).not.toContain("rejected or revoked");
+  expect(button(dom.root, "Switch on")).toBeUndefined();
+});
+
+test("approved: who approved it and what holds until the person switches it on", async () => {
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview() } }),
+    review: () => ({ json: { data: review({ status: "approved", decidedBy: JANA, decidedAt: "2026-10-01T14:01:00.000Z" }) } }),
+  });
+  expect(text(dom.root)).toMatch(/Jana Probe approved it on .*\./);
+  expect(text(dom.root)).toContain("Until you switch it on, version 4 stays switched on.");
+  expect(button(dom.root, "Switch on version 5")).toBeDefined();
+});
+
+test("expired, superseded, no access and a failed load each have their one line and at most one answer", async () => {
+  const asked: string[] = [];
+  const expired = await mount(
+    { "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending" } }) } }), review: () => ({ json: { data: review({ status: "expired" }) } }) },
+    { onAsk: (value) => asked.push(value) },
+  );
+  expect(status(expired.dom.root)).toBe("Expired");
+  expect(text(expired.dom.root)).toContain("The request to the admins has expired. Version 4 stays switched on.");
+  button(expired.dom.root, "Ask again")!.click();
+  expect(asked).toEqual(["Submit version 5 again for approval."]);
   for (const undo of restore.splice(0)) undo();
-  const pending = await mount({ "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending" } }) } }) });
-  expect(pending.dom.root.textContent).toContain("A Cloud administrator must approve this version first.");
-  expect(button(pending.dom.root, "Switch on")).toBeUndefined();
-});
 
-test("an older version, no access and an outage each say so; the outage retries", async () => {
   const older = await mount({ "activation/preview": () => ({ json: { data: preview({ latest: 6 }) } }) });
-  expect(older.dom.root.textContent).toContain("Version 5 was replaced by version 6.");
+  expect(status(older.dom.root)).toBe("Superseded");
+  expect(text(older.dom.root)).toContain("Version 5 was replaced by version 6. Its approval is further down.");
   for (const undo of restore.splice(0)) undo();
+
   const denied = await mount({ "activation/preview": () => ({ status: 403, json: {} }) });
-  expect(denied.dom.root.textContent).toContain("You no longer have access to this Code.");
+  expect(status(denied.dom.root)).toBe("No access");
+  expect(text(denied.dom.root)).toContain("You no longer manage this Code. Whoever manages it can switch it on.");
   for (const undo of restore.splice(0)) undo();
+
   let answers = 0;
-  const down = await mount({
-    "activation/preview": () => (answers++ === 0 ? { status: 503 } : { json: { data: preview() } }),
-  });
-  expect(down.dom.root.querySelector('[role="alert"]')?.textContent).toContain("Could not check this version.");
-  button(down.dom.root, "Retry")!.click();
+  const down = await mount({ "activation/preview": () => (answers++ === 0 ? { status: 503 } : { json: { data: preview() } }) });
+  expect(status(down.dom.root)).toBe("Not loaded");
+  expect(text(down.dom.root)).toContain("This version could not be loaded. Cloud changed nothing.");
+  button(down.dom.root, "Try again")!.click();
   await tick();
-  expect(button(down.dom.root, "Switch on")).toBeDefined();
+  expect(button(down.dom.root, "Switch on version 5")).toBeDefined();
+});
+
+test("a phone sees why it cannot switch on, in place of the reason", async () => {
+  const { dom } = await mount({ "activation/preview": () => ({ json: { data: preview({ allowed: { allowed: false, reason: "phone" } }) } }) });
+  expect(text(dom.root)).toContain("Switching on is not possible on a phone. It works on a computer.");
+  expect(button(dom.root, "Switch on version 5")?.hasAttribute("disabled")).toBe(true);
+});
+
+test("the card loads with a placeholder and the word Loading", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const { dom } = await mount({
+    "activation/preview": async () => {
+      await held;
+      return { json: { data: preview() } };
+    },
+  });
+  expect(status(dom.root)).toBe("Loading");
+  expect(dom.root.querySelector('[aria-busy="true"]')).not.toBeNull();
+  release();
+  await tick();
+  expect(status(dom.root)).toBeNull();
+});
+
+test("the card follows decisions and switch-ons from elsewhere on the live channel, without polling", async () => {
+  let pending = true;
+  const card = await mount({
+    "activation/preview": () => ({ json: { data: preview({ readiness: { state: pending ? "approval_pending" : "ready" } }) } }),
+    review: () => ({ json: { data: review({ status: pending ? "pending" : "approved", decidedBy: JANA, decidedAt: "2026-11-12T14:01:00.000Z" }) } }),
+  });
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  expect(card.previews()).toBe(1);
+  await card.live.apply([decided(["conversation-detail"])]);
+  expect(card.previews()).toBe(1);
+  pending = false;
+  await card.live.apply([decided()]);
+  await tick();
+  expect(card.previews()).toBe(2);
+  expect(button(card.dom.root, "Switch on version 5")?.hasAttribute("disabled")).toBe(false);
+  // A ready card still follows: a switch-on in another tab reaches it too.
+  await card.live.apply([decided()]);
+  await tick();
+  expect(card.previews()).toBe(3);
+});
+
+test("a decision whose read fails keeps the waiting card and is tried again by the live channel", async () => {
+  let down = false;
+  let pending = true;
+  const card = await mount({
+    "activation/preview": () => (down ? { status: 503 } : { json: { data: preview({ readiness: { state: pending ? "approval_pending" : "ready" } }) } }),
+  });
+  pending = false;
+  down = true;
+  await expect(card.live.apply([decided()])).rejects.toThrow();
+  expect(status(card.dom.root)).toBe("Waiting for admin");
+  down = false;
+  await card.live.apply([decided()]);
+  await tick();
+  expect(button(card.dom.root, "Switch on version 5")?.hasAttribute("disabled")).toBe(false);
 });
 
 test("the Code page is the one the owner's app declares, or a personal Code's page in Gustav", () => {
   expect(codeVersionPageHref(preview())).toBe("/app/mail/m_info/code");
-  expect(codeVersionPageHref(preview({ ownerKind: "person", place: null, page: null }))).toBe(`/app/assistant/code/${codeId}`);
-  // Without a declared page there is no address, also when the place is readable; Code of a place never gets a personal page.
+  expect(codeVersionPageHref(preview({ ownerKind: "person", page: null }))).toBe(`/app/assistant/code/${codeId}`);
   expect(codeVersionPageHref(preview({ page: null }))).toBeNull();
-  expect(codeVersionPageHref(preview({ page: undefined, place: null }))).toBeNull();
-});
-
-test("a page served for every method opens like a GET page; a page with a named segment does not", () => {
-  const route = (method: string, path: string) => ({ entrypoint: `${method} ${path}`, route: { method, path, public: false } });
-  expect(codeVersionOwnPageHref(preview({ automations: [route("ALL", "/")] }))).toBe(`/code/${codeId}/`);
-  expect(codeVersionOwnPageHref(preview({ automations: [route("GET", "/item/:id"), route("POST", "/")] }))).toBeNull();
-});
-
-test("an activation whose person is hidden or gone is credited to nobody", async () => {
-  const { dom } = await mount({
-    "activation/preview": () => ({
-      json: { data: preview({ running: 5, activated: { at: "2026-10-31T14:20:00.000Z", byYou: false, byName: null } }) },
-    }),
-  });
-  expect(dom.root.textContent).toContain("Version 5 switched on");
-  expect(dom.root.textContent).not.toContain("by you");
-});
-
-test("the chat version card names reviewed automations and falls back to their identifiers", async () => {
-  const { dom } = await mount({
-    "activation/preview": () => ({
-      json: { data: preview({ automations: [{ entrypoint: "deliver", title: "Lieferungen eintragen" }, { entrypoint: "legacyJob" }] }) },
-    }),
-  });
-  expect(dom.root.textContent).toContain("Lieferungen eintragen · legacyJob");
-  expect(dom.root.textContent).not.toContain("deliver");
-});
-
-test("the card shows everything a version may do: pages and who opens them, events by place, internet, secrets and database", async () => {
-  const place = {
-    key: "spaces.space\u0000Spc001",
-    ref: { type: "spaces.space", id: "Spc001" },
-    title: null,
-    typeTitle: "Space",
-    icon: "ti ti-layout-board",
-    own: false,
-    href: null,
-  };
-  const automations = [
-    { entrypoint: "route:GET:/", route: { method: "GET", path: "/", public: false } },
-    { entrypoint: "route:GET:/status", title: "Status", route: { method: "GET", path: "/status", public: true } },
-    { entrypoint: "event:spaces.item.due@1:place:0", event: { type: "spaces.item.due", title: "Item due", place } },
-  ];
-  const full = preview({
-    ownerKind: "person",
-    place: null,
-    targets: [],
-    automations,
-    internet: ["https://api.example.test"],
-    secrets: [{ name: "API_TOKEN", origin: "https://api.example.test" }],
-    database: true,
-  });
-  const { dom } = await mount({ "activation/preview": () => ({ json: { data: full } }) });
-  const rows = [...dom.root.querySelectorAll(".assistant-code-version__target")].map((row) => row.textContent);
-  expect(rows).toEqual([
-    "GET /All signed-in people (no guests) · runs with your rights",
-    "StatusPublic · no sign-in",
-    "Starts on “Item due”at Space Spc001",
-    "https://api.example.teston the internet, sends API_TOKEN",
-    "Reads and writesin its own database",
-  ]);
-  // An event is named by its title and place, never by its stable entrypoint.
-  expect(dom.root.textContent).toContain("Item due · Space Spc001");
-  expect(dom.root.textContent).not.toContain("event:spaces.item.due");
-  expect(dom.root.textContent).not.toContain("Calls no app.");
-
-  // Each kind alone is enough to say the version does something; a place's page runs with its service account, named after it.
-  for (const patch of [
-    { automations: [automations[0]!] },
-    { automations: [automations[2]!] },
-    { internet: ["https://api.example.test"] },
-    { database: true },
-  ]) {
-    restore.splice(0).forEach((undo) => undo());
-    const one = await mount({ "activation/preview": () => ({ json: { data: preview({ targets: [], ...patch }) } }) });
-    expect(one.dom.root.textContent).not.toContain("Calls no app.");
-    expect(one.dom.root.querySelectorAll(".assistant-code-version__target")).toHaveLength(1);
-    if (patch.automations?.[0]?.route)
-      expect(one.dom.root.textContent).toContain(
-        "All signed-in people (no guests) · runs with the rights of the service account “Code of info@example.test”",
-      );
-  }
-});
-
-test("a step keeps the card as it is while it reloads: no skeleton, the switch stays busy until the new state", async () => {
-  let on = false;
-  let answerReload: (() => void) | null = null;
-  const { dom } = await mount({
-    "activation/preview": () =>
-      on
-        ? new Promise<Answer>((resolve) => {
-            answerReload = () =>
-              resolve({
-                json: { data: preview({ running: 5, activated: { at: "2026-10-31T14:20:00.000Z", byYou: true, byName: null } }) },
-              });
-          })
-        : { json: { data: preview() } },
-    activate: () => {
-      on = true;
-      return { json: { data: { state: "active", failure: null } } };
-    },
-  });
-  button(dom.root, "Switch on")!.click();
-  await tick();
-  // Core said yes and the card reads again: it shows what it showed, never the skeleton, and offers no second switch.
-  expect(dom.root.querySelector('[data-state="loading"]')).toBeNull();
-  expect(dom.root.querySelector('[data-state="ready"]')).not.toBeNull();
-  expect(button(dom.root, "Switch on")?.hasAttribute("disabled")).toBe(true);
-  answerReload!();
-  await tick();
-  expect(dom.root.querySelector('[data-state="on"]')).not.toBeNull();
-});
-
-test("progress and refusal appear in one fixed slot after the actions, so the switch never moves", async () => {
-  const { dom } = await mount({
-    "activation/preview": () => ({ json: { data: preview() } }),
-    activate: () => ({ json: { data: { state: "failed", failure: { reason: "Owner authority changed." } } } }),
-  });
-  const actions = dom.root.querySelector(".assistant-code-version__actions")!;
-  const children = () => [...actions.children].map((child) => child.className.split(" ")[0] || child.tagName);
-  const before = children();
-  // The slot is there before anything happens: a live region that already exists is announced reliably.
-  expect(actions.querySelector('.assistant-code-version__status[role="status"]')?.textContent).toBe("");
-  button(dom.root, "Switch on")!.click();
-  await tick();
-  expect(children()).toEqual(before);
-  expect(actions.firstElementChild?.textContent).toContain("Try again");
-  expect(actions.querySelector('.assistant-code-version__status [role="alert"]')?.textContent).toContain("Owner authority changed.");
-});
-
-test("focus follows the switch to its result: the switched-on line, or the switch again after a refusal", async () => {
-  let on = false;
-  const switched = await mount({
-    "activation/preview": () => ({
-      json: {
-        data: on ? preview({ running: 5, activated: { at: "2026-10-31T14:20:00.000Z", byYou: true, byName: null } }) : preview(),
-      },
-    }),
-    activate: () => {
-      on = true;
-      return { json: { data: { state: "active", failure: null } } };
-    },
-  });
-  const press = (root: Element, name: string) => {
-    const control = button(root, name)!;
-    control.focus();
-    control.click();
-  };
-  press(switched.dom.root, "Switch on");
-  await tick();
-  await tick();
-  const line = switched.dom.root.querySelector('[data-state="on"]');
-  expect(line).not.toBeNull();
-  expect(switched.dom.document.activeElement).toBe(line);
-
-  restore.splice(0).forEach((undo) => undo());
-  const refused = await mount({
-    "activation/preview": () => ({ json: { data: preview() } }),
-    activate: () => ({ json: { data: { state: "failed", failure: { reason: "Owner authority changed." } } } }),
-  });
-  press(refused.dom.root, "Switch on");
-  await tick();
-  expect(refused.dom.document.activeElement).toBe(button(refused.dom.root, "Try again")!);
-});
-
-test("a schedule says when it runs, and an app's Code names the service account its pages run with", async () => {
-  const automations = [
-    { entrypoint: "weekly", cron: "0 8 * * 1" },
-    { entrypoint: "morning", title: "Every morning", cron: "0 7 * * *" },
-    { entrypoint: "route:GET:/", route: { method: "GET", path: "/", public: false } },
-  ];
-  const { dom } = await mount({
-    "activation/preview": () => ({ json: { data: preview({ ownerKind: "app", appName: "Mail", place: null, targets: [], automations }) } }),
-  });
-  expect(dom.root.textContent).toContain("Mondays 08:00 · Every morning (daily 07:00) · GET /");
-  expect(dom.root.textContent).not.toContain("weekly");
-  expect(dom.root.textContent).toContain("runs with the rights of the service account “Code of Mail”");
-});
-
-test("a person who moved on while the switch waited keeps their place when the result arrives", async () => {
-  let answer = () => {};
-  const answered = new Promise<void>((resolve) => {
-    answer = resolve;
-  });
-  const { dom } = await mount({
-    "activation/preview": () => ({ json: { data: preview() } }),
-    activate: async () => {
-      await answered;
-      return { json: { data: { state: "failed", failure: { reason: "Owner authority changed." } } } };
-    },
-  });
-  const switchOn = button(dom.root, "Switch on")!;
-  switchOn.focus();
-  switchOn.click();
-  const composer = dom.document.createElement("textarea");
-  dom.document.body.append(composer);
-  composer.focus();
-  answer();
-  await tick();
-  expect(button(dom.root, "Try again")).toBeDefined();
-  expect(dom.document.activeElement).toBe(composer);
-});
-
-test("the card says what Core saw at submission: the check passed and how many test cases did", async () => {
-  const passed = await mount({
-    "activation/preview": () => ({ json: { data: preview({ tests: { state: "passed", passed: 3, total: 3 } }) } }),
-  });
-  expect(passed.dom.root.querySelector(".assistant-code-version__checks")?.textContent).toBe("Check passedTests 3/3");
-  for (const undo of restore.splice(0)) undo();
-  const failed = await mount({
-    "activation/preview": () => ({ json: { data: preview({ tests: { state: "failed", passed: 2, total: 3 } }) } }),
-  });
-  expect(failed.dom.root.querySelector('[data-tone="warning"]')?.textContent).toBe("Tests 2/3");
-  for (const undo of restore.splice(0)) undo();
-  // A version submitted before Core recorded this shows no line rather than a guess.
-  const older = await mount({ "activation/preview": () => ({ json: { data: preview() } }) });
-  expect(older.dom.root.querySelector(".assistant-code-version__checks")).toBeNull();
-});
-
-test("a version waiting for a Cloud administrator shows their decision when it arrives live, without polling", async () => {
-  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
-  const card = await mount({ "activation/preview": () => ({ json: { data: preview({ readiness: state }) } }) });
-  expect(card.dom.root.textContent).toContain("This card shows their decision as soon as it is made.");
-  expect(button(card.dom.root, "Switch on")).toBeUndefined();
-  // Nothing asks Core again while the card waits.
-  await new Promise((resolve) => setTimeout(resolve, 120));
-  expect(card.calls).toHaveLength(1);
-  // Another view's update leaves the card alone.
-  await card.live.apply([decided(["conversation-detail"])]);
-  expect(card.calls).toHaveLength(1);
-  state = { state: "ready" };
-  await card.live.apply([decided()]);
-  await tick();
-  expect(card.calls.map((call) => call.route)).toEqual(["activation/preview", "activation/preview"]);
-  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
-  // Ready cards keep following activation and replacement in another tab.
-  await card.live.apply([decided()]);
-  expect(card.calls).toHaveLength(3);
-});
-
-test("a rejected version says so in the person's words and that nothing changed", async () => {
-  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
-  const card = await mount({ "activation/preview": () => ({ json: { data: preview({ readiness: state }) } }) });
-  state = { state: "refused", code: "code_approval_revoked", message: "This version approval is rejected or revoked." };
-  await card.live.apply([decided()]);
-  await tick();
-  const note = card.dom.root.querySelector('[data-state="rejected"]');
-  expect(note?.textContent).toBe("A Cloud administrator did not approve this version. Nothing changed, version 4 keeps running.");
-  // Core's own wording for operators stays off the card.
-  expect(card.dom.root.textContent).not.toContain("rejected or revoked");
-  expect(button(card.dom.root, "Switch on")).toBeUndefined();
-});
-
-test("a decision that arrives while the card still reads its first state is not lost", async () => {
-  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
-  let releaseFirst = () => {};
-  const first = new Promise<void>((resolve) => {
-    releaseFirst = resolve;
-  });
-  let answers = 0;
-  const card = await mount({
-    "activation/preview": async () => {
-      // The first answer was read before the decision and arrives after it.
-      const snapshot = { json: { data: preview({ readiness: state }) } };
-      if (answers++ === 0) await first;
-      return snapshot;
-    },
-  });
-  expect(card.dom.root.querySelector('[data-state="loading"]')).not.toBeNull();
-  state = { state: "ready" };
-  await card.live.apply([decided()]);
-  releaseFirst();
-  await tick();
-  expect(card.calls).toHaveLength(2);
-  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
-});
-
-test("a decision whose read fails keeps the waiting card and is tried again by the live channel", async () => {
-  let state: CodeVersionPreview["readiness"] = { state: "approval_pending" };
-  let down = false;
-  const card = await mount({
-    "activation/preview": () => (down ? { status: 503 } : { json: { data: preview({ readiness: state }) } }),
-  });
-  state = { state: "ready" };
-  down = true;
-  // The live channel keeps its cursor when an update fails and offers it again.
-  await expect(card.live.apply([decided()])).rejects.toThrow();
-  expect(card.dom.root.textContent).toContain("A Cloud administrator must approve this version first.");
-  expect(card.dom.root.querySelector('[role="alert"]')).toBeNull();
-  down = false;
-  await card.live.apply([decided()]);
-  await tick();
-  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
-});
-
-test.each([
-  { readiness: { state: "ready" } as const },
-  { readiness: { state: "ready" } as const, running: 5 },
-  { readiness: { state: "refused", code: "code_approval_revoked", message: "Changed" } as const },
-])("resync refreshes a settled card after a missed decision or activation: %j", async (state) => {
-  const card = await mount({
-    "activation/preview": () => ({ json: { data: preview(state) } }),
-    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
-  });
-  const initial = card.calls.length;
-  await card.live.resync();
-  expect(card.calls.length).toBeGreaterThan(initial);
-});
-
-test("a generic decision invalidation recovers a failed card through an authorized read", async () => {
-  let down = true;
-  const card = await mount({
-    "activation/preview": () => (down ? { status: 503 } : { json: { data: preview() } }),
-  });
-  await expect(card.live.apply([decided()])).rejects.toThrow();
-  down = false;
-  await card.live.apply([decided()]);
-  expect(card.calls).toHaveLength(3);
-  expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
-});
-
-test("a ready card follows activation in another tab without a reload", async () => {
-  let activated = false;
-  const card = await mount({
-    "activation/preview": () => ({
-      json: {
-        data: activated ? preview({ running: 5, activated: { at: "2026-11-14T12:00:00.000Z", byYou: true, byName: null } }) : preview(),
-      },
-    }),
-    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
-  });
-  expect(button(card.dom.root, "Switch on")).toBeDefined();
-  activated = true;
-  await card.live.apply([decided()]);
-  await tick();
-  expect(button(card.dom.root, "Switch on")).toBeUndefined();
-  expect(card.dom.root.textContent).toContain("switched on");
+  expect(codeVersionOwnPageHref(preview())).toBeNull();
 });

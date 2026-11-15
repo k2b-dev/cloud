@@ -455,7 +455,10 @@ export default function AssistantCodeVersionCard(props: {
         ),
       );
     const decider = review?.decidedBy?.name ?? words.adminSomeone;
-    const rejected = status === "rejected" || (preview.readiness.state === "refused" && preview.readiness.code === REJECTED);
+    // The platform knows two outcomes: requested changes refuse the switch like a rejection, so the review decides.
+    const rejected =
+      status === "rejected" ||
+      (status !== "changes_requested" && preview.readiness.state === "refused" && preview.readiness.code === REJECTED);
     if (rejected)
       return {
         ...base,
