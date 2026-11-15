@@ -602,7 +602,7 @@ const effectiveDone = () => sql`(conversation.pinned_at IS NULL AND COALESCE(con
     WHERE active_turn.conversation_id = conversation.id
       AND NOT COALESCE(active_turn.run_config ? 'background', false)
       AND active_turn.status IN ('queued', 'running', 'waiting_for_action'))
-  AND NOT EXISTS (SELECT 1 FROM ai.queued_messages pending WHERE pending.conversation_id = conversation.id AND pending.status IN ('pending','failed'))))`;
+  AND NOT EXISTS (SELECT 1 FROM ai.queued_messages pending WHERE pending.conversation_id = conversation.id AND (pending.status='pending' OR (pending.status='failed' AND pending.automation_source IS NULL)))))`;
 
 const browserWorkPending = () => sql`(
   latest.status = 'waiting_for_action'
@@ -2412,7 +2412,7 @@ export const aiConversations: AiConversationService = {
           WHERE conversation_id = ${input.conversationId}::uuid
             AND status IN ('queued', 'running', 'waiting_for_action')
         ) OR (${Boolean(input.onlyUnassigned)}::boolean AND EXISTS (
-          SELECT 1 FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed')
+          SELECT 1 FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL))
         )) AS exists
       `;
       if (activity?.exists) return { ok: false as const, reason: "active_turn" as const };
@@ -2458,7 +2458,7 @@ export const aiConversations: AiConversationService = {
             AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1
         `;
         const [pending] =
-          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
+          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL)) LIMIT 1`;
         if (active || pending) return { ok: false as const, reason: "active_turn" as const };
       }
       await tx`UPDATE ai.conversations
@@ -2488,7 +2488,7 @@ export const aiConversations: AiConversationService = {
             WHERE conversation_id = ai.conversations.id
               AND status IN ('queued', 'running', 'waiting_for_action')
           )
-          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND status IN ('pending','failed'))
+          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND (status='pending' OR (status='failed' AND automation_source IS NULL)))
         RETURNING id
       ), considered_turns AS (
         UPDATE ai.turns
@@ -3201,7 +3201,7 @@ export const aiConversations: AiConversationService = {
         const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
           AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1`;
         const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
-          AND status IN ('pending', 'failed') LIMIT 1`;
+          AND (status='pending' OR (status='failed' AND automation_source IS NULL)) LIMIT 1`;
         if (busy || queued) throw new AiChoiceConflict("choice_busy");
         const rows = await choiceMessageRows(tx, input.conversationId);
         choice = resolveAiChoice(rows.map(rowToMessage), input.choice, input.runConfig.locale ?? "en", new Date().toISOString());
@@ -3218,17 +3218,28 @@ export const aiConversations: AiConversationService = {
         };
       }
       if (input.queuedMessageId) {
+        if (conversation.archived_at) throw new Error("Queued message is no longer ready.");
         const [head] = await tx<
-          { id: string; status: string }[]
-        >`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY position LIMIT 1`;
+          { id: string; status: string; revision: string; submission: Parameters<AiConversationService["submitChatTurn"]>[0] }[]
+        >`SELECT id,status,revision::text,submission FROM ai.queued_messages WHERE conversation_id=${input.conversationId}::uuid
+          AND (status='pending' OR (status='failed' AND automation_source IS NULL)) ORDER BY position LIMIT 1 FOR UPDATE`;
         const [busy] =
           await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
-        if (!head || head.id !== input.queuedMessageId || head.status !== "pending" || busy)
+        if (
+          !head ||
+          head.id !== input.queuedMessageId ||
+          head.status !== "pending" ||
+          busy ||
+          (input.queuedMessageRevision !== undefined && input.queuedMessageRevision !== head.revision)
+        )
           throw new Error("Queued message is no longer ready.");
+        // The persisted payload, including source authority, is authoritative; caller snapshots may be stale.
+        input = { ...head.submission, queuedMessageId: head.id, queuedMessageRevision: head.revision };
+        assertInteractiveChatTurn(input.runConfig);
       }
       if (!input.queuedMessageId) {
         const [queued] =
-          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
+          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL)) LIMIT 1`;
         if (queued) throw new Error("Queued messages must be sent first.");
       }
       if (input.expectedDraftRevision !== undefined && Number(conversation.draft_revision) !== input.expectedDraftRevision) {

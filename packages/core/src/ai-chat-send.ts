@@ -3,13 +3,12 @@ import { sql } from "@k2b/cloud";
 import {
   AiQuotaError,
   aiConversationFileManifest,
-  aiConversations,
   aiProjects,
   isAiSettingsError,
   listAiConversationFiles,
   personalAiModelPolicy,
 } from "@k2b/cloud/ai";
-import { AiMessageQueueConflict, enqueueChatMessage, prepareAiChatTurn, wakeAiMessageQueue } from "@k2b/cloud/ai/runtime";
+import { AiMessageQueueConflict, enqueueAutomationChatMessage, prepareAiChatTurn, wakeAiMessageQueue } from "@k2b/cloud/ai/runtime";
 import { type CapabilityExecutionContext, CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { accounts, coreSettings } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
@@ -119,29 +118,33 @@ export const aiChatSendAction = {
     });
   },
   async run(input: z.infer<typeof aiChatSendInput>, context: CapabilityExecutionContext) {
-    const source = await chatWriteAuthority(context, sql);
-    if (!source.ok) return source;
+    // Replay may outlive the original Code run or its enabled state; source restrictions still apply.
+    const replayAuthority = await chatWriteAuthority(context, sql, { receiptReplay: true });
+    if (!replayAuthority.ok) return replayAuthority;
     if (!context.user) return fail(err.forbidden("Chat writes require their owner"));
     const key = CapabilityIdempotencyKeySchema.safeParse(context.idempotencyKey);
     const parsed = aiChatSendInput.safeParse(input);
     if (!key.success || !parsed.success) return fail(err.badInput("Supply text and a valid idempotency key"));
     const owner = context.user.id;
     const keyHash = sendKeyHash(owner, key.data);
-    const id = crypto.randomUUID();
-    const hash = approvalArgsDigest({ chatId: codeChatDestination(context), ...parsed.data });
-    const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
-    if (!chat) return fail(err.notFound("Chat"));
     const existing = async (db = sql) => {
-      const [row] = await db<{ id: string; hash: string; conversation_id: string }[]>`
-        SELECT id,submission->'runConfig'->'send'->>'requestHash' AS hash,conversation_id FROM ai.queued_messages
-        WHERE submission#>>'{runConfig,send,accountId}'=${owner} AND submission#>>'{runConfig,send,keyHash}'=${keyHash}`;
+      const [row] = await db<{ id: string; input_hash: string; conversation_id: string; chat_id: string }[]>`
+        SELECT id,input_hash,conversation_id,chat_id FROM ai.chat_send_receipts
+        WHERE account_id=${owner}::uuid AND operation='ai.chat.send' AND key_hash=${keyHash}`;
       if (!row) return null;
-      return row.hash === hash && row.conversation_id === chat.id
-        ? result(chat.id, chat.short_id, row.id)
+      // Hash against the originally resolved destination, before looking at today's binding or limits.
+      return row.input_hash === approvalArgsDigest({ chatId: row.chat_id, ...parsed.data })
+        ? result(row.conversation_id, row.chat_id, row.id)
         : fail(capabilityIdempotencyConflict("The key was used for a different chat message"));
     };
     const previous = await existing();
     if (previous) return previous;
+    const source = await chatWriteAuthority(context, sql);
+    if (!source.ok) return source;
+    const id = crypto.randomUUID();
+    const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
+    if (!chat) return fail(err.notFound("Chat"));
+    const hash = approvalArgsDigest({ chatId: chat.short_id, ...parsed.data });
     const user = await accounts.users.get({ id: owner });
     if (!user || isAccountExpired(user.accountExpires)) return fail(err.forbidden("The chat owner is inactive"));
     const actor = { kind: "user" as const, user };
@@ -199,6 +202,10 @@ export const aiChatSendAction = {
         await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send:${keyHash}`},0))`;
         const previous = await existing(db);
         if (previous) return previous;
+        const currentChat = await ownedActiveChat(owner, chat.short_id, db, { lock: true });
+        if (!currentChat) return fail(err.notFound("Chat"));
+        if (currentChat.project_id !== chat.project_id)
+          return fail({ code: "chat_changed", message: "The chat Project changed; read the chat again.", status: 409 as const });
         if (code && limits) {
           await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE`;
           await db`SELECT id FROM code.runs WHERE id=${code.runId}::uuid FOR UPDATE`;
@@ -207,11 +214,10 @@ export const aiChatSendAction = {
           const refused = await checkCodeChatRunBudget(code.runId, db, limits);
           if (refused) return fail({ code: refused, message: t.budget, status: 429 as const });
         }
-        const currentChat = await ownedActiveChat(owner, chat.short_id, db, { lock: true });
-        if (!currentChat) return fail(err.notFound("Chat"));
-        if (currentChat.project_id !== chat.project_id)
-          return fail({ code: "chat_changed", message: "The chat Project changed; read the chat again.", status: 409 as const });
-        await enqueueChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
+        await enqueueAutomationChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
+        await db`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
+          VALUES(${id}::uuid,${owner}::uuid,'ai.chat.send',${keyHash},${hash},${chat.id}::uuid,${chat.short_id},
+            (${JSON.stringify(source.data.origin)}::text)::jsonb,(${JSON.stringify(source.data.turnTrigger)}::text)::jsonb,${id}::uuid)`;
         return ok(null);
       });
       if (!admitted.ok) return admitted;

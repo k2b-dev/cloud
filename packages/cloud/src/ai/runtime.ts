@@ -25,9 +25,17 @@ import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { AiClientToolResultSchema } from "./http";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
-import { drainQueuedMessages } from "./message-queue";
+import { drainQueuedMessages, type ValidateQueuedChatStart } from "./message-queue";
 
-export { AiMessageQueueConflict, enqueueChatMessage } from "./message-queue";
+export type { QueuedChatSubmission, ValidateQueuedChatStart } from "./message-queue";
+export {
+  AiMessageQueueConflict,
+  AiQueuedChatStartError,
+  AUTOMATION_QUEUE_LIMIT,
+  AUTOMATION_QUEUE_SOURCE_LIMIT,
+  enqueueAutomationChatMessage,
+  enqueueChatMessage,
+} from "./message-queue";
 
 import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
@@ -94,7 +102,7 @@ const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue().send({
 
 /** Wake the durable queue promptly; the periodic sweep retries a failed wake-up. */
 export const wakeAiMessageQueue = (conversationId: string): void => {
-  void drainQueuedMessages(enqueueAiTurn, conversationId).catch(() =>
+  void drainQueuedMessages(enqueueAiTurn, conversationId, running?.validateQueuedChatStart).catch(() =>
     log.warn("AI message queue wake-up failed", { code: "queue_wakeup_failed", conversationId }),
   );
 };
@@ -605,7 +613,7 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
 
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
   await aiQuotas.prune().catch(() => log.warn("Quota retention failed", { code: "quota_retention_failed" }));
-  await drainQueuedMessages(enqueueAiTurn);
+  await drainQueuedMessages(enqueueAiTurn, undefined, running?.validateQueuedChatStart);
   const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
   await Promise.all([
     ...sweep.requeued.map((job) =>
@@ -632,6 +640,7 @@ export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEv
 type AiRuntimeState = {
   listeners: Set<(event: AiTurnFinalizedEvent) => Promise<void>>;
   approvalListeners: Set<ApprovalRequestedListener>;
+  validateQueuedChatStart?: ValidateQueuedChatStart;
   stop: () => void;
 };
 
@@ -643,6 +652,8 @@ export const startAiRuntime = (
     /** Host-owned tools for default Assistant turns. Register on the first runtime start. */
     tools?: readonly AiRuntimeTool[];
     concurrency?: number;
+    /** Host-owned admission policy; runs on the current queued snapshot under the conversation lock. */
+    validateQueuedChatStart?: ValidateQueuedChatStart;
     onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
     onApprovalRequested?: ApprovalRequestedListener;
   } = {},
@@ -705,7 +716,6 @@ export const startAiRuntime = (
     void sweepAiRuntime(dispatchTurnFinalized).catch((error) =>
       log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
     );
-  runSweep();
   const sweepTimer = setInterval(runSweep, AI_SWEEP_INTERVAL_MS);
   if (typeof sweepTimer === "object" && "unref" in sweepTimer) sweepTimer.unref();
 
@@ -713,6 +723,7 @@ export const startAiRuntime = (
   const state: AiRuntimeState = {
     listeners,
     approvalListeners,
+    validateQueuedChatStart: input.validateQueuedChatStart,
     stop: () => {
       if (running !== state) return;
       controller.abort();
@@ -725,6 +736,7 @@ export const startAiRuntime = (
     },
   };
   running = state;
+  runSweep();
   log.info("AI runtime started", { workerId: AI_WORKER_ID, concurrency });
   return releaseAiRuntime(listener, approvalListener);
 };

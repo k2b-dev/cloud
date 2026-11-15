@@ -404,11 +404,11 @@ export const flattenAiModelVariant = (provider: AiProvider, model: AiModel, vari
   maxToolRounds: model.maxToolRounds ?? undefined,
   pricing: variant.pricing ?? model.pricing ?? undefined,
 });
-export const readAiModelProfiles = async (): Promise<AiModelProfile[]> => {
+export const readAiModelProfiles = async (db = sql): Promise<AiModelProfile[]> => {
   const [providers, models, variants] = await Promise.all([
-    aiModelCatalog.providers(sql, false),
-    aiModelCatalog.models(),
-    aiModelCatalog.variants(),
+    aiModelCatalog.providers(db, false),
+    aiModelCatalog.models(db),
+    aiModelCatalog.variants(db),
   ]);
   return variants.flatMap((variant) => {
     const model = models.find((model) => model.id === variant.modelId);

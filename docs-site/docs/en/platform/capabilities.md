@@ -1589,11 +1589,15 @@ its result contains `{ chat, messages, message }`. Do not poll for a human.
 
 Repeating a key across Code runs recovers the accepted message, even when model
 or quota admission would now refuse a new one. The dispatcher can replay an
-admission response; the read Query gives current state. Different text, context
-or destination under that key returns `IDEMPOTENCY_CONFLICT`. A full queue
+admission response; the read Query gives current state. Different text or context
+under that key returns `IDEMPOTENCY_CONFLICT`. Replay keeps the original
+resolved destination, including after a chat-binding change or removal from the
+queue. Automation entries have 32 separate places per chat and one per source
+Code or chat; they never spend a person's composer places. A full queue
 returns `chat_busy`; a Project change during preparation returns `chat_changed`.
-This slice uses the existing shared capacity. Separate automation receipts and
-capacity follow with the automation queue.
+At start, Core rechecks ownership, source authority, enabled Code, model access
+and allowances under the chat lock. A failed automation entry is final, frees
+its place and does not block the next entry.
 
 Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.
 Chat reads are `read`; send retains the `ai` version-approval rule until the

@@ -33,8 +33,42 @@ snapshots share a 250 MiB budget. The existing turn worker processes messages in
 acceptance order, one active turn per conversation. Queues survive navigation,
 reloads and worker restarts. Completion, failure or cancellation of a turn allows
 the next queued message to start; a dispatch failure keeps the failed entry at the
-head until the user retries or removes it. Approval waits keep the current turn
+head until the user retries or removes it. This retry behavior applies to
+person entries. Automation entries fail permanently and release their place;
+the next entry may start immediately. Approval waits keep the current turn
 active and do not advance the queue.
+
+`AUTOMATION_QUEUE_LIMIT = 32` bounds pending automation entries separately from
+the person's composer capacity. `AUTOMATION_QUEUE_SOURCE_LIMIT = 1` prevents a
+Code or source chat from filling the queue while its previous message waits.
+Both constants are exported from `@k2b/cloud/ai/runtime`. The capacity check and
+FIFO ordering share the conversation lock. Automation sends return `chat_busy`
+when either automation limit is reached.
+
+`enqueueAutomationChatMessage` is the trusted host's draft-free insertion path;
+composer submission continues through `enqueueChatMessage`. On dequeue, Cloud
+reads the current payload and revision under the conversation lock.
+`submitChatTurn` consumes that stored payload and rejects a mismatched
+`queuedMessageRevision`. Core registers `validateQueuedChatStart` on the first
+`startAiRuntime` call: before promotion it checks current ownership, source
+authority, enabled Code, model access and allowances. Automation work fails
+closed when that host policy is absent: entries remain pending until the host
+registers its policy, including across runtime shutdown. The validator uses the
+supplied database executor for account, Project, settings, model-access and
+quota reads. It checks Project access without loading Project content. One
+model-catalog snapshot serves both the validator and quota check. These services
+accept optional transaction executors so a dequeue
+never needs another pool connection while holding its chat lock. Settings
+reads with an executor bypass the cache and read the stored value and defaults.
+
+`ai.chat.send` stores an immutable admission in `ai.chat_send_receipts`: account,
+operation, key hash, input hash, original destination, origin, initiator and
+queue ID. Turn state is read from the associated turns; retries retain the send
+ID. Queue payload cleanup and conversation deletion do not remove the receipt.
+Account deletion removes that account's receipts.
+Replay reads it before resolving today's destination or checking allowances,
+so it never redirects an accepted message. Read current state with
+`ai.chat.read({ id: originalChatId, message: sendId })`.
 
 The owner-authorized queue API provides:
 
@@ -1090,7 +1124,9 @@ Direct interactive Assistant submissions check optional cost allowances before
 consuming the draft or promoting a queued message. Each subsequent direct model
 round checks again. API rejection uses HTTP 429 with `quota_exhausted` or
 `quota_usage_unknown`; model access is still checked independently. A blocked
-queue head retains its content and attachments for later dispatch. Already
+person queue head retains its content and attachments for later dispatch.
+Automation queue entries fail permanently on a quota refusal and release their
+place. Already
 running provider calls may finish and exceed the allowance.
 
 The feature is disabled by default and does not limit generic application AI,

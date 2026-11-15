@@ -30,7 +30,7 @@ export const ownedActiveChat = async (account: string, chatId: string, db: SQL, 
 };
 
 /** Verified source coordinates, never an input, key, or caller-claimed chat ID. Shared with create. */
-export const chatWriteAuthority = async (context: CapabilityExecutionContext, db: SQL) => {
+export const chatWriteAuthority = async (context: CapabilityExecutionContext, db: SQL, options: { receiptReplay?: boolean } = {}) => {
   const { actor, accessSubject, authority } = context;
   if (
     actor.kind !== "user" ||
@@ -63,8 +63,8 @@ export const chatWriteAuthority = async (context: CapabilityExecutionContext, db
     const [code] = await db<{ id: string; title: string }[]>`
       SELECT code.id,code.title FROM code.codes code JOIN code.runs run ON run.code_id=code.id
       WHERE run.id=${run.runId}::uuid AND run.version_id=${run.versionId}::uuid
-        AND code.owner_kind='person' AND code.owner_user_id=${actor.user.id}::uuid AND code.state='active'
-        AND code.active_version_id=run.version_id AND run.state='running'`;
+        AND code.owner_kind='person' AND code.owner_user_id=${actor.user.id}::uuid
+        ${options.receiptReplay ? db`` : db`AND code.state='active' AND code.active_version_id=run.version_id AND run.state='running'`}`;
     return code
       ? ok({
           origin: { kind: "automation", id: code.id, runId: run.runId } satisfies AiChatOrigin,

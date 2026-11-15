@@ -118,6 +118,11 @@ await app.settings.set("inventory.low_stock_threshold", 10);
 await app.settings.remove("inventory.low_stock_threshold");
 ```
 
+Inside an existing database transaction, pass its executor to
+`app.settings.get(key, db)` or `coreSettings.get<T>(key, db)`. The read uses that
+transaction, sees its uncommitted writes, and bypasses the shared cache. Keep
+ordinary `get(key)` calls on hot paths to use the cache.
+
 Use `app.settings.read(key)` when the stored state matters. It returns
 `{ value, stored }`, where `stored` is `"none"`, `"readable"`, or `"unreadable"`.
 Each call reads the stored row from Postgres and reports this process's view
