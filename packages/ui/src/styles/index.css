@@ -59,8 +59,6 @@
      at least 10:1 and muted 7:1 on the surface and the muted surface. */
   --k2b-text-secondary: var(--k2b-neutral-800);
   --k2b-text-muted: #45454e;
-  /* The third grey for meta lines, axes, and times beside muted text: 4.8:1 on the surface. */
-  --k2b-text-subtle: var(--k2b-neutral-500);
   --k2b-placeholder-color: var(--k2b-neutral-500);
   --k2b-border: var(--k2b-neutral-200);
   --k2b-border-strong: var(--k2b-neutral-300);
@@ -324,7 +322,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   --k2b-text: var(--k2b-neutral-50);
   --k2b-text-secondary: #f1f1f3;
   --k2b-text-muted: #bdbdc6;
-  --k2b-text-subtle: #8d8d98;
   --k2b-placeholder-color: color-mix(in srgb, var(--k2b-neutral-400) 70%, var(--k2b-neutral-500));
   --k2b-border: #29313a;
   --k2b-border-strong: #3a4552;
