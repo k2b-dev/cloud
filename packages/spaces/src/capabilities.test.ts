@@ -2951,3 +2951,15 @@ test("creation reviews preserve every supplied domain field and bound compact pr
     expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(32 * 1024);
   }
 });
+
+test("every Query people see says in English and German what it did once it finished", async () => {
+  const { spacesCapabilityPresentation } = await import("./capability-presentation");
+  const visible = Object.entries(spacesCapabilities.queries).filter(([, query]) => !("appOnly" in query && query.appOnly));
+  const queries = spacesCapabilityPresentation.translations.de?.queries ?? {};
+  const missing = visible.flatMap(([id]) => {
+    const english = spacesCapabilityPresentation.doneTitles?.[id];
+    const german = (queries as Record<string, { doneTitle?: string }>)[id]?.doneTitle;
+    return english && german ? [] : [id];
+  });
+  expect(missing).toEqual([]);
+});

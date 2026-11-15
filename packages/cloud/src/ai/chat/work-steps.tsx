@@ -63,6 +63,12 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
   const timeZone = useReaderTimeZone();
   const t = () => aiChatMessages(locale());
   const failed = () => props.block.status !== "rejected" && isFailedTool(props.block);
+  // A finished Query says what it did: the app's past form, else its title marked done. The chat knows no app.
+  const doneQuery = () => {
+    const presentation = props.block.presentation;
+    if (presentation?.capabilityKind !== "query" || props.block.status !== "completed" || failed()) return null;
+    return presentation.doneTitle ?? t().stepDone({ title: presentation.title });
+  };
   const sentence = () => {
     const status = props.block.status;
     const outcome =
@@ -73,7 +79,7 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
           : null;
     return outcome ?? toolSubject(props.block, locale(), timeZone);
   };
-  const label = () => sentence() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
+  const label = () => sentence() ?? doneQuery() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
   const detail = () => {
     if (failed()) return [failureReason(props.block, t()), followed(props.block.id) ? t().stepWentOn : ""].join(" ").trim();
     const waiting = props.block.status === "awaiting_client" || props.block.status === "awaiting_approval";

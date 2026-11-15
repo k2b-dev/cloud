@@ -1138,6 +1138,8 @@ export type AiCapabilityToolPresentation = {
   appAccent?: string;
   title: string;
   capabilityKind: "query" | "action";
+  /** Queries: what a finished call did, in the locale of the turn, when the app gives a past form. */
+  doneTitle?: string;
   /** Actions: the app's sentences in the locale of the turn, worded for each call by the chat. */
   sentences?: CapabilityActionSentences;
   /** Actions: field formats for the sentences and labelled fields for the generic sentence, in schema order. */

@@ -80,6 +80,8 @@ const messages = /* @__PURE__ */ i18n.define({
       workEndedStopped: "stopped",
       workEndedInterrupted: "interrupted",
       stepThought: "Thought it over",
+      /** A finished app Query whose app gives no past form: its title, marked done. */
+      stepDone: ({ title }: { title: string }) => `${title} · done`,
       stepNoAccess: "No access.",
       stepDidNotWork: "This did not work.",
       stepNotFound: "Not found.",
@@ -424,6 +426,7 @@ const messages = /* @__PURE__ */ i18n.define({
       workEndedStopped: "gestoppt",
       workEndedInterrupted: "abgebrochen",
       stepThought: "Nachgedacht",
+      stepDone: ({ title }) => `${title} · erledigt`,
       stepNoAccess: "Kein Zugriff.",
       stepDidNotWork: "Das hat nicht geklappt.",
       stepNotFound: "Nicht gefunden.",
