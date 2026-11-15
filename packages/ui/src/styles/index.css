@@ -15268,20 +15268,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface);
 }
 
-/* The facts give way first: on a wide card they shrink and fade instead of
-   wrapping the row, so editing and approving keep one row of the same height. */
+/* The facts are short and always stay whole, such as "Applies to exactly
+   version 3": they are never cut or faded. When facts and answers do not fit
+   one line, the answers move together to a line of their own, right-aligned. */
 .k2b-ui .k2b-chat-decision__meta {
   display: inline-flex;
-  flex: 1 1 0;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.25rem 0.75rem;
-  min-width: 0;
-  overflow: hidden;
+  max-width: 100%;
   color: var(--k2b-text-muted);
-  font-size: 0.78125rem;
+  font-size: 0.75rem;
   white-space: nowrap;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 1rem), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 1rem), transparent);
 }
 
 .k2b-ui .k2b-chat-decision__fact {
@@ -15308,7 +15306,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The remember checkbox is one of the quiet facts: same size and ink, its box keeps the 3:1 edge. */
 .k2b-ui .k2b-chat-decision__meta .k2b-check__label {
   color: var(--k2b-text-secondary);
-  font-size: 0.78125rem;
+  font-size: 0.75rem;
   font-weight: 400;
 }
 
@@ -15340,9 +15338,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-decision__buttons {
   display: inline-flex;
+  flex: 0 1 auto;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.5rem;
+  max-width: 100%;
   margin-inline-start: auto;
+}
+
+/* Inside a decision, status chips keep the smallest step of its type scale (12 px). */
+.k2b-ui .k2b-chat-decision .k2b-status-badge,
+.k2b-ui .k2b-chat-decision .k2b-status-badge > i {
+  font-size: 0.75rem;
 }
 
 /* On the tint every button but the one filled answer takes the surface
@@ -15365,10 +15372,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* An answer keeps its label on one line while it fits the row, and wraps it
-   only when the label alone is wider than the row. */
+   only when the label alone is wider than the row. It is 36 px high like any
+   button; on touch screens the button's own hit area reaches 44 px. */
 .k2b-ui .k2b-button.k2b-chat-decision__answer {
   min-width: fit-content;
-  min-height: 2.75rem;
+  min-height: 2.25rem;
   padding: 0 1rem;
   font-size: 0.875rem;
 }
@@ -15482,6 +15490,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background-image: none;
 }
 
+/* Answers that wrap to a second line stay far enough apart that their 44 px
+   hit areas do not overlap. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-decision__buttons {
+    row-gap: 0.625rem;
+  }
+}
+
 /* The outcome of a decided question sits under its head; the head already
    carries the state, so the line needs no icon of its own. */
 .k2b-ui .k2b-chat-decision .k2b-chat-outcome {
@@ -15499,7 +15515,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 @container (max-width: 32.5rem) {
   .k2b-ui .k2b-chat-decision__buttons {
     order: 1;
-    width: 100%;
+    flex-basis: 100%;
     margin-inline-start: 0;
   }
 
@@ -15515,8 +15531,6 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     flex-wrap: wrap;
     justify-content: flex-start;
     white-space: normal;
-    -webkit-mask-image: none;
-    mask-image: none;
   }
 
   /* Facts that change while the question stays open keep their two lines, so the question keeps its height. */

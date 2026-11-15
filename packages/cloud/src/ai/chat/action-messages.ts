@@ -1,6 +1,17 @@
 import { i18n } from "@k2b/stdlib";
 
 /**
+ * How long until an approval expires, in the largest whole unit that fits: minutes under an hour, hours under a day,
+ * then days. It never says more time than is left: 1,440 minutes read "in 1 day".
+ */
+const expiryDistance = (minutes: number, locale: string): string => {
+  const format = new Intl.RelativeTimeFormat(locale, { numeric: "always", style: "short" });
+  if (minutes < 60) return format.format(minutes, "minute");
+  if (minutes < 24 * 60) return format.format(Math.floor(minutes / 60), "hour");
+  return format.format(Math.floor(minutes / (24 * 60)), "day");
+};
+
+/**
  * Cloud's own words around an Action question and its outcome line: details under the line, the preview's labels, and
  * the answers of a question that has no app sentence yet. The question, its chips, and the buttons of a new review
  * are the app's words; reasons are Cloud's reason codes (`capability-sentences.ts`).
@@ -36,7 +47,7 @@ const messages = i18n.define({
       approvalKind: "Approval",
       draftKind: "Draft",
       detailsFrom: ({ app }: { app: string }) => `Details from ${app}`,
-      expiresIn: ({ minutes }: { minutes: number }) => `Expires in ${minutes.toLocaleString("en")} min`,
+      expiresIn: ({ minutes }: { minutes: number }) => `Expires ${expiryDistance(minutes, "en")}`,
       expiresSoon: "Expires soon",
       asksEveryTime: "Asks every time",
       change: "Change",
@@ -93,7 +104,7 @@ const messages = i18n.define({
       approvalKind: "Freigabe",
       draftKind: "Entwurf",
       detailsFrom: ({ app }) => `Details von ${app}`,
-      expiresIn: ({ minutes }) => `Läuft ab in ${minutes.toLocaleString("de")} Min`,
+      expiresIn: ({ minutes }) => `Läuft ab ${expiryDistance(minutes, "de")}`,
       expiresSoon: "Läuft gleich ab",
       asksEveryTime: "Fragt jedes Mal",
       change: "Ändern",

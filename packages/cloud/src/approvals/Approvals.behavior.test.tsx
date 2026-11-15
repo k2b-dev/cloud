@@ -139,6 +139,21 @@ describe("Approvals", () => {
     }
   });
 
+  test("one request shows no count beside it, and a request without details shows no details island", async () => {
+    const bare = item("b1");
+    if (!bare.review || !("sentence" in bare.review)) throw new Error("Expected a sentence review");
+    const { view: _view, links: _links, ...withoutDetails } = bare.review;
+    const view = await mount({ initial: page([{ ...bare, review: withoutDetails }]) }, () => Response.json({ status: "approved" }));
+    try {
+      expect(view.dom.root.querySelector(".cloud-approvals__toolbar")).toBeNull();
+      expect(view.dom.root.textContent).not.toContain("1 open");
+      expect(view.dom.root.querySelector("article.cloud-approval .k2b-chat-decision__sentence")?.textContent).toBe("Send “Offer 1”?");
+      expect(view.dom.root.querySelector("article.cloud-approval .k2b-chat-decision__details")).toBeNull();
+    } finally {
+      view.cleanup();
+    }
+  });
+
   test("the author sees why another admin is required and can still reject", async () => {
     const request = item("code-author", {
       canApprove: false,

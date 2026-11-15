@@ -835,7 +835,12 @@ for (const view of [
         const approveBox = (await approve.boundingBox())!;
         const declineBox = (await decline.boundingBox())!;
         expect(await approve.innerText()).toBe(de ? "E-Mail senden" : "Send email");
-        expect(approveBox.height).toBeGreaterThanOrEqual(44);
+        expect(approveBox.height).toBe(36);
+        if (view.touch) {
+          // On a phone the answer's hit area reaches 44 px around its 36 px box.
+          const hit = await approve.evaluate((node) => parseFloat(getComputedStyle(node, "::after").height));
+          expect(hit).toBe(44);
+        }
         expect(declineBox.y).toBe(approveBox.y);
         if (view.touch) {
           // Phones let the two answers share the row.

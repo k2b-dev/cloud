@@ -43,10 +43,10 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width = 1440, dark = false, timelineWidth?: "narrow" | "wide") => {
+const open = async (width = 1440, dark = false, timelineWidth?: "narrow" | "wide", facts = false) => {
   const page = await browser.newPage({ viewport: { width, height: 1100 } });
   await page.setContent(
-    `<!doctype html><html${timelineWidth ? ` data-timeline-width="${timelineWidth}"` : ""}><head><style>${css}
+    `<!doctype html><html${timelineWidth ? ` data-timeline-width="${timelineWidth}"` : ""}${facts ? " data-facts" : ""}><head><style>${css}
       html { font-size:16px; } body { margin:0; font-family:Arial,sans-serif; }
       main { max-width:720px; margin:24px; }
     </style></head><body class="k2b-ui${dark ? " k2b-dark" : ""}"><div id="root"></div></body></html>`,
@@ -130,7 +130,7 @@ test("an expired outcome action reopens and focuses the question sentence", asyn
 });
 
 for (const width of [1440, 390])
-  test(`question alignment, spacing, typography and 44px answer targets at ${width}px`, async () => {
+  test(`question alignment, spacing, typography and 36 px answers at ${width}px`, async () => {
     const page = await open(width);
     try {
       const metrics = await page.evaluate(() => {
@@ -165,7 +165,10 @@ for (const width of [1440, 390])
       for (const indent of metrics.indent) expect(Math.abs(indent - 24)).toBeLessThanOrEqual(0.5);
       for (const left of metrics.flush) expect(Math.abs(left)).toBeLessThanOrEqual(0.5);
       for (const [index, expected] of [2, 14, 14].entries()) expect(Math.abs(metrics.gaps[index]! - expected)).toBeLessThanOrEqual(0.5);
-      for (const height of metrics.heights) expect(height).toBeGreaterThanOrEqual(44);
+      // Answers are 36 px high like every button; a touch screen gives them a 44 px hit area (touch-targets test).
+      // A long label wraps inside its button and makes it taller; a one-line answer is exactly 36 px.
+      for (const height of metrics.heights) expect(height).toBeGreaterThanOrEqual(36);
+      expect(metrics.heights.slice(0, 2)).toEqual([36, 36]);
       expect(metrics.size).toBe("18px");
       expect(metrics.weight).toBe("400");
       // The AI tint carries the question; the details lie on the surface colour.
@@ -361,6 +364,44 @@ for (const timelineWidth of ["narrow", "wide"] as const)
       expect(metrics.sentence).toBe("18px");
       // The decision follows its own width: narrow, the answers share the row.
       expect(metrics.answers).toEqual(timelineWidth === "narrow" ? ["1", "1"] : ["0", "0"]);
+    } finally {
+      await page.close();
+    }
+  });
+
+for (const width of [1440, 390])
+  test(`a short fact stays whole next to three answers, and status chips keep 12 px at ${width}px`, async () => {
+    const page = await open(width, false, undefined, true);
+    try {
+      await settled(page);
+      const metrics = await page.evaluate(() => {
+        const card = document.querySelector(".three-answers")!;
+        const meta = card.querySelector<HTMLElement>(".k2b-chat-decision__meta")!;
+        const fact = card.querySelector<HTMLElement>(".k2b-chat-decision__fact")!;
+        const answers = Array.from(card.querySelectorAll(".k2b-chat-decision__answer")).map((node) => node.getBoundingClientRect());
+        const box = card.getBoundingClientRect();
+        return {
+          fact: fact.textContent,
+          clipped: fact.scrollWidth - fact.clientWidth,
+          metaVisible: meta.getBoundingClientRect().width >= fact.getBoundingClientRect().width - 0.5,
+          metaHeight: meta.getBoundingClientRect().height,
+          metaSize: getComputedStyle(meta).fontSize,
+          answersInside: answers.every((answer) => answer.left >= box.left - 0.5 && answer.right <= box.right + 0.5),
+          heights: answers.map((answer) => answer.height),
+          badge: getComputedStyle(card.querySelector(".k2b-status-badge")!).fontSize,
+          overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        };
+      });
+      expect(metrics.fact).toBe("Applies to exactly version 3");
+      expect(metrics.clipped).toBeLessThanOrEqual(0);
+      expect(metrics.metaVisible).toBe(true);
+      // One line of 12 px text.
+      expect(metrics.metaHeight).toBeLessThanOrEqual(20);
+      expect(metrics.metaSize).toBe("12px");
+      expect(metrics.answersInside).toBe(true);
+      for (const height of metrics.heights) expect(height).toBe(36);
+      expect(metrics.badge).toBe("12px");
+      expect(metrics.overflow).toBeLessThanOrEqual(0);
     } finally {
       await page.close();
     }
