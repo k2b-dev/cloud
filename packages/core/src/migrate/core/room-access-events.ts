@@ -38,7 +38,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
             FOR candidate IN
               WITH RECURSIVE affected(id) AS (
                 SELECT value::uuid FROM jsonb_each_text(item)
-                  WHERE key IN ('group_id', 'child_group_id', 'manager_group_id')
+                  WHERE key IN ('group_id', 'child_group_id', 'manager_group_id') AND value IS NOT NULL
                 UNION SELECT gg.child_group_id FROM auth.group_groups_v2 gg JOIN affected a ON a.id = gg.parent_group_id
               )
               -- Enumerate each membership relation once. Correlated EXISTS under
