@@ -394,6 +394,14 @@ describe("Code pages in the Cloud layout", () => {
       expect(shellData(html)?.profile).toMatchObject({ name: "Mia Muster" });
     }));
 
+  test("the phone header names the page, or the Cloud without a title, never the hosting app (Rundgang #64)", () =>
+    withRateLimit(async () => {
+      const headerTitle = (html: string) => html.match(/<span class="layout-header-title[^"]*"[^>]*>([^<]*)</)?.[1];
+      const html = await (await host(true).request("https://cloud.test/code/c_page/")).text();
+      expect(headerTitle(html)).toBe("&lt;script>Workshop&lt;/script>");
+      expect(headerTitle(html)).not.toBe("Core");
+    }));
+
   test("anonymous visitors get the signed-out layout that reveals nothing beyond the legal pages, and sign-in returns", () =>
     withRateLimit(async () => {
       const router = host(false);
