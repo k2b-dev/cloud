@@ -240,7 +240,10 @@ describe("Chat.Composer suggestion", () => {
             await suggest(page, LONG);
             const lines = await page.evaluate(() => {
               const overlay = document.querySelector<HTMLElement>(".k2b-chat-composer__suggestion")!;
-              return overlay.scrollHeight <= overlay.clientHeight && overlay.getBoundingClientRect().height;
+              // The pill's touch area may reach past the suggestion on a phone; the text itself must end inside it.
+              const text = overlay.querySelector<HTMLElement>(":scope > span[aria-hidden]:not(.k2b-chat-composer__suggestion-gap)")!;
+              const box = overlay.getBoundingClientRect();
+              return text.getBoundingClientRect().bottom <= box.bottom + 0.5 && box.height;
             });
             expect(lines).toBeGreaterThan(3 * 21);
           }
