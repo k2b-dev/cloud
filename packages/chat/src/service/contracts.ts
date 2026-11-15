@@ -402,6 +402,12 @@ export const ConversationSchema = z.object({
   lastActivityAt: z.string(),
   lastMessage: LastMessageSchema.extend({ thread: z.strictObject({ id: ThreadIdSchema, name: z.string() }).nullable() }).nullable(),
 });
+/** The discussion about one resource: a container's chat, or the chat of an item's container with the item's thread. */
+export const ResourceDiscussionSchema = z.strictObject({
+  conversation: ConversationSchema,
+  thread: ThreadIdSchema.nullable(),
+  title: z.string(),
+});
 export const ExistingMatchSchema = ConversationSchema.pick({ id: true, name: true, title: true, lastActivityAt: true }).extend({
   archived: z.boolean(),
 });

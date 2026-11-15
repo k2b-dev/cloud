@@ -55,7 +55,8 @@ const context = (scope?: { type: string; id: string }) =>
   );
 
 const viewSpy = spyOn(snapshot, "loadChatView").mockImplementation(async (_context, input) => chatView(input.conversationId));
-const openSpy = spyOn(systemChats, "open").mockResolvedValue(ok(resourceConversation));
+const opened = ok({ conversation: resourceConversation, thread: null, title: resourceConversation.title });
+const openSpy = spyOn(systemChats, "openFor").mockResolvedValue(opened);
 const spies = [
   viewSpy,
   openSpy,
@@ -74,7 +75,7 @@ const spies = [
 afterEach(() => {
   viewSpy.mockClear();
   openSpy.mockClear();
-  openSpy.mockResolvedValue(ok(resourceConversation));
+  openSpy.mockResolvedValue(opened);
 });
 afterAll(() => {
   for (const spy of spies) spy.mockRestore();
@@ -106,8 +107,17 @@ describe("Chat in the panel beside a resource", () => {
     // The scope only selects: opening reads the container as this reader, through the same service as the list.
     expect(openSpy).toHaveBeenCalledTimes(1);
     const input = openSpy.mock.calls[0]![0];
-    expect({ type: input.resourceType, id: input.resourceId }).toEqual(notebook);
+    expect(input.ref).toEqual(notebook);
     expect(input.accessSubject).toMatchObject({ type: "user", userId: person.id });
+  });
+
+  test("an item the host page shares opens its thread in its container's discussion", async () => {
+    openSpy.mockResolvedValue(ok({ conversation: resourceConversation, thread: "Thrd01", title: "Lieferplan KW47.csv" }));
+    const item = { type: "inventory.item", id: "Plan-47" };
+    const response = await request(`/app/chat/panel?${PANEL_CONTEXT_PARAM}=${context(item)}`);
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(`/app/chat/panel/c/Werk01/t/Thrd01?${PANEL_CONTEXT_PARAM}=${context(item)}`);
+    expect(openSpy.mock.calls[0]![0].ref).toEqual(item);
   });
 
   test("in the resource's discussion the header leads to all chats, and nowhere out of the panel", async () => {

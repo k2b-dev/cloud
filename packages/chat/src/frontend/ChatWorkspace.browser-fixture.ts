@@ -1025,6 +1025,16 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           skipped: [],
         });
       }
+      // The discussion about a container the host page shares, as the panel opens it.
+      if (url.pathname === "/api/chat/system-chats/for-resource" && request.method === "POST") {
+        systemRequests.push({ path: url.pathname, query: {} });
+        const { ref } = (await request.json()) as { ref: CloudResourceRef };
+        const container = containers.get(`${ref.type}:${ref.id}`);
+        const chat = container?.chat ? chats.get(container.chat) : undefined;
+        return chat
+          ? Response.json({ conversation: chat.conversation, thread: null, title: chat.conversation.title })
+          : Response.json({ code: "NOT_FOUND", message: "Unavailable" }, { status: 404 });
+      }
       const systemOpen = /^\/api\/chat\/system-chats\/([^/]+)\/([^/]+)\/open$/.exec(url.pathname);
       if (systemOpen && request.method === "POST") {
         systemRequests.push({ path: url.pathname, query: {} });

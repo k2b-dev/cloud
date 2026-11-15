@@ -98,7 +98,7 @@ import {
   threadsPageHref as threadsPageAddress,
   UNREAD_COUNT_PATH,
 } from "./route";
-import { containerIcon, openResourceThread, openSystemChat } from "./system-chats";
+import { containerIcon, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
 
 import {
   chatHasThreads,
@@ -255,6 +255,14 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     panel: props.panel,
   });
   const [resourceChat, setResourceChat] = createSignal(props.resourceChat ?? null);
+  /** The panel shows the resource's discussion: its container's chat, or, for an item, the item's thread. */
+  const atResource = () => {
+    const target = resourceChat();
+    const current = route();
+    return Boolean(
+      target && current.chatId === target.id && !current.channels && (target.thread === null || current.view === target.thread),
+    );
+  };
   // History is not reactive; keep its list marker for the header rendered before each address commit.
   const [listPredecessor, setListPredecessor] = createSignal(false);
   const [archived, setArchived] = createSignal(props.archived ?? false);
@@ -2187,13 +2195,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           if (scope && previous && scope.type === previous.ref.type && scope.id === previous.ref.id) return;
           const token = ++scopeToken;
           if (!scope) return void setResourceChat(null);
-          openSystemChat({ resourceType: scope.type, resourceId: scope.id })
-            .then(async (current) => {
+          const following = atResource();
+          openResourceDiscussion(scope)
+            .then(async (found) => {
               if (disposed || token !== scopeToken) return;
-              store?.includeSystemChats([current]);
-              setResourceChat({ id: current.id, ref: scope, title: current.title });
-              if (previous && route().chatId === previous.id && (await open(chatRoute(current.id))) === "applied")
-                navigate(viewHref(threadHref(current.id, "all")), { replace: true, scroll: "preserve" });
+              store?.includeSystemChats([found.conversation]);
+              const next = { id: found.conversation.id, thread: found.thread, ref: scope, title: found.title };
+              setResourceChat(next);
+              const view = next.thread ?? "all";
+              if (following && (await open(chatRoute(next.id, view))) === "applied")
+                navigate(viewHref(threadHref(next.id, view)), { replace: true, scroll: "preserve" });
             })
             .catch(() => {
               if (token === scopeToken) setResourceChat(null);
@@ -2403,16 +2414,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const target = resourceChat();
     if (!target) return;
     const fromList = route().chatId === null;
-    if ((await open(chatRoute(target.id))) !== "applied") return;
+    const view = target.thread ?? "all";
+    if ((await open(chatRoute(target.id, view))) !== "applied") return;
     setListPredecessor(fromList);
-    navigation.push(viewHref(threadHref(target.id, "all")), { scroll: "preserve", state: { chatFromList: fromList } });
+    navigation.push(viewHref(threadHref(target.id, view)), { scroll: "preserve", state: { chatFromList: fromList } });
   };
   /** In the panel: back to the discussion about the host page's resource, wherever the reader went from there. */
-  const resourceChatButton = (currentId: string | null) => (
-    <Show when={resourceChat()?.id !== currentId && resourceChat()}>
+  const resourceChatButton = () => (
+    <Show when={!atResource() && resourceChat()}>
       {(target) => (
         <IconButtonLink
-          href={listHref(threadHref(target().id, "all"))}
+          href={listHref(threadHref(target().id, target().thread ?? "all"))}
           navigation="enhanced"
           onNavigate={openResourceChat}
           label={t().chatAboutResource({ title: target().title })}
@@ -2432,7 +2444,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               dictation={props.liveDictation ? liveDictationSource : undefined}
               actions={
                 <>
-                  <Show when={props.embedded}>{resourceChatButton(current().id)}</Show>
+                  <Show when={props.embedded}>{resourceChatButton()}</Show>
                   <Show when={!system() && current().permission === "admin"}>
                     <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
                       <i class="ti ti-user-plus" aria-hidden="true" />
@@ -2940,7 +2952,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     <>
       <Show when={!openChat()}>{draftNotice()}</Show>
       <Show when={props.embedded && !openChat() && resourceChat()}>
-        <div class="flex shrink-0 justify-end p-1">{resourceChatButton(null)}</div>
+        <div class="flex shrink-0 justify-end p-1">{resourceChatButton()}</div>
       </Show>
       <AppWorkspace
         mobileSurface="flush"

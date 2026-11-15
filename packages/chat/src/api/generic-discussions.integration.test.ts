@@ -12,6 +12,7 @@ import {
   ForYouPageSchema,
   ItemEventsPageSchema,
   MessagePageSchema,
+  ResourceDiscussionSchema,
   SharedPageSchema,
   SystemChatPageSchema,
   ThreadListSchema,
@@ -587,5 +588,34 @@ suiteFor(
     expect(partial.systemUnavailable).toBeUndefined();
     expect(partial.incomplete).toBeTrue();
     expect(partial.items).toHaveLength(3);
+  });
+  test("the panel opens the discussion about a shared container or item only through its readers", async () => {
+    const person = await f.person();
+    trackKeys(person, collection);
+    trackKeys(person, item);
+    const openFor = (ref: { type: string; id: string }) => api(person, "/system-chats/for-resource", "POST", { ref });
+    const container = ResourceDiscussionSchema.parse(await (await openFor(collection)).json());
+    f.trackChat(container.conversation.id);
+    expect(container).toMatchObject({ thread: null, title: "Warehouse", conversation: { kind: "system", resource: collection } });
+    // An item opens its container's chat and its thread, created once.
+    const first = ResourceDiscussionSchema.parse(await (await openFor(item)).json());
+    expect(first.conversation.id).toBe(container.conversation.id);
+    expect(first.title).toBe("Box");
+    expect(first.thread).not.toBeNull();
+    expect(ResourceDiscussionSchema.parse(await (await openFor(item)).json()).thread).toBe(first.thread);
+    // A reader who may not write keeps the existing thread and starts none.
+    writable = false;
+    await redis.send("DEL", trackKeys(person, collection));
+    expect(ResourceDiscussionSchema.parse(await (await openFor(item)).json()).thread).toBe(first.thread);
+    await sql`DELETE FROM chat.threads WHERE short_id = ${first.thread}`;
+    expect(ResourceDiscussionSchema.parse(await (await openFor(item)).json()).thread).toBeNull();
+    // Unreadable items, unknown types and malformed refs name nothing.
+    readable = false;
+    await redis.send("DEL", trackKeys(person, item));
+    const denied = await openFor(item);
+    expect(denied.status).toBe(404);
+    expect(await denied.text()).not.toContain("Box");
+    expect((await openFor({ type: "other.thing", id: "x" })).status).toBe(404);
+    expect((await api(person, "/system-chats/for-resource", "POST", { ref: { type: "", id: "" } })).status).toBe(400);
   });
 });

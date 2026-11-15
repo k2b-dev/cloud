@@ -35,6 +35,7 @@ All paths below start with `/api/chat`.
 | `POST /system-chats/:resourceType/:resourceId/open` | Create or return the container's conversation. The type must be a container declared by a discussion provider. |
 | `POST /conversations/:conversation/threads/for-resource` with `{ "ref": { "type": "inventory.item", "id": "…" } }` | Create or return an item thread. The type must be the provider's discussion item type. IDs are opaque strings up to 512 characters. |
 | `GET /conversations/:conversation/threads` | Authorized threads, with optional `filter=open\|done\|unread`, `q`, and `cursor`. |
+| `POST /system-chats/for-resource` with `{ "ref": { "type": "inventory.item", "id": "…" } }` | `{ conversation, thread, title }`: for a container type, its conversation with `thread: null`; for an item type, its container's conversation and the item's thread. The thread is created when the caller may write there; otherwise it is the existing thread or `null`. |
 
 Message uploads and downloads use the same routes and limits as ordinary chats:
 see [Chat message attachments](/en/docs/operations/build-and-deploy#chat-message-attachments-after-the-upgrade).
@@ -109,21 +110,23 @@ events still use that reader's own container and item authority. The personal
 Chat's [panel](/en/docs/platform/panels) starts in the discussion about the
 host page's resource. When the page shares a `scope` through
 `Layout context={{ scope }}` and the reader allowed **Share context** for
-Chat, `/app/chat/panel` opens that container's conversation through the same
-open operation as above and moves to `/app/chat/panel/c/:conversation`,
-keeping the shared context. The scope is only a selector: opening needs
-container read access, and a scope that is not a declared container type,
-or that the reader cannot read, leaves the panel at the chat list without
-naming the resource. A later context change moves the panel to the new
-resource's discussion only while it shows the previous one; elsewhere only
-the way back changes.
+Chat, `/app/chat/panel` opens it through `POST /system-chats/for-resource`
+and moves to `/app/chat/panel/c/:conversation`, or to the item's thread
+below it, keeping the shared context. A container scope opens the container's
+conversation. An item scope opens its container's conversation at the item's
+thread. The scope is only a selector: the item and container readers decide,
+as for the routes above. A scope that is not a declared discussion type, or
+that the reader cannot read, leaves the panel at the chat list without naming
+the resource. A later context change moves the panel to the new resource's
+discussion only while it shows the previous one; elsewhere only the way back
+changes.
 
 In the panel, the head's **All chats** opens the chat list inside the panel,
 and **Chat about …** returns to the resource's discussion. The panel has no
 link to the full view and no search, **New chat**, or **For you** rows.
 To appear there, an application reports its page's place and declares that
-place's type as the container of its `discussions` role; Chat needs no
-application-specific code.
+place's type in its `discussions` role, as the container or the item;
+Chat needs no application-specific code.
 
 ## Search the chat list
 

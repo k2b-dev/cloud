@@ -26,8 +26,8 @@ export default ssr<AuthContext>(async (c) => {
   if (accessSubject.type !== "user") return ssr.error(c, 403);
   const { resourceChat, redirect } = embedded
     ? await panelResourceChat(c, async (ref) => {
-        const opened = await chatService.systemChats.open({ ...chatRequestContext(c), resourceType: ref.type, resourceId: ref.id });
-        return opened.ok ? opened.data : null;
+        const opened = await chatService.systemChats.openFor({ ...chatRequestContext(c), ref });
+        return opened.ok ? { id: opened.data.conversation.id, thread: opened.data.thread, title: opened.data.title } : null;
       })
     : { resourceChat: null, redirect: null };
   if (redirect) return c.redirect(redirect, 302);

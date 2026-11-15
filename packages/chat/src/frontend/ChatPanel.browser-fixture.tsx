@@ -126,13 +126,14 @@ export async function startConversationPanelFixture() {
           const { resourceChat, redirect } =
             chatPage && embedded
               ? await panelResourceChat(c, async (ref) => {
-                  const response = await fetch(
-                    new URL(`api/chat/system-chats/${encodeURIComponent(ref.type)}/${encodeURIComponent(ref.id)}/open`, backend.url),
-                    {
-                      method: "POST",
-                    },
-                  );
-                  return response.ok ? ((await response.json()) as { id: string; title: string }) : null;
+                  const response = await fetch(new URL("api/chat/system-chats/for-resource", backend.url), {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ ref }),
+                  });
+                  if (!response.ok) return null;
+                  const found = (await response.json()) as { conversation: { id: string }; thread: string | null; title: string };
+                  return { id: found.conversation.id, thread: found.thread, title: found.title };
                 })
               : { resourceChat: null, redirect: null };
           if (redirect) return c.redirect(redirect, 302);

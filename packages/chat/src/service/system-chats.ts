@@ -8,6 +8,7 @@ import { discussionRead, providerFor } from "./discussion-read";
 import { openParticipant } from "./read-state";
 import { discussionIncomplete, readContainers, readResource, resourceDeferred } from "./resource-access";
 import { SUMMARY_TRAVERSAL_BUDGET } from "./thread-access";
+import { threads } from "./threads";
 
 const open = async (input: ChatContext & { resourceType: string; resourceId: string }) => {
   const parsed = SystemChatParamSchema.safeParse(input);
@@ -39,6 +40,33 @@ const open = async (input: ChatContext & { resourceType: string; resourceId: str
   const context = { ...input, conversationId: result.data };
   const opened = await openParticipant(context);
   return opened.ok ? conversations.get(context) : opened;
+};
+/**
+ * The discussion about one resource, as the panel beside it opens it: a container's chat, or an item's thread in its
+ * container's chat. The ref is a selector only; the item and container readers decide as this reader. A reader who
+ * may not write keeps an item's existing thread or, without one, the container's chat.
+ */
+const openFor = async (input: ChatContext & { ref: { type: string; id: string } }) => {
+  const missing = () => fail({ code: "NOT_FOUND", status: 404, message: messages(input).notFound });
+  const parsed = SystemChatParamSchema.safeParse({ resourceType: input.ref.type, resourceId: input.ref.id });
+  if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
+  if (await providerFor(input, input.ref.type, "container")) {
+    const opened = await open({ ...input, ...parsed.data });
+    return opened.ok ? ok({ conversation: opened.data, thread: null, title: opened.data.title }) : opened;
+  }
+  if (!(await providerFor(input, input.ref.type, "item"))) return missing();
+  const item = await readResource(input, input.ref);
+  const container = item && capPermission(item.permission, input.actor) !== "none" ? item.container?.ref : undefined;
+  if (!item || !container) return missing();
+  const opened = await open({ ...input, resourceType: container.type, resourceId: container.id });
+  if (!opened.ok) return opened;
+  const thread = await threads.forResource({ ...input, conversationId: opened.data.id, input: { ref: input.ref } });
+  if (thread.ok) return ok({ conversation: opened.data, thread: thread.data.thread.id, title: item.title });
+  // Starting a thread needs write access; both readers already allowed reading the item's existing one.
+  const [existing] = await sql<{ short_id: string }[]>`SELECT t.short_id FROM chat.threads t
+    JOIN chat.conversations c ON c.id = t.conversation_id
+    WHERE c.short_id = ${opened.data.id} AND t.resource_type = ${input.ref.type} AND t.resource_id = ${input.ref.id}`;
+  return ok({ conversation: opened.data, thread: existing?.short_id ?? null, title: item.title });
 };
 const list = async (input: ChatContext & { query?: unknown }) => {
   const parsed = SystemChatQuerySchema.safeParse(input.query ?? {});
@@ -119,4 +147,4 @@ const list = async (input: ChatContext & { query?: unknown }) => {
   }
   return ok({ items: visible, cursors, skipped });
 };
-export const systemChats = { open, list };
+export const systemChats = { open, openFor, list };

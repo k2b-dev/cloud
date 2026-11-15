@@ -4,6 +4,7 @@ import type { ApiType } from "../api";
 import {
   ConversationSchema,
   type ForResourceSchema,
+  ResourceDiscussionSchema,
   SystemChatPageSchema,
   type SystemChatParamSchema,
   ThreadListSchema,
@@ -31,6 +32,9 @@ export const loadSystemChats = async (query: { cursors?: SystemChatPage["cursors
 };
 export const openSystemChat = async (param: z.infer<typeof SystemChatParamSchema>) =>
   response(await client()["system-chats"][":resourceType"][":resourceId"].open.$post({ param }), ConversationSchema);
+/** The discussion about a resource the host page shares: its container's chat, or its item's thread there. */
+export const openResourceDiscussion = async (ref: z.infer<typeof ForResourceSchema>["ref"]) =>
+  response(await client()["system-chats"]["for-resource"].$post({ json: { ref } }), ResourceDiscussionSchema);
 export const loadSystemThreads = async (id: string, query: ThreadQuery, signal: AbortSignal) =>
   response(
     await client().conversations[":conversation"].threads.$get({ param: { conversation: id }, query }, { init: { signal } }),
