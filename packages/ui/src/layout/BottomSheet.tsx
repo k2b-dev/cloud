@@ -4,20 +4,7 @@ import type { DialogTone } from "../feedback/dialog-tone";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 import PanelDialog from "./PanelDialog";
-import { attachSheetMotion, type SheetDetent, type SheetMotion } from "./sheet-motion";
-
-/** Initial focus goes to the first input of the top sheet, otherwise to the
- * dialog element itself. Native `showModal()` focuses the first focusable
- * descendant, which is the drag handle; iOS shows a ring for that programmatic
- * focus, so the sheet moves it to the ring-less dialog before the next paint. */
-const sheetInitialFocus = (dialog: HTMLDialogElement): HTMLElement => {
-  const input = dialog.lastElementChild?.querySelector<HTMLElement>(
-    "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])",
-  );
-  if (input) return input;
-  dialog.tabIndex = -1;
-  return dialog;
-};
+import { attachSheetMotion, type SheetDetent, type SheetMotion, sheetInitialFocus } from "./sheet-motion";
 
 export const bottomSheetOptions = {
   panelClassName: "k2b-dialog k2b-bottom-sheet-frame",
