@@ -15051,6 +15051,33 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* A head keeps one line in every state, so a longer state word never moves the card: the source gives way first. */
+.k2b-ui .k2b-chat-decision__head {
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-chat-decision__source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-chat-decision__status {
+  flex: none;
+  white-space: nowrap;
+}
+
+.k2b-ui .k2b-chat-decision__status[data-tone="running"] {
+  color: var(--k2b-ai-accent);
+}
+
+/* The answer of a closed state stands where the answers of the open question stood: at the end, in their size. */
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions {
+  justify-content: flex-end;
+}
+
 /* What changes, inside a question's details: plain signs on one text edge, new in the AI colour, dropped and kept grey. */
 .k2b-ui .k2b-chat-decision__details .k2b-change-list {
   gap: 0.125rem;
@@ -15063,7 +15090,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.5rem;
 }
 
-.k2b-ui .k2b-chat-decision__details .k2b-change-list__item > .k2b-change-list__icon {
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item[data-tone] > .k2b-change-list__icon {
   width: 1rem;
   height: 1.5rem;
   background: none;
@@ -15071,8 +15098,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.875rem;
 }
 
-.k2b-ui .k2b-chat-decision__details .k2b-change-list__item[data-tone="add"] > .k2b-change-list__icon {
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item[data-tone="add"][data-tone] > .k2b-change-list__icon {
   color: var(--k2b-ai-accent);
+}
+
+.k2b-ui .k2b-chat-decision__details .k2b-change-list__item:not([data-tone="add"]) > .k2b-change-list__text {
+  color: var(--k2b-text-secondary);
 }
 
 /* Cloud works on the given answer for an unknown time: a shimmer runs over the filled button, never a fill level. */

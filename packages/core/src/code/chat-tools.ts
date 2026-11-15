@@ -302,6 +302,12 @@ export function createCodeAuthoringChatTools() {
       async (input, context, chat) => {
         const draft = await draftFor(input, chat);
         const checked = await codeAuthoringServices.check({ codeId: input.codeId, files: draft.files, entry: draft.entry }, context);
+        const titles = checked.permissions.length
+          ? await operationTitles(
+              checked.permissions.map((permission) => ({ operation: permission.operation, target: null })),
+              context,
+            ).catch(() => null)
+          : null;
         const words = describeCodeCheckWords(
           {
             diagnostics: checked.result.ok ? [] : checked.result.diagnostics,
@@ -309,6 +315,7 @@ export function createCodeAuthoringChatTools() {
             permissions: checked.permissions,
           },
           context.locale,
+          (id) => titles?.operations[id],
         );
         if (!checked.result.ok) return { ...checked, result: checked.result, words };
         const { bundle: _bundle, ...result } = checked.result;

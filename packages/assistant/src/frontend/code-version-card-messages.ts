@@ -11,6 +11,8 @@ export const codeVersionCardMessages = i18n.define({
     en: {
       source: "Code",
       loading: "Loading what this version needs",
+      loadingWord: "Loading",
+      show: "Show",
       statusOn: "Switched on",
       statusSwitching: "Switching on",
       statusWaitingAdmin: "Waiting for admin",
@@ -121,6 +123,8 @@ export const codeVersionCardMessages = i18n.define({
     de: {
       source: "Code",
       loading: "Lädt, was diese Version braucht",
+      loadingWord: "Lädt",
+      show: "Anzeigen",
       statusOn: "Eingeschaltet",
       statusSwitching: "Schaltet ein",
       statusWaitingAdmin: "Wartet auf Admin",

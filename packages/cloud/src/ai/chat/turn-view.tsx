@@ -34,7 +34,7 @@ import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
 import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
-import { isCodeStepResult } from "./code-step-words";
+import { codeStepWords } from "./code-step-words";
 import { CodeStepResult } from "./code-steps";
 import { type AiTurnAction, type AiTurnLayout, type AiTurnPhase, type AiTurnResult, submittedCodeVersion } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
@@ -486,7 +486,7 @@ function AiTurnResultView(props: {
               }
             </Show>
           </Match>
-          <Match when={isCodeStepResult(current())}>
+          <Match when={["code_check", "code_test", "code_simulate"].includes(current().name) && codeStepWords(current())}>
             <CodeStepResult block={current()} />
           </Match>
           <Match when={submittedCodeVersion(current())}>
