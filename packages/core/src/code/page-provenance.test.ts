@@ -4,7 +4,7 @@ import * as server from "@k2b/cloud/server";
 import { Hono } from "hono";
 import { stubConnections } from "../../../../scripts/fixtures/platform";
 import { createCodePageRoutes } from "../api/code-pages";
-import { codePageLabel } from "./page-provenance";
+import { CODE_PAGE_LABEL_BUDGET_MS, codePageLabel } from "./page-provenance";
 import { codePageProvenanceRoutes } from "./page-provenance-contracts";
 import * as reports from "./page-reports";
 import { CodeRequestError, type CodeRequestOwner } from "./requests";
@@ -70,6 +70,15 @@ test("the pill names the owner to members only: a person by name, an app by name
   title.mockResolvedValue(null);
   expect(await codePageLabel(mailbox, member, "de")).toEqual({ kind: "anonymous" });
   expect(await codePageLabel({ ...lea, name: null }, member, "de")).toEqual({ kind: "anonymous" });
+});
+
+test("a registry that does not answer leaves the pill anonymous within its budget instead of holding up the page", async () => {
+  spies.push(spyOn(server, "codeOwnerKindTitle").mockImplementation(() => new Promise<string | null>(() => undefined)));
+  const started = performance.now();
+  expect(await codePageLabel({ kind: "app", appId: "mail" }, member, "de")).toEqual({ kind: "anonymous" });
+  expect(performance.now() - started).toBeLessThan(CODE_PAGE_LABEL_BUDGET_MS + 500);
+  const long = await codePageLabel({ ...lea, name: "L".repeat(300) }, member, "de");
+  expect(long).toEqual({ kind: "person", name: "L".repeat(200) });
 });
 
 test("the version value is opaque, stable across requests, bound to Code and version, and checked exactly", () => {

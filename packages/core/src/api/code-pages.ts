@@ -38,7 +38,7 @@ const badInput = () => ({ code: "BAD_INPUT", message: "Invalid page request." })
 /**
  * Browser routes of a Code page's label (`codePageProvenanceRoutes`): the card's facts and a member's report. Both
  * admit exactly like the page (`admitCodePage`) under their own rate-limit IDs with the page's limits, answer missing
- * and inaccessible Code alike, and compare the delivered version before anything else is read.
+ * and inaccessible Code alike, and compare the delivered version right after admission, before any fact is read.
  */
 export function createCodePageRoutes(deps = { version: codeRequestVersion }) {
   const router = new Hono<AuthContext>();

@@ -305,10 +305,8 @@ test("Code review notices localize each outcome and link the immutable version",
 });
 
 test("page reports reach admins with the page and the automation, and the reporter once it is handled, never an admin's name", async () => {
-  const get = spyOn(settings, "get").mockImplementation(async (key: string) => {
-    if (key !== "app.url") throw new Error(`Unexpected fixture setting: ${key}`);
-    return "https://cloud.example.test/";
-  });
+  // The email reads only `app.url`.
+  const get = spyOn(settings, "get").mockResolvedValue("https://cloud.example.test/");
   try {
     const reported = app.notifications.codePageReported;
     expect(reported.recipient).toBe("user");

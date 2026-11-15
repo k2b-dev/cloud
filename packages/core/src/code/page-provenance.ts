@@ -17,6 +17,8 @@ import type { CodePageLabel, CodePageOwner, CodePageProvenance } from "./page-pr
 import type { CodeRequestOwner } from "./requests";
 import { findCode } from "./store";
 
+/** Like the Administration sidebar's count, the pill is a hint that may delay its page by at most this long. */
+export const CODE_PAGE_LABEL_BUDGET_MS = 250;
 /** The contract bounds every name to 200 characters; a longer display name is cut, never refused. */
 const clip = (value: string) => value.slice(0, 200);
 
@@ -31,7 +33,14 @@ export async function codePageLabel(owner: CodeRequestOwner, viewer: CodePageVie
     const name = codePageOwnerPersonName(viewer, owner.name);
     return name ? { kind: "person", name: clip(name) } : { kind: "anonymous" };
   }
-  const title = await codeOwnerKindTitle(owner, locale);
+  // The registry is an in-process view and answers at once; a label never holds up its page beyond this hint budget.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const title = await Promise.race([
+    codeOwnerKindTitle(owner, locale),
+    new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), CODE_PAGE_LABEL_BUDGET_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
   if (!title) return { kind: "anonymous" };
   return owner.kind === "app" ? { kind: "app", name: clip(title) } : { kind: "resource", type: clip(title) };
 }

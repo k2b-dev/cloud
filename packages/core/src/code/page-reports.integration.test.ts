@@ -246,8 +246,8 @@ databaseSuite()("Code page label card and page reports", () => {
     expect((await post(jana, "report", { ...report, key: crypto.randomUUID(), text: "Noch einmal." })).body.data?.reportedAt).toBe(
       reportedAt,
     );
-    const [{ count }] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.page_reports WHERE code_id=${codeId}`;
-    expect(count).toBe(1);
+    const [stored] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM code.page_reports WHERE code_id=${codeId}`;
+    expect(stored?.count).toBe(1);
     expect(await post(undefined, "report", { ...report, path: "/open", key: crypto.randomUUID() })).toEqual({
       status: 403,
       body: { code: "code_report_members_only" },
@@ -271,8 +271,8 @@ databaseSuite()("Code page label card and page reports", () => {
         by: "Jana Probe",
       },
     ]);
-    const [{ pending }] = await sql<{ pending: number }[]>`SELECT count(*)::int AS pending FROM code.page_report_outbox`;
-    expect(pending).toBe(0);
+    const [outboxRows] = await sql<{ pending: number }[]>`SELECT count(*)::int AS pending FROM code.page_report_outbox`;
+    expect(outboxRows?.pending).toBe(0);
   });
 
   test("admins read and resolve reports; the person is told once, and may report again", async () => {
@@ -325,13 +325,14 @@ databaseSuite()("Code page label card and page reports", () => {
   });
 
   test("resolved reports leave with the automation's history; open ones stay; the Code takes them all", async () => {
-    const [{ resolved_at }] = await sql<{ resolved_at: Date }[]>`SELECT resolved_at FROM code.page_reports WHERE state='resolved'`;
-    expect(await expireCodePageReports({ now: new Date(resolved_at.getTime() + 29 * 86_400_000), limit: 10 })).toBe(0);
-    expect(await expireCodePageReports({ now: new Date(resolved_at.getTime() + 31 * 86_400_000), limit: 10 })).toBe(1);
+    const [done] = await sql<{ resolved_at: Date }[]>`SELECT resolved_at FROM code.page_reports WHERE state='resolved'`;
+    const resolvedAt = done!.resolved_at;
+    expect(await expireCodePageReports({ now: new Date(resolvedAt.getTime() + 29 * 86_400_000), limit: 10 })).toBe(0);
+    expect(await expireCodePageReports({ now: new Date(resolvedAt.getTime() + 31 * 86_400_000), limit: 10 })).toBe(1);
     const states = await sql<{ state: string }[]>`SELECT state FROM code.page_reports WHERE code_id=${codeId}`;
     expect(states.map((row) => row.state)).toEqual(["open"]);
     await sql`DELETE FROM code.codes WHERE id=${codeId}`;
-    const [{ left }] = await sql<{ left: number }[]>`SELECT count(*)::int AS left FROM code.page_reports`;
-    expect(left).toBe(0);
+    const [remaining] = await sql<{ left: number }[]>`SELECT count(*)::int AS left FROM code.page_reports`;
+    expect(remaining?.left).toBe(0);
   });
 });
