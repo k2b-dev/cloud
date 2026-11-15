@@ -167,7 +167,8 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.cloud-code .cloud-code__list-island {
+/* The list starts at the island's edge: no band above the first row (Bild 22). */
+.k2b-ui .cloud-code .k2b-section.cloud-code__list-island[data-frame="line"] {
   position: relative;
   gap: 0;
   padding-top: 0;
