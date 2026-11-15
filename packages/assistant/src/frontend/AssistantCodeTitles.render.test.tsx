@@ -15,9 +15,10 @@ afterAll(() => {
   setSystemTime();
   rmSync(root, { recursive: true, force: true });
 });
-const [{ default: CodeView, codeScheduleLine }, { default: CodeBlock }, { LocaleProvider }] = await Promise.all([
+const [{ default: CodeView }, { default: CodeBlock }, { automationTiming }, { LocaleProvider }] = await Promise.all([
   import("./AssistantCodeView"),
   import("./AssistantCodeBlock"),
+  import("./code-overview"),
   import("@k2b/ui"),
 ]);
 const automation = (title?: string): CodeAutomation => ({
@@ -43,7 +44,7 @@ const render = (surface: "apps" | "panel", title?: string) =>
       get children() {
         const page = { items: [code(title)], nextCursor: null };
         return surface === "apps"
-          ? createComponent(CodeView, { userId: "fixture", timeZone: "UTC", initial: page, initialToday: null, onCreateInChat: () => {} })
+          ? createComponent(CodeView, { userId: "fixture", timeZone: "UTC", initial: page, onCreateInChat: () => {} })
           : createComponent(CodeBlock, {
               timeZone: "UTC",
               chatOpen: false,
@@ -54,21 +55,27 @@ const render = (surface: "apps" | "panel", title?: string) =>
       },
     }),
   );
-for (const surface of ["apps", "panel"] as const)
-  test(`${surface} renders reviewed automation titles with identifier fallback`, () => {
-    const titled = render(surface, "Lieferungen eintragen");
-    expect(titled).toContain("Lieferungen eintragen");
-    expect(titled).not.toContain(">lieferungenEintragen<");
-    // The list row stays "Automation · schedule" without a declared title (mockup); the panel names the export.
-    if (surface === "panel") expect(render(surface)).toContain("lieferungenEintragen");
-    else expect(render(surface)).not.toContain("lieferungenEintragen");
-  });
+test("the panel names a reviewed automation title, and without one when it runs, never the export name", () => {
+  const titled = render("panel", "Lieferungen eintragen");
+  expect(titled).toContain("Lieferungen eintragen");
+  expect(titled).not.toContain("lieferungenEintragen");
+  const untitled = render("panel");
+  expect(untitled).toContain("Von Hand gestartet");
+  expect(untitled).not.toContain("lieferungenEintragen");
+});
 
-test("the apps list names a one-time instant in its declared zone in German and English", () => {
-  const summary = code();
-  summary.automations = [{ ...automation(), kind: "schedule", at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }];
+test("an apps card shows the Code's name and when it runs, never the export name", () => {
+  for (const title of ["Lieferungen eintragen", undefined]) {
+    const html = render("apps", title);
+    expect(html).toContain("Logistik");
+    expect(html).toContain("Von Hand gestartet");
+    expect(html).not.toContain("lieferungenEintragen");
+  }
+});
+
+test("an apps card names a one-time instant in its declared zone in German and English", () => {
   for (const locale of ["de", "en"]) {
-    const line = codeScheduleLine(summary, locale, "America/New_York");
+    const line = automationTiming({ kind: "schedule", cron: null, at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin" }, locale);
     const expected = new Intl.DateTimeFormat(locale, { timeZone: "Europe/Berlin", dateStyle: "medium", timeStyle: "short" }).format(
       new Date("2026-12-01T09:15:30+01:00"),
     );

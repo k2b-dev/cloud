@@ -2,8 +2,10 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CODE_PAGE_FIXTURE_STATES } from "@k2b/cloud/ssr/code-page/code-page.fixture";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
+import { MAIL_CODE_CATCH_UP_STATES } from "./MailCodeTools.fixture";
 
 // The shared Code page inside Mail: layout at real widths, the switch-on flow with Core's answers, and recovery.
 const buildHarness = async (): Promise<string> => {
@@ -53,6 +55,17 @@ const iconSource = await Bun.file(iconCss).text();
 const iconFont = iconSource.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
 if (!iconFont) throw new Error("Missing Tabler WOFF2 file");
 const icons = { css: iconSource.replace(iconFont, "/tabler.woff2"), font: resolve(dirname(iconCss), iconFont) };
+// And the product's typeface, IBM Plex, so widths and wraps match what people see.
+const plexCss = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+const plexSource = await Bun.file(plexCss).text();
+const plexFiles = new Map(
+  [...new Set(plexSource.match(/\.\/fonts\/[^)"']+\.woff2/g) ?? [])].map((file) => [
+    `/plex/${file.split("/").at(-1)}`,
+    resolve(dirname(plexCss), file),
+  ]),
+);
+let plex = plexSource;
+for (const [path, file] of plexFiles) plex = plex.replaceAll(`./fonts/${file.split("/").at(-1)}`, path);
 /** What Core answers while the person switches on: the activation's final state. */
 let activationEnd: "active" | "owner_refused" | "unavailable" | "lost-active" | "silent" = "active";
 const activations: unknown[] = [];
@@ -63,8 +76,11 @@ const server = Bun.serve({
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
-    if (url.pathname === "/styles.css") return new Response(css + icons.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+    if (url.pathname === "/styles.css")
+      return new Response(css + icons.css + plex, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     if (url.pathname === "/tabler.woff2") return new Response(Bun.file(icons.font), { headers: { "Content-Type": "font/woff2" } });
+    const plexFile = plexFiles.get(url.pathname);
+    if (plexFile) return new Response(Bun.file(plexFile), { headers: { "Content-Type": "font/woff2" } });
     if (url.pathname === "/api/code/activate") {
       const body = (await request.json()) as { activationId: string; versionId: string };
       activations.push(body);
@@ -124,14 +140,19 @@ const contextFor = (width: number): BrowserContextOptions =>
 const shots = process.env.CODE_PAGE_SHOTS;
 if (shots) mkdirSync(shots, { recursive: true });
 
-const load = async (state: string, width: number, options: { phone?: boolean; dark?: boolean } = {}): Promise<Page> => {
+const load = async (
+  state: string,
+  width: number,
+  options: { phone?: boolean; dark?: boolean; catchUp?: string; locale?: "de" | "en" } = {},
+): Promise<Page> => {
   const page = await (await browser.newContext(contextFor(width))).newPage();
   await page.goto(server.url.href);
   if (options.dark) await page.evaluate(() => document.documentElement.classList.replace("light", "dark"));
   await page.evaluate((params) => window.mountMailboxCode(params as Parameters<typeof window.mountMailboxCode>[0]), {
     state,
-    locale: "de",
+    locale: options.locale ?? "de",
     phone: options.phone,
+    catchUp: options.catchUp,
   });
   await settled(page);
   return page;
@@ -143,54 +164,63 @@ const overflow = (page: Page) => page.evaluate(() => document.documentElement.sc
 
 describe("Mailbox Code page in a browser", () => {
   for (const [name, width] of Object.entries(widths))
-    test(`${name} ${width}px: every state fits without horizontal scrolling`, async () => {
-      for (const state of [
-        "overview",
-        "waiting",
-        "refused",
-        "refused-nolink",
-        "refused-reader",
-        "refused-policy",
-        "refused-approval",
-        "internet",
-        "runs",
-        "run-failed",
-        "versions",
-        "empty",
-        "error",
-      ]) {
-        const page = await load(state, width);
-        try {
-          expect({ state, overflow: await overflow(page) }).toEqual({ state, overflow: 0 });
-          expect(await page.locator(".cloud-code").count()).toBe(1);
-          await shoot(page, `${state}-${width}`);
-        } finally {
-          await page.context().close();
+    test(
+      `${name} ${width}px: every state fits without horizontal scrolling`,
+      async () => {
+        for (const state of CODE_PAGE_FIXTURE_STATES) {
+          const page = await load(state, width);
+          try {
+            expect({ state, overflow: await overflow(page) }).toEqual({ state, overflow: 0 });
+            expect(await page.locator(".cloud-code").count()).toBe(1);
+            await shoot(page, `${state}-${width}`);
+          } finally {
+            await page.context().close();
+          }
         }
-      }
-    }, 60_000);
+      },
+      CODE_PAGE_FIXTURE_STATES.length * 4_000,
+    );
 
-  test("the page is titled Code and its row titles stay smaller than the section headings", async () => {
+  test("the page heads with its state and its row titles stay no larger than the island titles", async () => {
     for (const width of [1440, 390])
-      for (const state of ["overview", "runs", "versions", "empty"]) {
+      for (const state of ["overview", "runs", "versions"]) {
         const page = await load(state, width);
         try {
           const measured = await page.evaluate(() => {
             const size = (element: Element) => Number.parseFloat(getComputedStyle(element).fontSize);
-            const heading = document.querySelector(".cloud-code__h2");
+            const titles = Array.from(document.querySelectorAll(".cloud-code__island .k2b-section__title"));
+            const largest = Math.max(0, ...titles.map(size));
             return {
-              title: document.querySelector(".cloud-code h1 .cloud-featcode[aria-hidden=true]")?.getAttribute("data-variant"),
-              rowsAboveHeading: heading
-                ? Array.from(document.querySelectorAll(".cloud-code__title")).filter((row) => size(row) > size(heading)).length
-                : 0,
+              state: document.querySelector(".cloud-code h1 .cloud-code__state")?.textContent?.trim() ?? null,
+              rowsAboveIsland: Array.from(document.querySelectorAll(".cloud-code__row-title")).filter((row) => size(row) > largest).length,
             };
           });
-          expect({ state, width, ...measured }).toEqual({ state, width, title: "wordmark", rowsAboveHeading: 0 });
+          expect({ state, width, heading: Boolean(measured.state), rowsAboveIsland: measured.rowsAboveIsland }).toEqual({
+            state,
+            width,
+            heading: true,
+            rowsAboveIsland: 0,
+          });
         } finally {
           await page.context().close();
         }
       }
   }, 60_000);
+
+  test("the code tab shows the source in the monospace face, so indentation lines up", async () => {
+    const page = await load("code", 1440);
+    try {
+      const fonts = await page.evaluate(() => {
+        const line = document.querySelector(".k2b-code-diff__line code");
+        const token = document.querySelector(".k2b-code-diff__line code span");
+        return [line, token].map((element) => (element ? getComputedStyle(element).fontFamily : null));
+      });
+      // Cloud sets a sans face on every element; the code surface must win for its lines and tokens.
+      for (const font of fonts) expect(font ?? "").toContain("Mono");
+    } finally {
+      await page.context().close();
+    }
+  });
 
   test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
     for (const [state, dot] of [
@@ -239,7 +269,8 @@ describe("Mailbox Code page in a browser", () => {
       await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
       await page.waitForURL(/activated=5/);
       expect(activations).toHaveLength(1);
-      expect(unexpectedRoutes).toEqual([]);
+      // The page's own run updates follow Core's live socket; that is no target preflight.
+      expect(unexpectedRoutes.filter((path) => path !== "/api/ai/live")).toEqual([]);
     } finally {
       await page.context().close();
     }
@@ -310,13 +341,13 @@ describe("Mailbox Code page in a browser", () => {
     }
   }, 30_000);
 
-  test("a phone session explains why it cannot switch on", async () => {
+  test("a phone session explains why it cannot switch on, at the button and without a dialog", async () => {
     const page = await load("waiting", 390, { phone: true });
     try {
-      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
-      const dialog = page.getByRole("dialog");
-      expect(await dialog.getByText("Am Telefon lässt sich Code nicht einschalten.", { exact: false }).isVisible()).toBe(true);
-      expect(await dialog.getByRole("button", { name: "Version 5 einschalten" }).isDisabled()).toBe(true);
+      const button = page.getByRole("button", { name: "Version 5 einschalten" }).first();
+      expect(await button.isDisabled()).toBe(true);
+      expect(await page.getByRole("dialog").count()).toBe(0);
+      expect(await page.locator(".cloud-code").getByText("Telefon", { exact: false }).first().isVisible()).toBe(true);
       expect(await overflow(page)).toBe(0);
       await shoot(page, "telefon-gesperrt-390");
     } finally {
@@ -327,9 +358,123 @@ describe("Mailbox Code page in a browser", () => {
   test("dark theme keeps the page readable", async () => {
     const page = await load("refused", 1440, { dark: true });
     try {
-      const color = await page.locator(".cloud-code__lead").evaluate((element) => getComputedStyle(element).color);
+      const color = await page
+        .locator(".cloud-code__meta")
+        .first()
+        .evaluate((element) => getComputedStyle(element).color);
       expect(color).not.toBe("rgb(0, 0, 0)");
       await shoot(page, "refused-dark-1440");
+    } finally {
+      await page.context().close();
+    }
+  });
+});
+
+describe("Process existing mail in a browser", () => {
+  test("the overview ends with one quiet line that leads to the flow, and a paused Code offers none", async () => {
+    for (const [state, shown] of [
+      ["overview", true],
+      ["paused", false],
+      ["runs", false],
+    ] as const) {
+      const page = await load(state, 1440);
+      try {
+        const link = page.getByRole("link", { name: "Vorhandene E-Mails nachholen" });
+        expect({ state, count: await link.count() }).toEqual({ state, count: shown ? 1 : 0 });
+        if (shown) {
+          expect(await link.getAttribute("href")).toBe("/app/mail/Mb4kd2/code/catch-up");
+          // The line ends the Code page's overview, where "Incoming mail" stood, without a divider.
+          expect(await page.locator(".cloud-code .mail-code-backfill").count()).toBe(1);
+          expect(await page.locator("main hr").count()).toBe(0);
+        }
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 30_000);
+
+  for (const width of [1440, 390])
+    test(`${width}px: every step fits, keeps the type steps, and puts leading signs on one axis`, async () => {
+      for (const step of MAIL_CODE_CATCH_UP_STATES) {
+        const page = await load("overview", width, { catchUp: step });
+        try {
+          expect({ step, overflow: await overflow(page) }).toEqual({ step, overflow: 0 });
+          const measured = await page.evaluate(() => {
+            const flow = document.querySelector(".mail-code-catchup");
+            if (!flow) return null;
+            // Every element of the flow's own text that carries words itself, plus the island titles and meta.
+            const own = Array.from(
+              flow.querySelectorAll(
+                '[class*="mail-code-catchup__"], [class*="mail-code-catchup__"] > span, .k2b-section__title, .k2b-section__meta',
+              ),
+            ).filter((element) =>
+              Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()),
+            );
+            const sizes = [...new Set(own.map((element) => Number.parseFloat(getComputedStyle(element).fontSize)))].sort((a, b) => a - b);
+            const axes = Array.from(flow.querySelectorAll(".mail-code-catchup__rows")).map(
+              (list) =>
+                new Set(Array.from(list.querySelectorAll(":scope > li > i")).map((icon) => Math.round(icon.getBoundingClientRect().left)))
+                  .size,
+            );
+            return { sizes, axes, hr: flow.querySelectorAll("hr, details").length };
+          });
+          expect(measured).not.toBeNull();
+          expect({ step, extra: measured!.sizes.filter((size) => ![12, 13, 14, 18].includes(size)) }).toEqual({ step, extra: [] });
+          expect({ step, axes: measured!.axes.filter((count) => count !== 1) }).toEqual({ step, axes: [] });
+          expect(measured!.hr).toBe(0);
+          await shoot(page, `nachholen-${step}-${width}`);
+        } finally {
+          await page.context().close();
+        }
+      }
+    }, 120_000);
+
+  test("“Load preview” sits on the row of the selection controls", async () => {
+    const page = await load("overview", 1440, { catchUp: "auswahl" });
+    try {
+      const boxes = await page.evaluate(() => {
+        const row = document.querySelector(".mail-code-catchup__pick");
+        const control = row?.querySelector(".k2b-field .k2b-select-trigger, .k2b-field button, .k2b-field input");
+        const button = row?.querySelector(".mail-code-catchup__load button");
+        return [control, button].map((element) => {
+          const box = element?.getBoundingClientRect();
+          return box ? { top: Math.round(box.top), height: Math.round(box.height) } : null;
+        });
+      });
+      const [control, button] = boxes;
+      // Same middle line, so the button reads as part of the controls' row.
+      expect({
+        control,
+        button,
+        gap: Math.abs(control!.top + control!.height / 2 - (button!.top + button!.height / 2)) <= 1,
+      }).toMatchObject({
+        gap: true,
+      });
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("the progress number keeps its place while the share grows", async () => {
+    const page = await load("overview", 1440, { catchUp: "laeuft" });
+    try {
+      const box = () => page.locator(".mail-code-catchup__progress .k2b-progress").boundingBox();
+      const before = await box();
+      await page.locator(".mail-code-catchup__percent").evaluate((element) => {
+        element.textContent = "100 %";
+      });
+      expect(await box()).toEqual(before);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("dark theme keeps the flow readable", async () => {
+    const page = await load("overview", 1440, { catchUp: "teilfehler", dark: true });
+    try {
+      const color = await page.locator(".mail-code-catchup__lead").evaluate((element) => getComputedStyle(element).color);
+      expect(color).not.toBe("rgb(0, 0, 0)");
+      await shoot(page, "nachholen-teilfehler-dark-1440");
     } finally {
       await page.context().close();
     }

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "@k2b/cloud";
+import { aiLive } from "@k2b/cloud/ai/live";
 import { CodeAutomationTitleSchema, type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
 import { buildAccessPrincipalCondition, createAccess, type Principal } from "@k2b/cloud/server";
 import type { SQL, TransactionSQL } from "bun";
@@ -300,7 +301,7 @@ export const addCodeShare = async (
   codePerson(context, true);
   if (!["user", "group"].includes(principal.type) || !["editor", "reader"].includes(permission))
     throw new CodeDataError("BAD_INPUT", "Invalid Code share.");
-  return sql.begin(async (tx) => {
+  const result = await sql.begin(async (tx) => {
     await lockCodeForEdit(codeId, context, tx);
     const userId = principal.type === "user" ? principal.userId : null;
     const groupId = principal.type === "group" ? principal.groupId : null;
@@ -308,6 +309,7 @@ export const addCodeShare = async (
       WHERE j.code_id=${codeId} AND (a.user_id=${userId}::uuid OR a.group_id=${groupId}::uuid)`;
     if (existing) {
       await tx`UPDATE auth.access SET permission=${permission === "editor" ? "write" : "read"}::auth.permission_level WHERE id=${existing.id}::uuid`;
+      await aiLive.publish(tx, { key: codeId, access: true });
       return existing.id;
     }
     const access = await createAccess({ principal, permission: permission === "editor" ? "write" : "read" }, tx);
@@ -315,6 +317,8 @@ export const addCodeShare = async (
     await tx`INSERT INTO code.shares(code_id,access_id) VALUES(${codeId},${access.data.id}::uuid)`;
     return access.data.id;
   });
+  aiLive.wake();
+  return result;
 };
 export const removeCodeShare = async (codeId: string, accessId: string, context: CodeContext): Promise<void> => {
   codePerson(context, true);
@@ -322,6 +326,7 @@ export const removeCodeShare = async (codeId: string, accessId: string, context:
     await lockCodeForEdit(codeId, context, tx);
     await tx`DELETE FROM code.shares WHERE code_id = ${codeId} AND access_id = ${accessId}::uuid`;
   });
+  aiLive.wake();
 };
 
 type VersionRow = {

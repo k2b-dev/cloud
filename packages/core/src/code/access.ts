@@ -6,7 +6,14 @@ import {
   cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "@k2b/cloud/contracts";
-import { codeAccountPresenter, getEffectivePermission, type RequestAuthority, userFromActor } from "@k2b/cloud/server";
+import type { LiveViewer } from "@k2b/cloud/events";
+import {
+  codeAccountPresenter,
+  getEffectivePermission,
+  getEffectivePermissions,
+  type RequestAuthority,
+  userFromActor,
+} from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
@@ -177,6 +184,69 @@ export const requireCodePermission = async (
   if (!permission || (editor && permission !== "editor")) throw new CodeDataError("NOT_FOUND", "Code not found.");
   if (editor) codePerson(context, true);
   return permission;
+};
+
+/**
+ * Admission and reauthorization use the same owner reader as codePermission("read"), never event delivery.
+ * Owner administration has no complete Core access feed; the channel opts into the live engine's
+ * ten-second reauthorize sweep (LIVE_LIMITS.sweepMs) to pick up its revocation.
+ */
+export const codeLiveReaders = async (
+  code: Code,
+  viewers: readonly LiveViewer[],
+  readOwner: typeof readCodeOwner = readCodeOwner,
+): Promise<ReadonlySet<string>> => {
+  const allowed = new Set<string>();
+  const shared: { viewer: LiveViewer; context: CodeContext }[] = [];
+  for (const viewer of viewers) {
+    try {
+      const context: CodeContext = {
+        authority: {
+          actor: viewer.actor,
+          accessSubject: viewer.accessSubject,
+          scopes: [...viewer.scopes],
+          // LiveViewer's ID distinguishes sessions from scope-limited credentials, even with empty scopes.
+          credentialKind:
+            viewer.actor.kind === "service_account"
+              ? viewer.actor.oauthClientId
+                ? "oauth"
+                : "api_key"
+              : viewer.id.includes(":scopes=")
+                ? "oauth"
+                : "session",
+        },
+      };
+      const user = codePerson(context);
+      if ((code.owner.kind === "person" && code.owner.userId === user.id) || user.roles.includes("admin")) allowed.add(viewer.id);
+      else shared.push({ viewer, context });
+    } catch (error) {
+      if (!(error instanceof CodeDataError)) throw error;
+    }
+  }
+  const permissions = await getEffectivePermissions({
+    accessIds: sql`SELECT access_id FROM code.shares WHERE code_id=${code.id}`,
+    subjects: shared.map(({ viewer }) => viewer.accessSubject),
+  });
+  // Bound owner-provider fan-out per batch to the live engine's eight-call authorization budget.
+  const ownerReadConcurrency = 8;
+  for (let start = 0; start < shared.length; start += ownerReadConcurrency) {
+    await Promise.all(
+      shared.slice(start, start + ownerReadConcurrency).map(async ({ viewer, context }, offset) => {
+        if (["read", "write", "admin"].includes(permissions[start + offset] ?? "none")) {
+          allowed.add(viewer.id);
+          return;
+        }
+        if (code.owner.kind === "person") return;
+        try {
+          if ((await readOwner(code.owner, context))?.admin) allowed.add(viewer.id);
+        } catch (error) {
+          // Existing reader grants were retained above; an unavailable owner cannot grant new access.
+          if (!(error instanceof CodeOwnerUnavailableError)) throw error;
+        }
+      }),
+    );
+  }
+  return allowed;
 };
 /** Outside a locally authorized target rights list, resource Code is named only by its type. */
 export const codeAccountDisplayName = async (code: Code, context: CodeContext): Promise<string | null> => {
