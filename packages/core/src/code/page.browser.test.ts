@@ -1264,6 +1264,47 @@ describe("the feat/code label of a Code page", () => {
     }
   }, 60_000);
 
+  test("a long owner name wraps inside its row and never overlaps the next fact (Rundgang #41)", async () => {
+    const longOwner = {
+      ...facts.reader,
+      owner: { kind: "resource", type: "Postfach", name: "info@moebel-beispiel-lieferanten-und-avise.de" },
+    } satisfies CodePageProvenance;
+    for (const width of [1440, 390]) {
+      const { page, errors, close } = await open(width, { frame: "workspace", path: "/week", facts: longOwner, locale: "de" });
+      try {
+        await settled(page);
+        if (width < 768) {
+          await pill(page).tap();
+          await card(page).waitFor({ state: "visible" });
+          await page.waitForFunction(() => !document.querySelector(".code-page-provenance__card [aria-busy='true']"));
+          await settled(page);
+        } else await openCard(page);
+        const rows = await page.evaluate(() =>
+          Array.from(document.querySelectorAll(".code-page-provenance__facts dd")).map((dd) => {
+            const own = dd.getBoundingClientRect();
+            const content = Array.from(dd.querySelectorAll("*")).map((child) => child.getBoundingClientRect());
+            return {
+              top: own.top,
+              bottom: own.bottom,
+              contentTop: Math.min(own.top, ...content.map((box) => box.top)),
+              contentBottom: Math.max(own.bottom, ...content.map((box) => box.bottom)),
+            };
+          }),
+        );
+        // The owner's name takes two lines here, and its row grows with it.
+        expect(rows[0]!.bottom - rows[0]!.top).toBeGreaterThan(30);
+        for (const [index, row] of rows.entries()) {
+          expect(row.contentTop).toBeGreaterThanOrEqual(row.top - 0.5);
+          expect(row.contentBottom).toBeLessThanOrEqual(row.bottom + 0.5);
+          if (index > 0) expect(row.top).toBeGreaterThanOrEqual(rows[index - 1]!.bottom - 0.5);
+        }
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }
+  }, 60_000);
+
   test("reporting: one optional reason, a required sentence, one size in every state, one key, and the card says Reported", async () => {
     for (const width of [1440, 390]) {
       const { page, errors, close } = await open(width, { frame: "workspace", path: "/week", facts: facts.member, locale: "de" });
@@ -1287,6 +1328,14 @@ describe("the feat/code label of a Code page", () => {
           expect(empty!.width).toBe(480);
           await shoot(page, "89-seite-melden-leer-light-1440");
         }
+        // Buttons are 36px high in this dialog, as decided for Gustav and Code (Rundgang #44).
+        expect(
+          await page.evaluate(() =>
+            Array.from(document.querySelectorAll(".code-page-report__actions button")).map((button) =>
+              Math.round(button.getBoundingClientRect().height),
+            ),
+          ),
+        ).toEqual([36, 36]);
         // A reason is optional, one at most, and a second press takes it back.
         const reason = (label: string) => page.getByRole("button", { name: label, exact: true });
         await reason("Verdächtige Aktivität").click();
