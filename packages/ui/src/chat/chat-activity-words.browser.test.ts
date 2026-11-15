@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser } from "../../test/browser";
 
 // A running activity changes its word with time (Feinschliff v3, section 1). Whether only one word ever stands in its
 // place and whether the time beside it keeps its box are questions of a real layout engine. The page clock is frozen,
@@ -62,7 +62,9 @@ afterAll(async () => {
 
 const open = async (width: number, reducedMotion: "reduce" | "no-preference" = "no-preference"): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width, height: 400 }, reducedMotion });
+  // Installed and paused: time moves only through runFor, so every change happens at an exact phase time.
   await page.clock.install({ time: new Date("2026-11-15T10:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-11-15T10:00:01Z"));
   await page.route(`${assets}**`, (route) =>
     route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
   );
@@ -75,8 +77,10 @@ const open = async (width: number, reducedMotion: "reduce" | "no-preference" = "
     );
   });
   await page.addScriptTag({ content: script });
-  await page.locator(".k2b-chat-activity__word").waitFor();
-  await settled(page);
+  // Attached, not visible: with reduced motion the stylesheet hides the changing word.
+  await page.locator(".k2b-chat-activity__word").waitFor({ state: "attached" });
+  // settled: frames wait for the paused clock, so two frames' worth of clock time lay the page out instead.
+  await page.clock.runFor(32);
   return page;
 };
 
