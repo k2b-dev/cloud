@@ -15,6 +15,7 @@ import { CODE_NEWSLETTER_DEMO_SOURCE } from "./page.newsletter-demo";
 import { codePageFixture } from "./page.test-fixture";
 import { buildCodePage } from "./page.test-source";
 import type { CodePageLabel, CodePageProvenance } from "./page-provenance-contracts";
+import { provenanceMessages } from "./provenance-messages";
 
 // The real renderer with the real stylesheet: the server's page, the island that replaces it, and every request it
 // sends. A fake event source stands in for platform events.
@@ -312,6 +313,17 @@ const labelPages: [string, CodePageTree][] = [
   ["/callback", callback],
 ];
 /** The card's facts per viewer, as the provenance route answers them (fictitious names). */
+/** Every failure of the report dialog; each has a short sentence for phones. */
+const FAILURES = [
+  "failedLost",
+  "failedUnknown",
+  "failedChanged",
+  "failedRateLimit",
+  "failedMembersOnly",
+  "failedSignedOut",
+  "failedNotFound",
+  "failedInput",
+] as const;
 const facts = {
   visitor: { viewer: "visitor", owner: null, automation: null, gives: "nothing", report: null },
   member: {
@@ -1387,7 +1399,28 @@ describe("the feat/code label of a Code page", () => {
         expect(await frame()).toEqual(empty);
         // A failure keeps the text, says why in red, and the main button tries again.
         await page.waitForFunction(() => document.querySelector(".code-page-report__status")?.getAttribute("data-tone") === "danger");
-        expect(await status.innerText()).toBe("Die Meldung ist nicht angekommen. Dein Text bleibt stehen.");
+        expect(await status.innerText()).toBe(
+          width >= 768 ? "Die Meldung ist nicht angekommen. Dein Text bleibt stehen." : "Nicht angekommen. Dein Text bleibt stehen.",
+        );
+        if (width < 768) {
+          // Rundgang #62: every failure fits the one 20px line on a phone, in German and English, without cutting.
+          const sentences = (["de", "en"] as const).flatMap((locale) => {
+            const words = provenanceMessages.resolve([locale]).t;
+            return FAILURES.map((key) => words[`${key}Short`]);
+          });
+          const fits = await page.evaluate((all) => {
+            const line = document.querySelector<HTMLElement>(".code-page-report__status")!;
+            const span = line.querySelector<HTMLElement>(".code-page-report__short")!;
+            const before = span.textContent;
+            const result = all.map((sentence) => {
+              span.textContent = sentence;
+              return { sentence, height: Math.round(line.getBoundingClientRect().height), cut: span.scrollWidth > span.clientWidth };
+            });
+            span.textContent = before;
+            return result;
+          }, sentences);
+          for (const fit of fits) expect(fit, fit.sentence).toEqual({ sentence: fit.sentence, height: 20, cut: false });
+        }
         expect(await send.innerText()).toBe("Erneut versuchen");
         expect(await page.locator(".code-page-report textarea").inputValue()).toContain("Zugangsdaten");
         expect(await frame()).toEqual(empty);

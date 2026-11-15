@@ -1,30 +1,39 @@
 import { BottomSheet, Button, bottomSheetAdaptiveOptions, dialogCore, FilterToggle, TextInput } from "@k2b/ui";
 import { createSignal, createUniqueId, For, Match, Show, Switch } from "solid-js";
 import { CODE_PAGE_REPORT_REASONS, CODE_PAGE_REPORT_TEXT_MAX, type CodePageReportReason } from "./page-provenance-contracts";
-import { type ProvenanceMessages, provenanceMessages } from "./provenance-messages";
+import { provenanceMessages } from "./provenance-messages";
 import { type CodePageRef, readCodePageProvenance, sendCodePageReport } from "./provenance-request";
 
-type Phase = { kind: "edit" } | { kind: "sending" } | { kind: "failed"; message: string } | { kind: "done" };
+type Failure =
+  | "failedLost"
+  | "failedUnknown"
+  | "failedChanged"
+  | "failedRateLimit"
+  | "failedMembersOnly"
+  | "failedSignedOut"
+  | "failedNotFound"
+  | "failedInput";
+type Phase = { kind: "edit" } | { kind: "sending" } | { kind: "failed"; failure: Failure } | { kind: "done" };
 
 /** A refusal in one sentence that says what to do; the person's text always stays. */
-const failure = (t: ProvenanceMessages, code: string | undefined): string => {
+const failure = (code: string | undefined): Failure => {
   switch (code) {
     case "code_page_changed":
-      return t.failedChanged;
+      return "failedChanged";
     case "code_report_rate_limit":
     case "code_request_rate_limit":
-      return t.failedRateLimit;
+      return "failedRateLimit";
     case "code_report_members_only":
     case "code_members_only":
-      return t.failedMembersOnly;
+      return "failedMembersOnly";
     case "code_sign_in_required":
-      return t.failedSignedOut;
+      return "failedSignedOut";
     case "code_route_not_found":
-      return t.failedNotFound;
+      return "failedNotFound";
     case "BAD_INPUT":
-      return t.failedInput;
+      return "failedInput";
     default:
-      return t.failedLost;
+      return "failedLost";
   }
 };
 
@@ -52,7 +61,7 @@ function ReportDialog(props: {
   const sending = () => phase().kind === "sending";
   const failedWith = () => {
     const current = phase();
-    return current.kind === "failed" ? current.message : undefined;
+    return current.kind === "failed" ? current.failure : undefined;
   };
   const ready = () => text().trim().length > 0 && !sending();
   let done: HTMLButtonElement | undefined;
@@ -73,12 +82,12 @@ function ReportDialog(props: {
     setPhase({ kind: "sending" });
     const answer = await sendCodePageReport({ ...props.page, reason: reason(), text: text().trim(), key });
     if (answer.kind === "ok") return arrived(answer.data.reportedAt);
-    if (answer.kind === "failed") return setPhase({ kind: "failed", message: failure(t(), answer.code) });
+    if (answer.kind === "failed") return setPhase({ kind: "failed", failure: failure(answer.code) });
     // No answer: first ask whether the report arrived. Only then is sending again offered, with the same key.
     const check = await readCodePageProvenance(props.page);
     const at = check.kind === "ok" ? check.data.report?.reportedAt : undefined;
     if (at) return arrived(at);
-    setPhase({ kind: "failed", message: check.kind === "ok" ? t().failedLost : t().failedUnknown });
+    setPhase({ kind: "failed", failure: check.kind === "ok" ? "failedLost" : "failedUnknown" });
   };
 
   return (
@@ -159,10 +168,12 @@ function ReportDialog(props: {
           <p class="code-page-report__status" id={ids.status} role="status" data-tone={failedWith() ? "danger" : undefined}>
             <Switch>
               <Match when={failedWith()}>
-                {(message) => (
+                {(failed) => (
                   <>
                     <i class="ti ti-alert-circle" aria-hidden="true" />
-                    <span>{message()}</span>
+                    {/* A phone shows the short sentence, so the line stays one line of 20px in every state. */}
+                    <span class="code-page-report__long">{t()[failed()]}</span>
+                    <span class="code-page-report__short">{t()[`${failed()}Short`]}</span>
                   </>
                 )}
               </Match>

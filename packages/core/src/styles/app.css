@@ -537,6 +537,9 @@ main > .code-page-host {
 .code-page-report__status > i {
   font-size: 0.875rem;
 }
+.code-page-report__short {
+  display: none;
+}
 .code-page-report__status[data-tone="danger"] {
   color: var(--k2b-danger-text);
 }
@@ -620,10 +623,20 @@ main > .code-page-host {
   .code-page-report__actions > * {
     flex: 1 1 0;
   }
-  /* A failure's sentence may need a second line on a phone; the line keeps room for it in every state. */
+  /* One line of 20px in every state: failures use their short sentence; a longer translation never wraps. */
   .code-page-report__status {
-    align-items: start;
-    min-height: 2.5rem;
+    height: 1.25rem;
+  }
+  .code-page-report__status > span {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .code-page-report__long {
+    display: none;
+  }
+  .code-page-report__short {
+    display: inline;
   }
 }
 @media (prefers-reduced-motion: reduce) {
