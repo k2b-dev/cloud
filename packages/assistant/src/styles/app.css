@@ -660,6 +660,18 @@
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
 }
+.assistant-code-decision__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--k2b-ai-surface);
+  color: var(--k2b-ai-accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
 .assistant-code-decision__missing {
   grid-column: 2 / -1;
   margin: 0;
@@ -677,6 +689,52 @@
   margin: 0;
   color: var(--k2b-text-secondary);
   font-size: 0.8125rem;
+}
+
+/* The row whose access makes an admin approve: a small grey mark under it. */
+.assistant-code-version__needs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.125rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+}
+
+/* An approval that just appeared rises 10 px into place, and one plum ring leaves it once (6a). History stays still. */
+.assistant-code-version[data-appear] {
+  border-radius: 0.75rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .assistant-code-version[data-appear] {
+    animation: assistant-code-version-rise 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  .assistant-code-version[data-appear] > .k2b-chat-decision {
+    animation: assistant-code-version-ring 1.1s ease-out 1 both;
+  }
+}
+@keyframes assistant-code-version-rise {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes assistant-code-version-ring {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--k2b-ai-accent) 45%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 12px color-mix(in srgb, var(--k2b-ai-accent) 0%, transparent);
+  }
 }
 
 /* The card while it loads: the sentence, the reason and the details on white, in their own heights. */

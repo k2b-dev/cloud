@@ -76,3 +76,34 @@ test("the server renders the waiting row of every case as the first client frame
     }
   }
 });
+
+test("a Code entry shows the sign of its kind and its own sentence, never the approval prefix", async () => {
+  const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
+  const base = waitingFixture.conversations[0]!;
+  const question = {
+    id: "q-code",
+    kind: "code_activate" as const,
+    conversationId: base.id,
+    conversationTitle: base.title,
+    anchor: "code-version-66666666-6666-4666-8666-666666666666",
+    short: "Version 5 einschalten",
+    createdAt: WAITING_NOW,
+  };
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(AssistantWaitingStrip, {
+          view: { entries: [question] as never, more: 0, total: 1, onlyHere: null },
+          conversationId: base.id,
+          quiet: false,
+          onJump: () => undefined,
+          onShowMore: () => undefined,
+        });
+      },
+    }),
+  );
+  expect(html).toContain("ti-power");
+  expect(html).toContain("Version 5 einschalten");
+  expect(html).not.toContain("Freigabe:");
+});

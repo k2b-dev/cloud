@@ -389,8 +389,12 @@ test("expired, superseded, no access and a failed load each have their one line 
   );
   expect(status(expired.dom.root)).toBe("Expired");
   expect(text(expired.dom.root)).toContain("The request to the admins has expired. Version 4 stays switched on.");
+  // Asking again goes to Core, which submits a new version; when Core cannot, the card says nothing changed.
   button(expired.dom.root, "Ask again")!.click();
-  expect(asked).toEqual(["Submit version 5 again for approval."]);
+  await tick();
+  expect(expired.calls.some((call) => call.route === "authoring/reviewRequestAgain")).toBe(true);
+  expect(text(expired.dom.root)).toContain("Could not ask again. Nothing changed.");
+  expect(asked).toEqual([]);
   for (const undo of restore.splice(0)) undo();
 
   const older = await mount({ "activation/preview": () => ({ json: { data: preview({ latest: 6 }) } }) });
@@ -483,4 +487,160 @@ test("the Code page is the one the owner's app declares, or a personal Code's pa
   expect(codeVersionPageHref(preview({ ownerKind: "person", page: null }))).toBe(`/app/assistant/code/${codeId}`);
   expect(codeVersionPageHref(preview({ page: null }))).toBeNull();
   expect(codeVersionOwnPageHref(preview())).toBeNull();
+});
+
+const changesReview = (revision: CodeVersionReview["revision"]) =>
+  review({
+    status: "changes_requested",
+    decidedBy: JANA,
+    decidedAt: "2026-11-12T14:01:00.000Z",
+    message: "Please store only PDF attachments.",
+    revision,
+  });
+const refusedPreview = () => preview({ readiness: { state: "refused", code: "code_approval_revoked", message: "x" } });
+const height = (root: Element) => root.querySelector(".k2b-chat-decision")!.getBoundingClientRect();
+
+test("Gustav's automatic revision: waiting says when it starts and offers Don't start; running offers Stop and names the allowance", async () => {
+  for (const [state, foot, answer] of [
+    ["queued", "Gustav revises by himself as soon as your answer is done. Once.", "Don't start"],
+    ["running", "Gustav is revising, once by himself. This counts against your AI allowance.", "Stop"],
+  ] as const) {
+    const stops: unknown[] = [];
+    const { dom } = await mount(
+      {
+        "activation/preview": () => ({ json: { data: refusedPreview() } }),
+        review: () => ({ json: { data: changesReview({ state, reason: null }) } }),
+        "authoring/reviewStop": (body) => {
+          stops.push(body);
+          return { json: { status: "stopped", submittedVersionId: null, submittedNumber: null } };
+        },
+      },
+      { onAsk: () => undefined },
+    );
+    expect(status(dom.root)).toBe("Changes requested");
+    expect(text(dom.root)).toContain(foot);
+    // While Gustav works by himself, the person cannot start a second revision.
+    expect(button(dom.root, "Let Gustav revise")).toBeUndefined();
+    button(dom.root, answer)!.click();
+    await tick();
+    expect(stops).toEqual([{ codeId, versionId }]);
+    for (const undo of restore.splice(0)) undo();
+  }
+});
+
+test("stopped, skipped and already revised once each say why and leave the person the button", async () => {
+  const cases = [
+    [{ state: "stopped", reason: "stopped" }, "Stopped. Gustav does not revise by himself."],
+    [{ state: "skipped", reason: "quota" }, "Gustav did not start by himself: your AI allowance is not enough right now."],
+    [{ state: "skipped", reason: "access_lost" }, "Gustav did not start by himself: this chat or your access to the Code is gone."],
+    [{ state: "skipped", reason: "needs_person" }, "Gustav needs you for this revision."],
+    [{ state: "none", reason: "already_automatic" }, "Gustav has already revised it once by himself. Now you decide."],
+  ] as const;
+  for (const [revision, foot] of cases) {
+    const { dom } = await mount(
+      {
+        "activation/preview": () => ({ json: { data: refusedPreview() } }),
+        review: () => ({ json: { data: changesReview(revision) } }),
+      },
+      { onAsk: () => undefined },
+    );
+    expect(text(dom.root)).toContain(foot);
+    expect(button(dom.root, "Let Gustav revise")).toBeDefined();
+    for (const undo of restore.splice(0)) undo();
+  }
+});
+
+test("a stop that came too late says the new version was already submitted and can be withdrawn", async () => {
+  let latest = 5;
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: refusedPreview() } }),
+    review: () => ({ json: { data: latest === 5 ? changesReview({ state: "running", reason: null }) : review({ status: "superseded" }) } }),
+    "authoring/reviewStop": () => {
+      latest = 6;
+      return { json: { status: "too_late", submittedVersionId: "77777777-7777-4777-8777-777777777777", submittedNumber: 6 } };
+    },
+  });
+  button(dom.root, "Stop")!.click();
+  await tick();
+  await tick();
+  expect(status(dom.root)).toBe("Superseded");
+  expect(text(dom.root)).toContain("Version 6 had already been submitted. You can withdraw it.");
+});
+
+test("the changes card keeps its place and height while Gustav's revision moves from waiting to running to stopped", async () => {
+  let revision: CodeVersionReview["revision"] = { state: "queued", reason: null };
+  const card = await mount({
+    "activation/preview": () => ({ json: { data: refusedPreview() } }),
+    review: () => ({ json: { data: changesReview(revision) } }),
+  });
+  const before = height(card.dom.root);
+  for (const next of [
+    { state: "running", reason: null },
+    { state: "stopped", reason: "stopped" },
+  ] as const) {
+    revision = next;
+    await card.live.apply([decided()]);
+    await tick();
+    const after = height(card.dom.root);
+    expect([after.top, after.height]).toEqual([before.top, before.height]);
+  }
+});
+
+test("asking again after the request expired follows the new version under the card's first anchor", async () => {
+  const next = "88888888-8888-4888-8888-888888888888";
+  let asked = false;
+  const { dom, calls } = await mount({
+    "activation/preview": (body) => ({
+      json: {
+        data:
+          (body as { versionId: string }).versionId === next
+            ? preview({ versionId: next, number: 6, latest: 6, readiness: { state: "approval_pending" } })
+            : preview({ readiness: { state: "approval_pending" } }),
+      },
+    }),
+    review: (body) => ({ json: { data: review({ status: (body as { versionId: string }).versionId === next ? "pending" : "expired" }) } }),
+    "authoring/reviewRequestAgain": () => {
+      asked = true;
+      return { json: { version: { id: next, number: 6 } } };
+    },
+  });
+  expect(status(dom.root)).toBe("Expired");
+  button(dom.root, "Ask again")!.click();
+  await tick();
+  await tick();
+  expect(asked).toBe(true);
+  expect(status(dom.root)).toBe("Waiting for admin");
+  expect(dom.root.querySelector(".k2b-chat-decision__sentence")?.textContent).toContain("Version 6");
+  expect(dom.root.querySelector("[data-chat-anchor]")?.getAttribute("data-chat-anchor")).toBe(`code-version-${versionId}`);
+  expect(calls.filter((call) => call.route === "activation/preview").at(-1)?.body).toMatchObject({ versionId: next });
+});
+
+test("waiting for admin names why exactly this version, marks the row, and offers to build without that access", async () => {
+  const asked: string[] = [];
+  const approval = { count: 1, reason: "It stores files in a folder others see.", accessLabel: "storing files", withoutLabel: "Build without storing files" };
+  const rows = [...words().changes.rows.items];
+  rows[1] = { ...rows[1]!, requiresApproval: true, approvalReason: approval.reason, accessLabel: approval.accessLabel } as (typeof rows)[number];
+  const { dom } = await mount(
+    {
+      "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending" } }) } }),
+      review: () => ({ json: { data: review({ status: "pending" }) } }),
+      [WORDS]: () => ({ json: { data: words({ changes: { ...words().changes, approval, rows: { ...words().changes.rows, items: rows } } }) } }),
+    },
+    { onAsk: (value) => asked.push(value) },
+  );
+  expect(text(dom.root)).toContain(
+    "In your Cloud an admin approves every automation that does something others see. It stores files in a folder others see.",
+  );
+  const marked = [...dom.root.querySelectorAll(".k2b-change-list__item")].filter((row) => row.textContent?.includes("needs approval"));
+  expect(marked.length).toBe(1);
+  button(dom.root, "Build without storing files")!.click();
+  expect(asked).toEqual(["Build version 5 without “storing files”, so that it needs no admin approval."]);
+});
+
+test("a version submitted moments ago appears once; history stays still", async () => {
+  const fresh = await mount({ [WORDS]: () => ({ json: { data: words({ submittedAt: new Date().toISOString() }) } }), "activation/preview": () => ({ json: { data: preview() } }) });
+  expect(fresh.dom.root.querySelector(".assistant-code-version")?.hasAttribute("data-appear")).toBe(true);
+  for (const undo of restore.splice(0)) undo();
+  const old = await mount({ "activation/preview": () => ({ json: { data: preview() } }) });
+  expect(old.dom.root.querySelector(".assistant-code-version")?.hasAttribute("data-appear")).toBe(false);
 });

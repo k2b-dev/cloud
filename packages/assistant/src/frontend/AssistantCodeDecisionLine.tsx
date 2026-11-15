@@ -12,6 +12,7 @@ export type AssistantCodeDecision = {
   person: { id: string | null; name: string | null };
   /** The `data-chat-anchor` of the version card further up. */
   anchor: string;
+  nextRunAt?: string | null;
 };
 
 const TONES = {
@@ -57,6 +58,10 @@ export default function AssistantCodeDecisionLine(props: {
   timeZone: string;
   /** Loads history up to the card when it is not on the page; resolves true when the jump then worked. */
   onReveal?: (anchor: string) => Promise<boolean>;
+  /** A later line already says what the person did about this version: this one stays as history, without action. */
+  settled?: boolean;
+  /** Gustav revises by himself after these changes: the line says so and has no action; his turn follows below. */
+  automatic?: boolean;
 }): JSX.Element {
   const locale = useLocale();
   const t = createMemo(() => codeVersionCardMessages.resolve([locale()]).t);
@@ -87,8 +92,18 @@ export default function AssistantCodeDecisionLine(props: {
         return t().eventActivated({ version });
     }
   };
+  const nextRun = () => {
+    const at = props.decision.nextRunAt;
+    if (props.decision.outcome !== "activated" || !at) return null;
+    const minutes = Math.round((Date.parse(at) - Date.now()) / 60_000);
+    if (minutes < 0 || minutes >= 24 * 60) return null;
+    const format = new Intl.RelativeTimeFormat(locale(), { numeric: "auto" });
+    return t().eventNextRun({ when: minutes < 60 ? format.format(minutes, "minute") : format.format(Math.round(minutes / 60), "hour") });
+  };
   const action = () =>
-    props.decision.outcome === "approved"
+    props.settled || props.automatic
+      ? null
+      : props.decision.outcome === "approved"
       ? t().eventSwitchOn
       : props.decision.outcome === "changes_requested"
         ? t().eventSee
@@ -113,7 +128,18 @@ export default function AssistantCodeDecisionLine(props: {
           <strong>{props.decision.person.name ?? t().adminSomeone}</strong>{" "}
         </Show>
         {sentence()}
-        <span class="assistant-code-decision__when"> · {when()}</span>
+        <span class="assistant-code-decision__when">
+          {" · "}
+          {when()}
+          <Show when={nextRun()}>{(text) => ` · ${text()}`}</Show>
+        </span>
+        <Show when={props.automatic}>
+          {" "}
+          <span class="assistant-code-decision__tag">
+            <i class="ti ti-sparkles" aria-hidden="true" />
+            {t().eventAutomatic}
+          </span>
+        </Show>
       </p>
       <Show when={action()}>
         {(label) => (
@@ -128,6 +154,24 @@ export default function AssistantCodeDecisionLine(props: {
           {t().eventGone}
         </p>
       </Show>
+    </div>
+  );
+}
+
+/** The visible start of Gustav's one automatic revision: Cloud's sentence and the mark that he starts by himself. */
+export function AssistantCodeReviewStartLine(props: { text: string }): JSX.Element {
+  const locale = useLocale();
+  const t = createMemo(() => codeVersionCardMessages.resolve([locale()]).t);
+  return (
+    <div class="assistant-code-decision" data-tone="warning" data-outcome="review_start">
+      <i class="assistant-code-decision__icon ti ti-message-2" aria-hidden="true" />
+      <p class="assistant-code-decision__text">
+        {props.text}{" "}
+        <span class="assistant-code-decision__tag">
+          <i class="ti ti-sparkles" aria-hidden="true" />
+          {t().eventAutomatic}
+        </span>
+      </p>
     </div>
   );
 }

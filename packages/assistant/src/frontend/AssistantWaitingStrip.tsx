@@ -13,6 +13,15 @@ import type { WaitingQuestionsView } from "./waiting-questions";
  * The line has a fixed height, so an approval opening or closing elsewhere never moves the composer. `quiet` keeps that
  * line in place but hides it.
  */
+/** The sign of each kind of entry: approvals, and a Code version or automation that waits for the person (3m). */
+const KIND_ICON: Record<AiOpenQuestion["kind"], string> = {
+  approval: "ti ti-shield-check",
+  code_activate: "ti ti-power",
+  code_changes: "ti ti-message-2",
+  code_expired: "ti ti-clock-off",
+  code_attention: "ti ti-alert-circle",
+};
+
 export function AssistantWaitingStrip(props: {
   view: WaitingQuestionsView;
   conversationId: string | null;
@@ -32,12 +41,17 @@ export function AssistantWaitingStrip(props: {
   };
   return (
     <nav class="assistant-waiting" aria-label={t().needsAttention} data-quiet={props.quiet ? "" : undefined} inert={props.quiet}>
-      <i class="assistant-waiting__mark ti ti-shield-check" aria-hidden="true" />
+      <i class={`assistant-waiting__mark ${KIND_ICON[(count() === 1 ? first()?.kind : undefined) ?? "approval"]}`} aria-hidden="true" />
       <p class="assistant-waiting__text">
-        <Show when={count() === 1 ? first() : undefined} fallback={t().waitingForApprovals({ count: count() })}>
+        <Show when={count() === 1 ? first() : undefined} fallback={
+            props.view.entries.every((entry) => entry.kind === "approval")
+              ? t().waitingForApprovals({ count: count() })
+              : t().waitingThings({ count: count() })
+          }
+        >
           {(question) => (
             <>
-              {t().waitingForApproval}{" "}
+              <Show when={question().kind === "approval"}>{t().waitingForApproval} </Show>
               <strong class="assistant-waiting__short" data-question={question().id}>
                 {question().short}
               </strong>

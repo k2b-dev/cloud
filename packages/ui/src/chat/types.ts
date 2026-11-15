@@ -24,8 +24,11 @@ export type ChatDecisionAnswer = {
   onSelect: () => void | Promise<void>;
 };
 
-/** A quiet fact in the answer row, such as when the question expires; `success` and `warning` colour it as a result. */
-export type ChatDecisionFact = { text: string; icon: string; tone?: "neutral" | "success" | "warning" | "danger" };
+/**
+ * A quiet fact in the answer row, such as when the question expires; `success` and `warning` colour it as a result,
+ * `ai` as work Gustav does by himself, such as a revision that waits or runs.
+ */
+export type ChatDecisionFact = { text: string; icon: string; tone?: "neutral" | "success" | "warning" | "danger" | "ai" };
 
 /** Why a question is asked, or why its main answer is off. */
 export type ChatDecisionReason = {

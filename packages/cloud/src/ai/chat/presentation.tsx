@@ -312,14 +312,11 @@ const storedItems = (
     }
 
     if (item.type === "code-decision" || item.type === "code-review-start") {
-      const activity: ChatTimelineItem = {
-        kind: "activity",
-        id: item.id,
-        label: textFromMessage(item.entry.message),
-        icon: "ti ti-shield-check",
-        tone: "ai",
-        content: actions.renderCodeDecision?.(item.entry),
-      };
+      // A host that draws the decision gets the whole line: its sentence, time and the one jump to the card.
+      const line = actions.renderCodeDecision?.(item.entry);
+      const activity: ChatTimelineItem = line
+        ? { kind: "activity", id: item.id, label: line, class: "ai-code-decision-line" }
+        : { kind: "activity", id: item.id, label: textFromMessage(item.entry.message), icon: "ti ti-shield-check", tone: "ai" };
       return item.type === "code-review-start" ? [activity, ...unansweredNotice(item.entry, itemIndex)] : activity;
     }
 
