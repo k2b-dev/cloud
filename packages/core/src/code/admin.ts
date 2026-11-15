@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { runAiStructured } from "@k2b/cloud/ai";
 import { getCapabilityCatalogApp } from "@k2b/cloud/capabilities/server";
+import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
 import { audit, coreSettings } from "@k2b/cloud/services";
 import { listPending, presentPendingApproval } from "@k2b/cloud/services/approvals";
 import type { CodePageRefusal } from "@k2b/cloud/ssr/code-page/data";
@@ -28,11 +29,12 @@ import { effective } from "./policy-effective";
 import { storeCodeVersionExplanation } from "./read-model/explanation";
 import { codeReadModelMessages } from "./read-model/messages";
 import { readModelNames } from "./read-model/names";
-import { canReadVersionText, restrictVersionEvidence } from "./read-model/present";
+import { canReadVersionText, presentCodeVersion, restrictVersionEvidence } from "./read-model/present";
 import { readCodeReviewComments } from "./review-comments";
 import type { CodeReviewComment, CodeSubmissionOrigin } from "./review-contracts";
 import { readCodeRunnerMetrics } from "./scheduling";
 import type { CodeRunnerMetrics } from "./scheduling-contracts";
+import { codeSettings } from "./settings";
 import { listCodeRuns, readCodeRun } from "./store";
 import {
   type CodeCheckedVersionManifest,
@@ -76,6 +78,13 @@ export type CodeAdminDecided = {
   number: number;
   title: string;
   approved: boolean;
+  /** The admin's outcome; `changes_requested` is a refusal for the platform. */
+  outcome: "approved" | "changes_requested" | "rejected";
+  /** Whether the reading admin decided it. */
+  mine: boolean;
+  author: { id: string | null; name: string | null; avatarHash: string | null };
+  owner: CodeOwner;
+  ownerName: string | null;
   soleAdmin: boolean;
   decidedBy: string | null;
   decidedAt: string;
@@ -134,6 +143,10 @@ export type CodeAdminApprovalDetail = {
   explanation: string | null;
   /** Localized catalog titles for operations and target types; ids stay the fallback. */
   titles: { operations: Record<string, string>; types: Record<string, string> };
+  /** The version in words, as every Code surface shows it; null when its manifest cannot be read. */
+  readModel?: CodeVersionReadModel | null;
+  /** The submitter's avatar, for the review head. */
+  authorAvatarHash?: string | null;
 };
 export type CodeAdminCodeStatus = "active" | "paused" | "draft" | "deleting" | "waiting";
 export type CodeAdminCode = {
@@ -321,32 +334,50 @@ export async function listCodeAdminApprovals(
 
 /** Recently decided versions, including the sole-admin label from C8. */
 export async function listCodeAdminDecided(context: CodeContext): Promise<CodeAdminDecided[]> {
-  requireCodePolicyAdmin(context);
+  const admin = requireCodePolicyAdmin(context);
   const rows = await sql<
-    {
+    (OwnerRow & {
       code_id: string;
       version_id: string;
       number: number;
       title: string;
       approved: boolean;
+      outcome: CodeAdminDecided["outcome"] | null;
       sole_admin: boolean;
+      decided_by_id: string | null;
       decided_by: string | null;
       decided_at: Date;
-    }[]
-  >`SELECT v.code_id,d.version_id,v.number,c.title,d.approved,d.sole_admin,COALESCE(NULLIF(u.display_name,''),u.uid) AS decided_by,d.decided_at
+      author_id: string | null;
+      author_name: string | null;
+      author_avatar: string | null;
+    })[]
+  >`SELECT v.code_id,d.version_id,v.number,c.title,d.approved,d.outcome,d.sole_admin,d.decided_by AS decided_by_id,
+      COALESCE(NULLIF(u.display_name,''),u.uid) AS decided_by,d.decided_at,
+      c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
+      v.created_by AS author_id,COALESCE(NULLIF(a.display_name,''),a.uid) AS author_name,a.avatar_hash AS author_avatar
     FROM code.version_decisions d JOIN code.versions v ON v.id=d.version_id JOIN code.codes c ON c.id=v.code_id
-      LEFT JOIN auth.users u ON u.id=d.decided_by
+      LEFT JOIN auth.users u ON u.id=d.decided_by LEFT JOIN auth.users a ON a.id=v.created_by
     ORDER BY d.decided_at DESC,d.version_id DESC LIMIT ${PAGE}`;
-  return rows.map((row) => ({
-    codeId: row.code_id,
-    versionId: row.version_id,
-    number: row.number,
-    title: row.title,
-    approved: row.approved,
-    soleAdmin: row.sole_admin,
-    decidedBy: row.decided_by,
-    decidedAt: iso(row.decided_at),
-  }));
+  return Promise.all(
+    rows.map(async (row) => {
+      const owner = ownerOf(row);
+      return {
+        codeId: row.code_id,
+        versionId: row.version_id,
+        number: row.number,
+        title: row.title,
+        approved: row.approved,
+        outcome: row.outcome ?? (row.approved ? "approved" : "rejected"),
+        mine: row.decided_by_id === admin.id,
+        author: { id: row.author_id, name: row.author_name, avatarHash: row.author_avatar },
+        owner,
+        ownerName: owner.kind === "person" ? await userName(owner.userId) : await reviewOwnerName(owner, context),
+        soleAdmin: row.sole_admin,
+        decidedBy: row.decided_by,
+        decidedAt: iso(row.decided_at),
+      };
+    }),
+  );
 }
 
 type OwnerRow = {
@@ -581,6 +612,22 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
         ? codeReadModelMessages.resolve(context.locale ? [context.locale] : []).t.restricted
         : row.explanation,
     titles: await operationTitles([...permissions, ...trialOperations, ...comparedOperations], context),
+    authorAvatarHash: row.author_avatar,
+    readModel: manifest
+      ? presentCodeVersion({
+          versionId,
+          number: row.number,
+          submittedAt: iso(row.created_at),
+          manifest,
+          comparison: comparisonManifest,
+          comparisonAvailable: comparisonId === null || comparisonManifest !== null,
+          explanation: row.explanation,
+          evidence: parseEvidence(row.evidence),
+          names,
+          locale,
+          limits: { cases: await codeSettings.get("core.code.test_cases") },
+        })
+      : null,
   };
 }
 

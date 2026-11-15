@@ -6,7 +6,11 @@ test("the URL keeps only valid selections, so reload and back return to the same
   const id = "a0000000-0000-4000-8000-000000000003";
   expect(parseCodeAreaQuery({})).toEqual({});
   expect(parseCodeAreaQuery({ sec: "nope", id })).toEqual({});
-  expect(parseCodeAreaQuery({ sec: "approvals", id, tab: "decided" })).toEqual({ sec: "approvals", id, tab: "decided" });
+  expect(parseCodeAreaQuery({ sec: "approvals", id, tab: "decided" })).toEqual({ sec: "approvals", id });
+  expect(parseCodeAreaQuery({ sec: "approvals", id, tab: "code" })).toEqual({ sec: "approvals", id, tab: "code" });
+  expect(parseCodeAreaQuery({ sec: "approvals", id, tab: "diff" })).toEqual({ sec: "approvals", id, tab: "diff" });
+  expect(parseCodeAreaQuery({ sec: "approvals", tab: "code" })).toEqual({ sec: "approvals" });
+  expect(parseCodeAreaQuery({ sec: "approvals", tab: "decided" })).toEqual({ sec: "approvals", tab: "decided" });
   expect(parseCodeAreaQuery({ sec: "approvals", id: "c_abcd" })).toEqual({ sec: "approvals" });
   expect(parseCodeAreaQuery({ sec: "code", id: "c_abcd", status: "paused", app: "mail", q: "  Bericht " })).toEqual({
     sec: "code",

@@ -1,46 +1,53 @@
-import type { CodeSecretVersionBinding } from "@k2b/cloud/contracts";
-import type { CodeRouteOwner } from "@k2b/cloud/ssr/code-page/messages";
-import { codeAutomationName } from "@k2b/cloud/ssr/code-page/targets";
-import { describeCodeTiming } from "@k2b/cloud/ssr/code-schedule";
-import { Button, ButtonLink, CodeDiff, type CodeDiffLocation, NoticeCard, prompts, Skeleton, useLocale } from "@k2b/ui";
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { CloudAvatar } from "@k2b/cloud/account/ui";
+import { ApprovalFrame, type ApprovalFrameProps } from "@k2b/cloud/approvals/ui";
+import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
+import { formatRelative } from "@k2b/cloud/shared";
+import type { DateContext } from "@k2b/stdlib";
+import {
+  Button,
+  ButtonLink,
+  ChangeList,
+  type ChangeListItem,
+  CodeDiff,
+  type CodeDiffFile,
+  type CodeDiffLocation,
+  Discussion,
+  IconButton,
+  LoadMore,
+  NoticeCard,
+  Section,
+  Skeleton,
+  StatusBadge,
+  Tabs,
+  useLocale,
+} from "@k2b/ui";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
-import type { CodeAutomationView } from "../../../code/automation-view";
-import { CODE_REVIEW_COMMENT_LENGTH } from "../../../code/review-contracts";
+import { type CodeReviewComment, CodeReviewCommentSchema, codeReviewCommentContracts } from "../../../code/review-contracts";
 import { type CodeVersionBinding, type CodeVersionDiffFile, codeVersionContracts } from "../../../code/version-contracts";
 import { CodeAdminRequestError, postCodeAdmin, reloadCodeArea } from "./client";
 import { codeAdminMessages } from "./messages";
+import { openCodeReviewDialog } from "./review-dialog";
+import { type CodeReviewMessages, codeReviewMessages } from "./review-messages";
 
-/** One permission row, already labelled by the page. `side` is old for a removed permission. */
-export type CodeApprovalRight = {
-  icon: string;
-  label: string;
-  sub: string;
-  change: "added" | "same" | "removed";
-  file?: string;
-  line?: number;
-};
-
-/** One operation of the trial run, with its count here and, when compared, in the earlier version. */
-export type CodeApprovalTrialCall = { label: string; operation: string; now: number; before: number };
-
-/** What Core recorded at submission, already worded by the page. `null` for a version submitted without a record. */
-export type CodeApprovalCheck = {
-  tests: string;
-  testsOk: boolean;
-  trial: string | null;
-  calls: CodeApprovalTrialCall[];
-  /** The earlier version's number when its trial run can be compared. */
-  comparedWith: number | null;
-};
+export type CodeReviewTab = "overview" | "code" | "diff";
+export type CodeReviewOutcome = "approved" | "changes_requested" | "rejected";
 
 export type CodeApprovalReviewProps = {
+  codeId: string;
   versionId: string;
+  number: number;
+  title: string;
+  /** The reading admin; only an author deletes a comment, and their own entries read "You". */
+  viewerId: string;
+  dateConfig: DateContext;
+  tab: CodeReviewTab;
   /** Self-approval recovery signs out only the version's author, never a newer browser account. */
   authorUserId: string | null;
-  explanation: string | null;
-  check: CodeApprovalCheck | null;
-  number: number;
+  /** Who submitted the version; they get the notification. */
+  recipient: string;
+  /** How the person continues after "Request changes". */
+  next: "chat" | "button" | "cli";
   binding: CodeVersionBinding;
   status: import("../../../code/version-contracts").CodeVersionSubmission["status"];
   canApprove: boolean;
@@ -48,53 +55,131 @@ export type CodeApprovalReviewProps = {
   soleAdminNotice: string | null;
   staleComparison: boolean;
   newer: { number: number; author: string; href: string } | null;
-  why: string[];
-  rights: CodeApprovalRight[];
-  /** Named as the Code page names them; the stable identifier shows beside a reviewed title. */
-  automations?: CodeAutomationView[];
-  /** Whose rights the version's pages that are not public run with. */
-  routeOwner: CodeRouteOwner;
-  internet: string[];
-  database?: boolean;
-  secrets: CodeSecretVersionBinding[];
-  diffHeader: string;
+  /** The reason in words, from the policy rows that need an admin. */
+  reason: string;
+  readModel: CodeVersionReadModel | null;
+  /** The stored explanation; null asks once by itself while the approval is open. */
+  explanation: string | null;
+  activeVersion: number | null;
+  comparison: number | null;
+  /** Rows of every file between the compared version and this one; null when the code could not be read. */
   files: CodeVersionDiffFile[] | null;
-  decision: { approved: boolean; soleAdmin: boolean; by: string; when: string } | null;
-  /** The Code in Administration › Code, where it can be paused. */
-  codeHref: string;
-  nextHref: string | null;
+  decision: { outcome: CodeReviewOutcome; comment: string | null; by: string; byId: string | null; at: string } | null;
+  /** The message and comments of this admin on the version right before, after "Request changes". */
+  previous: { number: number; message: string; comments: CodeReviewComment[] } | null;
+  comments: CodeReviewComment[];
+  commentsNext: string | null;
+  commentsTotal: number;
   listHref: string;
+  nextHref: string | null;
 };
 
-const short = (hash: string | null) => (hash ? `${hash.slice(0, 4)}…${hash.slice(-2)}` : "—");
-
-/** Survives the reload after a decision, so the reloaded page moves focus to the result once. */
+/** Survives the reload after a decision: what the page tells about it once (the decision, a conflict, a withdrawal). */
 const DECIDED_KEY = "k2b-code-decided";
+type Arrival = { versionId: string; kind: "decided" | "conflict" | "withdrawn" | "unknown"; outcome?: CodeReviewOutcome; text?: string };
 const RESULT_ID = "code-review-result";
 const FAILURE_ID = "code-review-failure";
 
+/** The result in the visible tab, or a notice about it: every tab draws the approval, only one is shown. */
+const focusResult = () => {
+  const target = [...document.querySelectorAll<HTMLElement>(`#${RESULT_ID}, [data-review-result]`)].find(
+    (element) => element.offsetParent !== null,
+  );
+  target?.focus({ preventScroll: false });
+};
+const readArrival = (versionId: string): Arrival | null => {
+  try {
+    const raw = sessionStorage.getItem(DECIDED_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<Arrival> | null;
+    if (!value || value.versionId !== versionId) return null;
+    sessionStorage.removeItem(DECIDED_KEY);
+    return value as Arrival;
+  } catch {
+    return null;
+  }
+};
+const writeArrival = (arrival: Arrival) => {
+  try {
+    sessionStorage.setItem(DECIDED_KEY, JSON.stringify(arrival));
+  } catch {
+    // Without storage the reloaded page still shows the server's state; only its one-time note is lost.
+  }
+};
+
+/** A worded sentence marks its grey chips, the version and the automation, with [[…]]. */
+const chipParts = (sentence: string): string[] => sentence.split(/\[\[|\]\]/);
+const sentenceOf = (sentence: string): ApprovalFrameProps["sentence"] =>
+  chipParts(sentence)
+    .map((text, index) =>
+      index % 2 === 1 ? { kind: "chip" as const, chip: { kind: "object" as const, title: text } } : { kind: "text" as const, text },
+    )
+    .filter((part) => part.kind === "chip" || part.text !== "");
+
+type Thread = { key: string; path: string; line: number; entries: CodeReviewComment[]; rootId: string };
+
+/** Comments as threads at their lines: entries of one line in time order, a reply under its line even without its root. */
+const threadsOf = (comments: readonly CodeReviewComment[]): Thread[] => {
+  const byId = new Map(comments.map((comment) => [comment.id, comment]));
+  const lines = new Map<string, Thread>();
+  for (const comment of [...comments].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))) {
+    const root = comment.parentId ? (byId.get(comment.parentId) ?? comment) : comment;
+    const path = comment.path ?? root.path;
+    const line = comment.line ?? root.line;
+    if (!path || !line) continue;
+    const key = `${path}\u0000${line}`;
+    const thread = lines.get(key);
+    if (thread) thread.entries.push(comment);
+    else lines.set(key, { key, path, line, entries: [comment], rootId: comment.parentId ?? comment.id });
+  }
+  return [...lines.values()].sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
+};
+
 /**
- * The detail level of one version: why it needs you, what changes in permissions, the full Code difference and the
- * decision bound to the exact hashes. Deciding sends the unchanged binding; the server rechecks everything.
+ * One version under review: a head row of tabs "Overview | Code | Diff", the approval with three decisions on top of
+ * each, and the code field where admins comment on lines. Both views come with the page; switching never loads.
+ * Deciding sends the unchanged binding; the server rechecks everything.
  */
 export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const locale = useLocale();
-  const t = () => codeAdminMessages.resolve([locale()]).t;
-  const [mark, setMark] = createSignal<CodeDiffLocation>();
-  const [busy, setBusy] = createSignal<"approve" | "reject" | null>(null);
+  const t = (): CodeReviewMessages => codeReviewMessages.resolve([locale()]).t;
+  const ta = () => codeAdminMessages.resolve([locale()]).t;
+
+  const first = () => props.comparison === null;
+  const [tab, setTab] = createSignal<CodeReviewTab>(first() && props.tab === "diff" ? "code" : props.tab);
+  const chooseTab = (next: CodeReviewTab) => {
+    setTab(next);
+    // The tab is part of the URL, so reload and back return to it; the views are already on the page.
+    const url = new URL(window.location.href);
+    if (next === "overview") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  };
+
+  // ---------- Decision state ----------
+  const [arrival, setArrival] = createSignal<Arrival | null>(null);
+  const [unknown, setUnknown] = createSignal<{ outcome: CodeReviewOutcome; text: string | null } | null>(null);
+  const [busy, setBusy] = createSignal(false);
   const [failure, setFailure] = createSignal<string | null>(null);
-  const [rejectDraft, setRejectDraft] = createSignal("");
   const [failureCode, setFailureCode] = createSignal<string>();
   const [signingOut, setSigningOut] = createSignal(false);
   const [signOutFailed, setSignOutFailed] = createSignal(false);
-  const [explanation, setExplanation] = createSignal(props.explanation);
-  // An open approval asks once by itself; the first render reserves the place, so the page does not shift.
-  const [explaining, setExplaining] = createSignal(props.explanation === null && props.status === "pending");
+  const drafts: Record<"changes" | "reject", string> = { changes: "", reject: "" };
+
+  const pending = () => props.status === "pending";
+  const closed = () => !pending() || unknown() !== null;
+  const blocked = () => (props.newer ? ta().outdated({ n: props.number }) : props.files ? null : ta().notLoaded);
+  const mayDecide = () => pending() && props.canApprove && !props.staleComparison && !unknown();
+  const keep = () => (props.activeVersion ? t().keepOn({ n: props.activeVersion }) : t().keepOff);
+
+  // ---------- Explanation ----------
+  const [explanation, setExplanation] = createSignal(props.readModel?.description.text ?? props.explanation);
+  const [explaining, setExplaining] = createSignal(
+    props.readModel?.description.state !== "restricted" && explanation() === null && pending(),
+  );
   const [explainFailed, setExplainFailed] = createSignal(false);
-  const [callsOpen, setCallsOpen] = createSignal(false);
   const explainAbort = new AbortController();
   onCleanup(() => explainAbort.abort());
-
   const explain = async () => {
     setExplaining(true);
     setExplainFailed(false);
@@ -107,6 +192,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       setExplaining(false);
     }
   };
+
   onMount(() => {
     const url = new URL(window.location.href);
     if (url.searchParams.has("reauthenticate")) {
@@ -114,19 +200,12 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
     }
     if (explaining()) void explain();
-    // The decision was made in the footer; after the reload its result is at the top, so focus and screen readers go there.
-    try {
-      if (sessionStorage.getItem(DECIDED_KEY) !== props.versionId) return;
-      sessionStorage.removeItem(DECIDED_KEY);
-    } catch {
-      return;
-    }
-    document.getElementById(RESULT_ID)?.focus({ preventScroll: false });
+    const arrived = readArrival(props.versionId);
+    if (!arrived) return;
+    if (arrived.kind === "unknown" && pending()) setUnknown({ outcome: arrived.outcome ?? "approved", text: arrived.text ?? null });
+    else setArrival(arrived);
+    queueMicrotask(focusResult);
   });
-
-  const pending = () => props.status === "pending";
-  const blocked = () => (props.newer ? t().outdated({ n: props.number }) : props.files ? null : t().notLoaded);
-  const mayDecide = () => pending() && props.canApprove && !props.staleComparison;
 
   const signInHref = (admin = false) => {
     const target = new URL(window.location.href);
@@ -136,14 +215,13 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     if (admin) query.set("method", "admin");
     return `/auth/login?${query}`;
   };
-
   const signInAdmin = async () => {
     if (signingOut() || !props.authorUserId) return;
     setSigningOut(true);
     setSignOutFailed(false);
     try {
       const { signOutBrowserSession } = await import("@k2b/cloud/browser/session");
-      await signOutBrowserSession(props.authorUserId, t().signOutFailed);
+      await signOutBrowserSession(props.authorUserId, ta().signOutFailed);
       window.location.assign(signInHref(true));
     } catch {
       setSignOutFailed(true);
@@ -151,515 +229,839 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     }
   };
 
-  const decide = async (approved: boolean) => {
-    let comment: string | undefined;
-    if (!approved) {
-      const confirmed = await prompts.form({
-        title: t().rejectTitle({ n: props.number }),
-        confirmText: t().rejectConfirm,
-        cancelText: t().cancel,
-        variant: "danger",
-        fields: {
-          info: { type: "info", content: () => <p>{t().rejectBody}</p> },
-          comment: {
-            type: "text",
-            multiline: true,
-            label: t().reviewMessage,
-            required: true,
-            maxLength: CODE_REVIEW_COMMENT_LENGTH,
-            default: rejectDraft(),
-            validate: (value) => (value?.trim() ? null : t().reviewMessageRequired),
-          },
-        },
-      });
-      if (!confirmed) return;
-      comment = confirmed.comment.trim();
-      setRejectDraft(comment);
+  /** A refusal's sentence, or null for a lost answer: only a refusal proves nothing changed. */
+  const refusal = (error: unknown): { code?: string; text: string } | null => {
+    if (!(error instanceof CodeAdminRequestError) || error.status < 400 || error.status >= 500) return null;
+    const code = error.code;
+    const text =
+      code === "SELF_APPROVAL"
+        ? ta().decideSelfApproval
+        : code === "REAUTHENTICATE"
+          ? ta().decideReauthenticate
+          : code === "REJECT_ONLY"
+            ? ta().decideRejectOnly
+            : code === "NOT_FOUND"
+              ? ta().decideNotFound
+              : code === "BUSY"
+                ? ta().decideBusy
+                : code === "UNAVAILABLE"
+                  ? ta().decideUnavailable
+                  : error.status === 403
+                    ? ta().decideForbidden
+                    : t().dialogFailed;
+    return { code, text };
+  };
+
+  /** Sends one decision. Saved, conflicting, withdrawn, and lost answers reload into the server's state. */
+  const send = async (outcome: CodeReviewOutcome, comment?: string) => {
+    // One decision at a time: a second one waits for the first to be refused, and none follows a saved or lost one.
+    if (busy() || unknown()) return;
+    setBusy(true);
+    try {
+      await postCodeAdmin(
+        "decide",
+        { binding: props.binding, approved: outcome === "approved", outcome, ...(comment ? { comment } : {}) },
+        codeVersionContracts.decide.data,
+      );
+      writeArrival({ versionId: props.versionId, kind: "decided", outcome });
+      reloadCodeArea();
+    } catch (error) {
+      const refused = refusal(error);
+      const status = error instanceof CodeAdminRequestError ? error.status : 0;
+      if (!refused) {
+        // The answer was lost: the decision may be saved. Only "Check state" stays until the page reads it.
+        setUnknown({ outcome, text: comment ?? null });
+        writeArrival({ versionId: props.versionId, kind: "unknown", outcome, text: comment });
+        queueMicrotask(focusResult);
+        return;
+      }
+      // Withdrawn meanwhile, or another admin decided first: the reloaded page shows the saved state and says why.
+      const code = refused.code ?? "";
+      if (status === 409 && !["BUSY", "UNAVAILABLE", "REJECT_ONLY", "SELF_APPROVAL", "REAUTHENTICATE"].includes(code)) {
+        writeArrival({ versionId: props.versionId, kind: code === "code_approval_revoked" ? "withdrawn" : "conflict" });
+        reloadCodeArea();
+        return;
+      }
+      setBusy(false);
+      throw Object.assign(new Error(refused.text), { code: refused.code });
     }
-    setBusy(approved ? "approve" : "reject");
+  };
+
+  const approve = async () => {
+    if (busy() || unknown()) return;
     setFailure(null);
     setFailureCode(undefined);
     setSignOutFailed(false);
     try {
-      await postCodeAdmin(
-        "decide",
-        { binding: props.binding, approved, ...(comment ? { comment } : {}) },
-        codeVersionContracts.decide.data,
-      );
-      try {
-        sessionStorage.setItem(DECIDED_KEY, props.versionId);
-      } catch {
-        // Without storage the result still renders at the top; only the focus move is lost.
-      }
-      // The server renders the decision and the sidebar count of open approvals from the same state. The button keeps
-      // its busy state until the reloaded page replaces it, so nothing on this page moves in between.
-      reloadCodeArea();
+      await send("approved");
     } catch (error) {
-      setBusy(null);
-      const code = error instanceof CodeAdminRequestError ? error.code : undefined;
-      setFailureCode(code);
-      const reason =
-        code === "SELF_APPROVAL"
-          ? t().decideSelfApproval
-          : code === "REAUTHENTICATE"
-            ? t().decideReauthenticate
-            : code === "REJECT_ONLY"
-              ? t().decideRejectOnly
-              : code === "NOT_FOUND"
-                ? t().decideNotFound
-                : code === "BUSY"
-                  ? t().decideBusy
-                  : code === "UNAVAILABLE"
-                    ? t().decideUnavailable
-                    : null;
-      // Only a refusal proves nothing changed; a lost answer may follow a committed decision.
-      setFailure(
-        !(error instanceof CodeAdminRequestError) || error.status < 400 || error.status >= 500
-          ? `${t().unknownTitle} ${t().unknownDecideSub}`
-          : (reason ?? (error.status === 409 ? t().decideConflict : error.status === 403 ? t().decideForbidden : t().decideFailed)),
-      );
+      // The button keeps its place; the reason shows above the approval with its way out.
+      setFailureCode(error instanceof Error && "code" in error ? String(error.code ?? "") : undefined);
+      setFailure(error instanceof Error ? error.message : t().dialogFailed);
       queueMicrotask(() => document.getElementById(FAILURE_ID)?.focus());
     }
   };
 
-  const showLine = (right: CodeApprovalRight) => {
-    if (!right.file || !right.line) return;
-    // CodeDiff centres the line in the detail column alone; the shell around it stays put.
-    setMark({ path: right.file, line: right.line, side: right.change === "removed" ? "old" : "new" });
+  const ask = async (kind: "changes" | "reject") => {
+    if (busy() || unknown()) return;
+    setFailure(null);
+    await openCodeReviewDialog({
+      kind,
+      number: props.number,
+      recipient: props.recipient,
+      keep: keep(),
+      comments: total(),
+      next: props.next,
+      draft: drafts[kind],
+      t: t(),
+      keepDraft: (text) => {
+        drafts[kind] = text;
+      },
+      send: (comment) => send(kind === "changes" ? "changes_requested" : "rejected", comment),
+    });
   };
 
-  const decidedNotice = () => {
-    const state = props.status === "approved" || props.status === "rejected" || props.status === "changes_requested" ? props.status : null;
-    if (!state) return null;
+  // ---------- Comments ----------
+  const [comments, setComments] = createSignal<CodeReviewComment[]>(props.comments);
+  const [olderCursor, setOlderCursor] = createSignal(props.commentsNext);
+  const [total, setTotal] = createSignal(props.commentsTotal);
+  const [opened, setOpened] = createSignal<CodeDiffLocation | null>(null);
+  const [focusLine, setFocusLine] = createSignal<CodeDiffLocation>();
+  const [deleteFailed, setDeleteFailed] = createSignal<string | null>(null);
+  const threads = createMemo(() => threadsOf(comments()));
+  const threadAt = (path: string, line: number) => threads().find((thread) => thread.path === path && thread.line === line);
+
+  const loadOlder = async () => {
+    const before = olderCursor();
+    if (!before) return false;
+    try {
+      const page = await postCodeAdmin(
+        "comments/list",
+        { codeId: props.codeId, versionId: props.versionId, before },
+        codeReviewCommentContracts.list.data,
+      );
+      const known = new Set(comments().map((comment) => comment.id));
+      setComments([...comments(), ...page.items.filter((comment) => !known.has(comment.id))]);
+      setOlderCursor(page.nextBefore);
+      setTotal(page.total);
+      return true;
+    } catch {
+      throw new Error(t().olderFailed);
+    }
+  };
+
+  const post = async (path: string, line: number, body: string, parentId?: string) => {
+    try {
+      const created = await postCodeAdmin(
+        "comments/create",
+        { codeId: props.codeId, versionId: props.versionId, path, line, body, ...(parentId ? { parentId } : {}) },
+        CodeReviewCommentSchema,
+      );
+      setComments([...comments(), created]);
+      setTotal(total() + 1);
+      return true;
+    } catch (error) {
+      const status = error instanceof CodeAdminRequestError ? error.status : 0;
+      throw new Error(status === 409 ? t().commentClosed : status === 413 || status === 422 ? t().commentTooMany : t().commentFailed);
+    }
+  };
+
+  const remove = async (comment: CodeReviewComment) => {
+    setDeleteFailed(null);
+    try {
+      await postCodeAdmin("comments/delete", { codeId: props.codeId, versionId: props.versionId, id: comment.id }, z.unknown());
+      // The server keeps replies of a deleted comment as their own thread at the same line; so does the page.
+      setComments(
+        comments()
+          .filter((entry) => entry.id !== comment.id)
+          .map((entry) => (entry.parentId === comment.id ? { ...entry, parentId: null } : entry)),
+      );
+      setTotal(Math.max(0, total() - 1));
+    } catch {
+      setDeleteFailed(comment.id);
+    }
+  };
+
+  const when = (iso: string) => formatRelative(iso, props.dateConfig);
+  const entry = (comment: CodeReviewComment, editable: boolean) => {
+    const mine = comment.author.id === props.viewerId;
+    const name = mine ? t().youCap : (comment.author.name ?? t().unknownAuthor);
     return (
-      <NoticeCard
-        id={RESULT_ID}
-        tabIndex={-1}
-        tone={state === "approved" ? "success" : "neutral"}
-        title={
-          state === "approved"
-            ? t().approvedTitle({ n: props.number })
-            : state === "changes_requested"
-              ? t().versionStatus({ s: state })
-              : t().rejectedTitle({ n: props.number })
+      <Discussion.Item
+        author={name}
+        avatar={
+          <CloudAvatar username={comment.author.name ?? name} userId={comment.author.id} avatarHash={comment.author.avatarHash} size="xs" />
         }
-        detail={
-          <>
-            <p>{state === "approved" ? `${t().approvedSub} ${t().undoHint}` : t().rejectedSub}</p>
-            <Show when={props.decision}>
-              {(decision) => (
-                <p class="text-(--k2b-text-muted)">
-                  {t().decidedBy({ who: decision().by, when: decision().when })}
-                  {decision().soleAdmin ? ` · ${t().selfApproved}` : ""}
-                </p>
+        meta={mine ? undefined : t().cloudAdmin}
+        timestamp={<time dateTime={comment.createdAt}>{when(comment.createdAt)}</time>}
+        actions={
+          editable && mine ? (
+            <IconButton label={t().deleteComment} size="sm" variant="ghost" onClick={() => void remove(comment)}>
+              <i class="ti ti-trash" aria-hidden="true" />
+            </IconButton>
+          ) : undefined
+        }
+      >
+        <p class="core-code-review__comment">{comment.body}</p>
+        <Show when={deleteFailed() === comment.id}>
+          <p class="core-code-review__comment-error" role="alert">
+            {t().deleteFailed}
+          </p>
+        </Show>
+      </Discussion.Item>
+    );
+  };
+
+  /** The thread directly under a line: comments flush, "Reply …" as its last line, writing in place. */
+  const LineThread = (line: { path: string; line: number }) => {
+    const thread = createMemo(() => threadAt(line.path, line.line));
+    const writingHere = () => {
+      const open = opened();
+      return open?.path === line.path && open.line === line.line;
+    };
+    const editable = () => !closed();
+    return (
+      <div class="core-code-review__thread">
+        <Discussion.Thread
+          label={t().threadLabel({ path: line.path, n: line.line })}
+          placeholder={thread() ? t().replyPlaceholder : t().commentPlaceholder({ n: line.line })}
+          hint={t().visibleWithDecision}
+          submitLabel={t().commentSubmit}
+          cancelLabel={t().commentCancel}
+          writing={writingHere() ? true : undefined}
+          onWritingChange={(writing) => {
+            if (writing) return;
+            if (writingHere()) setOpened(null);
+            // Sent or cancelled: the focus goes back to the "+" of this line.
+            setFocusLine({ path: line.path, line: line.line, side: "new" });
+          }}
+          onSubmit={editable() ? (message) => post(line.path, line.line, message, thread()?.rootId) : undefined}
+        >
+          <For each={thread()?.entries ?? []}>{(comment) => entry(comment, editable())}</For>
+        </Discussion.Thread>
+      </div>
+    );
+  };
+  /** Lines that carry a thread now, plus the line whose new thread is open; CodeDiff keeps one element per line. */
+  const slotLines = createMemo<CodeDiffLocation[]>(() => {
+    const lines = threads().map((thread) => ({ path: thread.path, line: thread.line, side: "new" as const }));
+    const open = opened();
+    if (open && !lines.some((line) => line.path === open.path && line.line === open.line))
+      lines.push({ path: open.path, line: open.line, side: "new" });
+    return lines;
+  });
+
+  // ---------- Code field ----------
+  const codeFiles = createMemo<CodeDiffFile[]>(() =>
+    (props.files ?? [])
+      .map((file) => ({
+        path: file.path,
+        lines: file.lines.filter((line) => line.kind !== "del").map((line) => ({ kind: "add" as const, text: line.text })),
+      }))
+      .filter((file) => file.lines.length > 0),
+  );
+  const diffFiles = createMemo<CodeDiffFile[]>(() => (props.files ?? []).map((file) => ({ path: file.path, lines: file.lines })));
+  const stat = createMemo(() => {
+    let add = 0;
+    let del = 0;
+    for (const file of props.files ?? [])
+      for (const line of file.lines) {
+        if (line.kind === "add") add++;
+        else if (line.kind === "del") del++;
+      }
+    return { add, del };
+  });
+  const [file, setFile] = createSignal<string>();
+
+  const codeField = (view: "code" | "diff") => (
+    <section class="core-code-review__field" aria-label={t().codeLabel} data-code-source-region="admin-approval">
+      <CodeDiff
+        files={view === "code" ? codeFiles() : diffFiles()}
+        file={file()}
+        onFileChange={setFile}
+        status={props.files ? undefined : "error"}
+        errorDescription={t().codeFailed}
+        onRetry={() => reloadCodeArea()}
+        label={t().codeLabel}
+        toolbarStart={<i class="ti ti-file-code core-code-review__files-icon" aria-hidden="true" />}
+        toolbarEnd={closed() ? undefined : <span class="core-code-review__keys">{t().keysHint}</span>}
+        lineAction={
+          closed()
+            ? undefined
+            : {
+                label: (location) => t().commentOnLine({ n: location.line }),
+                onSelect: (location) => {
+                  if (threadAt(location.path, location.line)) setOpened({ ...location });
+                  else setOpened({ path: location.path, line: location.line, side: "new" });
+                },
+              }
+        }
+        slotLines={slotLines()}
+        lineSlot={(location) => <LineThread path={location.path} line={location.line} />}
+        focusLine={focusLine()}
+      />
+      <p class="core-code-review__foot">
+        <i class="ti ti-lock" aria-hidden="true" />
+        <span>{closed() ? t().footDecided : t().footOpen}</span>
+      </p>
+    </section>
+  );
+
+  // ---------- Approval ----------
+  const changesDetails = (): ApprovalFrameProps["details"] => {
+    const changes = props.readModel?.changes;
+    if (!changes) return undefined;
+    const rows = changes.rows.items;
+    const same = rows.filter((row) => row.kind === "same");
+    const [showSame, setShowSame] = createSignal(false);
+    const items = (): ChangeListItem[] => [
+      ...rows
+        .filter((row) => row.kind !== "same")
+        .map((row) => ({ tone: row.kind === "add" ? ("add" as const) : ("remove" as const), content: row.text, detail: row.note })),
+      ...(same.length
+        ? showSame()
+          ? same.map((row) => ({ tone: "neutral" as const, icon: "ti ti-equal", content: row.text, detail: row.note }))
+          : [
+              {
+                tone: "neutral" as const,
+                icon: "ti ti-equal",
+                content: (
+                  <>
+                    {t().sameMore({ n: same.length })}{" "}
+                    <button type="button" class="k2b-text-link" onClick={() => setShowSame(true)}>
+                      {t().show}
+                    </button>
+                  </>
+                ),
+              },
+            ]
+        : []),
+    ];
+    return {
+      label: props.comparison ? t().detailsFrom({ n: props.comparison }) : t().detailsFirst,
+      content: <ChangeList label={t().detailsFirst} items={items()} />,
+      note: { text: changes.assurance, icon: "ti ti-info-circle" },
+    };
+  };
+  const examplesFact = (): NonNullable<ApprovalFrameProps["meta"]>[number] | null => {
+    const examples = props.readModel?.examples;
+    if (!examples || examples.state === "unavailable") return null;
+    return {
+      text: examples.summary,
+      icon: examples.state === "passed" ? "ti ti-circle-check" : "ti ti-alert-triangle",
+      tone: examples.state === "passed" ? "success" : "warning",
+    };
+  };
+  const answers = (): Pick<ApprovalFrameProps, "confirm" | "decline" | "more" | "unavailable"> => ({
+    more: [{ label: t().reject, onSelect: () => ask("reject") }],
+    decline: { label: t().requestChanges, onSelect: () => ask("changes") },
+    confirm: { label: t().approve({ n: props.number }), icon: "ti ti-check", onSelect: approve },
+    unavailable:
+      !mayDecide() || blocked()
+        ? {
+            text: blocked() ?? (props.staleComparison ? ta().staleTitle : props.own ? ta().ownSub : ta().decideForbidden),
+            icon: "ti ti-lock",
+          }
+        : undefined,
+  });
+  const openFrame = (short: boolean) => (
+    <ApprovalFrame
+      locale={locale()}
+      state="open"
+      source={{ name: t().source, icon: "ti ti-code" }}
+      sentence={sentenceOf(t().question({ n: props.number, title: props.title }))}
+      reason={{ text: props.reason, icon: "ti ti-eye" }}
+      details={short ? undefined : changesDetails()}
+      meta={
+        short
+          ? [{ text: t().commentsGo({ n: total() }), icon: "ti ti-message-2" }]
+          : [...(examplesFact() ? [examplesFact()!] : []), { text: t().boundTo({ n: props.number }), icon: "ti ti-lock" }]
+      }
+      {...answers()}
+    />
+  );
+
+  /** A closed approval: the same frame with its state, what happened, the message, and the way on. */
+  const closedFrame = () => {
+    const decision = props.decision;
+    const pendingUnknown = unknown();
+    const mine = decision?.byId === props.viewerId;
+    const status = (): NonNullable<ApprovalFrameProps["status"]> => {
+      if (pendingUnknown) return { tone: "warning", label: t().statusUnknown };
+      if (decision?.outcome === "approved") return { tone: "done", label: t().statusApproved };
+      if (decision?.outcome === "changes_requested") return { tone: "warning", label: t().statusChanges };
+      if (decision?.outcome === "rejected") return { tone: "error", label: t().statusRejected };
+      if (props.status === "withdrawn") return { tone: "off", label: t().statusWithdrawn };
+      if (props.status === "superseded" || props.status === "cancelled") return { tone: "off", label: t().statusSuperseded };
+      return { tone: "expired", label: t().statusExpired };
+    };
+    const sentence = (): string => {
+      if (pendingUnknown) return t().unknownSentence({ n: props.number });
+      if (decision) {
+        const who = decision.by;
+        if (decision.outcome === "approved")
+          return mine ? t().youApproved({ n: props.number }) : t().otherApproved({ who, n: props.number });
+        if (decision.outcome === "changes_requested")
+          return mine ? t().youChanges({ n: props.number }) : t().otherChanges({ who, n: props.number });
+        return mine ? t().youRejected({ n: props.number }) : t().otherRejected({ who, n: props.number });
+      }
+      if (props.status === "withdrawn") return t().withdrawnSentence({ who: props.recipient, n: props.number });
+      return t().closedSentence({ n: props.number });
+    };
+    const why = (): { text: string; icon: string } => {
+      if (pendingUnknown) return { text: t().unknownWhy, icon: "ti ti-alert-triangle" };
+      if (decision?.outcome === "approved") return { text: t().afterApproved({ who: props.recipient }), icon: "ti ti-bell" };
+      if (decision?.outcome === "changes_requested")
+        return { text: t().afterChanges({ who: props.recipient, keep: keep() }), icon: "ti ti-bell" };
+      if (decision?.outcome === "rejected")
+        return { text: t().afterRejected({ who: props.recipient, n: props.number, keep: keep() }), icon: "ti ti-bell" };
+      return { text: props.status === "withdrawn" ? keep() : t().closedWhy, icon: "ti ti-info-circle" };
+    };
+    const message = (): { label: string; text: string; who: string; avatar: string; avatarId: string | null; at: string | null } | null => {
+      if (pendingUnknown?.text)
+        return {
+          label: t().unconfirmedMessage,
+          text: pendingUnknown.text,
+          who: t().youCap,
+          avatar: t().youCap,
+          avatarId: props.viewerId,
+          at: null,
+        };
+      if (!decision?.comment) return null;
+      const label = mine ? (decision.outcome === "rejected" ? t().yourReason : t().yourMessage) : t().theirMessage({ who: decision.by });
+      return {
+        label,
+        text: decision.comment,
+        who: mine ? t().youCap : decision.by,
+        avatar: decision.by,
+        avatarId: decision.byId,
+        at: decision.at,
+      };
+    };
+    return (
+      <ApprovalFrame
+        locale={locale()}
+        state="decided"
+        source={{ name: t().source, icon: "ti ti-code" }}
+        status={status()}
+        reason={{ text: why().text }}
+        outcome={
+          <div tabIndex={-1} class="core-code-review__closed" data-review-result>
+            <p class="k2b-chat-decision__sentence">
+              <For each={chipParts(sentence())}>
+                {(part, index) => (index() % 2 === 1 ? <span class="core-code-review__chip">{part}</span> : part)}
+              </For>
+            </p>
+            <p class="k2b-chat-line k2b-chat-decision__reason">
+              <i class={`k2b-chat-line__icon ${why().icon}`} aria-hidden="true" />
+              <span class="k2b-chat-line__text">{why().text}</span>
+            </p>
+            <Show when={message()}>
+              {(shown) => (
+                <div class="k2b-chat-decision__details">
+                  <p class="k2b-chat-decision__details-label">
+                    <span class="k2b-chat-decision__tile k2b-icon-tile">
+                      <i class="ti ti-code" aria-hidden="true" />
+                    </span>
+                    {shown().label}
+                  </p>
+                  <div class="core-code-review__message">
+                    <CloudAvatar username={shown().avatar} userId={shown().avatarId} size="xs" />
+                    <div>
+                      <p class="core-code-review__message-head">
+                        <strong>{shown().who}</strong>
+                        <Show when={shown().at}>{(at) => <span> · {when(at())}</span>}</Show>
+                      </p>
+                      <p class="core-code-review__comment">{shown().text}</p>
+                    </div>
+                  </div>
+                </div>
               )}
             </Show>
-            <div class="mt-2 flex flex-wrap gap-2">
-              <Show when={state === "approved"}>
-                <ButtonLink size="sm" variant="secondary" href={props.codeHref}>
-                  {t().openCode}
-                </ButtonLink>
-              </Show>
-              <Show
-                when={props.nextHref}
-                fallback={
-                  <ButtonLink size="sm" variant="secondary" href={props.listHref}>
-                    {t().backToList}
+            <div class="k2b-chat-decision__answers">
+              <span class="k2b-chat-decision__meta">
+                <Show when={pendingUnknown}>
+                  <span class="k2b-chat-decision__fact" data-tone="neutral">
+                    <i class="ti ti-history" aria-hidden="true" />
+                    {keep()}
+                  </span>
+                </Show>
+              </span>
+              <span class="k2b-chat-decision__buttons">
+                <Show
+                  when={!pendingUnknown}
+                  fallback={
+                    <Button class="k2b-chat-decision__answer" variant="ai" onClick={() => reloadCodeArea()}>
+                      <i class="ti ti-refresh" aria-hidden="true" />
+                      {t().checkState}
+                    </Button>
+                  }
+                >
+                  <ButtonLink class="k2b-chat-decision__answer" variant="secondary" href={props.nextHref ?? props.listHref}>
+                    {props.nextHref ? t().nextApproval : t().backToList}
                   </ButtonLink>
-                }
-              >
-                {(href) => (
-                  <ButtonLink size="sm" href={href()}>
-                    {t().nextVersion}
-                  </ButtonLink>
-                )}
-              </Show>
+                </Show>
+              </span>
             </div>
-          </>
+          </div>
         }
       />
     );
   };
 
-  return (
-    <div class="flex min-h-full flex-col">
-      <div class="grid flex-1 content-start gap-6 px-2 pt-1 pb-6">
-        <Show when={decidedNotice()}>{(notice) => notice()}</Show>
-        <Show when={props.automations?.length}>
-          <section>
-            <h3 class="text-sm font-medium">{t().automations}</h3>
-            <ul class="mt-2 grid gap-1 text-sm text-secondary">
-              <For each={props.automations}>
-                {(entry) => (
-                  <li>
-                    <bdi>{codeAutomationName(entry, "", locale())}</bdi>
-                    {/* A reviewed title says what it does; when it runs follows, as on the Code page. */}
-                    <Show when={entry.title !== undefined && describeCodeTiming(entry, locale())}>{(timing) => <> · {timing()}</>}</Show>
-                    <Show when={entry.route}>
-                      {(route) => <> · {route().public ? t().routePublic : t().routePrivate({ owner: props.routeOwner })}</>}
-                    </Show>
-                    <Show when={entry.title}>
-                      <code class="ml-2 text-xs text-dimmed">{entry.entrypoint}</code>
-                    </Show>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </section>
-        </Show>
+  const frame = (short: boolean) => (closed() ? closedFrame() : openFrame(short));
 
-        <Show when={["expired", "cancelled", "withdrawn", "superseded"].includes(props.status)}>
-          <NoticeCard tone="neutral" title={t().closedTitle} detail={t().closedSub} />
-        </Show>
-        <Show when={pending() && props.newer}>
-          {(newer) => (
-            <NoticeCard
-              tone="warning"
-              icon="ti ti-git-branch"
-              title={t().newerTitle({ who: newer().author, n: newer().number })}
-              detail={
-                <>
-                  <p>{t().newerSub({ n: props.number })}</p>
-                  <div class="mt-2">
-                    <ButtonLink size="sm" href={newer().href}>
-                      {t().reviewNewer({ n: newer().number })}
-                    </ButtonLink>
-                  </div>
-                </>
-              }
-            />
-          )}
-        </Show>
-        <Show when={pending() && !props.newer && props.staleComparison}>
-          <NoticeCard tone="warning" title={t().staleTitle} detail={t().staleSub} />
-        </Show>
-        <Show when={pending() && props.own && !props.soleAdminNotice}>
-          <NoticeCard tone="neutral" icon="ti ti-user-x" title={t().ownTitle} detail={t().ownSub} />
-        </Show>
-        <Show when={pending() && props.soleAdminNotice}>
-          {(notice) => <NoticeCard tone="warning" icon="ti ti-user-shield" title={t().soleTitle} detail={notice()} />}
-        </Show>
-        <Show when={failure()}>
-          {(message) => (
-            <NoticeCard
-              id={FAILURE_ID}
-              tabIndex={-1}
-              tone="danger"
-              title={message()}
-              detail={signOutFailed() ? <span role="alert">{t().signOutFailed}</span> : undefined}
-              actions={
-                <div class="flex flex-wrap gap-2">
-                  <Show when={failureCode() === "REAUTHENTICATE"}>
-                    <Show
-                      when={!signOutFailed()}
-                      fallback={
-                        <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
-                          <i class="ti ti-refresh" aria-hidden="true" />
-                          {t().reload}
-                        </Button>
-                      }
-                    >
-                      <ButtonLink size="sm" href={signInHref()} navigation="document">
-                        {t().signInAgain}
-                      </ButtonLink>
-                    </Show>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      wrap
-                      loading={signingOut()}
-                      disabled={!props.authorUserId}
-                      onClick={() => void signInAdmin()}
-                    >
-                      {t().signInAdmin}
-                    </Button>
-                  </Show>
-                  <Show when={failureCode() === "NOT_FOUND"}>
-                    <ButtonLink size="sm" variant="secondary" href={props.listHref}>
-                      {t().backToList}
-                    </ButtonLink>
-                  </Show>
-                  <Show when={failureCode() !== "REAUTHENTICATE"}>
-                    <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
-                      <i class="ti ti-refresh" aria-hidden="true" />
-                      {t().reload}
-                    </Button>
-                  </Show>
-                </div>
-              }
-            />
-          )}
-        </Show>
-
-        <section class="grid gap-2" aria-labelledby="code-review-why">
-          <h3 id="code-review-why" class="text-base font-semibold">
-            {t().why}
-          </h3>
-          <Show when={props.why.length} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().whyNone}</p>}>
-            <ul class="grid gap-2">
-              <For each={props.why}>
-                {(line) => (
-                  <li class="flex items-start gap-3 text-sm">
-                    <i class="ti ti-user-shield mt-0.5 text-(--k2b-text-muted)" aria-hidden="true" />
-                    <span>{line}</span>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </Show>
-        </section>
-
-        <section class="grid gap-2" aria-labelledby="code-review-rights">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 id="code-review-rights" class="text-base font-semibold">
-              {t().rights}
-            </h3>
-            <span class="text-xs text-(--k2b-text-muted)">{t().rightsSub}</span>
-          </div>
-          <Show when={props.rights.length} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().noRights}</p>}>
-            <ul class="grid gap-1">
-              <For each={props.rights}>
-                {(right) => (
-                  <li
-                    class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm"
-                    classList={{ "bg-(--k2b-success-surface)": right.change === "added" }}
-                    data-change={right.change}
-                  >
-                    <i
-                      class={`ti ${right.change === "added" ? "ti-plus text-(--k2b-success-text)" : right.change === "removed" ? "ti-minus text-(--k2b-text-muted)" : right.icon}`}
-                      aria-hidden="true"
-                    />
-                    <span class="min-w-0 flex-1" classList={{ "line-through text-(--k2b-text-muted)": right.change === "removed" }}>
-                      <span class="font-medium">{right.label}</span>
-                      <span class="block text-xs text-(--k2b-text-muted)">{right.sub}</span>
-                    </span>
-                    <span class="shrink-0 text-xs text-(--k2b-text-muted)">
-                      {right.change === "added" ? t().changeAdded : right.change === "removed" ? t().changeRemoved : t().changeSame}
-                    </span>
-                    <Show when={right.file && right.line && props.files}>
-                      <button
-                        type="button"
-                        class="k2b-text-link shrink-0 font-mono text-xs"
-                        aria-label={t().showLine({ file: right.file ?? "", n: right.line ?? 0 })}
-                        onClick={() => showLine(right)}
-                      >
-                        {t().lineRef({ n: right.line ?? 0 })}
-                      </button>
-                    </Show>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </Show>
-        </section>
-
-        <Show when={props.database}>
-          <p class="text-sm">
-            <i class="ti ti-database" aria-hidden="true" /> {t().usesDatabase}
-          </p>
-        </Show>
-        <section class="grid gap-2" aria-labelledby="code-review-internet">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 id="code-review-internet" class="text-base font-semibold">
-              {t().internetOrigins}
-            </h3>
-            <span class="text-xs text-(--k2b-text-muted)">{t().internetSub}</span>
-          </div>
-          <Show when={props.internet.length} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().internetNone}</p>}>
-            <ul class="grid gap-1">
-              <For each={props.internet}>
-                {(target) => (
-                  <li class="flex items-center gap-3 px-3 py-1 text-sm">
-                    <i class="ti ti-world text-(--k2b-text-muted)" aria-hidden="true" />
-                    <span class="min-w-0 flex-1">
-                      <span class="font-mono">{target}</span>
-                    </span>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </Show>
-        </section>
-
-        <Show when={props.secrets.length}>
-          <section class="grid gap-2" aria-labelledby="code-review-secrets">
-            <h3 id="code-review-secrets" class="text-base font-semibold">
-              {t().secretBindings}
-            </h3>
-            <ul class="grid gap-2">
-              <For each={props.secrets}>
-                {(binding) => (
-                  <li class="grid gap-1 px-3 py-1 text-sm">
-                    <span class="font-mono break-all">{binding.name}</span>
-                    <span class="font-mono break-all">
-                      {binding.origin}
-                      {binding.pathPrefix}
-                    </span>
-                    <span class="text-(--k2b-text-muted)">{t().secretHeaders({ names: binding.headers.join(", ") })}</span>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </section>
-        </Show>
-        <section class="grid gap-2" aria-labelledby="code-review-explanation">
-          <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <h3 id="code-review-explanation" class="text-base font-semibold">
-              {t().whatHappens}
-            </h3>
-            <span class="text-xs text-(--k2b-text-muted)">
-              <i class="ti ti-sparkles text-(--k2b-ai-accent)" aria-hidden="true" /> {t().aiHint}
-            </span>
-          </div>
-          <Show
-            when={explanation()}
-            fallback={
-              <Show
-                when={!explaining()}
-                fallback={
-                  <div class="grid gap-2 py-0.5" role="status" aria-label={t().whatHappens}>
-                    <Skeleton class="h-3 w-full" />
-                    <Skeleton class="h-3 w-4/5" />
-                  </div>
-                }
-              >
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <Show when={explainFailed()}>
-                    <p class="text-sm text-(--k2b-text-muted)">{t().explainFailed}</p>
-                  </Show>
-                  <Button size="sm" variant="secondary" onClick={() => void explain()}>
-                    <i class={`ti ${explainFailed() ? "ti-refresh" : "ti-sparkles"}`} aria-hidden="true" />
-                    {explainFailed() ? t().explainRetry : t().explain}
-                  </Button>
-                </div>
-              </Show>
-            }
-          >
-            {(text) => <p class="max-w-prose text-sm">{text()}</p>}
-          </Show>
-        </section>
-
-        <section class="grid gap-2" aria-labelledby="code-review-check">
-          <h3 id="code-review-check" class="text-base font-semibold">
-            {t().check}
-          </h3>
-          <Show when={props.check} fallback={<p class="text-sm text-(--k2b-text-muted)">{t().evidenceMissing}</p>}>
-            {(check) => (
-              <ul class="grid gap-1">
-                <li class="flex items-center gap-3 px-3 py-1 text-sm" data-check="tests">
-                  <i
-                    class={`ti ${check().testsOk ? "ti-circle-check text-(--k2b-success-text)" : "ti-alert-triangle text-(--k2b-warning-text)"}`}
-                    aria-hidden="true"
-                  />
-                  <span class="min-w-0 flex-1">
-                    {t().checkTypes} · {check().tests}
-                  </span>
-                </li>
-                <Show when={check().trial}>
-                  {(trial) => (
-                    <li class="grid gap-2 px-3 py-1 text-sm" data-check="trial">
-                      <div class="flex items-center gap-3">
-                        <i class="ti ti-player-play text-(--k2b-text-muted)" aria-hidden="true" />
-                        <span class="min-w-0 flex-1">{trial()}</span>
-                        <Show when={check().calls.length}>
-                          <Button size="sm" variant="ghost" aria-expanded={callsOpen()} onClick={() => setCallsOpen(!callsOpen())}>
-                            {callsOpen() ? t().hideCalls : check().comparedWith === null ? t().showCalls : t().compare}
-                          </Button>
-                        </Show>
-                      </div>
-                      <Show when={callsOpen()}>
-                        <table class="w-full text-left text-xs">
-                          <thead class="text-(--k2b-text-muted)">
-                            <tr>
-                              <th class="py-1 pr-3 font-medium">{t().callColumn}</th>
-                              <Show when={check().comparedWith}>
-                                {(number) => <th class="py-1 pr-3 text-right font-medium">{t().callsBefore({ n: number() })}</th>}
-                              </Show>
-                              <th class="py-1 text-right font-medium">{t().callsNow}</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <For each={check().calls}>
-                              {(call) => (
-                                <tr>
-                                  <td class="py-1 pr-3" title={call.operation}>
-                                    {call.label}
-                                  </td>
-                                  <Show when={check().comparedWith}>
-                                    <td class="py-1 pr-3 text-right tabular-nums">{call.before}</td>
-                                  </Show>
-                                  <td class="py-1 text-right tabular-nums">{call.now}</td>
-                                </tr>
-                              )}
-                            </For>
-                          </tbody>
-                        </table>
-                      </Show>
-                    </li>
-                  )}
-                </Show>
-              </ul>
-            )}
-          </Show>
-        </section>
-
-        <section class="grid gap-2" aria-labelledby="code-review-diff" data-code-source-region="admin-approval">
-          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h3 id="code-review-diff" class="text-base font-semibold">
-              {t().diff}
-            </h3>
-            <span class="text-xs text-(--k2b-text-muted)">{props.diffHeader}</span>
-          </div>
-          <CodeDiff
-            files={props.files ?? []}
-            mark={mark()}
-            status={props.files ? undefined : "error"}
-            errorDescription={t().diffFailedSub}
-            onRetry={() => reloadCodeArea()}
-            label={t().diff}
+  // ---------- Notices ----------
+  const notices = () => (
+    <>
+      <Show when={arrival()?.kind === "conflict" && props.decision}>
+        {(decision) => (
+          <NoticeCard
+            id={RESULT_ID}
+            tabIndex={-1}
+            tone="warning"
+            icon="ti ti-users"
+            title={t().conflictTitle({ who: props.decision?.by ?? t().unknownAuthor, n: props.number })}
+            detail={t().conflictSub}
+            data-decision={String(Boolean(decision()))}
           />
-        </section>
-      </div>
+        )}
+      </Show>
+      <Show when={arrival()?.kind === "withdrawn"}>
+        <NoticeCard
+          id={RESULT_ID}
+          tabIndex={-1}
+          tone="danger"
+          icon="ti ti-alert-circle"
+          title={t().withdrawnTitle({ n: props.number })}
+          detail={t().withdrawnSub({ keep: keep() })}
+        />
+      </Show>
+      <Show when={props.previous}>
+        {(previous) => (
+          <NoticeCard
+            tone="neutral"
+            icon="ti ti-message-2"
+            title={t().previousTitle({ n: previous().number })}
+            detail={
+              <div class="core-code-review__previous">
+                <p>{previous().message}</p>
+                <Show when={previous().comments.length}>
+                  <p class="core-code-review__muted">{t().previousComments({ n: previous().comments.length })}</p>
+                  <ul class="core-code-review__previous-list">
+                    <For each={previous().comments}>
+                      {(comment) => (
+                        <li>
+                          <strong>{comment.author.id === props.viewerId ? t().youCap : (comment.author.name ?? t().unknownAuthor)}</strong>
+                          {" · "}
+                          {comment.body}
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+              </div>
+            }
+          />
+        )}
+      </Show>
+      <Show when={pending() && props.newer}>
+        {(newer) => (
+          <NoticeCard
+            tone="warning"
+            icon="ti ti-git-branch"
+            title={ta().newerTitle({ who: newer().author, n: newer().number })}
+            detail={
+              <>
+                <p>{ta().newerSub({ n: props.number })}</p>
+                <div class="mt-2">
+                  <ButtonLink size="sm" href={newer().href}>
+                    {ta().reviewNewer({ n: newer().number })}
+                  </ButtonLink>
+                </div>
+              </>
+            }
+          />
+        )}
+      </Show>
+      <Show when={pending() && !props.newer && props.staleComparison}>
+        <NoticeCard tone="warning" title={ta().staleTitle} detail={ta().staleSub} />
+      </Show>
+      <Show when={pending() && props.own && !props.soleAdminNotice}>
+        <NoticeCard tone="neutral" icon="ti ti-user-x" title={ta().ownTitle} detail={ta().ownSub} />
+      </Show>
+      <Show when={pending() && props.soleAdminNotice}>
+        {(notice) => <NoticeCard tone="warning" icon="ti ti-user-shield" title={ta().soleTitle} detail={notice()} />}
+      </Show>
+      <For each={props.readModel?.notices.items ?? []}>
+        {(notice) => (
+          <NoticeCard
+            tone={notice.severity === "block" ? "danger" : "warning"}
+            icon={notice.severity === "block" ? "ti ti-ban" : "ti ti-alert-triangle"}
+            title={notice.text}
+            detail={notice.consequence}
+          />
+        )}
+      </For>
+      <Show when={failure()}>
+        {(message) => (
+          <NoticeCard
+            id={FAILURE_ID}
+            tabIndex={-1}
+            tone="danger"
+            title={message()}
+            detail={signOutFailed() ? <span role="alert">{ta().signOutFailed}</span> : undefined}
+            actions={
+              <div class="flex flex-wrap gap-2">
+                <Show when={failureCode() === "REAUTHENTICATE"}>
+                  <Show
+                    when={!signOutFailed()}
+                    fallback={
+                      <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
+                        <i class="ti ti-refresh" aria-hidden="true" />
+                        {ta().reload}
+                      </Button>
+                    }
+                  >
+                    <ButtonLink size="sm" href={signInHref()} navigation="document">
+                      {ta().signInAgain}
+                    </ButtonLink>
+                  </Show>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    wrap
+                    loading={signingOut()}
+                    disabled={!props.authorUserId}
+                    onClick={() => void signInAdmin()}
+                  >
+                    {ta().signInAdmin}
+                  </Button>
+                </Show>
+                <Show when={failureCode() === "NOT_FOUND"}>
+                  <ButtonLink size="sm" variant="secondary" href={props.listHref}>
+                    {t().backToList}
+                  </ButtonLink>
+                </Show>
+                <Show when={failureCode() !== "REAUTHENTICATE"}>
+                  <Button size="sm" variant="secondary" onClick={() => reloadCodeArea()}>
+                    <i class="ti ti-refresh" aria-hidden="true" />
+                    {ta().reload}
+                  </Button>
+                </Show>
+              </div>
+            }
+          />
+        )}
+      </Show>
+    </>
+  );
 
-      {/* The binding is one line on top, the decision one row below it, so the approve button never wraps alone. */}
-      <div class="sticky bottom-0 grid gap-2 bg-(--k2b-surface) px-2 py-3">
-        <p class="text-xs text-(--k2b-text-muted)">
-          <i class="ti ti-lock" aria-hidden="true" /> {t().boundTo({ n: props.number })}
-          <span class="hidden md:inline">
-            {" "}
-            · {t().sourceHash} <code title={props.binding.sourceHash}>{short(props.binding.sourceHash)}</code> · {t().bundleHash}{" "}
-            <code title={props.binding.bundleHash}>{short(props.binding.bundleHash)}</code>
+  // ---------- Overview ----------
+  const description = () => {
+    const model = props.readModel?.description;
+    return (
+      <Section
+        frame="line"
+        title={t().whatItDoes}
+        actions={
+          <span class="core-code-review__ai-mark">
+            <i class="ti ti-sparkles" aria-hidden="true" />
+            {model?.modelLabel ?? t().aiMark}
           </span>
-        </p>
-        <Show when={pending() && (!props.own || props.soleAdminNotice)}>
-          {/* Why approving is blocked sits on its own line, so the two buttons never split across rows. */}
-          <Show when={blocked() ?? (props.staleComparison ? t().staleTitle : null)}>
-            {(reason) => (
-              <p class="text-right text-xs font-medium text-(--k2b-warning-text)">
-                <i class="ti ti-alert-triangle" aria-hidden="true" /> {reason()}
-              </p>
-            )}
-          </Show>
-          <div class="flex flex-wrap items-center justify-end gap-2">
-            <Button
-              variant="secondary"
-              disabled={!mayDecide() || busy() !== null}
-              loading={busy() === "reject"}
-              onClick={() => void decide(false)}
+        }
+      >
+        <Show
+          when={explanation()}
+          fallback={
+            <Show
+              when={!explaining()}
+              fallback={
+                <div class="grid gap-2 py-0.5" role="status" aria-label={t().whatItDoes}>
+                  <Skeleton class="h-3 w-full" />
+                  <Skeleton class="h-3 w-4/5" />
+                </div>
+              }
             >
-              {t().reject}
-            </Button>
-            <Button
-              disabled={!mayDecide() || blocked() !== null || busy() !== null}
-              loading={busy() === "approve"}
-              onClick={() => void decide(true)}
-            >
-              <i class="ti ti-check" aria-hidden="true" />
-              {t().approveVersion({ n: props.number })}
-            </Button>
-          </div>
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <Show when={explainFailed()}>
+                  <p class="core-code-review__muted">{t().explainFailed}</p>
+                </Show>
+                <Button size="sm" variant="secondary" onClick={() => void explain()}>
+                  <i class={`ti ${explainFailed() ? "ti-refresh" : "ti-sparkles"}`} aria-hidden="true" />
+                  {explainFailed() ? t().explainRetry : t().explain}
+                </Button>
+              </div>
+            </Show>
+          }
+        >
+          {(text) => <p class="core-code-review__text">{text()}</p>}
         </Show>
+      </Section>
+    );
+  };
+
+  const commentsIsland = () => (
+    <Show when={threads().length}>
+      <Section
+        frame="line"
+        title={t().commentsTitle}
+        count={total()}
+        actions={
+          <button type="button" class="k2b-text-link core-code-review__link" onClick={() => chooseTab("code")}>
+            {t().seeInCode}
+          </button>
+        }
+      >
+        <div class="core-code-review__overview-threads">
+          <Show when={olderCursor()}>
+            <LoadMore hasMore auto={false} side="start" label={t().olderComments} onLoadMore={loadOlder} count={comments().length} />
+          </Show>
+          <For each={threads()}>
+            {(thread) => (
+              <Discussion.Thread label={t().threadLabel({ path: thread.path, n: thread.line })} placeholder="" submitLabel="">
+                <For each={thread.entries}>{(comment) => entry(comment, false)}</For>
+              </Discussion.Thread>
+            )}
+          </For>
+          <p class="core-code-review__muted">
+            {props.next === "cli" ? t().commentsFootCli({ who: props.recipient }) : t().commentsFoot({ who: props.recipient })}
+          </p>
+        </div>
+      </Section>
+    </Show>
+  );
+
+  const mayDo = () => {
+    const model = props.readModel;
+    if (!model) return null;
+    const rows = (items: readonly { text: string; note?: string }[]) => (
+      <For each={items}>
+        {(row) => (
+          <span class="core-code-review__may-row">
+            {row.text}
+            <Show when={row.note}>{(note) => <span class="core-code-review__muted"> · {note()}</span>}</Show>
+          </span>
+        )}
+      </For>
+    );
+    return (
+      <Section frame="line" title={t().mayDo({ n: props.number })}>
+        <dl class="core-code-review__may">
+          <Show when={model.timing.items.length}>
+            <dt>{t().mayRuns}</dt>
+            <dd>{rows(model.timing.items)}</dd>
+          </Show>
+          <dt>{t().mayApps}</dt>
+          <dd>
+            <Show when={model.mayDo.items.length} fallback={t().mayNothing}>
+              {rows(model.mayDo.items)}
+            </Show>
+            <Show when={model.mayDo.moreText}>{(more) => <span class="core-code-review__muted">{more()}</span>}</Show>
+          </dd>
+        </dl>
+      </Section>
+    );
+  };
+
+  const examples = () => {
+    const model = props.readModel?.examples;
+    if (!model || model.state === "unavailable" || model.state === "none") return null;
+    return (
+      <Section frame="line" title={t().examples} meta={model.summary} description={model.explanation}>
+        <ul class="core-code-review__examples">
+          <For each={model.items}>
+            {(example) => (
+              <li class="core-code-review__example">
+                <i
+                  class={example.state === "succeeded" ? "ti ti-circle-check" : "ti ti-circle-x"}
+                  data-tone={example.state === "succeeded" ? "success" : "danger"}
+                  aria-hidden="true"
+                />
+                <span class="core-code-review__example-text">
+                  <strong>{example.name}</strong>
+                  <span class="core-code-review__muted">{example.sentence}</span>
+                </span>
+                <StatusBadge tone={example.state === "succeeded" ? "ok" : "error"} variant="text" icon={null} label={example.status} />
+              </li>
+            )}
+          </For>
+        </ul>
+      </Section>
+    );
+  };
+
+  const overview = () => (
+    <div class="core-code-review__panel">
+      {frame(false)}
+      <div class="core-code-review__columns">
+        <div class="core-code-review__column">
+          <Show when={!closed() || !props.decision}>{description()}</Show>
+          {commentsIsland()}
+        </div>
+        <div class="core-code-review__column">
+          {mayDo()}
+          {examples()}
+        </div>
       </div>
+    </div>
+  );
+
+  const codeView = (view: "code" | "diff") => (
+    <div class="core-code-review__panel">
+      {frame(true)}
+      {codeField(view)}
+    </div>
+  );
+
+  // Built once: the tab options are read again whenever a count changes, and the views must keep their state.
+  const overviewPanel = overview();
+  const codePanel = codeView("code");
+  const diffPanel = codeView("diff");
+  const codeCount = (
+    <span class="core-code-review__count">
+      <i class="ti ti-message-2" aria-hidden="true" />
+      {total()}
+    </span>
+  );
+  const diffCount = (
+    <span class="core-code-review__count">
+      <span data-tone="add">+{stat().add}</span> <span data-tone="del">−{stat().del}</span>
+    </span>
+  );
+
+  return (
+    <div class="core-code-review">
+      <div class="core-code-review__notices">{notices()}</div>
+      <Tabs
+        ariaLabel={t().tabsLabel}
+        value={tab}
+        onValueChange={(value) => chooseTab(value)}
+        options={[
+          { value: "overview", label: t().tabOverview, panel: overviewPanel },
+          {
+            value: "code",
+            label: t().tabCode,
+            count: codeCount,
+            countReserve: "99",
+            countLabel: t().commentCount({ n: total() }),
+            panel: codePanel,
+          },
+          first()
+            ? { value: "diff", label: t().tabDiff, disabled: true, panel: diffPanel }
+            : {
+                value: "diff",
+                label: t().tabDiff,
+                count: diffCount,
+                countReserve: "+999 −999",
+                countLabel: t().diffCount({ add: stat().add, del: stat().del }),
+                panel: diffPanel,
+              },
+        ]}
+      />
+      <Show when={first()}>
+        <span class="k2b-sr-only">{t().diffFirst}</span>
+      </Show>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import {
   Chart,
   CodeDiff,
   type CodeDiffFile,
+  type CodeDiffLocation,
   CodeDisplay,
   createDataTableView,
   DataTable,
@@ -763,6 +764,52 @@ const CodeDiffDemo = () => {
         status={state() === "loading" ? "loading" : state() === "error" ? "error" : undefined}
         errorDescription="Nothing was approved or rejected. Try again to see the code."
         onRetry={() => setState("diff")}
+      />
+    </DemoCard>
+  );
+};
+
+// The same review with an action on every line: a note opens below the line and closes back to its action.
+const CodeDiffLinesDemo = () => {
+  const [notes, setNotes] = createSignal<CodeDiffLocation[]>([{ path: "index.ts", line: 14 }]);
+  const [focusLine, setFocusLine] = createSignal<CodeDiffLocation>();
+  const close = (location: CodeDiffLocation) => {
+    setNotes((current) => current.filter((note) => note.path !== location.path || note.line !== location.line));
+    setFocusLine({ ...location });
+  };
+  return (
+    <DemoCard
+      id="code-diff-lines"
+      chip={{ kind: "component", name: "CodeDiff", from: "@k2b/ui" }}
+      description="An action at the start of every line and a place below it: hover or Tab into the code, arrow keys choose the line, Enter opens a note below it; closing returns the focus to that line."
+      code={`<CodeDiff
+  files={files}
+  lineAction={{ label: ({ line }) => \`Comment on line \${line}\`, onSelect: open }}
+  slotLines={notes()}
+  lineSlot={(location) => <Note location={location} onClose={() => close(location)} />}
+  focusLine={focusLine()}
+/>`}
+    >
+      <CodeDiff
+        files={diffFiles}
+        lineAction={{
+          label: ({ line }) => `Comment on line ${line}`,
+          onSelect: (location) =>
+            setNotes((current) =>
+              current.some((note) => note.path === location.path && note.line === location.line) ? current : [...current, location],
+            ),
+        }}
+        slotLines={notes()}
+        lineSlot={(location) => (
+          <p class="flex items-center gap-3 py-1 text-sm">
+            <span>Note on line {location.line}</span>
+            <Button size="sm" variant="ghost" onClick={() => close(location)}>
+              Close
+            </Button>
+          </p>
+        )}
+        focusLine={focusLine()}
+        toolbarEnd="Keyboard: Tab into the code, ↑ ↓ chooses the line, Enter comments"
       />
     </DemoCard>
   );
@@ -2599,6 +2646,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <CodeDemo />
       <CodeDiffDemo />
+      <CodeDiffLinesDemo />
     </DemoGrid>
   ),
   logs: () => (

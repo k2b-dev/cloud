@@ -15,7 +15,6 @@ import {
   readCodeAdminPolicyHistory,
   readCodeAdminRunners,
   readCodeAdminSummary,
-  readCodeAdminVersionSource,
 } from "../../../code/admin";
 import { listUnusedCodeDatabases } from "../../../code/database-retention";
 import { listCodePageReports } from "../../../code/page-reports";
@@ -109,6 +108,7 @@ export default ssr<AuthContext>(async (c) => {
         data={data}
         noPermission={noPermission}
         retryHref={requestPath(c)}
+        viewerId={c.get("user")?.id}
         appNames={Object.fromEntries(runtime.apps.map((app) => [app.id, app.name]))}
         documentationBase={documentationBase}
       />

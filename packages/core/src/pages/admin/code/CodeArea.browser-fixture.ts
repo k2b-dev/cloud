@@ -123,7 +123,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     const data = state === "noperm" ? null : codeFixtureData(state, c.req.query(), locale);
     // A decision persists until reset, so the reloaded page shows its result and the sidebar count drops.
     const decision = query.id ? decisions.get(query.id) : undefined;
-    if (data && decision !== undefined) data.approval = fixtureApprovalDetail(decision ? "approved" : "rejected");
+    if (data && decision !== undefined) data.approval = fixtureApprovalDetail(decision === "changes_requested" ? "changes" : decision);
     if (data?.approvals && typeof data.approvals === "object")
       data.approvals = { ...data.approvals, items: data.approvals.items.filter((item) => !decisions.has(item.versionId)) };
     const waiting = 4 - decisions.size;
@@ -153,6 +153,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
             data,
             noPermission: state === "noperm",
             retryHref: c.req.url,
+            viewerId: user.id,
             appNames: { mail: "Mail", spaces: "Spaces", werkstatt: "Werkstattbuch" },
             documentationBase: undefined,
           });
@@ -164,7 +165,7 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
     );
   });
 
-  const decisions = new Map<string, boolean>();
+  const decisions = new Map<string, "approved" | "changes_requested" | "rejected" | "withdrawn">();
   /** Requests the islands sent, for assertions. */
   const requests: { path: string; body: unknown }[] = [];
   const api = async (request: Request, url: URL): Promise<Response> => {
@@ -195,8 +196,21 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
           { code: refusal, message: "Private transport diagnostic" },
           { status: refusal === "NOT_FOUND" ? 404 : refusal === "BUSY" || refusal === "UNAVAILABLE" ? 409 : 403 },
         );
-      const decision = body && typeof body === "object" && "approved" in body ? body.approved : null;
-      decisions.set(fixtureApprovalDetail().version.id, Boolean(decision));
+      if (state === "conflict") {
+        // Jana Probe decided first; the reloaded page shows her decision.
+        decisions.set(fixtureApprovalDetail().version.id, "rejected");
+        return Response.json({ code: "CONFLICT", message: "Already decided" }, { status: 409 });
+      }
+      if (state === "gone") {
+        decisions.set(fixtureApprovalDetail().version.id, "withdrawn");
+        return Response.json({ code: "code_approval_revoked", message: "Withdrawn" }, { status: 409 });
+      }
+      if (state === "dialogfail") return Response.json({ code: "BAD_INPUT", message: "Refused" }, { status: 400 });
+      const outcome =
+        body && typeof body === "object" && "outcome" in body && typeof body.outcome === "string"
+          ? (body.outcome as "approved" | "changes_requested" | "rejected")
+          : "approved";
+      decisions.set(fixtureApprovalDetail().version.id, outcome);
       const detail = fixtureApprovalDetail();
       return Response.json({
         data: {
@@ -207,18 +221,54 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
             number: detail.version.number,
           },
           binding: detail.binding,
-          status: decision ? "approved" : "rejected",
+          status: outcome,
           approvalId: detail.approvalId,
           origin: { kind: "cli" },
           decision: {
-            approved: Boolean(decision),
-            outcome: decision ? "approved" : "rejected",
+            approved: outcome === "approved",
+            outcome,
             comment: body && typeof body === "object" && "comment" in body ? body.comment : null,
             decidedBy: user.id,
             decidedAt: "2026-11-01T12:20:00.000Z",
             soleAdmin: false,
             label: "",
           },
+        },
+      });
+    }
+    if (path === "comments/create") {
+      if (state === "commentfail") return Response.json({ code: "UNAVAILABLE", message: "Busy" }, { status: 503 });
+      const input = (body ?? {}) as { path?: string; line?: number; body?: string; parentId?: string };
+      return Response.json({
+        data: {
+          id: `c2000000-0000-4000-8000-${String(requests.length).padStart(12, "0")}`,
+          author: { id: user.id, name: user.displayName, avatarHash: null },
+          createdAt: "2026-11-01T12:10:00.000Z",
+          body: input.body ?? "",
+          parentId: input.parentId ?? null,
+          path: input.path,
+          line: input.line,
+        },
+      });
+    }
+    if (path === "comments/delete") return Response.json({ data: { deleted: true } });
+    if (path === "comments/list") {
+      if (state === "olderfail") return Response.json({ code: "UNAVAILABLE" }, { status: 503 });
+      return Response.json({
+        data: {
+          items: [
+            {
+              id: "c3000000-0000-4000-8000-000000000001",
+              author: { id: FIXTURE_PEOPLE.jana, name: "Jana Probe", avatarHash: null },
+              createdAt: "2026-11-01T10:00:00.000Z",
+              body: "Ein älterer Kommentar zur Zeile 5.",
+              parentId: null,
+              path: "code.ts",
+              line: 5,
+            },
+          ],
+          nextBefore: null,
+          total: 4,
         },
       });
     }

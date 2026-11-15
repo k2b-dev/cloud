@@ -40,7 +40,10 @@ export type CodeRunnerMetrics = {
   oldestWaitingMs: number;
   instances: number;
   freeSlots: number;
-  runners: Array<{ instanceId: string; freeSlots: number; lastSeenAt: string }>;
+  /** All places of the fresh fleet: free slots plus the runs and authoring jobs it holds now. */
+  slots?: number;
+  /** `busySlots` counts the runs that instance holds now; free plus busy are its places. */
+  runners: Array<{ instanceId: string; freeSlots: number; busySlots?: number; lastSeenAt: string }>;
   nextCursor: string | null;
 };
 /** Stable outcomes are translated at the UI, including the skipped tick and explicit rerun recovery. */
