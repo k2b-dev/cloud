@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 import { type MapDialogFixture, startMapDialogFixture } from "../../test/map-dialog-fixture";
 
 setDefaultTimeout(30_000);
@@ -290,7 +290,8 @@ test("on a phone the map fills the screen and the list is a sheet with three hei
       const name = document.querySelector(".k2b-map-dialog__detail h3");
       return name?.textContent === "Restaurierung Sedlmayr" && name.getBoundingClientRect().top >= body.top;
     });
-    // The 22 px grip has a 44 px target.
+    // The 22 px grip has a 44 px target, measured at rest: the sheet glides to its detent by transform.
+    await settled(page);
     const grip = (await handle.boundingBox())!;
     const targets = await page.evaluate(
       ([x, top, bottom]) => [document.elementFromPoint(x!, top!)?.className, document.elementFromPoint(x!, bottom!)?.className],
