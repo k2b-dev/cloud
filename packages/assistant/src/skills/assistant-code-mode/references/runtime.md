@@ -57,3 +57,5 @@ source convention. Ambiguous numeric columns use unambiguous number columns in t
 Codes with leading zeros and dates remain text. Use
 `numbers:false` to keep all values as text. `cloud.sheet.toCsv` is asynchronous:
 await it before passing the result to `cloud.download`.
+
+For ZIP inputs and outputs use `cloud.zip`; read [ZIP archives](zip.md) for limits, CAMT and download examples.

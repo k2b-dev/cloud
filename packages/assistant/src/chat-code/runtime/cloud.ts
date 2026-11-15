@@ -6,6 +6,7 @@ import { createHttp } from "./http";
 import { boundMoney, chart, html } from "./lib";
 import { createPdf } from "./pdf";
 import { createViews } from "./views";
+import { createZipFile, openZip } from "./zip";
 
 type Rpc = (method: string, args?: unknown[], signal?: AbortSignal) => Promise<unknown>;
 export type RuntimeContext = { locale: string; timeZone: string; user: { id: string; name: string } | null };
@@ -117,6 +118,7 @@ export function createCloud(
       },
     },
     download: createDownload(rpc),
+    zip: { open: openZip, create: createZipFile },
     view: createViews(rpc, context, script),
     html,
     chart: (options: Parameters<typeof chart>[0]) => chart(options, context.locale, context.timeZone),
