@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, settled } from "../../test/browser";
 
 // A page swap inserts server sidebars whose inline scroll script never runs. Whether the current item comes into
 // view without moving the page, and whether the offset is stored on leave, depends on real layout.
@@ -43,6 +43,7 @@ test("a swapped sidebar shows its current item without moving the page, and stor
     await page.goto("http://sidebar.test/tools");
     await page.addScriptTag({ content: script });
     await page.evaluate(() => window.scrollTo(0, 400));
+    await settled(page);
     const result = await page.evaluate(() => {
       (window as unknown as { follow: () => void }).follow();
       const body = document.querySelector<HTMLElement>(".k2b-app-workspace__sidebar-body")!;
