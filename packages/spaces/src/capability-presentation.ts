@@ -2,6 +2,12 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
+  results: {
+    "task.create": { targetType: "item", kind: "task", text: "Created {target}" },
+    "task.update": { targetType: "item", kind: "task", text: "Updated {target}" },
+    "event.create": { targetType: "item", kind: "event", text: "Created {target}" },
+    "item.tags.set": { targetType: "item", kind: "item", text: "Updated tags on {target}" },
+  },
   sentences: {
     "task.create": {
       approval: "Create the task {input.title}",
@@ -665,6 +671,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "event.create": {
+          result: { targetType: "item", kind: "Termin", text: "{target} angelegt" },
           title: "Kalenderereignis erstellen",
           sentences: {
             approval: "Termin {input.title} am {input.startsAt} erstellen",
@@ -775,6 +782,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "item.tags.set": {
+          result: { targetType: "item", kind: "Eintrag", text: "Tags für {target} geändert" },
           title: "Artikel-Tags festlegen",
           description:
             "Ersetzen Sie die Tags für eine beschreibbare Aufgabe oder ein beschreibbares Ereignis, ohne die anderen Felder zu ändern.",
@@ -800,6 +808,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "task.create": {
+          result: { targetType: "item", kind: "Aufgabe", text: "{target} angelegt" },
           title: "Aufgabe erstellen",
           sentences: {
             approval: "Aufgabe {input.title} erstellen",
@@ -843,6 +852,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
           },
         },
         "task.update": {
+          result: { targetType: "item", kind: "Aufgabe", text: "{target} geändert" },
           title: "Aufgabe aktualisieren",
           description:
             "Aufgabenfelder ändern. Zuständige einzeln mit addAssigneeIds/removeAssigneeIds ändern. Ein neuer Titel braucht den zuvor gelesenen expectedTitle; bei TITLE_CONFLICT neu laden und prüfen.",

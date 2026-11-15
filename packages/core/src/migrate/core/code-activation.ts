@@ -22,6 +22,21 @@ export async function migrate(db: SQL = sql): Promise<void> {
       FOR EACH ROW WHEN (NEW.state='active' AND OLD.state IS DISTINCT FROM NEW.state) EXECUTE FUNCTION code.version_card_live();
       CREATE OR REPLACE TRIGGER activation_insert_live AFTER INSERT ON code.activations
       FOR EACH ROW WHEN (NEW.state='active') EXECUTE FUNCTION code.version_card_live()`.simple();
+    // Keep read/list projections in the activation's own transaction. Failed attempts never change attribution.
+    await tx`CREATE OR REPLACE FUNCTION code.record_activation_time() RETURNS TRIGGER AS $$
+    BEGIN
+      IF NEW.state='active' AND (TG_OP='INSERT' OR OLD.state IS DISTINCT FROM 'active') THEN
+        UPDATE code.codes SET activated_at=NEW.updated_at,activated_by=NEW.activating_person
+          WHERE id=NEW.code_id AND active_version_id=NEW.version_id;
+      END IF;
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql`.simple();
+    await tx`CREATE OR REPLACE TRIGGER record_activation_time AFTER INSERT OR UPDATE ON code.activations
+      FOR EACH ROW EXECUTE FUNCTION code.record_activation_time()`.simple();
+    await tx`UPDATE code.codes c SET activated_at=a.updated_at,activated_by=a.activating_person FROM (
+      SELECT DISTINCT ON (code_id,version_id) code_id,version_id,updated_at,activating_person FROM code.activations
+      WHERE state='active' ORDER BY code_id,version_id,updated_at DESC,id DESC
+    ) a WHERE c.id=a.code_id AND c.active_version_id=a.version_id AND c.activated_at IS NULL`.simple();
     await tx`ALTER TABLE code.activations ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE`.simple();
     await tx`CREATE INDEX IF NOT EXISTS activations_code ON code.activations(code_id,created_at DESC,id)`.simple();
     await tx`ALTER TABLE code.activations DROP COLUMN IF EXISTS plan, DROP COLUMN IF EXISTS mandate_policy`.simple();

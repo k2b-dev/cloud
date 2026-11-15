@@ -14,8 +14,16 @@ export const CodeReadModelRowSchema = z.strictObject({
   href: text.optional(),
   app: text.optional(),
   icon: text.optional(),
+  state: z.enum(["succeeded", "replayed", "refused", "unknown"]).optional(),
 });
-export const CodeReadModelChangeSchema = z.strictObject({ kind: z.enum(["add", "remove", "same"]), text, note: text.optional() });
+export const CodeReadModelChangeSchema = z.strictObject({
+  kind: z.enum(["add", "remove", "same"]),
+  text,
+  note: text.optional(),
+  requiresApproval: z.boolean().optional(),
+  approvalReason: text.optional(),
+  accessLabel: text.optional(),
+});
 export const CodeReadModelNoticeSchema = z.strictObject({ severity: z.enum(["warning", "block"]), text, consequence: text });
 export const CodeReadModelExampleSchema = z.strictObject({
   name: text,
@@ -36,6 +44,7 @@ export const CodeVersionReadModelSchema = z.strictObject({
   timing: list(CodeReadModelRowSchema),
   changes: z.strictObject({
     state: z.enum(["first", "changed", "access_same_behavior_changed", "same", "unavailable"]),
+    approval: z.strictObject({ count, reason: text, accessLabel: text.nullable(), withoutLabel: text }).nullable().optional(),
     text,
     rows: list(CodeReadModelChangeSchema),
     assurance: text,
@@ -71,7 +80,7 @@ export type CodeRunReadModel = z.infer<typeof CodeRunReadModelSchema>;
 export const CodeActivityReadModelSchema = z.strictObject({
   week: z.iso.datetime(),
   counters: list(z.strictObject({ key: text, automationKey: text, text, count })),
-  recent: z.array(z.strictObject({ text, at: z.iso.datetime(), href: text.optional(), runId: z.uuid() })).max(CODE_READ_MODEL_RECENT_LIMIT),
+  recent: z.array(CodeReadModelRowSchema.extend({ at: z.iso.datetime(), runId: z.uuid() })).max(CODE_READ_MODEL_RECENT_LIMIT),
   timeline: z.strictObject({
     from: z.iso.datetime(),
     to: z.iso.datetime(),

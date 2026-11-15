@@ -2,6 +2,8 @@ import { sql } from "@k2b/cloud";
 import { CodeCheckedVersionManifestSchema, type CodeVersionReadModel, codeReadModelContracts } from "@k2b/cloud/contracts";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError } from "../access";
+import { codePolicyGroupRowsQuery, codePolicyGroupsFromRows, codePolicySnapshotFromRow, codePolicySnapshotQuery } from "../policy";
+import { effective } from "../policy-effective";
 import { codeSettings } from "../settings";
 import { readCode } from "../store";
 import { CodeVersionEvidenceSchema } from "../version-evidence";
@@ -15,10 +17,12 @@ export async function loadCodeVersionReadModel(
   context: CodeContext,
 ): Promise<CodeVersionReadModel> {
   const input = codeReadModelContracts.version.input.parse(raw);
-  await readCode(input.codeId, context);
+  const { code } = await readCode(input.codeId, context);
   const { locale } = codeReadModelMessages.resolve(context.locale ? [context.locale] : []);
   const [row] = await sql<
     {
+      policy: (Omit<Parameters<typeof codePolicySnapshotFromRow>[0], "updated_at"> & { updated_at: string }) | null;
+      memberships: Parameters<typeof codePolicyGroupsFromRows>[0];
       number: number;
       created_at: Date;
       manifest: unknown;
@@ -28,7 +32,9 @@ export async function loadCodeVersionReadModel(
       evidence: unknown;
       explanation: string | null;
     }[]
-  >`SELECT v.number,v.created_at,v.manifest,s.evidence,cmp.manifest AS comparison,cmp.id AS comparison_id,CASE WHEN ${input.comparisonVersionId !== undefined} THEN ${input.comparisonVersionId ?? null}::uuid ELSE (s.binding->>'comparisonVersionId')::uuid END AS expected_comparison_id,e.text AS explanation
+  >`SELECT (SELECT row_to_json(p) FROM (${codePolicySnapshotQuery(sql)}) p) AS policy,
+    (SELECT COALESCE(jsonb_agg(g),'[]'::jsonb) FROM (${codePolicyGroupRowsQuery(code.owner.kind === "person" ? code.owner.userId : null, sql, input.versionId)}) g) AS memberships,
+    v.number,v.created_at,v.manifest,s.evidence,cmp.manifest AS comparison,cmp.id AS comparison_id,CASE WHEN ${input.comparisonVersionId !== undefined} THEN ${input.comparisonVersionId ?? null}::uuid ELSE (s.binding->>'comparisonVersionId')::uuid END AS expected_comparison_id,e.text AS explanation
     FROM code.versions v LEFT JOIN code.version_submissions s ON s.version_id=v.id
     LEFT JOIN code.versions cmp ON cmp.code_id=v.code_id AND cmp.id=CASE WHEN ${input.comparisonVersionId !== undefined}
       THEN ${input.comparisonVersionId ?? null}::uuid ELSE (s.binding->>'comparisonVersionId')::uuid END
@@ -39,6 +45,8 @@ export async function loadCodeVersionReadModel(
   const manifest = CodeCheckedVersionManifestSchema.parse(row.manifest);
   const comparison = CodeCheckedVersionManifestSchema.safeParse(row.comparison);
   const evidence = CodeVersionEvidenceSchema.safeParse(row.evidence);
+  const policy = row.policy ? codePolicySnapshotFromRow({ ...row.policy, updated_at: new Date(row.policy.updated_at) }) : null;
+  const membership = codePolicyGroupsFromRows(row.memberships);
   return presentCodeVersion({
     versionId: input.versionId,
     number: row.number,
@@ -48,6 +56,14 @@ export async function loadCodeVersionReadModel(
     comparisonAvailable: row.expected_comparison_id === null || comparison.success,
     evidence: evidence.success ? evidence.data : null,
     explanation: row.explanation,
+    policy: policy
+      ? Object.fromEntries(
+          manifest.policyRows.map((classification) => [
+            classification,
+            effective(classification, code.owner, policy.definition, membership).value,
+          ]),
+        )
+      : {},
     names: await readModelNames([manifest, ...(comparison.success ? [comparison.data] : [])], context),
     locale,
     limits: { cases: await codeSettings.get("core.code.test_cases") },

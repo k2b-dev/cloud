@@ -40,6 +40,7 @@ import {
   SubscriptionUnsubscribeInputSchema,
 } from "./capability-contracts";
 import { checkMailCapabilityMessages } from "./capability-messages";
+import { mailCapabilityPresentation } from "./capability-presentation";
 import { summaryState } from "./frontend/_components/mail-summary-fixtures";
 import {
   attachmentExtraction,
@@ -70,6 +71,11 @@ import {
 } from "./service";
 import * as reviewReaders from "./service/capability-review-readers";
 import { previewMailCodeMessage, resolveMailCodeEvent, selectMailCodeMessages } from "./service/code-messages";
+
+test("conditional Mail outcomes keep counted automation wording instead of claiming creation or a full conversation move", () => {
+  expect(mailCapabilityPresentation.results?.["draft.create"]).toBeUndefined();
+  expect(mailCapabilityPresentation.results?.["conversation.move"]).toBeUndefined();
+});
 
 const mailboxId = "MbA123";
 const conversationId = "CvB234";

@@ -1,7 +1,13 @@
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "@k2b/cloud/capabilities/server";
-import { CloudResourceReaderViewSchema, type CodeCheckedVersionManifest, resolveCapabilityResourceReader } from "@k2b/cloud/contracts";
+import {
+  CloudResourceReaderViewSchema,
+  type CodeCheckedVersionManifest,
+  capabilityActionPolicy,
+  resolveCapabilityResourceReader,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 import type { CodeContext } from "../access";
+import { type CodePolicyRow, codePolicyRow, isCodeAiOperation } from "../policy-contracts";
 import { codeReadModelMessages } from "./messages";
 import type { ReadModelNames, ReadModelTarget } from "./present";
 
@@ -29,7 +35,7 @@ export async function readModelNames(
     return pending;
   };
   const targets = new Map<string, ReadModelTarget>();
-  const operations = new Map<string, { title: string; app?: string; icon?: string }>();
+  const operations = new Map<string, { title: string; app?: string; icon?: string; policyRow?: CodePolicyRow }>();
   const events = new Map<string, string>();
   const refs = new Map<string, { type: string; id: string | null }>();
   for (const manifest of manifests) {
@@ -84,6 +90,9 @@ export async function readModelNames(
     for (const operation of [...data.manifest.queries, ...data.manifest.actions])
       operations.set(`${appId}.${operation.localId}`, {
         title: operation.title,
+        policyRow: isCodeAiOperation(`${appId}.${operation.localId}`)
+          ? "ai"
+          : codePolicyRow("idempotency" in operation ? "action" : "query", capabilityActionPolicy(data.manifest, operation.localId)),
         app: data.appName,
         ...(data.appIcon ? { icon: data.appIcon } : {}),
       });
