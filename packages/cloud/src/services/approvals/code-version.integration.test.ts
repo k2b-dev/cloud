@@ -73,7 +73,7 @@ databaseSuite()("independent Code-version approvals", () => {
     approverRole: "admin",
     sentence: "Approve this version of Monday report?",
     input: { codeId: "demo", versionId: "v1", sourceHash: "a".repeat(64), bundleHash: "b".repeat(64) },
-    review: { ...reviewFixture(), content: { kind: "page", title: "Source diff", body: "- old\n+ new", format: "plain" } },
+    review: { ...reviewFixture(), view: { version: 1, blocks: [{ kind: "Text", text: "- old\n+ new" }] } },
     expiresInMs: 600_000,
   });
   const ask = async (input = snapshot()) => {
@@ -533,10 +533,8 @@ databaseSuite()("independent Code-version approvals", () => {
     expect((await countPending({ approverUserId: admin, roleContext: await roleContext(admin) })).apps.demo).toBeGreaterThan(0);
     expect((await countPending({ approverUserId: outsider })).total).toBe(0);
     expect(await readApprovalContent({ id, digest, approverUserId: admin, roleContext: await roleContext(admin) })).toEqual({
-      kind: "page",
-      title: "Source diff",
-      body: "- old\n+ new",
-      format: "plain",
+      version: 1,
+      blocks: [{ kind: "Text", text: "- old\n+ new" }],
     });
     expect(await readApprovalContent({ id, digest, approverUserId: outsider })).toBeNull();
     await sql`UPDATE auth.users SET admin=false WHERE id=${admin}::uuid`;

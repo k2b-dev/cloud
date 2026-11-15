@@ -120,12 +120,12 @@ export const cloudToolReview = (name: string, args: unknown, locale: string): Ca
           { locale: language, sentence: sentence[name] },
           // A place title holds 200 characters; the address rows keep the whole host.
           { site: { kind: "place", title: url.host.length > 200 ? `${url.host.slice(0, 99)}…${url.host.slice(-100)}` : url.host } },
-          { preview: { kind: "fields", rows } },
+          { view: { version: 1 as const, blocks: [{ kind: "Detail" as const, title: "Details", items: rows }] } },
         );
       // One address row holds at most 2,000 characters. An address whose encoded form is longer shows as written;
       // if even that does not fit, the encoded address continues over numbered rows, so every character stays visible.
       for (const address of [href, readableAddress(href)])
-        if (address && address.length <= ADDRESS_MAX) {
+        if (address && address.length <= ADDRESS_MAX && !/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(address)) {
           try {
             return review([{ label, value: address }]);
           } catch {

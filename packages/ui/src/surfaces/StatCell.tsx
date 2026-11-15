@@ -43,6 +43,8 @@ export type StatCellProps = {
   value: string | number | JSX.Element | null;
   sub?: string;
   valueClass?: string;
+  /** Colours the figure as a result, such as a negative balance in `danger`. */
+  valueTone?: "danger" | "success";
   /** An icon in a chip before the label, in `tone`. `"in"` and `"out"` are the money colours of `FlowAmount`. */
   icon?: string;
   /** The chip colour of `icon`. Defaults to zinc. */
@@ -76,6 +78,10 @@ export type StatCellProps = {
 
 function Body(props: StatCellProps): JSX.Element {
   const gridSize = useStatGridSize();
+  const surface = useStatGridSurface();
+  // A flat figure has no tile to hold: while it loads, its support line waits only where something will stand there.
+  const supportWaits = () =>
+    surface !== "flat" || Boolean(props.compare || props.sub || props.accent || props.stale || (props.trend && props.trend.length > 1));
   const size = () => props.size ?? gridSize;
   const accent = () => props.accent;
   const locale = useLocale();
@@ -113,6 +119,7 @@ function Body(props: StatCellProps): JSX.Element {
             <>
               <span
                 class={`k2b-stat-cell__value ${props.valueClass ?? ""}`}
+                data-tone={props.valueTone}
                 data-size={size()}
                 data-empty={empty() || undefined}
                 title={props.title}
@@ -206,7 +213,7 @@ function Body(props: StatCellProps): JSX.Element {
             </Show>
           }
         >
-          <Match when={props.status === "loading"}>
+          <Match when={props.status === "loading" && supportWaits()}>
             <span class="k2b-stat-cell__skeleton k2b-skeleton" data-part="support" aria-hidden="true" />
           </Match>
           <Match when={props.status === "error"}>

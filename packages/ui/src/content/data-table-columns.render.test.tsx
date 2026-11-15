@@ -135,6 +135,12 @@ test("typed columns align numbers right, let text wrap and draw status, bars and
   expect(html).not.toContain("€0.00");
 });
 
+test("a negative amount is money going out in the danger ink and keeps its sign", () => {
+  const html = render({ rows: [{ ...rows[0]!, rev: -980 }, rows[1]!] });
+  expect(html).toContain('<span class="k2b-data-table__amount" data-negative>-€980.00</span>');
+  expect(html).not.toContain("data-negative>€4,610.00");
+});
+
 test("money moves with an arrow and a change carries its badge, rated only with better", () => {
   const html = render({
     columns: [

@@ -1,12 +1,13 @@
 import { dates } from "@k2b/stdlib";
 import { Button, ButtonLink, type ChatDecisionState, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { ApprovalCard } from "../../approvals/ApprovalCard";
 import { CapabilityActionReceiptSchema } from "../../contracts/capabilities";
 import { AI_TOOL_CHECK_STALE_MS, type AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { type ActionCard, type ActionText, actionReceiptText, toolActionCard } from "./action-card";
 import { actionMessages } from "./action-messages";
-import { type ActionLine, ActionQuestion, ActionReceipt } from "./action-question";
+import { type ActionLine, ActionReceipt } from "./action-question";
 import { useReaderTimeZone } from "./action-sentences";
 import { useAiChatActions } from "./message-actions";
 import { capabilityErrorDescription, isRecord } from "./message-utils";
@@ -183,7 +184,8 @@ export function ToolActionView(props: {
     setLost(false);
     setAnswer(input.approved ? "approve" : "decline");
     try {
-      await actions.onApproval(request(), input);
+      // The digest names the review this card shows, so an answer never approves a review the person did not see.
+      await actions.onApproval(request(), { ...input, ...(props.block.approval?.digest ? { digest: props.block.approval.digest } : {}) });
     } catch {
       if (props.block.callId === submitted) setLost(true);
     }
@@ -401,24 +403,42 @@ export function ToolActionView(props: {
   const remember = () => {
     const approval = props.block.approval;
     if (!approval?.allowChat) return undefined;
-    return {
-      label: approval.website ? t().rememberWebsite : t().remember,
-      onSelect: () => submit({ approved: true, remember: "chat" }),
+    return { website: Boolean(approval.website), onSelect: () => submit({ approved: true, remember: "chat" }) };
+  };
+  // A draft of a pending personal approval goes to Cloud once edited; the controller replaces the card's review.
+  const editDraft = () => {
+    const approval = props.block.approval;
+    const edit = actions.onEditDraft;
+    if (!edit || !approval?.requestId || !approval.digest) return undefined;
+    const requestId = approval.requestId;
+    const digest = approval.digest;
+    return async (values: Record<string, string>) => {
+      await edit({ turnId: props.turnId, callId: props.block.callId, requestId }, values, digest);
+      return true;
     };
   };
+  // A call that never asked is a line of the history, not an approval.
+  const asked = () =>
+    Boolean(props.block.approval) ||
+    props.block.status === "awaiting_approval" ||
+    props.block.approved !== undefined ||
+    props.block.status === "rejected";
   return (
-    <ActionQuestion
-      card={card()}
-      state={decisionState()}
-      timeZone={timeZone}
-      anchorId={props.block.id}
-      unavailable={unavailable()}
-      waiting={online() ? undefined : actionMessages(card().locale).offline}
-      remember={remember()}
-      onConfirm={() => submit({ approved: true })}
-      onDecline={() => submit({ approved: false })}
-      outcome={<ActionReceipt card={card()} lines={lines()} current={currentKey()} />}
-    />
+    <Show when={asked()} fallback={<ActionReceipt card={card()} lines={lines()} current={currentKey()} anchorId={props.block.id} />}>
+      <ApprovalCard
+        card={card()}
+        state={decisionState()}
+        timeZone={timeZone}
+        anchorId={props.block.id}
+        unavailable={unavailable()}
+        waiting={online() ? undefined : actionMessages(card().locale).offline}
+        remember={remember()}
+        onEditDraft={editDraft()}
+        onConfirm={() => submit({ approved: true })}
+        onDecline={() => submit({ approved: false })}
+        outcome={{ lines: lines(), current: currentKey() }}
+      />
+    </Show>
   );
 }
 

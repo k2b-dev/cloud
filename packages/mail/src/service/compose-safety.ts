@@ -295,8 +295,11 @@ export const reviewDraftComposeSafety = async (params: {
   draftId: string;
   expectedRevision: number;
   locale?: string;
+  db?: SQL;
+  body?: string;
+  subject?: string;
 }): Promise<Result<DraftSendReview>> => {
-  return sql.begin(async (tx) => {
+  const review = async (tx: SQL): Promise<Result<DraftSendReview>> => {
     const allowed = await requireDraftAccess(params.context, params.mailboxId, params.draftId, "write", tx);
     if (!allowed.ok) return allowed;
     const source = await loadSafetySource({ db: tx, mailboxId: params.mailboxId, draftId: params.draftId });
@@ -311,8 +314,19 @@ export const reviewDraftComposeSafety = async (params: {
       context: params.context,
     });
     if (!content.ok) return content;
-    return ok({ ...evaluateComposeSafety(source.data, params.locale), contentHash: content.data.contentHash });
-  });
+    return ok({
+      ...evaluateComposeSafety(
+        {
+          ...source.data,
+          ...(params.body === undefined ? {} : { body: params.body }),
+          ...(params.subject === undefined ? {} : { subject: params.subject }),
+        },
+        params.locale,
+      ),
+      contentHash: content.data.contentHash,
+    });
+  };
+  return params.db ? review(params.db) : sql.begin(review);
 };
 
 export const validateDraftComposeSafety = async (params: {
@@ -321,33 +335,40 @@ export const validateDraftComposeSafety = async (params: {
   draftId: string;
   expectedRevision: number;
   approval?: ComposeSafetyApproval;
+  body?: string;
+  subject?: string;
 }): Promise<Result<ComposeSafetyReview>> => {
   const source = await loadSafetySource(params);
   if (!source.ok) return source;
   if (source.data.revision !== params.expectedRevision) return fail(err.conflict("Draft changed before sending"));
-  const review = evaluateComposeSafety(source.data);
-  if (review.warnings.length === 0) return ok(review);
-  /*
-   * These warnings are a prompt to the person composing the message, and the
-   * approval below is that person confirming they read them. An automatic reply
-   * has no such person: its text was reviewed when the automation was authored,
-   * and its recipients come from the message it answers, not from a choice
-   * someone made and might regret. Requiring an approval token there refused
-   * every automatic reply instead of protecting anyone, so the warnings stay
-   * advisory for a draft the platform wrote itself. Workflow send policy separately
-   * excludes definitions with AI steps or conversation summary reads, both when
-   * queuing and immediately before SMTP.
-   */
-  if (source.data.origin !== "user") return ok(review);
-  const expectedIds = review.warnings.map((warning) => warning.id).sort();
-  const approvedIds = [...new Set(params.approval?.warningIds ?? [])].sort();
+  const base = evaluateComposeSafety(source.data);
+  const review = evaluateComposeSafety({
+    ...source.data,
+    ...(params.body === undefined ? {} : { body: params.body }),
+    ...(params.subject === undefined ? {} : { subject: params.subject }),
+  });
+  return validateComposeSafetyEdits(base, review, params.approval, source.data.origin);
+};
+
+/** Edits may remove approved warnings, but never grant approval to a new warning. */
+export const validateComposeSafetyEdits = (
+  base: ComposeSafetyReview,
+  edited: ComposeSafetyReview,
+  approval: ComposeSafetyApproval | undefined,
+  origin: "user" | "workflow" = "user",
+): Result<ComposeSafetyReview> => {
+  if (origin !== "user") return ok(edited);
+  const expectedIds = base.warnings.map((warning) => warning.id).sort();
+  const approvedIds = [...new Set(approval?.warningIds ?? [])].sort();
   if (
-    params.approval?.revision !== review.revision ||
-    params.approval.fingerprint !== review.fingerprint ||
-    expectedIds.length !== approvedIds.length ||
-    expectedIds.some((id, index) => id !== approvedIds[index])
+    (expectedIds.length > 0 &&
+      (approval?.revision !== base.revision ||
+        approval.fingerprint !== base.fingerprint ||
+        expectedIds.length !== approvedIds.length ||
+        expectedIds.some((id, index) => id !== approvedIds[index]))) ||
+    edited.warnings.some((warning) => !expectedIds.includes(warning.id))
   ) {
-    return fail(err.conflict("Review the current message safety warnings before sending"));
+    return fail(err.conflict("The message safety warnings changed. Review the current message and approve a new send attempt."));
   }
-  return ok(review);
+  return ok(edited);
 };

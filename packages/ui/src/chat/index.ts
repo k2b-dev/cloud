@@ -6,7 +6,7 @@ import { ChatTasks } from "./ChatTasks";
 export type { ChatTask, ChatTasksProps } from "./ChatTasks";
 
 import { ChatComposer } from "./ChatComposer";
-import { ChatDecision, ChatMark, ChatOutcome, ChatPreview } from "./ChatDecision";
+import { ChatDecision, ChatOutcome } from "./ChatDecision";
 import { ChatActivity, ChatActivityToggle, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
 import { ChatRoot } from "./ChatRoot";
 import { ChatTimeline } from "./ChatTimeline";
@@ -27,19 +27,7 @@ export type {
   ChatPasteHandler,
   ChatPersonSuggestion,
 } from "./ChatComposer";
-export type {
-  ChatDecisionProps,
-  ChatMarkProps,
-  ChatOutcomeProps,
-  ChatPreviewExcerptProps,
-  ChatPreviewHeaderProps,
-  ChatPreviewLineProps,
-  ChatPreviewPeopleProps,
-  ChatPreviewProps,
-  ChatPreviewReadMoreProps,
-  ChatPreviewShowAllProps,
-  ChatPreviewTitleProps,
-} from "./ChatDecision";
+export type { ChatDecisionProps, ChatOutcomeProps } from "./ChatDecision";
 export type { ChatActivityProps, ChatActivityToggleProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
 export { formatChatTokens } from "./ChatPrimitives";
 export type { ChatRootProps } from "./ChatRoot";
@@ -53,6 +41,7 @@ export type {
   ChatComposerState,
   ChatContextUsageData,
   ChatDecisionAnswer,
+  ChatDecisionFact,
   ChatDecisionReason,
   ChatDecisionState,
   ChatDictationState,
@@ -61,8 +50,6 @@ export type {
   ChatModelOption,
   ChatOutcomeLine,
   ChatOutcomeTone,
-  ChatPreviewHeaderRow,
-  ChatPreviewPerson,
   ChatRole,
   ChatSubmitInput,
   ChatSubmitIntent,
@@ -84,8 +71,6 @@ export const Chat = Object.assign(ChatRoot, {
   ContextPanel: ChatContextPanel,
   Decision: ChatDecision,
   Outcome: ChatOutcome,
-  Preview: ChatPreview,
-  Mark: ChatMark,
 });
 
 export { matchesChatCommand } from "./command-search";

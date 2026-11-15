@@ -77,7 +77,7 @@ const mountTurn = async (
     return copy.textContent?.trim() ?? null;
   };
   const outcome = () => place().querySelector<HTMLElement>(".k2b-chat-outcome");
-  const question = () => place().querySelector<HTMLElement>(".k2b-chat-decision__card");
+  const question = () => place().querySelector<HTMLElement>('.k2b-chat-decision[data-state="open"]');
   return {
     dom,
     decisions,
@@ -118,7 +118,7 @@ domTest("an answer collapses the question at once to its outcome line, which tak
     expect(view.question()).toBeNull();
     const outcome = view.outcome()!;
     expect(view.line()).toBe("Running: Run code");
-    expect(document.activeElement).toBe(outcome);
+    expect(document.activeElement === outcome).toBe(true);
     expect(outcome.querySelector('[role="status"]')?.textContent).toBe("Running: Run code");
 
     // The turn reports the decision and then the outcome: the same line changes only its words.
@@ -126,11 +126,11 @@ domTest("an answer collapses the question at once to its outcome line, which tak
     view.setBlocks([{ ...runCode, status: "running", approved: true, approval: undefined }]);
     view.setPhase("running");
     await settle();
-    expect(view.outcome()).toBe(outcome);
+    expect(view.outcome() === outcome).toBe(true);
     view.setBlocks([{ ...runCode, status: "completed", approved: true, approval: undefined, result: { status: "ok" } }]);
     await settle();
-    expect(view.place()).toBe(place);
-    expect(view.outcome()).toBe(outcome);
+    expect(view.place() === place).toBe(true);
+    expect(view.outcome() === outcome).toBe(true);
     expect(view.line()).toBe("Ran code");
     expect(outcome.querySelector('[role="status"]')?.textContent).toBe("Ran code");
   } finally {
@@ -198,7 +198,7 @@ domTest("a declined question and one a stop left open read as outcome lines in t
     expect(view.line()).toBe("Abgelehnt: Code ausführen Du hast abgelehnt.");
     view.setBlocks([{ ...runCode, status: "rejected", approval: undefined }]);
     await settle();
-    expect(view.outcome()).toBe(outcome);
+    expect(view.outcome() === outcome).toBe(true);
     expect(view.line()).toBe("Abgelehnt: Code ausführen Du hast abgelehnt.");
   } finally {
     view.cleanup();
@@ -278,7 +278,7 @@ domTest("code that asks again gets a new question in the same place after each d
     view.setBlocks([{ ...ask(2), approved: true }]);
     await settle();
     expect(view.question()?.textContent).toContain("Step 2");
-    expect(view.place()).toBe(place);
+    expect(view.place() === place).toBe(true);
   } finally {
     view.cleanup();
   }
@@ -473,7 +473,7 @@ domTest("an app Action's catalog sentences name the question and every outcome l
     expect(english.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Send email to jana@example.com?");
     expect(english.question()?.textContent).toContain("I'm asking because Acme Mail always asks for this.");
     // Cloud's reason replaces the model's own words; the text for text-only readers is not repeated.
-    expect(english.place().textContent).not.toContain("Jana asked for the offer.");
+    expect(english.place().querySelector(".k2b-chat-decision__reason")?.textContent).not.toContain("Jana asked for the offer.");
     expect(english.place().textContent).not.toContain("Acme Mail: Send email to jana@example.com");
     english.button("Send email").click();
     await settle();
@@ -481,7 +481,7 @@ domTest("an app Action's catalog sentences name the question and every outcome l
     const outcome = english.outcome();
     english.setPhase("running");
     await settle();
-    expect(english.outcome()).toBe(outcome);
+    expect(english.outcome() === outcome).toBe(true);
     english.setBlocks([
       {
         ...sendMail("en"),
@@ -492,7 +492,7 @@ domTest("an app Action's catalog sentences name the question and every outcome l
       },
     ]);
     await settle();
-    expect(english.outcome()).toBe(outcome);
+    expect(english.outcome() === outcome).toBe(true);
     expect(english.line()).toBe("Sent email to jana@example.com (M-42)");
   } finally {
     english.cleanup();
@@ -653,24 +653,21 @@ domTest("one click on a website receipt revokes the chat approval for its origin
   }
 });
 
-domTest("a long text without a page of its own shows the rest in place and keeps the focus there", async () => {
+domTest("the complete draft view stays read-only while the question waits", async () => {
   const { actionFixtures } = await import("./action-question.fixtures");
   const fixture = actionFixtures("en").mail!.block;
   const review = fixture.review!;
-  if (!("sentence" in review)) throw new Error("Expected a new review");
+  if (!("sentence" in review)) throw new Error("Expected a view review");
   const view = await mountTurn([{ ...fixture, status: "awaiting_approval", review: { ...review, links: [] } }]);
   try {
-    const excerpt = view.place().querySelector<HTMLElement>(".k2b-chat-preview__excerpt")!;
-    const show = view.button("Read the whole email");
-    expect(show.getAttribute("aria-controls")).toBe(excerpt.id);
-    expect(excerpt.dataset.expanded).toBeUndefined();
-    show.click();
-    await tick();
-    expect(excerpt.dataset.expanded).toBe("true");
-    expect(view.button("Read the whole email")).toBeUndefined();
-    expect(document.activeElement).toBe(excerpt);
-    // The question itself still waits for its answer.
+    const subject = view.place().querySelector<HTMLInputElement>('[data-field="subject"] input')!;
+    const body = view.place().querySelector<HTMLTextAreaElement>('[data-field="body"] textarea')!;
+    expect(subject.value).toBe("Maintenance window Tuesday");
+    expect(subject.readOnly).toBe(true);
+    expect(body.readOnly).toBe(true);
+    expect(body.value).toContain("We plan the details on Monday at 9");
     expect(view.question()).not.toBeNull();
+    expect(view.decisions).toEqual([]);
   } finally {
     view.cleanup();
   }

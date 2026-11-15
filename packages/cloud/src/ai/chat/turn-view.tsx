@@ -21,7 +21,8 @@ import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
-import { CapabilityTablePreview } from "./capability-table";
+import { hasCapabilityView } from "./capability-result";
+import { CapabilityViewBlock } from "./capability-view";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
@@ -450,8 +451,13 @@ function CapabilityResultRow(props: { block: ToolBlock }) {
   );
 }
 
-function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; receipt: Accessor<boolean> }) {
-  const locale = useLocale();
+function AiTurnResultView(props: {
+  result: Accessor<AiTurnResult | undefined>;
+  receipt: Accessor<boolean>;
+  turnId: string;
+  /** The response that produced the result still runs; a choice in it waits until it ends. */
+  live: boolean;
+}) {
   const actions = useAiChatActions();
   const block = () => props.result()?.block;
   return (
@@ -491,13 +497,16 @@ function AiTurnResultView(props: { result: Accessor<AiTurnResult | undefined>; r
             <CloudChartBlock args={current().args} completed={current().status === "completed"} />
           </Match>
           <Match when={true}>
-            <Show when={!props.receipt()}>
-              <CapabilityResultRow block={current()} />
+            <Show
+              when={hasCapabilityView(current())}
+              fallback={
+                <Show when={!props.receipt()}>
+                  <CapabilityResultRow block={current()} />
+                </Show>
+              }
+            >
+              <CapabilityViewBlock block={current()} turnId={props.turnId} live={props.live} />
             </Show>
-            <CapabilityTablePreview
-              result={current().result}
-              label={current().presentation?.title ?? displayToolName(current().name, locale())}
-            />
           </Match>
         </Switch>
       )}
@@ -764,7 +773,16 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             <AiWorkLine segment={props.segment} />
           </div>
         </Show>
-        <For each={resultIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => actions().has(id)} />}</For>
+        <For each={resultIds()}>
+          {(id) => (
+            <AiTurnResultView
+              result={() => results().get(id)}
+              receipt={() => actions().has(id)}
+              turnId={props.segment().turnId}
+              live={isLive(props.segment().phase)}
+            />
+          )}
+        </For>
 
         <Show when={layout().text.length > 0}>
           <AiTurnText
@@ -775,7 +793,16 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             earlier={() => props.segment().earlier}
           />
         </Show>
-        <For each={mapFollowupIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => false} />}</For>
+        <For each={mapFollowupIds()}>
+          {(id) => (
+            <AiTurnResultView
+              result={() => results().get(id)}
+              receipt={() => false}
+              turnId={props.segment().turnId}
+              live={isLive(props.segment().phase)}
+            />
+          )}
+        </For>
 
         <Show
           when={!props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly && props.segment().scheduledTask?.reason}

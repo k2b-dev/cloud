@@ -19,6 +19,9 @@ export type ChatDecisionAnswer = {
   onSelect: () => void | Promise<void>;
 };
 
+/** A quiet fact in the answer row, such as when the question expires; `success` and `warning` colour it as a result. */
+export type ChatDecisionFact = { text: string; icon: string; tone?: "neutral" | "success" | "warning" | "danger" };
+
 /** Why a question is asked, or why its main answer is off. */
 export type ChatDecisionReason = {
   text: JSX.Element;
@@ -45,19 +48,6 @@ export type ChatOutcomeLine = {
   action?: { label: string; onSelect: () => void | Promise<void> };
   /** Small buttons under the line. Shown while this line is current; otherwise hidden but still reserving their row. */
   actions?: JSX.Element;
-};
-
-/** A person in a preview header: the name in the text colour, then the address the message really uses. */
-export type ChatPreviewPerson = { name?: string; address?: string };
-
-/** One header row, such as "To Lea Berg lea.berg@example.com". */
-export type ChatPreviewHeaderRow = {
-  label: string;
-  people?: readonly ChatPreviewPerson[];
-  /** Further content after the people, such as "and 2 more". */
-  value?: JSX.Element;
-  /** Draws the label stronger, for recipients others cannot see. */
-  emphasis?: boolean;
 };
 
 type ChatActionBase = {

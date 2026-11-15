@@ -16,6 +16,8 @@ import {
 } from "../_internal/capability-reviews";
 import { capabilityTimeoutMs, createCapabilityDeadline, withCapabilityRequestTimeout } from "../_internal/capability-timeout";
 import { getApp, getCapability, listApps } from "../_internal/registry";
+import { bindView } from "../blocks/bind";
+import { validateBlocks } from "../blocks/validate";
 import { capabilityCallDigest, capabilityInvocationBody, normalizeCapabilityCall } from "../capabilities/calls";
 import { resolveCommandLink } from "../capabilities/command-link";
 import {
@@ -1006,6 +1008,9 @@ const runCapabilityDispatch = async (
   }
 
   const reviewContext = {
+    appId: params.appId,
+    appPrefixes: [] as readonly string[],
+    inputSchema: operation.inputSchema,
     policy: capabilityActionPolicy(entry.manifest, params.capabilityId),
     approval: "approval" in operation ? operation.approval : undefined,
     queries: entry.manifest.queries,
@@ -1019,6 +1024,16 @@ const runCapabilityDispatch = async (
   const parsedResult = resultValidator?.safeParse(upstreamBody.data);
   const field = (value: unknown, key: string): unknown =>
     value !== null && typeof value === "object" ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined;
+  let reviewRegistryUnavailable = false;
+  if (params.review && field(upstreamBody.data, "view") !== undefined) {
+    try {
+      const app = await deadline.wait(() => (params.dependencies?.getApp ?? getApp)(params.appId));
+      if (!app || app.id !== params.appId) throw new Error("View app registration unavailable");
+      reviewContext.appPrefixes = app.routes;
+    } catch {
+      reviewRegistryUnavailable = true;
+    }
+  }
   const receipt = field(upstreamBody.data, "receipt");
   const links = field(upstreamBody.data, "links");
   const reviewIssues = params.review
@@ -1028,6 +1043,7 @@ const runCapabilityDispatch = async (
       : params.kind === "queries"
         ? ["Queries cannot return a receipt"]
         : capabilityActionReceiptIssues(receipt, links);
+  if (reviewRegistryUnavailable) reviewIssues.push("Review app registration unavailable");
   const nestedReceipt = field(field(upstreamBody.data, "data"), "receipt");
   if (
     !params.review &&
@@ -1037,6 +1053,26 @@ const runCapabilityDispatch = async (
     capabilityQueryChecksActionOutcome(operation)
   )
     reviewIssues.push(...capabilityActionReceiptIssues(nestedReceipt, links));
+  if (!params.review && field(upstreamBody.data, "view") !== undefined) {
+    try {
+      const app = await deadline.wait(() => (params.dependencies?.getApp ?? getApp)(params.appId));
+      if (!app || app.id !== params.appId) throw new Error("View app registration unavailable");
+      const view = bindView(field(upstreamBody.data, "view"), field(upstreamBody.data, "data"));
+      validateBlocks(view.blocks, "result", { appId: params.appId, appPrefixes: app.routes, envelope: upstreamBody.data });
+      const visit = (blocks: typeof view.blocks): void => {
+        for (const block of blocks) {
+          if (block.kind === "Section") visit(block.children);
+          if (block.kind === "Choice" && block.then) {
+            const localId = block.then.query.slice(`${params.appId}.query.`.length);
+            if (!entry.manifest.queries.some((query) => query.localId === localId)) throw new Error("Unknown follow-up query");
+          }
+        }
+      };
+      visit(view.blocks);
+    } catch {
+      reviewIssues.push("Invalid capability block view");
+    }
+  }
   if (!resultValidator || !parsedResult?.success || reviewIssues.length > 0) {
     if (actionWithoutRetrySafety) return settle(outcomeUnknown(), "uncertain");
     const invalid = errorResponse("INVALID_APP_RESPONSE", messages.outsideResultSchema({ appId: params.appId }), 502);
