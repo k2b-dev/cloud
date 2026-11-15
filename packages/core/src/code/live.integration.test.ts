@@ -13,7 +13,9 @@ const CodeRunEventSchema = z.object({ type: z.literal("code.run"), runId: z.uuid
 
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
+import { migrate as migrateJobs } from "../migrate/core/code-jobs";
 import { migrate as migrateCodeLive } from "../migrate/core/code-live";
+import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { codeLiveChannels } from "./live";
@@ -46,7 +48,9 @@ suiteFor(
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_live");
-    for (const migrate of [migrateAuth, migrateEvents, migrateSettings, migrateCode, migrateCodeLive]) await migrate();
+    // Calls and their effect flags come with the scheduling and job migrations, as in the scheduling suite.
+    for (const migrate of [migrateAuth, migrateEvents, migrateSettings, migrateCode, migrateScheduling, migrateJobs, migrateCodeLive])
+      await migrate();
     // Reapplying the migration removes an earlier draft's per-effect trigger too.
     await sql`CREATE TRIGGER run_live_effect AFTER UPDATE ON code.calls
       FOR EACH ROW EXECUTE FUNCTION code.publish_run_live()`.simple();
