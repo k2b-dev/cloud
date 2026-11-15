@@ -106,7 +106,7 @@ export const assistantMessages = i18n.define({
       startConversation: "Start a conversation",
       aiDisabled: "AI is disabled",
       submitApprovalFailed: "Could not submit approval.",
-      tabsNotSaved: "Your open tabs could not be saved for this chat. They stay here; the next change tries again.",
+      tabsNotSaved: "Tabs not saved; the next change tries again.",
       submitToolFailed: "Could not submit tool response.",
       forkFailed: "Could not fork conversation.",
       retryMessageFailed: "Could not retry message.",
@@ -250,8 +250,7 @@ export const assistantMessages = i18n.define({
       startConversation: "Chat beginnen",
       aiDisabled: "KI ist deaktiviert",
       submitApprovalFailed: "Die Freigabe konnte nicht übermittelt werden.",
-      tabsNotSaved:
-        "Deine offenen Tabs konnten für diesen Chat nicht gespeichert werden. Sie bleiben hier; die nächste Änderung versucht es erneut.",
+      tabsNotSaved: "Tabs nicht gespeichert; die nächste Änderung versucht es erneut.",
       submitToolFailed: "Die Antwort an das Tool konnte nicht übermittelt werden.",
       forkFailed: "Der Chat konnte nicht abgezweigt werden.",
       retryMessageFailed: "Die Nachricht konnte nicht erneut versucht werden.",

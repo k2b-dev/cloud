@@ -23,7 +23,6 @@ import type {
   AiSkillsRoutes,
   AiUserPrefs,
   AiChatTaskView as AssistantChatTask,
-  WebReaderResult,
 } from "@k2b/cloud/ai";
 import { AuthenticatedPrincipalSchema } from "@k2b/cloud/contracts";
 import type { AssistantSidebarPreview } from "../sidebar-preview";
@@ -367,19 +366,6 @@ export const assistantApi = {
   getWebReader: async (): Promise<{ available: boolean }> => {
     const response = await assistantClient.workspace["web-reader"].$get();
     if (!response.ok) throw new Error(await readError(response, "Failed to check web reading availability"));
-    return response.json();
-  },
-
-  readWebPage: async (
-    conversationId: string,
-    body: { url: string; confirmed?: boolean },
-    signal?: AbortSignal,
-  ): Promise<WebReaderResult> => {
-    const response = await assistantClient.workspace.conversations[":conversationId"]["web-reader"].$post(
-      { param: { conversationId }, json: body },
-      { init: { signal } },
-    );
-    if (!response.ok) throw new Error(await readError(response, "Failed to read web page"));
     return response.json();
   },
 

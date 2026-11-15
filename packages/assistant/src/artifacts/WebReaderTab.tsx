@@ -1,7 +1,7 @@
 import type { WebReaderResult } from "@k2b/cloud/ai";
 import { Button, Dropdown, type DropdownItem, IconButton, IconButtonLink, MarkdownView, Skeleton, useLocale } from "@k2b/ui";
 import { createResource, createSignal, Match, Show, Switch } from "solid-js";
-import { assistantApi } from "../api/client";
+import { readWebPage } from "../api/web-reader-client";
 import { webReaderMessages } from "./web-reader-messages";
 
 /** A day and time in the reader's words: "heute, 14:12", or the date before today. */
@@ -46,7 +46,7 @@ export function WebReaderTab(props: {
     async (request, { refetching }): Promise<WebReaderResult | { status: "error"; message: string }> => {
       void refetching;
       try {
-        const result = await assistantApi.readWebPage(props.conversationId, { url: request.url, confirmed: request.confirmed });
+        const result = await readWebPage(props.conversationId, { url: request.url, confirmed: request.confirmed });
         // The tab keeps the page it opened with; its title follows that page only.
         if (result.status === "ready" && request.url === props.url) props.onTitle(result.title);
         return result;
