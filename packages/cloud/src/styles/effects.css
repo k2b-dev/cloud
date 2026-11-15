@@ -2121,14 +2121,6 @@ dialog:has(.launchpad-panel)::backdrop {
   max-width: 20rem;
 }
 
-/* An answer reads in 15.5 px with 1.62 line height (Bauplan 4a, v12), the same size as the question above it; a status
-   and the notes at the steps stay quiet and small. */
-.k2b-ui .ai-turn__text:not(.ai-turn__text--status) > .assistant-markdown-block,
-.k2b-ui .ai-turn__text:not(.ai-turn__text--status) .ai-turn-clamp > .assistant-markdown-block {
-  font-size: 0.96875rem;
-  line-height: 1.62;
-}
-
 /* An answer's headings stand out by size and weight only: 18 px for the first three levels, the text's 14 px below. */
 .k2b-ui .ai-turn__text:not(.ai-turn__text--status) .assistant-markdown-block :where(h1, h2, h3) {
   font-size: 1.125rem;

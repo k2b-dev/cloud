@@ -94,21 +94,6 @@ for (const width of [1440, 390])
       const bubble = await box(page, ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble");
       expect(bubble.background).toBe(muted);
       expect(bubble.radius).toBe("16px 16px 5px");
-      // The question reads in the answer's size (v12 image 02), not in a smaller bubble type.
-      const sizes = await page.evaluate(() => {
-        const size = (selector: string) => {
-          const node = document.querySelector(selector);
-          return node ? [getComputedStyle(node).fontSize, getComputedStyle(node).lineHeight] : null;
-        };
-        return {
-          question: size(
-            ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble p, .k2b-chat-message[data-role=user] .k2b-chat-message__bubble",
-          ),
-          answer: size(".ai-turn__text .assistant-markdown-block p"),
-        };
-      });
-      expect(sizes.question?.[0]).toBe("15.5px");
-      expect(sizes.answer?.[0]).toBe("15.5px");
       const own = page.locator(".k2b-chat-message[data-role=user] .k2b-chat-message__actions button");
       expect(await own.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")))).toEqual([
         "Kopieren",

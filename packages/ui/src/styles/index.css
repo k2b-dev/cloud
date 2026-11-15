@@ -14472,11 +14472,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* The person's own message is a neutral grey bubble whose corner toward the composer is tighter; colour stays for
    meaning, and a sent message means nothing more than being one's own. */
 .k2b-ui .k2b-chat-message[data-role="user"] .k2b-chat-message__bubble {
-  padding: 0.5625rem 0.875rem;
+  padding: 0.625rem 0.875rem;
   border-radius: 1rem 1rem 0.3125rem 1rem;
-  /* The question reads in the answer's reading size. */
-  font-size: 0.96875rem;
-  line-height: 1.5;
   /* The person's own words stay neutral grey in every primary scope. */
   background: var(--k2b-surface-muted);
 }
