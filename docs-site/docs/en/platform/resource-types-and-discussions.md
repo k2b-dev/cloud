@@ -25,6 +25,7 @@ types: {
   item: {
     title: "Item",
     description: "An inventory item.",
+    count: { one: "item", other: "items" }, // Optional: "3 items".
     reader: "item.read",
     container: "collection",
     access: { readable: readableItemPrincipals },
@@ -36,6 +37,16 @@ discussions: {
   activity: "collection.activity", // Optional.
 },
 ```
+
+## Name a count
+
+`types.X.count` is optional: the Type's noun after a number, `one` and
+`other`, each 1–60 characters, in the presentation's base locale. Translate it
+in `presentation.translations[locale].types.X.count`; a translated count needs
+a base count. Consumers that summarize resources, such as the Assistant's box
+"In this chat" ("3 Mails, 2 web pages"), use it through
+`describeAiResourceTypeCounts(counts, locale)` from `@k2b/cloud/ai`. A Type
+without a count is summed up generically.
 
 ## Describe containment
 

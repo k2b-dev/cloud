@@ -14,7 +14,9 @@ import { auth, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprova
 import { coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout, loadCodePage, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
+import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
+import { loadAssistantChatWorkspace } from "../chat-workspace-service";
 import { catalogPerApp, loadCodePlace } from "../code-place";
 import {
   type CodePlace,
@@ -31,6 +33,7 @@ import { loadAssistantSidebarSnapshot, placeAppsFromCatalog } from "../sidebar";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";
+import { ASSISTANT_PANES_HINT_COOKIE } from "./chat-sidebar-layout";
 import { assistantMessages } from "./messages";
 
 /** Code that waits for the person, each with its place's name and link, read through the place's own reader. */
@@ -189,15 +192,18 @@ export default ssr<AuthContext>(async (c) => {
   const initialConversations = conversations.map((conversation) =>
     conversation.id === activeConversation?.shortId ? { ...conversation, unreadCompletion: false } : conversation,
   );
-  const [initialDetail, initialTimeline, initialContext] = activeConversation
+  const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
+  const [initialDetail, initialTimeline, initialContext, initialTabs] = activeConversation
     ? await Promise.all([
         loadAiStreamState(activeConversation, c.get("actor").kind === "user" ? user.id : null),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
         loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
           timeZone,
+          locale,
         }),
+        loadAssistantChatWorkspace(identity, activeConversation.shortId),
       ])
-    : [null, [], null];
+    : [null, [], null, null];
 
   const workspace = () => (
     <AssistantWorkspace
@@ -234,6 +240,8 @@ export default ssr<AuthContext>(async (c) => {
           : null
       }
       initialContext={initialContext}
+      initialTabs={activeConversation && initialTabs ? { chatId: activeConversation.shortId, snapshot: initialTabs } : null}
+      arrangeHintSeen={getCookie(c, ASSISTANT_PANES_HINT_COOKIE) === "seen"}
       projects={projects}
       initialProject={activeProject}
       initialProjectChats={
