@@ -162,7 +162,7 @@ export function CodeVersionApproval(props: {
     </>
   );
   return (
-    <div class="cloud-code__approval" data-version={props.version.number}>
+    <div class="cloud-code__approval cloud-approval-slot" data-version={props.version.number}>
       <ApprovalFrame
         locale={props.text.locale()}
         state={kind() === "ready" ? "open" : "decided"}

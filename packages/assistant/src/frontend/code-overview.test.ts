@@ -145,3 +145,23 @@ test("the person's day is their local date", () => {
   expect(localDay("Europe/Berlin", new Date("2026-11-14T23:30:00.000Z"))).toBe("2026-11-15");
   expect(localDay("America/New_York", new Date("2026-11-14T03:00:00.000Z"))).toBe("2026-11-13");
 });
+
+test("a dense day of planned starts shares one mark per hour, and a failed run keeps its own (#35)", () => {
+  const planned = Array.from({ length: 50 }, (_, index) => ({
+    at: new Date(Date.parse(DAY.from) + 12 * 3_600_000 + index * 60_000).toISOString(),
+    state: "planned" as const,
+    count: 1,
+  }));
+  const failed = {
+    at: new Date(Date.parse(DAY.from) + 6 * 3_600_000).toISOString(),
+    state: "failed" as const,
+    count: 1,
+    runId: `00000000-0000-4000-8000-${"9".repeat(12)}`,
+  };
+  const line = dayLine([item("c_aaaa", { extras: { runs: [], failure: null, activity: activity([...planned, failed]) } })]);
+  const plannedMarks = line!.marks.filter((mark) => mark.state === "planned");
+  expect(plannedMarks.length).toBeLessThanOrEqual(24);
+  expect(plannedMarks.reduce((sum, mark) => sum + mark.count, 0)).toBe(50);
+  expect(line!.marks.filter((mark) => mark.state === "failed")).toHaveLength(1);
+  expect(line).toMatchObject({ planned: 50, failed: 1 });
+});

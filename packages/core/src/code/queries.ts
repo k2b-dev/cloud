@@ -13,6 +13,8 @@ const contextFor = (context: CapabilityExecutionContext): CodeContext => {
     signal: context.signal,
     requestId: context.requestId,
     query: context.query,
+    // One query invocation may ask another app once; its permission checks share that one owner read.
+    ownerReads: new Map(),
   };
 };
 export async function runCodeQuery<T>(context: CapabilityExecutionContext, run: (context: CodeContext) => Promise<T>) {

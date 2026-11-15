@@ -82,7 +82,7 @@ export default function AssistantCodeAttention(props: {
                   {(item) => (
                     <li class="assistant-waiting-page__row">
                       <span class="assistant-waiting-page__tile" aria-hidden="true">
-                        <FeatCodeMark variant="glyph" size={16} decorative />
+                        <FeatCodeMark variant="glyph" tone="current" size={16} decorative />
                       </span>
                       <span class="assistant-waiting-page__row-copy">
                         <span class="assistant-waiting-page__row-title">

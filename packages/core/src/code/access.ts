@@ -29,6 +29,11 @@ export type CodeContext = {
   query?: CapabilityExecutionContext["query"];
   /** Authenticated submission provenance; chat tools set this from their actual conversation. */
   submissionOrigin?: import("./review-contracts").CodeSubmissionOrigin;
+  /**
+   * Owner reads of one read-only query invocation. An invocation may ask another app once, so every permission check of
+   * the same query shares that answer instead of asking again and failing closed. Durable work never sets it.
+   */
+  ownerReads?: Map<string, Promise<{ title: string; admin: boolean } | null>>;
 };
 export class CodeDataError extends Error {
   constructor(
@@ -77,7 +82,19 @@ export const codePerson = (context: CodeContext, write = false) => {
 };
 
 /** Resolve the resource's current title and permission through its canonical reader under this exact authority. */
-export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Promise<{ title: string; admin: boolean } | null> => {
+export const readCodeOwner = (owner: CodeOwner, context: CodeContext): Promise<{ title: string; admin: boolean } | null> => {
+  const reads = context.ownerReads;
+  if (!reads) return readCodeOwnerNow(owner, context);
+  const key =
+    owner.kind === "person" ? `person:${owner.userId}` : owner.kind === "app" ? `app:${owner.appId}` : `${owner.ref.type}:${owner.ref.id}`;
+  let read = reads.get(key);
+  if (!read) {
+    read = readCodeOwnerNow(owner, context);
+    reads.set(key, read);
+  }
+  return read;
+};
+const readCodeOwnerNow = async (owner: CodeOwner, context: CodeContext): Promise<{ title: string; admin: boolean } | null> => {
   if (owner.kind === "person") {
     const user = codePerson(context);
     return user.id === owner.userId ? { title: user.displayName || user.uid, admin: true } : null;

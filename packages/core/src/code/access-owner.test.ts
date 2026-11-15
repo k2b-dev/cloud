@@ -31,6 +31,22 @@ test("under a capability invocation the owner is asked through the nested query,
   expect(direct).not.toHaveBeenCalled();
 });
 
+test("one query invocation asks the owner once: every permission check of that query shares the answer (#31)", async () => {
+  spies.push(spyOn(provider, "getCapabilityCatalogApp").mockResolvedValue({ ok: true, data: { manifest } } as never));
+  let asked = 0;
+  // A second nested query under the same invocation is refused, as the platform allows only one.
+  const query = (async () =>
+    ++asked === 1 ? answer : { ok: false, error: { code: "FORBIDDEN", message: "one dependency only" } }) as never;
+  const context = { authority: authority("invocation"), query, ownerReads: new Map() };
+  for (let check = 0; check < 3; check++) expect(await readCodeOwner(owner, context)).toEqual({ title: "info@", admin: true });
+  expect(asked).toBe(1);
+  // Without the per-invocation memory (durable work), every read asks again.
+  asked = 0;
+  const durable = { authority: authority("invocation"), query };
+  expect(await readCodeOwner(owner, durable)).toEqual({ title: "info@", admin: true });
+  expect(await readCodeOwner(owner, durable)).toBeNull();
+});
+
 test("a session keeps asking directly under its own authority", async () => {
   spies.push(spyOn(provider, "getCapabilityCatalogApp").mockResolvedValue({ ok: true, data: { manifest } } as never));
   const direct = spyOn(provider, "invokeCapabilityWithDataSchema").mockResolvedValue(answer as never);

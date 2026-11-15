@@ -88,6 +88,11 @@
   margin-block: 0.375rem 0;
 }
 
+/* On a page between islands (a Code page's waiting version): the page's gap spaces the frame, not the chat margin. */
+.k2b-ui .cloud-approval-slot .k2b-chat-decision {
+  margin-block: 0;
+}
+
 .k2b-ui .cloud-approval__origin {
   display: flex;
   flex-wrap: wrap;
