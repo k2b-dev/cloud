@@ -41,7 +41,14 @@ export type {
   ChatPreviewShowAllProps,
   ChatPreviewTitleProps,
 } from "./ChatDecision";
-export type { ChatActivityProps, ChatActivityToggleProps, ChatContextUsageProps, ChatMessageProps } from "./ChatPrimitives";
+export type {
+  ChatActivityInfo,
+  ChatActivityMetaTone,
+  ChatActivityProps,
+  ChatActivityToggleProps,
+  ChatContextUsageProps,
+  ChatMessageProps,
+} from "./ChatPrimitives";
 export { formatChatTokens } from "./ChatPrimitives";
 export type { ChatRootProps } from "./ChatRoot";
 export type { ChatActivityItem, ChatMessageItem, ChatTimelineItem, ChatTimelineProps } from "./ChatTimeline";

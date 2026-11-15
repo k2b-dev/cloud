@@ -14741,13 +14741,29 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.75rem;
 }
 
+/* Every activity row has one grid: icon, text, meta, duration, and the chevron or ⓘ. Duration and the last column keep
+   their width when empty, so meta, duration, and chevron end on the same edges in every row. The row's hover area
+   reaches 0.375rem past its icon and text; they never move. */
 .k2b-ui .k2b-chat-activity__row {
-  display: flex;
-  min-height: 1.75rem;
+  display: grid;
+  width: calc(100% + 0.75rem);
+  min-height: 2rem;
+  grid-template-columns: 1.125rem minmax(0, 1fr) auto 3.5rem 1.125rem;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0;
+  column-gap: 0.5rem;
+  margin-inline: -0.375rem;
+  padding: 0.375rem;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
   list-style: none;
+}
+
+/* A phone row is a touch target and gives its text a little more room. */
+@media (max-width: 47.999rem) {
+  .k2b-ui .k2b-chat-activity__row {
+    min-height: 2.75rem;
+    grid-template-columns: 1.125rem minmax(0, 1fr) auto 3rem 1.125rem;
+  }
 }
 
 .k2b-ui summary.k2b-chat-activity__row {
@@ -14760,7 +14776,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui summary.k2b-chat-activity__row:hover {
-  color: var(--k2b-text-secondary);
+  background: var(--k2b-edge-hover-bg);
 }
 
 /* A row's text and icons re-render while it streams. Presses land on the summary itself, so a node replaced under the
@@ -14778,15 +14794,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   outline-offset: var(--k2b-focus-offset);
 }
 
-/* At least 1rem wide, so the label starts 1.5rem from the edge, where its
-   expanded content and every icon-led line of a chat question start. */
+/* A 1rem icon without a surface, centred in its column, so every icon of a list stands on one axis. */
 .k2b-ui .k2b-chat-activity__leading {
   display: inline-flex;
-  min-width: 1rem;
-  flex: 0 0 auto;
+  grid-column: 1;
+  justify-self: center;
   align-items: center;
   justify-content: center;
-  color: var(--k2b-text-muted);
+  color: var(--k2b-text-subtle);
+  font-size: 1rem;
 }
 
 .k2b-ui .k2b-chat-activity[data-tone="ai"] .k2b-chat-activity__leading {
@@ -14817,21 +14833,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: color-mix(in srgb, var(--k2b-chat-activity-accent) 58%, white);
 }
 
+/* One line: text that does not fit fades out at its end (`k2b-truncate-fade`), the description first. */
 .k2b-ui .k2b-chat-activity__copy {
   display: flex;
   min-width: 0;
-  flex: 1;
+  grid-column: 2;
   align-items: baseline;
   gap: 0.5rem;
 }
 
 .k2b-ui .k2b-chat-activity__copy strong {
-  overflow: hidden;
-  color: var(--k2b-text-secondary);
+  flex: none;
+  color: var(--k2b-text-muted);
   font-size: inherit;
   font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
@@ -14880,16 +14895,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 .k2b-ui .k2b-chat-activity__copy small {
-  overflow: hidden;
-  color: var(--k2b-text-muted);
+  flex: none;
+  color: var(--k2b-text-subtle);
   font-size: inherit;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* A wrapping line keeps its icon on the first line and shows the whole sentence. */
 .k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__row {
-  align-items: flex-start;
+  align-items: start;
 }
 
 .k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__leading {
@@ -14905,70 +14918,110 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__copy strong,
 .k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__copy small {
-  overflow: visible;
+  max-width: 100%;
   overflow-wrap: anywhere;
-  white-space: normal;
 }
 
-/* On a narrow chat surface a step's label wraps, so it shows its whole sentence instead of an ellipsis. A row with a
-   description keeps its one line, where the description is cut first. The chat surface is the container; the viewport
-   rule covers activities outside a chat timeline. A single line keeps its 1.75rem row. */
-@container k2b-chat (max-width: 47.999rem) {
-  .k2b-ui .k2b-chat-activity__row:not(:has(> .k2b-chat-activity__copy > small)) {
-    align-items: flex-start;
-  }
-
-  .k2b-ui .k2b-chat-activity__row:not(:has(> .k2b-chat-activity__copy > small)) > .k2b-chat-activity__leading {
-    min-height: 1.25rem;
-  }
-
-  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) {
-    line-height: 1.25rem;
-  }
-
-  .k2b-ui .k2b-chat-activity__copy > strong:not(:has(~ small)) {
-    overflow: visible;
-    overflow-wrap: anywhere;
-    white-space: normal;
-  }
+/* Status words and counts, and a host's controls after them, end on the meta column's right edge. A part of the meta
+   can carry its own tone, such as "1 failed" in "6 steps · 1 failed". */
+.k2b-ui .k2b-chat-activity__meta {
+  display: inline-flex;
+  grid-column: 3;
+  justify-self: end;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--k2b-text-subtle);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
-@media (max-width: 47.999rem) {
-  .k2b-ui .k2b-chat-activity__row:not(:has(> .k2b-chat-activity__copy > small)) {
-    align-items: flex-start;
-  }
+.k2b-ui .k2b-chat-activity__meta:is([data-tone="danger"]),
+.k2b-ui .k2b-chat-activity__meta [data-tone="danger"] {
+  color: var(--k2b-danger-text);
+}
 
-  .k2b-ui .k2b-chat-activity__row:not(:has(> .k2b-chat-activity__copy > small)) > .k2b-chat-activity__leading {
-    min-height: 1.25rem;
-  }
+.k2b-ui .k2b-chat-activity__meta:is([data-tone="warning"]),
+.k2b-ui .k2b-chat-activity__meta [data-tone="warning"] {
+  color: var(--k2b-warning-text);
+}
 
-  .k2b-ui .k2b-chat-activity__copy:not(:has(> small)) {
-    line-height: 1.25rem;
-  }
-
-  .k2b-ui .k2b-chat-activity__copy > strong:not(:has(~ small)) {
-    overflow: visible;
-    overflow-wrap: anywhere;
-    white-space: normal;
-  }
+.k2b-ui .k2b-chat-activity__meta:is([data-tone="ai"]),
+.k2b-ui .k2b-chat-activity__meta [data-tone="ai"] {
+  color: var(--k2b-ai-accent);
 }
 
 .k2b-ui .k2b-chat-activity__trailing {
   display: inline-flex;
   align-items: center;
-  margin-left: auto;
+}
+
+.k2b-ui .k2b-chat-activity__duration {
+  grid-column: 4;
+  justify-self: end;
+  color: var(--k2b-text-subtle);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .k2b-ui .k2b-chat-activity__chevron {
   transition: transform 120ms ease;
 }
 
+/* The chevron and the ⓘ sit optically flush with the row's right edge. */
+.k2b-ui .k2b-chat-activity__row > .k2b-chat-activity__chevron {
+  grid-column: 5;
+  justify-self: end;
+  margin-inline-end: -0.25rem;
+  color: var(--k2b-text-subtle);
+  font-size: 0.9375rem;
+}
+
 .k2b-ui .k2b-chat-activity[open] .k2b-chat-activity__chevron {
   transform: rotate(90deg);
 }
 
+.k2b-ui .k2b-chat-activity__info {
+  position: relative;
+  display: inline-grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  grid-column: 5;
+  justify-self: end;
+  place-items: center;
+  margin: -0.1875rem -0.25rem -0.1875rem 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--k2b-text-subtle);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-chat-activity__info:hover,
+.k2b-ui .k2b-chat-activity__info[aria-expanded="true"] {
+  background: var(--k2b-edge-hover-bg);
+  color: var(--k2b-text);
+}
+
+.k2b-ui .k2b-chat-activity__info:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+/* Touch: 44px to hit, 16px to see. */
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-activity__info::after {
+    position: absolute;
+    inset: -0.625rem;
+    content: "";
+  }
+}
+
+/* A body starts on the text edge of its row: the icon column and the gap. */
 .k2b-ui .k2b-chat-activity__body {
-  margin-left: 1.5rem;
+  margin-left: 1.625rem;
   padding: 0.375rem 0 0;
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
