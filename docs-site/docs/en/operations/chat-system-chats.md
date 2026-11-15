@@ -17,6 +17,13 @@ under **Discussions**. Item directories and message links work in the full
 page and below `/app/chat/panel`. Providers can also offer an activity feed.
 Existing comments stay in their owning application.
 
+Contacts offers address books as containers and contacts as items alongside
+Spaces and Notebooks. On an address-book page, the Chat panel follows the
+book; selecting a contact opens its item thread. Closing the contact returns
+the panel to the book. Contacts checks current book grants and credential
+limits for each reader and container list. It provides no activity feed or
+resource reader checks for push notifications in this release.
+
 The [item discussion capabilities](/en/docs/platform/chat-discussions) expose
 only provider-backed item threads. Keep the item and container types' declared
 readers available under the incoming authority alongside the Chat operation;
