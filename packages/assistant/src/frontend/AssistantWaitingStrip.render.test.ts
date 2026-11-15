@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { WAITING_NOW, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
+import { WAITING_NOW, waitingChatHistory, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
 
 // The server renders "Waiting for you" from the same read the browser starts from. Its first client frame, in
 // AssistantWorkspace.waiting.behavior.test.tsx, must show the same row: the same entries, and quiet in the same case.
@@ -53,7 +53,13 @@ test("the server renders the waiting row of every case as the first client frame
             initialDoneCount: 0,
             initialConversationId: here.id,
             initialArtifactPath: null,
-            initialDetail: { conversation: here, messages: [], hasMoreMessages: false, activeTurn: fixture.activeTurn, timeline: [] },
+            initialDetail: {
+              conversation: here,
+              messages: waitingChatHistory,
+              hasMoreMessages: false,
+              activeTurn: fixture.activeTurn,
+              timeline: [],
+            },
             initialContext: null,
             projects: [],
             initialProject: null,
