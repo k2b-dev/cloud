@@ -66,7 +66,7 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).toContain("sendProjectMessage");
     expect(workspace).toContain("<AssistantComposer projectId=");
     expect(workspace).toContain("navigateTo(assistantConversationHref");
-    expect(workspace).toContain("AssistantChatSidebarPanel");
+    expect(workspace).toContain("<AssistantChatContextPlaces");
     expect(workspace).toContain('class="assistant-chat-layout"');
     expect(workspace).toContain('class="assistant-chat-messages min-h-0 overflow-hidden"');
     expect(workspace).not.toContain("<AppWorkspace.Detail");
@@ -170,7 +170,7 @@ describe("Assistant frontend contracts", () => {
     expect(preferences).toContain("SettingsPanelFooter");
     expect(preferences).toContain("confirmDiscardIfDirty");
     expect(preferences).toContain("SettingsCollection.Item.Actions");
-    expect(preferences).toContain('class="font-medium text-blue-600 dark:text-blue-400">{text("Pinned")}</span>');
+    expect(preferences).toContain('class="font-medium text-[var(--k2b-action)]">{text("Pinned")}</span>');
     expect(preferences).toContain('memory.priority === "pinned" ? "ti ti-xbox-x" : "ti ti-pin"');
     expect(preferences).toContain('label={text("Go to source")}');
     expect(preferences).toContain('icon="ti ti-arrow-up-right"');
