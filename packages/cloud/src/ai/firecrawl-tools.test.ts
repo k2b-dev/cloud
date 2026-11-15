@@ -13,6 +13,9 @@ import {
   runCloudAiWebSearch,
 } from "./firecrawl-tools";
 
+const stubFetch = (handler: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>): typeof fetch =>
+  Object.assign(handler, { preconnect: () => undefined });
+
 const actor: RequestActor = {
   kind: "user",
   user: {
@@ -120,7 +123,7 @@ describe("Firecrawl AI tools", () => {
       return Response.json({ success: true, data: { markdown: "Unused" } });
     };
     await expect(
-      runCloudAiWebExtract({ url: "https://name:placeholder@example.com/" }, { apiKey: "test", fetch: fetcher as typeof fetch }),
+      runCloudAiWebExtract({ url: "https://name:placeholder@example.com/" }, { apiKey: "test", fetch: stubFetch(fetcher) }),
     ).rejects.toThrow("credentials");
     expect(sent).toBe(false);
   });
@@ -137,7 +140,7 @@ describe("Firecrawl AI tools", () => {
       for (const address of [{ url }, { metadata: { url } }, { metadata: { sourceURL: url } }]) {
         const fetcher = async () => Response.json({ success: true, data: { markdown: "Fixture article", ...address } });
         await expect(
-          runCloudAiWebExtract({ url: "https://example.com/start" }, { apiKey: "test", fetch: fetcher as typeof fetch }),
+          runCloudAiWebExtract({ url: "https://example.com/start" }, { apiKey: "test", fetch: stubFetch(fetcher) }),
         ).rejects.toThrow();
       }
     }
@@ -149,7 +152,7 @@ describe("Firecrawl AI tools", () => {
       redirect = init?.redirect;
       return Response.json({ success: true, data: { markdown: "Article" } });
     };
-    await runCloudAiWebExtract({ url: "https://example.com/" }, { apiKey: "test", fetch: fetcher as typeof fetch });
+    await runCloudAiWebExtract({ url: "https://example.com/" }, { apiKey: "test", fetch: stubFetch(fetcher) });
     expect(redirect).toBe("error");
   });
 
@@ -173,7 +176,7 @@ describe("Firecrawl AI tools", () => {
       });
     };
 
-    const result = await runCloudAiWebSearch({ query: "example" }, { apiKey: "fc-secret", fetch: fetcher as typeof fetch });
+    const result = await runCloudAiWebSearch({ query: "example" }, { apiKey: "fc-secret", fetch: stubFetch(fetcher) });
 
     expect(calls[0]?.url).toBe("https://api.firecrawl.dev/v2/search");
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
@@ -208,7 +211,7 @@ describe("Firecrawl AI tools", () => {
 
     const result = await runCloudAiWebExtract(
       { url: "https://example.com/page" },
-      { apiKey: "fc-secret", fetch: fetcher as unknown as typeof fetch, maxChars: 10 },
+      { apiKey: "fc-secret", fetch: stubFetch(fetcher), maxChars: 10 },
     );
 
     expect(result).toEqual({
@@ -230,10 +233,7 @@ describe("Firecrawl AI tools", () => {
         data: { markdown: content, metadata: { sourceURL: "https://example.com/large" } },
       });
 
-    const result = await runCloudAiWebExtract(
-      { url: "https://example.com/large" },
-      { apiKey: "fc-secret", fetch: fetcher as unknown as typeof fetch },
-    );
+    const result = await runCloudAiWebExtract({ url: "https://example.com/large" }, { apiKey: "fc-secret", fetch: stubFetch(fetcher) });
 
     expect(result.content.length).toBe(1_000_000);
     expect(result.truncated).toBe(true);
@@ -245,7 +245,7 @@ describe("Firecrawl AI tools", () => {
       payload = JSON.parse(String(init?.body));
       return Response.json({ success: true, data: { markdown: "Fresh article", metadata: { sourceURL: "https://example.com/page" } } });
     };
-    await runCloudAiWebExtract({ url: "https://example.com/page" }, { apiKey: "test", fetch: fetcher as typeof fetch, maxAge: 0 });
+    await runCloudAiWebExtract({ url: "https://example.com/page" }, { apiKey: "test", fetch: stubFetch(fetcher), maxAge: 0 });
     expect(payload).toMatchObject({ maxAge: 0, timeout: 30_000, formats: ["markdown"], onlyMainContent: true });
   });
 
@@ -258,7 +258,7 @@ describe("Firecrawl AI tools", () => {
           metadata: { sourceURL: "https://example.com/start", url: "https://other.example/final" },
         },
       });
-    const output = await runCloudAiWebExtract({ url: "https://example.com/start" }, { apiKey: "test", fetch: fetcher as typeof fetch });
+    const output = await runCloudAiWebExtract({ url: "https://example.com/start" }, { apiKey: "test", fetch: stubFetch(fetcher) });
     expect(output.url).toBe("https://other.example/final");
   });
 
@@ -285,7 +285,7 @@ describe("Firecrawl AI tools", () => {
         { url: "https://example.com/page" },
         {
           apiKey: "test",
-          fetch: fetcher as typeof fetch,
+          fetch: stubFetch(fetcher),
           signal: controller.signal,
         },
       ),
