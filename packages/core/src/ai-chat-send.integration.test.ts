@@ -137,6 +137,8 @@ suiteFor(
   });
 
   const setup = async () => {
+    // Business keys span runs and callers within an account; each case owns a fresh key space.
+    await sql`DELETE FROM ai.queued_messages`;
     runId = `4f000000-0000-4000-8000-${String(++ordinal).padStart(12, "0")}`;
     await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
       VALUES(${runId}::uuid,${codeId},${versionId}::uuid,'schedule','morning','running',32768,10)`;
@@ -219,7 +221,7 @@ suiteFor(
     let result: unknown;
     if (sourceKind === "code_run") {
       const pair = await generateKeyPair("RS256", { extractable: true });
-      const signer = { kid: "ac1-code-run-fixture", key: pair.privateKey, signUntil: new Date(Date.now() + 3_600_000) };
+      const signer = { kid: "4f000000-0000-4000-8000-000000000099", key: pair.privateKey, signUntil: new Date(Date.now() + 3_600_000) };
       const issuer = "https://cloud.test";
       const key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: signer.kid, alg: "RS256", use: "sig" }] });
       const signed = await signInvocationToken({
