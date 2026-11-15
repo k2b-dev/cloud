@@ -49,7 +49,8 @@ export function workspaceSelectionFromHref(href: string): WorkspaceTab | null {
     const [kind, id, path] = value;
     if (typeof id !== "string" || !id || id.length > 80) return null;
     if (typeof path !== "string" || !path || path.length > 500 || value.length !== 3) return null;
-    if (kind === "context" && (path === "files" || path === "sources" || path === "knowledge")) return contextTab(id, path, path);
+    if (kind === "context" && (path === "files" || path === "sources" || path === "knowledge" || path === "context"))
+      return contextTab(id, path, path);
     if (kind === "file") return fileTab(id, path);
   } catch {
     /* Invalid URL state is ignored; resource APIs still authorize every read. */

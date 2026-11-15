@@ -45,7 +45,7 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Al
 - **Weiterarbeiten:** Wenn eine Antwort wegen eines fehlgeschlagenen Schritts oder eines Fehlers beim KI-Dienst endet, zeigt der Chat den Grund. **Weiterarbeiten** lässt Gustav dort fortfahren, wo er aufgehört hat; die bisherigen Ergebnisse bleiben erhalten.
 - **In neuem Chat fortsetzen:** Erstellt einen neuen Chat, der bis einschließlich der ausgewählten Antwort kopiert wird.
 - **Details zur Antwort:** Zeigt Modell, Zeit und Token-Verbrauch einer Antwort.
-- **Kontext kürzen:** Öffne die Kontextanzeige beim Eingabefeld und wähle **Kontext kürzen**, um den bisherigen Chat-Kontext zusammenzufassen. Alternativ kannst du `/compact` verwenden. Hover zeigt die Details; ein Klick hält sie offen. Escape oder ein Klick außerhalb schließt sie.
+- **Kontext kürzen:** Öffne den Verbrauchs-Ring rechts neben **+** im Eingabefeld. Wähle unter **Dieser Chat** das Symbol **Jetzt zusammenfassen**, um den bisherigen Chat-Kontext zusammenzufassen. Während eine Antwort läuft, ist das Symbol gesperrt, und sein Tooltip sagt warum. Alternativ kannst du `/compact` verwenden. Hover zeigt die Details; ein Klick hält sie offen. Escape oder ein Klick außerhalb schließt sie.
 - **Projekte:** Die Projekteinstellungen zeigen gemeinsame Anweisungen und Kontext entsprechend deiner Lese-, Schreib- oder Administratorberechtigung. Projekt-Chats bleiben privat.
 :::
 
@@ -58,15 +58,19 @@ Handlung und ihr Ziel: eine stimmt zu, die andere lehnt ab. Die Freigabe gilt
 einmal für das, was die Karte zeigt. Ändert sich das vor der Ausführung, fragt
 Gustav erneut. Nach dem Neuladen bleiben Satz und Vorschau erhalten.
 
-Solange Fragen offen sind, listet **Wartet auf dich** über dem Eingabefeld jede
-in ihrer Kurzform, auch die aus deinen anderen Chats mit dem Namen des Chats.
-Wähle eine aus, um zu ihrer Frage zu springen: Gustav öffnet bei Bedarf
-den Chat und setzt den Fokus auf den Satz der Frage. Nach dem Neuladen bist du
-wieder bei dieser Frage. Warten mehr Fragen, als die Leiste zeigt, öffnet ihr
-letzter Eintrag **Freigaben**. Bei einer einzigen Frage im offenen Chat
-erscheint die Leiste nur, solange deren Schaltflächen nicht zu sehen sind.
-Mehrere Fragen auf einmal freizugeben geht nicht: Du beantwortest jede in ihrer
-eigenen Karte.
+Solange etwas auf dich wartet, zeigt **Wartet auf dich** über dem Eingabefeld es
+in einer Zeile: jede offene Frage in ihrer Kurzform, auch die aus deinen anderen
+Chats mit dem Namen des Chats, und im offenen Chat eine Automation, die
+Aufmerksamkeit braucht, oder eine App, deren letzter Lauf fehlgeschlagen ist.
+Jeder Eintrag hat ein Zeichen für seine Art. Wähle einen aus, um dorthin zu gehen: Bei
+einer Frage öffnet Gustav bei Bedarf den Chat und setzt den Fokus auf den
+Satz der Frage; nach dem Neuladen bist du wieder bei dieser Frage. Was nicht in
+die Zeile passt, steht hinter **+n**: Es öffnet die ganze Liste, nach diesem Chat
+und anderen Chats geordnet, mit **Alle ansehen** für **Freigaben**. Am Telefon
+zeigt die Zeile einen Eintrag, und die Liste öffnet sich als Blatt. Bei einer
+einzigen Frage im offenen Chat erscheint die Zeile nur, solange deren
+Schaltflächen nicht zu sehen sind. Mehrere Fragen auf einmal freizugeben geht
+nicht: Du beantwortest jede in ihrer eigenen Karte.
 
 Wo angeboten, merkt sich der dezente Link **Ja, und in diesem Chat nicht mehr
 fragen** diese Freigabe bis zum Löschen des Chats. **Immer freigeben** wird

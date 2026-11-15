@@ -14,7 +14,6 @@ import { auth, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprova
 import { coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout, loadCodePage, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
-import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { catalogPerApp, loadCodePlace } from "../code-place";
 import { type CodePlace, type CodeQueryInvoke, hasPersonalCode, loadCodeAttention, loadCodeSummaries } from "../code-summary";
@@ -24,7 +23,6 @@ import { loadAssistantSidebarSnapshot, placeAppsFromCatalog } from "../sidebar";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";
-import { ASSISTANT_CONTEXT_COOKIE, assistantContextClosedFromCookie } from "./chat-sidebar-layout";
 import { loadCodeOverview } from "./code-overview";
 import { assistantMessages } from "./messages";
 
@@ -226,7 +224,6 @@ export default ssr<AuthContext>(async (c) => {
           : null
       }
       initialContext={initialContext}
-      initialContextClosed={assistantContextClosedFromCookie(getCookie(c, ASSISTANT_CONTEXT_COOKIE))}
       projects={projects}
       initialProject={activeProject}
       initialProjectChats={
