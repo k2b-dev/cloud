@@ -595,7 +595,7 @@ describe("Gustav", () => {
         await list.getByText("Zuletzt: 1 Notiz angelegt").waitFor();
         // The failed run and the pause are the visible statuses; the rest are "Eingeschaltet".
         const cards = await list
-          .locator("a.assistant-apps__card")
+          .locator("a.k2b-link-card")
           .evaluateAll((items) => items.map((item) => (item.textContent ?? "").replace(/\s+/g, " ").trim()));
         expect(cards).toHaveLength(4);
         expect(cards[0]).toContain("Eingeschaltet");
