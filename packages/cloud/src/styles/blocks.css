@@ -133,6 +133,13 @@
   overflow-wrap: anywhere;
 }
 
+/* Markdown text keeps the reading size of plain text; the safe renderer owns its headings and lists. */
+.k2b-ui .cloud-blocks__markdown {
+  min-width: 0;
+  color: var(--k2b-text-secondary);
+  overflow-wrap: anywhere;
+}
+
 .k2b-ui .cloud-blocks__hint {
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
@@ -389,6 +396,13 @@
 
 .k2b-ui .cloud-blocks__checks {
   display: grid;
+  gap: 0.5rem;
+}
+
+/* A survey's options for several answers sit in the same grid as a choice list. */
+.k2b-ui .cloud-survey__checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
   gap: 0.5rem;
 }
 

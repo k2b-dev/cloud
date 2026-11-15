@@ -5,6 +5,7 @@ import {
   DashboardFrame,
   DataTable,
   DescriptionList,
+  MarkdownView,
   NoticeCard,
   ReferenceChip,
   StatCell,
@@ -625,7 +626,11 @@ function Leaf(props: { block: Block; host: Host; locale: string; timeZone: strin
         </section>
       );
     case "Text":
-      return <p class="cloud-blocks__text">{block.text}</p>;
+      return block.format === "markdown" ? (
+        <MarkdownView class="cloud-blocks__markdown" markdown={block.text} allowImages={false} headingScale="compact" />
+      ) : (
+        <p class="cloud-blocks__text">{block.text}</p>
+      );
     case "Heading":
       return <h4 class="cloud-blocks__title">{block.text}</h4>;
     case "Notice":
