@@ -343,8 +343,9 @@ export function CodeAreaView(props: Props) {
           ) : undefined,
           title: summary?.approvals ? t.waitingDot({ n: summary.approvals }) : undefined,
         })}
-        {item("code", t.allCode, { meta: count(summary?.codes) })}
       </AppWorkspace.SidebarSection>
+      <AppWorkspace.SidebarSection title={t.reports} count={summary?.reports} children={undefined} />
+      <AppWorkspace.SidebarSection>{item("code", t.allCode, { meta: count(summary?.codes) })}</AppWorkspace.SidebarSection>
       <AppWorkspace.SidebarSection title={t.policies}>
         {item("policy", t.standard)}
         {item("groups", t.groups, { meta: count(summary?.groups) })}

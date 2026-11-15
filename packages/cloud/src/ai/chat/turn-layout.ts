@@ -2,6 +2,7 @@ import { cardToolBlocks } from "../gustav-view-blocks";
 import { type AiTurnBlock, isRenderableTurnBlock } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { hasCapabilityView } from "./capability-result";
+import { codeStepWords } from "./code-step-words";
 import { isCardToolName, isChartToolName, isRecord, isSurveyToolName, isTextEditorToolName } from "./message-utils";
 import { isFailedTool } from "./tool-groups";
 
@@ -86,6 +87,9 @@ const resultTarget = (block: ToolBlock): string | null => {
   const args = isRecord(block.args) ? block.args : {};
   // A turn that submits twice shows its newest version once.
   if (block.name === "code_submit" && typeof args.codeId === "string") return `code_submit:${args.codeId}`;
+  // A turn that checks or tries examples again shows only the newest notices and examples of each kind.
+  if (["code_check", "code_test", "code_simulate"].includes(block.name) && typeof args.codeId === "string")
+    return `${block.name}:${args.codeId}`;
   if (block.name === "present" && typeof args.path === "string") return `present:${args.path.trim()}`;
   if (block.name === "code_present" && typeof args.title === "string") return `code_present:${args.title.trim().toLowerCase()}`;
   return null;
@@ -93,6 +97,9 @@ const resultTarget = (block: ToolBlock): string | null => {
 
 const isResult = (block: ToolBlock, phase: AiTurnPhase, codePresentations: boolean, codeVersions: boolean): boolean => {
   if (block.name === "code_submit") return codeVersions && submittedCodeVersion(block) !== null;
+  // Notices and tried examples stand in the conversation as building blocks, also when an example failed. A clean
+  // check after a failed one takes the failed one's place, so a notice that no longer holds disappears.
+  if (block.name === "code_check" || block.name === "code_test" || block.name === "code_simulate") return codeStepWords(block) !== null;
   if (block.name === "map" && block.result && typeof block.result === "object" && "map" in block.result) return true;
   if (isFailedTool(block) || block.status === "rejected" || block.status === "awaiting_approval") return false;
   // A running delivery reserves its place once its arguments arrived: a new version of an earlier result must find the

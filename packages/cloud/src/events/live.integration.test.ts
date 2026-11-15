@@ -6,6 +6,7 @@ import { bindProcessSync, unbindProcessSync } from "../_internal/process-sync";
 import { sql } from "../runtime/clients";
 import { createPgOutbox } from "../services/outbox";
 import { defineLive, liveOutbox, liveTopicConfig, startLiveOutbox } from "./live";
+import { installLiveOutbox } from "./testing";
 
 const APP = "eventstest";
 const live = defineLive({ appId: APP, event: z.object({ n: z.number().int() }) });
@@ -85,8 +86,7 @@ suiteFor("database", "nats")("live outbox", () => {
     live.routes({});
     await expect(startLiveOutbox("inventory")).rejects.toThrow(/mounts the live socket of "eventstest", but starts "inventory"/);
     await expect(startLiveOutbox(APP)).rejects.toThrow(/Update Cloud Core first/);
-    const { runCoreSetup } = await import("../../../core/src/runtime-helpers");
-    await runCoreSetup();
+    await installLiveOutbox(sql);
   });
 
   test("a rollback writes nothing; a commit publishes once and leaves no row", async () => {

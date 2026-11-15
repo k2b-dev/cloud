@@ -5,10 +5,20 @@ section: Operations
 order: 1155
 description: Configure, scale, and stop the stateless workerd runner for Code.
 tags: [code, runner, scaling, shutdown]
-updated: 2026-11-11
+updated: 2026-11-14
 ---
 
 # Scaling runners
+
+Core's `code-live` migration adds transactional run and access hints
+to its existing live outbox. Update Core to install it before consuming the
+`code` channel on `/api/ai/live`. Existing runs are not backfilled; consumers
+load an authorized snapshot and follow later updates. This adds no runner
+configuration or separate socket. See [Live updates](/en/docs/automation/live-updates).
+
+Effect counts refresh when a run enters `succeeded` or `failed`; individual
+effect calls do not write live outbox rows. Reapplying `code-live` removes
+the earlier draft's `run_live_effect` trigger on `code.calls`.
 
 The `runner` service executes Code bundles in workerd. Add replicas with
 `--scale runner=N`; every replica uses the same app key. Core owns durable run
@@ -219,10 +229,13 @@ worker checkpoints its live snapshot lazily, at most once per second. Opening
 the chat reads an authorized snapshot; SSE separately revalidates credentials
 and conversation access every five seconds.
 
-A version decision sends a generic `code-versions` invalidation in its decision
-transaction. Each waiting card reads its authorized preview again. Cards with
-a settled preview skip this invalidation and resync; a card whose initial read
-failed retries on the next invalidation. Approval never switches the Code on.
+Version decisions, withdrawals and successful activations enqueue a generic
+`code-versions` invalidation for the submitting person in the same transaction
+as their evidence. Activation invalidation does not wait for the chat to become
+free or for its historical receipt. Cards read their authorized preview again,
+including settled cards and cards being revised. A failed initial read retries
+on the next invalidation. The shared events outbox publishes invalidations in
+batches, with no SQL per live delivery. Approval never switches the Code on.
 
 Runner heartbeats renew the durable generation fence. Capability requests
 check current authority and record the call before effects. These operations

@@ -120,7 +120,7 @@ const continued = (page: Page) => page.evaluate(() => (window as unknown as { co
 
 describe("Gustav's authoring stop", () => {
   for (const locale of ["de", "en"] as const) {
-    test(`reads as one notice with two lists and a real button in ${locale}`, async () => {
+    test(`reads as one notice with one task list and a real button in ${locale}`, async () => {
       for (const width of [1440, 390]) {
         const { page, errors, close } = await open(locale, width);
         try {
@@ -130,14 +130,27 @@ describe("Gustav's authoring stop", () => {
           expect(await card.locator(".k2b-notice-card__description").textContent()).toBe(
             de ? "Dasselbe Problem blieb nach mehreren Versuchen." : "The same problem remained after several attempts.",
           );
-          const done = page.getByRole("list", { name: de ? "Erledigt" : "Done" });
-          const open = page.getByRole("list", { name: de ? "Noch offen" : "Still open" });
-          expect(await done.locator("li").allTextContents()).toEqual(de ? ["Entwurf geprüft"] : ["Draft checked"]);
-          expect(await open.locator("li").allTextContents()).toEqual(
-            de ? ["Mit Beispielen testen", "Version speichern"] : ["Test with examples", "Save a version"],
+          // One still task list (Chat.TaskList): done steps checked, open ones open, nothing turning.
+          const list = page.getByRole("list", { name: de ? "Gustav hat angehalten" : "Gustav stopped" });
+          const rows = await list
+            .locator(".k2b-chat-task")
+            .evaluateAll((nodes) =>
+              nodes.map((node) => [node.getAttribute("data-status"), node.querySelector(".k2b-chat-task__content")?.textContent]),
+            );
+          expect(rows).toEqual(
+            de
+              ? [
+                  ["completed", "Entwurf geprüft"],
+                  ["pending", "Mit Beispielen testen"],
+                  ["pending", "Version speichern"],
+                ]
+              : [
+                  ["completed", "Draft checked"],
+                  ["pending", "Test with examples"],
+                  ["pending", "Save a version"],
+                ],
           );
-          expect(await done.locator("li > i.ti-check").count()).toBe(1);
-          expect(await open.locator("li > i.ti-circle").count()).toBe(2);
+          expect(await list.locator('.k2b-chat-task[data-status="in_progress"]').count()).toBe(0);
           expect(await card.locator(".assistant-authoring-stop__meta").innerText()).toBe(
             de ? "Der Entwurf ist gespeichert." : "The draft is saved.",
           );
@@ -152,7 +165,7 @@ describe("Gustav's authoring stop", () => {
             const button = card.querySelector(".k2b-button")!;
             const styles = new Set<string>();
             const sizes = new Set<number>();
-            for (const node of card.querySelectorAll<HTMLElement>("p, li > span, .k2b-button, .k2b-button *")) {
+            for (const node of card.querySelectorAll<HTMLElement>("p, .k2b-chat-task__content, .k2b-button, .k2b-button *")) {
               if (!node.textContent?.trim() || [...node.children].some((child) => child.textContent?.trim())) continue;
               const style = getComputedStyle(node);
               sizes.add(Number.parseFloat(style.fontSize));
@@ -161,7 +174,7 @@ describe("Gustav's authoring stop", () => {
             const title = card.querySelector(".k2b-notice-card__title")!;
             const range = document.createRange();
             range.selectNodeContents(title);
-            const icons = [...card.querySelectorAll("li > i")].map((icon) => icon.getBoundingClientRect());
+            const icons = [...card.querySelectorAll(".k2b-chat-task__mark")].map((icon) => icon.getBoundingClientRect());
             return {
               styles: [...styles],
               sizes: [...sizes],
@@ -281,7 +294,7 @@ describe("Gustav's authoring stop", () => {
     try {
       const colors = await page.evaluate(() => {
         const color = (selector: string) => getComputedStyle(document.querySelector(selector)!).color;
-        return { title: color(".k2b-notice-card__title"), item: color(".assistant-authoring-stop__list li") };
+        return { title: color(".k2b-notice-card__title"), item: color(".k2b-chat-task__content") };
       });
       // Light ink on the dark surface, never the light theme's near-black.
       for (const value of Object.values(colors)) expect(value).not.toMatch(/^rgb\((?:[0-6]?\d|9), /);

@@ -14,6 +14,7 @@ import {
   loadCodeSummaries,
 } from "../code-summary";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
+import { automationTiming } from "./automation-timing";
 import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
 import { CodeStatusBadge, codeRunLine, codeStateLabel } from "./code-status";
 import { assistantMessages } from "./messages";
@@ -138,8 +139,13 @@ export default function AssistantCodeBlock(props: {
     const current = state();
     return current.kind === "ready" ? current.page : null;
   };
+  // A target the person may not see keeps its kind at most; its ID is never shown.
   const targetNames = (targets: CodeAutomationTarget[]) =>
-    targets.map((target) => (target.title ? [target.typeTitle, target.title].filter(Boolean).join(" ") : target.id)).join(", ");
+    targets
+      .map((target) =>
+        target.title ? [target.typeTitle, target.title].filter(Boolean).join(" ") : t().codeTargetHidden({ type: target.typeTitle }),
+      )
+      .join(", ");
   // Folded, the block says how many automations it holds and, beside that, the status that needs the most attention.
   const summary = () => {
     const items = page()?.items ?? [];
@@ -279,7 +285,7 @@ export default function AssistantCodeBlock(props: {
                                 aria-hidden="true"
                               />
                               <span class="flex min-w-0 flex-col">
-                                <span class="truncate text-primary">{automation.title ?? automation.entrypoint}</span>
+                                <span class="truncate text-primary">{automation.title ?? automationTiming(automation, locale())}</span>
                                 <span class="truncate text-sm text-secondary">{automationLine(automation)}</span>
                               </span>
                               <CodeStatusBadge code={code} status={automationStatus(code, automation)} />

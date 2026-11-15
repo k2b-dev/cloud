@@ -66,7 +66,7 @@ const NEXT_RUN_BUDGET_MS = 1_000;
 const NEXT_RUN_LIMIT = 50;
 const NEXT_RUN_CONCURRENCY = 8;
 
-const schedulerNextRun = async (codeId: string, entrypoint: string): Promise<string | null> => {
+export const schedulerNextRun = async (codeId: string, entrypoint: string): Promise<string | null> => {
   const info = await Promise.race([
     codeRunScheduler().get({ id: codeScheduleId(codeId, entrypoint) }),
     Bun.sleep(NEXT_RUN_BUDGET_MS).then(() => null),

@@ -220,6 +220,43 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
+  test("ZIP upload API preserves opaque bytes and offers canonical file downloads in de and en", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const token = await createTestSession(userId);
+    try {
+      const bytes = new TextEncoder().encode("PK archive bytes stay opaque even when not a valid ZIP");
+      for (const locale of ["de", "en"]) {
+        for (const [suffix, type] of [
+          ["zip", "application/zip"],
+          ["ZIP", "application/x-zip-compressed"],
+          ["ZIP", "application/octet-stream"],
+        ]) {
+          const form = new FormData();
+          form.set("file", new File([bytes], `bank-${locale}.${suffix}`, { type }));
+          const response = await aiRoutes.request(`/conversations/${chat.shortId}/files`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Accept-Language": locale },
+            body: form,
+          });
+          expect(response.status).toBe(200);
+          const { file } = await response.json();
+          expect(file).toMatchObject({ mediaType: "application/zip", size: bytes.byteLength });
+          const download = await aiRoutes.request(`/conversations/${chat.shortId}/files/content?path=${encodeURIComponent(file.path)}`, {
+            headers: { Authorization: `Bearer ${token}`, "Accept-Language": locale },
+          });
+          expect(download.status).toBe(200);
+          expect(download.headers.get("Content-Type")).toBe("application/zip");
+          expect(download.headers.get("Content-Disposition")).toContain("attachment;");
+          expect(new Uint8Array(await download.arrayBuffer())).toEqual(bytes);
+        }
+      }
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("image upload API sanitizes stored bytes and reports malformed images as 422", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });

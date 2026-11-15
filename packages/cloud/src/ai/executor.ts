@@ -38,6 +38,7 @@ import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { createChoiceCapabilityOrigin, projectAiChoices, viewChoice } from "./choices";
 import { CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
+import { aiCodeReviewToolAllowed } from "./code-review-turn";
 import { createCloudCompactFn } from "./compaction";
 import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { editedDraftArguments } from "./draft-edit";
@@ -932,9 +933,10 @@ export class AiTurnExecutor {
         aiConversations.getConversation({ conversationId }),
       ]);
       material = nextMaterial;
-      if (config.toolSource?.kind === "default" && this.config.tools?.length) {
+      if ((config.toolSource?.kind === "default" || config.codeReview) && this.config.tools?.length) {
         material.tools = [...new Map([...material.tools, ...this.config.tools].map((tool) => [tool.def.name, tool])).values()];
       }
+      material.tools = material.tools.filter((tool) => aiCodeReviewToolAllowed(config, tool.def.name));
       if (!conversation) throw new Error("Conversation is no longer available.");
       allowedTools = conversation.allowedTools ?? null;
       const allowed = allowedTools === null ? null : new Set(allowedTools);
@@ -1685,7 +1687,7 @@ export class AiTurnExecutor {
       }),
       tools: async () => {
         try {
-          return authoringBudget.tools(await turnPolicy.tools());
+          return authoringBudget.tools(await turnPolicy.tools()).filter((tool) => aiCodeReviewToolAllowed(config, tool.def.name));
         } catch (error) {
           remember(aiTurnReasonFromThrown(error));
           throw error;

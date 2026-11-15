@@ -314,6 +314,9 @@ export const NOTIFICATIONS = {
       kind: z.enum(["submitted", "decided"]),
       outcome: z.enum(["approved", "changes_requested", "rejected"]).nullable(),
       by: z.string().nullable(),
+      targetHref: z.templateLiteral(["/", z.string()]).optional(),
+      waiting: z.object({ short: z.string(), href: z.templateLiteral(["/", z.string()]) }).optional(),
+      automaticRevision: z.boolean().optional(),
     }),
     render: (data, { locale }) => {
       const de = locale.startsWith("de");
@@ -335,11 +338,17 @@ export const NOTIFICATIONS = {
                 : de
                   ? `${by} hat Version ${data.number} abgelehnt`
                   : `${by} rejected version ${data.number}`,
-        body: data.title,
+        body: [
+          data.title,
+          data.waiting?.short,
+          data.automaticRevision ? (de ? "Gustav überarbeitet die Version." : "Gustav is revising the version.") : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
         targetHref:
           data.kind === "submitted"
             ? `/admin/code?sec=approvals&id=${data.versionId}`
-            : `/app/assistant/code/${data.codeId}?tab=versions&version=${data.versionId}`,
+            : (data.waiting?.href ?? data.targetHref ?? `/app/assistant/code/${data.codeId}?tab=versions&version=${data.versionId}`),
       };
     },
   }),
@@ -602,6 +611,9 @@ export type CoreNotificationSender = AuthNotificationSender &
       by: string | null;
       locale: string;
       origin: import("./code/review-contracts").CodeSubmissionOrigin;
+      targetHref?: `/${string}`;
+      waiting?: { short: string; href: `/${string}` };
+      automaticRevision?: boolean;
       key: string;
     }) => Promise<unknown>;
     sendCodeDatabaseExpiry: (notice: { userId: string; codeId: string; title: string; deleteAt: string; key: string }) => Promise<unknown>;

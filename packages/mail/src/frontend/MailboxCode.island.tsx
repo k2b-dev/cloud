@@ -8,19 +8,28 @@ import type { MailboxCodePageData } from "../service/workspace";
 import MailSidebar from "./_components/MailSidebar";
 import { MailContactDirectoryProvider } from "./_components/mail-contact-directory-context";
 import { createMailboxPreferences } from "./_components/mail-mailbox-preferences";
-import MailCodeTools from "./MailCodeTools";
+import MailCodeCatchUp, {
+  MailCodeBackfillLink,
+  type MailCodeCatchUpData,
+  mailCodeCatchUpAvailable,
+  mailCodeCatchUpHref,
+} from "./MailCodeTools";
 import type { MailSidebarData } from "./mail-sidebar-data";
 
 /** The mailbox's tools live on its own page; beside its Code the sidebar row offers none. */
 const noMailboxMenu = { sections: () => [], busy: () => false, syncing: () => false };
 
-/** Code of one mailbox: Mail's own sidebar with "Code" selected, and the shared Code page beside it. */
+/**
+ * Code of one mailbox: Mail's own sidebar with "Code" selected, and beside it the shared Code page or, with `catchUp`,
+ * the flow that processes existing mail.
+ */
 export default function MailboxCode(props: {
   mailbox: MailboxCodePageData;
   sidebar: MailSidebarData;
   code: CodePageData;
   currentUserEmail: string | null;
   contactDirectory: MailContactDirectory;
+  catchUp?: MailCodeCatchUpData;
 }) {
   const preferences = createMailboxPreferences(props.sidebar);
   // The same rule as the mailbox page's dot, from the data this page already has.
@@ -60,22 +69,21 @@ export default function MailboxCode(props: {
         />
         <AppWorkspace.Content>
           <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
-            <CodePage data={props.code} />
             <Show
-              when={
-                props.code.state.kind === "ready" && props.code.state.permission === "editor" && props.code.state.code.state === "active"
-                  ? props.code.state
-                  : null
+              when={props.catchUp}
+              fallback={
+                <CodePage
+                  data={props.code}
+                  footer={
+                    // The Code page shows its footer only on the overview of a running automation.
+                    <Show when={mailCodeCatchUpAvailable(props.code, props.mailbox)}>
+                      <MailCodeBackfillLink href={mailCodeCatchUpHref(props.code.href)} />
+                    </Show>
+                  }
+                />
               }
             >
-              {(state) => (
-                <MailCodeTools
-                  mailboxId={props.mailbox.mailbox.id}
-                  codeId={state().code.id}
-                  versionId={state().code.activeVersionId!}
-                  folders={props.mailbox.folders}
-                />
-              )}
+              {(data) => <MailCodeCatchUp data={data()} />}
             </Show>
           </AppWorkspace.Main>
         </AppWorkspace.Content>

@@ -36,6 +36,9 @@ test("reload SSR shows a completed max_tokens answer with the reasoning clause a
   expect(html).toContain("Die Antwort wurde abgeschnitten");
   expect(html).toContain("Das Nachdenken hat den größten Teil davon verbraucht.");
   expect(html).toContain("Weiterschreiben");
+  // v12 05: the notice has its sign, says what stays, and continuing is a real button, not a bare text link.
+  expect(html).toContain("ti-alert-triangle");
+  expect(html).toMatch(/<button[^>]*data-variant="secondary"[^>]*>[\s\S]*?Weiterschreiben/);
   expect(html).not.toContain("max_tokens");
   expect(messages[0]?.loopDoneReason).toBe("stop");
 });
@@ -53,4 +56,42 @@ test("an answer with no visible text still renders the truncation notice", () =>
   const html = renderHistory([{ ...truncatedAnswer, message: { role: "assistant", content: [], stopReason: "max_tokens" } }]);
   expect(html).toContain("Die Antwort wurde abgeschnitten");
   expect(html).toContain("Das Nachdenken hat den größten Teil davon verbraucht.");
+});
+
+test("an automatic review start keeps an early model failure visible without offering another automatic continuation", () => {
+  const start: AiStoredMessage = {
+    ...truncatedAnswer,
+    id: "review-start",
+    seq: 1,
+    message: { role: "user", content: ["Gustav startet von selbst, einmal."] },
+    stopReason: null,
+    usage: null,
+    meta: {
+      codeReviewStart: { codeId: "c_review", versionId: "11111111-1111-4111-8111-111111111111" },
+      turnError: { code: "model_unavailable" },
+    },
+  };
+  const html = renderHistory([start]);
+  expect(html).toContain("Gustav startet von selbst");
+  expect(html).toContain("Der KI-Dienst hat nicht geantwortet.");
+  expect(html).not.toContain("Weiterschreiben");
+  const truncated = renderHistory([{ ...start, meta: { codeReviewStart: start.meta!.codeReviewStart } }, truncatedAnswer]);
+  expect(truncated).toContain("Die Antwort wurde abgeschnitten");
+  expect(truncated).not.toContain("Weiterschreiben");
+});
+
+test("a turn the person stopped shows only the quiet stopped line, never the abort notice; Cloud's own end keeps it", () => {
+  const stopped = renderHistory([
+    {
+      ...truncatedAnswer,
+      message: { role: "assistant", content: [{ type: "text", text: "Teil" }], stopReason: "aborted" },
+      stopReason: "aborted",
+      loopDoneReason: "aborted",
+      usage: null,
+    },
+  ]);
+  expect(stopped).not.toContain("Die Antwort wurde abgebrochen.");
+  expect(stopped).not.toContain("Weiterschreiben");
+  // Cloud's own end of an answer keeps its notice: here the output limit, with continuing as a button.
+  expect(renderHistory([truncatedAnswer])).toContain("Weiterschreiben");
 });

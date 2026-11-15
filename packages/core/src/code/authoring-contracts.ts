@@ -1,5 +1,10 @@
 import { CODE_CHECK_LIMITS, CodeCheckResultSchema, CodeTestCaseSchema, CodeTestMockSchema, CodeTestResultSchema } from "@k2b/cloud/code";
-import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import {
+  CODE_READ_MODEL_LIST_LIMIT,
+  CodeCheckedVersionManifestSchema,
+  CodeReadModelExampleSchema,
+  CodeReadModelNoticeSchema,
+} from "@k2b/cloud/contracts";
 import { AppEventEnvelopeSchema } from "@k2b/cloud/events";
 import { z } from "zod";
 import { codeActivationContracts } from "./activation-contracts";
@@ -153,7 +158,7 @@ const check = z
 const pulled = z.object({ version: z.literal(1), config: CodeProjectSchema, files: CodeSourceFilesSchema }).strict();
 /** The next human step, never an instruction for Gustav to approve or activate. */
 export const CodeSubmissionNextStepSchema = z.discriminatedUnion("next", [
-  z.object({ next: z.literal("admin_approval"), who: z.literal("cloud_admin") }).strict(),
+  z.object({ next: z.literal("admin_approval"), who: z.enum(["cloud_admin", "you"]) }).strict(),
   z.object({ next: z.literal("switch_on"), who: z.enum(["personal_owner", "owner_manager"]) }).strict(),
   z.object({ next: z.literal("revise"), who: z.literal("code_editor") }).strict(),
   z.object({ next: z.literal("check_status"), who: z.literal("code_editor") }).strict(),
@@ -187,6 +192,17 @@ export const CodeWorkspaceStatusSchema = z.object({ version: z.literal(1), items
  */
 export const codeAuthoringContracts = {
   review: { input: CodeReviewInputSchema, data: CodeReviewSchema },
+  reviewRequestAgain: { input: CodeReviewInputSchema.omit({ before: true }), data: codeVersionContracts.submit.data },
+  reviewStop: {
+    input: CodeReviewInputSchema.omit({ before: true }),
+    data: z
+      .object({
+        status: z.enum(["stopped", "too_late"]),
+        submittedVersionId: z.uuid().nullable(),
+        submittedNumber: z.number().int().positive().nullable(),
+      })
+      .strict(),
+  },
   reviewWait: { input: CodeReviewWaitInputSchema, data: CodeReviewSchema },
   withdraw: { input: CodeReviewInputSchema.omit({ before: true }), data: codeVersionContracts.submit.data },
   init: {
@@ -283,9 +299,33 @@ export const CodeChatDraftSummarySchema = z
  * Chat check result: the CLI contract without the checked bundle, which only costs the model tokens. The bundle's hash
  * stays in `manifest.hashes.bundle`; submit checks the same draft again and stores its own bundle.
  */
+/**
+ * What the chat shows of a check, a test or a simulation: Cloud's sentences beside the exact data for the model. The
+ * person reads notices with their consequence, what the Code may do, and tried examples; never source, a file, a line,
+ * a diagnostic code or an ID.
+ */
+export const CodeChatStepWordsSchema = z.strictObject({
+  notices: z.array(CodeReadModelNoticeSchema).max(CODE_READ_MODEL_LIST_LIMIT),
+  mayDo: z
+    .array(z.strictObject({ text: z.string(), isNew: z.boolean() }))
+    .max(CODE_READ_MODEL_LIST_LIMIT)
+    .optional(),
+  examples: z
+    .strictObject({
+      passed: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+      summary: z.string(),
+      explanation: z.string(),
+      items: z.array(CodeReadModelExampleSchema).max(CODE_READ_MODEL_LIST_LIMIT),
+    })
+    .optional(),
+});
 export const CodeChatCheckDataSchema = check.extend({
   result: z.discriminatedUnion("ok", [CodeCheckResultSchema.options[0], CodeCheckResultSchema.options[1].omit({ bundle: true })]),
+  words: CodeChatStepWordsSchema,
 });
+/** The chat's test and simulation result: the exact `cld code test` JSON for the model, and its words for the person. */
+export const CodeChatTestDataSchema = CodeTestResultSchema.extend({ words: CodeChatStepWordsSchema });
 
 /** Chat-only additive inputs. HTTP and CLI continue to require their complete source contracts. */
 export const codeChatAuthoringInputs = {

@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { aiLive } from "@k2b/cloud/ai/live";
 import { CODE_REQUEST_LIMITS, type CodeRouteResponse, CodeRouteResponseSchema, validateCodePage } from "@k2b/cloud/code";
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import type { RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
@@ -182,6 +183,7 @@ export async function startCodeRun(request: CodeStartRequest, context: CodeConte
   const input = CodeStartRequestSchema.parse(request);
   codePerson(context, true);
   const result = await sql.begin((db) => enqueue({ ...input, requestKey: `manual:${input.idempotencyKey}` }, db, context));
+  aiLive.wake();
   if (!result) throw new Error("Manual admission returned no run");
   return result;
 }
@@ -199,7 +201,7 @@ export async function processCurrentCodeScheduleTick(
 }
 async function admitScheduleTick(tick: ScheduledTick): Promise<CodeStartResult | null> {
   if (!Number.isFinite(tick.slot.getTime())) throw new RangeError("Invalid schedule slot");
-  return sql.begin(async (db) => {
+  const result = await sql.begin(async (db) => {
     const [retained] = await db<
       { retained: boolean }[]
     >`SELECT ${tick.slot}>clock_timestamp()-${CODE_SCHEDULE_TICK_RETENTION_MS}*interval '1 millisecond'
@@ -216,6 +218,8 @@ async function admitScheduleTick(tick: ScheduledTick): Promise<CodeStartResult |
       db,
     );
   });
+  aiLive.wake();
+  return result;
 }
 
 type ClaimedRun = {
@@ -312,7 +316,10 @@ export async function claimCodeRuns(
     }
     return claimed;
   };
-  return transaction ? claim(transaction) : sql.begin(claim);
+  if (transaction) return claim(transaction);
+  const result = await sql.begin(claim);
+  aiLive.wake();
+  return result;
 }
 /** Owner reads and signing happen after claim commit, outside dispatch locks. Missing owners never receive a token. */
 export async function codeRunnerLease(
@@ -442,6 +449,7 @@ export async function completeCodeRun(claims: CodeRunTokenClaims, outcome: Runne
     }
     await settleRun(claims.runId, outcome, limits, db);
   });
+  aiLive.wake();
 }
 /** Bounded crash recovery runs on every Core replica; SKIP LOCKED permits safe competing reconcilers. */
 export async function reconcileCodeRuns(): Promise<void> {
@@ -468,6 +476,7 @@ export async function reconcileCodeRuns(): Promise<void> {
     await db`DELETE FROM code.runner_instances WHERE instance_id IN(SELECT instance_id FROM code.runner_instances
       WHERE last_seen_at<clock_timestamp()-${(await codeSettings.get("core.code.runner_poll_ms")) + CODE_RUN_LEASE_MS}*interval '1 millisecond' LIMIT 100)`;
   });
+  aiLive.wake();
 }
 /** Signed free-slot telemetry is shared in Postgres. Reported slots are decremented in the fetch response path. */
 export async function recordCodeRunner(instanceId: string, freeSlots: number): Promise<void> {

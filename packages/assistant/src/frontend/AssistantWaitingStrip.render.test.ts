@@ -2,10 +2,11 @@ import { afterAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import type { AiOpenQuestion } from "@k2b/cloud/ai";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { WAITING_NOW, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
+import { WAITING_NOW, waitingChatHistory, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
 
 // The server renders "Waiting for you" from the same read the browser starts from. Its first client frame, in
 // AssistantWorkspace.waiting.behavior.test.tsx, must show the same row: the same entries, and quiet in the same case.
@@ -53,7 +54,13 @@ test("the server renders the waiting row of every case as the first client frame
             initialDoneCount: 0,
             initialConversationId: here.id,
             initialArtifactPath: null,
-            initialDetail: { conversation: here, messages: [], hasMoreMessages: false, activeTurn: fixture.activeTurn, timeline: [] },
+            initialDetail: {
+              conversation: here,
+              messages: waitingChatHistory,
+              hasMoreMessages: false,
+              activeTurn: fixture.activeTurn,
+              timeline: [],
+            },
             initialContext: null,
             projects: [],
             initialProject: null,
@@ -75,4 +82,65 @@ test("the server renders the waiting row of every case as the first client frame
       expect(html.match(/"status":\{"icon":"assistant-chat-waiting"/g)?.length).toBe(2);
     }
   }
+});
+
+test("Code waiting kinds keep their own sign in the shared chip row", async () => {
+  const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
+  const signs = {
+    code_activate: "ti ti-power",
+    code_changes: "ti ti-message-2",
+    code_expired: "ti ti-clock-off",
+    code_attention: "ti ti-alert-circle",
+  } as const;
+  for (const kind of ["code_activate", "code_changes", "code_expired", "code_attention"] as const) {
+    const icon = signs[kind];
+    const question: AiOpenQuestion = { ...waitingFixture.questions.items[0]!, kind };
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AssistantWaitingStrip, {
+            view: { attention: [], entries: [question], total: 1, more: 0, onlyHere: null },
+            conversationId: question.conversationId,
+            quiet: false,
+            onJump: () => {},
+            onShowMore: () => {},
+          });
+        },
+      }),
+    );
+    expect(html).toContain(`data-kind="${kind}"`);
+    expect(html).toContain(`assistant-waiting__icon ${icon}`);
+  }
+});
+
+test("a Code entry shows the sign of its kind and its own sentence, never the approval prefix", async () => {
+  const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");
+  const base = waitingFixture.conversations[0]!;
+  const question = {
+    id: "q-code",
+    kind: "code_activate" as const,
+    conversationId: base.id,
+    conversationTitle: base.title,
+    anchor: "code-version-66666666-6666-4666-8666-666666666666",
+    short: "Version 5 einschalten",
+    createdAt: WAITING_NOW,
+  };
+  const html = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(AssistantWaitingStrip, {
+          view: { attention: [], entries: [question] as never, more: 0, total: 1, onlyHere: null },
+          conversationId: base.id,
+          quiet: false,
+          onJump: () => undefined,
+          onShowMore: () => undefined,
+        });
+      },
+    }),
+  );
+  expect(html).toContain("ti-power");
+  expect(html).toContain("Version 5 einschalten");
+  expect(html).not.toContain("Freigabe:");
 });

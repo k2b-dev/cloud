@@ -42,7 +42,6 @@ import {
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { assistantApi } from "../api/client";
 import AssistantAuthoringStop from "../frontend/AssistantAuthoringStop";
-import AssistantCodeVersionCard from "../frontend/AssistantCodeVersionCard";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantDictation } from "../frontend/assistant-dictation";
 import {
@@ -52,6 +51,8 @@ import {
   matchesAssistantInvalidation,
 } from "../frontend/assistant-live";
 import { audioMessages } from "../frontend/audio-messages";
+import { AssistantCodeDecisionEntry } from "../frontend/code-decision-deferred";
+import { AssistantCodeVersionCard } from "../frontend/code-version-card-deferred";
 import { assistantMessages } from "../frontend/messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
@@ -655,6 +656,10 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     gone: () => void reloadList(true).catch(() => undefined),
   });
   const jump = (question: AiOpenQuestion) => {
+    if (question.href) {
+      window.location.assign(question.href);
+      return;
+    }
     const here = chat.activeConversationId() === question.conversationId;
     if (!here) go({ level: "chat", id: question.conversationId });
     void waitingFocus.focus(question.anchor, () => chat.activeConversationId() === question.conversationId);
@@ -980,9 +985,16 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                   actions={{
                     // The same version card as the workspace: on a phone it says where switching on works.
                     renderCodeAuthoringStop: (state, continuable) => <AssistantAuthoringStop state={state} continuable={continuable} />,
+                    renderCodeDecision: (entry) => (
+                      <AssistantCodeDecisionEntry entry={entry} messages={chat.messages} timeZone={props.timeZone} />
+                    ),
                     renderCodeVersion: (version) => (
                       <AssistantLiveProvider value={liveHub}>
-                        <AssistantCodeVersionCard {...version} timeZone={props.timeZone} />
+                        <AssistantCodeVersionCard
+                          {...version}
+                          timeZone={props.timeZone}
+                          onAsk={(text) => void send({ intent: "send", text, attachments: [] }, false)}
+                        />
                       </AssistantLiveProvider>
                     ),
                     actionDisabled: () => chat.runStatus() === "stopping",

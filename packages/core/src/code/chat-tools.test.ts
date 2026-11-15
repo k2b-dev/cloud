@@ -9,6 +9,10 @@ test("submit guidance follows the authoritative next step instead of always prom
   expect(description).toContain("nextStep");
   expect(description).toContain("admin_approval");
   expect(description).toContain("nextStep {next, who}");
+  expect(description).toContain("who=you");
+  expect(description).toContain("You can approve it yourself.");
+  expect(description).toContain("Du kannst sie selbst freigeben.");
+  expect(description).toContain("who=cloud_admin");
 });
 const schema = (name: string) => {
   const tool = tools.find((item) => item.def.name === name);
@@ -114,7 +118,7 @@ test("a passing chat check leaves the checked bundle on the server; its hash sta
     hashes: { source: hash, sdk: hash, bundle: hash },
   };
   const result = { ok: true, diagnostics: [], manifest, permissions: [] };
-  const answer = (value: object) => ({ version: 1, result: value, manifest: null, permissions: [] });
+  const answer = (value: object) => ({ version: 1, result: value, manifest: null, permissions: [], words: { notices: [], mayDo: [] } });
   expect(check.def.outputSchema.safeParse(answer(result)).success).toBe(true);
   expect(check.def.outputSchema.safeParse(answer({ ...result, bundle: "export {}" })).success).toBe(false);
 });

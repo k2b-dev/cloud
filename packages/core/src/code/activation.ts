@@ -20,6 +20,7 @@ import { describeCodeAutomations } from "./automation-view";
 import type { Code } from "./contracts";
 import { requireCodeEventAccess } from "./event-access";
 import { syncCodeEventSubscriptions } from "./event-subscriptions";
+import { enqueueCodeReviewChat } from "./review-chat-state";
 import { findCode } from "./store";
 import { CodeVersionEvidenceSchema } from "./version-evidence";
 import { CodeVersionError, codeVersionReadiness, recordCodeVersionBaseline, requireCodeVersionApproval } from "./versions";
@@ -225,7 +226,7 @@ export async function previewCodeActivation(
   }
   // An older card in a chat asks no target again: nothing can be switched on from there.
   if (version.number < base.latest) return { ...base, activated: null, readiness: { state: "ready" }, place, page };
-  const readiness = await codeVersionReadiness(code, input.versionId, sql);
+  const readiness = await codeVersionReadiness(code, input.versionId, sql, context);
   const targets = manifest.success ? await previewTargets(code, manifest.data, catalog) : undefined;
   const operationLabels = targets
     ? await describeOperations(
@@ -523,6 +524,7 @@ export async function processCodeActivation(activationId: string, overrides?: Pa
         await recordCodeVersionBaseline(code.id, row.version_id, tx);
         await tx`UPDATE code.codes SET active_version_id=${row.version_id}::uuid,state='active',pause_reason=NULL,pause_rows='{}',pause_policy_revision=NULL WHERE id=${code.id}`;
         await tx`UPDATE code.activations SET state='active',failure=NULL,mandate_id=${mandate.id}::uuid,authority=NULL,updated_at=now() WHERE id=${row.id}::uuid`;
+        await enqueueCodeReviewChat(row.version_id, "activation", tx);
         await tx`INSERT INTO code.activation_outbox(code_id,kind) VALUES(${code.id},'cleanup') ON CONFLICT DO NOTHING`;
         await audit.record(
           {

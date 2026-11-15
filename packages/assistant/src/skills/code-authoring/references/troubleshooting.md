@@ -49,7 +49,7 @@ edits and fixtures with `code_write({codeId, path, content})`.
 | `code_unattended_forbidden` | The version calls an Action that asks a person | Remove the call; use a silent Action or leave the step to a person |
 | `code_sends_not_yet` | The version sends mail or another message unattended | Create a draft instead |
 | `code_policy_never` | The installation's policy forbids a used class | Remove that call or ask a Cloud administrator about the policy |
-| `approval_pending` (switch-on readiness) | A Cloud administrator has not approved the version | Wait for the approval |
+| `approval_pending` (switch-on readiness) | The version still needs approval | If the server returns `readiness.selfApproval: true` or `nextStep.who: "you"`, say “You can approve it yourself.” / “Du kannst sie selbst freigeben.” Otherwise wait for an admin to approve |
 
 ## Version decision refusals
 
@@ -58,7 +58,7 @@ Do not retry a refused decision without resolving its cause.
 
 | Code | Cause | Next step |
 | --- | --- | --- |
-| `SELF_APPROVAL` | The author is not the only active Cloud administrator | Ask another admin to approve; the author can still reject |
+| `SELF_APPROVAL` | Another active human Cloud admin can review this version (the emergency admin never counts as another reviewer) | Ask another admin to approve; the author can still reject |
 | `REAUTHENTICATE` | Sole-admin self-approval lacks a full browser sign-in from the last ten minutes | Use the review's sign-in link with the same account; emergency admins must sign out first, then sign in again with the admin token. Return to the review and approve, or decide through Cloud Login |
 | `REJECT_ONLY` | The connection permits rejection only | Open the review in Cloud in the browser to approve |
 | `NOT_FOUND` from a decision | The approval is unavailable to this account | Open the current approvals list or ask a Cloud admin to review |
@@ -77,7 +77,7 @@ text. `status === 403` means forbidden, while `status === 404` means missing.
 | --- | --- | --- |
 | 403 or 404 from the target app | The account lacks access, or the object does not exist | Ask the resource's manager to share it with the service account; check the ID |
 | `code_capability_undeclared` (403) | The call's operation, target or ref is outside the version's checked permissions | Keep the SDK call visible to the checker; check and submit the updated source before activating it |
-| `code_approval_required`, `code_approval_revoked` | The version is not approved (any more) | A Cloud administrator approves it |
+| `code_approval_required`, `code_approval_revoked` | The version is not approved (any more) | Open the current review; offer self-approval only when the server allows it |
 | `code_admission_refused` | A schedule tick was refused by policy or approval | As above |
 | `code_not_active` | A newer version became active before the run started | Nothing; the new version handles later work |
 | `code_wall_clock_limit`, `code_call_limit`, `code_rate_limited` | A run budget is spent | Bound the work ([Data](data.md)) |

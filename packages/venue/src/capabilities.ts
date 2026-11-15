@@ -479,6 +479,7 @@ export const venueCapabilities = defineCapabilities({
       description: "A public or permission-scoped place with opening and staffing rules.",
       icon: "ti ti-building-carousel",
       reader: "venue.read",
+      access: { managers: listVenueManagers },
       pages: ["/app/venue/:id", "/app/venue/public/:id", "/app/venue/:id/:view"],
     },
     assignment: {
@@ -676,3 +677,5 @@ export const venueCapabilities = defineCapabilities({
     },
   },
 });
+
+import { listVenueManagers } from "./service/manager-recipients";

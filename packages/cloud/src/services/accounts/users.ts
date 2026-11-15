@@ -14,6 +14,7 @@ import * as settings from "../settings";
 import { buildRoles } from "./authz";
 import { buildBaseUser, resolveProviderProfile } from "./base-user";
 import { managedGroupIdsSubquery, managedGroupsNamesSubquery, recursiveGroupIdsSubquery, recursiveUserGroupsSubquery } from "./group-sql";
+import { type EmergencyIdentityRow, hasReservedEmergencyUid } from "./identity";
 import { buildIpaUserData, emptyIpaUserData, userIpaDataColumns, userIpaDataJoin } from "./ipa-data";
 import {
   canPersistStoredAdmin,
@@ -30,7 +31,7 @@ export { clearAvatar, getAvatar, getAvatarState, parseAvatarDataUrl, setAvatar, 
 export { hasInstallationAdminInTransaction } from "./installation-admin";
 
 type DbRow = Record<string, unknown>;
-type UserMutationTarget = BaseUser & { accountExpires: string | null; storedAdmin: boolean };
+type UserMutationTarget = BaseUser & { accountExpires: string | null; storedAdmin: boolean; emergency_admin: boolean };
 
 type CreateUserData = {
   provider: UserProvider;
@@ -68,6 +69,7 @@ const buildUserMutationTarget = (row: DbRow): UserMutationTarget => ({
   ...buildBaseUser(row),
   accountExpires: resolveAccountExpires(row)?.toISOString() ?? null,
   storedAdmin: Boolean(row.admin),
+  emergency_admin: row.emergency_admin === true,
 });
 
 const pgArrayLiteralToStrings = (value: string): string[] => {
@@ -218,7 +220,7 @@ export const get = async (params: { id: string } | { uid: string }, options: { d
 export const getMinimal = async (params: { id: string } | { uid: string }): Promise<UserMutationTarget | null> => {
   const whereClause = "id" in params ? sql`id = ${params.id}` : sql`uid = ${params.uid}`;
   const rows = await sql<DbRow[]>`
-    SELECT id, uid, provider, profile, admin, given_name, sn, display_name, mail, avatar_hash, account_expires
+    SELECT id, uid, provider, profile, admin, emergency_admin, given_name, sn, display_name, mail, avatar_hash, account_expires
     FROM auth.users
     WHERE ${whereClause}
   `;
@@ -616,8 +618,8 @@ export const setExpiry = async (params: {
  * `admin` identity. Break-glass access uses `ADMIN_LOGIN_TOKEN`, so everyday
  * actions stay attributed to the administrator who performs them.
  */
-const emergencyAdminSignInError = (user: { uid: string }): MutationResult<never> | null =>
-  user.uid === providers.local.users.EMERGENCY_ADMIN_UID
+const emergencyAdminSignInError = (user: EmergencyIdentityRow): MutationResult<never> | null =>
+  hasReservedEmergencyUid(user)
     ? { ok: false, error: "The emergency admin account has no login tokens or links. Use the admin login token instead.", status: 403 }
     : null;
 

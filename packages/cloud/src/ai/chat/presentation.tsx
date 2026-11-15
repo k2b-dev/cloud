@@ -23,7 +23,7 @@ import { AiReaderTimeZoneProvider } from "./action-sentences";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
-import { aiMessageStopNotice } from "./stop-notice";
+import { aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
@@ -173,11 +173,17 @@ const storedItems = (
   // A failed turn's notice ends its last item, which is its user message when the model never answered.
   const lastEntryOfLoop = new Map<string, number>();
   timeline.forEach((item, index) => {
-    const loopId = item.type === "summary" ? null : item.type === "user" ? item.entry.loopId : item.loopId;
+    const loopId =
+      item.type === "summary" || item.type === "code-decision"
+        ? null
+        : item.type === "user" || item.type === "code-review-start"
+          ? item.entry.loopId
+          : item.loopId;
     if (!loopId) return;
     lastEntryOfLoop.set(loopId, index);
     if (item.type === "assistant") lastItemOfLoop.set(loopId, index);
   });
+  const reviewLoops = new Set(messages.flatMap((entry) => (entry.meta?.codeReviewStart && entry.loopId ? [entry.loopId] : [])));
   const turnErrors = new Map<string, AiTurnError>();
   for (const message of messages) if (message.loopId && message.meta?.turnError) turnErrors.set(message.loopId, message.meta.turnError);
   // Only the chat's newest turn can be continued, and only while no other turn runs.
@@ -204,7 +210,7 @@ const storedItems = (
           earlier: false,
           duration: () => null,
           error,
-          continuable: newestLoop === loopId,
+          continuable: newestLoop === loopId && !reviewLoops.has(loopId),
         }),
       },
     ];
@@ -308,6 +314,15 @@ const storedItems = (
       return [...replacementItem, userItem, ...unansweredNotice(item.entry, itemIndex)];
     }
 
+    if (item.type === "code-decision" || item.type === "code-review-start") {
+      // A host that draws the decision gets the whole line: its sentence, time and the one jump to the card.
+      const line = actions.renderCodeDecision?.(item.entry);
+      const activity: ChatTimelineItem = line
+        ? { kind: "activity", id: item.id, label: line, class: "ai-code-decision-line" }
+        : { kind: "activity", id: item.id, label: textFromMessage(item.entry.message), icon: "ti ti-shield-check", tone: "ai" };
+      return item.type === "code-review-start" ? [activity, ...unansweredNotice(item.entry, itemIndex)] : activity;
+    }
+
     if (item.type === "summary") {
       const count = item.entry.meta?.compactedCount;
       const date = new Date(item.entry.createdAt).toLocaleDateString(locale);
@@ -370,7 +385,9 @@ const storedItems = (
       firstSegment = false;
       const error = last ? turnError : undefined;
       const lastMessage = item.entries.findLast((entry) => entry.message.role === "assistant");
-      const stopNotice = index === lastAssistant && lastMessage ? aiMessageStopNotice(lastMessage) : null;
+      // One ending, never two: the person's stop is the quiet line; only a turn Cloud ended explains itself in a notice.
+      const byPerson = last && segmentPhase === "stopped" && stoppedByPerson(item.entries);
+      const stopNotice = index === lastAssistant && lastMessage && !byPerson ? aiMessageStopNotice(lastMessage) : null;
       if (isEmptyLayout(layout) && !messageActions && !task && !error && !stopNotice) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
       return [
@@ -389,13 +406,17 @@ const storedItems = (
             duration: last ? () => ({ workedMs: item.workedMs, waitingMs: null }) : () => null,
             scheduledTask: task,
             error,
+            stoppedByPerson: byPerson,
             stopNotice: error ? null : stopNotice,
             // A stopped answer offers to answer the person's message again, where it stopped.
             answerAgain:
               last && segmentPhase === "stopped" && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
                 ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
                 : undefined,
-            continuable: idle && (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),
+            continuable:
+              idle &&
+              !(item.loopId && reviewLoops.has(item.loopId)) &&
+              (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),
           }),
           actions: messageActions,
           actionDisplay: "inline",

@@ -57,7 +57,8 @@ const classTokens = (html: string): string[] => {
 const HOOK_CLASSES = new Set(["k2b-copy-button"]);
 
 const unstyled = (html: string) => classTokens(html).filter((token) => !isIconClass(token) && !HOOK_CLASSES.has(token) && !hasRule(token));
-const foreign = (html: string) => classTokens(html).filter((token) => !isIconClass(token) && !/^(k2b-|cd-)/.test(token));
+// `hl-*` come from the `@k2b/stdlib` code highlighter.
+const foreign = (html: string) => classTokens(html).filter((token) => !isIconClass(token) && !/^(k2b-|cd-|hl-)/.test(token));
 
 const content = { encoding: "utf8" as const, mediaType: "text/plain", content: "const answer = 42;\n" };
 
@@ -181,10 +182,26 @@ describe("@k2b/ui content style coverage", () => {
   });
 
   test("syntax highlighting tokens emitted by CodeDisplay are styled", () => {
-    const html = renderToString(() => createComponent(CodeDisplay, { code: 'const answer = "42"; // note', language: "ts" }));
+    const html = renderToString(() => createComponent(CodeDisplay, { code: 'const answer = "42" + 1; // note', language: "ts" }));
 
-    expect(html).toContain("cd-k");
-    for (const token of ["cd-c", "cd-s", "cd-n", "cd-k", "cd-p", "cd-a", "cd-f", "cd-md-syntax", "cd-md-tag", "cd-md-formula"]) {
+    expect(html).toContain("hl-keyword");
+    for (const token of ["hl-comment", "hl-string", "hl-number", "hl-keyword", "hl-operator"]) expect(html).toContain(token);
+    for (const token of [
+      "hl-comment",
+      "hl-string",
+      "hl-number",
+      "hl-keyword",
+      "hl-operator",
+      "cd-c",
+      "cd-s",
+      "cd-n",
+      "cd-k",
+      "cd-p",
+      "cd-a",
+      "cd-md-syntax",
+      "cd-md-tag",
+      "cd-md-formula",
+    ]) {
       expect(hasRule(token)).toBe(true);
     }
   });

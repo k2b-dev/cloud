@@ -1,9 +1,11 @@
 import { type AiRuntimeTool, aiConversations, defineAiTool, resolveAiCapabilityActor } from "@k2b/cloud/ai";
+import type { CodeTestResult } from "@k2b/cloud/code";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server";
 import { logger } from "@k2b/cloud/services";
 import { z } from "zod";
 import { codeAuthoringFailure } from "../api/code-authoring";
 import { type CodeContext, CodeDataError, requireCodePermission } from "./access";
+import { operationTitles } from "./admin";
 import { codeAuthoringServices } from "./authoring";
 import {
   CODE_AUTHORING_REQUEST_BYTES,
@@ -11,6 +13,7 @@ import {
   CodeAuthoringErrorSchema,
   CodeChatCheckDataSchema,
   CodeChatDraftSummarySchema,
+  CodeChatTestDataSchema,
   codeAuthoringContracts,
   codeChatAuthoringInputs,
 } from "./authoring-contracts";
@@ -22,7 +25,10 @@ import {
   updateCodeChatDraft,
 } from "./chat-drafts";
 import { CODE_CHAT_SDK_APPS, CodeChatSdkDataSchema, CodeChatSdkInputSchema, readCodeChatSdk } from "./chat-sdk";
+import { describeCodeCheckWords, describeCodeTestWords } from "./read-model/chat-words";
+import { codeReadModelMessages } from "./read-model/messages";
 import { readCodeReview } from "./review";
+import { assertCodeReviewTurn } from "./review-chat-state";
 import { codeAuthor, readCode } from "./store";
 
 type ServerTool = Extract<AiRuntimeTool, { location: "server" }>;
@@ -35,6 +41,8 @@ export function createCodeAuthoringChatTools() {
     const run = await aiConversations.getTurnRunConfig({ conversationId: context.conversationId, turnId: context.turnId });
     if (!run || run.kind === "compact" || run.background || run.mandate)
       throw new CodeDataError("FORBIDDEN", "Edit lasting Code in an interactive chat.");
+    if (run.codeReview && codeId !== run.codeReview.codeId)
+      throw new CodeDataError("FORBIDDEN", "This automatic revision can only work on its own Code.");
     const authority = await resolveAiCapabilityActor({
       conversationId: context.conversationId,
       persistedActor: context.actor,
@@ -45,9 +53,16 @@ export function createCodeAuthoringChatTools() {
       locale: context.locale,
       signal: context.signal,
       requestId: context.callId,
-      submissionOrigin: { kind: "ai_chat", conversationId: context.conversationId, automaticAfterReview: false },
+      submissionOrigin: {
+        kind: "ai_chat",
+        conversationId: context.conversationId,
+        automaticAfterReview: Boolean(run.codeReview),
+        cardAnchor: `tool-${context.callId}`,
+      },
+      ...(run.codeReview ? { reviewTurn: { versionId: run.codeReview.versionId, turnId: context.turnId } } : {}),
     };
     codeAuthor(result);
+    if (codeId) await assertCodeReviewTurn(codeId, result);
     if (codeId) await requireCodePermission((await readCode(codeId, result)).code, result, true);
     return result;
   }
@@ -95,6 +110,20 @@ export function createCodeAuthoringChatTools() {
       approval: "never",
       timeoutMs: REQUEST_IDLE_TIMEOUT_MAX_SECONDS * 1000,
     }).server((input, context) => safe(() => call(service, input, context), context, command));
+  }
+  /** The person reads tried examples in words; the model keeps the exact result beside them. */
+  async function withTestWords(result: CodeTestResult, context: CodeContext) {
+    const operations = [
+      ...new Set(result.cases.flatMap((example) => example.runs.flatMap((run) => run.calls.map((call) => call.operation)))),
+    ];
+    const titles = operations.length
+      ? await operationTitles(
+          operations.map((operation) => ({ operation, target: null })),
+          context,
+        ).catch(() => null)
+      : null;
+    const call = codeReadModelMessages.resolve(context.locale ? [context.locale] : []).t.call;
+    return { ...result, words: describeCodeTestWords(result, context.locale, (id) => titles?.operations[id] ?? call) };
   }
   function conversationId(context: ChatContext) {
     if (!context.conversationId) throw new CodeDataError("FORBIDDEN", "Code authoring requires an active chat turn.");
@@ -165,19 +194,22 @@ export function createCodeAuthoringChatTools() {
     ),
     tool(
       "test",
-      { input: codeChatAuthoringInputs.test, data: codeAuthoringContracts.test.data },
+      { input: codeChatAuthoringInputs.test, data: CodeChatTestDataSchema },
       async (input, context, chat) => {
         const draft = await draftFor(input, chat);
-        return codeAuthoringServices.test({ ...input, files: draft.files, entry: draft.entry, tests: draft.tests }, context);
+        return withTestWords(
+          await codeAuthoringServices.test({ ...input, files: draft.files, entry: draft.entry, tests: draft.tests }, context),
+          context,
+        );
       },
       "With {codeId}, check the server-held draft and run its test/**/*.json fixtures written through code_write. Explicit files, entry or tests replace that draft part first. Run fixtures with fictional data in the production sandbox. Returns the exact cld code test JSON, including ordered calls. No real capabilities or durable runs.",
     ),
     tool(
       "simulate",
-      { input: codeChatAuthoringInputs.simulate, data: codeAuthoringContracts.simulate.data },
+      { input: codeChatAuthoringInputs.simulate, data: CodeChatTestDataSchema },
       async (input, context, chat) => {
         const draft = await draftFor(input, chat);
-        return codeAuthoringServices.simulate({ ...input, files: draft.files, entry: draft.entry }, context);
+        return withTestWords(await codeAuthoringServices.simulate({ ...input, files: draft.files, entry: draft.entry }, context), context);
       },
       "With {codeId,fixture}, check the server-held draft and simulate exactly one fixture. Explicit files or entry replace that draft part first. Uses a fixture invocation with a fixed clock and seed and explicit fake replies. Returns the exact cld code simulate JSON. No real effects.",
     ),
@@ -201,7 +233,7 @@ export function createCodeAuthoringChatTools() {
         await advanceCodeChatDraftBase(input.codeId, conversationId(chat), draft, result.submission.version.id);
         return result;
       },
-      "With {codeId}, check and submit the same server-held draft as code_check/code_test, including its baseVersionId and test fixtures as review evidence. Explicit files, entry, tests or baseVersionId replace that draft part first. Returns an immutable version and authoritative nextStep {next, who}, from the version card's approval check. State that step in plain words: admin_approval means a Cloud administrator must approve first; only switch_on means its personal owner or owner manager can switch it on. For revise ask to revise; for check_status or missing nextStep ask to check the live card. Never invent a step or claim it is waiting for the person to switch on while approval is pending. Does not activate. On unknown outcome pull before retrying.",
+      "With {codeId}, check and submit the same server-held draft as code_check/code_test, including its baseVersionId and test fixtures as review evidence. Explicit files, entry, tests or baseVersionId replace that draft part first. Returns an immutable version and authoritative nextStep {next, who}, from the version card's approval check. State that step in plain words: admin_approval with who=you means say “You can approve it yourself.” / “Du kannst sie selbst freigeben.”; with who=cloud_admin say a Cloud administrator must approve first. Never infer self-approval from the person’s role or promise another admin a notification when who=you; only switch_on means its personal owner or owner manager can switch it on. For revise ask to revise; for check_status or missing nextStep ask to check the live card. Never invent a step or claim it is waiting for the person to switch on while approval is pending. Does not activate. On unknown outcome pull before retrying.",
     ),
     tool(
       "diff",
@@ -272,9 +304,24 @@ export function createCodeAuthoringChatTools() {
       async (input, context, chat) => {
         const draft = await draftFor(input, chat);
         const checked = await codeAuthoringServices.check({ codeId: input.codeId, files: draft.files, entry: draft.entry }, context);
-        if (!checked.result.ok) return { ...checked, result: checked.result };
+        const titles = checked.permissions.length
+          ? await operationTitles(
+              checked.permissions.map((permission) => ({ operation: permission.operation, target: null })),
+              context,
+            ).catch(() => null)
+          : null;
+        const words = describeCodeCheckWords(
+          {
+            diagnostics: checked.result.ok ? [] : checked.result.diagnostics,
+            warnings: checked.result.ok ? (checked.result.warnings ?? []) : [],
+            permissions: checked.permissions,
+          },
+          context.locale,
+          (id) => titles?.operations[id],
+        );
+        if (!checked.result.ok) return { ...checked, result: checked.result, words };
         const { bundle: _bundle, ...result } = checked.result;
-        return { ...checked, result };
+        return { ...checked, result, words };
       },
       "Check the server-held draft with {codeId}. Explicit files or entry replace that draft part first. Returns diagnostics, warnings and operation/target permissions at file/line locations; the checked bundle stays on the server. Fix errors before test and submit; address each warning or know why it is fine.",
     ),

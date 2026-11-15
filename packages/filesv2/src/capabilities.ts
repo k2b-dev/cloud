@@ -63,11 +63,17 @@ export const filesCapabilities = defineCapabilities({
   },
   presentation: filesCapabilityPresentation,
   types: {
-    storage: { title: "Machine storage", description: "A managed machine storage base.", reader: "storage.read" },
+    storage: {
+      title: "Machine storage",
+      description: "A managed machine storage base.",
+      reader: "storage.read",
+      access: { managers: (input) => listFilesManagers(input, "storage") },
+    },
     template: {
       title: "File template",
       description: "A managed file template.",
       reader: "template.read",
+      access: { managers: (input) => listFilesManagers(input, "template") },
     },
     entry: {
       title: "File or folder",
@@ -273,3 +279,5 @@ export const filesCapabilities = defineCapabilities({
   },
   fileProvider: { list: "provider.list", read: "content.read", save: "provider.save" },
 });
+
+import { listFilesManagers } from "./service/manager-recipients";

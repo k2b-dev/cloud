@@ -49,6 +49,7 @@ import { watchAiConversation } from "./conversation-watchers";
 import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { enqueueAiDictation } from "./dictation-runtime";
 import { AiDictationConflict, AiDictationListSchema, AiDictationStartSchema, aiDictations } from "./dictations";
+import { normalizeAiUploadMediaType } from "./file-media-type";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, decodeAiFileContent, guessAiMediaType, normalizeAiFilePath } from "./files-store";
 import {
@@ -1750,7 +1751,7 @@ export const aiRoutes = (() => {
             conversationId: conversation.id,
             path,
             bytes: new Uint8Array(await file.arrayBuffer()),
-            mediaType: file.type || guessAiMediaType(path),
+            mediaType: normalizeAiUploadMediaType(path, file.type),
           });
           return respond(c, ok({ file: stat }));
         } catch (error) {
