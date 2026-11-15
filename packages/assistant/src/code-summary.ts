@@ -10,6 +10,8 @@ const CodeItemSchema = z.object({
   id: z.string(),
   title: z.string(),
   state: z.enum(["draft", "active", "paused", "deleting"]),
+  /** When the Code was paused; absent from older Core answers. */
+  pausedAt: z.string().nullable().optional(),
 });
 const CodeListSchema = z.object({ items: z.array(CodeItemSchema), nextCursor: z.string().nullable() });
 const RunListSchema = z.object({

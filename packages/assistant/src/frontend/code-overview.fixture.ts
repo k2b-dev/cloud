@@ -125,6 +125,7 @@ const CARDS = (): CodeOverviewItem[] => {
       id: "c_angeb1",
       title: "Angebote nachfassen",
       state: "paused",
+      pausedAt: "2026-10-29T14:00:00.000Z",
       lastRun: angeb[0]!,
       automations: [automation("schedule", "0 15 * * 5", null)],
       removedTargets: [],

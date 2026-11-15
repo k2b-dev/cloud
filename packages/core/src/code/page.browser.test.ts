@@ -10,7 +10,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { CODE_NEWSLETTER_DEMO_SOURCE } from "./page.newsletter-demo";
-import { codePageFixture } from "./page.test-fixture";
+import { codePageFixture, codePageProvenanceSeedFixture } from "./page.test-fixture";
 import { buildCodePage } from "./page.test-source";
 
 // The real renderer with the real stylesheet: the server's page, the island that replaces it, and every request it
@@ -56,7 +56,9 @@ let browser: Browser;
 
 const documentFor = (tree: CodePageTree) => {
   // As Core hosts it: the tree in its host, with the feat/code label beside it.
-  const body = renderToString(() => createComponent(CodePageHost, { tree, codeId, csrf, locale: "en", timeZone: "UTC" }));
+  const body = renderToString(() =>
+    createComponent(CodePageHost, { tree, codeId, csrf, provenance: codePageProvenanceSeedFixture, locale: "en", timeZone: "UTC" }),
+  );
   const props = JSON.stringify({ tree, codeId, csrf, locale: "en", timeZone: "UTC" }).replaceAll("<", "\\u003c");
   return (
     `<!doctype html><html lang="en" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +

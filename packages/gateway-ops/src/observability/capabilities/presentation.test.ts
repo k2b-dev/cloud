@@ -21,7 +21,7 @@ describe("capability execution presentation", () => {
   });
 
   test("gives every origin an icon", () => {
-    expect(Object.keys(ORIGIN_ICON).sort()).toEqual(["app", "assistant", "http", "mcp"]);
+    expect(Object.keys(ORIGIN_ICON).sort()).toEqual(["app", "assistant", "choice", "http", "mcp"]);
   });
 
   test("reduces shape metadata to size and keys, never to values", () => {

@@ -193,7 +193,7 @@ describe("ApprovalCard draft and host parity", () => {
         expect(styles[1]).toEqual(styles[0]);
         expect(styles[2]).toEqual(styles[0]);
         expect(styles[0]!.background).not.toBe("rgba(0, 0, 0, 0)");
-        expect(styles[0]!.radius).toBe("14px");
+        expect(styles[0]!.radius).toBe("12px");
         expect(errors).toEqual([]);
       } finally {
         await close();

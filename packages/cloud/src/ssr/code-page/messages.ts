@@ -399,6 +399,10 @@ export const codePageMessages = i18n.define({
       headVersion: ({ version, name, date }: { version: number; name: string | null; date: string }) =>
         name ? `Version ${version} by ${name}, ${date}` : `Version ${version}, ${date}`,
       headPaused: ({ version }: { version: number | null }) => (version === null ? "Paused" : `Version ${version} · paused`),
+      headActivated: ({ version, date, name }: { version: number; date: string; name: string | null }) =>
+        name ? `Version ${version}, switched on on ${date} by ${name}` : `Version ${version}, switched on on ${date}`,
+      headPausedOn: ({ version, date }: { version: number | null; date: string }) =>
+        version === null ? `Paused on ${date}` : `Version ${version} · paused on ${date}`,
       headNoVersion: "No version switched on yet",
       changeWith: ({ name }: Name) => `Change with ${name}`,
       pullSource: "Get the source locally",
@@ -897,6 +901,9 @@ export const codePageMessages = i18n.define({
       personalPlaceShared: "Mit dir geteilt",
       headVersion: ({ version, name, date }) => (name ? `Version ${version} von ${name}, ${date}` : `Version ${version}, ${date}`),
       headPaused: ({ version }) => (version === null ? "Pausiert" : `Version ${version} · pausiert`),
+      headActivated: ({ version, date, name }) =>
+        name ? `Version ${version}, eingeschaltet am ${date} von ${name}` : `Version ${version}, eingeschaltet am ${date}`,
+      headPausedOn: ({ version, date }) => (version === null ? `Pausiert am ${date}` : `Version ${version} · pausiert am ${date}`),
       headNoVersion: "Noch keine Version eingeschaltet",
       changeWith: ({ name }) => `Mit ${name} ändern`,
       pullSource: "Quelltext lokal holen",

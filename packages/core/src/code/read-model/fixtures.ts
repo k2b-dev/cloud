@@ -47,12 +47,24 @@ export function codeRunReadModelFixture(locale: "de" | "en"): import("@k2b/cloud
   const de = locale === "de";
   return {
     runId: "00000000-0000-4000-8000-000000000002",
-    title: de ? "Aufgabe erstellen · 3 bestätigt" : "Create task · 3 confirmed",
+    title: de ? "Aufgabe „Lieferung prüfen“ angelegt" : "Created task “Check delivery”",
     state: "succeeded",
     status: de ? "Erfolgreich" : "Successful",
     at: "2026-11-14T09:00:00.000Z",
     reason: null,
-    untilThen: { items: [{ text: de ? "Aufgabe erstellen · 3 bestätigt" : "Create task · 3 confirmed" }], more: 0, moreText: null },
+    untilThen: {
+      items: [
+        {
+          text: de ? "Aufgabe „Lieferung prüfen“ angelegt" : "Created task “Check delivery”",
+          app: "Spaces",
+          icon: "tabler:layout-kanban",
+          href: "/spaces/fictional",
+          state: "succeeded",
+        },
+      ],
+      more: 0,
+      moreText: null,
+    },
     complete: true,
   };
 }
@@ -60,11 +72,18 @@ export function codeActivityReadModelFixture(locale: "de" | "en"): import("@k2b/
   const run = codeRunReadModelFixture(locale);
   return {
     week: "2026-11-09T00:00:00.000Z",
-    counters: { items: [{ key: "spaces.task.create", automationKey: "daily", text: run.title, count: 3 }], more: 0, moreText: null },
+    counters: {
+      items: [{ key: "spaces.task.create", automationKey: "daily", text: locale === "de" ? "Aufgabe erstellen" : "Create task", count: 3 }],
+      more: 0,
+      moreText: null,
+    },
     recent: [
       {
-        text: locale === "de" ? "Aufgabe erstellen · 1 bestätigt" : "Create task · 1 confirmed",
+        text: locale === "de" ? "Aufgabe „Lieferung prüfen“ angelegt" : "Created task “Check delivery”",
         at: run.at,
+        app: "Spaces",
+        icon: "tabler:layout-kanban",
+        state: "succeeded",
         href: "/spaces/fictional",
         runId: run.runId,
       },

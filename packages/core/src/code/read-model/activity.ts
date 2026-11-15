@@ -10,12 +10,20 @@ import { coreSettings } from "@k2b/cloud/services";
 import type { z } from "zod";
 import { type CodeContext, CodeDataError } from "../access";
 import { readCode } from "../store";
+import { effectTarget, presentEffect } from "./effects";
 import { codeReadModelMessages } from "./messages";
 import { readModelNames } from "./names";
 
 type Mark = CodeActivityReadModel["timeline"]["marks"][number];
 type Counter = { key: string; automationKey: string; count: number; total: number };
-type Recent = { operation: string; target: { type: string; id: string } | null; manifest: unknown; runId: string; at: string };
+type Recent = {
+  evidence: unknown;
+  operation: string;
+  target: { type: string; id: string } | null;
+  manifest: unknown;
+  runId: string;
+  at: string;
+};
 export type ActivityData = {
   from: Date;
   to: Date;
@@ -45,7 +53,7 @@ export async function readCodeActivityData(input: z.infer<typeof codeReadModelCo
         ORDER BY entrypoint,kv.key LIMIT 50
       ) item),'[]'::jsonb) AS counters,
       COALESCE((SELECT jsonb_agg(item) FROM (
-        SELECT r.id AS "runId",c.ended_at AS at,c.call->>'capability' AS operation,c.call->'target' AS target,v.manifest
+        SELECT r.id AS "runId",c.ended_at AS at,c.call->>'capability' AS operation,c.call->'target' AS target,v.manifest,c.effect AS evidence
         FROM code.runs r JOIN code.calls c ON c.run_id=r.id JOIN code.versions v ON v.id=r.version_id
         WHERE c.code_id=${input.codeId} AND c.confirmed_effect AND NOT c.replayed AND c.state='succeeded'
         ORDER BY c.ended_at DESC,r.id DESC,c.ordinal DESC LIMIT 6
@@ -95,7 +103,10 @@ export async function loadCodeActivityReadModel(
     manifests,
     context,
     data.counters.map((item) => item.key),
-    data.recent.flatMap((item) => (item.target ? [item.target] : [])),
+    data.recent.flatMap((item) => {
+      const effect = effectTarget(item.evidence, context.locale ?? "en", item.target);
+      return [...(item.target ? [item.target] : []), ...(effect ? [effect.ref] : [])];
+    }),
   );
   const { t } = codeReadModelMessages.resolve(context.locale ? [context.locale] : []);
   const planned: Mark[] = [];
@@ -140,17 +151,10 @@ export async function loadCodeActivityReadModel(
       moreText: totalCounters > 50 ? t.more({ count: totalCounters - 50 }) : null,
     },
     recent: data.recent.map((item) => {
-      const target = item.target ? names.target(item.target) : null;
-      const action = names.operation(item.operation);
       return {
-        ...(action.app ? { app: action.app } : {}),
-        ...(action.icon ? { icon: action.icon } : {}),
-        text: target
-          ? t.mayDo({ action: t.calls({ action: names.operation(item.operation).title, count: 1 }), target: target.name })
-          : t.calls({ action: names.operation(item.operation).title, count: 1 }),
+        ...presentEffect(item, names, context.locale ?? "en"),
         at: new Date(item.at).toISOString(),
         runId: item.runId,
-        ...(target?.readable && target.href ? { href: target.href } : {}),
       };
     }),
     timeline: {

@@ -111,6 +111,7 @@ describe("My apps & automations", () => {
       "nächster Lauf Mo., 16.11.",
       "seit 3 Sekunden",
       "heute, 06:30",
+      "seit 29.10.",
     ])
       expect(text).toContain(part);
     expect(count(html, "assistant-apps__bars")).toBe(4);

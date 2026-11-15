@@ -39,8 +39,8 @@ export type ApprovalCardProps = {
 
 const confirmIcon = (card: ActionCard): string | undefined => (card.reason.code === "sends" ? "ti ti-send" : undefined);
 
-/** Minutes until `expiresAt`, read once a minute, so the server render and the first browser render agree. */
-function useMinutesLeft(expiresAt: () => string | undefined) {
+/** The exact time until `expiresAt`, read once a minute, so the server render and the first browser render agree. */
+function useTimeLeft(expiresAt: () => string | undefined) {
   const [now, setNow] = createSignal(Date.now());
   onMount(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);
@@ -50,7 +50,7 @@ function useMinutesLeft(expiresAt: () => string | undefined) {
     const at = expiresAt();
     if (!at) return undefined;
     const left = Date.parse(at) - now();
-    return Number.isFinite(left) ? Math.max(0, Math.ceil(left / 60_000)) : undefined;
+    return Number.isFinite(left) ? Math.max(0, left) : undefined;
   };
 }
 
@@ -71,7 +71,7 @@ const intent = (card: ActionCard): ActionText => [{ kind: "text", text: /[.!?…
 
 export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
   const t = () => actionMessages(props.card.locale);
-  const minutesLeft = useMinutesLeft(() => props.expiresAt);
+  const timeLeft = useTimeLeft(() => props.expiresAt);
   const editable = () => props.card.draft?.editable === true && props.onEditDraft !== undefined;
   // A draft the person may change starts in edit mode; "Change" returns to it, "Send …" moves on to approving.
   const [editing, setEditing] = createSignal(editable());
@@ -103,8 +103,9 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
   const meta = createMemo(() => {
     const words = t();
     const items: { text: string; icon: string }[] = [];
-    const left = minutesLeft();
-    if (left !== undefined) items.push({ icon: "ti ti-clock", text: left < 1 ? words.expiresSoon : words.expiresIn({ minutes: left }) });
+    const left = timeLeft();
+    if (left !== undefined)
+      items.push({ icon: "ti ti-clock", text: left < 60_000 ? words.expiresSoon : words.expiresIn({ milliseconds: left }) });
     if (!props.remember) items.push({ icon: "ti ti-repeat", text: words.asksEveryTime });
     return items;
   });
@@ -146,7 +147,12 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       unavailable={!editing() && unavailable() ? reason() : sending() ? reason() : undefined}
       waiting={props.waiting ? reason() : undefined}
       details={
-        props.card.view || props.card.contentRef || props.card.links.length > 0 || (props.card.consequences ?? []).length > 0
+        // Without anything to show there is no details island, not an empty one.
+        (props.card.view?.length ?? 0) > 0 ||
+        props.card.readMore ||
+        props.card.contentRef ||
+        props.card.links.length > 0 ||
+        (props.card.consequences ?? []).length > 0
           ? {
               label: t().detailsFrom({ app: props.card.app.name }),
               content: (

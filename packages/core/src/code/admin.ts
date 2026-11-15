@@ -13,6 +13,7 @@ import type { Code, CodeOwner, CodeRun, CodeSourceFiles } from "./contracts";
 import { type CodeDatabaseUsage, readCodeDatabaseUsage } from "./database";
 import { listCodeCleanupJobs } from "./lifecycle";
 import type { CodeCleanupJob } from "./lifecycle-contracts";
+import { codeAdminPermissionChanges } from "./permission-changes";
 import { readCodePolicyGroups, readCodePolicySnapshot, requireCodePolicyAdmin } from "./policy";
 import {
   CODE_POLICY_ROWS,
@@ -362,27 +363,7 @@ const ownerOf = (row: OwnerRow): CodeOwner =>
       ? { kind: "resource", ref: { type: row.owner_type!, id: row.owner_id! } }
       : { kind: "app", appId: row.owner_app_id! };
 
-const permissionKey = (permission: { operation: string; target: { type: string; id: string | null } | null }) =>
-  `${permission.operation}|${permission.target?.type ?? ""}|${permission.target?.id ?? ""}`;
-
-/** Compare permissions of the reviewed version with the comparison version, deduplicated by operation and target. */
-export function codeAdminPermissionChanges(
-  current: CodeCheckedVersionManifest["permissions"],
-  previous: CodeCheckedVersionManifest["permissions"] | null,
-): CodeAdminPermissionChange[] {
-  const before = new Map((previous ?? []).map((permission) => [permissionKey(permission), permission]));
-  const seen = new Set<string>();
-  const changes: CodeAdminPermissionChange[] = [];
-  for (const permission of current) {
-    const key = permissionKey(permission);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    changes.push({ ...permission, change: before.has(key) ? "same" : "added" });
-  }
-  for (const [key, permission] of before) if (!seen.has(key)) changes.push({ ...permission, change: "removed" });
-  const order = { added: 0, same: 1, removed: 2 } as const;
-  return changes.sort((a, b) => order[a.change] - order[b.change]);
-}
+export { codeAdminPermissionChanges } from "./permission-changes";
 
 /** Internet destinations reviewed with this exact version. Secret bindings never widen this list. */
 export function codeAdminInternet(manifest: CodeCheckedVersionManifest | null): string[] {

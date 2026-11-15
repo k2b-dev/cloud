@@ -1,6 +1,6 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import * as provider from "@k2b/cloud/capabilities/server";
-import { readCodeOwner } from "./access";
+import { codePageOwnerPersonName, isCodePageMember, readCodeOwner } from "./access";
 
 const owner = { kind: "resource" as const, ref: { type: "mail.mailbox", id: "m1" } };
 const authority = (credentialKind: string) =>
@@ -37,4 +37,34 @@ test("a session keeps asking directly under its own authority", async () => {
   spies.push(direct);
   expect(await readCodeOwner(owner, { authority: authority("session") })).toEqual({ title: "info@", admin: true });
   expect(direct).toHaveBeenCalledTimes(1);
+});
+
+const viewer = (profile: "user" | "guest", credentialKind = "session") =>
+  ({
+    actor: { kind: "user", user: { id: "u1", uid: "lea", displayName: "Lea Muster", roles: [], profile } },
+    accessSubject: { type: "user", userId: "u1" },
+    credentialKind,
+  }) as never;
+
+test("F26: members read the name of the person who owns a Code page; visitors, guests and workloads never do", () => {
+  expect(isCodePageMember(viewer("user"))).toBe(true);
+  expect(codePageOwnerPersonName(viewer("user"), "Jana Probe")).toBe("Jana Probe");
+  for (const other of [viewer("guest"), viewer("user", "api_key"), viewer("user", "oauth"), {}])
+    expect(codePageOwnerPersonName(other, "Jana Probe")).toBeNull();
+  // A workload acting for nobody, or a session whose subject is someone else, is no member.
+  expect(
+    isCodePageMember({
+      actor: { kind: "service_account", serviceAccount: { id: "sa", kind: "code", status: "active" } },
+      accessSubject: { type: "service_account", serviceAccountId: "sa" },
+      credentialKind: "session",
+    } as never),
+  ).toBe(false);
+  expect(isCodePageMember({ ...(viewer("user") as object), accessSubject: { type: "user", userId: "someone-else" } } as never)).toBe(false);
+  expect(codePageOwnerPersonName(viewer("user"), null)).toBeNull();
+});
+
+test("F26 leaves readCodeOwner alone: it names a person only to that person, also to readers of the Code", async () => {
+  const self = { authority: { ...(viewer("user") as object), scopes: [] } as never };
+  expect(await readCodeOwner({ kind: "person", userId: "u1" }, self)).toEqual({ title: "Lea Muster", admin: true });
+  expect(await readCodeOwner({ kind: "person", userId: "someone-else" }, self)).toBeNull();
 });

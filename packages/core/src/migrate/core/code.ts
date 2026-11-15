@@ -191,6 +191,19 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         CREATE OR REPLACE TRIGGER bounded_call BEFORE INSERT OR UPDATE ON code.calls FOR EACH ROW EXECUTE FUNCTION code.guard_call();
         CREATE OR REPLACE TRIGGER immutable_version_delete BEFORE DELETE ON code.versions FOR EACH ROW EXECUTE FUNCTION code.guard_version_delete();
     `.simple();
+    await tx`ALTER TABLE code.codes ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS activated_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS activated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();
+    await tx`CREATE OR REPLACE FUNCTION code.record_pause_time() RETURNS TRIGGER AS $$
+    BEGIN
+      IF NEW.state='paused' AND OLD.state IS DISTINCT FROM 'paused' THEN NEW.paused_at := now();
+      ELSIF NEW.state<>'paused' THEN NEW.paused_at := NULL;
+      ELSE NEW.paused_at := OLD.paused_at;
+      END IF;
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql`.simple();
+    await tx`CREATE OR REPLACE TRIGGER record_pause_time BEFORE UPDATE ON code.codes
+      FOR EACH ROW EXECUTE FUNCTION code.record_pause_time()`.simple();
     await migrateUnusedCodeDatabases(tx);
     await migrateCodeActivity(tx);
   });

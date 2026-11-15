@@ -75,6 +75,7 @@
     "./blocks": "./src/blocks/index.ts",
     "./blocks/ui": "./src/blocks/ui.ts",
     "./code": "./src/code/index.ts",
+    "./code/schedule": "./src/code/schedule.ts",
     "./code/events": "./src/code/event-tools.ts",
     "./code/chat-run": "./src/code/chat-run.ts",
     "./code/chat-run-wake": "./src/code/chat-run-wake.ts",

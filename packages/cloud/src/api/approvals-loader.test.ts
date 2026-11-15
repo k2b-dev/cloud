@@ -135,6 +135,8 @@ test("full presentation without a stored review retains declared sends policy", 
     },
   ]);
   const result = await load();
-  expect(result.items[0]?.review).toEqual({ ...details, ask: "sends" });
+  // The list carries a small view inline, so it needs no reference to load the content again.
+  expect(result.items[0]?.review).toEqual({ ...reviewFixture(), ask: "sends" });
+  expect(result.items[0]?.review).not.toHaveProperty("contentRef");
   expect(registry.listCapabilities).toHaveBeenCalledTimes(1);
 });

@@ -32,6 +32,9 @@ const CodeSchema = z.object({
   serviceAccountHandle: z.string().nullable().optional(),
   state: z.enum(["draft", "active", "paused", "deleting"]),
   activeVersionId: z.string().nullable(),
+  activatedAt: z.string().nullable().optional(),
+  activatedBy: z.object({ name: z.string() }).nullable().optional(),
+  pausedAt: z.string().nullable().optional(),
   needsReconfirmation: z.boolean().optional(),
   pauseReason: z.string().nullable(),
 });

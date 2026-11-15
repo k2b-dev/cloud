@@ -20,7 +20,7 @@ COPY packages/ssr/src packages/ssr/src
 COPY packages/ui packages/ui
 RUN bun run --cwd packages/ui build
 COPY packages/cloud/src packages/cloud/src
-COPY packages/editor/src/chart-schema.ts packages/editor/src/chart-locale.ts packages/editor/src/
+COPY packages/editor/src/chart-schema.ts packages/editor/src/chart-locale.ts packages/editor/src/charts.ts packages/editor/src/
 COPY packages/cloud/scripts/code-check*.ts packages/cloud/scripts/
 COPY packages/runner/src packages/runner/src
 COPY packages/runner/scripts packages/runner/scripts

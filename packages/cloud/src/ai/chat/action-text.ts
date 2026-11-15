@@ -156,7 +156,8 @@ export const actionQuestionLines = (
       const body = row.value.split(/\r?\n/);
       // Cut a long text only when "Read all" can open the whole thing; otherwise the terminal shows all of it.
       const shown = text.readMore ? body.slice(0, 8) : body;
-      lines.push(...shown.map((line) => `  ${line}`));
+      // A blank line between two blocks stays blank, without indent spaces at its end.
+      lines.push(...shown.map((line) => (line.trim() ? `  ${line}` : "")));
       if (shown.length < body.length || (text.incomplete && !markedIncomplete)) {
         lines.push("  …");
         markedIncomplete = true;

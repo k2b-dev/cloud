@@ -597,3 +597,9 @@ one run. Dates more than seven days in the past expire without an automatic
 run. Activation, pause, version approval and retries apply as for cron. A one-time
 occurrence waits for a queued or running predecessor within that recovery window.
 The date-time must include a UTC offset; the IANA zone is retained for display.
+
+Core now snapshots provider result forms and target identities with confirmed
+calls. It resolves their display names on each authorized history read.
+Forward migrations add these snapshots and activation/pause projections;
+older calls without forms keep counted Action wording, and older pauses with
+no timestamp remain undated. No runner configuration change is needed.

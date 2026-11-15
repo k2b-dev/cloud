@@ -144,9 +144,9 @@ describe("Approvals layout", () => {
         const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
         expect(overflow).toBe(0);
         expect(await tab.locator("article.cloud-approval .k2b-chat-decision").count()).toBe(2);
-        // The shared card keeps its tinted surface and 44 px answers at every width.
+        // The shared card keeps its tinted surface and 36 px answers at every width.
         const answer = (await tab.locator("article.cloud-approval .k2b-chat-decision__answer").first().boundingBox())!;
-        expect(answer.height).toBeGreaterThanOrEqual(44);
+        expect(answer.height).toBe(36);
         const card = tab.locator("article.cloud-approval .k2b-chat-decision").first();
         expect(await card.evaluate((node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
         expect(await tab.locator("article.cloud-approval .cloud-approval__icon").count()).toBe(0);

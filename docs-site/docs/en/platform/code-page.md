@@ -75,6 +75,13 @@ dialogs, the chat version card and Administration › Code use the same names.
 A run reads by the title from its own version, else as the listed automation
 with the same entrypoint, else by its identifier.
 
+Server read models and browser surfaces share `describeCodeSchedule(cron, locale)`
+and `describeCodeTiming({ cron?, at?, timeZone? }, locale)` from
+`@k2b/cloud/code/schedule`. The latter formats a one-time instant with its
+zone, otherwise the repeating schedule, or returns `null` without a schedule.
+Unrecognized cron shapes stay verbatim. These pure helpers need no SSR runtime;
+the existing `@k2b/cloud/ssr/code-schedule` entry re-exports the same functions.
+
 ## Refused calls
 
 The page reports a refused call like cron reports a failed job: what the Code

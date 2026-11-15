@@ -6,11 +6,12 @@ import {
   type CodeRouteResponse,
   CodeRouteResponseSchema,
 } from "@k2b/cloud/code";
-import { CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
+import { type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema } from "@k2b/cloud/contracts";
 import { CodeDataError } from "./access";
 import { codeAdmissionLock } from "./admission";
+import type { CodeOwner } from "./contracts";
 import { codeSettings } from "./settings";
-import { findCode, insertCodeRun } from "./store";
+import { type CodeRow, codeRowOwner, findCode, insertCodeRun } from "./store";
 import { requireCodeVersionApproval } from "./versions";
 
 export class CodeRequestError extends Error {
@@ -21,16 +22,34 @@ export class CodeRequestError extends Error {
     super(code);
   }
 }
+/** Who owns the Code a page belongs to, as hosting reads it with the version; a person's name for the label (F26). */
+export type CodeRequestOwner = { kind: "person"; userId: string; name: string | null } | Exclude<CodeOwner, { kind: "person" }>;
+
 /** Admission snapshots the active checked manifest. No visitor credentials or grants enter data dispatch.
- * Every signed-in person may reach non-public routes; handlers restrict access using c.user. */
-export async function codeRequestVersion(codeId: string) {
-  const [row] = await sql<{ manifest: unknown; active_version_id: string }[]>`SELECT v.manifest,
-    c.active_version_id FROM code.codes c
+ * Every signed-in person may reach non-public routes; handlers restrict access using c.user. The same statement
+ * reads who owns the Code, so the page's label costs no statement of its own. */
+export async function codeRequestVersion(
+  codeId: string,
+): Promise<{ versionId: string; manifest: CodeCheckedVersionManifest; owner: CodeRequestOwner }> {
+  const [row] = await sql<
+    (Pick<CodeRow, "owner_kind" | "owner_user_id" | "owner_type" | "owner_id" | "owner_app_id"> & {
+      manifest: unknown;
+      active_version_id: string;
+      owner_name: string | null;
+    })[]
+  >`SELECT v.manifest,c.active_version_id,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
+    COALESCE(NULLIF(u.display_name,''),u.uid) AS owner_name FROM code.codes c
     JOIN code.versions v ON v.id=c.active_version_id
+    LEFT JOIN auth.users u ON u.id=c.owner_user_id
     WHERE c.id=${codeId} AND (c.service_account_id IS NOT NULL OR c.owner_kind='person') AND c.state='active'`;
   const parsed = CodeCheckedVersionManifestSchema.safeParse(row?.manifest);
-  if (!row || !parsed.success) throw new CodeRequestError("code_route_not_found", 404);
-  return { versionId: row.active_version_id, manifest: parsed.data };
+  const owner = row && codeRowOwner(row);
+  if (!row || !parsed.success || !owner) throw new CodeRequestError("code_route_not_found", 404);
+  return {
+    versionId: row.active_version_id,
+    manifest: parsed.data,
+    owner: owner.kind === "person" ? { ...owner, name: row.owner_name } : owner,
+  };
 }
 /** One bounded request/response job, backed by the normal run lease, mandate and audit trail.
  * No automatic retries: even a disconnected client must never cause an implicit second POST. */
