@@ -359,8 +359,8 @@ export type AiStoredMessage = {
       sourceTitle: string;
       sourceHref?: string;
     };
-    /** A committed personal Code result; deferred from any already-running model turn. */
-    codeDelivery?: { codeId: string; runId: string; effectKey: string };
+    /** Immutable server-authored initiator of this message's turn. */
+    writerOrigin?: import("./chat-origin").AiChatOrigin;
     scheduledTask?: {
       reason?: { code: string; at: string; action?: string };
       /** Historical marker; the original stored text remains the display source. */
@@ -704,6 +704,12 @@ type RetiredRoutineContext = {
 };
 
 export type AiChatTurnRunConfig = {
+  /** Absence never means a person initiated the turn. */
+  writerOrigin?: import("./chat-origin").AiChatOrigin;
+  /** Source credential limits cannot be widened through another chat. */
+  sourceRestricted?: true;
+  /** Server-owned identity on the existing queue, retained through retries. */
+  send?: { id: string; requestHash: string };
   /** Trusted Core review entrypoint; the executor offers only the bounded Code tool set. */
   codeReview?: { codeId: string; versionId: string };
   /** Trusted host attribution; never grants tool authority. */
@@ -1023,7 +1029,12 @@ export type AiConversationService = {
     summary: Message;
     modelId?: string | null;
   }): Promise<void>;
-  listTurnMessages(input: { conversationId: string; loopId: string; includeCompacted?: boolean }): Promise<AiStoredMessage[]>;
+  listTurnMessages(input: {
+    conversationId: string;
+    loopId: string;
+    includeCompacted?: boolean;
+    limit?: number;
+  }): Promise<AiStoredMessage[]>;
   setMessageFeedback(input: {
     conversationId: string;
     messageShortId: string;

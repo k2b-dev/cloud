@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { aiChatDeliveryAction } from "../../../core/src/ai-chat-delivery";
+import { aiChatSendAction } from "../../../core/src/ai-chat-send";
 import { aiCapabilities } from "../../../core/src/capabilities";
 import { compileCapabilities, invokeCompiledCapability } from "../_internal/capabilities";
 import { analyzeCode } from "../code/checker-analysis";
@@ -20,33 +20,33 @@ const context: CapabilityExecutionContext = {
   signal: new AbortController().signal,
 };
 const compiled = compileCapabilities("core", aiCapabilities);
-const action = compiled.actions.get("ai.chat.deliver")!;
+const action = compiled.actions.get("ai.chat.send")!;
 const invoke = (text: string, ctx = context) =>
   invokeCompiledCapability({
     compiled,
     kind: "action",
-    localId: "ai.chat.deliver",
+    localId: "ai.chat.send",
     target: { type: "core.ai.chat", id: "Chat23" },
     input: { text },
     context: ctx,
     expectedSchemaHash: action.manifest.schemaHash,
   });
 
-test("personal SDK offers result delivery under the personal-effect policy", () => {
+test("personal SDK offers the reviewed send Action", () => {
   const manifest = compiled.manifest;
   expect(action.manifest).toMatchObject({ target: "ai.chat", idempotency: "required" });
-  expect(manifest.policies?.["ai.chat.deliver"]).toEqual({ silent: "you" });
+  expect(manifest.policies?.["ai.chat.send"]).toEqual({ silent: "you" });
   expect(
-    generateCodeSdk([manifest], { mode: "personal" }).manifest.operations.some((op) => op.capability === "core.ai.chat.deliver"),
+    generateCodeSdk([manifest], { mode: "personal" }).manifest.operations.some((op) => op.capability === "core.ai.chat.send"),
   ).toBeTrue();
 });
 
-test("ordinary callers cannot deliver Code results", async () => {
-  expect(await invoke("Result.")).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
-  expect(await aiChatDeliveryAction.review({ text: "Result." }, context)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+test("callers without session authority cannot send", async () => {
+  expect(await invoke("Result.")).toMatchObject({ ok: false, error: { code: "source_restricted" } });
+  expect(await aiChatSendAction.review({ text: "Result." }, context)).toMatchObject({ ok: false, error: { code: "source_restricted" } });
 });
 
-test("resource Code cannot deliver even when its creator is a delegated person", async () => {
+test("resource Code cannot send even when its creator is a delegated person", async () => {
   const machine: CapabilityExecutionContext = {
     ...context,
     user: null,
@@ -81,33 +81,33 @@ test("resource Code cannot deliver even when its creator is a delegated person",
   expect(await invoke("Resource result.", machine)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
 });
 
-test("capability rejects blank/oversized messages and missing effect keys before any delivery", async () => {
+test("capability rejects blank/oversized messages and missing effect keys before any effect", async () => {
   for (const text of [" ", "x".repeat(10_001)])
     expect(await invoke(text)).toMatchObject({ ok: false, error: { code: "VALIDATION_FAILED" } });
   expect(await invoke("Result.", { ...context, idempotencyKey: undefined })).toMatchObject({
     ok: false,
     error: { code: "IDEMPOTENCY_KEY_REQUIRED" },
   });
-  expect(aiChatDeliveryAction.input.safeParse({ text: "x".repeat(10_000) }).success).toBeTrue();
+  expect(aiChatSendAction.input.safeParse({ text: "x".repeat(10_000) }).success).toBeTrue();
 });
 
-test("a personal recurring report checks with the actual generated delivery handle", () => {
+test("a personal recurring report checks with the actual generated send handle", () => {
   const sdk = generateCodeSdk([compiled.manifest], { mode: "personal" });
   const checked = analyzeCode({
     sdk,
     entry: "code.ts",
-    aiOperations: [],
+    aiOperations: ["core.ai.chat.send"],
     files: {
       "code.ts": `
 import { app, core } from "@sdk";
 app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async () => {
-  await core.ai.chat("Chat23").deliver({ text: "Your weekly report is ready.", idempotencyKey: "weekly-report" });
+  await core.ai.chat("Chat23").send({ text: "Your weekly report is ready.", idempotencyKey: "weekly-report" });
 });
 export default app;
 `,
     },
   });
   expect(checked.diagnostics).toEqual([]);
-  expect(checked.ai).toBeFalse();
-  expect(checked.permissions).toMatchObject([{ operation: "core.ai.chat.deliver", target: { type: "core.ai.chat", id: "Chat23" } }]);
+  expect(checked.ai).toBeTrue();
+  expect(checked.permissions).toMatchObject([{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: "Chat23" } }]);
 });

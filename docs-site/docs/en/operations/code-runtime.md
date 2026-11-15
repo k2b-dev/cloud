@@ -81,18 +81,10 @@ grants. Public routes always receive `c.user === null`. Previously checked non-p
 using `c.user.groups` or `provider`: the supported fields are `id`, `username`,
 `groupIds`, `groupNames`, `kind` and `name`.
 
-Core adds `code.chat_deliveries` as an additive migration. Personal Code chat
-results commit their messages and receipts together. The existing Assistant
-notification recovery worker publishes the response notification, normally
-within one minute, and retries with a stable key after failures. Keep that
-worker running; a failed notification never repeats the chat message. Delivery
-receipts follow Code run retention; the chat message remains ordinary chat
-history. Inspect the run's capability calls to diagnose a refused delivery.
-
 ## Rebuild scheduled Assistant routines
 
 Rebuild an open-ended routine as personal Code with `app.schedule` and
-`core.ai.chat.run`, preserving its prompt, destination and explicit time zone.
+`core.ai.chat.send`, preserving its prompt, destination and explicit time zone.
 Use `{ at, timeZone }` for one-time work and `{ cron, timeZone }` for recurring
 work. Export definitions on the old release before upgrading. The upgrade stops
 all old routines; it does not activate replacements. Ask Gustav to rebuild and
@@ -109,13 +101,12 @@ The existing Code and Code-owner daily USD limits also count these actual
 costs. A turn never allocates the full Code attempt allowance, so several cheap
 turns can run without consuming the full allowance for `core.ai.generate` and
 `core.ai.decide`. The normal loop and step limits still bound each turn. See the
-[capability contract](/en/docs/platform/capabilities#start-personal-code-chat-turns)
+[capability contract](/en/docs/platform/capabilities#write-to-a-gustav-chat)
 for states, budget codes and a cost example. Bounded text tasks can keep
 `core.ai.generate` instead of starting a tool-using turn.
 
-Core adds `code.chat_runs` without altering routine definitions. Receipts
-follow Code run retention; ordinary chat messages and turns retain their own
-history. Keep the normal AI worker and sweep running so committed queued turns
+Send currently retains its accepted-message state in `ai.queued_messages`;
+ordinary chat messages and turns retain their own history. Keep the normal AI worker and sweep running so committed queued turns
 recover after a failed wake-up. A waiting turn appears in the chat and remains
 subject to its normal wait and execution limits.
 
@@ -219,3 +210,19 @@ runner. Archive paths never reach a filesystem. Encrypted, multipart and ZIP64
 archives, symlinks, duplicate names and unsafe paths are refused. Declared
 size and ratio limits are checked before extraction, and actual output is
 bounded while reading.
+
+## Upgrade chat writing to send
+
+This release replaces `ai.chat.run`, `ai.chat.run.read`, `ai.chat.deliver` and
+`ai.chat.message` with `ai.chat.send` and message snapshots in `ai.chat.read`.
+The removal of `ai.chat.message`, published in `cloud-v0.10.0`, belongs to the
+release-wide breaking Code migration (#3010). Rebuild and review callers with
+the new input, review and result contracts; there are no compatibility aliases.
+
+Before switching versions, deliver all pending `ai.inter_chat_messages` with
+the previous release and stop its workers. Core refuses migration while any
+pending row remains. Back up the database before upgrading. The migration
+removes `code.chat_deliveries`, its recovery path, `code.chat_runs` and old
+`meta.codeDelivery` markers. Existing message text stays readable. Send uses
+the normal turn-completion notification path. Rollback requires the pre-upgrade
+database backup together with its matching application release.

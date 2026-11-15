@@ -253,6 +253,7 @@ suite("AI conversation store integration", () => {
       expect(messages.find((message) => message.role === "tool_result" && message.callId === "other")).toEqual(other);
       // Loading changes only model context: the original error and the missing result stay as stored.
       const stored = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turnId });
+      expect(await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turnId, limit: 2 })).toEqual(stored.slice(-2));
       expect(stored.find(({ message }) => message.role === "tool_result" && message.callId === "send")?.message).toEqual(original);
       expect(stored.some(({ message }) => message.role === "tool_result" && message.callId === "cut-off")).toBe(false);
     } finally {
@@ -527,66 +528,66 @@ suite("AI conversation store integration", () => {
     }
   });
 
-  test.each([
-    { scheduledTask: { taskId: "task", occurrenceId: "run" } },
-    { codeDelivery: { codeId: "c_report", runId: "run", effectKey: "report" } },
-  ])("an interactive turn defers new background results without losing or compacting them: %j", async (meta) => {
-    const userId = await insertUser();
-    const chat = await aiConversations.createConversation({ ownerUserId: userId });
-    try {
-      const { turn } = await aiConversations.submitChatTurn({
-        conversationId: chat.id,
-        modelId: "test-model",
-        runConfig,
-        userMessage: userMessage("Hello"),
-      });
-      await aiConversations.claimTurn({
-        conversationId: chat.id,
-        turnId: turn.id,
-        leaseOwner: "foreground",
-        leaseMs: 30_000,
-        from: "queue",
-        maxAttempts: 50,
-        runBudgetMs: 60_000,
-      });
-      const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground" });
-      await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, meta)
+  test.each([{ scheduledTask: { taskId: "task", occurrenceId: "run" } }])(
+    "an interactive turn defers new background results without losing or compacting them: %j",
+    async (meta) => {
+      const userId = await insertUser();
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      try {
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "test-model",
+          runConfig,
+          userMessage: userMessage("Hello"),
+        });
+        await aiConversations.claimTurn({
+          conversationId: chat.id,
+          turnId: turn.id,
+          leaseOwner: "foreground",
+          leaseMs: 30_000,
+          from: "queue",
+          maxAttempts: 50,
+          runBudgetMs: 60_000,
+        });
+        const session = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground" });
+        await sql`INSERT INTO ai.messages (short_id, conversation_id, seq, kind, role, message, meta)
         VALUES (${createAiShortId()}, ${chat.id}, 2, 'message', 'assistant', ${JSON.stringify(assistantMessage("Background result"))}::text::jsonb,
           ${JSON.stringify(meta)}::text::jsonb)`;
-      await sql`UPDATE ai.conversations SET background_received_at = now() WHERE id = ${chat.id}`;
-      expect((await session.load()).map((entry) => entry.message)).toEqual([userMessage("Hello")]);
-      // Nessi's next local sequence is already occupied by the delivered result.
-      await session.append(assistantMessage("Foreground answer"), { seq: 2 });
-      expect((await session.load()).map((entry) => entry.seq)).toEqual([1, 3]);
-      expect((await aiConversations.listMessages({ conversationId: chat.id })).map((message) => message.seq)).toEqual([1, 2, 3]);
-      await aiConversations.compactMessages({
-        conversationId: chat.id,
-        turnId: turn.id,
-        checkpointSeq: 3,
-        summary: assistantMessage("Summary"),
-      });
-      const context = await aiConversations.listContextMessages({ conversationId: chat.id });
-      expect(context.map((message) => message.seq)).toEqual([2, 3]);
-      expect((await session.load()).map((entry) => entry.seq)).toEqual([3]);
-      expect((await aiConversations.listConversations({ ownerUserId: userId, status: "unread" })).map((item) => item.id)).toContain(
-        chat.id,
-      );
-      await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground", status: "completed" });
-      const next = await aiConversations.submitChatTurn({
-        conversationId: chat.id,
-        modelId: "test-model",
-        runConfig,
-        userMessage: userMessage("Next"),
-      });
-      expect(
-        (await aiConversations.createSessionStore({ conversationId: chat.id, turnId: next.turn.id }).load()).some((entry) =>
-          JSON.stringify(entry.message).includes("Background result"),
-        ),
-      ).toBe(true);
-    } finally {
-      await cleanupFixture({ userId, conversationIds: [chat.id] });
-    }
-  });
+        await sql`UPDATE ai.conversations SET background_received_at = now() WHERE id = ${chat.id}`;
+        expect((await session.load()).map((entry) => entry.message)).toEqual([userMessage("Hello")]);
+        // Nessi's next local sequence is already occupied by the delivered result.
+        await session.append(assistantMessage("Foreground answer"), { seq: 2 });
+        expect((await session.load()).map((entry) => entry.seq)).toEqual([1, 3]);
+        expect((await aiConversations.listMessages({ conversationId: chat.id })).map((message) => message.seq)).toEqual([1, 2, 3]);
+        await aiConversations.compactMessages({
+          conversationId: chat.id,
+          turnId: turn.id,
+          checkpointSeq: 3,
+          summary: assistantMessage("Summary"),
+        });
+        const context = await aiConversations.listContextMessages({ conversationId: chat.id });
+        expect(context.map((message) => message.seq)).toEqual([2, 3]);
+        expect((await session.load()).map((entry) => entry.seq)).toEqual([3]);
+        expect((await aiConversations.listConversations({ ownerUserId: userId, status: "unread" })).map((item) => item.id)).toContain(
+          chat.id,
+        );
+        await aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, leaseOwner: "foreground", status: "completed" });
+        const next = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "test-model",
+          runConfig,
+          userMessage: userMessage("Next"),
+        });
+        expect(
+          (await aiConversations.createSessionStore({ conversationId: chat.id, turnId: next.turn.id }).load()).some((entry) =>
+            JSON.stringify(entry.message).includes("Background result"),
+          ),
+        ).toBe(true);
+      } finally {
+        await cleanupFixture({ userId, conversationIds: [chat.id] });
+      }
+    },
+  );
 
   test("fork preserves the versions referenced by inline draft files", async () => {
     const userId = await insertUser();

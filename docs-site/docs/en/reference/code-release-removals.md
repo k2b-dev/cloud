@@ -69,7 +69,7 @@ the definitions saved before the upgrade.
 
 | Removed | Replacement |
 | --- | --- |
-| Type `core.ai.task`; queries `core.ai.task.read`, `core.ai.task.run.read`, `core.ai.tasks.list`; actions `core.ai.task.create`, `update`, `delete`, `pause`, `resume`, `run` | `core.ai.chat.run` and `core.ai.chat.deliver` from personal Code |
+| Type `core.ai.task`; queries `core.ai.task.read`, `core.ai.task.run.read`, `core.ai.tasks.list`; actions `core.ai.task.create`, `update`, `delete`, `pause`, `resume`, `run` | `core.ai.chat.send` from personal Code |
 | Type `assistant.app`; queries `assistant.app.read`, `assistant.app.search` | None. Old `assistant.app` and `assistant.artifact` references report the resource as unavailable. |
 
 Mail removes no capability: rules and automatic replies had none.

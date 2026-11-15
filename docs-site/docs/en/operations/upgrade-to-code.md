@@ -20,7 +20,7 @@ with Gustav afterwards.
 | --- | --- | --- |
 | Studio apps, their revisions, publications, sharing, app storage, files and RSQL databases | Removed with their data | None. A new lasting program is new Code; nothing is transferred. |
 | Mail rules: guided incoming rules, YAML workflows, their timers, backfills and Undo/Redo | Stopped; rule logs and runs stay readable | [Mailbox Code](/en/docs/platform/mail-code-automations), rebuilt by Gustav and switched on after review |
-| Scheduled Assistant chat routines | Stopped; definitions and run logs stay as a read-only archive | Personal Code with `app.schedule` and `core.ai.chat.run` or `core.ai.chat.deliver`, rebuilt by Gustav |
+| Scheduled Assistant chat routines | Stopped; definitions and run logs stay as a read-only archive | Personal Code with `app.schedule` and `core.ai.chat.send` or `core.ai.chat.send`, rebuilt by Gustav |
 | Automatic replies: out-of-office, office-hours and reference acknowledgements | Removed | None |
 
 These stay as they are:
@@ -250,8 +250,8 @@ replacement with fictional tests; see
   handler. Several rules of one mailbox become helper functions that one
   handler calls in a fixed order.
 - A **routine** becomes personal Code with `app.schedule` and an explicit
-  `timeZone`, then `core.ai.chat.run` when the work needs Gustav and tools, or
-  `core.ai.generate` and `core.ai.chat.deliver` for a prepared result. A
+  `timeZone`, then `core.ai.chat.send` when the work needs Gustav and tools, or
+  `core.ai.chat.send` with the prepared result as `context` and fixed instructions in `text`. A
   routine that relied on chat history, files or an open-ended tool loop needs
   those inputs resolved first; Gustav leaves such gaps visible in the draft.
 - **Automatic replies** and **Studio apps** have nothing to rebuild.

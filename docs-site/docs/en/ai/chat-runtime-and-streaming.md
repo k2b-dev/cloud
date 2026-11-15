@@ -1120,14 +1120,19 @@ For a result that starts no model turn, trusted hosts share
 `@k2b/cloud/ai/runtime`. Call it only inside an authorized transaction holding
 the destination conversation's row lock. It appends the assistant message and
 marks the conversation unread. The host owns idempotency and notification
-recovery in that same transaction. Personal Code's
-[chat delivery Action](/en/docs/platform/capabilities#deliver-personal-code-results-to-a-chat)
-uses this seam; applications call the capability instead of this host helper.
+recovery in that same transaction. This helper is for host-authored notices.
+Code writes through `ai.chat.send`, which always admits a normal chat turn.
 
 Trusted hosts may pass their open database transaction as the second argument
 to `aiConversations.submitChatTurn(input, db)` to commit a turn and a
 host-owned receipt together. Hold the authorized conversation lock first and
 enqueue with `enqueueExistingAiTurn` only after committing. Core uses this seam
-for [Code-started chat turns](/en/docs/platform/capabilities#start-personal-code-chat-turns).
+for queue promotion. `runConfig.writerOrigin` is the immutable initiator (`person`,
+`automation` or `chat`, plus stable ID). The trusted host sets it, and
+`submitChatTurn` copies it from the original turn on retry. Queue promotion,
+resume and `code_run` retain the same source coordinates. Missing origin is
+never treated as a person-initiated turn. `sourceRestricted` retains a limited
+entry point; app sessions and source chats with `allowedTools` cannot use
+`send` to widen authority. `runConfig.send` identifies the accepted queue entry.
 The optional host-owned `runConfig.codeOrigin` is copied to the user message
 and turn record for attribution; it grants no tool authority.

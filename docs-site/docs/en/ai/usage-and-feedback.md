@@ -156,7 +156,7 @@ does not override a finite wildcard. Unpriced models are exempt from both.
 Model permissions remain separate, including for administrators.
 
 These budgets cover direct Assistant calls, including personal Code-started
-Gustav turns through `core.ai.chat.run`, API/CLI submissions,
+Gustav turns through `core.ai.chat.send`, API/CLI submissions,
 queued messages and retries, and OpenAI-compatible API calls. Compaction,
 enrichment, image inspection, audio,
 workflows and retired routine history are excluded. Switching chat models does not

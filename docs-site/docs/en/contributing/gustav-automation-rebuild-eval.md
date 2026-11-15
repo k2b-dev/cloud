@@ -75,7 +75,7 @@ For `routine-agent`, review the open-ended task separately from text generation.
 The personal Code must belong to the exported owner. Its schedule keeps
 `cron: "0 9 * * 1"` and `timeZone: "Europe/Berlin"`, including DST changes.
 The case's `expectedInvocation` records the exact capability coordinates:
-`core.ai.chat.run`, target `{ type: "core.ai.chat", id: "ExMndy" }`, and domain
+`core.ai.chat.send`, target `{ type: "core.ai.chat", id: "ExMndy" }`, and domain
 input `{ prompt }` containing the exported instructions. Optional `context`
 contains source data only; `chatId` and grants are not input fields. The
 shown idempotency key is an illustrative value, not a required spelling;
@@ -89,7 +89,7 @@ to review any difference before activating. Mock the agent capability for
 exact prompt/chat, owner mismatch, budget refusal, the documented approval
 wait/outcome, busy-chat refusal and retries. The reply
 `{ id, chatId, status, reason, origin }` returns promptly; admission does not
-prove completion. `core.ai.chat.run.read` on the same chat with `{ id }`
+prove completion. `core.ai.chat.read` on the same chat with `{ id }`
 reads a later snapshot in `data`. Every domain Query returns `{ data, page? }`;
 Actions, including the start call, return their domain data directly. A list
 continues with the exact `page.nextCursor` only while `page.hasMore` is true,
@@ -112,7 +112,7 @@ Code daily USD limits, without a flat debit of the full Code attempt allowance.
 All three sources are inactive; no result may activate Code or copy grants.
 
 Also repeat the routine request while requiring the original Assistant chat.
-Use `core.ai.chat.deliver` for deterministic output when the live SDK offers it.
+Use `core.ai.chat.send` for deterministic output when the live SDK offers it.
 If the SDK lacks unattended delivery to that resource, Gustav must explain the
 gap and keep an inactive draft. Repeat with a recurring schedule in a timezone
 the SDK cannot represent: a fixed UTC-offset approximation is a failure.
@@ -120,5 +120,5 @@ Missing event or capability support likewise requires a visible gap, rather
 than a substituted implementation. Such blocked cases are reviewed as blocked;
 they are not successful-submission traces and do not pass this scorer.
 For `routine-agent`, the current SDK supports local cron timezones and
-`core.ai.chat.run`. Verify that the evaluation installation offers the same
+`core.ai.chat.send`. Verify that the evaluation installation offers the same
 contracts before treating a candidate as a tested replacement.

@@ -16,7 +16,7 @@ results come from [application capability manifests](/en/docs/platform/capabilit
 Third-party applications use the same path as built-in applications.
 
 Gustav's `code_sdk` index shows each method's policy classification. Inference
-calls (`core.ai.generate`, `core.ai.decide` and `core.ai.chat.run`) use `ai`,
+calls (`core.ai.generate`, `core.ai.decide` and `core.ai.chat.send`) use `ai`,
 including inference Queries. Reading a stored chat run uses `read`; delivering
 a chat message retains its Action policy. The index, checker and runtime use
 the same inference classification.
@@ -825,94 +825,58 @@ or the recovery window expires. A consumed date does not run again after a resta
 activation. The automation list shows its `at`, `timeZone`, and a null
 `nextRunAt` once consumed or expired.
 
-## Deliver a result to your Gustav chat
+## Write to your Gustav chat
 
-Personal Code can append a result to one of its owner's own active Assistant
-chats through `core.ai.chat(chatId).deliver`. Discover the actual chat ID and generated
-handle before writing the call:
+Use `core.ai.chat(chatId).send` to write one exact message to an owned active
+chat. Gustav answers using the person's current model grants, tools and approval
+rules. Discover the actual chat ID and generated handle first:
 
 ```ts
 import { app, core } from "@sdk";
 
-app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "weekly-report" }, async ({ runId, scheduledAt }) => {
-  await core.ai.chat("Chat23").deliver({
-    text: "Your weekly report is ready.",
-    idempotencyKey: `weekly-report:${scheduledAt ?? runId}`,
+app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "morning-review" }, async ({ runId, scheduledAt }) => {
+  const sent = await core.ai.chat("Chat23").send({
+    text: "Review my open work and prepare a short plan in this chat.",
+    idempotencyKey: `morning-review:${scheduledAt ?? runId}`,
   });
+  console.log(sent.id, sent.status);
 });
 export default app;
 ```
 
-`Chat23` is an example, not a destination to copy. Delivery appends an assistant
-message and marks the chat unread; it does not start another AI turn. Cloud
-keeps each delivery as its own answer. A result arriving during an interactive
-turn enters model context on the next turn and survives the current turn's
-compaction. Cloud
-creates the existing Assistant response notification on its next recovery pass,
-normally within one minute, subject to the owner's notification preferences.
-Text must contain 1–10,000 characters after trimming. Use one stable effect key
-per delivery: it is scoped across runs for this principal and capability, so retrying returns the original
-message instead of appending another. Reusing that key for different text or a
-different destination returns `idempotency_conflict`.
+`Chat23` is fictional. `text` contains 1–10,000 characters after trimming;
+optional `context` contains at most 10,000 characters of untrusted source data.
+Keep instructions in `text` and changing facts in `context`. For a prepared
+number, ask Gustav to confirm the supplied data in one sentence, without a new
+calculation. Every send can start an AI turn and incur its normal costs.
 
-Only personal Code can use this Action. Resource- and app-owned Code, ordinary
-interactive callers, archived chats and another person's chats are refused.
-The Action uses the `silent: "you"` policy and appears in the run's normal
-capability call log. It performs no model inference and consumes no Code AI
-budget.
+The Action returns `{ id, chatId, status, reason, origin }` promptly. Status is
+`queued`, `running`, `waiting`, `done`, `failed` or `cancelled`. A busy chat keeps
+the message in its existing queue, without consuming the person's draft. Read
+one later snapshot with `core.ai.chat.read({ id: "Chat23", message: sent.id })`;
+the Query returns `{ data: { chat, messages, message } }`. Finish the Code run
+when a person must answer; do not poll for approval.
 
-## Start a Gustav turn in your own chat
+One required key identifies the intended message across Code runs for the same
+account and operation. Repeating it recovers the accepted message; the dispatcher
+may replay its admission response. Use `ai.chat.read` for current state. Changing
+text, context or destination under that key returns `idempotency_conflict`.
 
-Personal Code uses `core.ai.chat(chatId).run` when the task needs Gustav to choose and
-use tools. Discover the owner's chat ID and the generated handle first:
+An unrestricted signed-in person, a person-initiated Gustav turn and personal
+Code may send to that person's active chat. App sessions and source chats with
+an `allowedTools` ceiling return `source_restricted`. Service accounts and other
+people's chats are refused. A turn initiated by Code or another chat cannot send
+again (`chat_chain_forbidden`). Retry, resume and queue promotion preserve the
+original initiator; missing origin never grants chaining authority.
 
-```ts
-import { app, core } from "@sdk";
-
-app.schedule({ at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin", name: "morning-review", title: "Review open work" },
-  async ({ runId, scheduledAt }) => {
-    const run = await core.ai.chat("Chat23").run({
-      prompt: "Review my open work and prepare a short plan in this chat.",
-      idempotencyKey: `morning-review:${scheduledAt ?? runId}`,
-    });
-    console.log(run.id, run.status);
-  });
-export default app;
-```
-
-`Chat23` is a fictional destination. Keep the routine's actual time zone.
-For recurring routines, use `{ cron, timeZone }` to preserve the routine's time
-zone. The Action accepts a trimmed prompt of
-1–10,000 characters and optional `context` of at most 10,000 characters.
-Context is source data, not additional authority or trusted instructions.
-
-The result contains `id`, `chatId`, `status`, `reason` and `origin`. It returns
-promptly with `queued`, `running`, `waiting_for_approval`, `waiting_for_input`,
-`completed` or `failed`. A later
-`core.ai.chat("Chat23").run.read({ id: run.id })` reads one current
-snapshot. Finish the Code run when approval is needed; the owner decides in
-the chat, and the ordinary chat worker continues the same turn. Do not poll
-until the owner answers. A busy chat returns `chat_busy`; try a later schedule
-or manual run after its current turn ends.
-
-Only the personal Code owner may target their own active chat. Sharing Code
-with a reader grants no chat authority. Resource- and app-owned Code cannot
-start these turns. Each turn uses the owner's current model grants, tools and
-approval rules, without passing the Code mandate to its tools. Billable
-inference charges actual usage to the owner's normal interactive Assistant allowance,
-with no flat Code attempt debit. Existing daily Code USD limits include that
-actual cost; normal model step
-and turn time limits still apply. The chat and run show “Started by Code
-{name}” (or “Gestartet von Code {name}”). The invoking Code keeps its ordinary
-capability call log.
-
-One stable key identifies one intended turn across Code runs for at least 24 hours. Repeating it recovers
-the original turn, even after its allowance is exhausted; the admission reply
-may be replayed. Read `ai.chat.run.read` to get the current state.
-Changing the prompt, context or destination under that key returns
-`idempotency_conflict`. Use a different occurrence key for the next intended turn.
-See [chat turn capability](/en/docs/platform/capabilities#start-personal-code-chat-turns)
-for the daily admission cap and budget error codes.
+Only `ai.generate`, `ai.decide` and `ai.chat.send` count as Code AI operations.
+Chat reads use the `read` policy. Send currently uses the `ai` row, including its
+version approval. A sent turn uses the owner's normal Assistant allowance by
+actual usage, without passing the Code mandate to its tools or debiting the
+whole text-AI attempt allowance. Existing Code daily admission checks still
+apply; they do not reserve a whole future turn. See the
+[send contract](/en/docs/platform/capabilities#write-to-a-gustav-chat) for limits
+and error codes.
 
 ## Name an automation
 
@@ -1440,7 +1404,7 @@ interrupted write, inspect its status before attempting another import.
 One-off runs share runner capacity and use its fixed wall-clock, memory and
 bridge budgets; see [One-off chat jobs](/en/docs/platform/code-runs#one-off-chat-jobs).
 Scheduled chat routines are retired. Rebuild timed work as reviewed personal
-Code with `app.schedule` and `core.ai.chat(chatId).run` or `core.ai.chat(chatId).deliver`.
+Code with `app.schedule` and `core.ai.chat(chatId).send`.
 Routine grants do not transfer. Studio RSQL `database` grants are unavailable in
 runner `code_run`. Chat accepts inline `code` and optional `inputPaths` only;
 saved script `id`, published `version`, and Studio `resourceId` contexts are
@@ -1525,7 +1489,7 @@ Use it for summaries, draft text or validated extraction. Put source data in
 Only `generate` and `decide` reserve the synchronous Code AI attempt allowance.
 Skill, catalog and chat history reads remain available when that allowance
 is zero or reserved by another inference call, subject to ordinary permissions,
-policy and capability call limits. [Chat turns](#start-a-gustav-turn-in-your-own-chat)
+policy and capability call limits. [Chat turns](#write-to-your-gustav-chat)
 use their own daily Code and interactive allowance checks.
 
 <!-- gate-1a-generation -->

@@ -79,28 +79,21 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       digest TEXT NOT NULL CHECK (digest ~ '^[a-f0-9]{64}$'),
       PRIMARY KEY (run_id,digest)
     )`.simple();
-    // Delivery receipts survive retries and double as the notification recovery outbox.
-    await tx`CREATE TABLE IF NOT EXISTS code.chat_deliveries (
-      run_id UUID NOT NULL REFERENCES code.runs(id) ON DELETE CASCADE,
-      key TEXT NOT NULL CHECK (char_length(key) BETWEEN 1 AND 200),
-      request_hash TEXT NOT NULL,
-      message_id UUID NOT NULL,
-      message_short_id TEXT NOT NULL,
-      conversation_id UUID NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (run_id,key)
-    )`.simple();
-    await tx`CREATE INDEX IF NOT EXISTS chat_deliveries_recovery ON code.chat_deliveries(created_at,message_id)`.simple();
-    // AI migrates after Code; receipts follow Code run retention without an AI-table dependency.
-    await tx`CREATE TABLE IF NOT EXISTS code.chat_runs (
-      run_id UUID NOT NULL REFERENCES code.runs(id) ON DELETE CASCADE,
-      key TEXT NOT NULL CHECK (char_length(key) BETWEEN 1 AND 200),
-      request_hash TEXT NOT NULL,
-      conversation_id UUID NOT NULL,
-      turn_id UUID NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (run_id,key), UNIQUE(turn_id)
-    )`.simple();
+    // The published inter-chat writer changes contract. Drain it on the old release before switching.
+    await tx`DO $$ BEGIN
+      IF to_regclass('ai.inter_chat_messages') IS NOT NULL THEN
+        IF EXISTS (SELECT 1 FROM ai.inter_chat_messages WHERE status='pending') THEN
+          RAISE EXCEPTION 'Deliver pending inter-chat messages on the previous release before upgrading to ai.chat.send';
+        END IF;
+      END IF;
+    END $$`.simple();
+    await tx`DROP TABLE IF EXISTS code.chat_deliveries`.simple();
+    await tx`DO $$ BEGIN
+      IF to_regclass('ai.messages') IS NOT NULL THEN
+        UPDATE ai.messages SET meta=meta-'codeDelivery' WHERE meta ? 'codeDelivery';
+      END IF;
+    END $$`.simple();
+    await tx`DROP TABLE IF EXISTS code.chat_runs`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_code_history ON code.runs(code_id,created_at DESC,id DESC)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_retention ON code.runs(ended_at,id) WHERE ended_at IS NOT NULL`.simple();
     await tx`ALTER TABLE code.runs

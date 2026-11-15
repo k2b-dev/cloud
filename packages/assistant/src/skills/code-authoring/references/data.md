@@ -59,7 +59,7 @@ Studio databases and grants never transfer; export them before upgrading.
 | The state of a conversation (tags, status, assignees, summary) | Mail, through its Actions |
 | A to-do or a follow-up | A Spaces task |
 | A note for a team | A chat message |
-| A result for the owner | The owner's Gustav chat with `core.ai.chat(chatId).deliver` |
+| A result for the owner | The owner's Gustav chat with `core.ai.chat(chatId).send` |
 | A configuration, such as a tag name or a Space ID | A constant in the source; a change is a new version |
 
 Check in [Capabilities](capabilities.md) whether the Action you need runs

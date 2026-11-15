@@ -3,6 +3,7 @@ export { compileCapabilities, invokeCompiledCapability } from "../../packages/cl
 export { createCodeOwnerRoutes } from "../../packages/cloud/src/_internal/code-owner";
 export { AiTurnExecutor } from "../../packages/cloud/src/ai/executor";
 export { beginAiCall, finishAiCall } from "../../packages/cloud/src/ai/inference-calls";
+export { drainQueuedMessages } from "../../packages/cloud/src/ai/message-queue";
 export { aiAssignmentFixture, aiModelFixture, aiSettingsFixture } from "../../packages/cloud/src/ai/model-fixture";
 export { aiQuotas } from "../../packages/cloud/src/ai/quotas";
 export * as aiModelSettings from "../../packages/cloud/src/ai/settings";
