@@ -819,6 +819,14 @@ Its receipt names where the read ended, and content from another origin is not
 returned, but the request has reached that origin by then. A website with an
 open redirect can therefore pass an address it receives on to another website.
 
+Web extraction and the reading view use hosted Firecrawl at `api.firecrawl.dev`.
+Cloud accepts only HTTP or HTTPS page addresses without URL credentials and
+checks both the requested and returned address against its hostname and IP
+literal rules. A rejected returned address yields no extracted content.
+The connection to the Firecrawl API does not follow redirects. Each API request
+has a 30-second deadline, and extracted Markdown is limited to 1,000,000
+characters; a longer page sets `truncated: true`.
+
 ### Read web pages with provenance
 
 `web_search` never asks. `web_extract` and `fetch_file` read an address

@@ -3,7 +3,7 @@ import type { AiConversation, AiOpenQuestions, AiTurnSnapshot } from "@k2b/cloud
 import type { LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { WAITING_NOW, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
+import { WAITING_NOW, waitingChatHistory, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
 
 // The live socket is the test's, so a question that opens or is decided elsewhere arrives as it does from Core.
 const subscriptions: LiveSubscriptionHandlers<unknown>[] = [];
@@ -115,7 +115,7 @@ const mount = (
           initialDoneCount={0}
           initialConversationId={here.id}
           initialArtifactPath={null}
-          initialDetail={{ conversation: here, messages: [], hasMoreMessages: false, activeTurn, timeline: [] }}
+          initialDetail={{ conversation: here, messages: waitingChatHistory, hasMoreMessages: false, activeTurn, timeline: [] }}
           initialContext={null}
           projects={[]}
           initialProject={null}

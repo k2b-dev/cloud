@@ -1815,7 +1815,8 @@ describe("turn places in the reader's language", () => {
   test("a failed turn says that it was interrupted", () => {
     const blocks: AiTurnBlock[] = [
       { id: "text-1", kind: "text", text: "Now I build the dashboard." },
-      { id: "tool-run", kind: "tool", callId: "run", name: "code_run", status: "completed", result: {} },
+      // A step that names nothing it did, so the line says how long the turn worked.
+      { id: "tool-run", kind: "tool", callId: "run", name: "memory", status: "completed", result: {} },
     ];
     const english = renderPlaces(blocks, { phase: "failed", workedMs: 240_000 });
     expect(english).toContain("Worked 4 min · interrupted");
