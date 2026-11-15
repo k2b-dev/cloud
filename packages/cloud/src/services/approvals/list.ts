@@ -97,7 +97,12 @@ export const listPending = async (input: {
     WHERE ${matches(input.appId, input.link)}
       AND (${cursor?.id ?? null}::uuid IS NULL OR (r.created_at,r.id) < (${cursor?.createdAt ?? null}::timestamptz,${cursor?.id ?? null}::uuid))
     ORDER BY r.created_at DESC,r.id DESC LIMIT ${limit + 1}`;
-    const items = rows.slice(0, limit);
+    // Reviews are stored with their view as text (`serializeReviewSnapshot`); a row carries them readable.
+    const items = rows.slice(0, limit).map((row) => ({
+      ...row,
+      details: restoreReviewSnapshot(row.details),
+      storedReview: row.storedReview === null ? null : (restoreReviewSnapshot(row.storedReview) as AiStoredActionReview),
+    }));
     const last = items.at(-1);
     return {
       items,

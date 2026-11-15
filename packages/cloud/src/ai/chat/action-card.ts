@@ -1,3 +1,4 @@
+import { dates } from "@k2b/stdlib";
 import {
   type CapabilitySentencePart,
   capabilityAskReasonText,
@@ -350,6 +351,18 @@ export type LegacyCardInput = {
   input?: unknown;
 };
 
+/** An old row's value as people read it: a day as a date, an instant in the reader's zone. Other text stays literal. */
+const legacyRowValue = (row: AiLegacyReviewRow, context: ActionCardContext): string => {
+  if (!row.format || Number.isNaN(Date.parse(row.value))) return row.value;
+  try {
+    return row.format === "date" && /^\d{4}-\d{2}-\d{2}$/.test(row.value)
+      ? dates.formatDate(row.value, { locale: context.locale, timeZone: "UTC" })
+      : dates.formatDateTime(row.value, { locale: context.locale, timeZone: context.timeZone });
+  } catch {
+    return row.value;
+  }
+};
+
 export const legacyActionCard = (input: LegacyCardInput, context: ActionCardContext): ActionCard => {
   const t = actionMessages(context.locale);
   const showInput = input.rows.length === 0 && !input.markdown && input.input !== undefined;
@@ -363,7 +376,14 @@ export const legacyActionCard = (input: LegacyCardInput, context: ActionCardCont
     view: [
       // An older server's rows read as its lines did: "Label: value", or the value alone, never under a dash.
       ...(input.rows.length
-        ? [{ kind: "Text" as const, text: input.rows.map((row) => (row.label ? `${row.label}: ${row.value}` : row.value)).join("\n") }]
+        ? [
+            {
+              kind: "Text" as const,
+              text: input.rows
+                .map((row) => (row.label ? `${row.label}: ${legacyRowValue(row, context)}` : legacyRowValue(row, context)))
+                .join("\n"),
+            },
+          ]
         : []),
       ...(input.markdown ? [{ kind: "Text" as const, text: input.markdown }] : []),
       ...(showInput ? [{ kind: "Text" as const, text: JSON.stringify(input.input, null, 2) }] : []),
