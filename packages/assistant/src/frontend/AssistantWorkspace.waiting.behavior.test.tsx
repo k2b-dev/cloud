@@ -17,6 +17,7 @@ mock.module("@k2b/cloud/browser/live", () => ({
   }),
 }));
 const bootstrap = createDomTestHarness();
+const { WAITING_NOW, waitingFixture, waitingStripSummary } = await import("./waiting-questions.fixture");
 const { LocaleProvider } = await import("@k2b/ui");
 const { default: Workspace } = await import("./AssistantWorkspace.island");
 const { AssistantWaitingStrip } = await import("./AssistantWaitingStrip");

@@ -204,6 +204,16 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     END $$ LANGUAGE plpgsql`.simple();
     await tx`CREATE OR REPLACE TRIGGER record_pause_time BEFORE UPDATE ON code.codes
       FOR EACH ROW EXECUTE FUNCTION code.record_pause_time()`.simple();
+    // Activation also runs without the optional version-review schema, so the base owns this function.
+    // Invalidate the submitting person's card in the same transaction, independently of chat receipts.
+    // A database without AI has no such viewers.
+    await tx`CREATE OR REPLACE FUNCTION code.version_card_live() RETURNS TRIGGER AS $$
+    BEGIN
+      IF to_regprocedure('ai.enqueue_live_for_user(uuid,uuid,text,text,text[])') IS NULL THEN RETURN NEW; END IF;
+      PERFORM ai.enqueue_live_for_user(gen_random_uuid(), (SELECT created_by FROM code.versions WHERE id=NEW.version_id),
+        NULL, NULL, ARRAY['code-versions']::text[]);
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql`.simple();
     await migrateUnusedCodeDatabases(tx);
     await migrateCodeActivity(tx);
   });

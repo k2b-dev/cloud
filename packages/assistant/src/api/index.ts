@@ -47,7 +47,7 @@ const app = new Hono<AuthContext>()
       ok(
         await loadAssistantSidebarSnapshot(
           { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
-          { locale: getLocale(c), timeZone: getTimeZone(c) },
+          { locale: getLocale(c), timeZone: getTimeZone(c), authority: auth.getAuthority(c) },
           placeAppsFromCatalog(catalogPerApp(getLocale(c), auth.getAuthority(c))),
         ),
       ),

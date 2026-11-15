@@ -16,6 +16,16 @@ export const pulseCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "base.managers": {
+          title: "Verwaltende ermitteln",
+          description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
+          input: {
+            id: "Öffentliche ID des Eintrags.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+            userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+          },
+        },
         "dashboard.list": {
           input: { baseId: "ID der Base aus base.list.", cursor: "Cursor der vorherigen Seite.", limit: "Höchstzahl der Dashboards." },
           title: "Pulse-Dashboards auflisten",

@@ -46,6 +46,8 @@ type RetryMessageHandler = (entry: AiStoredMessage, input?: AiRetryMessageInput)
 type RetrySteerHandler = (block: Extract<AiTurnBlock, { kind: "steer_message" }>) => void | Promise<void>;
 
 export type AiChatActions = {
+  /** The host supplies the authorized card jump for a durable decision fact. */
+  renderCodeDecision?: (entry: AiStoredMessage) => JSX.Element;
   /** Host-localized authoring budget notice. Consent uses the normal onContinueTurn send path. */
   renderCodeAuthoringStop?: (state: AiCodeAuthoringStop, continuable: () => boolean) => JSX.Element;
   /**

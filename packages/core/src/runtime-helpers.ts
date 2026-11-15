@@ -1,4 +1,5 @@
 import { APP_REGISTRY_TTL_MS, listApps, watchAppRegistry } from "@k2b/cloud";
+import { registerAiTurnAbortHandler } from "@k2b/cloud/ai/runtime";
 import { getGeoIp } from "@k2b/cloud/server/request-context";
 import { deviceOffersApproval, logger, superviseRuntimeTask } from "@k2b/cloud/services";
 import { refreshBuiltAvatarHashes } from "@k2b/cloud/services/accounts/avatar";
@@ -12,6 +13,8 @@ import { codeDatabaseRetentionRuntime } from "./code/database-retention-runtime"
 import { codeDeletionOutbox, codeOwnerDeletedOutbox } from "./code/lifecycle";
 import { codePolicyPauseOutbox } from "./code/policy-outbox";
 import { startCodeRunRetention } from "./code/retention";
+import { createCodeReviewChatOutboxes, finishCodeReviewRevision } from "./code/review-chat";
+import { stopCodeReviewTurn } from "./code/review-chat-state";
 import { createCodeReviewNotificationOutbox } from "./code/review-notifications";
 import { startCodeScheduling } from "./code/scheduling-runtime";
 import { startCodeVersionApprovals } from "./code/versions";
@@ -189,6 +192,8 @@ export const runCoreSetup = async (): Promise<void> => {
   }
 };
 
+let codeReviewChats: ReturnType<typeof createCodeReviewChatOutboxes> = [];
+let stopCodeReviewAbort: (() => void) | undefined;
 let codeReviewNotices: ReturnType<typeof createCodeReviewNotificationOutbox> | undefined;
 /** Start core background services (account lifecycle jobs). */
 export const startCoreServices = async (
@@ -201,6 +206,9 @@ export const startCoreServices = async (
     stopCodeVersionApprovals = startCodeVersionApprovals();
     codeReviewNotices = createCodeReviewNotificationOutbox(notificationSender);
     codeReviewNotices.start();
+    codeReviewChats = createCodeReviewChatOutboxes();
+    for (const outbox of codeReviewChats) outbox.start();
+    stopCodeReviewAbort = registerAiTurnAbortHandler(stopCodeReviewTurn);
     await initializeIdentityAuthority();
     stopAppWorkloadBroker = await startAppWorkloadBroker();
     stopAppEventBroker = await startAppEventBroker();
@@ -241,6 +249,7 @@ export const startCoreServices = async (
         await Promise.allSettled([
           ...(status === "completed" && kind === "chat" ? [aiNotifications.notifyTurnCompleted(turnId)] : []),
           deliverPendingAiMessages(),
+          finishCodeReviewRevision(turnId, status),
         ]);
       },
     });
@@ -277,6 +286,9 @@ export const startCoreServices = async (
     await codeActivationCleanupOutbox.stop();
     await codeOwnerDeletedOutbox.stop();
     await codeReviewNotices?.stop();
+    await Promise.all(codeReviewChats.map((outbox) => outbox.stop()));
+    stopCodeReviewAbort?.();
+    stopCodeReviewAbort = undefined;
     await codeDatabaseRetentionRuntime.stop();
     await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();
@@ -328,6 +340,9 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     await codeActivationCleanupOutbox.stop();
     await codeOwnerDeletedOutbox.stop();
     await codeReviewNotices?.stop();
+    await Promise.all(codeReviewChats.map((outbox) => outbox.stop()));
+    stopCodeReviewAbort?.();
+    stopCodeReviewAbort = undefined;
     await codeDatabaseRetentionRuntime.stop();
     await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();

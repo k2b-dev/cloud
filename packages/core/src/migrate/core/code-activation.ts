@@ -31,6 +31,12 @@ export async function migrate(db: SQL = sql): Promise<void> {
       SELECT DISTINCT ON (code_id,version_id) code_id,version_id,updated_at,activating_person FROM code.activations
       WHERE state='active' ORDER BY code_id,version_id,updated_at DESC,id DESC
     ) a WHERE c.id=a.code_id AND c.active_version_id=a.version_id AND c.activated_at IS NULL`.simple();
+    // The card follows a successful switch even while its chat is busy. The shared
+    // durable live outbox handles batching; replaying an already-active receipt emits nothing.
+    await tx`CREATE OR REPLACE TRIGGER activation_live AFTER UPDATE OF state ON code.activations
+      FOR EACH ROW WHEN (NEW.state='active' AND OLD.state IS DISTINCT FROM NEW.state) EXECUTE FUNCTION code.version_card_live();
+      CREATE OR REPLACE TRIGGER activation_insert_live AFTER INSERT ON code.activations
+      FOR EACH ROW WHEN (NEW.state='active') EXECUTE FUNCTION code.version_card_live()`.simple();
     await tx`ALTER TABLE code.activations ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE`.simple();
     await tx`CREATE INDEX IF NOT EXISTS activations_code ON code.activations(code_id,created_at DESC,id)`.simple();
     await tx`ALTER TABLE code.activations DROP COLUMN IF EXISTS plan, DROP COLUMN IF EXISTS mandate_policy`.simple();

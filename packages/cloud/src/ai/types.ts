@@ -332,6 +332,20 @@ export type AiStoredMessage = {
     submittedDraftRevision?: number;
     codeAuthoringStop?: AiCodeAuthoringStop;
     codeOrigin?: AiCodeOrigin;
+    /** Cloud's visible start of its one scoped automatic revision. */
+    codeReviewStart?: { codeId: string; versionId: string };
+    /** A Cloud-authored fact, never an instruction or an assistant answer. */
+    codeDecision?: {
+      codeId: string;
+      versionId: string;
+      number: number;
+      outcome: "approved" | "changes_requested" | "rejected" | "activated";
+      person: { id: string | null; name: string | null };
+      anchor: string;
+      /** Decision/action time, independent of delivery after a busy turn. */
+      at?: string;
+      nextRunAt?: string | null;
+    };
     modelRequest?: AiModelRequest;
     modelResolved?: AiResolvedModelRef;
     modelReplacement?: { kind: "model_replaced"; previousLabel: string; nextLabel: string };
@@ -690,6 +704,8 @@ type RetiredRoutineContext = {
 };
 
 export type AiChatTurnRunConfig = {
+  /** Trusted Core review entrypoint; the executor offers only the bounded Code tool set. */
+  codeReview?: { codeId: string; versionId: string };
   /** Trusted host attribution; never grants tool authority. */
   codeOrigin?: AiCodeOrigin;
   background?: RetiredRoutineContext;
