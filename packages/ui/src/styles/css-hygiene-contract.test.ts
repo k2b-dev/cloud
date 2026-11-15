@@ -242,9 +242,12 @@ describe("@k2b/ui stylesheet hygiene", () => {
 
     expect(declarations(".k2b-ui .k2b-table-shell").get("overflow")).toEqual(["hidden"]);
     expect(declarations(".k2b-ui .k2b-table-wrap").get("overflow")).toEqual(["auto"]);
-    expect(
-      declarations('.k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap', finePointer).get("scrollbar-width"),
-    ).toEqual(["none"]);
+    // The overlay replaces the native scrollbars: the vertical one gives up its room, the sideways one keeps its lane
+    // and only loses its paint, so nothing moves when the table's code arrives.
+    const enhanced = '.k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap';
+    const lane = declarations(`${enhanced}::-webkit-scrollbar`, finePointer);
+    expect([lane.get("width"), lane.get("height")]).toEqual([["0"], undefined]);
+    expect(declarations(`${enhanced}::-webkit-scrollbar-thumb`, finePointer).get("background")).toEqual(["transparent"]);
     expect(
       declarations(
         '.k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-data-table__scrollbar[data-overflow="true"]',

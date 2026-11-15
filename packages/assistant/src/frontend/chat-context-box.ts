@@ -100,6 +100,11 @@ export const contextBoxResultRow = (
   input: { now: string; timeZone: string; locale: string; formatSize: (bytes: number) => string; copy: Pick<ContextBoxCopy, "showInChat"> },
 ): ContextBoxRow => {
   const jump = resultJump(result);
+  const open: ContextBoxOpen = result.file
+    ? { kind: "file", path: result.file.path, title: result.title }
+    : jump
+      ? { kind: "jump", target: jump }
+      : { kind: "none" };
   const trailing = result.file
     ? input.formatSize(result.file.size)
     : contextBoxWhen(result.deliveredAt, input.now, input.timeZone, input.locale);
@@ -109,15 +114,12 @@ export const contextBoxResultRow = (
     title: result.title,
     trailing,
     tooltip: result.description ? `${result.title} · ${result.description}` : result.title,
-    open: result.file
-      ? { kind: "file", path: result.file.path, title: result.title }
-      : jump
-        ? { kind: "jump", target: jump }
-        : { kind: "none" },
-    // Files download from the row; anything else shows where it came from.
+    open,
+    // Files download from the row; anything else shows where it came from, unless the row's own click already goes
+    // there: one action per row.
     hover: result.file
       ? { kind: "download", path: result.file.path, name: fileName(result.file.path) }
-      : jump
+      : jump && open.kind !== "jump"
         ? { kind: "jump", target: jump }
         : null,
   };

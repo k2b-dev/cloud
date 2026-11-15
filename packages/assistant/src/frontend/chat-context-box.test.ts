@@ -23,7 +23,7 @@ describe("box model", () => {
   test("files show their size and download while pointing; other results their time and the way back to the chat", () => {
     const [file, view] = build().results.rows;
     expect(file).toMatchObject({ trailing: "1400000 B", open: { kind: "file" }, hover: { kind: "download" } });
-    expect(view).toMatchObject({ trailing: "14:09", open: { kind: "jump" }, hover: { kind: "jump" } });
+    expect(view).toMatchObject({ trailing: "14:09", open: { kind: "jump" }, hover: null });
   });
 
   test("the three newest results lead; more lead to all", () => {

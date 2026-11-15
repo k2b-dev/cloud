@@ -11834,13 +11834,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
-  .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap {
-    scrollbar-width: none;
-  }
-
+  /* The overlay replaces the native scrollbars. The vertical one gives up its room, so a table that starts to overflow
+     keeps its width. The sideways one keeps its lane and loses only its paint, so a table that overflows sideways has
+     the same height in its server frame and once its code arrives; the overlay draws inside that lane. */
   .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap::-webkit-scrollbar {
     width: 0;
-    height: 0;
+  }
+
+  .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap::-webkit-scrollbar-thumb {
+    /* scrollbars: allow hides only the thumb's paint, so the sideways lane keeps its room under the overlay */
+    background: transparent;
+  }
+
+  @supports not selector(::-webkit-scrollbar) {
+    .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap {
+      scrollbar-width: none;
+    }
   }
 
   .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-data-table__scrollbar[data-overflow="true"] {
