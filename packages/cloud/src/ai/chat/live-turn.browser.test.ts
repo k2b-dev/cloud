@@ -1825,6 +1825,7 @@ test("each text in the expanded work is a step of its own whose card holds the w
     await emit(page, { ...base, seq: 5, type: "block_set", block: tool(2, "completed") });
     await emit(page, { ...base, seq: 6, type: "block_delta", blockId: "text-2", blockKind: "text", delta: "Both files are read." });
     await emit(page, { ...base, seq: 7, type: "block_set", block: tool(3, "running") });
+    await settled(page, ".ai-turn-work");
     const summary = await viewportBox(page, ".ai-turn-work > summary");
     await page.locator(".ai-turn-work > summary").click();
     await page.locator(".ai-turn-steps").waitFor();
@@ -1848,6 +1849,8 @@ test("each text in the expanded work is a step of its own whose card holds the w
     expect(await rows()).toEqual(before);
     expect(await viewportBox(page, ".ai-turn-work > summary")).toEqual(summary);
     await page.keyboard.press("Escape");
+    await card.waitFor({ state: "hidden" });
+    await settled(page, ".ai-turn-work");
     expect(await rows()).toEqual(before);
   } finally {
     await context.close();

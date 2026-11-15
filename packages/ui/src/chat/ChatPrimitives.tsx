@@ -8,11 +8,11 @@ import {
   For,
   type JSX,
   onCleanup,
+  onMount,
   Show,
   useContext,
 } from "solid-js";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
-import { HoverCard } from "../feedback/HoverCard";
 import { Tooltip } from "../feedback/Tooltip";
 import { Format } from "../intl/Format";
 import { useLocale } from "../intl/locale";
@@ -414,24 +414,56 @@ const ActivityContent = (props: ChatActivityProps & { label: JSX.Element; disclo
     <Show when={props.disclosure}>
       <i class="ti ti-chevron-right k2b-chat-activity__chevron" aria-hidden="true" />
     </Show>
-    <Show when={!props.expandable && props.info}>
-      {(info) => (
-        <HoverCard.Trigger
-          triggerClass="k2b-chat-activity__info"
-          aria-label={info().label}
-          align="end"
-          width="24rem"
-          title={info().title}
-          detail={info().detail}
-          content={info().content}
-          actions={info().actions}
-        >
-          <i class="ti ti-info-circle" aria-hidden="true" />
-        </HoverCard.Trigger>
-      )}
-    </Show>
+    <Show when={!props.expandable && props.info}>{(info) => <ActivityInfo info={info()} />}</Show>
   </>
 );
+
+type InfoCardModule = typeof import("./ChatActivityInfoCard");
+const [infoCard, setInfoCard] = createSignal<InfoCardModule>();
+let infoCardLoading = false;
+/** Loads the ⓘ card once, in the browser only; the server and the first frame render the plain ⓘ. */
+const loadInfoCard = () => {
+  if (infoCardLoading) return;
+  infoCardLoading = true;
+  void import("./ChatActivityInfoCard").then(
+    (module) => {
+      setInfoCard(() => module);
+    },
+    () => {
+      infoCardLoading = false;
+    },
+  );
+};
+
+/**
+ * The ⓘ of a row without a body. It renders as a plain button with the trigger's look on the server and in the first
+ * frame, and becomes the `HoverCard` trigger as soon as that code has loaded, in the same place and with the focus.
+ */
+function ActivityInfo(props: { info: ChatActivityInfo }): JSX.Element {
+  let plain: HTMLButtonElement | undefined;
+  onMount(loadInfoCard);
+  return (
+    <Show
+      when={infoCard()}
+      fallback={
+        <button
+          ref={plain}
+          type="button"
+          class="k2b-hover-card-trigger k2b-chat-activity__info"
+          aria-label={props.info.label}
+          aria-haspopup={props.info.actions ? "dialog" : undefined}
+        >
+          <i class="ti ti-info-circle" aria-hidden="true" />
+        </button>
+      }
+    >
+      {(module) => {
+        const Card = module().ChatActivityInfoCard;
+        return <Card info={props.info} focus={plain !== undefined && document.activeElement === plain} />;
+      }}
+    </Show>
+  );
+}
 
 type ActivityDisclosure = {
   /** Whether the activity has a body this toggle can open. */

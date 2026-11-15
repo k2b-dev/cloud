@@ -19,6 +19,8 @@ const tool = (id: string, name = "read_file"): AiTurnBlock => ({
 const mount = async (blocks: () => AiTurnBlock[], phase: () => "running" | "completed" = () => "running") => {
   const dom = createDomTestHarness();
   const { AiTurnView } = await import("./turn-view");
+  // The opened work loads its code on demand in the browser; load it first, so a toggle shows its rows at once.
+  await (await import("#chat-work-list")).preloadAiWorkSteps();
   const { layoutAiTurn } = await import("./turn-layout");
   const { createAiToolDisclosureState } = await import("./tool-disclosure");
   const disclosureState = createAiToolDisclosureState();

@@ -17,6 +17,8 @@ const mount = async (blocks: () => AiTurnBlock[], options: { locale?: string; op
   dom ??= createDomTestHarness();
   const root = dom.root.appendChild(document.createElement("div"));
   const { AiTurnView } = await import("./turn-view");
+  // The opened work loads its code on demand in the browser; load it first, so a toggle shows its rows at once.
+  await (await import("#chat-work-list")).preloadAiWorkSteps();
   const { layoutAiTurn } = await import("./turn-layout");
   const { createAiToolDisclosureState } = await import("./tool-disclosure");
   const { AiChatActionsProvider } = await import("./message-actions");

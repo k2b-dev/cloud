@@ -20,6 +20,8 @@ const visibleText = (node: Element | null | undefined) => {
   const dom = createDomTestHarness();
   // The expanded work line shows every folded text; the newest stays below it.
   window.sessionStorage.setItem("cloud.ai.tool-disclosure:work:ai-turn:turn:start", "open");
+  // The opened work loads its code on demand in the browser; load it first, so a toggle shows its rows at once.
+  await (await import("#chat-work-list")).preloadAiWorkSteps();
   const { Chat } = await import("@k2b/ui");
   const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
   const [state, setState] = createStore(emptyProjection());
