@@ -18,6 +18,7 @@ const { renderToString } = await import("solid-js/web");
 const { ApprovalCard } = await import("../../approvals/ApprovalCard");
 const { default: Approvals } = await import("../../approvals/Approvals");
 const { toolActionCard } = await import("./action-card");
+const { actionMessages } = await import("./action-messages");
 const { legacyOutcomeWords } = await import("./tool-action-words");
 const { actionFixtures, storedLegacyReviews, FIXTURE_AT } = await import("./action-question.fixtures");
 
@@ -121,9 +122,40 @@ describe("ApprovalCard at the public rendering seam", () => {
       expect(words(render({ expiresAt: "2026-10-18T11:01:00.000Z" }))).toContain("Läuft ab in 22 Std.");
       expect(words(render({ expiresAt: "2026-10-18T12:02:00.000Z" }))).toContain("Läuft ab in 1 Tag");
       expect(words(render({ expiresAt: "2026-10-18T12:02:00.000Z" }))).not.toContain("1.440");
+      // The card reads the exact time left, not minutes rounded up: 59 min 1 s is still 59 minutes.
+      expect(words(render({ expiresAt: "2026-10-17T13:01:01.000Z" }))).toContain("Läuft ab in 59 Min.");
+      expect(words(render({ expiresAt: "2026-10-18T12:01:59.000Z" }))).toContain("Läuft ab in 23 Std.");
+      expect(words(render({ expiresAt: "2026-10-17T12:02:59.000Z" }))).toContain("Läuft gleich ab");
     } finally {
       now.mockRestore();
     }
+  });
+
+  test("each unit of an expiry rounds down at its edge, in German and English", () => {
+    const left = (hours: number, minutes: number, seconds: number) => ((hours * 60 + minutes) * 60 + seconds) * 1000;
+    const cases = [
+      [left(0, 59, 1), "Läuft ab in 59 Min.", "Expires in 59 min."],
+      [left(1, 0, 0), "Läuft ab in 1 Std.", "Expires in 1 hr."],
+      [left(23, 59, 59), "Läuft ab in 23 Std.", "Expires in 23 hr."],
+      [left(24, 0, 0), "Läuft ab in 1 Tag", "Expires in 1 day"],
+    ] as const;
+    for (const [milliseconds, de, en] of cases) {
+      expect(actionMessages("de").expiresIn({ milliseconds })).toBe(de);
+      expect(actionMessages("en").expiresIn({ milliseconds })).toBe(en);
+    }
+  });
+
+  test("an old review whose only content is its read link keeps the details with that link", () => {
+    const legacy: AiStoredActionReview = {
+      legacy: { question: "Send it?", rows: [], links: [{ rel: "open", href: "/app/mail/drafts/d1?revision=7" }] },
+    };
+    const linked = { ...card(legacy), view: [], links: [] };
+    expect(linked.readMore).toBe("/app/mail/drafts/d1?revision=7");
+    const body = render({ card: linked });
+    expect(body.querySelector(".k2b-chat-decision__details")).not.toBeNull();
+    expect(body.querySelector('.k2b-chat-decision__details a[href="/app/mail/drafts/d1?revision=7"]')).not.toBeNull();
+    // Without that link, an old review has nothing to show and no details island.
+    expect(render({ card: { ...linked, readMore: undefined } }).querySelector(".k2b-chat-decision__details")).toBeNull();
   });
 
   for (const [state, tone, label] of [
