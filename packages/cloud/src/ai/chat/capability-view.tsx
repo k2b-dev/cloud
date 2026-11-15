@@ -57,6 +57,85 @@ export const keyFigureGroup = (blocks: readonly ToolBlock[]): ToolBlock => {
 };
 
 /**
+ * The frame of every view in the conversation: Cloud's origin line "App · Title · As of", "Open large" and "Data",
+ * then the view without a hull. A capability result and Gustav's own views use it alike.
+ */
+export function ViewFrame(props: {
+  origin: { name?: string; icon: string; accent?: string };
+  title: string;
+  /** When the view was made, read as day and minute in the reader's time zone. */
+  at?: string;
+  /** What "Open large" shows in a panel. */
+  large: () => JSX.Element;
+  /** What "Data" shows instead of the view. */
+  data: unknown;
+  children: JSX.Element;
+}): JSX.Element {
+  const locale = useLocale();
+  const timeZone = useReaderTimeZone();
+  const words = () => blockWords(locale());
+  const [data, setData] = createSignal(false);
+  // The same on the server and in the browser.
+  const asOf = () => {
+    const at = props.at ? new Date(props.at) : undefined;
+    if (!at || Number.isNaN(at.getTime())) return undefined;
+    const time = new Intl.DateTimeFormat(locale(), {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone,
+    }).format(at);
+    return words().asOf({ time });
+  };
+  const openLarge = () =>
+    void dialogCore.open<void>(
+      (close) => (
+        <LocaleProvider locale={locale()}>
+          <PanelDialog>
+            <PanelDialog.Header
+              icon={props.origin.icon}
+              title={props.title}
+              subtitle={props.origin.name}
+              close={close}
+              closeLabel={words().close}
+            />
+            <PanelDialog.Body>{props.large()}</PanelDialog.Body>
+          </PanelDialog>
+        </LocaleProvider>
+      ),
+      { ...panelDialogOptions, history: true, ariaLabel: props.title },
+    );
+  return (
+    <section class="cloud-capability-view" aria-label={props.title}>
+      <div class="cloud-capability-view__head">
+        <span class="cloud-capability-view__app k2b-icon-tile" style={props.origin.accent ? { color: props.origin.accent } : undefined}>
+          <i class={props.origin.icon} aria-hidden="true" />
+        </span>
+        <strong>{props.origin.name ?? props.title}</strong>
+        <Show when={props.origin.name}>
+          <span class="cloud-capability-view__title">
+            · {props.title}
+            <Show when={asOf()}>{(stand) => <> · {stand()}</>}</Show>
+          </span>
+        </Show>
+        <span class="cloud-capability-view__tools">
+          <IconButton label={words().openLarge} size="sm" variant="ghost" onClick={openLarge}>
+            <i class="ti ti-arrows-diagonal" aria-hidden="true" />
+          </IconButton>
+          <IconButton label={words().showData} size="sm" variant="ghost" aria-pressed={data()} onClick={() => setData(!data())}>
+            <i class="ti ti-braces" aria-hidden="true" />
+          </IconButton>
+        </span>
+      </div>
+      <Show when={data() && isStructuredDataValue(props.data) ? props.data : undefined} fallback={props.children}>
+        {(value) => <StructuredDataPreview data={value()} />}
+      </Show>
+    </section>
+  );
+}
+
+/**
  * A capability result as the person sees it: Cloud's origin line "App · Title" and the app's blocks in the flow of the
  * conversation, without a hull. "Open large" shows the same blocks in a panel; the data toggle shows what Gustav read.
  */
@@ -73,26 +152,11 @@ export function CapabilityViewBlock(props: {
   const locale = useLocale();
   const timeZone = useReaderTimeZone();
   const actions = useAiChatActions();
-  const words = () => blockWords(locale());
-  const [data, setData] = createSignal(false);
   const app = () =>
     props.origin
       ? { appName: props.origin.name, appIcon: props.origin.icon, appAccent: props.origin.accent, title: props.origin.title }
       : props.block.presentation;
   const title = () => app()?.title ?? displayToolName(props.block.name, locale());
-  // When the app answered, as day and minute in the reader's time zone: the same on the server and in the browser.
-  const asOf = () => {
-    const at = props.block.at ? new Date(props.block.at) : undefined;
-    if (!at || Number.isNaN(at.getTime())) return undefined;
-    const time = new Intl.DateTimeFormat(locale(), {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZone,
-    }).format(at);
-    return words().asOf({ time });
-  };
   // Cloud keeps the state of the view's choice: answered and superseded stay read-only after a reload too.
   const choice = createMemo((): BlockChoiceState | undefined => {
     const stored = props.block.choice;
@@ -105,60 +169,18 @@ export function CapabilityViewBlock(props: {
       submit: submit ? (blockId, ids) => submit({ turnId: props.turnId, toolCallId: props.block.callId }, blockId, ids) : undefined,
     };
   });
-  const tree = (view: NonNullable<ReturnType<typeof capabilityView>>) => (
-    <BlockTree blocks={view.blocks} host="result" locale={locale()} timeZone={timeZone} choice={choice()} />
-  );
-  const openLarge = (view: NonNullable<ReturnType<typeof capabilityView>>) =>
-    void dialogCore.open<void>(
-      (close) => (
-        <LocaleProvider locale={locale()}>
-          <PanelDialog>
-            <PanelDialog.Header
-              icon={app()?.appIcon ?? "ti ti-apps"}
-              title={title()}
-              subtitle={app()?.appName}
-              close={close}
-              closeLabel={words().close}
-            />
-            <PanelDialog.Body>
-              <BlockTree blocks={view.blocks} host="result" locale={locale()} timeZone={timeZone} />
-            </PanelDialog.Body>
-          </PanelDialog>
-        </LocaleProvider>
-      ),
-      { ...panelDialogOptions, history: true, ariaLabel: title() },
-    );
   return (
     <Show when={capabilityView(props.block)}>
       {(view) => (
-        <section class="cloud-capability-view" aria-label={title()}>
-          <div class="cloud-capability-view__head">
-            <span class="cloud-capability-view__app k2b-icon-tile" style={app()?.appAccent ? { color: app()!.appAccent } : undefined}>
-              <i class={app()?.appIcon ?? "ti ti-apps"} aria-hidden="true" />
-            </span>
-            <strong>{app()?.appName ?? title()}</strong>
-            <Show when={app()?.appName}>
-              <span class="cloud-capability-view__title">
-                · {title()}
-                <Show when={asOf()}>{(stand) => <> · {stand()}</>}</Show>
-              </span>
-            </Show>
-            <span class="cloud-capability-view__tools">
-              <IconButton label={words().openLarge} size="sm" variant="ghost" onClick={() => openLarge(view())}>
-                <i class="ti ti-arrows-diagonal" aria-hidden="true" />
-              </IconButton>
-              <IconButton label={words().showData} size="sm" variant="ghost" aria-pressed={data()} onClick={() => setData(!data())}>
-                <i class="ti ti-braces" aria-hidden="true" />
-              </IconButton>
-            </span>
-          </div>
-          <Show
-            when={data() && isStructuredDataValue(props.data ?? props.block.result) ? (props.data ?? props.block.result) : undefined}
-            fallback={tree(view())}
-          >
-            {(result) => <StructuredDataPreview data={result()} />}
-          </Show>
-        </section>
+        <ViewFrame
+          origin={{ name: app()?.appName, icon: app()?.appIcon ?? "ti ti-apps", accent: app()?.appAccent }}
+          title={title()}
+          at={props.block.at}
+          large={() => <BlockTree blocks={view().blocks} host="result" locale={locale()} timeZone={timeZone} />}
+          data={props.data ?? props.block.result}
+        >
+          <BlockTree blocks={view().blocks} host="result" locale={locale()} timeZone={timeZone} choice={choice()} />
+        </ViewFrame>
       )}
     </Show>
   );

@@ -2409,6 +2409,26 @@ test("a presented explorer reserves its title, control rows and 18rem viewport b
   }
 });
 
+test("a view file stands under Gustav's head like an app's result, and still loads on demand", () => {
+  const path = "/views/orders-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "view",
+    kind: "tool",
+    name: "present",
+    callId: "view",
+    args: { path },
+    status: "completed",
+    result: { path, view: { view: "table", title: "Orders", rows: 3, columns: 2, footer: false } },
+  };
+  const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+  expect(html).toContain('class="cloud-capability-view"');
+  expect(html).toContain("<strong>Gustav</strong>");
+  expect(html).toContain("· Table");
+  expect(html).toContain('aria-label="Open large"');
+  expect(html).toContain(`data-view-path="${path}"`);
+  expect(html).toContain("Loading");
+});
+
 test("present without a valid view reference stays a file chip", () => {
   for (const result of [
     { path: "/views/result.view.json", size: 10 },

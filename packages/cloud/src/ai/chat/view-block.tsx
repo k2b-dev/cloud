@@ -101,7 +101,7 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescrip
         fallback={
           <div class="relative min-w-0">
             <div class="invisible" aria-hidden="true">
-              <StatGrid columns={columns()}>
+              <StatGrid columns={columns()} surface="flat">
                 <Index each={props.summary.items}>
                   {(item) => (
                     <StatCell

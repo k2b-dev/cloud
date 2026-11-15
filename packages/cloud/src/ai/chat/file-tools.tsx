@@ -1,11 +1,13 @@
 import { fileIcons } from "@k2b/stdlib";
-import { Chat } from "@k2b/ui";
+import { Chat, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import { formatAiFileSize } from "../attachments";
 import type { AiTurnBlock } from "../protocol";
 import { CloudAiViewSummarySchema, isAiViewFile } from "../view-block";
+import { ViewFrame } from "./capability-view";
 import { useAiChatActions } from "./message-actions";
 import { aiToolIcon, isRecord } from "./message-utils";
+import { aiChatMessages } from "./messages";
 import { CloudViewBlock } from "./view-block";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
@@ -42,6 +44,7 @@ const preparingView = (block: ToolBlock) =>
 
 /** A presented file: a view file shows as its chart or table, every other file as a chip to open and download. */
 export function PresentToolBlock(props: { block: ToolBlock }) {
+  const locale = useLocale();
   // Live updates replace the block with an equal result; only a different view loads again.
   const view = createMemo(() => presentedView(props.block), null, { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
   return (
@@ -54,7 +57,19 @@ export function PresentToolBlock(props: { block: ToolBlock }) {
         </Show>
       }
     >
-      {(view) => <CloudViewBlock path={view.path} summary={view.summary} />}
+      {(view) => (
+        // Gustav's view file stands under the same head as an app's result; the file still loads on demand and keeps
+        // its history, only its frame is the shared one.
+        <ViewFrame
+          origin={{ name: "Gustav", icon: "ti ti-moustache", accent: "var(--k2b-ai-accent)" }}
+          title={aiChatMessages(locale()).viewKind({ view: view.summary.view })}
+          at={props.block.at}
+          large={() => <CloudViewBlock path={view.path} summary={view.summary} />}
+          data={props.block.result}
+        >
+          <CloudViewBlock path={view.path} summary={view.summary} />
+        </ViewFrame>
+      )}
     </Show>
   );
 }
