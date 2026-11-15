@@ -25,6 +25,17 @@ Auf großen Bildschirmen bietet eine eigene Thread-Spalte dieselbe Suche und Fil
 
 Die zugehörige App liefert eine Kontextzeile. Zuständige und genaue Terminzeiten erscheinen nur, wenn die App sie dort nennt.
 
+## Neben der Ressource chatten {icon="layout-sidebar-right"}
+
+Öffne das Panel **Chat**, während du eine Ressource ansiehst, zum Beispiel ein Notizbuch. Das Panel öffnet die Diskussion über diese Ressource. Hat dort noch niemand geschrieben, ist sie leer und bereit; deine erste Nachricht beginnt sie. Wechselst du zu einer anderen Ressource, folgt das Panel, solange es noch die Diskussion der vorigen Ressource zeigt.
+
+:::reference
+- **Alle Chats** oben links zeigt deine anderen Chats im Panel.
+- **Über … chatten** oben rechts führt zurück zur Diskussion der Ressource.
+- Chat erfährt die Ressource erst, wenn du im Panel **Kontext teilen** für Chat erlaubst.
+- Du siehst die Diskussion nur, wenn du die Ressource lesen darfst.
+:::
+
 ## Über ein Element schreiben {icon="message-plus"}
 
 Du brauchst **Bearbeiten** oder **Verwalten** für den Bereich.

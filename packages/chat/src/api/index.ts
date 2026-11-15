@@ -19,7 +19,7 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { ChatComposeInputSchema } from "../commands";
 import { chatMessages } from "../messages";
-import { chatRequestContext as context } from "../request-context";
+import { chatRequestContext as context, oauthAllowsWrites } from "../request-context";
 import { ChatHealthSchema, chatService } from "../service";
 import { attachmentHeaders } from "../service/attachment-content";
 import { BadgeSchema, badgeCount } from "../service/badge";
@@ -78,6 +78,9 @@ import {
   ReadAllSchema,
   ReadSchema,
   ReadUpdateSchema,
+  ResourceDiscussionSchema,
+  ResourceLocationQuerySchema,
+  ResourceLocationSchema,
   SendMessageSchema,
   SharedPageSchema,
   SharedQuerySchema,
@@ -282,6 +285,41 @@ const app = new Hono<AuthContext>()
     }),
     validator("param", SystemChatParamSchema, invalidInput),
     async (c) => respond(c, chatService.systemChats.open({ ...context(c), ...c.req.valid("param") })),
+  )
+  .get(
+    "/system-chats/for-resource",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Find the discussion about a resource without creating it",
+      ...requiresAuth,
+      description:
+        "Reads where the discussion about a container or item is: `conversation` and `thread` stay null until someone writes, and nothing is created. `canWrite` says whether the caller may start it. The ref selects only: the item and container readers authorize the caller.",
+      responses: {
+        200: jsonResponse(ResourceLocationSchema, "Discussion location"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Resource unavailable or not readable"),
+      },
+    }),
+    validator("query", ResourceLocationQuerySchema, invalidInput),
+    async (c) =>
+      respond(c, chatService.systemChats.locate({ ...context(c), ref: c.req.valid("query"), credentialWrites: oauthAllowsWrites(c) })),
+  )
+  .post(
+    "/system-chats/for-resource",
+    auth.requireRole("authenticated"),
+    describeRoute({
+      tags: ["Chat"],
+      summary: "Open the discussion about a resource idempotently",
+      ...requiresAuth,
+      description:
+        "Starts or returns the discussion about a resource. For a container type of a discussion provider, opens its system chat like the open route. For an item type, opens its container's chat and the item's thread; starting the thread needs write access to the container. The ref selects only: the item and container readers authorize the caller.",
+      responses: {
+        200: jsonResponse(ResourceDiscussionSchema, "Opened discussion"),
+        404: jsonResponse(z.object({ code: z.literal("NOT_FOUND"), message: z.string() }), "Resource unavailable or not readable"),
+      },
+    }),
+    validator("json", ForResourceSchema, invalidInput),
+    async (c) => respond(c, chatService.systemChats.openFor({ ...context(c), ref: c.req.valid("json").ref })),
   )
   .get(
     "/channels/options",
