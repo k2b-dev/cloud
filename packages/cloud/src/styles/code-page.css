@@ -748,7 +748,8 @@ a.cloud-code__row-main:focus-visible {
 /* Kept for Administration › Code, which shows the same refusal notice and account line. */
 .cloud-code__lead {
   margin: 0;
-  color: var(--k2b-text-subtle);
+  /* N4-l127-schrift: the account line reads in the muted text colour, as the mockup's note does. */
+  color: var(--k2b-text-muted);
   font-size: 0.8125rem;
 }
 .cloud-code__note-actions,
