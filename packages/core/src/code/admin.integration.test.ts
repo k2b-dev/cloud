@@ -140,6 +140,8 @@ databaseSuite()("C22 Administration › Code read model", () => {
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useMigratedDatabase("core_code_admin");
+    // Flush the schema clone during setup; teardown must only flush this file's small fixture writes.
+    await sql`CHECKPOINT`;
     for (const [id, name] of [
       [authorId, "Lea Muster"],
       [reviewerId, "Ben Schulz"],

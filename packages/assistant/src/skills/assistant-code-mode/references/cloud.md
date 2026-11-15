@@ -387,6 +387,15 @@ interface Cloud {
   view: CloudView;
   money: CloudMoney;
   pdf: CloudPdf;
+  zip: {
+    /** Metadata validation only; files are decompressed on read. */
+    open(file: Blob): Promise<{
+      entries: readonly { name: string; size: number; compressedSize: number; directory: boolean }[];
+      read(name: string): Promise<Uint8Array>;
+      text(name: string): Promise<string>; // strict UTF-8
+    }>;
+    create(files: { name: string; data: string | Blob | Uint8Array | ArrayBuffer }[], name?: string): Promise<File>;
+  };
   sheet: CloudSheet;
   finance: CloudFinance;
 }

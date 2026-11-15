@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { migrateCloudAi } from "@k2b/cloud/ai";
 import * as provider from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import type { CodeCheckedVersionManifest, User } from "@k2b/cloud/contracts";
@@ -249,6 +250,9 @@ databaseSuite()("durable Code activation", () => {
       data: { appId: "example", appName: "Example", appIcon: "ti ti-code", appDescription: "Fixture", manifest: catalog },
     });
   });
+  beforeAll(async () => {
+    await migrateCloudAi();
+  });
   beforeEach(() => {
     ownerAdministrator = ownerId;
     revoked = false;
@@ -261,6 +265,22 @@ databaseSuite()("durable Code activation", () => {
     catalogSpy?.mockRestore();
     readersSpy?.mockRestore();
     setSystemTime();
+  });
+
+  test("activation invalidates the author's card at commit without waiting for chat delivery", async () => {
+    const code = await newCode();
+    const submitted = await version(code, []);
+    const activation = await start(code, submitted.version.id);
+    const changes = () => sql`SELECT payload->'d' AS data FROM events.outbox WHERE app_id='core' AND kind='live'
+      AND ordering_key=${`u:${ownerId}`} AND payload->'d'->'domains' @> '["code-versions"]'::jsonb ORDER BY seq`;
+    const before = await changes();
+    await run(activation.id);
+    expect((await status(code, activation.id)).state).toBe("active");
+    const after = await changes();
+    expect(after).toHaveLength(before.length + 1);
+    expect(after.at(-1)?.data).toMatchObject({ type: "ai.invalidated", domains: ["code-versions"] });
+    await run(activation.id);
+    expect(await changes()).toEqual(after);
   });
 
   test("legacy mandate keeps its policy, asks for confirmation, and pauses at the next version switch", async () => {

@@ -1,5 +1,11 @@
 import type { CodePageTree } from "@k2b/cloud/code";
 
+/**
+ * The tree replaced itself (a form answer, a followed event, another page). The tree sends it from its host, so the
+ * feat/code label beside the tree can drop what it loaded for the page before.
+ */
+export const CODE_PAGE_TREE_EVENT = "code-page:tree";
+
 /** Delivers the events a page follows. Calls `onEvent` for each matching event its viewer may see. */
 export type CodePageEventSource = {
   subscribe: (types: readonly string[], onEvent: () => void) => () => void;

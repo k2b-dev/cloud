@@ -257,7 +257,9 @@ export { migrateCloudAi } from "./migrate";
 export {
   type AiOpenQuestion,
   type AiOpenQuestionKind,
+  type AiOpenQuestionSource,
   type AiOpenQuestions,
+  AiOpenQuestionsSchema,
   countAiOpenQuestions,
   listAiOpenQuestions,
 } from "./open-questions";
@@ -301,6 +303,7 @@ export {
 export { createAiProvider } from "./provider";
 export { AiQuotaError } from "./quotas";
 export { isConversationResourceCursor } from "./resource-refs";
+export { describeAiResourceTypeCounts } from "./resource-type-counts";
 export type { AiRoutes } from "./routes";
 export { type AiRunFileRef, AiRunReadInput, AiRunViewInput, createAiRunFiles } from "./run-files";
 export {
@@ -503,3 +506,4 @@ export {
   type CloudAiViewImageOutput,
   CloudAiViewImageOutputSchema,
 } from "./vision-tool";
+export { readWebPageForPerson, type WebReaderResult, WebReaderResultSchema } from "./web-reader";

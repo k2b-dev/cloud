@@ -33,12 +33,16 @@ export const codePageHandlers = ssr<CodePageHostingContext>((context) => {
         <main>{view()}</main>
       </MinimalLayout>
     ) : (
-      <Layout c={context} title={page.tree.title} fullWidth>
+      // The header names the page, or the Cloud when it has no title; never Core, which only hosts it.
+      <Layout c={context} title={page.tree.title} headTitle="page" fullWidth>
         {/* The app card every app has. No head row: the page shows its own title. No sidebar until Code declares
-            navigation. Main scrolls, so the feat/code label sticks to the card's bottom edge. */}
+            navigation. Main scrolls, so the footer with the feat/code label sticks to the card's bottom edge; its own
+            fade replaces Main's, which would blend the label out with the content. */}
         <AppWorkspace mobileSurface="flush" class="min-h-0 flex-1" resizable={false} head={false}>
           <AppWorkspace.Content>
-            <AppWorkspace.Main>{view()}</AppWorkspace.Main>
+            <AppWorkspace.Main class="code-page-main" scrollFade={false}>
+              {view()}
+            </AppWorkspace.Main>
           </AppWorkspace.Content>
         </AppWorkspace>
       </Layout>

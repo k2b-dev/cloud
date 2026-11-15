@@ -1,13 +1,14 @@
 import { sql } from "@k2b/cloud";
 import { listResourceManagers } from "@k2b/cloud/capabilities/server";
-import { getEffectivePermission, listUsersWithAccess } from "@k2b/cloud/server";
+import { getEffectivePermission, listAccessRecipientUserIds } from "@k2b/cloud/server";
 import { accounts, coreSettings, isAccountAllowed } from "@k2b/cloud/services";
 import { listApprovalAdminRecipients } from "@k2b/cloud/services/approvals";
 import { createPgOutbox, type OutboxRow } from "@k2b/cloud/services/outbox";
 import type { CoreNotificationSender } from "../notifications";
 import type { Code } from "./contracts";
-import { type CodeReviewDecision, CodeSubmissionOriginSchema } from "./review-contracts";
+import { type CodeReviewDecision, CodeSubmissionOriginSchema, codeVersionChatAnchor } from "./review-contracts";
 import { findCode } from "./store";
+import { listCodeWaiting } from "./waiting";
 
 type NoticeRow = OutboxRow & { version_id: string; kind: "submitted" | "decided"; recipient_id: string | null; recipient_cursor: string };
 /** Same page bound as the accounts directory. Each actual recipient gets a separate retryable effect. */
@@ -45,11 +46,15 @@ export async function deliverCodeReviewNotice(row: NoticeRow, sender: Pick<CoreN
       outcome: CodeReviewDecision["outcome"] | null;
       name: string | null;
       pending: boolean | null;
+      revision_state: string | null;
+      chat_id: string | null;
     }[]
-  >`SELECT s.code_id,v.number,v.created_by,s.locale,s.origin,d.outcome,(r.status='pending' AND r.expires_at>now()) AS pending,COALESCE(NULLIF(u.display_name,''),u.uid) AS name
+  >`SELECT s.code_id,v.number,v.created_by,s.locale,s.origin,d.outcome,(r.status='pending' AND r.expires_at>now()) AS pending,COALESCE(NULLIF(u.display_name,''),u.uid) AS name,
+      w.state AS revision_state,(SELECT short_id FROM ai.conversations chat WHERE chat.id=(s.origin->>'conversationId')::uuid AND chat.created_by_user_id=v.created_by) AS chat_id
     FROM code.version_submissions s JOIN code.versions v ON v.id=s.version_id
     LEFT JOIN approvals.requests r ON r.id=s.approval_id
     LEFT JOIN code.version_decisions d ON d.version_id=v.id LEFT JOIN auth.users u ON u.id=d.decided_by
+    LEFT JOIN code.review_chat_work w ON w.version_id=v.id
     WHERE s.version_id=${row.version_id}::uuid`;
   if (!version) return;
   const code = await findCode(version.code_id);
@@ -68,6 +73,15 @@ export async function deliverCodeReviewNotice(row: NoticeRow, sender: Pick<CoreN
     { locale: string | null }[]
   >`SELECT notification_locale AS locale FROM auth.users WHERE id=${user.id}::uuid`;
   const locale = preference?.locale ?? (user.id === version.created_by ? version.locale : await coreSettings.get<string>("app.locale"));
+  const origin = CodeSubmissionOriginSchema.parse(version.origin);
+  const ownChat = row.kind === "decided" && user.id === version.created_by && origin.kind === "ai_chat" && version.chat_id;
+  const targetHref: `/${string}` | undefined =
+    ownChat && origin.kind === "ai_chat"
+      ? `/app/assistant?conversation=${encodeURIComponent(version.chat_id!)}&question=${encodeURIComponent(codeVersionChatAnchor(row.version_id, origin))}`
+      : undefined;
+  const waiting = ownChat
+    ? (await listCodeWaiting({ ownerUserId: user.id, locale, timeZone: "UTC", versionId: row.version_id }, signal)).items[0]
+    : undefined;
   await sender.sendCodeReview({
     userId: user.id,
     codeId: code.id,
@@ -78,7 +92,10 @@ export async function deliverCodeReviewNotice(row: NoticeRow, sender: Pick<CoreN
     outcome: version.outcome,
     by: version.name,
     locale,
-    origin: CodeSubmissionOriginSchema.parse(version.origin),
+    origin,
+    targetHref,
+    waiting: waiting ? { short: waiting.short, href: targetHref! } : undefined,
+    automaticRevision: version.revision_state === "queued" || version.revision_state === "running",
     key: `code-review:${row.version_id}:${row.kind}:${user.id}`,
   });
 }
@@ -105,13 +122,13 @@ async function recipientGrants(code: Code) {
 async function decisionRecipients(code: Code, afterId: string, signal: AbortSignal, submittedBy?: string | null) {
   const grants = await recipientGrants(code);
   const [shared, app, owner] = await Promise.all([
-    listUsersWithAccess({ accessIds: grants.shares, minimumPermission: "write", afterId, limit: RECIPIENT_PAGE }),
-    listUsersWithAccess({ accessIds: grants.app, minimumPermission: "admin", afterId, limit: RECIPIENT_PAGE }),
+    listAccessRecipientUserIds({ accessIds: grants.shares, minimumPermission: "write", afterId, limit: RECIPIENT_PAGE }),
+    listAccessRecipientUserIds({ accessIds: grants.app, afterId, limit: RECIPIENT_PAGE }),
     code.owner.kind === "resource"
       ? listResourceManagers({ ref: code.owner.ref, afterId, limit: RECIPIENT_PAGE, signal })
       : Promise.resolve(code.owner.kind === "person" ? [code.owner.userId] : []),
   ]);
-  return [...new Set([...shared.map((user) => user.id), ...app.map((user) => user.id), ...owner, ...(submittedBy ? [submittedBy] : [])])]
+  return [...new Set([...shared, ...app, ...owner, ...(submittedBy ? [submittedBy] : [])])]
     .filter((id) => id > afterId)
     .sort()
     .slice(0, RECIPIENT_PAGE);

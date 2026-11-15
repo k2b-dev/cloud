@@ -518,9 +518,9 @@ test("a version waiting for a Cloud administrator shows their decision when it a
   await tick();
   expect(card.calls.map((call) => call.route)).toEqual(["activation/preview", "activation/preview"]);
   expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
-  // Once decided, the card no longer follows decisions: its next step is this person's own.
+  // Ready cards keep following activation and replacement in another tab.
   await card.live.apply([decided()]);
-  expect(card.calls).toHaveLength(2);
+  expect(card.calls).toHaveLength(3);
 });
 
 test("a rejected version says so in the person's words and that nothing changed", async () => {
@@ -582,14 +582,14 @@ test.each([
   { readiness: { state: "ready" } as const },
   { readiness: { state: "ready" } as const, running: 5 },
   { readiness: { state: "refused", code: "code_approval_revoked", message: "Changed" } as const },
-])("resync does not reload a settled card: %j", async (state) => {
+])("resync refreshes a settled card after a missed decision or activation: %j", async (state) => {
   const card = await mount({
     "activation/preview": () => ({ json: { data: preview(state) } }),
     "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
   });
   const initial = card.calls.length;
   await card.live.resync();
-  expect(card.calls).toHaveLength(initial);
+  expect(card.calls.length).toBeGreaterThan(initial);
 });
 
 test("a generic decision invalidation recovers a failed card through an authorized read", async () => {
@@ -602,4 +602,22 @@ test("a generic decision invalidation recovers a failed card through an authoriz
   await card.live.apply([decided()]);
   expect(card.calls).toHaveLength(3);
   expect(button(card.dom.root, "Switch on")?.hasAttribute("disabled")).toBe(false);
+});
+
+test("a ready card follows activation in another tab without a reload", async () => {
+  let activated = false;
+  const card = await mount({
+    "activation/preview": () => ({
+      json: {
+        data: activated ? preview({ running: 5, activated: { at: "2026-11-14T12:00:00.000Z", byYou: true, byName: null } }) : preview(),
+      },
+    }),
+    "/api/capabilities/v1/queries/core/code.automation.list": () => ({ json: { data: { items: [], removedTargets: [] } } }),
+  });
+  expect(button(card.dom.root, "Switch on")).toBeDefined();
+  activated = true;
+  await card.live.apply([decided()]);
+  await tick();
+  expect(button(card.dom.root, "Switch on")).toBeUndefined();
+  expect(card.dom.root.textContent).toContain("switched on");
 });

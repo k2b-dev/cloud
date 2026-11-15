@@ -220,17 +220,11 @@ export default function AssistantCodeVersionCard(props: {
     void load();
     // A card opened while an earlier attempt is unresolved continues with that attempt.
     if (pending.read()) void check();
-    // A card that waits for a decision follows them, and so does one still reading or showing an error, whose state is
-    // not known yet; every other state changes only by this person's own step.
+    // A ready card and a review in progress follow changes from another tab too.
     const decided = matchesAssistantInvalidation(["code-versions"]);
     onCleanup(
       live.register({
-        matches: (invalidation) => {
-          const current = loaded();
-          const open =
-            current === null || current === "failed" || (typeof current === "object" && current.readiness.state === "approval_pending");
-          return open && decided(invalidation);
-        },
+        matches: decided,
         // A failed read keeps the card and fails the update, so the live channel tries it again.
         invalidate: async () => {
           if (!(await load(true))) throw new Error("The Code version could not be read again.");

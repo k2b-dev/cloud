@@ -35,12 +35,18 @@ export type OutboxRow = {
   attempts: number;
 };
 
+/** Work is healthy but must wait for another durable operation. Retry at the ordinary safety-scan interval. */
+export class PgOutboxDeferred extends Error {}
+
 export type PgOutboxConfig<Row extends OutboxRow> = {
   /** Schema-qualified table, e.g. `events.outbox`. */
   table: string;
   /** Log source. */
   name: string;
   publish: (row: Row) => Promise<unknown>;
+  /** Atomic, idempotent batch publisher, in sequence order. On failure the whole batch retries.
+   * Use for set-based durable writes; do not perform a separate SQL write per row. */
+  publishBatch?: (rows: readonly Row[]) => Promise<void | { deferred: readonly string[] }>;
   /** Safety scan for missed hints; known retry and claim deadlines wake independently. */
   reconcileIntervalMs: number;
   /**
@@ -187,21 +193,32 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       `;
     });
 
-  const retryLater = async (row: Row, error: unknown) => {
-    const attempts = row.attempts + 1;
+  const retryLater = async (rows: readonly Row[], error: unknown) => {
+    const deferred = error instanceof PgOutboxDeferred;
     const message = error instanceof Error ? error.message : String(error);
-    const delaySeconds = Math.min(300, 2 ** Math.min(attempts, 8));
     const [schedule] = await sql<{ wake_after_ms: number }[]>`
-      UPDATE ${sql.unsafe(table)}
-      SET attempts = ${attempts},
-          next_attempt_at = now() + (${delaySeconds} * interval '1 second'),
-          claimed_until = NULL,
+      WITH retry AS (
+        SELECT * FROM jsonb_to_recordset(${JSON.stringify(
+          rows.map((row) => ({
+            id: row.id,
+            previous: row.attempts,
+            attempts: row.attempts + (deferred ? 0 : 1),
+            delay: deferred ? config.reconcileIntervalMs / 1000 : Math.min(300, 2 ** Math.min(row.attempts + 1, 8)),
+          })),
+        )}::text::jsonb)
+          AS r(id uuid,previous int,attempts int,delay double precision)
+      ), updated AS (
+      UPDATE ${sql.unsafe(table)} o
+      SET attempts = r.attempts,
+          next_attempt_at = now() + (r.delay * interval '1 second'),
+          claimed_until = CASE WHEN ${deferred} THEN now() + (r.delay * interval '1 second') ELSE NULL END,
           last_error = ${message.slice(0, 1_000)}
-      WHERE id = ${row.id}::uuid AND attempts = ${row.attempts}
-      RETURNING extract(epoch FROM (next_attempt_at - clock_timestamp()))::double precision * 1000 AS wake_after_ms
+      FROM retry r WHERE o.id = r.id AND o.attempts = r.previous
+      RETURNING o.next_attempt_at
+      ) SELECT extract(epoch FROM (min(next_attempt_at) - clock_timestamp()))::double precision * 1000 AS wake_after_ms FROM updated
     `;
     wakeAfter(schedule?.wake_after_ms ?? null);
-    log.warn("Outbox delivery failed", { outboxId: row.id, attempts, error: message });
+    if (!deferred) log.warn("Outbox delivery failed", { outboxIds: rows.map((row) => row.id), error: message });
   };
 
   const dispatch: PgOutbox<Row>["dispatch"] = async (row, publish = config.publish) => {
@@ -209,7 +226,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
       await publish(row);
       await sql`DELETE FROM ${sql.unsafe(table)} WHERE id = ${row.id}::uuid AND attempts = ${row.attempts}`;
     } catch (error) {
-      await retryLater(row, error);
+      await retryLater([row], error);
     }
   };
 
@@ -218,6 +235,25 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
    * A run starts no publish once the claim has ended (`claimEnds`, monotonic): another replica may own the rest by then.
    */
   const dispatchBatch = async (rows: Row[], claimEnds: number) => {
+    if (config.publishBatch) {
+      if (!rows.length || performance.now() >= claimEnds) return;
+      try {
+        const result = await config.publishBatch(rows);
+        const deferred = new Set(result?.deferred ?? []);
+        const completed = rows.filter((row) => !deferred.has(row.id));
+        if (completed.length)
+          await sql`DELETE FROM ${sql.unsafe(table)} o USING jsonb_to_recordset(${JSON.stringify(completed.map((row) => ({ id: row.id, attempts: row.attempts })))}::text::jsonb)
+          AS r(id uuid,attempts int) WHERE o.id=r.id AND o.attempts=r.attempts`;
+        if (deferred.size)
+          await retryLater(
+            rows.filter((row) => deferred.has(row.id)),
+            new PgOutboxDeferred("Waiting for durable work"),
+          );
+      } catch (error) {
+        await retryLater(rows, error);
+      }
+      return;
+    }
     const delivered: string[] = [];
     const runs = Map.groupBy(rows, (row) => row[runKey]);
     const results = await Promise.allSettled(
@@ -227,7 +263,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
           try {
             await config.publish(row);
           } catch (error) {
-            await retryLater(row, error);
+            await retryLater([row], error);
             const rest = run.slice(index + 1).map((later) => later.id);
             // Past the claim, the rest is free already, and releasing it could end another replica's claim.
             if (rest.length > 0 && performance.now() < claimEnds) {

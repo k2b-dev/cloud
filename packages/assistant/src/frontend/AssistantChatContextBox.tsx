@@ -1,17 +1,6 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { conversationFileSource } from "@k2b/cloud/ai/solid";
-import {
-  AnchoredPopover,
-  BottomSheet,
-  Button,
-  bottomSheetOptions,
-  dialogCore,
-  formatFileViewSize,
-  IconButton,
-  IconButtonLink,
-  Skeleton,
-  useLocale,
-} from "@k2b/ui";
+import { AnchoredPopover, Button, formatFileViewSize, IconButton, IconButtonLink, Skeleton, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, on, Show, untrack } from "solid-js";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { type ChatSidebarState, createReadingFreeze } from "./AssistantChatSidebar";
@@ -341,59 +330,6 @@ export function AssistantChatContextBox(props: {
 }
 
 /**
- * The box as a sheet from below on phones. Its Back entry closes it; an action that leaves the sheet (open, jump) runs
- * only after the sheet and its history entry are gone, so the action's own history entry follows it. While the sheet is
- * open it keeps what the person reads, like the island under the pointer.
- */
-export const openAssistantContextBoxSheet = async (props: {
-  state: ChatSidebarState;
-  actions: ContextBoxActions;
-  project?: AiProject | null;
-  wrap?: (children: () => JSX.Element) => JSX.Element;
-}) => {
-  let after: (() => void) | undefined;
-  await dialogCore.open<void>(
-    (close, context) => {
-      const leave =
-        <A extends unknown[]>(run: (...args: A) => void) =>
-        (...args: A) => {
-          after = () => run(...args);
-          close();
-        };
-      const actions: ContextBoxActions = {
-        onOpen: leave(props.actions.onOpen),
-        onJump: leave(props.actions.onJump),
-        onOpenAll: leave(props.actions.onOpenAll),
-        onOpenSources: leave(props.actions.onOpenSources),
-        onOpenContext: leave(props.actions.onOpenContext),
-      };
-      const dismiss = () => void context.requestDismiss();
-      const content = () => (
-        // Half and full height, but only when the box is taller than half the screen; shorter, it rests at its height.
-        <BottomSheet onDismiss={dismiss} detents>
-          <BottomSheet.Body>
-            {/* The box brings its own head with "New · n" and "Open as tab"; the handle closes the sheet. */}
-            <div class="assistant-context-sheet">
-              <AssistantChatContextBox
-                state={props.state}
-                actions={actions}
-                project={props.project}
-                frozen={() => true}
-                variant="sheet"
-                headingId="assistant-context-sheet-title"
-              />
-            </div>
-          </BottomSheet.Body>
-        </BottomSheet>
-      );
-      return props.wrap ? props.wrap(content) : content();
-    },
-    { ...bottomSheetOptions, history: true },
-  );
-  after?.();
-};
-
-/**
  * The places of the box in the chat layout: the island in its column, and the button that stands in for it when there
  * is no room or tabs are open. The button opens the box as a popover below it, or as a sheet on phones. CSS decides
  * which shows, so the server's first frame is final. Rendered inside `.assistant-chat-layout`.
@@ -403,6 +339,8 @@ export function AssistantChatContextPlaces(props: {
   state: ChatSidebarState;
   actions: ContextBoxActions;
   project?: AiProject | null;
+  /** The chat's title, for the head row on phones, where the app's head names only the app. */
+  title?: string | null;
   onSheet: () => void;
 }) {
   const copy = useCopy();
@@ -425,20 +363,30 @@ export function AssistantChatContextPlaces(props: {
   };
   return (
     <>
-      <Button
-        ref={host.buttonRef}
-        class="assistant-context-button"
-        data-k2b-primary="ai"
-        size="sm"
-        variant="ghost"
-        aria-label={copy().title}
-        aria-haspopup="dialog"
-        aria-expanded={host.anchor() ? "true" : "false"}
-        onClick={host.toggle}
-      >
-        <i class="ti ti-layout-list" aria-hidden="true" />
-        <span>{copy().title}</span>
-      </Button>
+      {/* The button stands in a head row above the timeline, never over it, so it covers no message. */}
+      <div class="assistant-context-head">
+        <Show when={props.title}>
+          {(title) => (
+            <p class="assistant-context-head__title k2b-truncate-fade" title={title()}>
+              {title()}
+            </p>
+          )}
+        </Show>
+        <Button
+          ref={host.buttonRef}
+          class="assistant-context-button"
+          data-k2b-primary="ai"
+          size="sm"
+          variant="ghost"
+          aria-label={copy().title}
+          aria-haspopup="dialog"
+          aria-expanded={host.anchor() ? "true" : "false"}
+          onClick={host.toggle}
+        >
+          <i class="ti ti-layout-list" aria-hidden="true" />
+          <span>{copy().title}</span>
+        </Button>
+      </div>
       <div class="assistant-context-boxcol">
         <AssistantChatContextBox
           variant="island"

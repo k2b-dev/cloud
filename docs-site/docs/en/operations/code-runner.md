@@ -219,10 +219,13 @@ worker checkpoints its live snapshot lazily, at most once per second. Opening
 the chat reads an authorized snapshot; SSE separately revalidates credentials
 and conversation access every five seconds.
 
-A version decision sends a generic `code-versions` invalidation in its decision
-transaction. Each waiting card reads its authorized preview again. Cards with
-a settled preview skip this invalidation and resync; a card whose initial read
-failed retries on the next invalidation. Approval never switches the Code on.
+Version decisions, withdrawals and successful activations enqueue a generic
+`code-versions` invalidation for the submitting person in the same transaction
+as their evidence. Activation invalidation does not wait for the chat to become
+free or for its historical receipt. Cards read their authorized preview again,
+including settled cards and cards being revised. A failed initial read retries
+on the next invalidation. The shared events outbox publishes invalidations in
+batches, with no SQL per live delivery. Approval never switches the Code on.
 
 Runner heartbeats renew the durable generation fence. Capability requests
 check current authority and record the call before effects. These operations
@@ -599,3 +602,10 @@ for confirmed weekly effects. Upgrade Core before deploying an application
 that publishes this field: older Core readers reject unknown result-form
 keys and may drop that Action's translation. Existing effect snapshots
 without the label use the explicit Action/count fallback.
+
+Version-word replies may include optional `mayDo.items[].target` lookup hints.
+Upgrade applications that validate these replies to the current read-model
+contracts before upgrading Core; older strict validators reject the added field.
+Names for additional grant targets require independent viewer-authorized reader
+composition at the consuming page. The one-child-Query limit and runner settings
+are unchanged.
