@@ -601,7 +601,9 @@ tab**. Below come the three newest **Results** with their time or size, then
 any further group the chat snapshot carries (`groups` on
 `AssistantChatContextSnapshot`: each row a sign, a title, one state word in its
 tone, and an optional ring when it waits for the viewer; at most three rows,
-then **Show all**), then one line for **Sources** and one for **Context**. A
+then **Show all**), then one line for **Sources** (Cloud items in their app's nouns where the
+resource type names them, such as "3 Mails", then web pages and searches) and
+one for **Context**. A
 click on a row opens the thing as a tab beside the chat (files and apps) or
 jumps to its message; pointing at a row shows exactly one action over its
 fixed place (download for files, show in chat otherwise), never on touch. The
