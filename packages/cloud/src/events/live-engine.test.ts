@@ -999,20 +999,22 @@ test("collection refresh defers sustained domain bursts without closing sockets"
   engine.stop();
   LIVE_LIMITS.sweepMs = 50;
   const setTimer = globalThis.setTimeout;
-  let resume: (() => void) | undefined;
+  const heldSweeps: (() => void)[] = [];
+  let holdingSweeps = true;
   const schedule = new Proxy(setTimer, {
     apply(target, _receiver, args: Parameters<typeof setTimeout>) {
       const timer = target(...args);
       const [callback, delay, ...values] = args;
-      if (delay === LIVE_LIMITS.sweepMs && typeof callback === "function") {
+      if (holdingSweeps && delay === LIVE_LIMITS.sweepMs && typeof callback === "function") {
         // Hold the deferred sweep until the first bounded refresh is observed.
         clearTimeout(timer);
-        resume = () => callback(...values);
+        heldSweeps.push(() => callback(...values));
       }
       return timer;
     },
   });
   const timers = spyOn(globalThis, "setTimeout").mockImplementation(schedule);
+  const finishRefresh = Promise.withResolvers<void>();
   let changing = false;
   let refreshes = 0,
     listings = 0;
@@ -1030,6 +1032,8 @@ test("collection refresh defers sustained domain bursts without closing sockets"
             if (changing) {
               refreshes++;
               topic.publish({ v: 1, k: "a", a: true });
+              // Release the sweep while its bounded catch-up is still running.
+              if (refreshes === 4) await finishRefresh.promise;
               await Bun.sleep(0);
             }
             return ["a"];
@@ -1043,15 +1047,22 @@ test("collection refresh defers sustained domain bursts without closing sockets"
     await until(() => ada.framesOf("s").length === 1);
     changing = true;
     topic.publish({ v: 1, k: "a", a: true });
-    await until(() => resume !== undefined || ada.socket.closes.length > 0);
+    await until(() => (heldSweeps.length > 0 && refreshes === 4) || ada.socket.closes.length > 0);
     expect(ada.socket.closes).toEqual([]);
     expect(refreshes).toBeLessThanOrEqual(4);
+    expect(heldSweeps).toHaveLength(1);
     changing = false;
-    resume?.();
+    // A sweep released during a refresh can rearm itself; let later timers run.
+    holdingSweeps = false;
+    for (const resume of heldSweeps.splice(0)) resume();
+    finishRefresh.resolve();
     await until(() => listings > refreshes + 1);
+    expect(timers.mock.calls.filter(([, delay]) => delay === LIVE_LIMITS.sweepMs)).toHaveLength(2);
     topic.publish(event("a", 1));
     await until(() => ada.framesOf("s").some((frame) => frame.t === "event"));
+    expect(ada.socket.closes).toEqual([]);
   } finally {
+    finishRefresh.resolve();
     timers.mockRestore();
   }
 });
