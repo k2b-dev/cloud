@@ -804,7 +804,7 @@ export function CodeAreaView(props: Props) {
     if (!policy) return failure;
     return (
       <div class="grid min-h-full grid-rows-[auto_1fr]">
-        <p class="px-2 pb-2 text-sm text-(--k2b-text-muted)">{t.policyLead}</p>
+        <p class="pb-2 text-sm text-(--k2b-text-muted)">{t.policyLead}</p>
         <CodePolicyEditor
           revision={policy.policy.revision}
           definition={policy.policy.definition}
@@ -964,7 +964,7 @@ export function CodeAreaView(props: Props) {
       </>
     );
     return (
-      <div class="grid content-start gap-4 px-2 pt-1 pb-6">
+      <div class="grid content-start gap-4 pt-1 pb-6">
         <Show
           when={entries.length}
           fallback={<Placeholder icon="ti ti-history-off" title={t.historyEmpty} description={t.historyEmptySub} />}
@@ -1068,7 +1068,7 @@ export function CodeAreaView(props: Props) {
     const page = data.databases;
     if (!page || !ok(page)) return failure;
     return (
-      <div class="grid content-start gap-4 px-2 pt-1 pb-6">
+      <div class="grid content-start gap-4 pt-1 pb-6">
         <p class="text-sm text-(--k2b-text-muted)">{t.unusedDatabasesLead}</p>
         <Show when={page.items.length || query.after} fallback={<Placeholder icon="ti ti-database" title={t.noUnusedDatabases} />}>
           <CodeUnusedDatabases rows={page.items} dateConfig={props.dateConfig} />
@@ -1082,7 +1082,7 @@ export function CodeAreaView(props: Props) {
     if (!ok(page)) return failure;
     const jobs = page.items;
     return (
-      <div class="grid content-start gap-4 px-2 pt-1 pb-6">
+      <div class="grid content-start gap-4 pt-1 pb-6">
         <p class="text-sm text-(--k2b-text-muted)">{t.cleanupLead}</p>
         <p class="text-sm text-(--k2b-text-muted)">{t.cleanupAccessNote}</p>
         <Show
@@ -1126,7 +1126,7 @@ export function CodeAreaView(props: Props) {
     const behind = !none && metrics.freeSlots === 0 && metrics.queued > 0;
     const short = (id: string) => id.replace(/-/g, "").slice(0, 4);
     return (
-      <div class="grid content-start gap-4 px-2 pt-1 pb-6" data-section="code-runners">
+      <div class="grid content-start gap-4 pt-1 pb-6" data-section="code-runners">
         <Show when={none}>
           <NoticeCard tone="danger" icon="ti ti-plug-off" title={t.noRunners} detail={t.noRunnersSub} />
         </Show>
@@ -1195,7 +1195,7 @@ export function CodeAreaView(props: Props) {
     if (!ok(entries)) return failure;
     return (
       <div class="grid content-start gap-2 pt-1 pb-6">
-        <p class="px-2 text-sm text-(--k2b-text-muted)">{t.limitsLead}</p>
+        <p class="text-sm text-(--k2b-text-muted)">{t.limitsLead}</p>
         <CoreSettingsForm
           documentationBase={props.documentationBase}
           documentationTopic="code-limits"
