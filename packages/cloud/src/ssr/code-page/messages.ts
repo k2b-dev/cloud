@@ -415,8 +415,8 @@ export const codePageMessages = i18n.define({
       describedNotChecked: ({ name }: Name) => `described by ${name}, not checked by Cloud`,
       nextRunLabel: "Next run",
       nextNone: "none planned",
-      nextUnknown: "not known right now",
-      nextPaused: "none while paused",
+      nextUnknown: "unknown",
+      nextPaused: "paused",
       lastLabel: "Last",
       lastNone: "no run yet",
       stripCaption: ({ count, today, failed }: { count: number; today: number; failed: number }) =>
@@ -918,8 +918,8 @@ export const codePageMessages = i18n.define({
       describedNotChecked: ({ name }) => `von ${name} beschrieben, nicht von Cloud geprüft`,
       nextRunLabel: "Nächster Lauf",
       nextNone: "keiner geplant",
-      nextUnknown: "gerade nicht bekannt",
-      nextPaused: "keiner, solange pausiert ist",
+      nextUnknown: "unbekannt",
+      nextPaused: "pausiert",
       lastLabel: "Zuletzt",
       lastNone: "noch kein Lauf",
       stripCaption: ({ count, today, failed }) =>

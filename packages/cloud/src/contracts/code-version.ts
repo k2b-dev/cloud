@@ -4,13 +4,18 @@ import { CodeInternetOriginsSchema } from "./code-internet";
 import { CodeRouteSchema } from "./code-routes";
 import { CodeSecretVersionBindingSchema } from "./code-secrets";
 
-/** Automation display title: the Code title's 200-character budget, one line of escaped plain text. */
+/**
+ * Automation display title: the Code title's 200-character budget, one line of escaped plain text. A capability's
+ * registered JSON Schema reads its patterns without the `u` flag, where `\p{…}` would match literal letters; so the
+ * pattern names control and line characters by code unit, and format characters are a refinement it leaves out.
+ */
 export const CodeAutomationTitleSchema = z
   .string()
   .trim()
   .min(1)
   .max(200)
-  .regex(/^[^<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u);
+  .regex(/^[^<>\u0000-\u001f\u007f-\u009f\u2028\u2029]*$/)
+  .refine((value) => !/\p{Cf}/u.test(value));
 
 /** An absolute one-time instant; omitted display zone inherits the Cloud instance setting. */
 export const CodeOnceScheduleSchema = z.strictObject({
