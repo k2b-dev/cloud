@@ -104,10 +104,10 @@ test("a card loaded on demand gets the focus once its module has loaded and its 
         document.querySelector("[data-chat-anchor='code-version-v3']")!.insertAdjacentHTML("beforeend", module.button());
       }, 1200);
     });
-    const started = Date.now();
+    const started = performance.now();
     await land(page, "code-version-v3");
     expect(await focused(page)).toEqual({ tag: "BUTTON", text: "Version 3 einschalten" });
-    expect(Date.now() - started).toBeLessThan(3000);
+    expect(performance.now() - started).toBeLessThan(3000);
   } finally {
     await page.close();
   }
