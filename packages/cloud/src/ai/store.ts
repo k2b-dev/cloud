@@ -605,11 +605,13 @@ const conversationRunStatus = (status: AiTurnStatus | null | undefined, browserP
 const todoMessageJson = () => sql`(CASE WHEN jsonb_typeof(message) = 'string' THEN (message #>> '{}')::jsonb ELSE message END)`;
 const todoMetaJson = () => sql`(CASE WHEN jsonb_typeof(meta) = 'string' THEN (meta #>> '{}')::jsonb ELSE meta END)`;
 
-/** What a copied message keeps of its meta: its todo plan, and its calls' reviews and checks, so a fork reads the same. */
+/** Copies retain plans, reviews/checks and host facts so their display and model trust boundary stay the same. */
 const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_object(
   'todoPlan', ${todoMetaJson()}->'todoPlan',
   'toolReviews', ${todoMetaJson()}->'toolReviews',
-  'toolChecks', ${todoMetaJson()}->'toolChecks'
+  'toolChecks', ${todoMetaJson()}->'toolChecks',
+  'codeDecision', ${todoMetaJson()}->'codeDecision',
+  'codeReviewStart', ${todoMetaJson()}->'codeReviewStart'
 )), '{}'::jsonb)`;
 
 // A background result arriving during an interactive turn becomes context on the next turn.

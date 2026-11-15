@@ -627,12 +627,17 @@ suite("AI executor integration", () => {
       const claim=await aiConversations.claimTurn({conversationId:conversation.id,turnId:turn.id,leaseOwner:"review-scope-exec",leaseMs:30000,from:"queue",maxAttempts:5,runBudgetMs:60000});
       await createExecutor("review-scope-exec",undefined,fakeValidateBoundedToolTurn,undefined,[review,mail]).run({conversationId:conversation.id,turnId:turn.id,claim:claim!,signal:new AbortController().signal});
       expect(reviewCalls).toBe(1);expect(foreignCalls).toBe(0);
+      expect(requests.length).toBeGreaterThan(0);
+      let sawReview = false;
       for(const request of requests) {
-        if (!request || typeof request !== "object" || !("tools" in request)) throw new Error("Expected advertised tools");
-        const advertised=JSON.stringify(request.tools);
+        if (!request || typeof request !== "object") throw new Error("Expected model request");
+        // The final bounded response omits tools entirely. It cannot widen this scope.
+        const advertised=JSON.stringify("tools" in request ? request.tools : []);
+        sawReview ||= advertised.includes('"name":"code_review"');
         expect(advertised).not.toContain('"name":"mail_send"');
         expect(advertised).not.toContain('"name":"load_tools"');
       }
+      expect(sawReview).toBe(true);
     } finally {completionQueue=[];onCompletionRequest=null;await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;}
   });
   test("a stored scope excludes runtime-added tools even with a supplied chatId and persisted preload", async () => {

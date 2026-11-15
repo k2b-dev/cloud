@@ -16,7 +16,6 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { type CodeContext, CodeDataError, CodeOwnerUnavailableError } from "../code/access";
-import { cancelCodeReviewRevision } from "../code/review-chat";
 import { codeAuthoringServices } from "../code/authoring";
 import {
   CODE_AUTHORING_REQUEST_BYTES,
@@ -202,7 +201,7 @@ export function createCodeAuthoringRoutes() {
     },
   );
   register("review", codeAuthoringContracts.review, codeAuthoringServices.review);
-  register("reviewStop", codeAuthoringContracts.reviewStop, cancelCodeReviewRevision, true);
+  register("reviewStop", codeAuthoringContracts.reviewStop, codeAuthoringServices.reviewStop, true);
   register("reviewWait", codeAuthoringContracts.reviewWait, codeAuthoringServices.reviewWait);
   register("withdraw", codeAuthoringContracts.withdraw, codeAuthoringServices.withdraw, true);
   register("init", codeAuthoringContracts.init, codeAuthoringServices.init, true);

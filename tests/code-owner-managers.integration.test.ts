@@ -1,4 +1,4 @@
-import { beforeAll,expect,test } from "bun:test";
+import { afterAll,beforeAll,expect,test } from "bun:test";
 import { sql } from "../packages/cloud/src/runtime/clients";
 import { databaseSuite,useFreshDatabase } from "../scripts/fixtures/test-infra";
 import { migrate as extensions } from "../packages/core/src/migrate/core/extensions";
@@ -25,7 +25,9 @@ import { listFilesManagers } from "../packages/filesv2/src/service/manager-recip
 
 const person="11111111-1111-4111-8111-111111111111",other="22222222-2222-4222-8222-222222222222";
 databaseSuite()("Code owner manager projections",()=>{
-  beforeAll(async()=>{await useFreshDatabase("code_owner_managers");await extensions();await auth();await events();await settings();await workflows();});
+  let database: Awaited<ReturnType<typeof useFreshDatabase>>;
+  afterAll(async()=>{await database?.drop();});
+  beforeAll(async()=>{database=await useFreshDatabase("code_owner_managers");await extensions();await auth();await events();await settings();await workflows();});
   for(const migrate of [spaces,contacts,notebooks,grids,chat,venue,files]) beforeAll(migrate);
   beforeAll(()=>pulse("UTC"));
   beforeAll(async()=>{

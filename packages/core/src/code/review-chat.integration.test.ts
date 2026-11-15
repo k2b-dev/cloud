@@ -43,11 +43,15 @@ databaseSuite()("durable Code decisions and once-only automatic revisions",() =>
     for (const id of [owner,admin]) await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${id},'local','user',false)`;
   });
   afterAll(() => { setSystemTime(); });
-  async function fixture(outcome: "approved"|"changes_requested"|"rejected"|null="approved",automatic=false,cli=false,shared=false,approvalId?:string) {
+  async function fixture(outcome: "approved"|"changes_requested"|"rejected"|null="approved",automatic=false,cli=false,shared=false,approvalId?:string,resource=false) {
     const codeId=`c_async${String(++ordinal).padStart(3,"0")}`;
     const chat=await aiConversations.createConversation({ ownerUserId: owner,title:"Fictional review chat" });
     const versionId=crypto.randomUUID();
-    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by) VALUES(${codeId},'person',${shared ? admin : owner}::uuid,'Weekly report',${owner}::uuid)`;
+    if(resource) {
+      const [account]=await sql`INSERT INTO auth.service_accounts(name,kind,status) VALUES(${`code:grids.base:${codeId}`},'code','active') RETURNING id`;
+      await sql`INSERT INTO code.codes(id,owner_kind,owner_type,owner_id,service_account_id,title,created_by)
+        VALUES(${codeId},'resource','grids.base',${codeId},${account!.id}::uuid,'Weekly report',${owner}::uuid)`;
+    } else await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title,created_by) VALUES(${codeId},'person',${shared ? admin : owner}::uuid,'Weekly report',${owner}::uuid)`;
     if(shared) await sql`WITH a AS (INSERT INTO auth.access(user_id,permission) VALUES(${owner}::uuid,'write') RETURNING id)
       INSERT INTO code.shares(code_id,access_id) SELECT ${codeId},id FROM a`;
     await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,manifest,source_bytes,bundle_bytes,created_by)
@@ -78,6 +82,9 @@ databaseSuite()("durable Code decisions and once-only automatic revisions",() =>
     expect(messages[0]?.meta?.codeDecision).toMatchObject({codeId:f.codeId,versionId:f.versionId,outcome:"approved",anchor:"tool-submit"});
     expect(JSON.stringify(messages[0]?.message)).not.toContain("send mail");
     expect(messages[0]?.loopId).toBeNull();
+    const fork=await aiConversations.forkConversation({sourceConversationId:f.chat.id,ownerUserId:owner,throughSeq:messages[0]!.seq});
+    expect((await aiConversations.listMessages({conversationId:fork.id}))[0]?.meta?.codeDecision?.versionId).toBe(f.versionId);
+    expect(JSON.stringify((await aiConversations.listContextMessages({conversationId:fork.id}))[0]?.message)).toContain("Cloud fact:");
     expect(messages[0]?.meta?.codeDecision?.at).toMatch(/^20/);
     const [chat]=await sql`SELECT background_received_at FROM ai.conversations WHERE id=${f.chat.id}::uuid`;
     expect(chat?.background_received_at).not.toBeNull();
@@ -185,7 +192,7 @@ databaseSuite()("durable Code decisions and once-only automatic revisions",() =>
       expect(turn?.run_config.codeReview).toEqual({codeId:f.codeId,versionId:f.versionId});
       const [chat]=await sql`SELECT draft_content,draft_revision FROM ai.conversations WHERE id=${f.chat.id}::uuid`;
       expect(Number(chat?.draft_revision)).toBe(7); expect(JSON.stringify(chat?.draft_content)).toContain("My unsent answer");
-    } finally {prepare.mockRestore();enqueue.mockRestore();await sql`UPDATE auth.users SET display_name=NULL WHERE id=${admin}::uuid`;}
+    } finally {prepare.mockRestore();enqueue.mockRestore();await sql`UPDATE auth.users SET display_name='' WHERE id=${admin}::uuid`;}
   });
   test("review text stays untrusted data and real chat tools refuse any other Code",async()=>{
     const f=await fixture("changes_requested"),other=await fixture();
@@ -262,17 +269,17 @@ databaseSuite()("durable Code decisions and once-only automatic revisions",() =>
   });
   test("unrelated broken resource owners are not scanned and one unavailable own owner cannot break waiting",async()=>{
     await sql`UPDATE code.codes SET state='deleting'`;
-    const direct=await fixture(),remote=await fixture();
+    const direct=await fixture(),remote=await fixture("approved",false,false,false,undefined,true);
     await sql`UPDATE code.codes SET active_version_id=${direct.versionId}::uuid,state='active' WHERE id=${direct.codeId}`;
-    await sql`UPDATE code.codes SET owner_kind='resource',owner_user_id=NULL,owner_type='grids.base',owner_id='Remote',active_version_id=${remote.versionId}::uuid,state='active' WHERE id=${remote.codeId}`;
+    await sql`UPDATE code.codes SET active_version_id=${remote.versionId}::uuid,state='active' WHERE id=${remote.codeId}`;
     const check=spyOn(resources,"listResourceManagers").mockImplementation(async()=>{throw new Error("fixture owner unavailable");});
     const read=(userId:string)=>listCodeWaiting({ownerUserId:userId,locale:"de",timeZone:"UTC"},signal());
     const meter=await meterSql();
     try {
       const one=await meter.during(()=>read(admin));
       for(let index=0;index<6;index++) {
-        const foreign=await fixture();
-        await sql`UPDATE code.codes SET created_by=${owner}::uuid,owner_kind='resource',owner_user_id=NULL,owner_type='grids.base',owner_id='Remote',active_version_id=${foreign.versionId}::uuid,state='active' WHERE id=${foreign.codeId}`;
+        const foreign=await fixture("approved",false,false,false,undefined,true);
+        await sql`UPDATE code.codes SET active_version_id=${foreign.versionId}::uuid,state='active' WHERE id=${foreign.codeId}`;
       }
       const many=await meter.during(()=>read(admin));
       expect(many.length).toBe(one.length);expect(check).not.toHaveBeenCalled();

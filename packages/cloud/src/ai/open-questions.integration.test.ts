@@ -208,21 +208,16 @@ databaseSuite()("open questions", () => {
     const falseReview = await f.ask({ callId: "false-review", block: { ...tool("false-review"), review: false } });
     const warnings = spyOn(console, "warn").mockImplementation(() => undefined);
     try {
-      expect(await f.read()).toMatchObject({
-        count: 5,
-        items: [
-          { id: falseReview.id, anchor: "tool-false-review", short: "Send this draft" },
-          { id: incompleteReview.id, anchor: "tool-incomplete-review", short: "Send this draft" },
-          { id: badBlock.id, anchor: "tool-bad-block", short: "Send this draft" },
-          {
-            id: badReview.id,
-            anchor: "tool-bad-review",
-            short: "Send this draft",
-            app: { name: "Mail", icon: "ti ti-mail", accent: "blue" },
-          },
-          { id: valid.id, short: "Send Meeting.pdf to Lea" },
-        ],
-      });
+      const page = await f.read();
+      expect(page.count).toBe(5);
+      expect(page.items.map(({ id,anchor,short }) => ({ id,anchor,short }))).toEqual([
+        { id: valid.id, anchor: "tool-valid", short: "Send Meeting.pdf to Lea" },
+        { id: badReview.id, anchor: "tool-bad-review", short: "Send this draft" },
+        { id: badBlock.id, anchor: "tool-bad-block", short: "Send this draft" },
+        { id: incompleteReview.id, anchor: "tool-incomplete-review", short: "Send this draft" },
+        { id: falseReview.id, anchor: "tool-false-review", short: "Send this draft" },
+      ]);
+      expect(page.items[1]?.app).toEqual({ name: "Mail", icon: "ti ti-mail", accent: "blue" });
       expect(
         warnings.mock.calls.filter(
           ([source, message]) => source === "[ai:open-questions]" && message === "Failed to present open question",

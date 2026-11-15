@@ -184,12 +184,16 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code_versions");
     await migrateAuth();
+  });
+  beforeAll(async () => {
     await migrateEvents();
     await migrateAppEvents();
     await migratePwa();
     await migrateAppApproval();
     await migrateSettings();
     await migrateAudit();
+  });
+  beforeAll(async () => {
     await migrateCode();
     await migratePolicy();
     await migrateApprovals();
@@ -1485,22 +1489,21 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await decideCodeVersion(second.binding, { outcome: "approved" }, reviewer);
     await activate(code, second);
   });
-  // Runs last: it installs Core's AI live function, which every earlier decision in this suite ran without.
-  test("each decision reaches the submitting person's version card on Core's AI live channel, in its own transaction", async () => {
-    const code = await newCode(),
-      approved = await submitCodeVersion(input(code, "live approved"), author);
-    // Before the AI schema exists a decision still commits; nobody can follow it live there.
-    await decideCodeVersion(approved.binding, { outcome: "approved" }, reviewer);
-    await sql`CREATE SCHEMA IF NOT EXISTS ai`;
-    await sql`CREATE TABLE ai.live_calls(user_id UUID, conversation TEXT, project TEXT, domains TEXT[])`;
-    await sql`CREATE FUNCTION ai.enqueue_live_for_user(p_change UUID, p_user UUID, p_conversation TEXT, p_project TEXT, p_domains TEXT[])
-      RETURNS void AS $$ INSERT INTO ai.live_calls VALUES(p_user, p_conversation, p_project, p_domains) $$ LANGUAGE sql`.simple();
-    const next = await submitCodeVersion(input(code, "live rejected", approved.version.id), author);
-    expect(await sql`SELECT * FROM ai.live_calls`).toHaveLength(0);
-    await decideCodeVersion(next.binding, { outcome: "rejected", comment: "Please revise this version." }, reviewer);
-    expect(Array.from(await sql`SELECT * FROM ai.live_calls`)).toEqual([
-      { user_id: authorId, conversation: null, project: null, domains: ["code-versions"] },
-    ]);
+  test("each decision reaches the submitting person's version card through the transactional AI live outbox", async () => {
+    const code = await newCode();
+    const submitted = await submitCodeVersion(input(code, "live decision"), author);
+    const changes = () => sql`SELECT payload->'d' AS data FROM events.outbox
+      WHERE app_id='core' AND kind='live' AND ordering_key=${`u:${authorId}`}
+      AND payload->'d'->'domains' @> '["code-versions"]'::jsonb ORDER BY seq`;
+    const before = await changes();
+    await expect(decideCodeVersion({ ...submitted.binding, sourceHash: "0".repeat(64) }, { outcome: "approved" }, reviewer)).rejects.toThrow();
+    expect(await changes()).toEqual(before);
+    await decideCodeVersion(submitted.binding, { outcome: "rejected", comment: "Please revise this version." }, reviewer);
+    const after = await changes();
+    expect(after).toHaveLength(before.length + 1);
+    expect(after.at(-1)?.data).toMatchObject({
+      type: "ai.invalidated", conversationId: null, projectId: null, domains: ["code-versions"],
+    });
   });
 });
 

@@ -171,11 +171,12 @@ const storedItems = (
   // A failed turn's notice ends its last item, which is its user message when the model never answered.
   const lastEntryOfLoop = new Map<string, number>();
   timeline.forEach((item, index) => {
-    const loopId = (item.type === "summary" || item.type === "code-decision" || item.type === "code-review-start") ? null : item.type === "user" ? item.entry.loopId : item.loopId;
+    const loopId = (item.type === "summary" || item.type === "code-decision") ? null : (item.type === "user" || item.type === "code-review-start") ? item.entry.loopId : item.loopId;
     if (!loopId) return;
     lastEntryOfLoop.set(loopId, index);
     if (item.type === "assistant") lastItemOfLoop.set(loopId, index);
   });
+  const reviewLoops = new Set(messages.flatMap((entry) => entry.meta?.codeReviewStart && entry.loopId ? [entry.loopId] : []));
   const turnErrors = new Map<string, AiTurnError>();
   for (const message of messages) if (message.loopId && message.meta?.turnError) turnErrors.set(message.loopId, message.meta.turnError);
   // Only the chat's newest turn can be continued, and only while no other turn runs.
@@ -202,7 +203,7 @@ const storedItems = (
           earlier: false,
           duration: () => null,
           error,
-          continuable: newestLoop === loopId,
+          continuable: newestLoop === loopId && !reviewLoops.has(loopId),
         }),
       },
     ];
@@ -289,8 +290,9 @@ const storedItems = (
     }
 
     if (item.type === "code-decision" || item.type === "code-review-start") {
-      return { kind: "activity", id: item.id, label: textFromMessage(item.entry.message),
+      const activity: ChatTimelineItem = { kind: "activity", id: item.id, label: textFromMessage(item.entry.message),
         icon: "ti ti-shield-check", tone: "ai", content: actions.renderCodeDecision?.(item.entry) };
+      return item.type === "code-review-start" ? [activity,...unansweredNotice(item.entry,itemIndex)] : activity;
     }
 
     if (item.type === "summary") {
@@ -366,7 +368,7 @@ const storedItems = (
             scheduledTask: task,
             error,
             stopNotice: error ? null : stopNotice,
-            continuable: idle && (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),
+            continuable: idle && !(item.loopId && reviewLoops.has(item.loopId)) && (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),
           }),
           actions: messageActions,
           actionDisplay: "inline",

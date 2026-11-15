@@ -95,3 +95,13 @@ test("review submission hooks cannot block cancellation of an ordinary turn",asy
   try {expect(await abortAiTurn({conversationId:"chat",turnId:"turn"})).toEqual({ok:true});expect(calls).toBe(0);}
   finally {dispose();config.mockRestore();active.mockRestore();request.mockRestore();}
 });
+
+test("Composer cancellation closes a review host's submission gate before aborting the turn",async()=>{
+  const steps:string[]=[];
+  const dispose=registerAiTurnAbortHandler(async()=>{steps.push("submission-gate-closed");});
+  const config=spyOn(aiConversations,"getTurnRunConfig").mockResolvedValue({kind:"chat",input:"fixed",codeReview:{codeId:"c_review",versionId:"11111111-1111-4111-8111-111111111111"}});
+  const active=spyOn(aiConversations,"getActiveTurn").mockResolvedValue(null);
+  const request=spyOn(aiConversations,"requestTurnAbort").mockImplementation(async()=>{steps.push("turn-aborted");return {found:false};});
+  try {await abortAiTurn({conversationId:"chat",turnId:"turn"});expect(steps).toEqual(["submission-gate-closed","turn-aborted"]);}
+  finally {dispose();config.mockRestore();active.mockRestore();request.mockRestore();}
+});
