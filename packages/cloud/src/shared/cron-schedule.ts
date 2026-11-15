@@ -94,3 +94,41 @@ export const normalizeCronSchedule = (schedule: CronSchedule): CronSchedule => {
   }
   return { cron: fields.join(" "), timezone: normalizedTimezone };
 };
+
+/** Walk a bounded day's UTC minutes using the same parsed fields as validation.
+ * Repeated local minutes during a DST rollback produce one slot, as the scheduler does.
+ */
+export function visitCronDaySlots(schedule: CronSchedule, from: Date, to: Date, visit: (slot: Date) => void): void {
+  const normalized = normalizeCronSchedule(schedule);
+  if (!Number.isFinite(+from) || !Number.isFinite(+to) || +to < +from || +to - +from > 26 * 60 * 60 * 1000)
+    throw new RangeError("A schedule preview must fit one local day");
+  const fields = normalized.cron.split(" ").map((value, index) => validateCronField(value, CRON_FIELDS[index]!));
+  const format = new Intl.DateTimeFormat("en-US", {
+    timeZone: normalized.timezone,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+    hour: "numeric",
+    minute: "numeric",
+    hourCycle: "h23",
+  });
+  const seen = new Set<string>();
+  for (let at = Math.ceil(+from / 60_000) * 60_000; at < +to; at += 60_000) {
+    const parts = new Map(format.formatToParts(at).map((part) => [part.type, part.value]));
+    const minute = Number(parts.get("minute")),
+      hour = Number(parts.get("hour")),
+      day = Number(parts.get("day")),
+      month = Number(parts.get("month"));
+    const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.get("weekday") ?? "");
+    const dom = fields[2]!,
+      dow = fields[4]!;
+    const dayMatches = dom.any ? dow.values.has(weekday) : dow.any ? dom.values.has(day) : dom.values.has(day) || dow.values.has(weekday);
+    if (!fields[0]!.values.has(minute) || !fields[1]!.values.has(hour) || !fields[3]!.values.has(month) || !dayMatches) continue;
+    const local = `${parts.get("year")}-${month}-${day}-${hour}-${minute}`;
+    if (!seen.has(local)) {
+      seen.add(local);
+      visit(new Date(at));
+    }
+  }
+}

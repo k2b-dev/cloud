@@ -289,7 +289,7 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "code.version.read": {
           title: "Code-Version lesen",
-          description: "Liest unveränderliche Versionen und Quelltext, Bundle oder Manifest in Teilen.",
+          description: "Liest Versionsmetadaten und das Manifest; Quelltext und Bundle sind nur für Bearbeitende lesbar.",
           input: {
             codeId: "Stabile Code-ID aus core.code.list oder core.code.read.",
             versionId: "UUID der unveränderlichen Version dieses Codes.",
@@ -298,6 +298,42 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             "content.path": "Relativer Quelltextpfad aus den Versionsmetadaten.",
             offset: "Position in UTF-16-Codeeinheiten: nullbasiert oder nextOffset des vorherigen Abschnitts.",
             length: "Gewünschte Anzahl an UTF-16-Codeeinheiten, höchstens 16.384; ein einzelnes Surrogatpaar kann zwei Einheiten belegen.",
+          },
+        },
+        "code.source.tab": {
+          title: "Tab Code lesen",
+          description:
+            "Liest für Bearbeitende den Quelltext der eingeschalteten Version, einen gewählten Unterschied und die Versionsdaten in begrenzten Abschnitten.",
+          input: {
+            codeId: "Automation, deren Quelltext du öffnen möchtest.",
+            comparisonVersionId: "Gespeicherte Vergleichsversion; null vergleicht ohne Vorgängerversion.",
+            path: "Quelldatei der eingeschalteten Version; sonst die erste Datei.",
+            sourceOffset: "Position des nächsten Quelltextabschnitts.",
+            diffOffset: "Position des nächsten Abschnitts im Unterschied.",
+            before: "Versionsnummer für die nächste Listenseite.",
+          },
+        },
+        "code.run.words": {
+          title: "Code-Lauf in Worten lesen",
+          description: "Liest bestätigte Beobachtungen und den übersetzten Fehlgrund ohne private Eingaben oder Ausgaben.",
+          input: { codeId: "Automation des Laufs.", runId: "Gespeicherter Lauf, der beschrieben werden soll." },
+        },
+        "code.activity.words": {
+          title: "Code-Wirkungen in Worten lesen",
+          description: "Liest bestätigte Aktionen der Woche, letzte Ergebnisse und den begrenzten Zeitstrahl eines Tages.",
+          input: {
+            codeId: "Automation für die Übersicht.",
+            day: "Lokaler Kalendertag im ISO-Format.",
+            timeZone: "IANA-Zeitzone für diesen Tag.",
+          },
+        },
+        "code.version.words": {
+          title: "Code-Version in Worten lesen",
+          description: "Liest übersetzte Fakten und getrennt markierte Modelltexte mit Zielnamen und Links, die diese Person lesen darf.",
+          input: {
+            codeId: "Automation der Version.",
+            versionId: "Gespeicherte Version, die beschrieben werden soll.",
+            comparisonVersionId: "Gespeicherte Vergleichsversion; sonst der Einreichungsstand, bei null ohne Vorgängerversion.",
           },
         },
         "code.run.list": {

@@ -70,8 +70,7 @@ const chartTransport = z.fromJSONSchema(
     override: ({ jsonSchema }) => {
       if (jsonSchema.type === "object" && jsonSchema.additionalProperties === undefined) jsonSchema.additionalProperties = false;
       for (const [field, schema] of Object.entries(jsonSchema.properties ?? {})) {
-        if (typeof schema === "object" && schema && !schema.description)
-          schema.description = `Chart ${field} option from the shared chart description.`;
+        if (typeof schema === "object" && schema && !schema.description) schema.description = `Chart ${field}.`;
       }
     },
   }),

@@ -284,6 +284,13 @@ The contracts barrel exports `CodeCheckedVersionManifestSchema`,
 `CodeCheckedVersionManifest`, `CodeAutomationTitleSchema`, `CodeVersionPermissionSchema`, `CODE_POLICY_ROWS`,
 `CodePolicyRowSchema` and `CodePolicyManifestSchema` for the checker and Core's
 version lifecycle. See [Code versions and approval](/en/docs/platform/code-versions).
+The contracts barrel also exports `CodeVersionReadModelSchema`,
+`CodeRunReadModelSchema`, `CodeActivityReadModelSchema`, their inferred types and
+`codeReadModelContracts`. Core provides `loadCodeSourceTab`, `codeSourceTabContract`, `CodeSourceTab`, `loadCodeVersionReadModel`,
+`loadCodeRunReadModel` and `loadCodeActivityReadModel`; see
+[Code in words](/en/docs/platform/code-read-model). `@k2b/cloud/code` exports
+`CodeTestDifferenceSchema`, `codeTestDifference` and `visitCronDaySlots` for
+platform-owned bounded test evidence and schedule previews.
 These schemas describe evidence; they grant no execution or resource access.
 `CodeSecretBindingSchema`, `CodeSecretVersionBindingSchema`, `CodeSecretNameSchema`,
 `CodeHttpRequestSchema`, `CodeHttpResultSchema`, `CodeInternetOriginSchema`,
