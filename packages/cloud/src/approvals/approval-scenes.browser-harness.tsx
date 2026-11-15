@@ -299,7 +299,7 @@ const scenes: Record<string, () => JSX.Element> = {
       name: string,
       args: Record<string, unknown>,
       result: unknown,
-      presentation?: AiTurnBlock["presentation"],
+      presentation?: Extract<AiTurnBlock, { kind: "tool" }>["presentation"],
     ): AiTurnBlock => ({
       id,
       kind: "tool",
