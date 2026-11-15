@@ -21,7 +21,8 @@ import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
 import { focusMenuRow, focusRowSegment } from "./menu-rows";
 import { MenuSearch, type MenuSearchApi } from "./menu-search";
-import { openMenuSheet, prefersMenuSheet } from "./menu-sheet";
+import { menuSheetReady, openMenuSheet } from "./menu-sheet-open";
+import { prefersMenuSheet } from "./phone-sheet";
 
 // Resolved outside JSX: a conditional attribute compiles to a lazy memo, which would be created inside the click handler.
 const selectAction = (item: { action?: () => void }) => item.action;
@@ -668,6 +669,8 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
   const locale = useLocale();
   /** The open phone sheet's cancel switch: it closes when the menu goes or is disabled, as the popover does. */
   let sheet: AbortController | undefined;
+  /** Ends the current phone sheet's open state, once, also before its code has loaded. */
+  let endSheet: (() => void) | undefined;
   const id = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const menuId = `k2b-dropdown-${id}`;
   const [internalOpen, setInternalOpen] = createSignal(false);
@@ -685,6 +688,8 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
    * arrives gets one event from "closed" to "closed"; this still reports that close to the owner.
    */
   let shown = false;
+  /** The menu opens in place of a phone sheet whose code did not load; the owner already heard it open. */
+  let announcedOpen = false;
   let triggerRing = true;
   let mounted = false;
   /** Where a key on the trigger asked the focus to go; a controlled menu opens later, in its owner's update. */
@@ -756,6 +761,23 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
       else focusMenuItem(menuRef, focus === "first" ? 0 : -1);
     });
   };
+  /** The phone sheet has closed: focus goes back, and the trigger and the owner hear the close. */
+  const finishSheet = (anchored: boolean, ring: boolean) => {
+    sheet = undefined;
+    // An entry that moved focus elsewhere, such as into a field, keeps it.
+    const target = anchored ? originElement() : undefined;
+    const focused = document.activeElement;
+    if (target?.isConnected && (!focused || focused === document.body)) returnFocus(target, ring);
+    setInternalOpen(false);
+    props.onOpenChange?.(false);
+    props.onClose?.();
+  };
+  /** Closes the phone sheet; one still waiting for its code ends at once, also while a download stalls. */
+  const cancelSheet = () => {
+    if (!sheet) return;
+    sheet.abort();
+    if (!menuSheetReady()) endSheet?.();
+  };
   const requestOpen = (next: boolean, focus: "first" | "last" | false = "first") => {
     if (props.disabled && next) return;
     if (props.open !== undefined) {
@@ -771,32 +793,45 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
       const anchored = origin !== undefined;
       const ring = anchored && ringOnReturn(originElement());
       if (anchored && document.activeElement instanceof HTMLElement) document.activeElement.blur();
-      // The sheet is this menu's open state: the trigger reports it and the owner hears both ends.
+      // The sheet is this menu's open state: the trigger reports it and the owner hears both ends, once.
+      const end = () => {
+        if (sheet === current) finishSheet(anchored, ring);
+      };
+      endSheet = end;
       setInternalOpen(true);
       props.onOpenChange?.(true);
-      void openMenuSheet({
-        Items: DropdownItems,
-        items: props.items,
-        label: props.label ?? messages().dropdownMenu,
-        locale: locale(),
-        top: props.sheetTop,
-        search: props.search,
-        icons: props.icons,
-        note: props.note,
-        signal: current.signal,
-      }).finally(() => {
-        sheet = undefined;
-        // An entry that moved focus elsewhere, such as into a field, keeps it.
-        const target = anchored ? originElement() : undefined;
-        const focused = document.activeElement;
-        if (target?.isConnected && (!focused || focused === document.body)) returnFocus(target, ring);
-        setInternalOpen(false);
-        props.onOpenChange?.(false);
-        props.onClose?.();
-      });
+      void openMenuSheet(
+        {
+          Items: DropdownItems,
+          items: props.items,
+          label: props.label ?? messages().dropdownMenu,
+          locale: locale(),
+          top: props.sheetTop,
+          search: props.search,
+          icons: props.icons,
+          note: props.note,
+          signal: current.signal,
+        },
+        (error) => {
+          globalThis.reportError(error);
+          if (sheet !== current) return;
+          // The sheet's code did not load: the person still chooses, from the menu that is always in the page, and
+          // the next open tries the sheet again. The owner already heard this open.
+          sheet = undefined;
+          if (!current.signal.aborted && menuRef?.isConnected) {
+            announcedOpen = true;
+            open(focus);
+            if (menuRef.matches(":popover-open")) return;
+            announcedOpen = false;
+          }
+          finishSheet(anchored, ring);
+        },
+      ).finally(end);
       return;
     }
-    if (next) open(focus);
+    // A second tap while the sheet's code still loads cancels that sheet.
+    if (!next && sheet) cancelSheet();
+    else if (next) open(focus);
     else close(false);
   };
   const handleMenuKeyDown = (event: KeyboardEvent) => {
@@ -854,7 +889,7 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
   });
   createEffect(() => {
     if (!props.disabled) return;
-    sheet?.abort();
+    cancelSheet();
     if (mounted) close(false);
   });
   props.openAt?.((at, focus) => {
@@ -864,7 +899,7 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
     requestOpen(true);
   });
   props.closeWith?.(() => {
-    sheet?.abort();
+    cancelSheet();
     if (isOpen()) close();
   });
   onMount(() => {
@@ -916,11 +951,13 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
             const nextOpen = (event as ToggleEvent).newState === "open";
             const wasOpen = shown || (event as ToggleEvent).oldState === "open";
             shown = nextOpen;
+            const announced = announcedOpen;
+            announcedOpen = false;
             setInternalOpen(nextOpen);
             if (nextOpen) setEntriesShown(true);
             if (nextOpen) attachViewportListeners();
             else detachViewportListeners();
-            if (props.open === undefined || props.open !== nextOpen) props.onOpenChange?.(nextOpen);
+            if (!(announced && nextOpen) && (props.open === undefined || props.open !== nextOpen)) props.onOpenChange?.(nextOpen);
             // A light dismiss hides the menu with focus inside it; an opener without a trigger takes it back.
             const focused = document.activeElement;
             const target = wasOpen && !nextOpen ? originElement() : undefined;

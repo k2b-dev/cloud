@@ -7,20 +7,32 @@ const barrel = /\bexport\s*\*|\bexport\s*\{[^}]*\}\s*from\b/;
 /**
  * A module whose code reaches no output, replaced by its import edges and empty exports. Its code still counts in the
  * minifier's naming of the chunks it touches, so an unused function would change the measured size; the edges keep
- * the module graph, and with it the chunks, as they are.
+ * the module graph, and with it the chunks, as they are. With `imported`, it keeps only the exports that some module
+ * of the build imports by name: in a build with on-demand chunks, even an unused export's name moves the minifier's
+ * choices in the chunks around it.
  */
-const stubDeadModule = (path: string, code: string) => {
+const stubDeadModule = (path: string, code: string, imported?: ReadonlySet<string>) => {
   const loader = /\.tsx?$/.test(path) ? (path.endsWith("x") ? "tsx" : "ts") : "js";
   const scan = new Bun.Transpiler({ loader }).scan(code);
   const edges = scan.imports
     .filter((entry) => entry.kind === "import-statement")
     .map((entry, index) => `export * as __edge${index} from ${JSON.stringify(entry.path)};`);
-  const names = scan.exports.map((name) => (name === "default" ? "export default void 0;" : `export const ${name} = void 0;`));
+  const names = scan.exports
+    .filter((name) => name === "default" || !imported || imported.has(name))
+    .map((name) => (name === "default" ? "export default void 0;" : `export const ${name} = void 0;`));
   return [...edges, ...names].join("\n") || "export {};";
 };
 
-/** Source inputs reachable without loading an on-demand chunk. `dead` modules are replaced by `stubDeadModule`. */
-export const buildIslandClosure = async (entries: string[], files?: Record<string, string>, dead?: ReadonlySet<string>) => {
+/**
+ * Source inputs reachable without loading an on-demand chunk. `dead` modules are replaced by `stubDeadModule`, which
+ * keeps only the `imported` names when they are given.
+ */
+export const buildIslandClosure = async (
+  entries: string[],
+  files?: Record<string, string>,
+  dead?: ReadonlySet<string>,
+  imported?: ReadonlySet<string>,
+) => {
   const stubs: string[] = [];
   for (const path of dead ?? []) if (!barrel.test(files?.[path] ?? (await Bun.file(path).text()))) stubs.push(path);
   const result = await Bun.build({
@@ -41,7 +53,7 @@ export const buildIslandClosure = async (entries: string[], files?: Record<strin
                 // Only the stubbed paths: a loader that matched every file would keep the Solid transform below from running.
                 const filter = new RegExp(`^(?:${stubs.map((path) => path.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|")})$`);
                 build.onLoad({ filter }, async ({ path }) => ({
-                  contents: stubDeadModule(path, files?.[path] ?? (await Bun.file(path).text())),
+                  contents: stubDeadModule(path, files?.[path] ?? (await Bun.file(path).text()), imported),
                   loader: "js",
                   resolveDir: dirname(path),
                 }));
