@@ -2,7 +2,6 @@ import { sql } from "@k2b/cloud";
 import { z } from "zod";
 import { type CodeContext, codePermission, codePerson } from "./access";
 import { CodeIdSchema } from "./contracts";
-import { CodeSubmissionOriginSchema } from "./review-contracts";
 import { type CodeRow, mapCode } from "./store";
 
 /** A chat lists at most this many Code; the box shows three of them. */
@@ -48,7 +47,6 @@ export type CodeChatList = z.infer<typeof codeChatListContract.data>;
 type Row = CodeRow & {
   version_id: string;
   number: number;
-  origin: unknown;
   submitted_at: Date;
   outcome: "approved" | "changes_requested" | "rejected" | null;
   approval_id: string | null;
@@ -73,8 +71,9 @@ const stateOf = (row: Row): CodeChatState => {
 export async function listChatCode(input: z.infer<typeof codeChatListContract.input>, context: CodeContext): Promise<CodeChatList> {
   const user = codePerson(context);
   const rows = await sql<Row[]>`SELECT * FROM (SELECT DISTINCT ON (c.id) c.*, NULL AS service_account_handle, NULL AS activated_by_name,
-      v.id AS version_id, v.number, s.origin, s.created_at AS submitted_at, s.approval_id, d.outcome, w.state AS work_state,
-      (r.expires_at<=now() OR r.status='expired') AS expired,
+      v.id AS version_id, v.number, s.created_at AS submitted_at, s.approval_id, d.outcome, w.state AS work_state,
+      -- The same predicate as asking again (versions.ts expiredSubmission); a pruned request counts as expired.
+      (COALESCE(r.status,'expired')='expired' OR (r.status='pending' AND r.expires_at<=now())) AS expired,
       (SELECT active.number FROM code.versions active WHERE active.id=c.active_version_id) AS active_number
     FROM code.version_submissions s
       JOIN ai.conversations chat ON chat.id=${input.conversationId}::uuid AND chat.created_by_user_id=${user.id}::uuid
@@ -83,6 +82,8 @@ export async function listChatCode(input: z.infer<typeof codeChatListContract.in
       LEFT JOIN code.review_chat_work w ON w.version_id=v.id
     WHERE s.origin->>'kind'='ai_chat' AND s.origin->>'conversationId'=${input.conversationId} AND c.state<>'deleting'
       AND NOT EXISTS(SELECT 1 FROM code.version_withdrawals withdrawn WHERE withdrawn.version_id=v.id)
+      -- A request closed without a decision (a newer version replaced it) no longer waits for anyone.
+      AND NOT (s.approval_id IS NOT NULL AND d.outcome IS NULL AND COALESCE(r.status,'expired') NOT IN ('pending','expired'))
     ORDER BY c.id, v.number DESC) newest
     ORDER BY submitted_at DESC, id LIMIT ${CODE_CHAT_LIST_LIMIT * 2}`;
   const readable: Row[] = [];
@@ -91,7 +92,6 @@ export async function listChatCode(input: z.infer<typeof codeChatListContract.in
   return {
     count: readable.length,
     items: readable.slice(0, CODE_CHAT_LIST_LIMIT).map((row) => {
-      const origin = CodeSubmissionOriginSchema.parse(row.origin);
       const state = stateOf(row);
       return {
         codeId: row.id,
@@ -100,7 +100,9 @@ export async function listChatCode(input: z.infer<typeof codeChatListContract.in
         number: row.number,
         state,
         attention: state === "ready" || state === "changes" || (state === "waiting" && row.expired === true),
-        anchor: origin.kind === "ai_chat" ? (origin.cardAnchor ?? `code-version-${row.version_id}`) : `code-version-${row.version_id}`,
+        // The version card in the chat carries this anchor (Assistant's codeVersionCardAnchor); `origin.cardAnchor` names
+        // the submitting tool call, which renders no element of its own once the card replaced it.
+        anchor: `code-version-${row.version_id}`,
         submittedAt: row.submitted_at.toISOString(),
       };
     }),

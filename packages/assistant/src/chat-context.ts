@@ -12,12 +12,24 @@ import {
   describeAiResourceTypeCounts,
   loadAiConversationFileOverview,
 } from "@k2b/cloud/ai";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 
 /** Snapshot limits: results and files come from people and stay small; sources and working files can grow. */
 const RESULT_LIMIT = 500;
 const FILE_LIMIT = 500;
 const WORKING_GROUP_LIMIT = 200;
 const LOOSE_WORKING_FILE_LIMIT = 100;
+/**
+ * A further group is optional: it gets what the snapshot can spare of the request's idle budget, keeping four seconds
+ * for the rest (as app migrations do), then the box shows without it and reads it again on the next update.
+ */
+const GROUP_DEADLINE_MS = (REQUEST_IDLE_TIMEOUT_SECONDS - 4) * 1000;
+type ChatContextGroupSource = (conversation: { id: string }, signal: AbortSignal) => Promise<AssistantChatContextGroup | null>;
+const loadGroup = async (source: ChatContextGroupSource, conversationId: string): Promise<AssistantChatContextGroup | null> => {
+  const signal = AbortSignal.timeout(GROUP_DEADLINE_MS);
+  const late = new Promise<null>((resolve) => signal.addEventListener("abort", () => resolve(null), { once: true }));
+  return Promise.race([source({ id: conversationId }, signal), late]).catch(() => null);
+};
 const SOURCE_PAGE = 100;
 
 /** Something the assistant delivered in this chat. */
@@ -160,7 +172,7 @@ export const loadAssistantChatContextSnapshot = async (
     timeZone: string;
     locale?: string;
     /** Owners of further groups fill them for this chat; a group that is null is left out. */
-    groups?: ReadonlyArray<(conversation: { id: string }) => Promise<AssistantChatContextGroup | null>>;
+    groups?: readonly ChatContextGroupSource[];
   },
 ): Promise<AssistantChatContextSnapshot | null> => {
   if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
@@ -183,7 +195,7 @@ export const loadAssistantChatContextSnapshot = async (
     }),
     aiSkills.listConversationUses(conversation.id),
     aiMemories.listFromConversation(userId, conversation.id),
-    Promise.all((options.groups ?? []).map((group) => group({ id: conversation.id }))),
+    Promise.all((options.groups ?? []).map((group) => loadGroup(group, conversation.id))),
   ]);
   // An upload stays the person's file, also when the assistant hands it over with present.
   const uploads = new Set(overview.files.flatMap((file) => (file.origin === "user" ? [file.path] : [])));

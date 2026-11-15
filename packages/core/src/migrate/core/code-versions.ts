@@ -17,6 +17,20 @@ export async function migrate(db: SQL = sql): Promise<void> {
     // The Code a chat submitted, for the chat's box "In this chat".
     await tx`CREATE INDEX IF NOT EXISTS version_submission_chat ON code.version_submissions((origin->>'conversationId'),code_id)
       WHERE origin->>'kind'='ai_chat'`.simple();
+    // Pausing or resuming changes the state word the chats that submitted the Code show; tell their people in the same
+    // transaction. A database without AI has no such viewers.
+    await tx`CREATE OR REPLACE FUNCTION code.chat_code_state_live() RETURNS TRIGGER AS $$
+    DECLARE person UUID;
+    BEGIN
+      IF to_regprocedure('ai.enqueue_live_for_user(uuid,uuid,text,text,text[])') IS NULL THEN RETURN NEW; END IF;
+      FOR person IN SELECT DISTINCT v.created_by FROM code.version_submissions s JOIN code.versions v ON v.id=s.version_id
+        WHERE s.code_id=NEW.id AND s.origin->>'kind'='ai_chat' AND v.created_by IS NOT NULL LIMIT 20 LOOP
+        PERFORM ai.enqueue_live_for_user(gen_random_uuid(), person, NULL, NULL, ARRAY['code-versions']::text[]);
+      END LOOP;
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql`.simple();
+    await tx`CREATE OR REPLACE TRIGGER chat_code_state_live AFTER UPDATE OF state ON code.codes
+      FOR EACH ROW WHEN (OLD.state IS DISTINCT FROM NEW.state) EXECUTE FUNCTION code.chat_code_state_live()`.simple();
     await tx`CREATE TABLE IF NOT EXISTS code.version_withdrawals (
       version_id UUID PRIMARY KEY REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,
       withdrawn_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,

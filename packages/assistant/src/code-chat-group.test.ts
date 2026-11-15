@@ -3,6 +3,7 @@ import type { CapabilityInvocation } from "@k2b/cloud/capabilities";
 import type { z } from "zod";
 import { type CodeChatList, codeChatGroup, loadCodeChatGroup } from "./code-chat-group";
 import type { CodeQueryInvoke } from "./code-summary";
+import { codeVersionCardAnchor } from "./frontend/AssistantCodeVersionCard";
 
 const item = (state: CodeChatList["items"][number]["state"], attention = false) => ({
   codeId: `c_${state.padEnd(8, "x")}`,
@@ -58,4 +59,9 @@ test("a chat without readable Code has no group, also when Core refuses or canno
   expect(await loadCodeChatGroup(offline, chat, "de")).toBeNull();
   const one = fakeCore({ count: 1, items: [item("waiting")] });
   expect((await loadCodeChatGroup(one.invoke, chat, "en"))?.rows.map((row) => row.word)).toEqual(["Waiting for admin"]);
+});
+
+test("the anchor Core returns is the one the version card carries in the chat", () => {
+  // core.code.chat.list answers `code-version-<versionId>` (chat-list.integration.test.ts); a row click lands on this card.
+  expect(codeVersionCardAnchor("281fc42a-2d41-4822-a28b-e9e026f68ec1")).toBe("code-version-281fc42a-2d41-4822-a28b-e9e026f68ec1");
 });

@@ -90,10 +90,13 @@ const app = new Hono<AuthContext>()
         locale: getLocale(c),
         // Gustav reads the chat's Code through Core's public query with the person's own credentials.
         groups: [
-          (conversation) =>
+          (conversation, deadline) =>
             loadCodeChatGroup(
               (invocation, schema) =>
-                invokeCapabilityWithDataSchema(invocation, schema, { ...openQuestionsCaller(c), signal: c.req.raw.signal }),
+                invokeCapabilityWithDataSchema(invocation, schema, {
+                  ...openQuestionsCaller(c),
+                  signal: AbortSignal.any([c.req.raw.signal, deadline]),
+                }),
               conversation.id,
               getLocale(c),
             ),

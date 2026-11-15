@@ -1748,17 +1748,33 @@ export default function AssistantWorkspace(props: Props) {
     });
   // Routines and Studio app runs are gone on feat/code; Code attention reaches "Waiting for you" on its own path.
   setWaitingAttention(() => () => []);
+  /**
+   * Jumps to a card of this chat, such as a Code version, with the same landing as a question, so a reload and Back
+   * return to it. A card above the loaded history loads older pages until it shows; a card that is gone says so.
+   */
+  const jumpToCard = async (anchor: string) => {
+    const conversationId = chat.activeConversationId();
+    if (!conversationId) return;
+    const shown = () => Boolean(timelineContent()?.querySelector(`[data-chat-anchor="${CSS.escape(anchor)}"]`));
+    while (!shown() && conversationId === chat.activeConversationId()) {
+      if (!(await chat.loadOlderMessages().catch(() => false))) break;
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    }
+    if (conversationId !== chat.activeConversationId()) return;
+    if (!shown()) {
+      chat.setError(assistantCommandMessages.resolve([locale()]).t.messageUnavailable);
+      return;
+    }
+    await jumpToQuestion({ conversationId, anchor });
+  };
   // The box "In this chat": a click opens the thing as a tab beside the chat, or jumps to it.
   const contextBoxActions = (): ContextBoxActions => ({
     onOpen: (target) => {
       const actions = sidebarActions();
       if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
       else if (target.kind === "jump") actions.onJump(target.target);
-      else if (target.kind === "anchor") {
-        // A card of this chat, such as a Code version: the same landing as a question, so a reload and Back return to it.
-        const conversationId = chat.activeConversationId();
-        if (conversationId) void jumpToQuestion({ conversationId, anchor: target.anchor });
-      } else if (target.kind === "href") window.location.assign(target.href);
+      else if (target.kind === "anchor") void jumpToCard(target.anchor);
+      else if (target.kind === "href") window.location.assign(target.href);
     },
     onJump: (target) => void jumpTo(target),
     onOpenAll: () => openContextOverview("files", sidebarCopy().title),

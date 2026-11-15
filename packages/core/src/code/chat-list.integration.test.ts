@@ -62,8 +62,17 @@ databaseSuite()("Core lists the Code a chat submitted, for its owner only", () =
         ctx(author),
       )
     ).id;
+  /** An admin's approval request for a version, open, expired, or closed when a newer version replaced it. */
+  const approval = async (status: "pending" | "expired" | "cancelled", expiresInSeconds = 3600) => {
+    const [row] = await sql<{ id: string }[]>`INSERT INTO approvals.requests(app_id,action,kind,requester_kind,requester_ref,
+        requester_app_id,approver_role,assurance,sentence,args_digest,review_digest,status,expires_at)
+      VALUES('core','code.version.submit','code_version','code_version',${crypto.randomUUID()},'core','admin','confirm',
+        'Version freigeben','args','review',${status},now() + make_interval(secs => ${expiresInSeconds}))
+      RETURNING id`;
+    return row!.id;
+  };
   /** A submission from the chat, as the chat tool records it; with an approval, it waits for an admin. */
-  const submit = async (codeId: string, versionId: string, options: { approval?: boolean; conversationId?: string } = {}) => {
+  const submit = async (codeId: string, versionId: string, options: { approval?: string; conversationId?: string } = {}) => {
     const origin = {
       kind: "ai_chat",
       conversationId: options.conversationId ?? chatId,
@@ -73,7 +82,7 @@ databaseSuite()("Core lists the Code a chat submitted, for its owner only", () =
     submitted++;
     await sql`INSERT INTO code.version_submissions(version_id,code_id,binding,origin,approval_id,created_at)
       VALUES(${versionId}::uuid,${codeId},'{}'::jsonb,${JSON.stringify(origin)}::text::jsonb,
-        ${options.approval ? crypto.randomUUID() : null}::uuid,now() + make_interval(secs => ${submitted}))`;
+        ${options.approval ?? null}::uuid,now() + make_interval(secs => ${submitted}))`;
   };
   const decide = (versionId: string, outcome: "approved" | "changes_requested" | "rejected") =>
     sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_via,auth_epoch,outcome)
@@ -92,6 +101,10 @@ databaseSuite()("Core lists the Code a chat submitted, for its owner only", () =
     await migrateActivation();
     await sql`CREATE SCHEMA IF NOT EXISTS ai`;
     await sql`CREATE TABLE IF NOT EXISTS ai.conversations(id UUID PRIMARY KEY, created_by_user_id UUID NOT NULL)`;
+    // Records the live updates Core sends, in place of AI's own outbox.
+    await sql`CREATE TABLE IF NOT EXISTS ai.live_sent(user_id UUID, domains TEXT[])`;
+    await sql`CREATE OR REPLACE FUNCTION ai.enqueue_live_for_user(change UUID, person UUID, chat TEXT, project TEXT, domains TEXT[])
+      RETURNS void AS $$ INSERT INTO ai.live_sent VALUES(person, domains) $$ LANGUAGE sql`.simple();
     for (const [name, id] of Object.entries(ids))
       await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${id}::uuid,${name},'local','user')`;
     await sql`INSERT INTO ai.conversations(id,created_by_user_id) VALUES(${chatId}::uuid,${ids.author}::uuid)`;
@@ -122,19 +135,35 @@ databaseSuite()("Core lists the Code a chat submitted, for its owner only", () =
     const on = await mine("Wochenbericht");
     const onVersion = await version(on.id, ids.author);
     await submit(on.id, onVersion);
-    await sql`UPDATE code.codes SET state='paused',active_version_id=${onVersion}::uuid WHERE id=${on.id}`;
+    await sql`UPDATE code.codes SET active_version_id=${onVersion}::uuid WHERE id=${on.id}`;
+    await sql`DELETE FROM ai.live_sent`;
+    // Pausing tells the chat's person, so the box's state word follows.
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${on.id}`;
+    const sent = await sql<{ userId: string; domains: string[] }[]>`SELECT user_id::text AS "userId", domains FROM ai.live_sent`;
+    expect([...sent]).toEqual([{ userId: ids.author, domains: ["code-versions"] }]);
     const waiting = await mine("Angebote nachfassen");
     const first = await version(waiting.id, ids.author);
-    await submit(waiting.id, first, { approval: true });
+    await submit(waiting.id, first, { approval: await approval("pending") });
     await decide(first, "changes_requested");
     const second = await version(waiting.id, ids.author, first);
-    await submit(waiting.id, second, { approval: true });
+    await submit(waiting.id, second, { approval: await approval("pending") });
     const revising = await mine("Rechnungen sortieren");
     const asked = await version(revising.id, ids.author);
-    await submit(revising.id, asked, { approval: true });
+    await submit(revising.id, asked, { approval: await approval("pending") });
     await decide(asked, "changes_requested");
     await sql`INSERT INTO code.review_chat_work(version_id,code_id,conversation_id,user_id,state)
       VALUES(${asked}::uuid,${revising.id},${chatId}::uuid,${ids.author}::uuid,'running')`;
+    // Its approval ran out: the person can ask again.
+    const lapsed = await mine("Abgelaufen");
+    await submit(lapsed.id, await version(lapsed.id, ids.author), { approval: await approval("pending", -60) });
+    // A newer version from another chat closed this one's request without a decision: nothing waits here any more.
+    const replaced = await mine("Ersetzt");
+    const older = await version(replaced.id, ids.author);
+    await submit(replaced.id, older, { approval: await approval("cancelled") });
+    await submit(replaced.id, await version(replaced.id, ids.author, older), {
+      approval: await approval("pending"),
+      conversationId: crypto.randomUUID(),
+    });
     // Withdrawn and from another chat: not this chat's automations.
     const withdrawn = await mine("Zurückgezogen");
     const gone = await version(withdrawn.id, ids.author);
@@ -147,14 +176,15 @@ databaseSuite()("Core lists the Code a chat submitted, for its owner only", () =
     await submit(foreign.id, await version(foreign.id, ids.other));
 
     const list = await listChatCode({ conversationId: chatId }, ctx(ids.author));
-    expect(list.count).toBe(4);
+    expect(list.count).toBe(5);
     expect(list.items.map((item) => [item.title, item.state, item.attention])).toEqual([
+      ["Abgelaufen", "waiting", true],
       ["Rechnungen sortieren", "revising", false],
       ["Angebote nachfassen", "waiting", false],
       ["Wochenbericht", "paused", false],
       ["Lieferscheine ablegen", "ready", true],
     ]);
-    expect(list.items[1]).toMatchObject({ versionId: second, number: 2, anchor: `tool-call-${second.slice(0, 8)}` });
+    expect(list.items[2]).toMatchObject({ versionId: second, number: 2, anchor: `code-version-${second}` });
 
     // A reader without the right sees nothing: another person asking for this chat gets an empty list.
     expect(await listChatCode({ conversationId: chatId }, ctx(ids.other))).toEqual({ count: 0, items: [] });

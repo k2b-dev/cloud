@@ -448,6 +448,10 @@ test("an existing chat still loads at its old address under the name Gustav", as
   spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
   spies.push(spyOn(ai, "loadAiStreamState").mockResolvedValue({ type: "state", conversation: chat, messages: [], activeTurn: null }));
   spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+  // The chat's tabs come from the database, which this render test does not start.
+  spies.push(
+    spyOn(chatWorkspace, "loadAssistantChatWorkspace").mockResolvedValue({ state: { tabs: [], layout: null, front: null }, revision: 0 }),
+  );
   const response = await request("https://cloud.example.test/app/assistant?conversation=chat1");
   // Same address, no redirect: links and bookmarks to old chats keep working.
   expect(response.status).toBe(200);

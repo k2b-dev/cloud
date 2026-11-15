@@ -191,7 +191,18 @@ export default ssr<AuthContext>(async (c) => {
         loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
           timeZone,
           locale,
-          groups: [(conversation) => loadCodeChatGroup(invokeCode, conversation.id, locale)],
+          groups: [
+            (conversation, deadline) =>
+              loadCodeChatGroup(
+                (invocation, schema) =>
+                  invokeCapabilityWithDataSchema(invocation, schema, {
+                    ...codeCaller,
+                    signal: AbortSignal.any([c.req.raw.signal, deadline]),
+                  }),
+                conversation.id,
+                locale,
+              ),
+          ],
         }),
         loadAssistantChatWorkspace(identity, activeConversation.shortId),
       ])
