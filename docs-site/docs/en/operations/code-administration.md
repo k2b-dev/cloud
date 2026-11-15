@@ -17,11 +17,14 @@ Every selection is part of the URL, so reload, back and shared links return to
 the same place. Other people see a no-permission state; the page has no
 partial view for them. The "Code" entry in the Administration sidebar shows the
 number of open Code-version approvals for the signed-in Cloud administrator,
-plus the open reports on Code pages.
+plus the open reports on Code pages. The area shows this breakdown separately
+as **Approvals** and **Reports**, using the same server snapshot as the sidebar.
+The admin bar's **Approvals** badge counts only approval requests.
 
 | Section | What it shows | Source of truth |
 | --- | --- | --- |
 | Approvals | Versions that wait for a Cloud administrator, and recently decided versions | [Code versions](/en/docs/platform/code-versions) |
+| Reports | Number of open page reports. Select the affected Code to resolve a report or pause the automation | [Code pages](/en/docs/platform/code-page) |
 | Code in this Cloud | Every Code with owner, status and last run. A resource owner shows the name its app's reader gives you, or a generic type label when you may not read it | [Code data model](/en/docs/platform/code-data-model) |
 | Policies › Default, Groups, Effective for …, History | The policy table, group rules, the resolved table for one person, and recent changes from the audit log | [Code policy](/en/docs/platform/code-policy) |
 | Operations › Cleanup | Pending Code deletion jobs, with status, attempts and the last error | [Code lifecycle](/en/docs/platform/code-lifecycle) |

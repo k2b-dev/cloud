@@ -202,12 +202,46 @@ unchanged comparison.
 
 An author cannot approve their own version when another active human Cloud
 administrator exists. The platform's sole-admin rule is the only exception:
-a sole active human Cloud administrator can approve their own version after
-recent full browser sign-in or through Cloud Login. The shared question shows:
+an administrator with no other active human reviewer can approve their own
+version after recent full browser sign-in or through Cloud Login. The shared
+question shows:
 
 > Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft.
 
-Machine accounts and expired administrators do not count as a second person.
+The Administration → Code review shows “You are the only admin and approve
+your own version.” / “Du bist der einzige Admin und gibst deine eigene Version
+frei.” and enables approval. When another reviewer exists, the author's
+“Another admin approves it” hint stays and approval remains unavailable.
+
+The Code sidebar badge counts open version requests plus open page reports.
+Administration → Code shows the breakdown as **Approvals** and **Reports**
+(**Freigaben** and **Meldungen**). Both numbers come from the same server
+snapshot. The admin bar's **Approvals** badge counts only approval requests,
+including your own pending submission; expired requests do not count. Page
+reports still notify admins. Select the affected Code in administration to
+resolve its report or pause the Code.
+
+When you can approve your own pending version, Gustav's submission handover
+and version card say “You can approve it yourself.” / “Du kannst sie selbst
+freigeben.” The server selects this wording for the submitting person; with
+another human reviewer, the administrator-approval wording stays. The submit
+result identifies this next step as `admin_approval` with `who: "you"`, rather
+than `who: "cloud_admin"`; the version preview carries `readiness.selfApproval`.
+This is an advisory next step: the decision checks eligibility again.
+
+Machine accounts, expired or locked administrators, disabled account categories,
+and the emergency identity do not count as other reviewers. The platform
+recognizes that identity by a stored marker together with local Login and the
+username `admin`. Returning the account to an ordinary provider or profile ends
+that marker; the restored human admin counts as a reviewer. An ordinary IPA
+account named `admin` also remains a human reviewer after switching to local
+Login and receiving admin access. An existing emergency account without the
+marker counts conservatively as an ordinary administrator until it carries
+the marker.
+The emergency admin may approve its own version only when no active human
+admin exists, with the same recent sign-in requirement and audit evidence.
+An active ordinary account such as `dev-admin` counts as a human reviewer,
+even without a previous sign-in.
 The platform counts and locks the administrator population in the decision
 transaction. Adding a second administrator blocks new self-approvals immediately;
 an earlier approval stays valid.

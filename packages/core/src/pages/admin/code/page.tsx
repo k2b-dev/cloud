@@ -50,7 +50,7 @@ export default ssr<AuthContext>(async (c) => {
   let noPermission = !allowed;
   if (allowed) {
     try {
-      const summary = await attempt(() => readCodeAdminSummary(context));
+      const summary = await attempt(() => readCodeAdminSummary(context, c.get("adminCodeCounts")));
       const sec = query.sec;
       const limitKeys = [
         ...CODE_LIMIT_KEYS,

@@ -5,6 +5,7 @@ import { reviewFixture } from "../../_internal/capability-review.test-fixture";
 import { migrateCloudAi } from "../../ai/migrate";
 import { sql } from "../../runtime/clients";
 import type { RequestAuthority } from "../../server/middleware/auth";
+import { transitionIpaUserToLocal } from "../accounts/switching";
 import { get as getUser } from "../accounts/users";
 import { createTestBrowserSignIn } from "../session/session.test-fixture";
 import { encryptValue } from "../settings/crypto";
@@ -18,7 +19,7 @@ import {
   registerApprovalDecisionHandler,
 } from ".";
 import { readApprovalContent } from "./content";
-import { soleCodeAdmin } from "./policy";
+import { hasOtherApprovalAdmin, listApprovalAdminRecipients } from "./policy";
 
 // Each suite receives an isolated test database from the shared infrastructure gate.
 databaseSuite()("independent Code-version approvals", () => {
@@ -117,11 +118,53 @@ databaseSuite()("independent Code-version approvals", () => {
   const selfDecide = async (id: string, tx: SQL, authority: RequestAuthority) =>
     approvals.decide(id, { approved: true }, { userId: author, via: "web_session", authority }, tx);
 
+  test("an IPA admin UID switched to local remains a human reviewer; the marked emergency identity is separate", async () => {
+    const pending = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    await withSoleAdmin(async (tx) => {
+      const [existing] = await tx<{ id: string }[]>`SELECT id FROM auth.users WHERE uid='admin'`;
+      if (existing) await tx`UPDATE auth.users SET uid=${`saved-admin-${existing.id}`} WHERE id=${existing.id}::uuid`;
+      const [ordinary] = await tx<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,emergency_admin)
+        VALUES('admin','ipa','user',true) RETURNING id`;
+      if (!ordinary) throw new Error("Missing ordinary account");
+      await transitionIpaUserToLocal({ userId: ordinary.id, targetProfile: "user", accountExpires: null, db: tx });
+      await tx`UPDATE auth.users SET admin=true WHERE id=${ordinary.id}::uuid`;
+      expect([...(await tx`SELECT uid,provider,emergency_admin FROM auth.users WHERE id=${ordinary.id}::uuid`)]).toMatchObject([
+        { uid: "admin", provider: "local", emergency_admin: false },
+      ]);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(true);
+      const authority = await signedAuthor(signIn.sid, tx);
+      expect(await selfDecide(pending.id, tx, authority)).toEqual({ ok: false, code: "SELF_APPROVAL" });
+      // Only the emergency sign-in path writes this marker in application code.
+      await tx`UPDATE auth.users SET emergency_admin=true WHERE id=${ordinary.id}::uuid`;
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
+      expect(await listApprovalAdminRecipients(tx, { userId: ordinary.id })).toEqual([ordinary.id]);
+      expect(await selfDecide(pending.id, tx, authority)).toMatchObject({ ok: true });
+    });
+  });
+  test.each(["ipa", "local"] as const)("a stale emergency marker on an ordinary %s admin still counts as a reviewer", async (provider) => {
+    const pending = await ask();
+    await withSoleAdmin(async (tx) => {
+      // Simulate a stored marker left over from an earlier identity transition.
+      // Check provider and UID independently: IPA/admin and local/ordinary-name both count.
+      if (provider === "ipa") {
+        await tx`UPDATE auth.users SET uid=${`saved-admin-${admin}`} WHERE uid='admin'`;
+        await tx`UPDATE auth.users SET uid='admin' WHERE id=${admin}::uuid`;
+      }
+      await tx`UPDATE auth.users SET provider=${provider},admin=${provider === "local"},emergency_admin=true WHERE id=${admin}::uuid`;
+      await tx`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${admin}::uuid,'code-review-admins')`;
+      await tx`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
+        ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(true);
+      expect(await selfDecide(pending.id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "SELF_APPROVAL" });
+      expect(await approvals.get(pending.id, tx)).toMatchObject({ status: "pending" });
+    });
+  });
   test("the sole human admin self-approves with durable decision evidence and an audit reason", async () => {
     const { id } = await ask();
     const signIn = await createTestBrowserSignIn(author);
     await withSoleAdmin(async (tx) => {
-      expect(await soleCodeAdmin(tx)).toBe(author);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
       expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toEqual({ ok: true, status: "approved", replay: false });
       expect(transitionSoleAdmin).toBe(true);
       expect(await approvals.get(id, tx)).toMatchObject({ status: "approved", soleAdmin: true, decidedByUserId: author });
@@ -157,7 +200,7 @@ databaseSuite()("independent Code-version approvals", () => {
         ('freeipa.groups.admin',${await encryptValue(["code-review-admins"])}),
         ('user.category.freeipa.enabled',${await encryptValue(false)})
         ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
-      expect(await soleCodeAdmin(tx)).toBe(author);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
       expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toMatchObject({ ok: true });
     });
   });
@@ -169,7 +212,12 @@ databaseSuite()("independent Code-version approvals", () => {
       await tx`INSERT INTO auth.ipa_user_effective_groups VALUES(${outsider}::uuid,'code-review-admins')`;
       await tx`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
         ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
-      expect(await soleCodeAdmin(tx)).toBeNull();
+      expect(await listApprovalAdminRecipients(tx, { userId: outsider })).toEqual([outsider]);
+      await tx`INSERT INTO auth.user_ipa_data(user_id,locked_at) VALUES(${outsider}::uuid,now())`;
+      expect(await listApprovalAdminRecipients(tx, { userId: outsider })).toEqual([]);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
+      await tx`UPDATE auth.user_ipa_data SET locked_at=NULL WHERE user_id=${outsider}::uuid`;
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(true);
       expect(await selfDecide(id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "SELF_APPROVAL" });
     });
   });
@@ -210,10 +258,23 @@ databaseSuite()("independent Code-version approvals", () => {
           code: "NOT_FOUND",
         });
       }
-      expect(await soleCodeAdmin(tx)).toBe(author);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
       expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toMatchObject({ ok: true });
       await tx`UPDATE auth.users SET admin=false WHERE id=${author}::uuid`;
-      expect(await soleCodeAdmin(tx)).toBeNull();
+      expect(await selfDecide(id, tx, await signedAuthor(signIn.sid, tx))).toEqual({ ok: false, code: "NOT_FOUND" });
+    });
+  });
+
+  test("a stale admin claim cannot self-approve an open request after database demotion", async () => {
+    const { id } = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    await withSoleAdmin(async (tx) => {
+      const authority = await signedAuthor(signIn.sid, tx);
+      expect(authority.actor.kind === "user" && authority.actor.user.roles.includes("admin")).toBe(true);
+      await tx`UPDATE auth.users SET admin=false WHERE id=${author}::uuid`;
+      expect(await approvals.get(id, tx)).toMatchObject({ status: "pending", soleAdmin: false });
+      expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "NOT_FOUND" });
+      expect(await approvals.get(id, tx)).toMatchObject({ status: "pending", soleAdmin: false, decidedByUserId: null });
     });
   });
 
@@ -241,52 +302,57 @@ databaseSuite()("independent Code-version approvals", () => {
       sql.begin(async (tx) => {
         await tx`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
         await tx`UPDATE auth.users SET admin=false WHERE admin AND id<>${author}::uuid`;
-        expect(await soleCodeAdmin(tx)).toBe(author);
+        expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
         expect(await selfDecide(id, tx, await authorityFor(author, tx))).toEqual({ ok: false, code: "SELF_APPROVAL" });
         throw rollback;
       }),
     ).rejects.toBe(rollback);
   });
 
-  test("an in-flight second-admin promotion wins without aborting or stalling the decision transaction", async () => {
-    const { id } = await ask();
-    const authority = await authorityFor(author);
-    await withSoleAdmin(async (tx) => {
-      let promoted!: () => void, release!: () => void;
-      const ready = new Promise<void>((resolve) => {
-        promoted = resolve;
-      });
-      const released = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const rollback = new Error("promotion rollback");
-      const promotion = sql
-        .begin(async (writer) => {
-          await writer`UPDATE auth.users SET admin=true WHERE id=${outsider}::uuid`;
-          promoted();
-          await released;
-          throw rollback;
-        })
-        .catch((error: unknown) => {
-          if (error !== rollback) throw error;
+  for (const writerKind of ["promotion", "ipa_lock"] as const) {
+    test(`an in-flight population change (${writerKind}) wins without aborting or stalling the decision transaction`, async () => {
+      const { id } = await ask();
+      const authority = await authorityFor(author);
+      await withSoleAdmin(async (tx) => {
+        let promoted!: () => void, release!: () => void;
+        const ready = new Promise<void>((resolve) => {
+          promoted = resolve;
         });
-      try {
-        await Promise.race([
-          ready,
-          promotion.then(() => {
-            throw new Error("Promotion never acquired its lock");
-          }),
-        ]);
-        expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "BUSY" });
-        expect(await approvals.get(id, tx)).toMatchObject({ status: "pending" });
-        // A denied NOWAIT lock is contained in a savepoint, so this transaction remains usable.
-        expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
-      } finally {
-        release();
-        await promotion;
-      }
+        const released = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const rollback = new Error("promotion rollback");
+        const promotion = sql
+          .begin(async (writer) => {
+            if (writerKind === "promotion") await writer`UPDATE auth.users SET admin=true WHERE id=${outsider}::uuid`;
+            else
+              await writer`INSERT INTO auth.user_ipa_data(user_id,locked_at) VALUES(${outsider}::uuid,now())
+            ON CONFLICT(user_id) DO UPDATE SET locked_at=EXCLUDED.locked_at`;
+            promoted();
+            await released;
+            throw rollback;
+          })
+          .catch((error: unknown) => {
+            if (error !== rollback) throw error;
+          });
+        try {
+          await Promise.race([
+            ready,
+            promotion.then(() => {
+              throw new Error("Promotion never acquired its lock");
+            }),
+          ]);
+          expect(await selfDecide(id, tx, authority)).toEqual({ ok: false, code: "BUSY" });
+          expect(await approvals.get(id, tx)).toMatchObject({ status: "pending" });
+          // A denied NOWAIT lock is contained in a savepoint, so this transaction remains usable.
+          expect((await tx`SELECT 1 AS usable`)[0]?.usable).toBe(1);
+        } finally {
+          release();
+          await promotion;
+        }
+      });
     });
-  });
+  }
 
   test("an author row lock fails busy before a waiting writer can cause a lock upgrade deadlock", async () => {
     const { id } = await ask();

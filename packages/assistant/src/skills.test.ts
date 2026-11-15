@@ -6,6 +6,10 @@ test("Code handover follows submit nextStep and keeps SDK diagnostics out of hum
   const skill = SKILLS.find((skill) => skill.name === "code-authoring")!;
   expect(skill.instructions).toContain("nextStep");
   expect(skill.instructions).toContain("admin_approval");
+  expect(skill.instructions).toContain("`admin_approval` / `you`");
+  expect(skill.instructions).toContain("`admin_approval` / `cloud_admin`");
+  expect(skill.instructions).toContain("You can approve it yourself.");
+  expect(skill.instructions.replace(/\s+/g, " ")).toContain("Du kannst sie selbst freigeben.");
   expect(skill.instructions).toContain("`next` and `who`");
   expect(skill.instructions).toContain("never infer one");
   expect(skill.instructions).toContain("file names or error codes");

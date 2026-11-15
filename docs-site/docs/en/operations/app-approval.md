@@ -973,13 +973,32 @@ Review authenticator dependencies and service-worker updates as credential
 handling code. Do not add analytics, remote scripts, exported private-key
 backups or a shared cross-Cloud key as incidental integration work.
 
-Code-version role reviews use the same signed device confirmation. The sole
-active human Cloud admin may review their own version with the explicit
+Code-version role reviews use the same signed device confirmation. An admin
+without another active human reviewer may approve their own version with the explicit
 self-approval notice in the signed question. A second active human admin
 blocks new self-approvals; it does not revoke earlier decisions. See
 [Code-version approvals](/en/docs/identity/approvals#code-version-approvals)
 for eligibility and decision evidence.
 
-An active bootstrap admin counts even if that person has never signed in.
-Review and demote or expire unused admin accounts when the installation no
-longer needs them; an unused active admin still prevents sole-admin self-approval.
+The emergency identity never counts as another reviewer. The exception requires
+its stored identity marker, local Login and the username `admin` together.
+Returning the account to an ordinary provider or profile ends the marker, so the
+restored human admin counts as a reviewer. An ordinary IPA account named `admin`
+also counts after switching to local Login and receiving admin access. An
+existing emergency account without the marker counts conservatively as an
+ordinary admin until it carries the marker. This conservative reviewer count
+does not change the reserved local account’s sign-in restrictions or its email
+exemption: both also apply without the marker. The emergency admin may self-approve
+only when no active human admin exists, with recent sign-in and the same visible
+self-approval audit and history. An active ordinary bootstrap account such as
+`dev-admin` counts even without a previous sign-in.
+Locked, expired, or category-disabled accounts and service accounts do not count.
+Review and demote or expire unused ordinary admin accounts when the installation
+no longer needs them; an unused active human admin still prevents self-approval.
+
+Self-approval can return `BUSY` (HTTP 503) during a running FreeIPA sync because
+the NOWAIT population lock includes `auth.user_ipa_data`; retry after the sync finishes.
+
+The emergency admin still receives submitted-version and page-report notifications
+and may read Code decision events; locked FreeIPA accounts are excluded from
+these recipients and readers as well as from independent reviewers.
