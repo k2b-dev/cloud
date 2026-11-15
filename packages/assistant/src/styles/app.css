@@ -825,3 +825,10 @@
 .assistant-all-chats-filters { display: flex; flex-wrap: wrap; gap: .5rem; align-items: start; }
 .assistant-all-chats-filters > :first-child { flex: 999 1 16rem; min-width: 0; }
 .assistant-all-chats-filters > :last-child { flex: 1 1 13rem; min-width: 0; }
+
+/* Reading column (Gustav chat v12, Bauplan 4a): the conversation is at most 812 px wide and centred, so with its 24 px
+   gutters the turns and the composer share one 764 px column; prose stops at 44 rem. */
+.k2b-ui .assistant-chat-layout .k2b-chat-timeline__content { width: min(100%, 50.75rem); }
+.k2b-ui .assistant-chat-composer > div { max-width: 47.75rem; }
+.k2b-ui .assistant-chat-layout .ai-turn__text .assistant-markdown-block { max-width: 44rem; }
+

@@ -418,7 +418,8 @@ for (const view of [
             ),
           ],
         });
-        // The work line and the result stay where they were; the status folds away and the notice ends the turn.
+        // The work line and the result stay where they were; the notice ends the turn. A text written before a step folds
+        // away; the text Gustav had begun after its last step stays where it stood.
         expect(await box(".ai-turn-work")).toEqual(workBefore);
         expect(await box(".ai-turn > :nth-child(2)")).toEqual(resultBefore);
         const notice = await box(".ai-turn__notice");
@@ -426,7 +427,7 @@ for (const view of [
         expect(notice![1]!).toBeGreaterThanOrEqual(resultBefore![1]! + resultBefore![3]!);
         expect(notice![0]! + notice![2]!).toBeLessThanOrEqual(Math.ceil(view.width));
         const text = await page.locator(".ai-turn__notice").innerText();
-        expect(text).toContain(de ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.");
+        expect(text).toContain(de ? "Die Antwort wurde unterbrochen:" : "The answer was interrupted:");
         expect(text).toContain(
           failedStep
             ? de
@@ -452,7 +453,8 @@ for (const view of [
           );
           expect(await page.locator(".ai-turn-work .ai-turn-work__meta").innerText()).toBe(de ? "4 Min." : "4 min");
         }
-        expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
+        if (failedStep) expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
+        else expect(await page.locator(".ai-turn__text").innerText()).toContain("Now I build the report.");
         expect(
           await page.evaluate(() => {
             const viewport = document.querySelector(".k2b-chat-timeline__viewport")!;

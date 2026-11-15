@@ -34,7 +34,7 @@ import type { AiStopNotice } from "./stop-notice";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, useAiToolDisclosure } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
-import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
+import { aiTurnErrorCanContinue } from "./turn-error";
 import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 import { AiThoughtStep, AiWorkFollowedContext, AiWorkStep, keepsStepDetail } from "./work-steps";
@@ -76,6 +76,8 @@ export type AiTurnSegment = {
   reconnect?: "line" | "row";
   /** Why the turn failed, shown in a notice at its end. Only the last segment of a failed turn carries it. */
   error?: AiTurnError | null;
+  /** A stopped answer can be given again: the person's message is answered anew. */
+  answerAgain?: () => void | Promise<void>;
   stopNotice?: AiStopNotice | null;
   /** The turn is the chat's newest and nothing runs, so a new message can pick up its work. */
   continuable?: boolean;
@@ -705,7 +707,7 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
   );
 }
 
-function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) {
+function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean; kept: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const actions = useAiChatActions();
@@ -721,7 +723,14 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) 
     }
   };
   return (
-    <NoticeCard tone="danger" class="ai-turn__notice" title={t().turnErrorTitle} detail={aiTurnErrorDescription(props.error, locale())}>
+    <NoticeCard
+      tone="danger"
+      icon="ti ti-alert-circle"
+      layout="card"
+      class="ai-turn__notice"
+      title={t().turnInterrupted({ reason: t().turnErrorReason(props.error) })}
+      detail={props.kept ? t().keptSoFar : undefined}
+    >
       <Show when={canContinue()}>
         <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueTurn()}>
           <i class="ti ti-player-play" aria-hidden="true" /> {t().continueTurn}
@@ -747,6 +756,8 @@ function AiTurnText(props: {
   quiet: Accessor<boolean>;
   /** An earlier segment of a split turn: it stops being live while the turn goes on. */
   earlier: Accessor<boolean>;
+  /** The turn ended with its answer; a stopped or failed turn keeps its text but its answer is not ready. */
+  completed: Accessor<boolean>;
 }) {
   const locale = useLocale();
   const status = () => props.live() && props.folding();
@@ -808,7 +819,8 @@ function AiTurnText(props: {
   );
   createEffect(
     on(props.live, (live, wasLive) => {
-      if (wasLive === true && !live && untrack(props.folding) && !untrack(props.earlier)) announce(aiChatMessages(locale()).answerReady);
+      if (wasLive === true && !live && untrack(props.folding) && !untrack(props.earlier) && untrack(props.completed))
+        announce(aiChatMessages(locale()).answerReady);
     }),
   );
   return (
@@ -850,6 +862,19 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
   const actions = createMemo(() => new Map(layout().actions.map((action) => [action.id, action])));
   const actionIds = createMemo(() => [...actions().keys()]);
   const live = () => isLive(props.segment().phase);
+  // One "Answer again" at a time: a second click while the first is on its way would ask the controller to stop it.
+  const [answering, setAnswering] = createSignal(false);
+  const answerAgain = async (run: () => unknown) => {
+    if (answering()) return;
+    setAnswering(true);
+    try {
+      await run();
+    } catch {
+      // The chat controller shows why the message could not be answered again.
+    } finally {
+      setAnswering(false);
+    }
+  };
   // The sources the finished answer cites, numbered as in its text. Read once the turn ends, from the same sanitized HTML
   // the answer shows, so a link the sanitizer drops never comes back as a source.
   const sources = createMemo(() => {
@@ -859,13 +884,16 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
       .join("\n\n");
     return text.includes("](") ? answerSources(markdown.renderSync(text, { locale: locale() }), layout().work) : [];
   });
-  // Screen readers hear once that the turn they followed failed and why; history read later is not announced.
+  /** Something of the turn stays above its failure notice. */
+  const kept = () => layout().text.length > 0 || layout().results.length > 0 || layout().steps > 0;
+  // Screen readers hear once that the turn they followed failed and why, as the notice says it; history read later is not
+  // announced.
   createEffect(
     on(live, (now, before) => {
       const error = props.segment().error;
       if (before && !now && error) {
         const t = aiChatMessages(locale());
-        announce(`${t.turnErrorTitle} ${aiTurnErrorDescription(error, locale())}`);
+        announce([t.turnInterrupted({ reason: t.turnErrorReason(error) }), kept() ? t.keptSoFar : ""].filter(Boolean).join(" "));
       }
     }),
   );
@@ -909,6 +937,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             folding={() => layout().steps > 0}
             quiet={() => layout().textIsStatus}
             earlier={() => props.segment().earlier}
+            completed={() => props.segment().phase === "completed"}
           />
         </Show>
         <Show when={!live() && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
@@ -933,8 +962,32 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           {/* Calm by design: no busy sweep while the turn reconnects. */}
           <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
         </Show>
+        <Show when={props.segment().phase === "stopped" && !props.segment().earlier}>
+          {/* Calm by design: the person stopped it, so this is a quiet line, not a warning. */}
+          <Chat.Activity
+            class="ai-turn__stopped"
+            wrap
+            icon="ti ti-player-stop"
+            label={layout().text.length > 0 ? aiChatMessages(locale()).stoppedTextStays : aiChatMessages(locale()).stoppedByYou}
+            trailing={
+              <Show when={props.segment().answerAgain}>
+                {(again) => (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={answering()}
+                    onClick={() => void answerAgain(again())}
+                    disabled={chatActions.actionDisabled?.()}
+                  >
+                    <i class="ti ti-refresh" aria-hidden="true" /> {aiChatMessages(locale()).actionAnswerAgain}
+                  </Button>
+                )}
+              </Show>
+            }
+          />
+        </Show>
         <Show when={props.segment().error}>
-          {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} />}
+          {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} kept={kept()} />}
         </Show>
         <Show when={props.segment().stopNotice}>
           {(notice) => <AiTurnStopNotice notice={notice()} continuable={props.segment().continuable === true} />}

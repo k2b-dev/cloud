@@ -538,8 +538,9 @@
   margin-block: calc(1.125rem - var(--md-table-bleed)) 1.125rem;
 }
 
+/* A thematic break is space, never a line between parts of an answer (design guide: no lines between areas). */
 .assistant-markdown-block :where(hr) {
-  @apply border-0 border-t border-zinc-200 dark:border-zinc-800;
+  border: 0;
   margin-block: 1.375rem;
 }
 
@@ -2117,6 +2118,22 @@ dialog:has(.launchpad-panel)::backdrop {
 .k2b-ui .ai-source__title {
   min-width: 0;
   max-width: 20rem;
+}
+
+/* An answer's headings stand out by size and weight only: 18 px for the first three levels, the text's 14 px below. */
+.k2b-ui .ai-turn__text:not(.ai-turn__text--status) .assistant-markdown-block :where(h1, h2, h3) {
+  font-size: 1.125rem;
+  line-height: 1.625rem;
+  letter-spacing: -0.005em;
+}
+
+/* "Answer again" follows the sentence, as one quiet line (v12 g-antwort/gestoppt), instead of standing at the far edge. */
+.k2b-ui .ai-turn__stopped .k2b-chat-activity__copy {
+  flex: 0 1 auto;
+}
+
+.k2b-ui .ai-turn__stopped .k2b-chat-activity__trailing {
+  margin-inline-start: 0.25rem;
 }
 
 /* A note at a step: a quiet line under the step's words, at its text edge, that opens the text in place. */

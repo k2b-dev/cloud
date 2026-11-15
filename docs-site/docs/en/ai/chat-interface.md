@@ -469,8 +469,11 @@ order:
    space behind. A long quiet text that becomes the final message unfolds
    below its first lines.
    Finished, it is the final message in answer typography: the turn's last
-   text, even if a tool call followed it. A stopped or failed turn has no final
-   message; its texts stay in the work line.
+   text, even if a tool call followed it. A stopped or failed turn keeps the
+   answer it had begun after its last step in this place; a status written
+   before a step stays in the work line. A failed turn ends with a notice that
+   names the reason and that what is there stays; a stopped one ends with a
+   quiet line and **Answer again**.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
    The question and result use the same card: a sentence with typed chips,
