@@ -616,6 +616,7 @@ describe("Code page loader", () => {
         };
       return { items: [] };
     };
+  type CatalogApp = NonNullable<Extract<Awaited<ReturnType<typeof capabilityServer.getCapabilityCatalogApp>>, { ok: true }>["data"]>;
   const registry = {
     spaces: {
       appId: "spaces",
@@ -646,26 +647,30 @@ describe("Code page loader", () => {
     checkedManifest: unknown = manifest,
     cloudTimeZone?: string,
     roles: string[] = ["user"],
+    /** Version words Core answers instead of the default, and other apps' answers by `app.capability`. */
+    overrides: { words?: (versionId: string) => unknown; apps?: Record<string, unknown>; spaces?: CatalogApp } = {},
   ) => {
     const appCalls: string[] = [];
     const coreCalls: string[] = [];
     const invoke = spyOn(capabilityServer, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
       if (invocation.appId !== "core") {
-        appCalls.push(`${invocation.appId}.${invocation.capabilityId}`);
+        const key = `${invocation.appId}.${invocation.capabilityId}`;
+        appCalls.push(key);
+        const answer = overrides.apps?.[key];
+        if (answer) return { ok: true, data: capabilityResultSchema(schema).parse(answer) };
         return { ok: false, error: { code: "APP_UNAVAILABLE", message: "Another app was asked", status: 503 } };
       }
       coreCalls.push(invocation.capabilityId);
-      const data = core(
-        permission,
-        run,
-        firstCall,
-        checkedManifest,
-      )(invocation.capabilityId, invocation.input as { content?: unknown; cursor?: number; versionId?: string });
+      const input = invocation.input as { content?: unknown; cursor?: number; versionId?: string };
+      const data =
+        invocation.capabilityId === "code.version.words" && overrides.words
+          ? overrides.words(input.versionId ?? V4)
+          : core(permission, run, firstCall, checkedManifest)(invocation.capabilityId, input);
       return { ok: true, data: capabilityResultSchema(schema).parse({ data }) };
     });
     const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockImplementation(async (appId) => ({
       ok: true,
-      data: appId === "spaces" ? registry.spaces : null,
+      data: appId === "spaces" ? (overrides.spaces ?? registry.spaces) : null,
     }));
     const fetched = spyOn(globalThis, "fetch").mockImplementation(
       Object.assign(
@@ -702,6 +707,76 @@ describe("Code page loader", () => {
       fetched.mockRestore();
     }
   };
+
+  // #77: Core's owner check spent its one child Query on the mailbox, so it could not read the Space and kept only
+  // its reference. The page reads that target itself, as the person, through the same readers as the latest results.
+  test("a target Core could not read in its owner child call is still named, and only when the person may read it", async () => {
+    const withTarget = (versionId: string) => {
+      const base = versionWords(versionId);
+      return {
+        ...base,
+        mayDo: {
+          items: [
+            {
+              text: "Aufgabe erstellen · ein Ziel vom Typ Space",
+              app: "Spaces",
+              target: { ref: { type: "spaces.space", id: "GPzX93" }, text: "Aufgabe erstellen · Space „{name}“" },
+            },
+          ],
+          more: 0,
+          moreText: null,
+        },
+      };
+    };
+    const spaces: CatalogApp = {
+      ...registry.spaces,
+      manifest: {
+        ...registry.spaces.manifest,
+        types: registry.spaces.manifest.types.map((type) => (type.localId === "space" ? { ...type, reader: "space.read" } : type)),
+        queries: [{ ...currentLibrary.manifest.queries[0]!, localId: "space.read", title: "Space lesen" }],
+      },
+    };
+    const readable = await load("reader", "", failedRun, policyCall, manifest, undefined, ["user"], {
+      words: withTarget,
+      spaces,
+      apps: {
+        "spaces.space.read": {
+          data: { view: { title: "Logistik", permission: "read" } },
+          links: [{ rel: "open", href: "/app/spaces/GPzX93" }],
+        },
+      },
+    });
+    if (readable.data.state.kind !== "ready") throw new Error("Expected a ready page");
+    expect(readable.data.state.words?.current?.mayDo.items).toEqual([
+      expect.objectContaining({ text: "Aufgabe erstellen · Space „Logistik“", href: "/app/spaces/GPzX93" }),
+    ]);
+    expect(readable.appCalls).toEqual(["spaces.space.read"]);
+    const page = renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data: readable.data });
+        },
+      }),
+    );
+    expect(page).toContain('<a href="/app/spaces/GPzX93">Space „Logistik“</a>');
+    // Without the right the row keeps Core's type-only words, without a link or the reference.
+    const hidden = await load("reader", "", failedRun, policyCall, manifest, undefined, ["user"], { words: withTarget, spaces });
+    if (hidden.data.state.kind !== "ready") throw new Error("Expected a ready page");
+    const [row] = hidden.data.state.words?.current?.mayDo.items ?? [];
+    expect(row?.text).toBe("Aufgabe erstellen · ein Ziel vom Typ Space");
+    expect(row).not.toHaveProperty("href");
+    const hiddenPage = renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data: hidden.data });
+        },
+      }),
+    );
+    expect(hiddenPage).toContain("ein Ziel vom Typ Space");
+    expect(hiddenPage).not.toMatch(/GPzX93|\{name\}/);
+  });
 
   test("an omitted schedule zone displays the Cloud default even with a different visitor zone", async () => {
     const at = "2026-12-01T09:15:30Z";

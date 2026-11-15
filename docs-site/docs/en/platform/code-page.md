@@ -39,7 +39,8 @@ their type ("a space you cannot see").
   effect's target with the reader's own rights, at most six, and names and
   links only what they may open); **When it runs** with
   **Run now**; and **What it may do** (apps, internet and its own data in one
-  list). A newer version that waits shows the shared approval frame above the
+  list; a target is named and linked only when the reader may open it, read
+  the same way as the effects). A newer version that waits shows the shared approval frame above the
   situation. When the last run failed, a notice says what happened and what
   to check. Run updates arrive live; see [Follow run updates](#follow-run-updates).
 - **Runs:** a list with filters (all, failed, skipped) and a detail that says
