@@ -90,3 +90,51 @@ describe("answer sources", () => {
     expect(answerSources(md("Kein Zitat."), blocks)).toEqual([]);
   });
 });
+
+/**
+ * Kimi K3's answer in the Preview tour (15.11., chat "Was steht im Notebook …"), copied from the transcript: it writes
+ * bare numbers in the text and adds its own sources paragraph at the end.
+ */
+const kimiAnswer = [
+  "Im Notebook steht, wie der Wareneingang ablaufen soll: Lieferavise werden morgens geprüft und Paletten im Lager B gezählt [1].",
+  "",
+  "Auffällig: 14 der 22 Aufgaben heißen identisch „Lieferavise heute prüfen“ [2]. Das sieht nach einer Automatisierung aus.",
+  "",
+  "**Quellen:** [1] Notiz [Wareneingang](/open/notebooks.note/~wareneingang) im Notebook [Logistik-Handbuch](/open/notebooks.notebook/~handbuch) · [2] Aufgabenliste des Space [Logistik](/open/spaces.space/~logistik), abgerufen heute um 07:07 Uhr.",
+].join("\n");
+
+describe("a model that writes bare numbers and its own sources paragraph", () => {
+  test("the numbers become chips to the destinations of its sources paragraph, which leaves the answer", () => {
+    const rendered = html(kimiAnswer);
+    expect(rendered).not.toContain("Quellen:");
+    expect(rendered).not.toContain("abgerufen heute");
+    expect(rendered).toMatch(
+      /href="\/open\/notebooks\.note\/~wareneingang"[^>]* class="ai-cite" data-cite="1" aria-label="Quelle 1">1<\/a>/,
+    );
+    expect(rendered).toMatch(/href="\/open\/spaces\.space\/~logistik"[^>]* class="ai-cite" data-cite="2" aria-label="Quelle 2">2<\/a>/);
+    expect(rendered).not.toContain("[1]");
+    expect(rendered).not.toContain("[2]");
+    // The row under the answer lists exactly the numbers in the text.
+    expect(answerCitations(md(kimiAnswer))).toEqual([
+      { number: 1, href: "/open/notebooks.note/~wareneingang" },
+      { number: 2, href: "/open/spaces.space/~logistik" },
+    ]);
+  });
+
+  test("a sources list with one numbered line per source leaves the answer as well", () => {
+    const listed = "Zwei Dinge [1] und [2].\n\nQuellen:\n\n- [1] [Angebot](/open/files.file/~a)\n- [2](/open/mail.thread/~b) Mail von Jana";
+    expect(answerCitations(md(listed))).toEqual([
+      { number: 1, href: "/open/files.file/~a" },
+      { number: 2, href: "/open/mail.thread/~b" },
+    ]);
+    expect(html(listed)).not.toContain("Quellen");
+  });
+
+  test("bare numbers without a destination, in code, and ordinary closing paragraphs stay text", () => {
+    expect(html("Der Index ist [1] und `[2]`.")).toContain("[1]");
+    expect(html("Der Index ist [1] und `[2]`.")).not.toContain("ai-cite");
+    const closing = "Fertig [1](/open/a/~1).\n\nHinweis: Das gilt nur für Lager B.";
+    expect(html(closing)).toContain("Hinweis:");
+    expect(html("Siehe [1](/open/a/~1), nochmal [1] und im Code `[1]`.")).toContain(">[1]</code>");
+  });
+});

@@ -100,7 +100,8 @@ dialog, draws the review's details with `ApprovalDetails` from
   a draft as quiet text in the AI colour, the decline answer, and the one filled
   approve answer. Facts are short and always stay whole; when facts and answers
   do not fit one line, the answers move together to a line of their own.
-  Answers are 36 px high, with a 44 px hit area on touch screens. While a tall
+  Answers are the library's normal button size, with a 44 px hit area on touch
+  screens. While a tall
   card is in view, the answer row stays at the bottom of the view. Below 32.5 rem
   of the card's own width the answers take the full row and the facts sit under
   them.

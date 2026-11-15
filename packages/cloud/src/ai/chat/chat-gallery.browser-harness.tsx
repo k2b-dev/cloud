@@ -47,7 +47,10 @@ render(
               </div>
               {/* As in AssistantWorkspace: the composer column under the timeline's. */}
               <div class="assistant-chat-composer" style="padding: 0.5rem var(--ui-space-section) var(--ui-space-section)">
-                <div style="max-width: 48rem; margin-inline: auto; display: flex; flex-direction: column; gap: 0.5rem">
+                <div
+                  class="assistant-chat-composer__column"
+                  style="margin-inline: auto; display: flex; flex-direction: column; gap: 0.5rem"
+                >
                   <Chat.Composer value={draft()} onValueChange={setDraft} onSubmit={() => true} placeholder="Gustav etwas fragen" />
                 </div>
               </div>

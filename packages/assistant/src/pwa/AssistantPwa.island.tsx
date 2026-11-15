@@ -501,6 +501,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     const current = files()[key] ?? [];
     const result = await readAiComposerFiles(selected, {
       acceptsImages: props.status.visionModelConfigured,
+      locale: locale(),
       currentCount: current.length,
       currentImageBytes: current.reduce((sum, file) => sum + (file.kind === "image" ? file.size : 0), 0),
     });

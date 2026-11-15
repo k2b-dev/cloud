@@ -1,4 +1,4 @@
-import type { CapabilityActionCallReview, CapabilityActionReview } from "@k2b/cloud/contracts";
+import type { CapabilityActionCallReview } from "@k2b/cloud/contracts";
 
 const sentences = {
   en: {
@@ -41,8 +41,10 @@ export const notebookAutomationReview = (
   locale: string | undefined,
   proposal: {
     title: string;
-    message: string;
-    details: NonNullable<CapabilityActionReview["details"]>;
+    /** Short facts, such as the notebook and the parent note, as label and value. */
+    details: { label: string; value: string }[];
+    /** The note's or comment's Markdown, drawn by Cloud's safe renderer under the facts. */
+    markdown?: string;
     scope: string;
     links: CapabilityActionCallReview["links"];
   },
@@ -60,10 +62,9 @@ export const notebookAutomationReview = (
     view: {
       version: 1 as const,
       blocks: [
-        {
-          kind: "Text" as const,
-          text: [proposal.message, ...proposal.details.map(({ label, value }) => `${label}: ${value}`)].join("\n\n"),
-        },
+        // The question already says what happens; the details name where, and the text follows as it will read.
+        ...(proposal.details.length ? [{ kind: "Detail" as const, title, items: proposal.details }] : []),
+        ...(proposal.markdown?.trim() ? [{ kind: "Text" as const, text: proposal.markdown, format: "markdown" as const }] : []),
       ],
     },
     scope: proposal.scope,
