@@ -11829,6 +11829,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     height: 0;
   }
 
+  /* The overlay takes the native scrollbars' place. A table that overflows sideways keeps the room the native lane had
+     (measured by DataTable, 0 where scrollbars overlay), so it has the same height in its server frame and once its
+     code arrives, and the overlay draws inside that lane. */
+  .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"][data-overflow-x="true"] > .k2b-table-wrap {
+    padding-bottom: var(--k2b-data-table-native-lane, 0px);
+  }
+
   .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-data-table__scrollbar[data-overflow="true"] {
     display: block;
   }

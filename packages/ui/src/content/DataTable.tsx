@@ -267,6 +267,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     y: { overflow: false, offset: 0, size: 0 },
   });
   const [scrollbarEnhanced, setScrollbarEnhanced] = createSignal(false);
+  // The room the native sideways scrollbar took before the overlay replaced it; 0 where scrollbars overlay the content.
+  const [nativeLane, setNativeLane] = createSignal(0);
   const [scrolling, setScrolling] = createSignal(false);
   const panel = useContext(DataTablePanelContext);
   let tableRef: HTMLTableElement | undefined;
@@ -649,6 +651,8 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
   };
 
   onMount(() => {
+    // Measured once before the overlay hides it, so a table that overflows sideways keeps the height of its first frame.
+    if (scrollRef) setNativeLane(Math.max(0, scrollRef.offsetHeight - scrollRef.clientHeight));
     setScrollbarEnhanced(true);
     syncScrollbars();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncScrollbars);
@@ -685,6 +689,7 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
         data-overflow-y={scrollbars().y.overflow ? "true" : undefined}
         data-scrollbar-enhanced={scrollbarEnhanced() ? "true" : undefined}
         data-scrolling={scrolling() ? "true" : undefined}
+        style={nativeLane() > 0 ? { "--k2b-data-table-native-lane": `${nativeLane()}px` } : undefined}
         onMouseLeave={() => setHoveredColumn(null)}
       >
         <div
