@@ -33,9 +33,12 @@ import {
   needsPerson,
   withCardExtras,
 } from "./code-overview";
+import { codeViewMessages } from "./code-view-messages";
 import { assistantMessages } from "./messages";
 
-type Messages = ReturnType<typeof assistantMessages.resolve>["t"];
+/** The view's own texts over Gustav's shared ones, for one locale. */
+const viewText = (locale: string) => ({ ...assistantMessages.resolve([locale]).t, ...codeViewMessages.resolve([locale]).t });
+type Messages = ReturnType<typeof viewText>;
 
 /** From this many entries, chips filter the cards. */
 const FILTER_FROM = 8;
@@ -158,7 +161,7 @@ const cardWhen = (item: CodeOverviewItem, status: CodeCardStatus, t: Messages, l
 
 function CodeCard(props: { item: CodeOverviewItem; timeZone: string; now: Date }) {
   const locale = useLocale();
-  const t = () => assistantMessages.resolve([locale()]).t;
+  const t = () => viewText(locale());
   const status = () => cardStatus(props.item);
   const shown = () => STATUS[status()];
   // Oldest left, newest right, as on the Code page.
@@ -238,7 +241,7 @@ function DayIsland(props: {
   onRetry: () => void;
 }) {
   const locale = useLocale();
-  const t = () => assistantMessages.resolve([locale()]).t;
+  const t = () => viewText(locale());
   const sentence = (line: DayLine) => t().appsTodaySentence(line);
   const percent = (at: number) => `${(at * 100).toFixed(3)}%`;
   const span = (bounds: { from: string; to: string }) => Date.parse(bounds.to) - Date.parse(bounds.from);
@@ -387,7 +390,7 @@ export default function AssistantCodeView(props: {
   onCreateInChat: () => void;
 }) {
   const locale = useLocale();
-  const t = () => assistantMessages.resolve([locale()]).t;
+  const t = () => viewText(locale());
   const [page, setPage] = createSignal<CodeOverviewPage | null | undefined>(props.initial);
   const [more, setMore] = createSignal<"idle" | "loading" | "failed">("idle");
   const [filter, setFilter] = createSignal<Filter>(readFilter());
