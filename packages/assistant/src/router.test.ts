@@ -26,6 +26,11 @@ test("retired Studio endpoints are absent while chat code stays mounted", () => 
     ["PUT", "/artifacts/machine/:id/access/:accessId"],
   ];
   expect(router.routes.some((route) => route.path === "/api/assistant/chat-code/runtime/capabilities")).toBe(true);
+  // The tabs beside a chat are remembered per chat.
+  for (const method of ["GET", "PUT"])
+    expect(
+      apiRoutes.routes.some((route) => route.method === method && route.path === "/workspace/conversations/:conversationId/tabs"),
+    ).toBe(true);
   for (const [method, path] of routes) {
     expect(apiRoutes.routes.some((route) => route.method === method && route.path === path)).toBe(false);
     expect(router.routes.some((route) => route.method === method && route.path === `/api/assistant${path}`)).toBe(false);

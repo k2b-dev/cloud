@@ -92,6 +92,31 @@ describe("model chooser in the composer", () => {
       await budget.close();
     });
 
+  test("without any model the chip names that legibly in the locked composer and opens nothing", async () => {
+    const page = await open(1440, "?state=empty");
+    try {
+      const chip = page.locator(".ai-model-chip");
+      const look = await chip.evaluate((node) => {
+        const label = [...node.querySelectorAll("span")].find((span) => span.textContent?.trim() === "Kein Modell")!;
+        let opacity = 1;
+        for (let element: Element | null = label; element; element = element.parentElement)
+          opacity *= Number(getComputedStyle(element).opacity);
+        return { opacity, disabled: (node as HTMLButtonElement).disabled, aria: node.getAttribute("aria-disabled") };
+      });
+      // v12 image 12, state 7: "Kein Modell" reads in the normal secondary text, not faded with the locked controls.
+      expect(look).toEqual({ opacity: 1, disabled: false, aria: "true" });
+      // Playwright waits for an aria-disabled control to become enabled, so the click goes to the element directly.
+      const dialogs = () => page.locator("[role='dialog']:visible").count();
+      const before = await dialogs();
+      await chip.dispatchEvent("click");
+      await settled(page);
+      expect(await dialogs()).toBe(before);
+      expect(await chip.getAttribute("aria-expanded")).toBeNull();
+    } finally {
+      await page.close();
+    }
+  });
+
   test("a class whose model is no longer allowed says so, holds the draft back and offers Balanced", async () => {
     const page = await open(1440, "?state=revoked&draft=Hallo");
     expect(await page.locator(".ai-model-chip").isDisabled()).toBe(false);

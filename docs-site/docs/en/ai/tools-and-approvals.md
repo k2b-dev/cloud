@@ -878,6 +878,24 @@ differ in one detail and tell the model to pick one according to data from the
 chat; each such read then tells that website one choice. When a chat holds
 data that must not leave it, read pages only from sources you trust.
 
+### Offer a reading view to the person
+
+`readWebPageForPerson` and `WebReaderResultSchema` from `@k2b/cloud/ai` let an
+application offer Markdown from the same Firecrawl service as `web_extract`.
+The application must check that the user-backed actor owns the chat before
+passing its internal conversation UUID. The same address rule applies:
+provenance in that chat or a remembered website approval for that chat allows
+the read; otherwise `confirm` returns the full URL for the person to approve
+with a second request containing that URL and `confirmed: true`.
+
+The reader requests fresh content, removes images, and returns `contentAt`
+with the Markdown. A redirect needs its own address permission, except a
+same-origin redirect after explicit confirmation; otherwise it returns
+`redirect_blocked` without content. Empty or failed reads return `unreadable`.
+Without a configured Firecrawl key it returns `unavailable`. Assistant exposes
+`GET /api/assistant/workspace/web-reader` with `{ available }` so clients can
+open links in the person's browser when the service is unavailable.
+
 See [Resource authorization](/en/docs/identity/authorization) for the domain
 permission check.
 

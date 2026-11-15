@@ -291,7 +291,6 @@ const scenes: Record<string, () => JSX.Element> = {
       </>
     );
   },
-  // Gustav's own question with options (v12 07): the same flat choice as a view's.
   // Durchgang 5, #78: Gustav asked for three key figures, once as stat charts, once as cards with their signs; both
   // stand as the flat row of key figures under his head.
   kennzahlen: () => {
@@ -343,6 +342,7 @@ const scenes: Record<string, () => JSX.Element> = {
       </>
     );
   },
+  // Gustav's own question with options (v12 07): the same flat choice as a view's.
   survey: () => (
     <>
       <Label>Auswahl</Label>

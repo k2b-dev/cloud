@@ -745,6 +745,10 @@ model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
 
 
+`readWebPageForPerson`, `WebReaderResult`, and `WebReaderResultSchema` from
+`@k2b/cloud/ai` support a person's [web reading view](/en/docs/ai/tools-and-approvals#offer-a-reading-view-to-the-person)
+after the application checks chat ownership.
+
 ## Workspace speedtest consumers
 
 The private `@k2b/speedtest` workspace shares one measurement contract between

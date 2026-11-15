@@ -260,6 +260,11 @@ export function AiModelChooser(props: {
    */
   const disabled = () =>
     props.state.status === "loading" || (props.state.status === "ready" && !current() && !choice()?.class) || props.locked;
+  /**
+   * No model is open to the person at all. The chip is not a control then but the reason the composer is locked, so it
+   * stays legible: `aria-disabled` keeps it out of the faded disabled controls and still tells screen readers.
+   */
+  const noModel = () => props.state.status === "ready" && props.state.models.options.length === 0;
   /** The stop the card shows: the class that answers, or none for a model outside the classes ("Own choice"). */
   const cardClass = (): AiModelClass | null => {
     const modelClass = choice()?.class ?? null;
@@ -280,20 +285,23 @@ export function AiModelChooser(props: {
         ref={chip}
         type="button"
         class="ai-model-chip group inline-flex h-8 w-[148px] flex-none items-center border-0 bg-transparent p-0 outline-none"
-        aria-haspopup={single() ? undefined : "dialog"}
-        aria-expanded={single() ? undefined : anchor() !== null}
+        aria-haspopup={single() || noModel() ? undefined : "dialog"}
+        aria-expanded={single() || noModel() ? undefined : anchor() !== null}
+        aria-disabled={noModel() ? "true" : undefined}
         aria-label={ariaLabel() || t().chooseModel}
         aria-busy={props.state.status === "loading" ? "true" : undefined}
         title={props.locked ? props.lockedReason : current() ? optionName(current()!) : undefined}
-        disabled={disabled() || single()}
+        disabled={(disabled() || single()) && !noModel()}
         data-tone={issue() || props.state.status === "error" ? "warning" : undefined}
         data-level={level() === null ? undefined : String(level())}
-        onClick={(event) => setAnchor(anchor() ? null : event.currentTarget)}
+        onClick={(event) => {
+          if (!noModel()) setAnchor(anchor() ? null : event.currentTarget);
+        }}
       >
         {/* Flush left at a fixed width: the level indicator always starts at the same x, whatever the label says. */}
         <span
           class="relative inline-flex h-8 w-full min-w-0 items-center gap-[7px] rounded-[9px] px-1.5 text-[13px] text-(--k2b-text-secondary) group-hover:bg-(--k2b-surface-muted) group-hover:text-(--k2b-text) group-focus-visible:outline-2 group-focus-visible:outline-offset-1 group-focus-visible:outline-(--k2b-focus-ring) group-aria-expanded:bg-(--k2b-surface-muted) group-disabled:opacity-55 group-disabled:group-hover:bg-transparent"
-          classList={{ "opacity-100!": single() && Boolean(current()) }}
+          classList={{ "opacity-100!": (single() && Boolean(current())) || noModel() }}
         >
           <Switch
             fallback={
