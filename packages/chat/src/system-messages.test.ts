@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { SystemMessage } from "./service/contracts";
-import { messagePlainText, messagePreview, renderSystemMessage } from "./system-messages";
+import { messagePlainText, messagePreview, quoteOccursIn, renderSystemMessage } from "./system-messages";
 
 const member = { id: "12345678-1234-4234-8234-123456789012", name: "Lea" };
 const cases: [SystemMessage, string, string][] = [
@@ -82,6 +82,15 @@ test("previews show the text a reader sees, never Markdown marks", () => {
   ];
   for (const [body, preview] of cases) expect(messagePreview(body)).toBe(preview);
   expect(messagePlainText("**fett**\n\nund *mehr*")).toBe("fett und mehr");
+});
+
+test("a quote occurs in its message by the words a reader sees, whatever the whitespace, and never by invented words", () => {
+  const body = "Der **Bericht** ist [fertig](https://example.test/).\n\n- Lea prüft\n- Ben liest\n\n`code  hier`";
+  for (const passage of ["Bericht ist fertig", "fertig. Lea prüft Ben", "Lea prüft\nBen liest", "code  hier", "**Bericht**"])
+    expect(quoteOccursIn(body, passage)).toBe(true);
+  for (const passage of ["Bericht ist nicht fertig", "Ben prüft", "", "  "]) expect(quoteOccursIn(body, passage)).toBe(false);
+  // Composed and decomposed umlauts are the same passage.
+  expect(quoteOccursIn("Lea prüft", "Lea pru\u0308ft")).toBe(true);
 });
 
 for (const [names, en, de] of [

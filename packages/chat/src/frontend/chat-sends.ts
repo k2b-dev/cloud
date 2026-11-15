@@ -6,6 +6,8 @@ import type { ApiType } from "../api";
 import { type AttachmentView, AttachmentViewSchema, type Mention, MessageViewSchema, type SendMessageSchema } from "../service/contracts";
 
 export type ChatSendReply = { id: string; author: string; text: string };
+/** A quoted passage of the message `id`, shown until the stored message replaces the send. */
+export type ChatSendQuote = { id: string; author: string; text: string };
 export type ChatSendInput = z.input<typeof SendMessageSchema>;
 export type ChatSend = {
   clientId: string;
@@ -16,6 +18,8 @@ export type ChatSend = {
   thread: string;
   /** The answered message, shown as its quote until the stored message replaces the send. */
   replyTo: ChatSendReply | null;
+  /** Quoted passages, in the order they were added. */
+  quotes: readonly ChatSendQuote[];
   /** Shared Cloud elements, shown as cards from the first frame. */
   refs: readonly CloudResourceRef[];
   /** Uploaded images and documents, shown from the first frame; the message takes them when it is stored. */
@@ -56,8 +60,13 @@ export const createChatSends = (dependencies: {
           : {}),
         ...(entry.refs.length ? { refs: [...entry.refs] } : {}),
         ...(entry.attachments.length ? { attachments: entry.attachments.map((attachment) => attachment.id) } : {}),
-        // A reply goes into its original's thread on the server; General needs no thread.
-        ...(entry.replyTo ? { replyTo: entry.replyTo.id } : entry.thread !== "general" ? { thread: entry.thread } : {}),
+        ...(entry.quotes.length ? { quotes: entry.quotes.map((quote) => ({ message: quote.id, text: quote.text })) } : {}),
+        // A reply or a quote goes into its original's thread on the server; General needs no thread.
+        ...(entry.replyTo
+          ? { replyTo: entry.replyTo.id }
+          : entry.quotes.length === 0 && entry.thread !== "general"
+            ? { thread: entry.thread }
+            : {}),
       });
       if (disposed || entries.get(entry.clientId) !== entry) return;
       entry.status = "sent";
@@ -82,6 +91,7 @@ export const createChatSends = (dependencies: {
       target: {
         thread?: string;
         replyTo?: ChatSendReply | null;
+        quotes?: readonly ChatSendQuote[];
         refs?: readonly CloudResourceRef[];
         attachments?: readonly AttachmentView[];
         mentions?: readonly Mention[];
@@ -94,6 +104,7 @@ export const createChatSends = (dependencies: {
         mentions: (target.mentions ?? []).map((mention) => ({ ...mention, principal: { ...mention.principal } })),
         thread: target.thread ?? "general",
         replyTo: target.replyTo ?? null,
+        quotes: target.quotes ?? [],
         refs: target.refs ?? [],
         attachments: target.attachments ?? [],
         createdAt: (dependencies.now?.() ?? new Date()).toISOString(),

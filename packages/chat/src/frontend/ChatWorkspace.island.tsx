@@ -55,6 +55,7 @@ import {
 import { renderSystemMessage } from "../system-messages";
 
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
+import type { DraftQuote } from "./chat-quote-selection";
 
 import ChatDeviceNotice from "./ChatDeviceNotice";
 
@@ -692,6 +693,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       onSelect: () => void jumpTo(chatId, reply.id),
     };
   };
+  // A quoted passage jumps to its message and tints the passage there.
+  const quotesOf = (chatId: string, message: Message) =>
+    message.quotes?.map((quote) =>
+      "deleted" in quote
+        ? { author: "", text: t().quotedDeleted }
+        : {
+            author: quote.author.id === props.viewerId ? t().you : quote.author.name,
+            text: quote.text,
+            onSelect: () => void jumpTo(chatId, quote.id, quote.text),
+          },
+    );
   // In "All threads", a chip under each message names its thread and opens it.
   const originOf = (chatId: string, view: ThreadView) => {
     const name = threadName(view);
@@ -902,6 +914,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         known.seq === item.seq &&
         known.origin?.label === item.origin?.label &&
         known.quote?.text === item.quote?.text &&
+        known.quotes?.map((quote) => quote.text).join() === item.quotes?.map((quote) => quote.text).join() &&
         known.attachments?.map((attachment) => attachment.id).join() === item.attachments?.map((attachment) => attachment.id).join()
         ? known
         : item;
@@ -916,6 +929,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         refs: message.refs,
         attachments: message.attachments,
         quote: quoteOf(current.id, message),
+        quotes: quotesOf(current.id, message),
         origin: mixed && message.kind === "text" ? originOf(current.id, messageThread(message)) : undefined,
         via: message.via,
         key: sendKeys.get(message.id) ?? message.id,
@@ -982,6 +996,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             attachments: send.attachments,
             origin: mixed ? originOf(current.id, send.thread) : undefined,
             quote: send.replyTo ? { author: send.replyTo.author, text: send.replyTo.text } : undefined,
+            quotes: send.quotes.length ? send.quotes.map((quote) => ({ author: quote.author, text: quote.text })) : undefined,
             authorId: props.viewerId,
             authorName: t().you,
             body: send.body,
@@ -1458,12 +1473,16 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // Each part of a chat keeps its own draft and its own reply.
   const applyRoute = (next: Route) => {
     const previous = draftId(route());
-    if (previous) replies.set(previous, reply());
+    if (previous) {
+      replies.set(previous, reply());
+      quoteDrafts.set(previous, quotes());
+    }
     setRoute(next);
     setPanel(next.panel);
     const key = draftId(next);
     setDraft(key ? readDraft(key) : "");
     setReply(key ? (replies.get(key) ?? null) : null);
+    setQuotes(key ? (quoteDrafts.get(key) ?? []) : []);
     setNow(new Date());
     sortRows();
     if (props.embedded) {
@@ -1628,9 +1647,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     else navigate(href, options);
   };
   /** A quote's original: in the loaded history it is highlighted in place, otherwise the chat opens around it. */
-  const jumpTo = async (id: string, message: string) => {
+  const jumpTo = async (id: string, message: string, passage?: string) => {
     const key = sendKeys.get(message) ?? message;
-    if (openChat()?.id === id && feed?.scrollToKey(key, { highlight: true })) return;
+    if (openChat()?.id === id && feed?.scrollToKey(key, { highlight: true, highlightText: passage })) return;
     // A quote lies in the reply's own thread, so the open view holds it once the history around it is loaded.
     await openView(id, openChat()?.view ?? "all", undefined, message);
   };
@@ -1980,6 +1999,24 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   // A message goes to the open thread; in "All threads" to General. A reply goes to its original's thread.
   const [reply, setReply] = createSignal<ChatFeedItem | null>(null);
   const replies = new Map<string, ChatFeedItem | null>();
+  // Quoted passages of the draft; they lie in one thread with its reply, which the message goes to.
+  const [quotes, setQuotes] = createSignal<readonly DraftQuote[]>([]);
+  const quoteDrafts = new Map<string, readonly DraftQuote[]>();
+  // The pill that offers a quote has loaded this module already.
+  const quote = (item: ChatFeedItem, text: string) =>
+    void importOnDemand(() => import("./chat-quote-selection")).then((module) => {
+      const next = module?.addQuote(quotes(), reply(), item, text, t().quotesReplaced);
+      if (!next) return;
+      if (!next.keepReply) setReply(null);
+      setQuotes(next.quotes);
+    });
+  const answer = (item: ChatFeedItem) => {
+    if (quotes()[0] && quotes()[0]!.thread !== (item.thread ?? "general")) {
+      toast(t().quotesReplaced, { iconClass: "ti ti-info-circle" });
+      setQuotes([]);
+    }
+    setReply(item);
+  };
   // A message that only shares Cloud elements has no text.
   const uploads = createAttachmentUpload();
   const forYouApi = createForYouApi();
@@ -2009,15 +2046,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     try {
       if (current.hasNewer) await store?.loadLatest();
       const answered = reply();
-      const thread = answered ? (answered.thread ?? "general") : current.view === "all" ? "general" : current.view;
+      const quoted = quotes();
+      const thread = answered
+        ? (answered.thread ?? "general")
+        : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view));
       outbox.send(current.id, body, {
         thread,
         refs,
         attachments,
         mentions,
         replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
+        quotes: quoted.map(({ id, author, text }) => ({ id, author, text })),
       });
       setReply(null);
+      setQuotes([]);
       feed?.scrollToEnd();
       return true;
     } finally {
@@ -2592,7 +2634,15 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                     }
                   : undefined
               }
-              onReply={notice() ? undefined : (item) => setReply(item)}
+              onReply={notice() ? undefined : answer}
+              quotes={quotes().map((entry) => ({
+                id: entry.key,
+                author: entry.author,
+                text: entry.text,
+                onRemove: () => setQuotes((list) => list.filter((other) => other !== entry)),
+                onSelect: () => void jumpTo(current().id, entry.id, entry.text),
+              }))}
+              onQuote={notice() ? undefined : quote}
               replyHint={replyHint}
               unreadHint={unreadHint}
               listHref={listHref()}

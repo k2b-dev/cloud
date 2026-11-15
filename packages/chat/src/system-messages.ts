@@ -94,6 +94,16 @@ export const messagePlainText = (body: string): string => {
   return text.replace(/\s+/gu, " ").trim();
 };
 
+const withoutSpace = (text: string) => text.normalize("NFC").replace(/\s+/gu, "");
+/**
+ * Whether a quoted passage occurs in a message: in the words a reader sees or in its Markdown source. Whitespace does
+ * not count, because a selection across paragraphs, list items or table cells joins them differently than Markdown.
+ */
+export const quoteOccursIn = (body: string, text: string): boolean => {
+  const needle = withoutSpace(text);
+  return needle !== "" && (withoutSpace(messagePlainText(body)).includes(needle) || withoutSpace(body).includes(needle));
+};
+
 export const messagePreview = (
   body: string,
   attachments: readonly Pick<AttachmentView, "kind" | "name">[] = [],

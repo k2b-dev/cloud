@@ -13872,6 +13872,88 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface);
 }
 
+/* Quoted passages above a message's text, and above the composer's field: the quote icon, at most two lines, and who
+   wrote them, on a quiet grey without a bar or border. Several stack with a small gap. */
+.k2b-ui .k2b-message-quotes {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.0625rem -0.375rem 0.375rem;
+}
+
+.k2b-ui .k2b-message-row__body > .k2b-message-quotes {
+  margin: 0;
+}
+
+.k2b-ui .k2b-message-quote {
+  display: flex;
+  max-width: 30rem;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.625rem;
+  border: 0;
+  border-radius: 0.625rem;
+  color: var(--k2b-text-secondary);
+  background: color-mix(in srgb, var(--k2b-text) 6%, transparent);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
+  text-align: start;
+}
+
+.k2b-ui .k2b-message-row[data-own] .k2b-message-quote {
+  background: color-mix(in srgb, var(--k2b-surface) 70%, transparent);
+}
+
+.k2b-ui .k2b-message-quote > i {
+  flex: none;
+  font-size: 0.875rem;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .k2b-message-quote__content {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+}
+
+.k2b-ui .k2b-message-quote__text {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--k2b-text);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-message-quote__author {
+  overflow: hidden;
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k2b-ui button.k2b-message-quote {
+  cursor: pointer;
+}
+
+.k2b-ui button.k2b-message-quote:hover {
+  background: color-mix(in srgb, var(--k2b-text) 10%, transparent);
+}
+
+.k2b-ui .k2b-message-row[data-own] button.k2b-message-quote:hover {
+  background: var(--k2b-surface);
+}
+
+/* A quoted passage found in its message (VirtualFeed's highlightText). */
+.k2b-ui ::highlight(k2b-virtual-feed-passage) {
+  background-color: var(--k2b-selected);
+}
+
 /* Where the message belongs, as a quiet chip of fixed height under it. */
 .k2b-ui .k2b-message-row__origin {
   display: inline-flex;
@@ -14429,7 +14511,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-overflow: ellipsis;
 }
 
-.k2b-ui :is(.k2b-message-row__quote, .k2b-message-row__media-item, .k2b-message-row__file, .k2b-message-row__thread):focus-visible {
+.k2b-ui :is(.k2b-message-row__quote, .k2b-message-quote, .k2b-message-row__media-item, .k2b-message-row__file, .k2b-message-row__thread):focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: calc(-1 * var(--k2b-focus-width));
 }
@@ -14470,6 +14552,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 @media (forced-colors: active) {
   .k2b-ui .k2b-message-row__bubble,
   .k2b-ui .k2b-message-row__quote,
+  .k2b-ui .k2b-message-quote,
   .k2b-ui .k2b-message-row__file {
     outline: 1px solid CanvasText;
   }
@@ -16609,20 +16692,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* The answered message above the field: the same quiet quote as in a message, and a button that cancels the reply. */
-.k2b-ui .k2b-chat-composer__reply {
+.k2b-ui :is(.k2b-chat-composer__reply, .k2b-chat-composer__quote) {
   display: flex;
   min-width: 0;
   align-items: flex-start;
   gap: 0.25rem;
 }
 
-.k2b-ui .k2b-chat-composer__reply > .k2b-message-row__quote {
+.k2b-ui :is(.k2b-chat-composer__reply > .k2b-message-row__quote, .k2b-chat-composer__quote > .k2b-message-quote) {
   max-width: none;
   flex: 1 1 0;
   margin: 0;
 }
 
-.k2b-ui .k2b-chat-composer__reply-cancel {
+.k2b-ui :is(.k2b-chat-composer__reply-cancel, .k2b-chat-composer__quote-remove) {
   flex: none;
 }
 

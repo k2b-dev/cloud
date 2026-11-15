@@ -304,6 +304,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     body: string;
     thread?: string;
     replyTo?: string;
+    quotes?: { message: string; text: string }[];
     refs?: CloudResourceRef[];
     attachments?: string[];
     mentions?: { start: number; end: number; principal: { type: string; id: string } }[];
@@ -502,6 +503,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     target: {
       thread?: string | null;
       replyTo?: string;
+      quotes?: { message: string; text: string }[];
       refs?: CloudResourceRef[];
       attachments?: AttachmentView[];
       clientId?: string;
@@ -511,7 +513,9 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     const seq = entry.messages.length + 1;
     const rev = entry.conversation.rev + 1;
     const original = target.replyTo ? entry.messages.find((message) => message.id === target.replyTo) : undefined;
-    const thread = original ? original.thread : (target.thread ?? null);
+    // As on the server, quotes and a reply lie in one thread, which the message goes to.
+    const quoted = (target.quotes ?? []).map((quote) => ({ quote, source: entry.messages.find((message) => message.id === quote.message)! }));
+    const thread = original ? original.thread : quoted.length ? quoted[0]!.source.thread : (target.thread ?? null);
     const message: Message = {
       via: null,
       clientId: target.clientId ?? null,
@@ -523,6 +527,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
       replyTo: original
         ? { id: original.id, author: original.author, preview: original.body ?? "", attachments: original.attachments }
         : null,
+      quotes: quoted.map(({ quote, source }) => ({ id: source.id, author: source.author, text: quote.text })),
       id: messageId(chat, seq),
       conversationId: chat,
       seq,
@@ -1286,6 +1291,10 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           message.refs = [];
           message.reactions = [];
         }
+        // A deleted original leaves its quotes without text; readers learn it from the original's own change.
+        if (message.deletedAt)
+          for (const quoting of entry.messages)
+            quoting.quotes = quoting.quotes?.map((quote) => ("id" in quote && quote.id === message.id ? { deleted: true as const } : quote));
         for (const reply of entry.messages)
           if (reply.replyTo && "id" in reply.replyTo && reply.replyTo.id === message.id)
             reply.replyTo = message.deletedAt ? { deleted: true } : { ...reply.replyTo, preview: message.body ?? "" };
@@ -1815,6 +1824,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             clientId: input.clientId,
             thread: input.thread ?? null,
             replyTo: input.replyTo,
+            quotes: input.quotes,
             refs: input.refs ?? [],
             attachments: (input.attachments ?? []).flatMap((attachment) => {
               const stored = uploads.get(attachment);

@@ -24,6 +24,7 @@ export type {
   ChatCommandSection,
   ChatComposerPeople,
   ChatComposerProps,
+  ChatComposerQuote,
   ChatComposerReply,
   ChatComposerSuggestion,
   ChatFileSelection,

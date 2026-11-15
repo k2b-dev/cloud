@@ -6,6 +6,7 @@ import { copyText } from "../actions/CopyButton";
 import { Dropdown, type DropdownAction } from "../actions/Dropdown";
 import { type GestureKind, GestureMenu, type GestureMenuAction } from "../actions/GestureMenu";
 import { type ChatMessages, useChatMessages } from "../chat/chat-messages";
+import { MessageQuote } from "./MessageQuote";
 import { announce } from "../feedback/announce";
 import { useLocale } from "../intl/locale";
 import { type UiMessages, useUiMessages } from "../intl/messages";
@@ -185,6 +186,11 @@ export type MessageRowProps = {
   actions?: readonly MessageRowAction[];
   /** The message this one answers, shown above it. */
   quote?: MessageRowQuote;
+  /**
+   * Passages of other messages this one quotes, above its text after `quote`: each with the quote icon, at most two
+   * lines, and its author on quiet grey. `onSelect` makes one a button, for example to jump to the passage.
+   */
+  quotes?: readonly MessageRowQuote[];
   /** Marks the message as forwarded from somewhere else. */
   forwarded?: boolean;
   /** Marks the message as edited after it was sent. */
@@ -602,6 +608,14 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
     </Show>
   );
 
+  const quotesBlock = () => (
+    <Show when={content() && props.quotes?.length}>
+      <div class="k2b-message-quotes">
+        <For each={props.quotes}>{(value) => <MessageQuote quote={value} label={chatMessages().quoteFrom} />}</For>
+      </div>
+    </Show>
+  );
+
   /** The picture's description, then that it is a video and how long, then how many more the grid hides. */
   const mediaLabel = (item: MessageRowMedia, more: number) =>
     [
@@ -700,7 +714,10 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
             <span>{chatMessages().messageForwarded}</span>
           </div>
         </Show>
-        <Show when={!hasBubble()}>{quoteBlock()}</Show>
+        <Show when={!hasBubble()}>
+          {quoteBlock()}
+          {quotesBlock()}
+        </Show>
         <Show when={hasBubble()}>
           <div
             class="k2b-message-row__bubble"
@@ -708,6 +725,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
             aria-busy={props.progress && !props.deleted ? "true" : undefined}
           >
             {quoteBlock()}
+            {quotesBlock()}
             <Show
               when={!props.deleted}
               fallback={

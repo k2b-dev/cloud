@@ -83,6 +83,12 @@ export const mutateMessage =
         );
       }
       if (operation === "delete") {
+        // Quotes of it keep no text. Readers with the quoting messages loaded learn it from this message's change.
+        await db`UPDATE chat.messages SET quotes = (
+            SELECT jsonb_agg(CASE WHEN quote->>'id' = ${row.short_id} THEN '{"deleted":true}'::jsonb ELSE quote END ORDER BY position)
+            FROM jsonb_array_elements(quotes) WITH ORDINALITY AS entry(quote, position))
+          WHERE conversation_id = ${current.data.id}::uuid AND seq > ${row.seq} AND quotes <> '[]'::jsonb
+            AND quotes @> ${JSON.stringify([{ id: row.short_id }])}::text::jsonb`;
         await db`DELETE FROM chat.message_reactions WHERE message_id = ${row.id}::uuid`;
         await db`DELETE FROM chat.attachments WHERE message_id = ${row.id}::uuid`;
       }

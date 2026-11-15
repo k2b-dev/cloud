@@ -39,6 +39,7 @@ import {
   loadEmojiIndex,
   suggestEmoji,
 } from "../inputs/emoji/emoji-index";
+import { MessageQuote } from "../content/MessageQuote";
 import { FileDropTarget } from "../inputs/FileDropTarget";
 import { toggleBulletList, toggleInlineMarker } from "../inputs/markdown/actions";
 import { openCodeFence } from "../inputs/markdown/code-zone";
@@ -224,6 +225,20 @@ export type ChatComposerReply = {
   onSelect?: () => void;
 };
 
+/** A passage the draft quotes, such as part of a message the person selected. */
+export type ChatComposerQuote = {
+  /** Stable among the draft's quotes. */
+  id: string;
+  /** Who wrote the passage. */
+  author: string;
+  /** The passage; it shows at most two lines. */
+  text: string;
+  /** Takes the quote out of the draft. */
+  onRemove: () => void;
+  /** Makes the quote a button, for example to jump to the passage. */
+  onSelect?: () => void;
+};
+
 /**
  * A suggested next message. It stands in the empty field instead of the placeholder, wraps and grows the field like
  * typed text, and ends in a hint: "Tab accept" with a keyboard, an Accept button on touch-only devices. Tab or the hint
@@ -340,6 +355,11 @@ export type ChatComposerProps = {
    * button that cancels the reply. `onSelect` makes the quote a button, for example to jump to the original.
    */
   reply?: ChatComposerReply;
+  /**
+   * Passages the draft quotes, each above the field with the quote icon, at most two lines, its author, and a button
+   * that removes it; below `reply` when both are there. The application owns the list and sends it with the message.
+   */
+  quotes?: readonly ChatComposerQuote[];
   /** A suggested next message in the empty field; see `ChatComposerSuggestion`. */
   suggestion?: ChatComposerSuggestion;
 };
@@ -2834,6 +2854,23 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             </div>
           )}
         </Show>
+        <For each={props.quotes}>
+          {(quote) => (
+            <div class="k2b-chat-composer__quote">
+              <MessageQuote quote={quote} label={chatMessages().quoteFrom} />
+              <button
+                type="button"
+                class="k2b-chat-composer__icon-action k2b-chat-composer__quote-remove"
+                aria-label={chatMessages().removeQuote}
+                title={chatMessages().removeQuote}
+                onMouseDown={keepFieldFocus}
+                onClick={() => quote.onRemove()}
+              >
+                <i class="ti ti-x" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        </For>
         <Show when={attachments().length > 0}>
           <div class="k2b-chat-composer__attachments" role="list" aria-label={chatMessages().attachments} tabIndex={0}>
             <For each={attachments()}>
