@@ -856,7 +856,18 @@ databaseSuite()("Core Code data and Query authorization", () => {
         );
       }),
     ).rejects.toThrow("storage limit");
+    await sql`INSERT INTO code.ai_daily_budget(day,scope_kind,scope_key,reference_cost) VALUES
+      ('2026-09-30','code',${code.id},1),('2026-10-01','code',${code.id},2),('2026-10-02','code',${code.id},3),
+      ('2026-09-30','owner',${ids.owner},4)`;
     expect(await expireCodeRuns({ now: new Date("2026-10-31T11:59:59.000Z"), limit: 100 })).toBe(0);
+    expect(
+      await sql<{ day: string; cost: number }[]>`SELECT day::text AS day,reference_cost::int AS cost FROM code.ai_daily_budget
+      WHERE scope_kind='code' AND scope_key=${code.id} ORDER BY day`,
+    ).toEqual([
+      { day: "2026-10-01", cost: 2 },
+      { day: "2026-10-02", cost: 3 },
+    ]);
+    expect(await sql`SELECT scope_key FROM code.ai_daily_budget WHERE scope_kind='owner' AND scope_key=${ids.owner}`).toHaveLength(0);
     expect(await expireCodeRuns({ now: fixed, limit: 100 })).toBe(1);
     expect(await sql`SELECT * FROM code.calls WHERE run_id=${runId}::uuid`).toHaveLength(0);
     expect(await sql`SELECT * FROM code.runs WHERE id=${active}::uuid`).toHaveLength(1);

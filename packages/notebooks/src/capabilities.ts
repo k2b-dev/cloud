@@ -1212,7 +1212,7 @@ export const notebooksCapabilities = defineCapabilities({
       description: "A permission-scoped collection of Markdown notes.",
       icon: "ti ti-notebook",
       reader: "notebook.read",
-      access: { readable: readableNotebook },
+      access: { readable: readableNotebook, managers: (input) => listNotebookManagers(input) },
       pages: ["/app/notebooks/:id"],
     },
     note: {
@@ -1222,7 +1222,7 @@ export const notebooksCapabilities = defineCapabilities({
       color: "violet",
       reader: "note.read",
       container: "notebook",
-      access: { readable: readableNote },
+      access: { readable: readableNote, managers: (input) => listNotebookManagers(input, true) },
       pages: ["/app/notebooks/:notebook/notes/:id"],
     },
     comment: {
@@ -1592,3 +1592,5 @@ export const notebooksCapabilities = defineCapabilities({
     },
   },
 });
+
+import { listNotebookManagers } from "./service/manager-recipients";

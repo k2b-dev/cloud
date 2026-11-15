@@ -2470,7 +2470,7 @@ export const spacesCapabilities = defineCapabilities({
       description: "A permission-scoped collaboration space.",
       icon: "ti ti-layout-kanban",
       reader: "space.read",
-      access: { readable: readableSpace },
+      access: { readable: readableSpace, managers: (input) => listSpaceManagers(input) },
       pages: ["/app/spaces/:id"],
     },
     item: {
@@ -2480,7 +2480,7 @@ export const spacesCapabilities = defineCapabilities({
       color: "emerald",
       reader: "item.read",
       container: "space",
-      access: { readable: readableItem },
+      access: { readable: readableItem, managers: (input) => listSpaceManagers(input, true) },
       pages: ["/app/spaces/:space?item=:id"],
     },
     comment: {
@@ -3718,3 +3718,5 @@ export const spacesCapabilities = defineCapabilities({
     },
   },
 });
+
+import { listSpaceManagers } from "./service/manager-recipients";

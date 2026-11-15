@@ -87,6 +87,7 @@ export {
   hasPermission,
   images,
   isServiceError,
+  listAccessRecipientUserIds,
   listUsersWithAccess,
   lockAccessMutationAuthority,
   ok,

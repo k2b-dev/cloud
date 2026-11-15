@@ -257,7 +257,9 @@ export { migrateCloudAi } from "./migrate";
 export {
   type AiOpenQuestion,
   type AiOpenQuestionKind,
+  type AiOpenQuestionSource,
   type AiOpenQuestions,
+  AiOpenQuestionsSchema,
   countAiOpenQuestions,
   listAiOpenQuestions,
 } from "./open-questions";

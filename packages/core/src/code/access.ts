@@ -22,6 +22,8 @@ export type CodeContext = {
   query?: CapabilityExecutionContext["query"];
   /** Authenticated submission provenance; chat tools set this from their actual conversation. */
   submissionOrigin?: import("./review-contracts").CodeSubmissionOrigin;
+  /** Set only by the authenticated, scoped review turn. Checked under the Code lock at submit. */
+  reviewTurn?: { versionId: string; turnId: string };
   /** One read-model load may reuse its owner reader answer for the same target, never another identity or request. */
   ownerReaderAnswer?: { ref: { type: string; id: string }; title: string; admin: boolean; href?: string } | null;
 };
@@ -83,7 +85,7 @@ export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Pro
     const entries =
       app.access?.kind === "grants"
         ? await sql<{ access_id: string }[]>`SELECT j.access_id FROM auth.app_access j JOIN auth.access a ON a.id=j.access_id
-        WHERE j.app_id=${app.id} AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL)`
+        WHERE j.app_id=${app.id}`
         : [];
     const permission = await getEffectivePermission({
       accessIds: entries.map((entry) => entry.access_id),
