@@ -43,6 +43,7 @@ import { createCloudCompactFn } from "./compaction";
 import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { editedDraftArguments } from "./draft-edit";
 import { aiFileStore } from "./files-store";
+import { cardToolResult, chartToolResult } from "./gustav-views";
 import { readAiTurnCallUsage } from "./inference-calls";
 import { AI_LIVE_ARGS_INTERVAL_MS, createLiveArgsReader } from "./live-tool-args";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
@@ -235,6 +236,15 @@ const indexConversationToolSource = async (input: {
         title: text(args.title) || path.slice(path.lastIndexOf("/") + 1),
         preview: text(args.description) || undefined,
         icon: "ti ti-file",
+      };
+    } else if (["chart", "card", "cloud_card"].includes(input.name) && result.view) {
+      // Gustav's own chart or key figure is a result of the chat like a presented file; the box jumps to it.
+      source = {
+        kind: "result",
+        key: `view:${input.callId}`,
+        title: text(args.title) || input.name,
+        preview: text(args.subtitle) || text(args.caption) || undefined,
+        icon: input.name === "chart" ? "ti ti-chart-bar" : "ti ti-layout-cards",
       };
     } else if (input.name === "web_extract" && typeof input.result === "object" && input.result !== null) {
       const result = input.result as Record<string, unknown>;
@@ -2042,14 +2052,26 @@ export class AiTurnExecutor {
     // a published awaiting_client would read as an open request to clients and remount the result in the chat.
     // nessi emits no tool_execution_end for client tools, so Cloud ends the call itself.
     if (frontendMode === "client_view") {
-      loop.push({ type: "tool_result", callId: event.callId, result: { displayed: true } });
-      await pipeline.apply({
-        type: "tool_execution_end",
+      // The stored result carries the chart or key figure as blocks, so people see it as the same island an app's
+      // result is (`gustav-views.ts`), live and after a reload. The model reads it at the provider boundary like any
+      // view: `displayed` and a short summary (`modelCapabilityMessage`). Older results without a view keep their drawing.
+      const result =
+        toolName === "chart"
+          ? chartToolResult(event.args)
+          : toolName === "card" || toolName === "cloud_card"
+            ? cardToolResult(event.args)
+            : { displayed: true };
+      loop.push({ type: "tool_result", callId: event.callId, result });
+      await pipeline.apply({ type: "tool_execution_end", callId: event.callId, name: event.name, result, isError: false } as OutboundEvent);
+      await indexConversationToolSource({
+        conversationId,
+        turnId,
         callId: event.callId,
-        name: event.name,
-        result: { displayed: true },
+        name: toolName,
+        args: event.args,
+        result,
         isError: false,
-      } as OutboundEvent);
+      });
       await aiToolAudit
         .noteToolCompleted({ turnId, callId: event.callId, isError: false })
         .catch(() => log.warn("AI tool audit write failed", { code: "tool_audit_complete_failed", turnId, callId: event.callId }));

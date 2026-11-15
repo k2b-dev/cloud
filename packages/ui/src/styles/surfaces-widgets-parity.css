@@ -1071,6 +1071,12 @@
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"] > .k2b-stat-cell__support { margin-top: 0; }
 /* Flat figures are given whole, never loaded into place: a support line with nothing to say takes no room. */
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"] > .k2b-stat-cell__support:empty { display: none; }
+/* A flat figure with nothing beside it (no change, comparison or trend) reserves no room for one in any width: its
+   quiet line stands right under the figure, in its first frame as when its code arrives. */
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"][data-plain]:not([data-wrap]) .k2b-stat-cell__main { min-height: 1.75rem; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"][data-plain][data-size="sm"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 1.5rem; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"][data-plain][data-size="lg"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 2.25rem; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"][data-plain]:not([data-wrap]) > .k2b-stat-cell__support { min-height: 1rem; }
 .k2b-ui .k2b-stat-cell__value[data-tone="danger"] { color: var(--k2b-danger-text); }
 .k2b-ui .k2b-stat-cell__value[data-tone="success"] { color: var(--k2b-success-text); }
 .k2b-ui .k2b-stat-cell[data-size="sm"] { gap: 0.125rem; padding: 0.625rem 0.75rem; }
@@ -2120,6 +2126,13 @@
   color: var(--k2b-text);
   font-size: 0.875rem;
   font-weight: 600;
+  line-height: 1.25rem;
+}
+
+/* The subtitle of a chart in an island is the quiet line of the island's head, as a frame's own subtitle is. */
+:where(.k2b-ui) .k2b-dashboard-frame .k2b-chart-explorer__description {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
   line-height: 1.25rem;
 }
 

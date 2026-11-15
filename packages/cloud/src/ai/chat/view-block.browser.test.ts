@@ -836,6 +836,7 @@ for (const view of [
 const stock = {
   view: "table",
   title: "Stock",
+  subtitle: "Counted on 14 November",
   columns: [
     { id: "room", label: "Room", type: "text" },
     { id: "items", label: "Items", type: "number" },
@@ -848,14 +849,23 @@ const stock = {
 files["/views/stock-2b3c4d5e.view.json"] = stock;
 
 for (const theme of ["light", "dark"] as const)
-  test(`a Markdown table in a chat answer shares the view table's frame, header band and cell padding (${theme})`, async () => {
+  test(`a table view stands in an island without a frame of its own; a Markdown table keeps its frame, both share the header band and cell padding (${theme})`, async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
     try {
       const page = await context.newPage();
       await page.goto(`http://127.0.0.1:${server.port}/?lang=en&theme=${theme}`);
       await page.evaluate(
         (value) => window.show(value),
-        [present("/views/stock-2b3c4d5e.view.json", { view: "table", title: stock.title, rows: 2, columns: 2, footer: false })],
+        [
+          present("/views/stock-2b3c4d5e.view.json", {
+            view: "table",
+            title: stock.title,
+            subtitle: stock.subtitle,
+            rows: 2,
+            columns: 2,
+            footer: false,
+          }),
+        ],
       );
       await page.waitForSelector("[data-view-path] table");
       await page.evaluate(
@@ -909,9 +919,22 @@ for (const theme of ["light", "dark"] as const)
           };
         }, kind);
       const view = await look("view");
-      expect(view.frame.shadow).not.toBe("none");
+      const markdown = await look("markdown");
+      // v12 section 9: a table view is an island, white with the island shadow, and the island is its frame, so the
+      // table draws no box inside it. A Markdown table in the answer's text keeps its own frame.
+      const island = await page.evaluate(() => {
+        const frame = document.querySelector("[data-view-path]")!.closest(".k2b-dashboard-frame");
+        return frame ? getComputedStyle(frame).boxShadow : null;
+      });
+      expect(island).not.toBeNull();
+      expect(island).not.toBe("none");
+      expect(view.frame.border.startsWith("0px")).toBe(true);
+      expect(["none", "rgba(0, 0, 0, 0) 0px 0px 0px 0px"]).toContain(view.frame.shadow);
+      expect(markdown.frame.border.startsWith("1px")).toBe(true);
+      expect(markdown.frame.shadow).not.toBe("none");
       expect(view.band.fill).not.toBe("rgba(0, 0, 0, 0)");
-      expect(await look("markdown")).toEqual(view);
+      expect(markdown.band).toEqual(view.band);
+      expect(markdown.cells).toEqual(view.cells);
     } finally {
       await context.close();
     }
@@ -1109,11 +1132,12 @@ test("a reference in a table or a record opens through the host with its title a
     await page.goto(`http://127.0.0.1:${server.port}/`);
     await page.evaluate((value) => (window as unknown as { show: (blocks: ToolBlock[]) => void }).show(value), widgets.slice(1));
     await page.getByRole("button", { name: "Office chairs for the second floor" }).click();
-    // Without a title the reference shows its id.
-    await page.getByRole("button", { name: "item-3" }).click();
+    // A reference Cloud could not name for this reader is not available: no id, nothing to open (#84).
+    await page.getByText("Not available").first().waitFor();
+    expect(await page.getByRole("button", { name: "item-3" }).count()).toBe(0);
+    expect(await page.locator("main").textContent()).not.toContain("item-3");
     expect(await page.evaluate(() => (window as unknown as { opened: unknown[] }).opened)).toEqual([
       { title: "Office chairs for the second floor", ref: { type: "spaces.item", id: "item-42" } },
-      { title: "item-3", ref: { type: "spaces.item", id: "item-3" } },
     ]);
   } finally {
     await context.close();
@@ -2006,3 +2030,181 @@ for (const width of [1280, 390])
       await context.close();
     }
   });
+
+// Gustav's view-file chart stands as an island under his head, and a run of zeros stays on the zero line: his lines are
+// straight unless the file asks for a curve, which could swing below zero between two values.
+const quiet = {
+  view: "chart",
+  kind: "line",
+  title: "Rückläufer pro Tag",
+  subtitle: "November 2026",
+  area: true,
+  series: [
+    {
+      label: "Rückläufer",
+      data: [0, 0, 0, 4, 0, 0, 0, 6, 1, 0, 0, 0, 3, 0].map((y, index) => ({ x: `2026-11-${String(index + 1).padStart(2, "0")}`, y })),
+    },
+  ],
+};
+files["/views/returns-per-day-3c4d5e6f.view.json"] = quiet;
+for (const width of [1440, 390])
+  test(`a view-file chart and table are islands, the chart's zeros stay on the zero line and its values have hollow points (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de`);
+      await page.evaluate(
+        (value) => window.show(value),
+        [
+          present("/views/returns-per-day-3c4d5e6f.view.json", {
+            view: "chart",
+            kind: "line",
+            title: quiet.title,
+            subtitle: quiet.subtitle,
+          }),
+          present("/views/stock-2b3c4d5e.view.json", {
+            view: "table",
+            title: stock.title,
+            subtitle: stock.subtitle,
+            rows: 2,
+            columns: 2,
+            footer: false,
+          }),
+        ],
+      );
+      await page.waitForFunction(() => document.querySelector("[data-view-path] .k2b-chart[data-chart-kind] svg path"));
+      await page.waitForSelector("[data-view-path] table");
+      await settled(page);
+      expect(await page.locator(".k2b-dashboard-frame > [data-view-path]").count()).toBe(2);
+      const curves = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("[data-view-path] .k2b-chart svg path"))
+          .map((path) => path.getAttribute("d") ?? "")
+          .filter((d) => /[Cc]/.test(d)),
+      );
+      expect(curves).toEqual([]);
+      // v12, chart in an island: a hollow point on each of the 14 values, the surface inside a ring in the line's colour.
+      const points = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<SVGCircleElement>("[data-view-path] .k2b-line-point")).map((point) => {
+          const style = getComputedStyle(point);
+          return { fill: style.fill, stroke: style.stroke };
+        }),
+      );
+      expect(points).toHaveLength(quiet.series[0]!.data.length);
+      // The island's head: a bold title over a quiet subtitle, the same step for the chart and the table.
+      const heads = await page.evaluate(() => {
+        const muted = getComputedStyle(document.body).getPropertyValue("--k2b-text-muted").trim();
+        const probe = document.createElement("span");
+        probe.style.color = muted;
+        document.body.append(probe);
+        const quietColor = getComputedStyle(probe).color;
+        probe.remove();
+        const chart = document.querySelector(".k2b-dashboard-frame .k2b-chart-explorer__description")!;
+        const table = document.querySelector(".k2b-dashboard-frame header h3 + span")!;
+        const look = (element: Element) => ({ color: getComputedStyle(element).color, size: getComputedStyle(element).fontSize });
+        return { quietColor, chart: look(chart), table: look(table) };
+      });
+      expect(heads.chart).toEqual({ color: heads.quietColor, size: "13px" });
+      expect(heads.table).toEqual(heads.chart);
+      expect(points[0]!.fill).not.toBe(points[0]!.stroke);
+      if (process.env.VIEW_SHOTS)
+        await page.screenshot({ path: `${process.env.VIEW_SHOTS}/gustav-insel-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  });
+
+test('"Open large" shows a view file\'s table in the Lightbox from the file the chat loaded, and gives the focus back', async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    const loads: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/files") loads.push(url.searchParams.get("path") ?? "");
+    });
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+    await page.evaluate(
+      (value) => window.show(value),
+      [
+        present("/views/stock-2b3c4d5e.view.json", {
+          view: "table",
+          title: stock.title,
+          subtitle: stock.subtitle,
+          rows: 2,
+          columns: 2,
+          footer: false,
+        }),
+      ],
+    );
+    await page.waitForSelector("[data-view-path] tbody tr");
+    const opener = page.getByRole("button", { name: "Open large" });
+    await opener.click();
+    const lightbox = page.locator(".k2b-lightbox[open]");
+    await lightbox.locator(".k2b-lightbox__view tbody tr").first().waitFor();
+    expect(await lightbox.locator(".k2b-lightbox__view tbody tr").count()).toBe(2);
+    expect(await lightbox.textContent()).not.toContain("no longer available");
+    // The chat's file, not a second load.
+    expect(loads).toEqual(["/views/stock-2b3c4d5e.view.json"]);
+    await page.keyboard.press("Escape");
+    await lightbox.waitFor({ state: "detached" });
+    expect(await opener.evaluate((button) => button === document.activeElement)).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+// #84: Cloud names a view's references for the reader as the chat reads it (`view=1`, `view-names.ts`). What it could
+// not name, because the reader may not read it or it is gone, stands as "Not available": never its id, never a link.
+const dueTasks = {
+  view: "table",
+  title: "Logistics: tasks with a due date",
+  columns: [
+    { id: "task", type: "ref" },
+    { id: "due", type: "date" },
+  ],
+  rows: [
+    { task: { type: "spaces.item", id: "ZK3qUf", title: "Agree the tour plan for week 47" }, due: "2026-11-16" },
+    { task: { type: "spaces.item", id: "zgDSTy" }, due: "2026-11-17" },
+  ],
+};
+files["/views/tasks-with-due-date-5e6f7a8b.view.json"] = dueTasks;
+test("a table names a reference by its title and shows one it cannot name as not available, never its id", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+  try {
+    const page = await context.newPage();
+    const reads: string[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === "/files") reads.push(url.searchParams.get("view") ?? "");
+    });
+    await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+    await page.evaluate(
+      (value) => window.show(value),
+      [
+        present("/views/tasks-with-due-date-5e6f7a8b.view.json", {
+          view: "table",
+          title: dueTasks.title,
+          rows: 2,
+          columns: 2,
+          footer: false,
+        }),
+      ],
+    );
+    await page.waitForSelector("[data-view-path] tbody tr");
+    const cells = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("[data-view-path] tbody tr")).map((row) => {
+        const cell = row.querySelector("td")!;
+        return { text: cell.textContent?.trim(), link: cell.querySelector("button.k2b-reference") !== null };
+      }),
+    );
+    expect(reads).toEqual(["1"]);
+    expect(cells).toEqual([
+      { text: "Agree the tour plan for week 47", link: true },
+      { text: "Not available", link: false },
+    ]);
+    expect(await page.locator("[data-view-path]").textContent()).not.toContain("zgDSTy");
+    if (process.env.VIEW_SHOTS) await page.screenshot({ path: `${process.env.VIEW_SHOTS}/84-tabelle-light-1440.png`, fullPage: true });
+  } finally {
+    await context.close();
+  }
+});

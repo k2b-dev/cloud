@@ -266,6 +266,9 @@ const messages = /* @__PURE__ */ i18n.define({
       textEditorWaiting: "waiting",
       textEditorSubmitted: "submitted",
       cardFallback: "Card",
+      keyFigures: "Key figures",
+      viewKind: ({ view }: { view: "chart" | "table" | "group" | "stats" | "details" | "explorer" }) =>
+        ({ chart: "Chart", table: "Table", group: "Charts", stats: "Key figures", details: "Details", explorer: "Analysis" })[view],
       preparingTextEditor: "Preparing text editor",
       memory: "Memory",
       usingMemory: "Using memory",
@@ -667,6 +670,11 @@ const messages = /* @__PURE__ */ i18n.define({
       textEditorWaiting: "wartet",
       textEditorSubmitted: "gesendet",
       cardFallback: "Karte",
+      keyFigures: "Kennzahlen",
+      viewKind: ({ view }) =>
+        ({ chart: "Diagramm", table: "Tabelle", group: "Diagramme", stats: "Kennzahlen", details: "Details", explorer: "Auswertung" })[
+          view
+        ],
       preparingTextEditor: "Texteditor wird vorbereitet",
       memory: "Personalisierung",
       usingMemory: "Personalisierung wird verwendet",
