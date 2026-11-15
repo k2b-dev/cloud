@@ -493,7 +493,7 @@ const venueToday = (size: DashboardWidgetSize): BuiltInWidgetFixture[] => {
     tone: "ok",
     title: "Geöffnet bis 18:00",
     message: size === "medium" ? undefined : "Heute keine regelmäßigen Öffnungszeiten",
-    icon: "ti ti-door-gate-open",
+    icon: "ti ti-door-enter",
     grow: size === "small",
   };
   const stat: WidgetBlock[] =

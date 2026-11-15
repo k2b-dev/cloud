@@ -288,7 +288,7 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
                         ? [
                             {
                               label: text("Download SKILL.md"),
-                              icon: "ti ti-file-type-md",
+                              icon: "ti ti-markdown",
                               action: () => void withSkill(skill, downloadAiSkillMarkdown),
                             },
                           ]

@@ -624,7 +624,7 @@ export function ShiftTemplateDialog(
       <CheckboxCard
         label={t().requireTarget}
         description={t().requireTargetDescription}
-        icon="ti ti-users-check"
+        icon="ti ti-user-check"
         value={requireTargetForOpening}
         onValueChange={setRequireTargetForOpening}
         variant="input"

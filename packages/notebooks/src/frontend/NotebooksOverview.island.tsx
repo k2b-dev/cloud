@@ -105,7 +105,7 @@ const activityIcons = {
   "note.restored": "ti ti-history",
   "annotation.create": "ti ti-message-plus",
   "comment.created": "ti ti-message-plus",
-  "comment.updated": "ti ti-message-pencil",
+  "comment.updated": "ti ti-pencil",
   "comment.deleted": "ti ti-message-x",
 } satisfies Record<NotebookActivityAction, string>;
 const activityEventIcon = (action: string): string => (isNotebookActivityAction(action) ? activityIcons[action] : "ti ti-activity");

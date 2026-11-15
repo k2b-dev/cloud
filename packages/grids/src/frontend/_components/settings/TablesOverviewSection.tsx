@@ -316,7 +316,7 @@ export function TablesOverviewSection(props: { baseId: string }) {
     <SettingsGroup title={messages().tableOverview} description={messages().tableOverviewDescription}>
       <SettingsGroup.Action>
         <Button size="sm" variant="secondary" onClick={() => void openTablesOverviewDialog(props.baseId)}>
-          <i class="ti ti-table-search" aria-hidden="true" /> {messages().reviewTables}
+          <i class="ti ti-zoom-scan" aria-hidden="true" /> {messages().reviewTables}
         </Button>
       </SettingsGroup.Action>
       <NoticeCard tone="info">{messages().tableOverviewGuidance}</NoticeCard>

@@ -1,7 +1,7 @@
 ---
 id: weather-read
 title: Read a forecast
-icon: ti ti-cloud-sun
+icon: ti ti-temperature-celsius
 description: Choose current, hourly, daily, radar, and display views for the time horizon you need.
 order: 110
 ---

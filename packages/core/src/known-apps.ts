@@ -140,7 +140,7 @@ export const listAppListing = async (
         id,
         name: id,
         description: "",
-        icon: "ti ti-app",
+        icon: "ti ti-app-window",
         accent: null,
         release: null,
         routes: [],
