@@ -1,8 +1,9 @@
 import { sql } from "@k2b/cloud";
-import { err, fail, ok } from "@k2b/cloud/server";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { crypto } from "@k2b/stdlib";
+import type { z } from "zod";
 import { boundConversation, type ChatContext, type ConversationRow, capPermission, messages, subjectPrincipal } from "./access";
-import { type SystemChatPageSchema, SystemChatParamSchema, SystemChatQuerySchema } from "./contracts";
+import { type ResourceDiscussionSchema, type SystemChatPageSchema, SystemChatParamSchema, SystemChatQuerySchema } from "./contracts";
 import { conversations } from "./conversations";
 import { discussionRead, providerFor } from "./discussion-read";
 import { openParticipant } from "./read-state";
@@ -94,7 +95,9 @@ const locate = async (input: ChatContext & { ref: { type: string; id: string }; 
  * container's chat, starting what does not exist yet. The ref is a selector only; the item and container readers
  * decide as this reader, and starting an item's thread needs write access to its container.
  */
-const openFor = async (input: ChatContext & { ref: { type: string; id: string } }) => {
+const openFor = async (
+  input: ChatContext & { ref: { type: string; id: string } },
+): Promise<Result<z.infer<typeof ResourceDiscussionSchema>>> => {
   const missing = () => fail({ code: "NOT_FOUND", status: 404, message: messages(input).notFound });
   const parsed = SystemChatParamSchema.safeParse({ resourceType: input.ref.type, resourceId: input.ref.id });
   if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));

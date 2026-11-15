@@ -21,6 +21,8 @@ const newContext = async (options: BrowserContextOptions = {}) => {
   await context.addCookies([{ name: "cloud.timezone", value: "UTC", url: fixture.url }]);
   return context;
 };
+// A resource's discussion names the resource in the head's subtitle; its title is the open part, such as All threads.
+const shows = (header: ReturnType<Page["locator"]>, name: string) => header.getByText(name).filter({ visible: true }).first();
 // Failure diagnostics never replace the failure they describe: a panel that is gone is reported, not awaited.
 const diagnose = async (read: () => Promise<unknown>) =>
   console.error(await read().catch((error: unknown) => `Diagnostics unavailable: ${error instanceof Error ? error.message : error}`));
@@ -144,9 +146,11 @@ for (const width of [1440, 390]) {
       await page.locator("#open-chat").click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
       const header = panel.locator(".chat-conversation__header");
-      await header.getByText("Lager Ost", { exact: true }).waitFor();
+      await shows(header, "Lager Ost").waitFor();
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
       expect(new URL(chatFrame().url()).pathname).toBe(`/app/chat/panel/c/${shelf}`);
+      // The shared context the slot gave the panel; later moves continue its page and sequence.
+      const shared = JSON.parse(new URL(chatFrame().url()).searchParams.get("cloud_panel_context")!) as { pageId: string; seq: number };
       // No way out of the panel and no head row; the resource's own discussion needs no way back to itself.
       expect(await panel.locator('a[href^="/app/chat/c/"]').count()).toBe(0);
       expect(await header.getByRole("link", { name: "Chat about Lager Ost", exact: true }).count()).toBe(0);
@@ -171,12 +175,11 @@ for (const width of [1440, 390]) {
           animations: "disabled",
         });
       await otherRow.click();
-      await header.getByText("Project planning", { exact: true }).waitFor();
+      await shows(header, "Project planning").waitFor();
       await back.click();
-      await header.getByText("Lager Ost", { exact: true }).waitFor();
+      await shows(header, "Lager Ost").waitFor();
       expect(new URL(chatFrame().url()).pathname).toBe(`/app/chat/panel/c/${shelf}`);
       // The host page moves to another resource, as a page swap does: the panel follows from the old discussion.
-      const shared = JSON.parse(new URL(chatFrame().url()).searchParams.get("cloud_panel_context")!) as { pageId: string; seq: number };
       const move = (id: string, seq: number) =>
         page.evaluate(
           ({ pageId, id, seq }) => {
@@ -193,7 +196,7 @@ for (const width of [1440, 390]) {
           { pageId: shared.pageId, id, seq },
         );
       await move("Yard-2", shared.seq + 1);
-      await header.getByText("Hof West", { exact: true }).waitFor();
+      await shows(header, "Hof West").waitFor();
       await page.waitForFunction(
         (path) => document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentWindow?.location.pathname === path,
         `/app/chat/panel/c/${yard}`,
@@ -201,7 +204,7 @@ for (const width of [1440, 390]) {
       // Away from the resource's discussion, a host move only changes where the icon leads.
       await header.getByRole("link", { name: "All chats", exact: true }).click();
       await otherRow.click();
-      await header.getByText("Project planning", { exact: true }).waitFor();
+      await shows(header, "Project planning").waitFor();
       await move("Shelf-7", shared.seq + 2);
       await header.getByRole("link", { name: "Chat about Lager Ost", exact: true }).waitFor();
       expect(new URL(chatFrame().url()).pathname).toBe(`/app/chat/panel/c/${other}`);
@@ -244,10 +247,12 @@ for (const width of [1440, 390]) {
       await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
       await page.locator("#open-chat").click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
-      await panel.locator(".chat-conversation__header").getByText("Lager Ost", { exact: true }).waitFor();
+      await shows(panel.locator(".chat-conversation__header"), "Lager Ost").waitFor();
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
       await page.goto(fixture.url + "app/fixture/board/Bay-9");
       await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
+      // A phone does not keep the sheet open across pages.
+      if (width < 768) await page.locator("#open-chat").click();
       const start = panel.getByRole("region", { name: "About Halle Süd", exact: true });
       await start.getByText("Nobody has written here yet.", { exact: true }).waitFor();
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
@@ -315,7 +320,7 @@ test("Chat follows only the latest host place when earlier places answer late", 
     await page.locator("#open-chat").click();
     const panel = page.frameLocator("[data-cloud-panel-frame]");
     const header = panel.locator(".chat-conversation__header");
-    await header.getByText("Lager Ost", { exact: true }).waitFor();
+    await shows(header, "Lager Ost").waitFor();
     await panel.locator('html[data-fixture-ready="true"]').waitFor();
     const frame = () => page.frames().find((candidate) => candidate.url().includes("/app/chat/panel"))!;
     const shared = JSON.parse(new URL(frame().url()).searchParams.get("cloud_panel_context")!) as { pageId: string; seq: number };
@@ -363,13 +368,13 @@ test("Chat follows only the latest host place when earlier places answer late", 
     await move("Yard-2");
     const pending = await slow;
     await move("Dock-3");
-    await header.getByText("Rampe Nord", { exact: true }).waitFor();
+    await shows(header, "Rampe Nord").waitFor();
     releaseSnapshot();
     // The superseded open may abort its read; either way the frame has its answer or its failure.
     await pending.response().catch(() => null);
     await drawn();
     expect(new URL(frame().url()).pathname).toBe(`/app/chat/panel/c/${ids["Dock-3"]}`);
-    expect(await header.getByText("Rampe Nord", { exact: true }).count()).toBe(1);
+    expect(await shows(header, "Rampe Nord").count()).toBe(1);
   } finally {
     for (const release of gates.values()) release();
     fixture.allowChatContext(false);
@@ -1598,11 +1603,11 @@ for (const historyFailure of [false, true]) {
       await page.locator('html[data-fixture-ready="true"]').waitFor();
       await page.locator("#open-chat").click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
-      // The list opens the chat in place, one entry above the list, so Back to chats would step back in history.
+      // The list opens the chat in place, one entry above the list, so All chats would step back in history.
       // A click before the island mounted would load the chat as a document instead and test another way back.
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
       await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
-      await panel.getByRole("link", { name: "Back to chats", exact: true }).waitFor();
+      await panel.getByRole("link", { name: "All chats", exact: true }).waitFor();
       expect(
         await panel.locator("html").evaluate(() => [location.pathname, (history.state as { chatFromList?: boolean } | null)?.chatFromList]),
       ).toEqual([`/app/chat/panel/c/${id}`, true]);
@@ -1640,7 +1645,7 @@ for (const historyFailure of [false, true]) {
         addEventListener("popstate", () => traversals.push(location.pathname));
         Object.assign(window, { chatTraversals: traversals });
       });
-      await panel.getByRole("link", { name: "Back to chats", exact: true }).click();
+      await panel.getByRole("link", { name: "All chats", exact: true }).click();
       await panel
         .getByRole("region", { name: "Notifications, Alt+T", exact: true })
         .getByText("Your message is being prepared. Wait before switching chats.", { exact: true })

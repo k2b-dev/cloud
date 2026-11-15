@@ -87,10 +87,10 @@ import { createItemEventsApi } from "./item-events-api";
 import type { ChosenMember } from "./MemberPicker";
 
 import { createNotificationCleanup } from "./notification-cleanup";
-import { type ResourceChat, resourceChatExists, resourceChatPath } from "./panel-resource";
 import ResourceChatStart from "./ResourceChatStart";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
+import { type ResourceChat, resourceChatExists, resourceChatPath } from "./resource-chat";
 import {
   panelHref as conversationHref,
   parseRoute,
