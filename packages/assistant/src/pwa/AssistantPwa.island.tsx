@@ -653,6 +653,10 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     gone: () => void reloadList(true).catch(() => undefined),
   });
   const jump = (question: AiOpenQuestion) => {
+    if (question.href) {
+      window.location.assign(question.href);
+      return;
+    }
     const here = chat.activeConversationId() === question.conversationId;
     if (!here) go({ level: "chat", id: question.conversationId });
     void waitingFocus.focus(question.anchor, () => chat.activeConversationId() === question.conversationId);

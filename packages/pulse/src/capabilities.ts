@@ -754,6 +754,7 @@ export const pulseCapabilities = defineCapabilities({
       description: "A permission-scoped Pulse telemetry workspace.",
       icon: "ti ti-activity-heartbeat",
       reader: "base.read",
+      access: { managers: listBaseManagers },
       pages: ["/app/pulse/:id"],
     },
     source: {
@@ -1169,3 +1170,5 @@ export const pulseCapabilities = defineCapabilities({
     },
   },
 });
+
+import { listBaseManagers } from "./service/manager-recipients";

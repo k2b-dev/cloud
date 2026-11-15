@@ -16,6 +16,12 @@ export async function migrate(db: SQL = sql): Promise<void> {
     )`.simple();
     await tx`CREATE OR REPLACE TRIGGER database_unused_activation AFTER INSERT OR UPDATE OF state ON code.activations
       FOR EACH ROW EXECUTE FUNCTION code.refresh_database_unused()`.simple();
+    // The card follows a successful switch even while its chat is busy. The shared
+    // durable live outbox handles batching; replaying an already-active receipt emits nothing.
+    await tx`CREATE OR REPLACE TRIGGER activation_live AFTER UPDATE OF state ON code.activations
+      FOR EACH ROW WHEN (NEW.state='active' AND OLD.state IS DISTINCT FROM NEW.state) EXECUTE FUNCTION code.version_card_live();
+      CREATE OR REPLACE TRIGGER activation_insert_live AFTER INSERT ON code.activations
+      FOR EACH ROW WHEN (NEW.state='active') EXECUTE FUNCTION code.version_card_live()`.simple();
     await tx`ALTER TABLE code.activations ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE`.simple();
     await tx`CREATE INDEX IF NOT EXISTS activations_code ON code.activations(code_id,created_at DESC,id)`.simple();
     await tx`ALTER TABLE code.activations DROP COLUMN IF EXISTS plan, DROP COLUMN IF EXISTS mandate_policy`.simple();

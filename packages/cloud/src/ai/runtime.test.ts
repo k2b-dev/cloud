@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { StoreEntry } from "@k2b/nessi";
 import { __compactionTest } from "./compaction";
-import { __aiRuntimeTest } from "./runtime";
+import { __aiRuntimeTest, abortAiTurn, registerAiTurnAbortHandler } from "./runtime";
+import { aiConversations } from "./store";
 
 describe("AI compaction split", () => {
   const messageEntry = (seq: number, role: "user" | "assistant"): StoreEntry => ({
@@ -83,4 +84,50 @@ describe("AI action response idempotency", () => {
       ),
     ).toBe(false);
   });
+});
+
+test("review submission hooks cannot block cancellation of an ordinary turn", async () => {
+  let calls = 0;
+  const dispose = registerAiTurnAbortHandler(async () => {
+    calls++;
+    throw new Error("Review host unavailable");
+  });
+  const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "ordinary" });
+  const active = spyOn(aiConversations, "getActiveTurn").mockResolvedValue(null);
+  const request = spyOn(aiConversations, "requestTurnAbort").mockResolvedValue({ found: false });
+  try {
+    expect(await abortAiTurn({ conversationId: "chat", turnId: "turn" })).toEqual({ ok: true });
+    expect(calls).toBe(0);
+  } finally {
+    dispose();
+    config.mockRestore();
+    active.mockRestore();
+    request.mockRestore();
+  }
+});
+
+test("Composer cancellation closes a review host's submission gate before aborting the turn", async () => {
+  const steps: string[] = [];
+  const dispose = registerAiTurnAbortHandler(async () => {
+    steps.push("submission-gate-closed");
+  });
+  const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({
+    kind: "chat",
+    input: "fixed",
+    codeReview: { codeId: "c_review", versionId: "11111111-1111-4111-8111-111111111111" },
+  });
+  const active = spyOn(aiConversations, "getActiveTurn").mockResolvedValue(null);
+  const request = spyOn(aiConversations, "requestTurnAbort").mockImplementation(async () => {
+    steps.push("turn-aborted");
+    return { found: false };
+  });
+  try {
+    await abortAiTurn({ conversationId: "chat", turnId: "turn" });
+    expect(steps).toEqual(["submission-gate-closed", "turn-aborted"]);
+  } finally {
+    dispose();
+    config.mockRestore();
+    active.mockRestore();
+    request.mockRestore();
+  }
 });

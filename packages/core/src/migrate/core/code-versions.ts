@@ -58,6 +58,34 @@ export async function migrate(db: SQL = sql): Promise<void> {
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS review_notice_once ON code.review_notification_outbox(version_id,kind,recipient_cursor,COALESCE(recipient_id,'00000000-0000-0000-0000-000000000000'::uuid))`.simple();
     await tx`CREATE INDEX IF NOT EXISTS review_notice_order ON code.review_notification_outbox(version_id,sequence)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS review_notice_busy ON code.review_notification_outbox(version_id,sequence) WHERE claimed_until IS NOT NULL OR attempts>0`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS code.review_chat_work (
+      version_id UUID PRIMARY KEY REFERENCES code.version_submissions(version_id) ON DELETE CASCADE,
+      code_id TEXT NOT NULL REFERENCES code.codes(id) ON DELETE CASCADE,
+      conversation_id UUID NOT NULL, user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      state TEXT NOT NULL DEFAULT 'none' CHECK(state IN ('none','queued','running','submitted','completed','stopped','skipped')),
+      reason TEXT, turn_id UUID, submitted_version_id UUID REFERENCES code.versions(id) ON DELETE SET NULL,
+      decision_message_id UUID, activation_message_id UUID, updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`.simple();
+    await tx`ALTER TABLE code.review_chat_work ADD COLUMN IF NOT EXISTS decision_suppressed BOOLEAN NOT NULL DEFAULT FALSE`.simple();
+    await tx`CREATE UNIQUE INDEX IF NOT EXISTS review_chat_turn ON code.review_chat_work(turn_id) WHERE turn_id IS NOT NULL`.simple();
+    await tx`CREATE TABLE IF NOT EXISTS code.review_chat_outbox (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(), version_id UUID NOT NULL REFERENCES code.review_chat_work(version_id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK(kind IN ('decision','activation','revision')), sequence BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
+      attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(), claimed_until TIMESTAMPTZ, last_error TEXT,
+      UNIQUE(version_id,kind)
+    )`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS review_chat_order ON code.review_chat_outbox(kind,version_id,sequence)`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS review_chat_sequence ON code.review_chat_outbox(kind,sequence)`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS review_chat_busy ON code.review_chat_outbox(kind,version_id,sequence) WHERE claimed_until IS NOT NULL OR attempts>0`.simple();
+    await tx`CREATE OR REPLACE FUNCTION code.review_chat_live() RETURNS TRIGGER AS $$
+    BEGIN
+      IF to_regprocedure('ai.enqueue_live_for_user(uuid,uuid,text,text,text[])') IS NOT NULL THEN
+        PERFORM ai.enqueue_live_for_user(gen_random_uuid(),NEW.user_id,NULL,NULL,ARRAY['code-versions','conversation-detail']::text[]);
+      END IF;
+      RETURN NEW;
+    END $$ LANGUAGE plpgsql`.simple();
+    await tx`CREATE OR REPLACE TRIGGER review_chat_live AFTER INSERT OR UPDATE ON code.review_chat_work
+      FOR EACH ROW EXECUTE FUNCTION code.review_chat_live()`.simple();
     // Last approved OR successfully self-activated snapshot, independent of whether it is still running.
     await tx`CREATE TABLE IF NOT EXISTS code.version_baselines (
       code_id TEXT PRIMARY KEY REFERENCES code.codes(id) ON DELETE CASCADE,
@@ -78,9 +106,9 @@ export async function migrate(db: SQL = sql): Promise<void> {
       FOR EACH ROW EXECUTE FUNCTION code.guard_version_evidence();
       CREATE OR REPLACE TRIGGER immutable_decision BEFORE UPDATE ON code.version_decisions
       FOR EACH ROW EXECUTE FUNCTION code.guard_version_evidence();`.simple();
-    // A decision reaches the version card of the person who submitted it on Core's AI live channel, in the decision's
-    // own transaction. A database without the AI schema has no such viewers.
-    await tx`CREATE OR REPLACE FUNCTION code.version_decision_live() RETURNS TRIGGER AS $$
+    // Version evidence invalidates the submitting person's card in its own transaction,
+    // independently of chat receipt delivery. A database without AI has no such viewers.
+    await tx`CREATE OR REPLACE FUNCTION code.version_card_live() RETURNS TRIGGER AS $$
     BEGIN
       IF to_regprocedure('ai.enqueue_live_for_user(uuid,uuid,text,text,text[])') IS NULL THEN RETURN NEW; END IF;
       PERFORM ai.enqueue_live_for_user(gen_random_uuid(), (SELECT created_by FROM code.versions WHERE id=NEW.version_id),
@@ -88,6 +116,9 @@ export async function migrate(db: SQL = sql): Promise<void> {
       RETURN NEW;
     END $$ LANGUAGE plpgsql`.simple();
     await tx`CREATE OR REPLACE TRIGGER decision_live AFTER INSERT ON code.version_decisions
-      FOR EACH ROW EXECUTE FUNCTION code.version_decision_live();`.simple();
+      FOR EACH ROW EXECUTE FUNCTION code.version_card_live();
+      CREATE OR REPLACE TRIGGER withdrawal_live AFTER INSERT ON code.version_withdrawals
+      FOR EACH ROW EXECUTE FUNCTION code.version_card_live();
+      DROP FUNCTION IF EXISTS code.version_decision_live();`.simple();
   });
 }

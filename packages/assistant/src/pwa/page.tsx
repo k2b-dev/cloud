@@ -1,6 +1,6 @@
 import { aiConversations, assistantAiSettingsState, getLiveDictationStatus, loadAiStreamState } from "@k2b/cloud/ai";
 import { aiLive } from "@k2b/cloud/ai/live";
-import { type AuthContext, expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
+import { type AuthContext, auth, expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { getLocalizedRuntimeContext, PwaLayout } from "@k2b/cloud/ssr";
 import type { Context } from "hono";
 import { app, ssr } from "../config";
@@ -29,7 +29,7 @@ const render = async <E extends AuthContext>(c: Context<E>, address: PwaAddress)
     assistantAiSettingsState({ type: "user", userId: user.id }),
     getLiveDictationStatus(c.get("accessSubject")),
     // A list that fails to load leaves the rest of the part usable; the island offers to try again.
-    loadAssistantSidebarSnapshot(identity, { locale, timeZone }).catch(() => null),
+    loadAssistantSidebarSnapshot(identity, { locale, timeZone, authority: auth.getAuthority(c) }).catch(() => null),
     aiConversations
       .listConversationsPage({ ownerUserId: user.id, page: 1, perPage: 1 })
       .then((page) => page.total)
