@@ -54,15 +54,20 @@ export type CodeRow = {
   created_by: string | null;
   created_at: Date;
 };
+const ownerOfRow = (row: Pick<CodeRow, "owner_kind" | "owner_user_id" | "owner_type" | "owner_id" | "owner_app_id">) =>
+  row.owner_kind === "person"
+    ? { kind: "person", userId: row.owner_user_id }
+    : row.owner_kind === "app"
+      ? { kind: "app", appId: row.owner_app_id }
+      : { kind: "resource", ref: { type: row.owner_type, id: row.owner_id } };
+/** The owner a row names, or null when the columns do not form one. */
+export const codeRowOwner = (row: Pick<CodeRow, "owner_kind" | "owner_user_id" | "owner_type" | "owner_id" | "owner_app_id">) => {
+  const owner = CodeOwnerSchema.safeParse(ownerOfRow(row));
+  return owner.success ? owner.data : null;
+};
 export const mapCode = (row: CodeRow): Code => ({
   id: row.id,
-  owner: CodeOwnerSchema.parse(
-    row.owner_kind === "person"
-      ? { kind: "person", userId: row.owner_user_id }
-      : row.owner_kind === "app"
-        ? { kind: "app", appId: row.owner_app_id }
-        : { kind: "resource", ref: { type: row.owner_type, id: row.owner_id } },
-  ),
+  owner: CodeOwnerSchema.parse(ownerOfRow(row)),
   title: row.title,
   serviceAccountId: row.service_account_id,
   serviceAccountHandle: row.service_account_handle ?? null,

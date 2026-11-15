@@ -60,3 +60,14 @@ test("a browser visitor without a session reaches a public Code page; app access
   expect(response.status).toBe(200);
   expect(await response.text()).toBe("route-owned authentication");
 });
+
+test("the label of a public Code page answers visitors without a session; its routes admit like the page", async () => {
+  for (const path of ["/api/code/pages/provenance", "/api/code/pages/report"]) {
+    const router = new Hono()
+      .use(requireAppAccess(app.meta, async (c) => c.text("Core access denied", 403)))
+      .post(path, (c) => c.text("route-owned admission"));
+    const response = await router.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("route-owned admission");
+  }
+});

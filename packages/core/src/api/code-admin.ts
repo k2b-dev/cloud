@@ -13,6 +13,7 @@ import { z } from "zod";
 import { type CodeContext, CodeDataError } from "../code/access";
 import { CodeExplanationUnavailableError, codeAdminOwnerNames, explainCodeVersion } from "../code/admin";
 import { CodeIdSchema } from "../code/contracts";
+import { codePageReportContracts, listCodePageReports, resolveCodePageReport } from "../code/page-reports";
 import { previewCodePolicy, readCodePolicy, requireCodePolicyAdmin, updateCodePolicy } from "../code/policy";
 import { codePolicyContracts } from "../code/policy-contracts";
 import { createCodeReviewComment, deleteCodeReviewComment, listCodeReviewComments } from "../code/review-comments";
@@ -43,6 +44,8 @@ export const codeAdminContracts = {
   explain: { input: z.object({ versionId: z.uuid() }).strict(), data: z.object({ text: z.string() }).strict() },
   pause: { input: z.object({ codeId: CodeIdSchema, paused: z.boolean() }).strict() },
   preview: { input: codePolicyContracts.preview.input },
+  reportList: codePageReportContracts.list,
+  reportResolve: codePageReportContracts.resolve,
   update: { input: codePolicyContracts.update.input },
 } as const;
 
@@ -142,6 +145,20 @@ export const createCodeAdminRoutes = () => {
           input.paused ? setCodePaused(input.codeId, true, context(c)) : setCodePaused(input.codeId, false, context(c)),
         );
       },
+    )
+    .post(
+      "/reports/list",
+      auth.readOnly,
+      middleware.openapi({ tags: ["Code"], summary: "Read one page of the reports members filed on an automation's pages" }),
+      v("json", codeAdminContracts.reportList.input),
+      (c) => run(() => listCodePageReports(c.req.valid("json"), context(c))),
+    )
+    .post(
+      "/reports/resolve",
+      auth.requireOAuthScope("write", "admin"),
+      middleware.openapi({ tags: ["Code"], summary: "Resolve one page report and tell the person who filed it" }),
+      v("json", codeAdminContracts.reportResolve.input),
+      (c) => run(() => resolveCodePageReport(c.req.valid("json"), context(c))),
     )
     .post(
       "/policy/read",
