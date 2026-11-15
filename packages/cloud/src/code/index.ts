@@ -57,6 +57,7 @@ export {
   CodePageTreeSchema,
   validateCodePage,
 } from "./page-contract";
+export { nameCodeGrantTargets } from "./read-model-targets";
 export {
   CODE_REQUEST_LIMITS,
   type CodeRouteRequest,

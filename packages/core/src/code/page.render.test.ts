@@ -10,12 +10,13 @@ import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { stubConnections } from "../../../../scripts/fixtures/platform";
+import type { CodePageLabel } from "./page-provenance-contracts";
 
 const root = mkdtempSync(join(tmpdir(), "core-code-page-render-"));
 Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
 const { default: Page } = await import("./PageTree.island");
 const { createCodeHostingRoutes } = await import("./hosting");
-const { codePageFixture, codePageProvenanceSeedFixture } = await import("./page.test-fixture");
+const { codePageFixture } = await import("./page.test-fixture");
 const { CODE_INITIAL_PAGE_SOURCE } = await import("./authoring-contracts");
 const { CODE_NEWSLETTER_DEMO_SOURCE } = await import("./page.newsletter-demo");
 const { buildCodePage } = await import("./page.test-source");
@@ -342,18 +343,28 @@ describe("Code pages in the Cloud layout", () => {
     }
   };
 
-  /** The feat/code label: server markup right after the tree's container, never inside it. */
-  const expectLabelOutsideTree = (html: string, madeWith = "Made with") => {
-    expect(html).toMatch(/<\/solid-island><\/div><div class="code-page-provenance" data-code-provenance>/);
+  /** The feat/code label: the footer right after the tree's container, never inside it, with the pill in the first HTML. */
+  const expectLabelOutsideTree = (html: string, pill = "Self-built page", madeWith = "Made with") => {
+    expect(html).toMatch(/<\/solid-island><\/div><div class="code-page-provenance" data-code-provenance><solid-island/);
     expect(html.match(/data-code-provenance(?![-\w])/g)).toHaveLength(1);
     const label = html.slice(html.indexOf("data-code-provenance"));
+    expect(label).toContain(pill);
+    // The card is a closed dialog beside the pill; a press opens it once the island runs.
+    expect(label).toContain('aria-haspopup="dialog"');
+    expect(label).toContain('popover="manual"');
     expect(label).toContain(madeWith);
-    expect(label).toContain('popovertarget="code-page-provenance-note"');
-    expect(label).toContain('popover="auto"');
     // Printing keeps the label: the print region is the host around tree and label.
     expect(html.match(/data-print-region/g)).toHaveLength(1);
     expect(html).toMatch(/<div class="code-page-host" data-code-page-host[^>]*data-print-region/);
   };
+  /** The props of every island in the page, as the browser receives them. */
+  const islandProps = (html: string) =>
+    [...html.matchAll(/<solid-island[^>]*data-props="([^"]*)"/g)].map(
+      (match) =>
+        JSON.parse(match[1]!.replaceAll("&quot;", '"').replaceAll("&amp;", "&")) as {
+          t: { p?: { k?: string[]; v?: unknown[] } };
+        },
+    );
 
   test("every variant carries the feat/code label outside the page tree, in the reader's language", () =>
     withRateLimit(async () => {
@@ -364,11 +375,12 @@ describe("Code pages in the Cloud layout", () => {
         [true, "plain"],
       ] as const) {
         const html = await (await host(signedIn, layout).request("https://cloud.test/code/c_page/")).text();
-        expectLabelOutsideTree(html);
+        // A member reads whose page it is (F26); a visitor without an account only that someone built it.
+        expectLabelOutsideTree(html, signedIn ? "Page of " : "Self-built page");
       }
       const german = await (await host(false).request("https://cloud.test/code/c_page/", { headers: { "Accept-Language": "de" } })).text();
-      expectLabelOutsideTree(german, "Erstellt mit");
-      expect(german).toContain("Gib hier nie Passwörter oder Wiederherstellungscodes ein.");
+      expectLabelOutsideTree(german, "Selbst gebaute Seite", "Erstellt mit");
+      expect(german).toContain("Gib hier nie ein Passwort oder einen Wiederherstellungscode ein.");
     }));
 
   test("signed-in people see the page in the workspace with their rail and profile", () =>
@@ -380,6 +392,14 @@ describe("Code pages in the Cloud layout", () => {
       // One main landmark: the page sits in the layout's.
       expect(html.match(/<main\b/g)).toHaveLength(1);
       expect(shellData(html)?.profile).toMatchObject({ name: "Mia Muster" });
+    }));
+
+  test("the phone header names the page, or the Cloud without a title, never the hosting app (Rundgang #64)", () =>
+    withRateLimit(async () => {
+      const headerTitle = (html: string) => html.match(/<span class="layout-header-title[^"]*"[^>]*>([^<]*)</)?.[1];
+      const html = await (await host(true).request("https://cloud.test/code/c_page/")).text();
+      expect(headerTitle(html)).toBe("&lt;script>Workshop&lt;/script>");
+      expect(headerTitle(html)).not.toBe("Core");
     }));
 
   test("anonymous visitors get the signed-out layout that reveals nothing beyond the legal pages, and sign-in returns", () =>
@@ -403,12 +423,29 @@ describe("Code pages in the Cloud layout", () => {
         expect(data![key]).toEqual(legalData![key]);
       expect(data!.profile).toBeUndefined();
       // The island receives the checked tree and what it needs to send it back, nothing else.
-      const islands = [...html.matchAll(/<solid-island[^>]*data-props="([^"]*)"/g)].map(
-        (match) => JSON.parse(match[1]!.replaceAll("&quot;", '"').replaceAll("&amp;", "&")) as { t: { p?: { k?: string[] } } },
-      );
+      const islands = islandProps(html);
       const page = islands.filter((island) => island.t.p?.k?.includes("tree"));
       expect(page).toHaveLength(1);
       expect(page[0]!.t.p!.k).toEqual(["tree", "codeId", "csrf", "locale", "timeZone"]);
+      // The label's island gets exactly the contract's seed and what the pill needs. For a visitor without an account
+      // the seed names nobody: no owner, automation title, version number or account appears in it or in the HTML.
+      const label = islands.filter((island) => island.t.p?.k?.includes("provenance"));
+      expect(label).toHaveLength(1);
+      expect(label[0]!.t.p!.k).toEqual(["provenance", "codeId", "form", "locale"]);
+      const seed = JSON.stringify(label[0]!.t.p!.v);
+      for (const key of ["label", "version", "path", "cloudName"]) expect(seed).toContain(`"${key}"`);
+      expect(seed).toContain('"anonymous"');
+      expect(seed).toContain("Probe Cloud");
+      for (const secret of ["owner-hidden", "v_hidden", "Mia", "Payroll probe"]) {
+        expect(seed).not.toContain(secret);
+        expect(html).not.toContain(secret);
+      }
+      // Nothing beyond the seed: no owner kind, automation, report or viewer travels to the island.
+      for (const key of ["person", "resource", "owner", "automation", "report", "viewer"]) expect(seed).not.toContain(`"${key}"`);
+      // The pill says only that someone built the page; the card's facts load per viewer on its first opening.
+      expect(html).toContain("Self-built page");
+      expect(html).toContain("Someone built this page themselves");
+      expect(html).not.toContain("This page belongs to");
     }));
 
   test("a route with layout plain renders the page alone, as before", () =>
@@ -442,30 +479,78 @@ test("a page cannot reach the feat/code label: no block accepts a class, style o
   for (const attempt of attempts) expect(() => validateCodePage(attempt, "c_page")).toThrow();
 });
 
-test("the no-passwords line shows without a press while a page has a form, and is hidden without one", async () => {
-  const { default: CodePageHost } = await import("./PageHost");
-  const render = (page: typeof tree, locale = "en") =>
-    renderToString(() =>
+describe("the feat/code label in the first HTML", () => {
+  const seed = (label: CodePageLabel) => ({ label, version: "v".repeat(32), path: "/", cloudName: "Möbel Beispiel Cloud" });
+  const render = async (page: typeof tree, label: CodePageLabel, locale = "en") => {
+    const { default: CodePageHost } = await import("./PageHost");
+    return renderToString(() =>
       createComponent(CodePageHost, {
         tree: page,
         codeId: "c_page",
         csrf: "session-bound",
-        provenance: codePageProvenanceSeedFixture,
         locale,
         timeZone: "UTC",
+        provenance: seed(label),
       }),
     );
-  const warning = (html: string) => html.match(/<p class="code-page-provenance__warning[^"]*"[^>]*>/)?.[0];
-  // The fixture has a form inside a section; this page's form sits at the top level.
-  for (const page of [validateCodePage(codePageFixture, "c_page"), tree]) {
-    const html = render(page);
-    expect(warning(html)).toBeDefined();
-    expect(warning(html)).not.toContain("hidden");
-    expect(html).toContain("Do not enter passwords here.");
-  }
-  expect(render(tree, "de")).toContain("Gib hier keine Passwörter ein.");
+  };
+  /** The pill: the trigger button of the label's card. */
+  const pill = (html: string) => html.match(/<button[^>]*code-page-provenance__pill[\s\S]*?<\/button>/)?.[0] ?? "";
+  const password = (html: string) => html.match(/<span class="code-page-provenance__password"[^>]*>/)?.[0];
   const noForm = validateCodePage({ version: 1, kind: "Page", title: "Plain", children: [{ kind: "Text", text: "Hello" }] }, "c_page");
-  expect(warning(render(noForm))).toContain("hidden");
+
+  test("the pill names the page for each label, grammar-free for a resource, in both languages", async () => {
+    const cases: [CodePageLabel, string, string, string, string][] = [
+      [
+        { kind: "anonymous" },
+        "Self-built page",
+        "Someone built this page themselves",
+        "Selbst gebaute Seite",
+        "Diese Seite hat jemand selbst gebaut",
+      ],
+      [
+        { kind: "person", name: "Lea Muster" },
+        "Page of Lea Muster",
+        "This page belongs to Lea Muster",
+        "Seite von Lea Muster",
+        "Diese Seite gehört zu Lea Muster",
+      ],
+      [{ kind: "app", name: "Mail" }, "Page of Mail", "This page belongs to Mail", "Seite von Mail", "Diese Seite gehört zu Mail"],
+      [
+        { kind: "resource", type: "Postfach" },
+        "Page · Postfach",
+        "This page belongs to: Postfach",
+        "Seite · Postfach",
+        "Diese Seite gehört zu: Postfach",
+      ],
+    ];
+    for (const [label, en, enTitle, de, deTitle] of cases) {
+      const english = await render(noForm, label);
+      expect(pill(english)).toContain(en);
+      expect(english).toContain(enTitle);
+      const german = await render(noForm, label, "de");
+      expect(pill(german)).toContain(de);
+      expect(german).toContain(deTitle);
+      expect(german).toContain("in Möbel Beispiel Cloud");
+      // The card's facts are not in the first HTML; only its placeholders and the three promises are.
+      expect(german).toContain("Von Cloud geprüft:");
+      expect(german).not.toContain("Automation öffnen");
+      expect(german).not.toContain("Seite melden");
+    }
+  });
+
+  test("with a form the pill leads with no passwords, without a press; without one the part waits for CSS", async () => {
+    // The fixture has a form inside a section; this page's form sits at the top level.
+    for (const page of [validateCodePage(codePageFixture, "c_page"), tree]) {
+      const html = await render(page, { kind: "person", name: "Lea Muster" });
+      expect(password(html)).toContain("data-form");
+      expect(pill(html)).toContain("Do not enter passwords here");
+      expect(pill(html).indexOf("Do not enter passwords here")).toBeLessThan(pill(html).indexOf("Page of Lea Muster"));
+    }
+    expect(pill(await render(tree, { kind: "anonymous" }, "de"))).toContain("Hier keine Passwörter eingeben");
+    expect(pill(await render(tree, { kind: "anonymous" }, "de"))).toContain("Keine Passwörter");
+    expect(password(await render(noForm, { kind: "anonymous" }))).not.toContain("data-form");
+  });
 });
 
 test("no block asks for a secret: no password or masked field type and no credential autocomplete", () => {
