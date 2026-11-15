@@ -117,7 +117,7 @@ describe("Code page: overview (Bild 19 to 21)", () => {
     expect(page).toContain("41 Aufgaben angelegt");
     expect(page).toContain("44 Unterhaltungen sortiert");
     // #80: only the name is the link; the rest of Core's sentence stays text (v12 picture 19).
-    expect(html("overview")).toContain('Aufgabe „<a href="/app/spaces/Lg8x2q">Lieferung Polsterei Weber</a>“ angelegt');
+    expect(html("overview")).toContain('Aufgabe <a href="/app/spaces/Lg8x2q">Lieferung Polsterei Weber</a> angelegt');
     expect(text("personal")).not.toContain("Was sie für dich getan hat");
   });
 
@@ -760,7 +760,9 @@ describe("Code page loader", () => {
         },
       }),
     );
-    expect(page).toContain('<a href="/app/spaces/GPzX93">Space „Logistik“</a>');
+    // The place reads as quiet text with its kind, never a link (v12 picture 19).
+    expect(page).toContain("Spaces · Space „Logistik“");
+    expect(page).not.toContain('href="/app/spaces/GPzX93"');
     // Without the right the row keeps Core's type-only words, without a link or the reference.
     const hidden = await load("reader", "", failedRun, policyCall, manifest, undefined, ["user"], { words: withTarget, spaces });
     if (hidden.data.state.kind !== "ready") throw new Error("Expected a ready page");
@@ -1183,7 +1185,7 @@ test("what it did for you names only the results the reader may read", async () 
     }),
   );
   // #80: only the name is the link, framed by the rest of Core's sentence as text.
-  expect(markup).toContain('Aufgabe „<a href="/app/spaces/GPzX93/UxrUVC">Lieferung Polsterei Weber</a>“ angelegt');
+  expect(markup).toContain('Aufgabe <a href="/app/spaces/GPzX93/UxrUVC">Lieferung Polsterei Weber</a> angelegt');
   expect(markup).not.toMatch(/<a [^>]*>Aufgabe/);
   const feed = markup.slice(markup.indexOf("cloud-code__feed"));
   expect(feed).toMatch(/<span class="cloud-code__feed-text">Aufgabe angelegt<\/span>/);
@@ -1251,14 +1253,64 @@ test("a result's link covers only the name its sentence frames", async () => {
     href: "/app/spaces/GPzX93?item=8GSn8B",
     target: { ref: { type: "spaces.item", id: "8GSn8B" }, text: "Aufgabe „{name}“ angelegt" },
   };
+  // The link marks the name, so the one pair of quotation marks around it goes.
   expect(linkedName(base)).toEqual({
-    before: "Aufgabe „",
+    before: "Aufgabe ",
     name: "Lieferavise heute prüfen",
-    after: "“ angelegt",
+    after: " angelegt",
     href: "/app/spaces/GPzX93?item=8GSn8B",
   });
+  for (const [open, close] of [
+    ["“", "”"],
+    ['"', '"'],
+    ["'", "'"],
+  ])
+    expect(
+      linkedName({
+        ...base,
+        text: `Created task ${open}Lieferavise heute prüfen${close}`,
+        target: { ...base.target, text: `Created task ${open}{name}${close}` },
+      }),
+    ).toMatchObject({ before: "Created task ", name: "Lieferavise heute prüfen", after: "" });
+  // Without a pair right around the name nothing else is removed.
+  expect(
+    linkedName({ ...base, text: "„Aufgabe“ Lieferavise heute prüfen", target: { ...base.target, text: "„Aufgabe“ {name}" } }),
+  ).toMatchObject({ before: "„Aufgabe“ ", name: "Lieferavise heute prüfen", after: "" });
   const { href: _href, ...unlinked } = base;
   expect(linkedName(unlinked)).toBeNull();
   expect(linkedName({ ...base, target: { ...base.target, text: "{name} und {name}" } })).toBeNull();
   expect(linkedName({ ...base, text: "Aufgabe angelegt" })).toBeNull();
+});
+
+// v12 picture 19: "What it may do" shows its place in grey, with the kind the registry gives its type, never a link.
+test("a grant's place reads as its kind and name, from the page's targets", async () => {
+  const { placeText } = await import("./CodeOverview");
+  const target = (type: string, id: string, typeTitle: string | null, own = false) => ({
+    target: { key: `${type}\u0000${id}`, ref: { type, id }, title: null, typeTitle, icon: null, own, href: null },
+    operations: [],
+    newOperations: [],
+  });
+  const state = {
+    targets: [target("mail.mailbox", "VyhBnz", "Postfach", true), target("spaces.space", "GPzX93", "Space"), target("x.y", "z", null)],
+  };
+  // The owner's own row is known by its name; a named target by its reference.
+  expect(placeText({}, "info@moebel-beispiel.de", state, "info@moebel-beispiel.de")).toBe("Postfach info@moebel-beispiel.de");
+  expect(placeText({ target: { ref: { type: "spaces.space", id: "GPzX93" } } }, "Logistik", state, "info@moebel-beispiel.de")).toBe(
+    "Space Logistik",
+  );
+  // A type without a kind, an unknown place, or a name that already starts with its kind stays as it is.
+  expect(placeText({ target: { ref: { type: "x.y", id: "z" } } }, "Etwas", state, "info@")).toBe("Etwas");
+  expect(placeText({}, "anderswo", state, "info@")).toBe("anderswo");
+  expect(placeText({ target: { ref: { type: "spaces.space", id: "GPzX93" } } }, "Space Logistik", state, "info@")).toBe("Space Logistik");
+  // The page renders it without a link.
+  const markup = renderMarkup(() =>
+    createComponent(LocaleProvider, {
+      locale: "de",
+      get children() {
+        return createComponent(CodePage, { data: codePageFixture("overview") });
+      },
+    }),
+  );
+  const may = markup.slice(markup.indexOf("cloud-code__may"));
+  expect(may.slice(0, may.indexOf("</ul>"))).not.toContain("<a ");
 });

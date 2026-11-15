@@ -9,6 +9,7 @@ import { CodeVersionApproval } from "./CodeVersionApproval";
 import { type CodePageAutomation, type CodePageData, type CodePageReady, StartSchema } from "./data";
 import { Island, iconClass, ModelMark, type PageText, personal, Row, runStatus, Status, sentence, splitRow, withQuery } from "./page-kit";
 import { describeCodeTiming } from "./schedule";
+import { targetKey } from "./targets";
 
 /** "When it runs" shows this many triggers before "Show n more". */
 const WHEN_ROWS = 6;
@@ -151,6 +152,29 @@ function Did(props: { state: CodePageReady; live: CodeLive; text: PageText }) {
     </Island>
   );
 }
+
+/**
+ * A grant's place with its kind, as the registry names the type ("Postfach", "Space"): the kind comes from the page's
+ * targets, which read the catalog as the person. A row Core named by its target carries the reference; the owner's own
+ * row is known by its name. Without a kind the place stays its name alone.
+ */
+export const placeText = (
+  row: { target?: { ref: { type: string; id: string } } },
+  name: string | null,
+  state: Pick<CodePageReady, "targets">,
+  ownerTitle: string,
+): string => {
+  if (!name) return "";
+  const rows = state.targets ?? [];
+  const ref = row.target?.ref;
+  const target = ref
+    ? rows.find((item) => targetKey(item.target.ref) === targetKey(ref))?.target
+    : name === ownerTitle
+      ? rows.find((item) => item.target.own)?.target
+      : undefined;
+  const kind = target?.typeTitle;
+  return kind && !name.startsWith(`${kind} `) ? `${kind} ${name}` : name;
+};
 
 /** A manual or scheduled automation that runs now with the running version. */
 const runnable = (state: CodePageReady) =>
@@ -347,6 +371,8 @@ function MayDo(props: { data: CodePageData; state: CodePageReady; text: PageText
           <For each={words()?.mayDo.items ?? []}>
             {(row) => {
               const parts = splitRow(row.text);
+              // The place as quiet text, never a link (v12 picture 19): its kind and its name, "Postfach info@…".
+              const place = () => placeText(row, parts.rest, props.state, props.data.owner.title);
               return (
                 <Row
                   icon={iconClass(row.icon, "ti ti-apps")}
@@ -355,14 +381,8 @@ function MayDo(props: { data: CodePageData; state: CodePageReady; text: PageText
                   sub={
                     <>
                       {row.app}
-                      <Show when={row.app && parts.rest}>{" · "}</Show>
-                      <Show when={parts.rest}>
-                        {(rest) => (
-                          <Show when={row.href} fallback={rest()}>
-                            {(href) => <a href={href()}>{rest()}</a>}
-                          </Show>
-                        )}
-                      </Show>
+                      <Show when={row.app && place()}>{" · "}</Show>
+                      {place()}
                     </>
                   }
                 />
