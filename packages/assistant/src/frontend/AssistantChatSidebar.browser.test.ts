@@ -647,7 +647,8 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       // A result without a file shows where it came from.
       const app = page.locator(".assistant-context-boxcol .assistant-context-box__row").nth(1);
       await app.hover();
-      await app.getByRole("button", { name: "„Umsatz-Dashboard“ im Chat zeigen" }).click();
+      // On feat/code the row itself also jumps (no Studio app tab), so take the action in its place.
+      await app.locator(".assistant-context-box__act").getByRole("button", { name: "„Umsatz-Dashboard“ im Chat zeigen" }).click();
       const jumps = await page.evaluate(() => (window as unknown as { sidebar: { jumps: unknown[] } }).sidebar.jumps);
       expect(jumps).toEqual([{ messageSeq: 9, callId: "call-app", presentationId: null }]);
     } finally {
@@ -705,7 +706,7 @@ describe(`Box "In this chat" in ${browserName}`, () => {
     }
   }, 20_000);
 
-  test("the button never covers the first message: below 56 rem the timeline starts below it", async () => {
+  test("the button never covers a message: it stands in a head row, and the timeline scrolls below it", async () => {
     for (const [width, tabs] of [
       [390, false],
       [820, false],
@@ -714,18 +715,16 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       const page = await boxPage(width, sidebarSnapshot(), { tabs });
       try {
         const box = await page.evaluate(() => {
-          const content = document.querySelector(".harness-timeline")!;
-          const style = getComputedStyle(content);
-          const rect = content.getBoundingClientRect();
+          // Scrolled into the middle: what passes the top of the scrollport must still not run under the button.
+          const viewport = document.querySelector(".k2b-chat-timeline__viewport")!;
+          viewport.scrollTop = viewport.scrollHeight / 2;
           const button = document.querySelector(".assistant-context-button")!.getBoundingClientRect();
-          return {
-            top: rect.top + Number.parseFloat(style.paddingTop),
-            right: rect.right - Number.parseFloat(style.paddingRight),
-            buttonBottom: button.bottom,
-            buttonLeft: button.left,
-          };
+          return { top: viewport.getBoundingClientRect().top, buttonBottom: button.bottom, buttonHeight: button.height };
         });
-        expect(box.top >= box.buttonBottom || box.right <= box.buttonLeft).toBe(true);
+        expect(box.buttonHeight).toBeGreaterThan(0);
+        expect(box.top).toBeGreaterThanOrEqual(box.buttonBottom);
+        // On a phone the head names the chat; wider, the chat's place names it.
+        expect(await page.locator(".assistant-context-head__title").isVisible()).toBe(width < 768);
       } finally {
         await page.close();
       }
@@ -741,6 +740,21 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       expect(await sheet.getByRole("heading", { name: "In diesem Chat" }).count()).toBe(1);
       const type = await typeOf(page, ".assistant-context-sheet .assistant-context-box");
       expect(type.styles).toEqual(["12/400", "13/400", "13/600"]);
+      // As high as the box, and the chat behind it stays as bright as before (v12, picture 66).
+      const fit = await page.evaluate(() => {
+        const frame = document.querySelector(".k2b-bottom-sheet-frame")!;
+        const box = document.querySelector(".assistant-context-sheet")!.getBoundingClientRect();
+        const backdrop = getComputedStyle(frame, "::backdrop");
+        return {
+          frame: frame.getBoundingClientRect().height,
+          box: box.height,
+          dim: backdrop.backgroundColor,
+          blur: backdrop.backdropFilter,
+        };
+      });
+      expect(fit.frame - fit.box).toBeLessThan(96);
+      expect(fit.dim).toBe("rgba(0, 0, 0, 0)");
+      expect(fit.blur).toBe("none");
       await sheet.getByRole("button", { name: /^Kontext/ }).click();
       await sheet.waitFor({ state: "detached" });
       await page.waitForFunction(() => (window as unknown as HarnessWindow).sidebar.actions.length > 0);

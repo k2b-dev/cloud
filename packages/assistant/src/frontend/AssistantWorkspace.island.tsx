@@ -3434,6 +3434,7 @@ export default function AssistantWorkspace(props: Props) {
                             state={contextState}
                             actions={contextBoxActions()}
                             project={activeConversationProject()}
+                            title={activeConversation()?.title ?? null}
                             onSheet={openContextSheet}
                           />
                         </Show>

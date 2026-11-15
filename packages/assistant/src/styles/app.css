@@ -70,28 +70,43 @@
    open; otherwise a button at the top of the chat that opens the same box below
    it; on phones the button opens a sheet. The island never moves the chat. */
 .k2b-ui .assistant-context-boxcol { display: none; }
-.k2b-ui .assistant-context-button {
-  position: absolute;
-  z-index: 2;
-  inset-block-start: 0.5rem;
-  inset-inline-end: 1.25rem;
-  background: var(--k2b-surface);
+/* The button's head row above the timeline: it takes its own grid row, so the timeline scrolls below it and no message
+   passes under the button. */
+.k2b-ui .assistant-chat-layout:has(> .assistant-context-head) { grid-template-rows: auto minmax(0, 1fr) auto; }
+.k2b-ui .assistant-chat-layout:has(> .assistant-context-head) .assistant-chat-messages { grid-row: 2; }
+.k2b-ui .assistant-chat-layout:has(> .assistant-context-head) .assistant-chat-composer { grid-row: 3; }
+.k2b-ui .assistant-context-head {
+  display: flex;
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.375rem 1.25rem 0;
 }
+.k2b-ui .assistant-context-head__title { display: none; }
 @media (max-width: 47.999rem) {
   .k2b-ui .assistant-chat-layout { --assistant-context-mode: sheet; }
   .k2b-ui .assistant-context-button .k2b-button__label > span { display: none; }
-}
-/* Below 56rem the button always shows at the top of a full-width timeline: the first message starts below it, so the
-   button never covers it. From 56rem the timeline's centered column keeps clear of the button by itself. */
-@container assistant-chat (max-width: 55.999rem) {
-  .k2b-ui .assistant-chat-layout:has(> .assistant-context-button) .k2b-chat-timeline__content { padding-block-start: 2.75rem; }
+  /* On a phone the head names the chat, as the app's head names only the app. */
+  .k2b-ui .assistant-context-head { justify-content: space-between; padding: 0.25rem 0.5rem 0 1rem; }
+  .k2b-ui .assistant-context-head__title {
+    display: block;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
 }
 @container assistant-chat (min-width: 56rem) {
   .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) { --assistant-context-mode: column; }
   .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol) {
     --assistant-chat-context-width: 19.5rem;
   }
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-button { display: none; }
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-head { display: none; }
   /* Above the messages' full-width scrollport, which spans this column too; only the island takes the pointer. */
   .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol {
     display: block;
@@ -327,6 +342,8 @@
 .k2b-ui .assistant-context-sidebar__actions { display: flex; flex: none; gap: 0.125rem; margin-inline-start: auto; }
 /* In the phone sheet, the sheet's body owns scrolling; the panel only lays out its sections. */
 .k2b-ui .k2b-detail-panel.assistant-context-sheet { height: auto; overflow: visible; }
+/* The box's sheet lies over the chat without dimming it (v12, picture 66); a tap beside it still closes it. */
+.k2b-ui .k2b-dialog.k2b-bottom-sheet-frame:has(.assistant-context-sheet)::backdrop { backdrop-filter: none; background: transparent; }
 .k2b-ui .assistant-context-sheet .k2b-detail-panel__body { overflow: visible; }
 /* The workspace Files tab: the sidebar's surface, filling the tab. */
 .k2b-ui .assistant-context-tab {
