@@ -301,9 +301,9 @@ export function CodeRuns(props: { data: CodePageData; state: CodePageReady; text
   const selected = () => props.state.run?.run.id ?? null;
   /** Counts are exact only when every run is loaded; otherwise the chips name the filter without a number. */
   const count = (which: CodeRunFilter) => (cursor() === null ? all().filter((run) => matches(run, which)).length : null);
-  const chip = (which: CodeRunFilter, label: string, icon: string) => (
+  // Pills with words and counts, no signs (Bild 22).
+  const chip = (which: CodeRunFilter, label: string) => (
     <FilterToggle
-      icon={icon}
       active={filter() === which}
       href={withQuery(props.data.href, { tab: "runs", filter: which === "all" ? undefined : which })}
       label={count(which) === null ? label : `${label} ${count(which)}`}
@@ -377,9 +377,9 @@ export function CodeRuns(props: { data: CodePageData; state: CodePageReady; text
           <div class="cloud-code__md" data-phone={props.state.runSelected ? "detail" : "list"}>
             <div class="cloud-code__list-col">
               <div class="cloud-code__filters" role="group" aria-label={t().filterLabel}>
-                {chip("all", t().filterAll, "ti ti-list")}
-                {chip("failed", t().filterFailed, "ti ti-alert-circle")}
-                {chip("skipped", t().filterSkipped, "ti ti-player-skip-forward")}
+                {chip("all", t().filterAll)}
+                {chip("failed", t().filterFailed)}
+                {chip("skipped", t().filterSkipped)}
               </div>
               <Show when={props.state.runs?.eventDeliveries?.length}>
                 <Island title={t().eventDeliveries}>

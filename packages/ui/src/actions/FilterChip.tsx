@@ -228,7 +228,8 @@ export default FilterChip;
 
 export type FilterToggleProps = {
   label: JSX.Element;
-  icon: string;
+  /** Optional sign before the label; a pill of words, such as run filters with counts, needs none. */
+  icon?: string;
   /** Whether the filter is on. An active toggle carries the same tint as an active `FilterChip`. */
   active: boolean;
   /** Link to the URL with the filter switched. The link keeps working without JavaScript. */
@@ -250,7 +251,7 @@ export type FilterToggleProps = {
 export function FilterToggle(props: FilterToggleProps): JSX.Element {
   const content = () => (
     <>
-      <i class={props.icon} aria-hidden="true" />
+      <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
       <span class="k2b-filter-chip__label">{props.label}</span>
     </>
   );

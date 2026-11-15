@@ -546,9 +546,12 @@
 .assistant-apps__hour { position: absolute; top: 34px; transform: translateX(-50%); color: var(--k2b-text-muted); font-size: 0.75rem; line-height: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .assistant-apps__hour::before { content: ""; position: absolute; top: -14px; left: 50%; width: 1px; height: 6px; background: var(--k2b-border-strong); }
 .assistant-apps__now { position: absolute; top: 4px; bottom: 16px; width: 1px; margin-left: -0.5px; background: var(--k2b-ai-accent); }
-.assistant-apps__now > span { position: absolute; top: -6px; left: 6px; color: var(--k2b-ai-accent); font-size: 0.75rem; line-height: 1; white-space: nowrap; }
+.assistant-apps__now > span { position: absolute; top: -14px; left: 6px; color: var(--k2b-ai-accent); font-size: 0.75rem; line-height: 1; white-space: nowrap; }
 .assistant-apps__marks { position: absolute; inset: 0; margin: 0; padding: 0; list-style: none; }
 .assistant-apps__marks > li { position: absolute; top: 12px; width: 0; }
+/* A failed or running run is never hidden under its neighbours: it lies on top. */
+.assistant-apps__marks > li:has(> [data-state="failed"]) { z-index: 2; }
+.assistant-apps__marks > li:has(> [data-state="running"]) { z-index: 3; }
 /* Form carries the state as well as colour: a failed run is interrupted, a planned start is short and grey. */
 .assistant-apps__mark { position: absolute; top: 0; left: -2px; display: block; width: 4px; height: 20px; border-radius: 2px; background: var(--k2b-success-500); }
 .assistant-apps__mark[data-state="failed"] { background: linear-gradient(var(--k2b-danger-500) 0 4px, transparent 4px 7px, var(--k2b-danger-500) 7px); }

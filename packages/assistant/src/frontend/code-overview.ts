@@ -145,6 +145,8 @@ export type DayLine = {
  * All listed Code's marks of the person's day on one line, in time order. Above `CODE_READ_MODEL_TIMELINE_LIMIT` marks,
  * equal portions of the day merge into groups, as Core groups one Code's day; the counts stay exact.
  */
+/** One planned mark per hour at most. */
+const PLANNED_HOURS = 24;
 export const dayLine = (items: readonly CodeOverviewItem[]): DayLine | null => {
   const days = items.flatMap((item) => (item.extras?.activity ? [{ codeId: item.id, timeline: item.extras.activity.timeline }] : []));
   if (days.length === 0) return null;
@@ -168,6 +170,21 @@ export const dayLine = (items: readonly CodeOverviewItem[]): DayLine | null => {
         runId: mark.runId ?? null,
       });
     }
+  }
+  // Planned starts carry no result: above one per hour they share one mark per hour, so a dense day stays readable on
+  // a phone. Runs that happened keep their own mark; the counts stay exact.
+  const planned = marks.filter((mark) => mark.state === "planned");
+  if (planned.length > PLANNED_HOURS) {
+    const hours = new Map<number, DayMark>();
+    for (const mark of planned) {
+      const hour = Math.min(PLANNED_HOURS - 1, Math.floor(mark.at * PLANNED_HOURS));
+      const known = hours.get(hour);
+      hours.set(
+        hour,
+        known ? { ...known, count: known.count + mark.count, runId: null } : { ...mark, at: (hour + 0.5) / PLANNED_HOURS, runId: null },
+      );
+    }
+    marks.splice(0, marks.length, ...marks.filter((mark) => mark.state !== "planned"), ...hours.values());
   }
   marks.sort((a, b) => a.at - b.at);
   if (marks.length <= CODE_READ_MODEL_TIMELINE_LIMIT) return { marks, missing, ...counts };

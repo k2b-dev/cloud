@@ -166,7 +166,7 @@ function CodeCard(props: { item: CodeOverviewItem; timeZone: string; now: Date }
     <Paper as="a" href={codeHref(props.item.id)} interactive class="assistant-apps__card" data-status={status()}>
       <span class="assistant-apps__card-top">
         <span class="assistant-apps__tile" aria-hidden="true">
-          <FeatCodeMark variant="glyph" size={16} decorative />
+          <FeatCodeMark variant="glyph" tone="current" size={16} decorative />
         </span>
         <span class="assistant-apps__card-copy">
           <span class="assistant-apps__card-title">{props.item.title}</span>
@@ -315,7 +315,7 @@ function DayIsland(props: {
                 <For each={line().marks}>
                   {(mark) => {
                     const label = () =>
-                      mark.state === "group"
+                      mark.state === "group" || (mark.state === "planned" && mark.count > 1)
                         ? t().appsGroupMark({ time: markTime(mark), count: mark.count })
                         : t().appsMark({
                             title: (mark.codeId && props.titles.get(mark.codeId)) || t().codeKind,

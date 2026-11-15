@@ -471,6 +471,7 @@ export const codePageMessages = i18n.define({
       askAfter: "?",
       approvalSource: "Code",
       changedAgainst: ({ version }: Version) => `compared with version ${version}`,
+      descriptionMissing: "No description of this version yet. The tabs below show what it may do and when it runs.",
       sameAccess: ({ running }: { running: number | null }) =>
         running === null ? "Access and triggers stay the same." : `Access and triggers stay as in version ${running}.`,
       approvalReady: ({ version, name }: { version: number; name: string }) => `Switch on version ${version} of ${name}?`,
@@ -973,6 +974,7 @@ export const codePageMessages = i18n.define({
       askAfter: " einschalten?",
       approvalSource: "Code",
       changedAgainst: ({ version }) => `gegenüber Version ${version}`,
+      descriptionMissing: "Für diese Version gibt es noch keine Beschreibung. Was sie darf und wann sie läuft, steht unten.",
       sameAccess: ({ running }) =>
         running === null ? "Zugriffe und Auslöser bleiben gleich." : `Zugriffe und Auslöser bleiben wie bei Version ${running}.`,
       approvalReady: ({ version, name }) => `Version ${version} von ${name} einschalten?`,

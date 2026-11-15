@@ -28,7 +28,15 @@ export const lastFinishedRun = (state: CodePageReady) =>
 export function CodeLede(props: { state: CodePageReady; text: PageText }) {
   const description = () => props.state.words?.current?.description ?? null;
   return (
-    <Show when={description()?.text}>
+    <Show
+      when={description()?.text}
+      fallback={
+        // Without a description the place stays, with a quiet line: the page never jumps when one arrives.
+        <Show when={props.state.words?.current}>
+          <p class="cloud-code__lede cloud-code__lede--missing">{props.text.t().descriptionMissing}</p>
+        </Show>
+      }
+    >
       {(text) => (
         <p class="cloud-code__lede">
           {text()}{" "}
