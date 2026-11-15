@@ -1,0 +1,38 @@
+import { z } from "zod";
+import type { AiDraftContentPart } from "./types";
+
+/** One FIFO shared by every writer of a chat. */
+export const AI_MESSAGE_QUEUE_LIMIT = 20;
+
+/** Server-authored display metadata. href is projected for the current viewer. */
+export const AiMessageOriginSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("person"), name: z.string() }).strict(),
+  z.object({ kind: z.literal("automation"), name: z.string(), href: z.string().optional() }).strict(),
+  z.object({ kind: z.literal("chat"), name: z.string(), href: z.string().optional() }).strict(),
+]);
+export type AiMessageOrigin = z.infer<typeof AiMessageOriginSchema>;
+
+export const AiQueuedMessageSchema = z.object({
+  /** Stable entry ID and submission idempotency key; retries never allocate another ID. */
+  id: z.uuid(),
+  text: z.string(),
+  origin: AiMessageOriginSchema,
+  state: z.enum(["pending", "sending", "failed"]),
+  createdAt: z.iso.datetime(),
+  authorIsViewer: z.boolean(),
+});
+export type AiQueuedMessage = z.infer<typeof AiQueuedMessageSchema> & { content: AiDraftContentPart[] };
+
+/** Result of POST /conversations/:id/queue/:entryId/send-now. Reconcile uncertain HTTP outcomes by entry ID. */
+export type AiSendQueuedMessageResult = {
+  id: string;
+  state: "sending" | "submitted" | "failed";
+  turnId: string | null;
+};
+
+/**
+ * Queue changes use the existing /api/ai/live user channel: ai.invalidated,
+ * conversation-detail + conversation-list. Reload the authorized queue snapshot
+ * after this event; never poll. No origin or per-viewer fields travel in fanout.
+ */
+export type AiQueueLiveEvent = import("./live-events").AiInvalidation;

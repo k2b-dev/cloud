@@ -523,3 +523,12 @@ export {
   CloudAiViewImageOutputSchema,
 } from "./vision-tool";
 export { readWebPageForPerson, type WebReaderResult, WebReaderResultSchema } from "./web-reader";
+export {
+  AI_MESSAGE_QUEUE_LIMIT,
+  type AiMessageOrigin,
+  AiMessageOriginSchema,
+  type AiQueuedMessage,
+  AiQueuedMessageSchema,
+  type AiQueueLiveEvent,
+  type AiSendQueuedMessageResult,
+} from "./queue-contracts";

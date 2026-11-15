@@ -301,6 +301,8 @@ export type AiStoredMessage = {
   compactedAt: string | null;
   /** UI metadata (e.g. how many messages a compaction summary replaced). */
   meta: {
+    /** Server-authored writer attribution, with links projected for the viewer. */
+    origin?: import("./queue-contracts").AiMessageOrigin;
     /** The atomically consumed composer revision, used to confirm a local send. */
     submittedDraftRevision?: number;
     modelRequest?: AiModelRequest;
