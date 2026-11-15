@@ -59,7 +59,7 @@ export type ContextBoxModel = {
 
 export type ContextBoxCopy = {
   results: string;
-  sourcesSummary: (counts: { pages: number; searches: number; items: number }) => string;
+  sourcesSummary: (counts: { named: readonly string[]; pages: number; searches: number; items: number }) => string;
   contextSummary: (parts: { project: string | null; skills: number; memories: number; routines: number }) => string;
   /** The context line when the chat has no project, skills, memories, or routines. */
   contextFallback: string;
@@ -141,12 +141,20 @@ const groupRow = (row: AssistantChatContextGroup["rows"][number]): ContextBoxRow
   hover: row.action ? { kind: "href", href: row.action.href, label: row.action.label, icon: row.action.icon } : null,
 });
 
-/** "3 pages, 2 searches, 4 items": what the chat read, by kind, from the snapshot's first page of sources. */
-export const contextBoxSourceCounts = (sources: readonly AiConversationSource[]) => ({
-  pages: sources.filter((source) => source.kind === "web").length,
-  searches: sources.filter((source) => source.kind === "activity").length,
-  items: sources.filter((source) => source.kind === "resource").length,
-});
+/**
+ * What the chat read, by kind: Cloud items in their app's own nouns where it names them ("3 Mails"), the rest as items,
+ * then web pages and searches. Counted from the snapshot's first page of sources.
+ */
+export const contextBoxSourceCounts = (snapshot: Pick<AssistantChatContextSnapshot, "sources" | "resourceCounts">) => {
+  const named = snapshot.resourceCounts ?? [];
+  const namedCount = named.reduce((sum, entry) => sum + entry.count, 0);
+  return {
+    named: named.toSorted((a, b) => b.count - a.count || a.label.localeCompare(b.label)).map((entry) => entry.label),
+    pages: snapshot.sources.filter((source) => source.kind === "web").length,
+    searches: snapshot.sources.filter((source) => source.kind === "activity").length,
+    items: Math.max(0, snapshot.sources.filter((source) => source.kind === "resource").length - namedCount),
+  };
+};
 
 /**
  * The box: the three newest results, further groups the snapshot carries, then one line for sources and one for the
@@ -166,7 +174,7 @@ export const buildContextBoxModel = (
       .map((result) => contextBoxResultRow(result, { now: snapshot.now, timeZone: snapshot.timeZone, ...input })),
     more: snapshot.results.length > CONTEXT_BOX_GROUP_LIMIT || snapshot.resultsTruncated,
   };
-  const counts = contextBoxSourceCounts(snapshot.sources);
+  const counts = contextBoxSourceCounts(snapshot);
   const sources = snapshot.sourceCount > 0 ? input.copy.sourcesSummary(counts) : null;
   const routines = snapshot.tasks.filter((task) => task.state !== "completed").length;
   // Always there: the tab "Context" also holds the chat's secrets and approvals.

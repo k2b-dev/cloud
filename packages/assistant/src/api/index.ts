@@ -81,7 +81,7 @@ const app = new Hono<AuthContext>()
     const snapshot = await loadAssistantChatContextSnapshot(
       { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
       c.req.param("conversationId")!,
-      { timeZone: getTimeZone(c) },
+      { timeZone: getTimeZone(c), locale: getLocale(c) },
     );
     return snapshot ? respond(c, ok(snapshot)) : respond(c, fail(err.notFound("Conversation")));
   })

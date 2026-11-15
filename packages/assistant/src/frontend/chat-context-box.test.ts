@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot } from "./AssistantChatSidebar.fixture";
+import { fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source } from "./AssistantChatSidebar.fixture";
 import { buildContextBoxModel, CONTEXT_BOX_ROW_LIMIT, contextBoxPending, contextBoxWhen } from "./chat-context-box";
 
 const copy = {
   results: "Ergebnisse",
-  sourcesSummary: ({ pages, searches, items }: { pages: number; searches: number; items: number }) => `${items}/${pages}/${searches}`,
+  sourcesSummary: ({ named, pages, searches, items }: { named: readonly string[]; pages: number; searches: number; items: number }) =>
+    [...named, `${items}/${pages}/${searches}`].join(", "),
   contextSummary: ({ project, skills }: { project: string | null; skills: number; memories: number; routines: number }) =>
     [project, skills ? `${skills} Skills` : null].filter(Boolean).join(", "),
   contextFallback: "Secrets & Freigaben",
@@ -57,6 +58,19 @@ describe("box model", () => {
     expect(build(sidebarSnapshot(), "Einkauf").context).toBe("Einkauf, 1 Skills");
     const empty = build(sidebarSnapshot({ results: [], sources: [], sourceCount: 0 }));
     expect(empty.empty).toBe(true);
+  });
+
+  test("the sources line names Cloud items in their app's nouns and counts the rest as items", () => {
+    const mails = ["M1", "M2", "M3"].map((id) =>
+      source("resource", `mail.message:${id}`, `Mail ${id}`, minutesAgo(5), { ref: { type: "mail.message", id } }),
+    );
+    const note = source("resource", "notebooks.note:N1", "Notiz", minutesAgo(6), { ref: { type: "notebooks.note", id: "N1" } });
+    const snapshot = sidebarSnapshot({
+      sources: [...mails, note, ...sidebarSnapshot().sources],
+      sourceCount: 6,
+      resourceCounts: [{ type: "mail.message", count: 3, label: "3 Mails" }],
+    });
+    expect(build(snapshot).sources).toBe("3 Mails, 1/1/1");
   });
 
   test("never more than ten rows, groups included", () => {

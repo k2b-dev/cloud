@@ -118,9 +118,22 @@ export const chatSidebarMessages = i18n.define({
       boxShowNew: "Show what is new",
       boxSources: "Sources",
       boxContext: "Context",
-      boxSourcesSummary: ({ pages, searches, items }: { pages: number; searches: number; items: number }) =>
+      boxSourcesSummary: ({
+        named,
+        pages,
+        searches,
+        items,
+      }: {
+        named: readonly string[];
+        pages: number;
+        searches: number;
+        items: number;
+      }) =>
         [
-          items ? plural(items, "item from your Cloud", "items from your Cloud") : null,
+          ...named,
+          items
+            ? plural(items, named.length ? "other item" : "item from your Cloud", named.length ? "other items" : "items from your Cloud")
+            : null,
           pages ? plural(pages, "web page", "web pages") : null,
           searches ? plural(searches, "search", "searches") : null,
         ]
@@ -256,9 +269,26 @@ export const chatSidebarMessages = i18n.define({
       boxShowNew: "Neues anzeigen",
       boxSources: "Quellen",
       boxContext: "Kontext",
-      boxSourcesSummary: ({ pages, searches, items }: { pages: number; searches: number; items: number }) =>
+      boxSourcesSummary: ({
+        named,
+        pages,
+        searches,
+        items,
+      }: {
+        named: readonly string[];
+        pages: number;
+        searches: number;
+        items: number;
+      }) =>
         [
-          items ? plural(items, "Eintrag aus deiner Cloud", "Einträge aus deiner Cloud") : null,
+          ...named,
+          items
+            ? plural(
+                items,
+                named.length ? "weiterer Eintrag" : "Eintrag aus deiner Cloud",
+                named.length ? "weitere Einträge" : "Einträge aus deiner Cloud",
+              )
+            : null,
           pages ? plural(pages, "Webseite", "Webseiten") : null,
           searches ? plural(searches, "Suche", "Suchen") : null,
         ]

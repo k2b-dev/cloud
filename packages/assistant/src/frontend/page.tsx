@@ -98,6 +98,7 @@ export default ssr<AuthContext>(async (c) => {
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
         loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
           timeZone,
+          locale,
         }),
         loadAssistantChatWorkspace(identity, activeConversation.shortId),
       ])

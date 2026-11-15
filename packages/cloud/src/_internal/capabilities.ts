@@ -131,6 +131,7 @@ const FILE_PROVIDER_FIELDS = {
 const TYPE_FIELDS = {
   title: true,
   description: true,
+  count: true,
   icon: true,
   color: true,
   reader: true,
@@ -305,6 +306,13 @@ export const serializeCapabilityProviderResult = (
 const assertText = (value: string, label: string, max: number): void => {
   if (!value.trim()) throw new Error(`${label} is required`);
   if (value.length > max) throw new Error(`${label} must be at most ${max} characters`);
+};
+
+/** A type's nouns after a number, both required and short. */
+const typeCount = (count: { one: string; other: string }, localId: string) => {
+  assertText(count.one, `Resource type ${localId} count.one`, 60);
+  assertText(count.other, `Resource type ${localId} count.other`, 60);
+  return { one: count.one.trim(), other: count.other.trim() };
 };
 
 const schemaFieldPaths = (schema: unknown, prefix = ""): Set<string> => {
@@ -559,10 +567,10 @@ export const compileCapabilityPresentation = (
         }),
       ) as Readonly<Record<string, never>>;
     };
-    const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, _definition, label) => {
+    const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, definition, label) => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
       const copy = entry as Record<string, unknown>;
-      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description");
+      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description" && key !== "count");
       if (strict && extraField) throw new Error(`${label} contains unsupported field "${extraField}"`);
       if (copy.title !== undefined) {
         if (typeof copy.title !== "string") throw new Error(`${label}.title must be text`);
@@ -572,9 +580,19 @@ export const compileCapabilityPresentation = (
         if (typeof copy.description !== "string") throw new Error(`${label}.description must be text`);
         assertText(copy.description, `${label}.description`, 500);
       }
+      // A translated count needs base nouns to translate.
+      const count =
+        copy.count === undefined
+          ? undefined
+          : z
+              .object({ one: z.string().trim().min(1).max(60), other: z.string().trim().min(1).max(60) })
+              .strict()
+              .parse(copy.count);
+      if (count && !definition.count) throw new Error(`${label}.count needs a count on the resource type`);
       return {
         ...(copy.title ? { title: String(copy.title).trim() } : {}),
         ...(copy.description ? { description: String(copy.description).trim() } : {}),
+        ...(count ? { count } : {}),
       };
     });
     const translatedEvents = compileGroup(raw.events, events, "Event", (entry, _definition, label) => {
@@ -789,6 +807,7 @@ export const compileCapabilities = (
         localId,
         title: definition.title.trim(),
         description: definition.description.trim(),
+        ...(definition.count ? { count: typeCount(definition.count, localId) } : {}),
         ...(definition.icon ? { icon: definition.icon } : {}),
         ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
@@ -1220,7 +1239,14 @@ export const resolveCapabilityManifestPresentation = (
       appId: current.appId,
       types: current.types.map((type) => {
         const copy = translation.types?.[type.localId];
-        return copy ? { ...type, title: copy.title ?? type.title, description: copy.description ?? type.description } : type;
+        return copy
+          ? {
+              ...type,
+              title: copy.title ?? type.title,
+              description: copy.description ?? type.description,
+              ...(copy.count && type.count ? { count: copy.count } : {}),
+            }
+          : type;
       }),
       queries: current.queries.map((operation) => {
         const copy = translation.queries?.[operation.localId];

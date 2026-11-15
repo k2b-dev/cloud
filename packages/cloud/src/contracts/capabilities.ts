@@ -846,9 +846,14 @@ export type CapabilityExecutionContext = {
 export const CAPABILITY_RESOURCE_COLORS = ["blue", "emerald", "violet", "orange", "red", "amber", "zinc", "cyan", "rose"] as const;
 export type CapabilityResourceColor = (typeof CAPABILITY_RESOURCE_COLORS)[number];
 
+/** How a list counts resources of a type, as nouns in the presentation's base locale: `{ one: "mail", other: "mails" }`. */
+export type CapabilityResourceTypeCount = { one: string; other: string };
+
 export type CapabilityResourceTypeDefinition = {
   title: string;
   description: string;
+  /** The type's noun after a number, such as "3 mails"; translate it with `presentation.translations[locale].types`. */
+  count?: CapabilityResourceTypeCount;
   icon?: string;
   /** One colour per kind of resource, so a card or list shows at a glance what it stands for. */
   color?: CapabilityResourceColor;
@@ -918,7 +923,7 @@ export type CapabilityOperationPresentationTranslation = {
 
 export type CapabilityPresentationTranslation = {
   events?: Readonly<Record<string, { title?: string; description?: string }>>;
-  types?: Readonly<Record<string, { title?: string; description?: string }>>;
+  types?: Readonly<Record<string, { title?: string; description?: string; count?: CapabilityResourceTypeCount }>>;
   /** The file provider's `title` in this locale; only for a provider that declares a `title`. */
   fileProvider?: { title?: string };
   queries?: Readonly<Record<string, CapabilityOperationPresentationTranslation>>;
@@ -1093,6 +1098,10 @@ export const CapabilityResourceTypeManifestSchema = z
     localId: CapabilityLocalIdSchema,
     title: z.string().min(1).max(120),
     description: z.string().min(1).max(500),
+    count: z
+      .object({ one: z.string().min(1).max(60), other: z.string().min(1).max(60) })
+      .strict()
+      .optional(),
     icon: z.string().min(1).max(120).optional(),
     color: z.enum(CAPABILITY_RESOURCE_COLORS).optional(),
     reader: CapabilityLocalIdSchema.optional(),
