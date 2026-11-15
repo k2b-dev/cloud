@@ -75,7 +75,7 @@ afterEach(() => {
 /** Mounts the card with Core's routes answered by `routes`; a missing route is an outage. */
 type Answer = { status?: number; json?: unknown };
 type Routes = Record<string, (body: unknown) => Answer | Promise<Answer>>;
-const mount = async (given: Routes, options: { onAsk?: (text: string) => void } = {}) => {
+const mount = async (given: Routes, options: { onAsk?: (text: string) => void; number?: number } = {}) => {
   // The review and the words answer like Core does for an ordinary ready version, unless a test says otherwise.
   const routes: Routes = { review: () => ({ json: { data: review() } }), [WORDS]: () => ({ json: { data: words() } }), ...given };
   const dom = createDomTestHarness();
@@ -94,7 +94,14 @@ const mount = async (given: Routes, options: { onAsk?: (text: string) => void } 
   const dispose = render(
     () => (
       <AssistantLiveProvider value={live}>
-        <Card codeId={codeId} versionId={versionId} number={5} timeZone="UTC" onActivated={() => activated.push(1)} onAsk={options.onAsk} />
+        <Card
+          codeId={codeId}
+          versionId={versionId}
+          number={options.number ?? 5}
+          timeZone="UTC"
+          onActivated={() => activated.push(1)}
+          onAsk={options.onAsk}
+        />
       </AssistantLiveProvider>
     ),
     dom.root,
@@ -290,11 +297,16 @@ test("withdrawing a waiting version asks Core and shows the withdrawn state", as
 });
 
 test("a first version says the automation stays off until then", async () => {
-  const { dom } = await mount({
-    "activation/preview": () => ({ json: { data: preview({ running: null, readiness: { state: "approval_pending" } }) } }),
-    review: () => ({ json: { data: review({ status: "pending", activeVersion: null }) } }),
-    [WORDS]: () => ({ json: { data: words({ changes: { ...words().changes, state: "first" } }) } }),
-  });
+  const { dom } = await mount(
+    {
+      "activation/preview": () => ({
+        json: { data: preview({ number: 1, latest: 1, running: null, readiness: { state: "approval_pending" } }) },
+      }),
+      review: () => ({ json: { data: review({ status: "pending", activeVersion: null }) } }),
+      [WORDS]: () => ({ json: { data: words({ number: 1, changes: { ...words().changes, state: "first" } }) } }),
+    },
+    { number: 1 },
+  );
   expect(text(dom.root)).toContain("Until then the automation does not run. You do not need to do anything.");
   expect(dom.root.querySelector(".k2b-chat-decision__details-context")?.textContent).toBe(" · first version");
 });
@@ -706,4 +718,30 @@ test("a second version whose first never ran compares with the first, not as the
     review: () => ({ json: { data: review({ activeVersion: null }) } }),
   });
   expect(dom.root.querySelector(".k2b-chat-decision__details-context")?.textContent).not.toContain("first version");
+});
+
+test("version 2 whose version 1 never ran says that none is switched on yet; only version 1 is the first version", async () => {
+  const first = {
+    ...words().changes,
+    state: "first",
+    rows: { items: [{ kind: "add", text: "Runs Fridays at 16:00" }], more: 0, moreText: null },
+  };
+  for (const [version, reason, context] of [
+    [2, "No version is switched on yet.", " · none switched on yet"],
+    [1, "It is the first version of this automation.", " · first version"],
+  ] as const) {
+    const { dom } = await mount(
+      {
+        "activation/preview": () => ({ json: { data: preview({ number: version, latest: version, running: null }) } }),
+        review: () => ({ json: { data: review({ activeVersion: null }) } }),
+        [WORDS]: () => ({ json: { data: words({ number: version, changes: first }) } }),
+      },
+      { number: version },
+    );
+    expect(dom.root.querySelector(".k2b-chat-decision__sentence")?.textContent).toContain(`Version ${version}`);
+    expect(text(dom.root)).toContain(reason);
+    expect(dom.root.querySelector(".k2b-chat-decision__details-context")?.textContent).toBe(context);
+    if (version === 2) expect(text(dom.root)).not.toMatch(/first version/i);
+    for (const undo of restore.splice(0)) undo();
+  }
 });

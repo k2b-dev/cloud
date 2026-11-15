@@ -356,8 +356,9 @@ export default function AssistantCodeVersionCard(props: {
   const compared = () => keep() ?? Math.max(1, number() - 1);
   const changeKind = () => {
     const words = current()?.words;
-    // Only Core's comparison says "first": a second version whose first never ran still compares with the first.
-    if (!words || words.changes.state === "first") return "first" as const;
+    // Core compares with nothing when no version ever ran. Only version 1 is the first version (v12); a later one says
+    // that none is switched on yet, such as version 2 after changes were requested on version 1.
+    if (!words || words.changes.state === "first") return number() === 1 ? ("first" as const) : ("none" as const);
     const rows = words.changes.rows.items;
     if (rows.some((row) => row.kind === "add")) return "more" as const;
     if (rows.some((row) => row.kind === "remove")) return "less" as const;
@@ -369,20 +370,26 @@ export default function AssistantCodeVersionCard(props: {
     const text = on
       ? {
           first: t().reasonOnFirst,
+          none: t().reasonOnNone,
           more: t().reasonOnMore({ version }),
           less: t().reasonOnLess({ version }),
           same: t().reasonOnSame({ version }),
         }[kind]
-      : { first: t().reasonFirst, more: t().reasonMore({ version }), less: t().reasonLess({ version }), same: t().reasonSame({ version }) }[
-          kind
-        ];
+      : {
+          first: t().reasonFirst,
+          none: t().reasonNone,
+          more: t().reasonMore({ version }),
+          less: t().reasonLess({ version }),
+          same: t().reasonSame({ version }),
+        }[kind];
     return { text, icon: "ti ti-eye" };
   };
   const changeDetails = (): ApprovalFrameProps["details"] => {
     const words = current()?.words;
     if (!words || changes().length === 0) return undefined;
     // The frame sets the label in bold and its context quietly after it: "Details von Code · gegenüber Version 4".
-    const context = changeKind() === "first" ? t().detailsFirst : t().detailsAgainst({ version: compared() });
+    const kind = changeKind();
+    const context = kind === "first" ? t().detailsFirst : kind === "none" ? t().detailsNone : t().detailsAgainst({ version: compared() });
     return {
       label: t().details,
       context,
