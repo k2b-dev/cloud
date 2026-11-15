@@ -95,6 +95,63 @@ fails with `CONFLICT`; read the newer version before saving again. Version
 numbers increase within the Code. A run always references a version of the
 same Code.
 
+## Choose a personal Code's chat
+
+`core.code.chat_binding.read({ codeId })` is available to every Code reader:
+
+```ts
+{
+  codeId: string;
+  revision: number;
+  canChange: boolean;
+  chat: null
+    | { state: "available"; id: string; title: string;
+        project: { id: string; title: string } | null; href: string }
+    | { state: "unavailable"; reason: "archived" | "deleted";
+        id?: string; title?: string }
+    | { state: "hidden" };
+}
+```
+
+`null` means no binding. The owner receives an available chat's short ID, title,
+Project and open link. An archived chat returns `unavailable` with
+`reason: "archived"`, its short `id` and `title`, so the owner can offer
+“Restore chat” through `POST /api/ai/conversations/:id/restore`.
+A deleted chat returns `unavailable` with `reason: "deleted"` and no identity
+or title. If the optional AI schema is absent, it also counts as deleted. Other
+readers receive `hidden` for a bound chat, without its title, ID or Project.
+Project metadata appears only while the caller can read that Project;
+otherwise `project` is `null` even for the chat owner.
+Only the personal owner has `canChange: true`; shared editors and Cloud
+administrators receive no ownership through their grants.
+
+The resource Action `core.code.chat_binding.set` targets
+`{ type: "core.code", id: codeId }` and accepts `{ chatId, revision }`, plus the
+usual required idempotency key. `chatId` is the short ID of an own active chat.
+Reuse the response from `read` for `revision`; a stale value returns `CONFLICT`.
+A reader or editor who does not own the Code receives `FORBIDDEN`; an unknown,
+foreign or archived destination returns `NOT_FOUND`. Unreadable Code remains
+`NOT_FOUND`. The Action reviews the named Code and chat and returns the same
+shape as the Query, with the revision increased by one.
+
+The change creates no version and needs no administrator decision. The target
+chat's Project, model and files determine the resulting turn. Already queued
+messages keep their destination. Core records `core.code.chat_binding.changed`
+with the previous and next internal chat IDs and the new revision.
+
+`code_init` binds newly created personal Code to its authenticated originating
+chat at revision 1. Code created outside a chat starts unbound at revision 0.
+The binding is neither source text nor version state. A change of owner clears
+it and increases its revision; a new copy starts unbound. Only personal Code
+can have a binding. AI remains optional, so the stored UUID has no foreign key.
+
+An archived or deleted bound chat supplies `chat_missing` through Code attention.
+The version read model includes a blocking notice with `code: "chat_missing"`
+and a localized recovery sentence. The existing `ai.open_questions` feed carries
+one `kind: "code_attention"` item with “<title> needs a chat” and an `href` to the
+Code page. Consumers use this existing feed for Waiting for you, including Code
+without a submitted version; they do not synthesize a second waiting item.
+
 ## Read through Core Queries
 
 Use these capabilities through the standard capability client. They all
@@ -110,12 +167,13 @@ check current permissions in Core's Code service.
 | `core.code.automation.list` | `codeId` | The running version's automations with `kind`, `cron`, optional one-time `at` and `timeZone`, `nextRunAt`, newest `lastRun` and `missingTargets`, plus every `removedTargets` entry |
 | `core.code.run.count` | `since`, at most 7 days ago | `runs` and `failed` of the caller's own personal Code since then |
 | `core.code.summary` | Exact `owner` | For each readable Code: `automations` of the running or newest version, and an empty `access` array; Core does not inventory target rights. For settings and delete dialogs |
-| `core.code.attention` | Exact `owner` | Visible Code items with `reasons`: `run_failed`, `access_missing`, `approval_pending` |
-| `core.code.attention.list` | Optional `cursor` | Across owners: resource or application Code the caller may edit that needs them, with `lastRunAt` and the same `reasons` plus `paused`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
+| `core.code.attention` | Exact `owner` | Visible Code items with `reasons`: `run_failed`, `access_missing`, `approval_pending`, `chat_missing` |
+| `core.code.attention.list` | Optional `cursor` | Across owners: resource or application Code the caller may edit that needs them, plus own personal Code with a missing bound chat, with `lastRunAt` and the same `reasons` plus `paused`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
 
 `core.code.attention` serves an owner's navigation. The reasons per Code are
 the same for every reader, so Core keeps them for 30 seconds and computes one
-at a time; who sees which Code is checked on every request. Missing access
+at a time; who sees which Code is checked on every request. `chat_missing` is
+checked live so restoration or a changed binding clears it immediately. Missing access
 comes from a recorded `target_refused` call in the latest failed run, never
 from target-rights inspection. `missingTargets` and `removedTargets` retain
 that recorded reference for editors, with no fetched title; readers receive no

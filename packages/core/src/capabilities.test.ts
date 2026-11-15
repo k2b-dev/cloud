@@ -676,6 +676,11 @@ test("every declared Type has a reader open-link case or an explicit reason", as
     expect(fixture.reader).toBe(type.reader);
     const result = await fixture.read();
     if (!result.ok) throw new Error(`${typeId}: ${result.error.message}`);
+    if (typeId === "ai.chat") {
+      expect(aiCapabilities.queries["ai.chat.read"].data.parse(result.data.data)).toMatchObject({
+        view: { title: chat.title, permission: "write" },
+      });
+    }
     assertResourceOpenLink(result.data);
   }
 });
@@ -702,6 +707,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.attention",
     "code.attention.list",
     "code.automation.list",
+    "code.chat_binding.read",
     "code.event.catchup.read",
     "code.list",
     "code.policy.effective",
@@ -747,6 +753,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "ai.skill.reference.set",
     "ai.skill.references.set",
     "ai.skill.update",
+    "code.chat_binding.set",
     "code.event.catchup",
     "code.event.catchup.cancel",
     "code.event.catchup.resume",
@@ -807,6 +814,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.resume": { destructive: false, idempotency: "required" },
     "code.run": { destructive: false, idempotency: "required" },
     "code.secret.delete": { destructive: true, idempotency: "required" },
+    "code.chat_binding.set": { destructive: false, idempotency: "required" },
     "code.secret.set": { destructive: false, idempotency: "none" },
     "code.version.approve": { destructive: false, idempotency: "required" },
     "code.version.reject": { destructive: false, idempotency: "required" },

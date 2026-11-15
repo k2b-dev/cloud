@@ -147,9 +147,10 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             model: "Modellklasse oder erlaubte Variante; Standard ist balanced.",
             files: "FileRefs dieses Laufs; Cloud liest sie als aufrufendes Konto.",
             ...codeAiFileInput,
-            tools: "Generierte SDK-Funktionen mit fest gebundenem Ziel.",
+            tools: "Generierte SDK-Funktionen mit festem Ziel oder aktuellem Chat-Bezug.",
             "tools[].capability": "Operations-ID der übergebenen SDK-Funktion; Cloud prüft sie gegen die freigegebene Code-Version.",
-            "tools[].target": "Fest gebundenes Ressourcenziel der SDK-Funktion oder null bei einer anwendungsweiten Operation.",
+            "tools[].target":
+              "Ressourcenziel der SDK-Funktion; bound-chat verwendet den aktuellen Chat-Bezug, null steht für eine anwendungsweite Operation.",
             "tools[].target.type": "Vollständiger Ressourcentyp des fest gebundenen Ziels.",
             "tools[].target.id": "Ressourcen-ID des fest gebundenen Ziels.",
             fileTools: "view_image und read_file für bekannte FileRefs anbieten; Standard ist true.",
@@ -281,6 +282,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             cursor: "Letzte Code-ID aus nextCursor der vorherigen Seite.",
             limit: "Maximale Anzahl der auf dieser Seite geprüften Code-Kandidaten; höchstens 20.",
           },
+        },
+        "code.chat_binding.read": {
+          title: "Chat des Codes lesen",
+          description: "Liest Chat-Bezug und Revision. Chat-Titel bleiben für den Besitzer privat.",
+          input: codeIdInput,
         },
         "code.read": {
           title: "Code lesen",
@@ -491,6 +497,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.chat_binding.set": {
+          title: "Chat des Codes wählen",
+          description: "Nur der Besitzer darf einen eigenen aktiven Chat wählen. Bereits eingereihte Nachrichten behalten ihr Ziel.",
+          input: { chatId: "Kurze ID deines eigenen aktiven Chats.", revision: "Aktuelle Revision aus code.chat_binding.read." },
+        },
+
         "code.event.catchup": {
           title: "Code für vorhandene Ereignisse nachholen",
           description:

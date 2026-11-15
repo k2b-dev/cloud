@@ -17,8 +17,9 @@ import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { aiChatSendData, chatSendSnapshot } from "./ai-chat-send-result";
-import { chatWriteAuthority, codeChatDestination, ownedActiveChat } from "./ai-code-chat";
+import { chatWriteAuthority, ownedActiveChat } from "./ai-code-chat";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
+import { resolveCodeChatDestination } from "./code/chat-binding";
 import { codeSettings } from "./code/settings";
 
 export const aiChatSendInput = z.strictObject({
@@ -77,7 +78,9 @@ export const aiChatSendAction = {
     const source = await chatWriteAuthority(context, sql);
     if (!source.ok) return source;
     if (!context.user) return fail(err.forbidden("Chat writes require their owner"));
-    const chat = await ownedActiveChat(context.user.id, codeChatDestination(context), sql);
+    const destination = await resolveCodeChatDestination(context, sql);
+    if (!destination.ok) return destination;
+    const chat = await ownedActiveChat(context.user.id, destination.data.chatId, sql);
     if (!chat) return fail(err.notFound("Chat"));
     const de = context.locale.split("-")[0] === "de";
     return ok({
@@ -128,8 +131,10 @@ export const aiChatSendAction = {
     const owner = context.user.id;
     const keyHash = sendKeyHash(owner, key.data);
     const id = crypto.randomUUID();
-    const hash = approvalArgsDigest({ chatId: codeChatDestination(context), ...parsed.data });
-    const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
+    const destination = await resolveCodeChatDestination(context, sql);
+    if (!destination.ok) return destination;
+    const hash = approvalArgsDigest({ chatId: destination.data.chatId, ...parsed.data });
+    const chat = await ownedActiveChat(owner, destination.data.chatId, sql);
     if (!chat) return fail(err.notFound("Chat"));
     const existing = async (db = sql) => {
       const [row] = await db<{ id: string; hash: string; conversation_id: string }[]>`
