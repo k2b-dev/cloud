@@ -40,7 +40,12 @@ export const CodeVersionReadModelSchema = z.strictObject({
   locale: text,
   description: z.strictObject({ state: z.enum(["visible", "missing", "restricted"]), text: text.nullable(), modelLabel: text }),
   assurance: text,
-  mayDo: list(CodeReadModelRowSchema),
+  mayDo: list(
+    CodeReadModelRowSchema.extend({
+      /** Resolve an unavailable static target with an independent canonical reader as the viewer. */
+      target: z.strictObject({ ref: z.strictObject({ type: text, id: text }), text }).optional(),
+    }),
+  ),
   timing: list(CodeReadModelRowSchema),
   changes: z.strictObject({
     state: z.enum(["first", "changed", "access_same_behavior_changed", "same", "unavailable"]),
