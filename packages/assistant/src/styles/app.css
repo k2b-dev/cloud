@@ -627,6 +627,46 @@
   padding: 0.375rem 0.625rem 0;
 }
 
+/* The event line at the end of a chat: a decision on a version, one sentence and at most one action. It is a fact,
+   no turn: no surface, the text on the reading edge, the action at the end of the same line. */
+.assistant-code-decision {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.5rem;
+  min-height: 2rem;
+  font-size: 0.8125rem;
+}
+.assistant-code-decision__icon {
+  color: var(--k2b-text-secondary);
+}
+.assistant-code-decision[data-tone="ok"] .assistant-code-decision__icon {
+  color: var(--k2b-success-text);
+}
+.assistant-code-decision[data-tone="warning"] .assistant-code-decision__icon {
+  color: var(--k2b-warning-text);
+}
+.assistant-code-decision[data-tone="danger"] .assistant-code-decision__icon {
+  color: var(--k2b-danger-text);
+}
+.assistant-code-decision__text {
+  margin: 0;
+  min-width: 0;
+}
+.assistant-code-decision__text strong {
+  font-weight: 600;
+}
+.assistant-code-decision__when {
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+.assistant-code-decision__missing {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
 /* The version card is the shared approval frame; only the admin's message and comments are drawn here, flush, as
    text: avatar 18 px, name 13/600, role and time 12/400, the text 13/400 below. Never a file or a line. */
 .assistant-code-version__review {
