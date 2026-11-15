@@ -201,6 +201,7 @@
   --k2b-ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* standard curve */
   --k2b-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* small marks only: check, switch knob, badge */
   --k2b-ease-morph: cubic-bezier(0.2, 0, 0, 1); /* with --k2b-motion-morph: a soft start and a long, calm landing */
+  --k2b-ease-in: ease-in; /* something leaves: it speeds up as it goes */
   /* Moments of work in progress. Each follows a change of state; only "running" loops. */
   --k2b-motion-glide: 380ms; /* the highlight of the current step glides to the next row */
   --k2b-motion-check: 260ms; /* a check springs open when a step is done */
@@ -214,6 +215,9 @@
   --k2b-motion-arrive: 460ms; /* an approval rises 10 px into place */
   --k2b-motion-ring-out: 1100ms; /* a ring around a new approval loosens outwards once */
   --k2b-motion-busy: 1300ms; /* one pass of the shimmer over a filled button while Cloud works; loops until an answer */
+  --k2b-motion-word-out: 120ms; /* a changing word of a running activity fades out completely ... */
+  --k2b-motion-word-in: 160ms; /* ... and only then the next word fades in */
+  --k2b-motion-word-hold: 2400ms; /* how long one such word stands */
   --k2b-motion-switch-on: 340ms; /* a card changes in place to "on" */
   --k2b-motion-pulse: 1100ms; /* one pulse of a running run; loops until its result */
   --k2b-motion-settle: 300ms; /* a value fades over to its new text */
@@ -321,6 +325,9 @@
     --k2b-motion-settle: 0ms;
     --k2b-motion-enter-row: 0ms;
     --k2b-motion-think: 0ms;
+    --k2b-motion-word-out: 0ms;
+    --k2b-motion-word-in: 0ms;
+    --k2b-motion-word-hold: 0ms;
   }
   .k2b-ui,
   .k2b-ui::before,
@@ -363,6 +370,9 @@ html[data-k2b-motion="reduced"] .k2b-ui {
   --k2b-motion-settle: 0ms;
   --k2b-motion-enter-row: 0ms;
   --k2b-motion-think: 0ms;
+  --k2b-motion-word-out: 0ms;
+  --k2b-motion-word-in: 0ms;
+  --k2b-motion-word-hold: 0ms;
 }
 html[data-k2b-motion="reduced"] .k2b-ui,
 html[data-k2b-motion="reduced"] .k2b-ui::before,
@@ -14957,6 +14967,54 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: inline-flex;
   align-items: center;
   margin-left: auto;
+}
+
+/* A changing word of a running activity (`Chat.Activity.Words`): one word in its place at any moment. The old word
+   fades out completely, only then the next fades in; opacity only, so nothing beside it moves. */
+.k2b-ui .k2b-chat-activity__words {
+  display: inline-grid;
+  vertical-align: top;
+}
+
+.k2b-ui .k2b-chat-activity__word,
+.k2b-ui .k2b-chat-activity__word-rest {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+/* The resting first word stands in for the changing one only with reduced motion, by the stylesheet alone, so the
+   server's HTML and the first frame already agree. */
+.k2b-ui .k2b-chat-activity__word-rest {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-chat-activity__word-rest {
+    display: inline;
+  }
+
+  .k2b-ui .k2b-chat-activity__word {
+    display: none;
+  }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity__word-rest {
+  display: inline;
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity__word {
+  display: none;
+}
+
+/* Transitions, not animations, so a host may still run its own animation on the word, such as a shimmer. The new word
+   arrives while the place is at opacity 0 and comes back in with the "in" timing. */
+.k2b-ui .k2b-chat-activity__word {
+  transition: opacity var(--k2b-motion-word-in) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-chat-activity__word[data-phase="out"] {
+  opacity: 0;
+  transition: opacity var(--k2b-motion-word-out) var(--k2b-ease-in);
 }
 
 .k2b-ui .k2b-chat-activity__chevron {

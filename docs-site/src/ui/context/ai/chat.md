@@ -55,6 +55,19 @@ only links, buttons, and other controls inside it stay their own targets. With
 a controlled `open`, the body renders as soon as the row opens, before the host
 passes its new state back.
 
+Put `Chat.Activity.Words` in the `label` of a running activity whose word may
+change with time, such as thinking. It shows `first` for 3 s, then one of
+`words` every 2.4 s, round after round. The old word fades out completely
+before the next one fades in, so one word stands in its place at any moment.
+`elapsedMs` is how long the phase has run by the host's clock: the server
+renders the word for that time, and the first browser frame shows the same
+word. A pointer or the focus on the row holds the word, a hidden tab changes
+nothing, and with reduced motion the stylesheet shows a resting `first`, already in the server's HTML. The words are `aria-hidden`; screen
+readers hear `announce` once, from one status element. Keep the time beside it
+in `trailing`, so a longer or shorter word moves nothing. The host owns the
+words and their order; key the component by the phase, so each phase starts
+over.
+
 ## Import
 
 ```tsx
@@ -641,6 +654,12 @@ type ChatActivityToggleProps = { children: JSX.Element };
 
 `Chat.Activity.Toggle` takes `ChatActivityToggleProps`. Put it in an activity's
 `label` to open only that activity's body.
+
+```ts
+type ChatActivityWordsProps = { first: string; words: readonly string[]; elapsedMs: number; announce: string };
+```
+
+`Chat.Activity.Words` takes `ChatActivityWordsProps`.
 
 `ChatRootProps` belongs to `Chat`, the other component props to `.Timeline`, `.Composer`, `.Message`, and `.Activity`. `ChatActionBase` is the common shape shown here; consumers import `ChatAction`. For usage data see [Context usage](/en/ui/ai/context-usage#api-reference).
 
