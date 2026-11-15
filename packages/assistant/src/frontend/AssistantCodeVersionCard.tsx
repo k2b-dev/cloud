@@ -652,19 +652,22 @@ export default function AssistantCodeVersionCard(props: {
             : undefined,
       };
     }
-    if (preview.readiness.state === "approval_pending" || status === "pending")
+    if (preview.readiness.state === "approval_pending" || status === "pending") {
+      // The server says this person may approve it themselves: the card speaks to them, not about other admins.
+      const self = preview.readiness.state === "approval_pending" && preview.readiness.selfApproval === true;
+      const why = self ? words.reasonSelf : words.reasonAdmin;
       return {
         ...base,
         state: "open",
-        status: { tone: "warning", label: words.statusWaitingAdmin, icon: "ti ti-hourglass" },
-        sentence: sentence(words.waitsAdmin),
+        status: { tone: "warning", label: self ? words.statusWaitingYou : words.statusWaitingAdmin, icon: "ti ti-hourglass" },
+        sentence: sentence(self ? words.waitsYou : words.waitsAdmin),
         reason: {
-          text: value.words?.changes.approval ? `${words.reasonAdmin} ${value.words.changes.approval.reason}` : words.reasonAdmin,
+          text: value.words?.changes.approval ? `${why} ${value.words.changes.approval.reason}` : why,
           icon: "ti ti-eye",
         },
         details: changeDetails(),
         notes: [
-          { text: words.notesAdminKnow, icon: "ti ti-bell" },
+          ...(self ? [] : [{ text: words.notesAdminKnow, icon: "ti ti-bell" }]),
           { text: words.notesKeep({ keep: keep() }), icon: "ti ti-history" },
         ],
         meta: withdrawError() ? [{ text: words.withdrawFailed, icon: "ti ti-alert-triangle", tone: "danger" }] : exampleFacts(),
@@ -686,6 +689,7 @@ export default function AssistantCodeVersionCard(props: {
         ],
         link: seeAll(),
       };
+    }
 
     // Ready: the person decides. The activation's own states take the card's place while Cloud works on it.
     if (act.kind === "unknown")

@@ -46,7 +46,7 @@ export default function AdminSidebar({
 }: {
   currentPath: string;
   apps: readonly RuntimeContext["apps"][number][];
-  /** Open Code-version approvals; shown on the "Code" entry. */
+  /** Open Code-version approvals plus page reports; shown on the "Code" entry. */
   codeApprovals?: number;
 }) {
   const locale = useLocale();

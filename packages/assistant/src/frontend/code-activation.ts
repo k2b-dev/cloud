@@ -52,7 +52,8 @@ const PreviewSchema = z.object({
     .object({ state: z.enum(["passed", "failed", "none", "unavailable"]), passed: z.number().int(), total: z.number().int() })
     .optional(),
   readiness: z.union([
-    z.object({ state: z.enum(["ready", "approval_pending"]) }),
+    z.object({ state: z.literal("ready") }),
+    z.object({ state: z.literal("approval_pending"), selfApproval: z.boolean().optional() }),
     z.object({ state: z.literal("refused"), code: z.string(), message: z.string() }),
   ]),
   place: z.object({ title: z.string(), typeTitle: z.string().nullable(), href: z.string().nullable() }).nullable(),

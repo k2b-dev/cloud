@@ -29,6 +29,7 @@ export const codeVersionCardMessages = i18n.define({
       statusOn: "Switched on",
       statusSwitching: "Switching on",
       statusWaitingAdmin: "Waiting for admin",
+      statusWaitingYou: "Waiting for your approval",
       statusChanges: "Changes requested",
       statusRejected: "Rejected",
       statusWithdrawn: "Withdrawn",
@@ -41,6 +42,7 @@ export const codeVersionCardMessages = i18n.define({
       askOn: "switch on?",
       isOn: "is switched on.",
       waitsAdmin: "waits for an admin’s approval.",
+      waitsYou: "waits for your approval.",
       needsChanges: "still needs changes.",
       wasRejected: "was rejected.",
       of: "of",
@@ -56,6 +58,7 @@ export const codeVersionCardMessages = i18n.define({
       reasonOnSame: ({ version }: V) => `It may do the same as version ${version}; only its behaviour changed.`,
       reasonOnFirst: "It is the first version of this automation.",
       reasonAdmin: "In your Cloud an admin approves every automation that does something others see.",
+      reasonSelf: "You can approve it yourself.",
       reasonChanges: ({ name, keep }: Who & Keep) =>
         `${name} reviewed it and has not approved it yet. ${keep ? `Version ${keep} stays switched on.` : "The automation stays off."}`,
       reasonRejected: ({ name, keep }: Who & Keep) =>
@@ -166,6 +169,7 @@ export const codeVersionCardMessages = i18n.define({
       statusOn: "Eingeschaltet",
       statusSwitching: "Schaltet ein",
       statusWaitingAdmin: "Wartet auf Admin",
+      statusWaitingYou: "Wartet auf deine Freigabe",
       statusChanges: "Änderungen angefordert",
       statusRejected: "Abgelehnt",
       statusWithdrawn: "Zurückgezogen",
@@ -178,6 +182,7 @@ export const codeVersionCardMessages = i18n.define({
       askOn: "einschalten?",
       isOn: "ist eingeschaltet.",
       waitsAdmin: "wartet auf die Freigabe eines Admins.",
+      waitsYou: "wartet auf deine Freigabe.",
       needsChanges: "braucht noch Änderungen.",
       wasRejected: "wurde abgelehnt.",
       of: "von",
@@ -193,6 +198,7 @@ export const codeVersionCardMessages = i18n.define({
       reasonOnSame: ({ version }) => `Sie darf dasselbe wie Version ${version}; nur ihr Verhalten hat sich geändert.`,
       reasonOnFirst: "Sie ist die erste Version dieser Automation.",
       reasonAdmin: "In eurer Cloud gibt ein Admin jede Automation frei, die etwas tut, das andere sehen.",
+      reasonSelf: "Du kannst sie selbst freigeben.",
       reasonChanges: ({ name, keep }) =>
         `${name} hat sie geprüft und noch nicht freigegeben. ${keep ? `Version ${keep} bleibt eingeschaltet.` : "Die Automation bleibt aus."}`,
       reasonRejected: ({ name, keep }) =>

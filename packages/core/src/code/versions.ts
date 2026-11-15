@@ -831,15 +831,30 @@ export async function requireCodeVersionApproval(code: Code, versionId: string, 
   return { policyRevision: policy.revision };
 }
 /** Shared approval readiness for the version card and authoring handover. Never changes access. */
-export async function codeVersionReadiness(code: Code, versionId: string, db: SQL): Promise<CodeActivationPreview["readiness"]> {
+export async function codeVersionReadiness(
+  code: Code,
+  versionId: string,
+  db: SQL,
+  context: CodeContext,
+): Promise<CodeActivationPreview["readiness"]> {
   try {
     await requireCodeVersionApproval(code, versionId, db);
     return { state: "ready" };
   } catch (error) {
     if (!(error instanceof CodeVersionError)) throw error;
-    return error.code === "code_approval_required"
-      ? { state: "approval_pending" }
-      : { state: "refused", code: error.code, message: error.message };
+    if (error.code !== "code_approval_required") return { state: "refused", code: error.code, message: error.message };
+    const person = codePerson(context, true);
+    if (!person.roles.includes("admin")) return { state: "approval_pending" };
+    const [submission] = await db<
+      { approval_id: string | null }[]
+    >`SELECT approval_id FROM code.version_submissions WHERE version_id=${versionId}::uuid`;
+    const request = submission?.approval_id ? await approvals.get(submission.approval_id, db, true) : null;
+    const selfApproval = Boolean(
+      request?.status === "pending" &&
+        request.expiresAt.getTime() > Date.now() &&
+        (await codeVersionSoleAdminNotice(request, person.id, context.authority, context.locale, db)),
+    );
+    return { state: "approval_pending", selfApproval };
   }
 }
 async function requireExecutionEditor(code: Code, context: CodeContext, tx: SQL) {

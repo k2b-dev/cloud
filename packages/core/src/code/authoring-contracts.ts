@@ -158,7 +158,7 @@ const check = z
 const pulled = z.object({ version: z.literal(1), config: CodeProjectSchema, files: CodeSourceFilesSchema }).strict();
 /** The next human step, never an instruction for Gustav to approve or activate. */
 export const CodeSubmissionNextStepSchema = z.discriminatedUnion("next", [
-  z.object({ next: z.literal("admin_approval"), who: z.literal("cloud_admin") }).strict(),
+  z.object({ next: z.literal("admin_approval"), who: z.enum(["cloud_admin", "you"]) }).strict(),
   z.object({ next: z.literal("switch_on"), who: z.enum(["personal_owner", "owner_manager"]) }).strict(),
   z.object({ next: z.literal("revise"), who: z.literal("code_editor") }).strict(),
   z.object({ next: z.literal("check_status"), who: z.literal("code_editor") }).strict(),

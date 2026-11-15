@@ -14,6 +14,7 @@ import { createAppEventTestHarness } from "@k2b/cloud/events/testing";
 import { auth } from "@k2b/cloud/server";
 import { approvalArgsDigest, approvalDecisionHints, approvals, migrateApprovals } from "@k2b/cloud/services/approvals";
 import { createTestBrowserSignIn } from "@k2b/cloud/services/session/session.test-fixture";
+import { encryptValue } from "@k2b/cloud/services/settings/crypto";
 import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -597,6 +598,46 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     expect(await sql`SELECT id FROM code.versions WHERE code_id=${code.id}`).toHaveLength(2);
     expect(next.version.number).toBe(submitted.version.number + 1);
     expect(next.approvalId).not.toBe(submitted.approvalId);
+  });
+  test("the only emergency admin receives submitted review notices and can read the decided event", async () => {
+    await sql`DELETE FROM code.review_notification_outbox`;
+    const code = await newCode();
+    const submitted = await submitCodeVersion(input(code, "emergency notification"), author);
+    const sent: Parameters<CoreNotificationSender["sendCodeReview"]>[0][] = [];
+    const outbox = createCodeReviewNotificationOutbox({
+      sendCodeReview: async (notice) => {
+        sent.push(notice);
+      },
+    });
+    try {
+      await sql`UPDATE auth.users SET admin=false WHERE id<>${reviewerId}::uuid`;
+      await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${reviewerId}::uuid`;
+      await outbox.reconcile();
+      expect(sent.map((notice) => [notice.userId, notice.kind, notice.versionId])).toEqual([
+        [reviewerId, "submitted", submitted.version.id],
+      ]);
+      await decideCodeVersion(submitted.binding, { outcome: "approved" }, reviewer);
+      const [event] = await sql<{ payload: { place: { type: string; id: string } } }[]>`SELECT payload FROM events.outbox
+        WHERE payload->>'type'='core.code.version.decided' AND payload->'data'->>'versionId'=${submitted.version.id}`;
+      expect(event?.payload.place).toEqual({ type: "core.code", id: code.id });
+      // The event's place reader must allow an admin with no ownership or share on this Code.
+      const principals = [{ type: "user" as const, userId: reviewerId }];
+      const appContext: CapabilityAppExecutionContext = {
+        actor: { kind: "app", appId: "core" },
+        accessSubject: { type: "none" },
+        user: null,
+        locale: "en",
+        origin: "app",
+        requestId: "emergency-event-reader",
+        signal: new AbortController().signal,
+      };
+      const readable = aiCapabilities.types.code.access.readable;
+      expect(await readable({ id: code.id, principals }, appContext)).toEqual(principals);
+      await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
+      expect(await readable({ id: code.id, principals }, appContext)).toEqual([]);
+    } finally {
+      await sql`UPDATE auth.users SET uid=${reviewerId},emergency_admin=false WHERE id=${reviewerId}::uuid`;
+    }
   });
   test("notification effects commit with evidence, resolve active admins, and use each recipient's locale and current rights", async () => {
     // Other tests intentionally leave durable effects without running a worker. Isolate this worker fixture.
@@ -1199,6 +1240,86 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     const next = await submitCodeVersion(input(code, "next", submission.version.id), author);
     await expect(decideCodeVersion(next.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({ code: "SELF_APPROVAL" });
     expect((await approvals.get(submission.approvalId!))?.soleAdmin).toBe(true);
+  });
+  for (const other of ["emergency", "locked_ipa", "disabled_category"] as const) {
+    test(`Code self-approval ignores an ineligible second admin (${other})`, async () => {
+      if (other === "emergency") await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${reviewerId}::uuid`;
+      else {
+        await sql`UPDATE auth.users SET provider='ipa',admin=false WHERE id=${reviewerId}::uuid`;
+        await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${reviewerId}::uuid,'code-review-admins')`;
+        await sql`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
+          ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+        if (other === "locked_ipa")
+          await sql`INSERT INTO auth.user_ipa_data(user_id,locked_at) VALUES(${reviewerId}::uuid,${fixed})
+            ON CONFLICT(user_id) DO UPDATE SET locked_at=EXCLUDED.locked_at`;
+        else
+          await sql`INSERT INTO settings.entries(key,value) VALUES('user.category.freeipa.enabled',${await encryptValue(false)})
+            ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
+      }
+      try {
+        const code = await newCode(),
+          submission = await submitCodeVersion(input(code, "eligible"), author);
+        const signIn = await createTestBrowserSignIn(authorId);
+        const signed: CodeContext = {
+          ...author,
+          authority: {
+            ...author.authority,
+            credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+          },
+        };
+        expect((await decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).decision).toMatchObject({
+          approved: true,
+          soleAdmin: true,
+        });
+      } finally {
+        await sql`DELETE FROM auth.user_ipa_data WHERE user_id=${reviewerId}::uuid`;
+        await sql`DELETE FROM auth.ipa_user_effective_groups WHERE user_id=${reviewerId}::uuid`;
+        await sql`DELETE FROM settings.entries WHERE key IN ('freeipa.groups.admin','user.category.freeipa.enabled')`;
+        await sql`UPDATE auth.users SET uid=${reviewerId},provider='local',emergency_admin=false WHERE id=${reviewerId}::uuid`;
+      }
+    });
+  }
+  test("emergency author self-approves only without a human reviewer; active dev-admin counts", async () => {
+    await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${authorId}::uuid`;
+    await sql`UPDATE auth.users SET uid='dev-admin',emergency_admin=false WHERE id=${reviewerId}::uuid`;
+    try {
+      const code = await newCode(),
+        submission = await submitCodeVersion(input(code, "emergency"), author);
+      const signIn = await createTestBrowserSignIn(authorId);
+      const signed: CodeContext = {
+        ...author,
+        authority: {
+          ...author.authority,
+          credentialProof: { kind: "session", userId: authorId, sid: signIn.sid, authEpoch: 0, expiresAt: "2099-01-01T00:00:00Z" },
+        },
+      };
+      await expect(decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({ code: "SELF_APPROVAL" });
+      await sql`UPDATE auth.users SET account_expires='2000-01-01' WHERE id=${reviewerId}::uuid`;
+      await expect(decideCodeVersion(submission.binding, { outcome: "approved" }, author)).rejects.toMatchObject({
+        code: "REAUTHENTICATE",
+      });
+      await sql`UPDATE auth.session_families SET issued_at='2000-01-01' WHERE sid=${signIn.sid}::uuid`;
+      await expect(decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).rejects.toMatchObject({
+        code: "REAUTHENTICATE",
+      });
+      const recent = await createTestBrowserSignIn(authorId);
+      signed.authority.credentialProof = {
+        kind: "session",
+        userId: authorId,
+        sid: recent.sid,
+        authEpoch: 0,
+        expiresAt: "2099-01-01T00:00:00Z",
+      };
+      expect((await decideCodeVersion(submission.binding, { outcome: "approved" }, signed)).decision).toMatchObject({ soleAdmin: true });
+      expect((await listCodeVersions({ codeId: code.id, limit: 20 }, signed)).items[0]?.decision?.label).toBe(
+        "selbst freigegeben (einziger Admin)",
+      );
+      const [event] =
+        await sql`SELECT actor_user_id,reason,metadata FROM audit.events WHERE action='core.code.version.approved' AND target_id=${code.id}`;
+      expect(event).toMatchObject({ actor_user_id: authorId, reason: "self_approved_sole_admin", metadata: { soleAdmin: true } });
+    } finally {
+      await sql`UPDATE auth.users SET uid=id::text,emergency_admin=false WHERE id IN (${authorId}::uuid,${reviewerId}::uuid)`;
+    }
   });
   test("sole-admin self-approval still requires C5's browser confirmation", async () => {
     await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;

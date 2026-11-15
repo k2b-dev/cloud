@@ -75,7 +75,7 @@ afterEach(() => {
 /** Mounts the card with Core's routes answered by `routes`; a missing route is an outage. */
 type Answer = { status?: number; json?: unknown };
 type Routes = Record<string, (body: unknown) => Answer | Promise<Answer>>;
-const mount = async (given: Routes, options: { onAsk?: (text: string) => void; number?: number } = {}) => {
+const mount = async (given: Routes, options: { onAsk?: (text: string) => void; number?: number; locale?: string } = {}) => {
   // The review and the words answer like Core does for an ordinary ready version, unless a test says otherwise.
   const routes: Routes = { review: () => ({ json: { data: review() } }), [WORDS]: () => ({ json: { data: words() } }), ...given };
   const dom = createDomTestHarness();
@@ -88,21 +88,25 @@ const mount = async (given: Routes, options: { onAsk?: (text: string) => void; n
     if (!answer) return new Response("{}", { status: 503 });
     return new Response(JSON.stringify(answer.json ?? {}), { status: answer.status ?? 200 });
   }) as unknown as typeof fetch);
+  // Browser UI modules register delegated events while loading, so await them inside this DOM lifetime.
+  const { LocaleProvider } = await import("@k2b/ui");
   const { default: Card } = await import("./AssistantCodeVersionCard");
   const activated: number[] = [];
   const live = createAssistantLiveHub();
   const dispose = render(
     () => (
-      <AssistantLiveProvider value={live}>
-        <Card
-          codeId={codeId}
-          versionId={versionId}
-          number={options.number ?? 5}
-          timeZone="UTC"
-          onActivated={() => activated.push(1)}
-          onAsk={options.onAsk}
-        />
-      </AssistantLiveProvider>
+      <LocaleProvider locale={options.locale ?? "en"}>
+        <AssistantLiveProvider value={live}>
+          <Card
+            codeId={codeId}
+            versionId={versionId}
+            number={options.number ?? 5}
+            timeZone="UTC"
+            onActivated={() => activated.push(1)}
+            onAsk={options.onAsk}
+          />
+        </AssistantLiveProvider>
+      </LocaleProvider>
     ),
     dom.root,
   );
@@ -437,6 +441,28 @@ test("a phone sees why it cannot switch on, in place of the reason", async () =>
   expect(text(dom.root)).toContain("Switching on is not possible on a phone. It works on a computer.");
   expect(button(dom.root, "Switch on version 5")?.hasAttribute("disabled")).toBe(true);
 });
+
+for (const [locale, selfText, otherText] of [
+  ["de", "Du kannst sie selbst freigeben.", "In eurer Cloud gibt ein Admin jede Automation frei"],
+  ["en", "You can approve it yourself.", "In your Cloud an admin approves every automation"],
+] as const) {
+  for (const selfApproval of [true, false]) {
+    test(`pending version addresses its server-selected approver (${locale}, self=${selfApproval})`, async () => {
+      const card = await mount(
+        {
+          "activation/preview": () => ({ json: { data: preview({ readiness: { state: "approval_pending", selfApproval } }) } }),
+          review: () => ({ json: { data: review({ status: "pending" }) } }),
+        },
+        { locale },
+      );
+      expect(card.dom.root.textContent).toContain(selfApproval ? selfText : otherText);
+      expect(card.dom.root.textContent).not.toContain(selfApproval ? otherText : selfText);
+      // A person who may approve it themselves is not told that the admins know and will decide.
+      expect(card.dom.root.textContent?.includes(locale === "de" ? "Die Admins wissen Bescheid" : "The admins know")).toBe(!selfApproval);
+      expect(button(card.dom.root, locale === "de" ? "einschalten" : "Switch on")).toBeUndefined();
+    });
+  }
+}
 
 test("the card loads with a placeholder and the word Loading", async () => {
   let release = () => {};
