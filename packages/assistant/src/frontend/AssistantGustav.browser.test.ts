@@ -20,6 +20,7 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import AssistantCodeVersionCard from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeVersionCard.tsx"))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
+import AssistantCodeDecisionLine from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeDecisionLine.tsx"))};
 import { AssistantLiveProvider, createAssistantLiveHub } from ${JSON.stringify(resolve(import.meta.dir, "assistant-live.tsx"))};
 
 // The person's AI live channel, as the workspace provides it; a test hands it the updates Core would send.
@@ -37,6 +38,13 @@ render(
               timeZone="Europe/Berlin"
               onAsk={(text) => (window.harnessAsked = [...(window.harnessAsked ?? []), text])}
             />
+            {window.harness.decision ? (
+              <div style="height:140vh" data-history>
+                <div style="position:absolute;bottom:2rem;left:1rem;right:1rem">
+                  <AssistantCodeDecisionLine decision={window.harness.decision} at={new Date().toISOString()} timeZone="Europe/Berlin" />
+                </div>
+              </div>
+            ) : null}
           </AssistantLiveProvider>
         </div>
       ) : (
@@ -173,6 +181,8 @@ type Scenario = {
   panelAccessMissing?: boolean;
   /** What Core answers for a version card, which then renders alone in the panel's width. */
   cardPreview?: CodeVersionPreview;
+  /** An event line about the card's version far below it, at the end of the chat. */
+  decision?: boolean;
   /** The review as the person sees it, and the version in words; without them Core answers the card's ordinary defaults. */
   cardReview?: Record<string, unknown>;
   cardWords?: Record<string, unknown>;
@@ -416,6 +426,18 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
         locale: "de",
         props: propsOf(scenario, url),
         ...(scenario.cardPreview ? { card: { codeId: "c_info01", versionId: cardVersionId, number: 5 } } : {}),
+        ...(scenario.decision
+          ? {
+              decision: {
+                codeId: "c_info01",
+                versionId: cardVersionId,
+                number: 5,
+                outcome: "approved",
+                person: { id: "u-jana", name: "Jana Probe" },
+                anchor: `code-version-${cardVersionId}`,
+              },
+            }
+          : {}),
       };
       const outer = view.column ? "display:flex;justify-content:flex-end;height:100vh" : "display:flex;height:100vh";
       const inner = view.column
@@ -793,6 +815,35 @@ describe("Gustav", () => {
         }
       }
   }, 240_000);
+
+  test("the event line at the end jumps up to the card and puts the focus on switching on", async () => {
+    for (const view of [desktop, phone]) {
+      const h = await open(
+        view,
+        { cardPreview: cardPreview(), cardReview: { status: "approved", decidedBy: JANA, decidedAt: at(5) }, decision: true },
+        { path: "/app/assistant/panel" },
+      );
+      try {
+        const line = h.page.locator(".assistant-code-decision");
+        await line.waitFor();
+        await line.scrollIntoViewIfNeeded();
+        expect(await line.innerText()).toContain("Jana Probe hat Version 5 freigegeben");
+        await shot(h.page, `f-ereigniszeile-vorher-${view.name}-light`);
+        await line.getByRole("button", { name: "Einschalten …" }).click();
+        const main = h.page
+          .locator(".assistant-code-version .k2b-chat-decision")
+          .getByRole("button", { name: "Version 5 einschalten", exact: true });
+        await h.page.waitForFunction(() => document.activeElement?.textContent?.includes("Version 5 einschalten"));
+        expect(await main.evaluate((element) => element === document.activeElement)).toBe(true);
+        const box = await h.page.locator(".assistant-code-version .k2b-chat-decision").boundingBox();
+        expect(box && box.y >= 0 && box.y < view.height).toBe(true);
+        expect(h.errors).toEqual([]);
+        await shot(h.page, `f-ereigniszeile-nachher-${view.name}-light`);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 120_000);
 
   test("the changes card has one height whether Gustav's revision waits, runs or stopped", async () => {
     const changes = { status: "changes_requested", decidedBy: JANA, decidedAt: at(10), message: "Bitte nur PDF-Anhänge ablegen." };

@@ -687,3 +687,23 @@ test("once approved, the approval mark is gone from the rows", async () => {
   });
   expect(text(dom.root)).not.toContain("needs approval");
 });
+
+test("a long name is cut at its end, at a word and without an open bracket", async () => {
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview({ title: "Wochenrückblick-Aufgaben für das Team (montags, Space Logistik)" }) } }),
+  });
+  const chip = dom.root.querySelectorAll(
+    ".k2b-chat-decision__sentence .k2b-reference-chip, .k2b-chat-decision__sentence [class*='reference']",
+  )[1];
+  const shown = chip?.textContent ?? "";
+  expect(shown).toBe("Wochenrückblick-Aufgaben für das Team…");
+  expect(shown).not.toContain("(");
+});
+
+test("a second version whose first never ran compares with the first, not as the first version", async () => {
+  const { dom } = await mount({
+    "activation/preview": () => ({ json: { data: preview({ running: null, number: 2, latest: 2 }) } }),
+    review: () => ({ json: { data: review({ activeVersion: null }) } }),
+  });
+  expect(dom.root.querySelector(".k2b-chat-decision__details-context")?.textContent).not.toContain("first version");
+});

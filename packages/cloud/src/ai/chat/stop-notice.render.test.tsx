@@ -79,3 +79,19 @@ test("an automatic review start keeps an early model failure visible without off
   expect(truncated).toContain("Die Antwort wurde abgeschnitten");
   expect(truncated).not.toContain("Weiterschreiben");
 });
+
+test("a turn the person stopped shows only the quiet stopped line, never the abort notice; Cloud's own end keeps it", () => {
+  const stopped = renderHistory([
+    {
+      ...truncatedAnswer,
+      message: { role: "assistant", content: [{ type: "text", text: "Teil" }], stopReason: "aborted" },
+      stopReason: "aborted",
+      loopDoneReason: "aborted",
+      usage: null,
+    },
+  ]);
+  expect(stopped).not.toContain("Die Antwort wurde abgebrochen.");
+  expect(stopped).not.toContain("Weiterschreiben");
+  // Cloud's own end of an answer keeps its notice: here the output limit, with continuing as a button.
+  expect(renderHistory([truncatedAnswer])).toContain("Weiterschreiben");
+});

@@ -47,6 +47,22 @@ export const codeVersionCardAnchor = (versionId: string) => `code-version-${vers
 /** The code a refused version carries when a Cloud administrator rejected it, or revoked its approval. */
 const REJECTED = "code_approval_revoked";
 
+/**
+ * A chip shows at most 40 characters and cuts longer titles in the middle, which can break a name apart, such as one
+ * parenthesis left over. The card cuts a long name at its end instead, at a word, and leaves no bracket open.
+ */
+const CHIP_CHARACTERS = 40;
+const chipTitle = (title: string): string => {
+  const characters = [...title];
+  if (characters.length <= CHIP_CHARACTERS) return title;
+  let cut = characters.slice(0, CHIP_CHARACTERS - 1).join("");
+  const space = cut.lastIndexOf(" ");
+  if (space > CHIP_CHARACTERS / 2) cut = cut.slice(0, space);
+  const open = cut.lastIndexOf("(");
+  if (open > cut.lastIndexOf(")")) cut = cut.slice(0, open);
+  return `${cut.replace(/[\s,;:·–-]+$/u, "")}…`;
+};
+
 /** A conversation message below the card: then the card keeps its full form after switching on in this session. */
 const historyBelow = (element: Element | null | undefined): boolean => {
   let node: Element | null = element?.closest("article.k2b-chat-message") ?? null;
@@ -279,7 +295,7 @@ export default function AssistantCodeVersionCard(props: {
   const sentence = (verb: string): NonNullable<ApprovalFrameProps["sentence"]> => [
     { kind: "chip", chip: { kind: "object", title: t().versionChip({ version: number() }) } },
     { kind: "text", text: ` ${t().of} ` },
-    { kind: "chip", chip: { kind: "object", title: current()?.preview.title ?? "" } },
+    { kind: "chip", chip: { kind: "object", title: chipTitle(current()?.preview.title ?? "") } },
     { kind: "text", text: ` ${verb}` },
   ];
   const ask = (text: string) => () => props.onAsk?.(text);
@@ -336,16 +352,19 @@ export default function AssistantCodeVersionCard(props: {
     if (items.length === 0 && words.changes.state === "same") items.push({ tone: "neutral", icon: "ti ti-equal", content: t().sameText });
     return items;
   });
+  /** The version Core compares with: the running one, else the one before this version. */
+  const compared = () => keep() ?? Math.max(1, number() - 1);
   const changeKind = () => {
     const words = current()?.words;
-    if (!words || words.changes.state === "first" || keep() === null) return "first" as const;
+    // Only Core's comparison says "first": a second version whose first never ran still compares with the first.
+    if (!words || words.changes.state === "first") return "first" as const;
     const rows = words.changes.rows.items;
     if (rows.some((row) => row.kind === "add")) return "more" as const;
     if (rows.some((row) => row.kind === "remove")) return "less" as const;
     return "same" as const;
   };
   const versionReason = (on: boolean) => {
-    const version = keep() ?? 0;
+    const version = compared();
     const kind = changeKind();
     const text = on
       ? {
@@ -363,7 +382,7 @@ export default function AssistantCodeVersionCard(props: {
     const words = current()?.words;
     if (!words || changes().length === 0) return undefined;
     // The frame sets the label in bold and its context quietly after it: "Details von Code · gegenüber Version 4".
-    const context = changeKind() === "first" ? t().detailsFirst : t().detailsAgainst({ version: keep() ?? 0 });
+    const context = changeKind() === "first" ? t().detailsFirst : t().detailsAgainst({ version: compared() });
     return {
       label: t().details,
       context,

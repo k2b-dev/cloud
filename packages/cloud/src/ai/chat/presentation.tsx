@@ -392,7 +392,9 @@ const storedItems = (
             duration: last ? () => ({ workedMs: item.workedMs, waitingMs: null }) : () => null,
             scheduledTask: task,
             error,
-            stopNotice: error ? null : stopNotice,
+            // The person stopped it: the turn's own quiet line says so. The notice speaks only when Cloud ended the
+            // answer itself (output limit, Code authoring budget, an interruption the person did not ask for).
+            stopNotice: error || (stopNotice?.kind === "stopped" && segmentPhase === "stopped") ? null : stopNotice,
             continuable:
               idle &&
               !(item.loopId && reviewLoops.has(item.loopId)) &&
