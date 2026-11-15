@@ -12,7 +12,12 @@ type Page = z.infer<typeof ConversationPageSchema>;
  * "Discover channels" beside the Channels section: the discoverable catalog in a popover, loaded when it opens.
  * Choosing a channel opens it in the chat area, where a reader who has not subscribed is asked to subscribe.
  */
-export default function ChannelCatalog(props: { anchor: HTMLElement; onClose: () => void; onOpen: (id: string) => void }): JSX.Element {
+export default function ChannelCatalog(props: {
+  /** The button the catalog opens beside; the catalog is open while it is set. */
+  anchor: HTMLElement | undefined;
+  onClose: () => void;
+  onOpen: (id: string) => void;
+}): JSX.Element {
   const locale = useLocale();
   const t = () => chatMessages.resolve([locale()]).t;
   const api = createChannelApi();
@@ -40,12 +45,25 @@ export default function ChannelCatalog(props: { anchor: HTMLElement; onClose: ()
       if (request === current) setBusy(false);
     }
   };
+  // Each opening reads the current catalog; typing reads again after a pause.
   createEffect(
-    on(query, (_value, previous) => {
-      if (previous === undefined) return void load();
-      const timer = setTimeout(() => void load(), 250);
-      onCleanup(() => clearTimeout(timer));
-    }),
+    on(
+      () => props.anchor,
+      (anchor) => {
+        if (anchor) void load();
+      },
+    ),
+  );
+  createEffect(
+    on(
+      query,
+      () => {
+        if (!props.anchor) return;
+        const timer = setTimeout(() => void load(), 250);
+        onCleanup(() => clearTimeout(timer));
+      },
+      { defer: true },
+    ),
   );
   onCleanup(() => request?.abort());
   return (

@@ -2689,11 +2689,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
 
   // "Discover channels" opens the catalog beside the Channels section; its code loads with the first opening.
-  const [catalog, setCatalog] = createSignal<{ anchor: HTMLElement; view: typeof import("./ChannelCatalog").default }>();
+  // The catalog stays mounted once loaded; it is open while its anchor is set, as the shared popover expects.
+  const [catalogView, setCatalogView] = createSignal<typeof import("./ChannelCatalog").default>();
+  const [catalogAnchor, setCatalogAnchor] = createSignal<HTMLElement>();
   const toggleCatalog = async (anchor: HTMLElement) => {
-    if (catalog()) return void setCatalog(undefined);
-    const module = await importOnDemand(() => import("./ChannelCatalog"));
-    if (module && anchor.isConnected) setCatalog({ anchor, view: module.default });
+    if (catalogAnchor()) return void setCatalogAnchor(undefined);
+    if (!catalogView()) {
+      const module = await importOnDemand(() => import("./ChannelCatalog"));
+      if (!module) return;
+      setCatalogView(() => module.default);
+    }
+    if (anchor.isConnected) setCatalogAnchor(anchor);
   };
   const discoverButton = () => (
     <>
@@ -2702,22 +2708,25 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         variant="ghost"
         label={t().browseChannels}
         aria-haspopup="dialog"
-        aria-expanded={catalog() ? "true" : "false"}
+        aria-expanded={catalogAnchor() ? "true" : "false"}
         onClick={(event) => void toggleCatalog(event.currentTarget)}
       >
         <i class="ti ti-info-circle text-xs" aria-hidden="true" />
       </IconButton>
-      <Show when={catalog()}>
-        {(open) => (
-          <Dynamic
-            component={open().view}
-            anchor={open().anchor}
-            onClose={() => setCatalog(undefined)}
-            onOpen={(id: string) => void openChosen(id)}
-          />
-        )}
-      </Show>
     </>
+  );
+  // Section actions render once per sidebar form; the catalog lives once, beside the workspace.
+  const catalogPopover = () => (
+    <Show when={catalogView()}>
+      {(view) => (
+        <Dynamic
+          component={view()}
+          anchor={catalogAnchor()}
+          onClose={() => setCatalogAnchor(undefined)}
+          onOpen={(id: string) => void openChosen(id)}
+        />
+      )}
+    </Show>
   );
   const archiveLink = () => (
     <AppWorkspace.SidebarItem
@@ -2943,6 +2952,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
   return (
     <>
+      {catalogPopover()}
       <Show when={!openChat()}>{draftNotice()}</Show>
       <Show when={props.embedded && !openChat()}>
         <div class="flex shrink-0 justify-end p-1">
