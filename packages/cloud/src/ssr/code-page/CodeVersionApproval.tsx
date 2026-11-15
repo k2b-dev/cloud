@@ -1,6 +1,7 @@
 import { ChangeList, Chat, type ChatDecisionAnswer, type ChatDecisionFact, type ChatOutcomeTone } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
 import type { ActionText } from "../../ai/chat/action-card";
+import { actionMessages } from "../../ai/chat/action-messages";
 import { ApprovalFrame, type ApprovalFrameStatus } from "../../approvals/ApprovalFrame";
 import { openPanel } from "../../browser/panel";
 import type { CodeVersionReadModel } from "../../contracts/code-read-model";
@@ -169,11 +170,13 @@ export function CodeVersionApproval(props: {
         sentence={sentence()}
         reason={{ text: props.words?.changes.text ?? t().approvalKeep({ running: running() }), icon: "ti ti-eye" }}
         details={{
-          label: t().changesTitle,
+          // As every approval: "Details from Code", then what it is compared with; under it what Cloud vouches for.
+          label:
+            running() !== null && props.words?.changes.state !== "first"
+              ? `${actionMessages(props.text.locale()).detailsFrom({ app: t().approvalSource })} · ${t().changedAgainst({ version: running()! })}`
+              : actionMessages(props.text.locale()).detailsFrom({ app: t().approvalSource }),
           content: changes(),
-          ...(running() !== null && props.words?.changes.state !== "first"
-            ? { note: { text: t().changedAgainst({ version: running()! }), icon: "ti ti-git-compare" } }
-            : {}),
+          ...(props.words ? { note: { text: props.words.changes.assurance, icon: "ti ti-info-circle" } } : {}),
         }}
         meta={facts()}
         confirm={phone() ? undefined : switchOn()}

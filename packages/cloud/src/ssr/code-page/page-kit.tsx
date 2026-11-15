@@ -86,13 +86,26 @@ export type Tone = "ok" | "danger" | "warn" | "ai" | "muted";
 export function Status(props: { tone: Tone; icon: string; label: string; reserve?: readonly string[]; class?: string }) {
   return (
     <span class={`cloud-code__st ${props.class ?? ""}`} data-tone={props.tone}>
-      <i class={props.icon} aria-hidden="true" />
-      <Show when={props.reserve?.length} fallback={<span>{props.label}</span>}>
-        {/* Every word this place can show reserves its width, so the text beside it never moves. */}
+      <Show
+        when={props.reserve?.length}
+        fallback={
+          <>
+            <i class={props.icon} aria-hidden="true" />
+            <span>{props.label}</span>
+          </>
+        }
+      >
+        {/* Every word this place can show reserves its width, so the text beside it never moves; the sign stays at the word. */}
         <span class="cloud-code__st-reserve">
-          <span>{props.label}</span>
+          <span class="cloud-code__st-shown">
+            <i class={props.icon} aria-hidden="true" />
+            <span>{props.label}</span>
+          </span>
           {props.reserve!.map((label) => (
-            <span aria-hidden="true">{label}</span>
+            <span class="cloud-code__st-shown" aria-hidden="true">
+              <i class={props.icon} />
+              <span>{label}</span>
+            </span>
           ))}
         </span>
       </Show>

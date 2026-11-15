@@ -141,7 +141,10 @@ export async function loadCodeActivityReadModel(
     },
     recent: data.recent.map((item) => {
       const target = item.target ? names.target(item.target) : null;
+      const action = names.operation(item.operation);
       return {
+        ...(action.app ? { app: action.app } : {}),
+        ...(action.icon ? { icon: action.icon } : {}),
         text: target
           ? t.mayDo({ action: t.calls({ action: names.operation(item.operation).title, count: 1 }), target: target.name })
           : t.calls({ action: names.operation(item.operation).title, count: 1 }),

@@ -324,7 +324,7 @@ function MayDo(props: { data: CodePageData; state: CodePageReady; text: PageText
       loadingRows={3}
     >
       <Show when={count() > 0} fallback={<p class="cloud-code__quiet-line">{t().mayEmpty}</p>}>
-        <ul class="cloud-code__rows">
+        <ul class="cloud-code__rows" data-plain="">
           <For each={words()?.mayDo.items ?? []}>
             {(row) => {
               const parts = splitRow(row.text);

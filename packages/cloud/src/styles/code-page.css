@@ -137,6 +137,11 @@
 .cloud-code__st-reserve > span[aria-hidden="true"] {
   visibility: hidden;
 }
+.cloud-code__st-shown {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+}
 .cloud-code__spin {
   animation: cloud-code-spin 1.1s linear infinite;
 }
@@ -178,6 +183,10 @@
 }
 .cloud-code__row + .cloud-code__row {
   border-top: 1px solid var(--cloud-code-line);
+}
+/* "What it may do" reads as one list (Bild 19): rows without lines between them. */
+.cloud-code__rows[data-plain] > .cloud-code__row + .cloud-code__row {
+  border-top: 0;
 }
 .cloud-code__row-main {
   display: flex;

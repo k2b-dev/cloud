@@ -55,6 +55,17 @@ const iconSource = await Bun.file(iconCss).text();
 const iconFont = iconSource.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
 if (!iconFont) throw new Error("Missing Tabler WOFF2 file");
 const icons = { css: iconSource.replace(iconFont, "/tabler.woff2"), font: resolve(dirname(iconCss), iconFont) };
+// And the product's typeface, IBM Plex, so widths and wraps match what people see.
+const plexCss = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
+const plexSource = await Bun.file(plexCss).text();
+const plexFiles = new Map(
+  [...new Set(plexSource.match(/\.\/fonts\/[^)"']+\.woff2/g) ?? [])].map((file) => [
+    `/plex/${file.split("/").at(-1)}`,
+    resolve(dirname(plexCss), file),
+  ]),
+);
+let plex = plexSource;
+for (const [path, file] of plexFiles) plex = plex.replaceAll(`./fonts/${file.split("/").at(-1)}`, path);
 /** What Core answers while the person switches on: the activation's final state. */
 let activationEnd: "active" | "owner_refused" | "unavailable" | "lost-active" | "silent" = "active";
 const activations: unknown[] = [];
@@ -65,8 +76,11 @@ const server = Bun.serve({
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
-    if (url.pathname === "/styles.css") return new Response(css + icons.css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
+    if (url.pathname === "/styles.css")
+      return new Response(css + icons.css + plex, { headers: { "Content-Type": "text/css; charset=utf-8" } });
     if (url.pathname === "/tabler.woff2") return new Response(Bun.file(icons.font), { headers: { "Content-Type": "font/woff2" } });
+    const plexFile = plexFiles.get(url.pathname);
+    if (plexFile) return new Response(Bun.file(plexFile), { headers: { "Content-Type": "font/woff2" } });
     if (url.pathname === "/api/code/activate") {
       const body = (await request.json()) as { activationId: string; versionId: string };
       activations.push(body);
@@ -150,18 +164,22 @@ const overflow = (page: Page) => page.evaluate(() => document.documentElement.sc
 
 describe("Mailbox Code page in a browser", () => {
   for (const [name, width] of Object.entries(widths))
-    test(`${name} ${width}px: every state fits without horizontal scrolling`, async () => {
-      for (const state of CODE_PAGE_FIXTURE_STATES) {
-        const page = await load(state, width);
-        try {
-          expect({ state, overflow: await overflow(page) }).toEqual({ state, overflow: 0 });
-          expect(await page.locator(".cloud-code").count()).toBe(1);
-          await shoot(page, `${state}-${width}`);
-        } finally {
-          await page.context().close();
+    test(
+      `${name} ${width}px: every state fits without horizontal scrolling`,
+      async () => {
+        for (const state of CODE_PAGE_FIXTURE_STATES) {
+          const page = await load(state, width);
+          try {
+            expect({ state, overflow: await overflow(page) }).toEqual({ state, overflow: 0 });
+            expect(await page.locator(".cloud-code").count()).toBe(1);
+            await shoot(page, `${state}-${width}`);
+          } finally {
+            await page.context().close();
+          }
         }
-      }
-    }, 60_000);
+      },
+      CODE_PAGE_FIXTURE_STATES.length * 4_000,
+    );
 
   test("the page heads with its state and its row titles stay no larger than the island titles", async () => {
     for (const width of [1440, 390])
@@ -188,6 +206,21 @@ describe("Mailbox Code page in a browser", () => {
         }
       }
   }, 60_000);
+
+  test("the code tab shows the source in the monospace face, so indentation lines up", async () => {
+    const page = await load("code", 1440);
+    try {
+      const fonts = await page.evaluate(() => {
+        const line = document.querySelector(".k2b-code-diff__line code");
+        const token = document.querySelector(".k2b-code-diff__line code span");
+        return [line, token].map((element) => (element ? getComputedStyle(element).fontFamily : null));
+      });
+      // Cloud sets a sans face on every element; the code surface must win for its lines and tokens.
+      for (const font of fonts) expect(font ?? "").toContain("Mono");
+    } finally {
+      await page.context().close();
+    }
+  });
 
   test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
     for (const [state, dot] of [

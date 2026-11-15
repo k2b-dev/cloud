@@ -4454,6 +4454,13 @@
   background: var(--k2b-surface-muted);
 }
 
+/* Hosts may set a sans face on every element (`* { font-family }`); inside a code
+   surface every line and token keeps the surface's monospace face, so indentation
+   lines up. Controls in the surface that set their own face come later. */
+.k2b-ui :is(.k2b-code-diff__body, .k2b-content-code-display__body) * {
+  font-family: inherit;
+}
+
 .k2b-ui .k2b-code-diff__body:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: var(--k2b-focus-offset);

@@ -2,7 +2,7 @@ import { DotStrip, type DotStripTone } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import type { CodeActivityReadModel } from "../../contracts/code-read-model";
 import type { CodePageData, CodePageReady, CodePageRun } from "./data";
-import { type PageText, runStatus, Status, withQuery } from "./page-kit";
+import { iconClass, type PageText, runStatus, Status, withQuery } from "./page-kit";
 
 /** At most this many runs fit the strip; older ones drop off the left. */
 export const CODE_STRIP_RUNS = 30;
@@ -174,8 +174,8 @@ export function EffectRows(props: { live: CodeLive; text: PageText }) {
           const target = at < 0 ? null : effect.text.slice(at + 3);
           return (
             <li data-fresh={props.live.fresh().effect === `${effect.runId}:${effect.text}` ? "" : undefined}>
-              <span class="cloud-code__tile k2b-icon-tile" data-tile="neutral" data-size="sm" aria-hidden="true">
-                <i class="ti ti-circle-check" />
+              <span class="cloud-code__tile k2b-icon-tile" data-tile={effect.icon ? "app" : "neutral"} data-size="sm" aria-hidden="true">
+                <i class={iconClass(effect.icon, "ti ti-circle-check")} />
               </span>
               <span class="cloud-code__feed-text">
                 {head}
