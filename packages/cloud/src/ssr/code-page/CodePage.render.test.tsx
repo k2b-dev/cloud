@@ -54,7 +54,7 @@ describe("Code page: overview (Bild 19 to 21)", () => {
   test("the head says the state in one large word, the place and version in one quiet line, and offers Gustav and More", () => {
     const page = text("overview");
     expect(page).toContain("Eingeschaltet");
-    expect(page).toContain("Postfach info@moebel-beispiel.de · Version 4 von Ben Schulz, 28.10.");
+    expect(page).toContain("Postfach info@moebel-beispiel.de · Version 4, eingeschaltet am 28.10. von Ben Schulz");
     expect(page).toContain("Mit Gustav ändern");
     // "View code" and the account line with its handle are gone; the handle lives in the menu.
     expect(page).not.toContain("Code ansehen");
@@ -113,7 +113,7 @@ describe("Code page: overview (Bild 19 to 21)", () => {
     expect(page).toContain("Was sie für dich getan hat diese Woche");
     expect(page).toContain("41 Aufgaben angelegt");
     expect(page).toContain("44 Unterhaltungen sortiert");
-    expect(html("overview")).toContain('<a href="/app/spaces/Lg8x2q">Lieferung Polsterei Weber</a>');
+    expect(html("overview")).toContain('<a href="/app/spaces/Lg8x2q">Aufgabe „Lieferung Polsterei Weber“ angelegt</a>');
     expect(text("personal")).not.toContain("Was sie für dich getan hat");
   });
 
@@ -184,6 +184,7 @@ describe("Code page: overview (Bild 19 to 21)", () => {
   test("paused: brown state, resume in the head, no next run, every trigger paused, no host footer", () => {
     const page = text("paused");
     expect(page).toContain("Pausiert");
+    expect(page).toContain("Version 4 · pausiert am 12.11.");
     expect(page).toContain("Fortsetzen");
     expect(page).toContain("keiner, solange pausiert ist");
     expect(page).toContain("Letzte 30 Läufe vor der Pause");

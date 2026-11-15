@@ -345,7 +345,7 @@ const activity = (): CodeActivityReadModel => ({
     {
       app: "Spaces",
       icon: "tabler:layout-kanban",
-      text: L("Aufgabe anlegen · 1 bestätigt · Lieferung Polsterei Weber", "Create task · 1 confirmed · Delivery Polsterei Weber"),
+      text: L("Aufgabe „Lieferung Polsterei Weber“ angelegt", "Created task “Delivery Polsterei Weber”"),
       at: minutesAgo(4),
       href: "/app/spaces/Lg8x2q",
       runId: id(2, 1),
@@ -353,14 +353,14 @@ const activity = (): CodeActivityReadModel => ({
     {
       app: "Mail",
       icon: "tabler:mail",
-      text: L("Unterhaltungen zuweisen · 3 bestätigt", "Assign conversations · 3 confirmed"),
+      text: L("3 Unterhaltungen der Logistik zugewiesen", "Assigned 3 conversations to Logistics"),
       at: minutesAgo(4),
       runId: id(2, 1),
     },
     {
       app: "Spaces",
       icon: "tabler:layout-kanban",
-      text: L("Aufgabe anlegen · 1 bestätigt · Lieferung Stoffe Nord", "Create task · 1 confirmed · Delivery Stoffe Nord"),
+      text: L("Aufgabe „Lieferung Stoffe Nord“ angelegt", "Created task “Delivery Stoffe Nord”"),
       at: minutesAgo(19),
       href: "/app/spaces/Lg8x2q",
       runId: id(2, 2),
@@ -368,7 +368,7 @@ const activity = (): CodeActivityReadModel => ({
     {
       app: "Mail",
       icon: "tabler:mail",
-      text: L("Unterhaltungen verschieben · 2 bestätigt", "Move conversations · 2 confirmed"),
+      text: L("2 Unterhaltungen nach „Lieferungen“ verschoben", "Moved 2 conversations to “Deliveries”"),
       at: minutesAgo(34),
       runId: id(2, 4),
     },
@@ -436,6 +436,8 @@ const ready = (overrides: Partial<CodePageReady> = {}, words: Partial<CodePageWo
       state: "active",
       activeVersionId: v4.id,
       pauseReason: null,
+      activatedAt: "2026-10-28T09:12:00.000Z",
+      activatedBy: { name: "Ben Schulz" },
     },
     permission: "editor",
     versions: [v5, v4, v3, v2, v1].filter((version) => version.number !== 5),
@@ -680,7 +682,7 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
       return {
         ...base,
         tab: "overview",
-        state: ready({ code: { ...ready().code, state: "paused" } }),
+        state: ready({ code: { ...ready().code, state: "paused", pausedAt: "2026-11-12T10:02:00.000Z" } }),
       };
     case "with-pages":
       return {

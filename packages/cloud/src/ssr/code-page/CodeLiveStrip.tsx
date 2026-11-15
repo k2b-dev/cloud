@@ -168,32 +168,20 @@ export function EffectRows(props: { live: CodeLive; text: PageText }) {
   return (
     <ul class="cloud-code__feed" aria-label={props.text.t().didRecent}>
       <For each={props.live.effects().slice(0, CODE_RECENT_ROWS)}>
-        {(effect) => {
-          const at = effect.text.lastIndexOf(" · ");
-          const head = at < 0 ? effect.text : effect.text.slice(0, at);
-          const target = at < 0 ? null : effect.text.slice(at + 3);
-          return (
-            <li data-fresh={props.live.fresh().effect === `${effect.runId}:${effect.text}` ? "" : undefined}>
-              <span class="cloud-code__tile k2b-icon-tile" data-tile={effect.icon ? "app" : "neutral"} data-size="sm" aria-hidden="true">
-                <i class={iconClass(effect.icon, "ti ti-circle-check")} />
-              </span>
-              <span class="cloud-code__feed-text">
-                {head}
-                <Show when={target}>
-                  {(name) => (
-                    <>
-                      {" · "}
-                      <Show when={effect.href} fallback={name()}>
-                        {(href) => <a href={href()}>{name()}</a>}
-                      </Show>
-                    </>
-                  )}
-                </Show>
-              </span>
-              <span class="cloud-code__feed-time">{props.text.moment(effect.at)}</span>
-            </li>
-          );
-        }}
+        {(effect) => (
+          <li data-fresh={props.live.fresh().effect === `${effect.runId}:${effect.text}` ? "" : undefined}>
+            <span class="cloud-code__tile k2b-icon-tile" data-tile={effect.icon ? "app" : "neutral"} data-size="sm" aria-hidden="true">
+              <i class={iconClass(effect.icon, "ti ti-circle-check")} />
+            </span>
+            {/* Core says what happened as one sentence; a target the reader may open makes it a link. */}
+            <span class="cloud-code__feed-text">
+              <Show when={effect.href} fallback={effect.text}>
+                {(href) => <a href={href()}>{effect.text}</a>}
+              </Show>
+            </span>
+            <span class="cloud-code__feed-time">{props.text.moment(effect.at)}</span>
+          </li>
+        )}
       </For>
     </ul>
   );

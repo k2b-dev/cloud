@@ -137,6 +137,11 @@ const cardWhen = (item: CodeOverviewItem, status: CodeCardStatus, t: Messages, l
     return t.appsSince({ when: runningFor(running.startedAt ?? running.createdAt, locale, timeZone, now) });
   const newest = running ?? item.lastRun ?? null;
   if (status === "failed" && newest) return dayOrTime(newest.endedAt ?? newest.createdAt, t, locale, timeZone, now);
+  // "since 29.10.": the day alone, as Bild 27 shows it.
+  if (status === "paused" && item.pausedAt)
+    return t.appsSince({
+      when: new Intl.DateTimeFormat(locale, { timeZone, day: "2-digit", month: "2-digit" }).format(new Date(item.pausedAt)),
+    });
   if (status === "on") {
     const next = nextCodeRun(item);
     return next ? t.codeNextRun({ when: dayOrTime(next, t, locale, timeZone, now) }) : "";

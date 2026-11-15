@@ -310,8 +310,15 @@ function ReadyPage(props: {
   const state = () => bigState(props.state, t());
   const meta = () => {
     const active = props.state.active;
-    if (paused()) return t().headPaused({ version: active?.number ?? null });
+    const code = props.state.code;
+    if (paused())
+      return code.pausedAt
+        ? t().headPausedOn({ version: active?.number ?? null, date: props.text.short(code.pausedAt) })
+        : t().headPaused({ version: active?.number ?? null });
     if (!active) return t().headNoVersion;
+    // When and by whom the running version was switched on (Bild 19); older Core answers name its author instead.
+    if (code.activatedAt)
+      return t().headActivated({ version: active.number, date: props.text.short(code.activatedAt), name: code.activatedBy?.name ?? null });
     return t().headVersion({ version: active.number, name: active.createdBy?.name ?? null, date: props.text.short(active.createdAt) });
   };
   /** "Change with Gustav" is filled unless a waiting version or "Resume" takes that place. */
