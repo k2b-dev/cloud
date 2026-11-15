@@ -2,6 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import { aiCapabilityId } from "./capabilities";
+import { listQueuedMessages } from "./message-queue";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 import { aiToolAudit } from "./tool-audit";
@@ -174,7 +175,6 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
         modelId: "test-model",
         runConfig: { kind: "chat", input: text, toolSource: { kind: "none" } },
         userMessage: { role: "user", content: [{ type: "text", text }] },
-        sourceHref: `/app/assistant?conversation=${source.shortId}`,
       });
       expect(delivered.delivered).toBe(true);
       const messages = await aiConversations.listMessages({ conversationId: target.id });
@@ -187,7 +187,6 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
             sourceChatId: source.shortId,
             sourceTurnId: sourceTurn.shortId,
             sourceTitle: source.title,
-            sourceHref: `/app/assistant?conversation=${source.shortId}`,
           },
         },
       });
@@ -211,6 +210,7 @@ databaseSuite()("AI conversation resources and inter-chat messages (integration)
             userMessage: { role: "user", content: [{ type: "text", text: queued.message.text }] },
           }),
         ).toEqual({ delivered: false, reason: "busy" });
+        expect((await listQueuedMessages(target.id)).map(({ id, origin }) => [id, origin.kind])).toEqual([[queued.message.id, "chat"]]);
       }
 
       const deliverable = await aiConversations.createInterChatMessage({

@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-11-13
+updated: 2026-11-15
 ---
 
 # Chat runtime and streaming
@@ -28,7 +28,7 @@ that draft revision and preserves its text, resource references, model selection
 and exact attachment bytes. Repeating the same `queueId` is idempotent, including
 after the message has started. A later composer draft remains independent.
 
-Each conversation accepts up to 32 pending or failed messages. Queued attachment
+Each conversation accepts up to 20 pending or failed messages. Queued attachment
 snapshots share a 250 MiB budget. The existing turn worker processes messages in
 acceptance order, one active turn per conversation. Queues survive navigation,
 reloads and worker restarts. Completion, failure or cancellation of a turn allows
@@ -38,9 +38,13 @@ active and do not advance the queue.
 
 The owner-authorized queue API provides:
 
-- `GET /conversations/:id/queue`: ordered pending and failed entries.
-- `PATCH /conversations/:id/queue/:messageId` with `{ text }`: edit queued text
-  while retaining attachments and resource references.
+- `GET /conversations/:id/queue`: ordered pending and failed entries, including
+  `id`, `text`, `content`, `origin`, `state`, `createdAt`, and `authorIsViewer`.
+  The display states are `pending`, `sending`, and `failed`; storage keeps its
+  existing `pending`, `failed`, `submitted`, and `cancelled` statuses.
+- `PATCH /conversations/:id/queue/:messageId` with `{ text }`: edit the person's
+  own queued text while retaining attachments and resource references. Automation
+  and other-chat entries cannot be edited.
 - `DELETE /conversations/:id/queue/:messageId`: remove an entry that has not started.
 - `POST /conversations/:id/queue/:messageId/retry`: retry a failed dispatch.
 
@@ -48,6 +52,69 @@ All paths above use the `/api/ai` prefix. Editing or deleting races safely with
 promotion: once an entry becomes a turn, the queue endpoint returns not found.
 Normal submissions cannot overtake the queue. Chats with pending entries cannot
 be archived or marked done and do not become done through inactivity.
+
+### Send a queued message now
+
+`POST /conversations/:id/queue/:messageId/send-now` prioritizes that entry and
+interrupts the current turn. An already-started tool finishes and saves its
+result; the runtime starts no later tool. The interrupted turn stays in history
+with `meta.queueInterrupted: true` and an `aborted` status. The chat displays
+“Stopped” without a resume action. Other queue entries retain their order.
+
+The response is `{ id, state, turnId }`, where `state` is `sending`, `submitted`,
+or `failed`. The entry ID is the idempotency key. After a lost response, read
+`GET /conversations/:id/queue/:messageId/send-now` before replaying that same
+POST. A submitted receipt survives promotion; an absent list entry alone does
+not prove failure. Never allocate another ID to retry an uncertain send.
+
+A pending client tool uses its existing result deadline. The entry stays
+`sending` until the client result is saved. If the deadline expires or the
+result reports an uncertain outcome, the entry becomes `failed` (“Not sent”);
+Cloud releases the interruption request and leaves the original turn to its
+normal result and timeout handling. It does not terminate the client effect.
+The same “Not sent” state applies if a lost server worker has no durable
+outcome for a started effect. The runtime never treats a lost lease alone as
+confirmation of a successful interruption. All queue mutations remain locked
+while a send-now request is in progress.
+
+The next turn receives the interrupted history, a system instruction with the
+last finished step and the interrupted step's outcome, the current `todo_write`
+state, and the prioritized message's provenance. It handles that message first,
+then explains in one sentence whether it will continue, change, or abandon the
+old work. It must check an uncertain effect before repeating it.
+
+### Preserve writer identity and live state
+
+One queue combines the person's messages, automation messages, and messages
+from another chat. `origin.kind` is `person`, `automation`, or `chat`, with a
+stable ID and a resolved display name. Chat and automation links appear only
+when the viewer can open the target. Durable provenance stores IDs, never
+translated names or display links. Existing inter-chat delivery also enters
+this queue and cannot overtake a person's entry.
+
+The platform-owned `sendAiChatMessage` from `@k2b/cloud/ai/runtime` accepts
+`idempotencyKey`, `chatId`, `text`, `authority`, and `origin`. A platform adapter
+must derive `origin` and `actor` from the verified writer/run context; they are
+never application-supplied request fields. For an automation, pass its stable
+Code/version ID and optional run ID; a resource reference lets the authorized
+resource reader resolve its name and link. This function prepares a future
+capability adapter; it does not register an `ai.chat.send` capability.
+
+A personal automation uses the person's `accessSubject` and the automation's
+`actor`. The person must own the target chat. A service-account `accessSubject`,
+including mailbox Code, is refused for personal chats. No additional grant or
+manifest field is required. Every writer uses the same model access, quota,
+queue limit, and attachment budget. Acceptance wakes the existing turn worker;
+an idle chat starts promptly, while an approval wait keeps messages queued.
+
+Queue changes use the existing `/api/ai/live` invalidations for
+`conversation-detail` and `conversation-list`. Clients reload the authorized
+snapshot after an invalidation and never poll. Token delivery and worker
+interruption signals execute no SQL; the integration budget is pinned with
+`scripts/fixtures/sql-meter.ts`. The shared browser exports are
+`AI_MESSAGE_QUEUE_LIMIT`, `AiMessageOriginSchema`, `AiQueuedMessageSchema`,
+`AiMessageOrigin`, `AiQueuedMessage`, `AiSendQueuedMessageResult`, and
+`AiQueueLiveEvent`.
 
 ## Observe work across conversations
 
@@ -73,7 +140,8 @@ carry conversation and turn IDs. A heartbeat warning is emitted once per failure
 streak; recovery uses the existing durable turn state.
 
 Upload storage failures emit `file_upload_failed` with the conversation ID and
-error type. Tool-audit write failures are warnings with turn and call IDs. Expected audio
+error type. A failed tool-start or dispatch audit prevents the effect from
+starting; other tool-audit write failures are warnings with turn and call IDs. Expected audio
 cancellation is informational; retryable dictation failures are warnings and
 terminal failures are errors. Provider/transcription traces retain their existing
 status, duration and accounting. Diagnostic metadata does not add prompt,

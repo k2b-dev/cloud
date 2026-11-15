@@ -960,6 +960,7 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
   });
 
   test("two browsers cannot execute one tool call twice and interrupted claims never replay", async () => {
+    const start = spyOn(aiToolAudit, "noteToolStarted").mockResolvedValue(true);
     const conversationId = crypto.randomUUID(),
       turnId = crypto.randomUUID();
     const input = { operation: "open" as const, id };
@@ -1042,7 +1043,12 @@ databaseSuite()("Assistant artifacts in disposable Postgres", () => {
       expect(await clientCalls.claim(loser, owner)).toEqual({ status: "interrupted" });
       expect(await clientCalls.claim(winner, owner)).toEqual({ status: "interrupted" });
       await expect(clientCalls.complete({ ...winner, result: {} }, owner)).rejects.toMatchObject({ code: "CONFLICT" });
+      // A new browser claim cannot cross the runtime's Send now barrier.
+      await sql`DELETE FROM assistant.artifact_client_calls WHERE turn_id=${turnId}::uuid`;
+      start.mockResolvedValue(false);
+      expect(await clientCalls.claim(first, owner)).toEqual({ status: "interrupted" });
     } finally {
+      start.mockRestore();
       conversation.mockRestore();
       turn.mockRestore();
     }

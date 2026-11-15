@@ -26,6 +26,7 @@ import { aiConversations } from "./store";
 import * as stream from "./stream";
 import { aiToolAudit } from "./tool-audit";
 import { prepareAiTools } from "./tools";
+import { AiTurnInterruption } from "./turn-interruption";
 import * as turnTiming from "./turn-timing";
 import type { AiPendingTurnActionRecord, AiStoredMessage, AiTurnSteer } from "./types";
 
@@ -202,6 +203,7 @@ describe("malformed tool calls in a chat turn", () => {
         conversationId: "chat",
         turnId: "turn",
         abortController: new AbortController(),
+        interruption: new AiTurnInterruption(() => {}),
         prepared: prepareAiTools({ tools: [] }),
         allowRememberedApprovals: false,
         rememberableCapabilityApprovals: new Map(),
@@ -1364,6 +1366,7 @@ for (const stopReason of ["tool_use", "error", "interrupted", "aborted"] as cons
       conversationId: "chat",
       turnId: "turn",
       abortController: new AbortController(),
+      interruption: new AiTurnInterruption(() => {}),
       prepared: prepareAiTools({ tools: [] }),
       allowRememberedApprovals: false,
       rememberableCapabilityApprovals: new Map<string, string>(),
@@ -1416,7 +1419,7 @@ test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s cl
     resolvedEvent: { type: "tool_result", callId: "local-1", result: { status: "completed", path: "/work", entries: [], nextAfter: null } },
   };
   const config = spyOn(aiConversations, "getTurnRunConfig").mockResolvedValue({ kind: "chat", input: "List files" });
-  const save = spyOn(aiConversations, "savePendingTurnAction").mockResolvedValue(undefined);
+  const save = spyOn(aiConversations, "savePendingTurnAction").mockResolvedValue(true);
   const get = spyOn(aiConversations, "getPendingTurnAction").mockResolvedValue(mode === "fast" ? resolved : pending);
   const markInline = spyOn(aiConversations, "markPendingTurnActionConsumedInline").mockResolvedValue(undefined);
   const suspend = spyOn(aiConversations, "suspendTurn").mockResolvedValue(true);
@@ -1473,6 +1476,7 @@ test.each(["fast", "late", "interaction", "code_open", "abort"] as const)("%s cl
         approvalTargets: new Map(),
         linkedApprovals: new Map(),
         signal: signal.signal,
+        interruption: new AiTurnInterruption(() => signal.abort()),
       }),
     ).toBe(mode !== "fast");
     expect(save).toHaveBeenCalledTimes(1);
