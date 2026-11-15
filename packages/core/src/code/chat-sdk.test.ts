@@ -70,12 +70,14 @@ test(`the index plus the declarations of any ${CODE_CHAT_SDK_APPS} apps fit the 
   const shared = size(codeChatSdkView(manifests, { mode: "personal" }, []));
   // Each further app adds its own declarations on top of the shared ones.
   const largest = shared + largestApps.reduce((sum, value) => sum + value.size - shared, 0);
+  console.log("SDK tool result budget", size(index) + largest, "/", budget);
   expect(size(index) + largest).toBeLessThanOrEqual(budget);
   const combined = codeChatSdkView(
     manifests,
     { mode: "personal" },
     largestApps.map((app) => app.appId),
   );
+  console.log("SDK combined tool result budget", size(index) + size(combined), "/", budget);
   expect(size(index) + size(combined)).toBeLessThanOrEqual(budget);
 });
 

@@ -667,20 +667,23 @@ export default function Browser(props: {
       progress: "indeterminate",
       action: { label: b().cancel, onClick: () => request.abort() },
     });
+    // The reading toast turns into an error in place, or a new one when the person closed it; otherwise the upload
+    // takes over and it leaves.
+    const fail = (message: string) => {
+      if (notice.update(message, { variant: "error", progress: null, duration: undefined, action: null }) === false) toast.error(message);
+    };
     void readDroppedEntries(entries, request.signal)
       .then((result) => {
-        if (request.signal.aborted || source !== locationKey()) return;
-        if (result.errors.length) toast.error(result.errors.join("\n"));
+        if (request.signal.aborted || source !== locationKey()) return notice.dismiss();
+        if (result.errors.length) fail(result.errors.join("\n"));
+        else notice.dismiss();
         startUpload(result.files, result.directories, result.hidden.length, root);
       })
       .catch((error) => {
-        if (!request.signal.aborted)
-          toast.error(error instanceof Error && error.message === "drop_too_large" ? b().dropTooLarge : b().loadFailed);
+        if (request.signal.aborted) notice.dismiss();
+        else fail(error instanceof Error && error.message === "drop_too_large" ? b().dropTooLarge : b().loadFailed);
       })
-      .finally(() => {
-        clearTimeout(timer);
-        notice.dismiss();
-      });
+      .finally(() => clearTimeout(timer));
   };
 
   // Mutations on the selection run through one loading state and one error surface.
@@ -1309,7 +1312,7 @@ export default function Browser(props: {
         // moved on to another folder meanwhile, and its Undo still targets the folder the file was made in.
         toast.success([b().opCreated(result.entry.name), operation.summary].filter(Boolean).join(" · "), {
           celebrate: true,
-          action: { label: b().opUndo, onClick: () => void undoCreated(operation.base, result.entry) },
+          action: { label: b().opUndo, variant: "ghost", onClick: () => void undoCreated(operation.base, result.entry) },
         });
       },
       (error: unknown) => {
@@ -2162,7 +2165,7 @@ export default function Browser(props: {
             >
               <ContextMenu class="filesv2-browser__collection" tabIndex={-1} items={contextItems()} label={t().actions} disabled={busy()}>
                 <ScrollArea
-                  class="h-full"
+                  class="filesv2-browser__scroll h-full"
                   scrollPreserveKey={`filesv2:${folderKey(baseIdentity(), folder())}:${props.after ?? ""}:${view().view}`}
                 >
                   <Show
@@ -2334,9 +2337,18 @@ export default function Browser(props: {
                       </Show>
                     </div>
                   </Show>
-                  {/* The selection's actions float at the bottom of the column; the list scrolls beneath and ends above. */}
-                  <Show when={selected().length > 0}>
-                    <Toolbar label={b().selectionActions} variant="floating" moreItems={pillMore()} class="filesv2-selection-pill">
+                  {/*
+                   * The selection's actions float at the bottom of the column; the list scrolls beneath and ends above.
+                   * The pill keeps its place while nothing is selected, only hidden, so showing or hiding it never moves a
+                   * row, also at the end of a long list.
+                   */}
+                  <Toolbar
+                    label={b().selectionActions}
+                    variant="floating"
+                    moreItems={selected().length ? pillMore() : undefined}
+                    class={selected().length ? "filesv2-selection-pill" : "filesv2-selection-pill filesv2-selection-pill--idle"}
+                  >
+                    <Show when={selected().length > 0}>
                       <Toolbar.Action label={b().clear} icon="ti ti-x" onClick={() => toggleSelecting(false)} />
                       <Toolbar.Label>{b().pillCount({ n: selected().length, kind: pillKind(selected()) })}</Toolbar.Label>
                       <Toolbar.Separator />
@@ -2377,8 +2389,8 @@ export default function Browser(props: {
                           onClick={() => void moveOrCopy(selected())}
                         />
                       </Show>
-                    </Toolbar>
-                  </Show>
+                    </Show>
+                  </Toolbar>
                 </ScrollArea>
               </ContextMenu>
             </Show>

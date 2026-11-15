@@ -101,6 +101,7 @@ describe("Core Code data contracts", () => {
       "code.version.read",
       "code.version.words",
       "code.version.review",
+      "code.version.words",
     ]);
     expect(
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),

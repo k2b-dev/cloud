@@ -43,7 +43,7 @@ import {
 import { codeVersionDiff } from "./version-diff";
 import { type CodeVersionEvidence, CodeVersionEvidenceSchema } from "./version-evidence";
 import { codeVersionMessages } from "./version-messages";
-import { diffCodeVersion, listCodeVersions } from "./versions";
+import { listCodeVersions } from "./versions";
 
 /**
  * Cloud-admin read model for Administration › Code. Every reader requires the Code policy admin gate first;

@@ -697,7 +697,7 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.version.list": {
       title: "List Code versions",
-      description: "Read version submission and approval receipts, including sole-admin decisions.",
+      description: "Read submission and approval receipts, including sole-admin decisions.",
       ...codeVersionContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeVersions(input, ctx)),
@@ -711,30 +711,28 @@ export const aiCapabilities = defineCapabilities({
     },
     "code.policy.effective": {
       title: "Resolve Code policy",
-      description:
-        "Resolve current classification rules for the personal owner, or a resource/app author. Other views require Cloud administration.",
+      description: "Resolve owner/author classification rules. Other views require Cloud administration.",
       ...codePolicyContracts.effective,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => effectiveCodePolicy(input, ctx)),
     },
     "code.policy.preview": {
       title: "Preview Code policy",
-      description: "Preview an exact pause count and a page of affected active Code without writing. Cloud administrators only.",
+      description: "Admins preview pause count and affected active Code without writing.",
       ...codePolicyContracts.preview,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => previewCodePolicy(input, ctx)),
     },
     "code.attention": {
       title: "Check Code attention",
-      description:
-        "For one exact owner, list the readable Code that needs someone: a failed latest run, access removed at a target, or a version waiting for approval.",
+      description: "List readable Code for one owner needing attention: latest run failed, target access missing or approval pending.",
       ...codeAttentionContracts.attention,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeAttention(input, ctx)),
     },
     "code.summary": {
       title: "Summarize an owner's Code",
-      description: "For one exact owner, count the automations and the targets with access of the readable Code. No names and no contents.",
+      description: "Count readable automations and accessible targets for one exact owner. No names or contents.",
       ...codeAttentionContracts.summary,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeSummary(input, ctx)),
@@ -742,14 +740,14 @@ export const aiCapabilities = defineCapabilities({
     "code.list": {
       title: "List Code",
       description:
-        "List personal and explicitly shared Code; Cloud admins list all. Supply an exact owner to also list the Code of an object you manage. Follow nextCursor even on empty pages.",
+        "List personal/shared Code; admins list all. An exact owner includes Code of objects you manage. Follow nextCursor even on empty pages.",
       ...codeQueryContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodes(input, ctx)),
     },
     "code.read": {
       title: "Read Code",
-      description: "Read one Code identity, owner and current permission using its stable codeId.",
+      description: "Read Code identity, owner and current permission by codeId.",
       ...codeQueryContracts.read,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeDetails(input.codeId, ctx)),
@@ -779,22 +777,21 @@ export const aiCapabilities = defineCapabilities({
     "code.attention.list": {
       title: "List Code that needs you",
       description:
-        "Across owners, list Code of a resource or app that the caller administers and that needs them: paused, a latest run failed, access missing at a target, or a version awaiting approval. Follow nextCursor even on empty pages.",
+        "List managed resource/app Code needing attention: paused, latest run failed, target access missing or approval pending. Follow nextCursor even on empty pages.",
       ...codeAttentionContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeAttention(input, ctx)),
     },
     "code.automation.list": {
       title: "List a Code's automations",
-      description:
-        "List the running version's automations with schedule, next run and newest run, and which removed target access each one needs.",
+      description: "List active-version automations, schedules, next/latest runs and missing target access.",
       ...codeAutomationContracts.list,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => listCodeAutomations(input, ctx)),
     },
     "code.run.count": {
       title: "Count own Code runs",
-      description: "Count runs and failed runs of the caller's own personal Code since a moment within the last 7 days.",
+      description: "Count own personal Code runs/failures since a moment within the last 7 days.",
       ...codeQueryContracts.runCount,
       openWorld: false,
       run: (input, context) => runCodeQuery(context, (ctx) => countOwnCodeRuns(input, ctx)),

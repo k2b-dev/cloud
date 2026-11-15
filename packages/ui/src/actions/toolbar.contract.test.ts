@@ -34,16 +34,29 @@ test("floating Toolbar is a pill with the toolbar shadow, reserves height, and k
     expect(rule, selector).toBeDefined();
     return cssDeclarations(rule!.body);
   };
-  const pill = declarations('.k2b-ui .k2b-toolbar[data-variant="floating"]');
-  expect(pill.get("box-shadow")).toEqual(["var(--k2b-shadow-toolbar)"]);
+  // A floating Toolbar is a pill of small controls (`k2b-pill`): its height follows the control and the space around
+  // it, the same above, below, and at the sides, and its controls are round.
+  const pill = declarations(".k2b-ui .k2b-pill");
   expect(pill.get("border-radius")).toEqual(["999px"]);
-  // 44 px controls by default; a host may lower `--k2b-toolbar-control` and `--k2b-toolbar-inset`, and the pill
-  // follows its controls with the same inset above, below, and at the sides.
-  expect(pill.get("block-size")).toEqual(["calc(var(--k2b-toolbar-control, 2.75rem) + 2 * var(--k2b-toolbar-inset, 0.25rem) + 2px)"]);
-  expect(pill.get("padding")).toEqual(["var(--k2b-toolbar-inset, 0.25rem)"]);
-  const controls = rules.find((rule) => rule.selector.startsWith('.k2b-ui .k2b-toolbar[data-variant="floating"] .k2b-button:not('));
-  expect(controls && cssDeclarations(controls.body).get("block-size")).toEqual(["var(--k2b-toolbar-control, 2.75rem)"]);
-  expect(controls && cssDeclarations(controls.body).get("min-block-size")).toEqual(["var(--k2b-toolbar-control, 2.75rem)"]);
+  expect(pill.get("block-size")).toEqual(["calc(var(--k2b-pill-control) + 2 * var(--k2b-pill-inset) + 2px)"]);
+  expect(pill.get("padding")).toEqual(["var(--k2b-pill-inset)"]);
+  // The look sits at no extra weight so glass and danger replace it; the geometry rule must not set a colour that
+  // would win over it and hide the edge.
+  const look = declarations(".k2b-ui :where(.k2b-pill)");
+  expect(look.get("box-shadow")).toEqual(["var(--k2b-shadow-toolbar)"]);
+  expect(look.get("border-color")).toBeDefined();
+  expect(pill.has("border")).toBe(false);
+  expect(pill.has("border-color")).toBe(false);
+  // Only menus and popovers inside the pill keep their own button size, not a pill inside a dialog.
+  const controls = rules.find(
+    (rule) =>
+      rule.selector === '.k2b-ui .k2b-pill .k2b-button:not(.k2b-pill :is([popover], [role="menu"], [role="dialog"]) .k2b-button)' &&
+      rule.context === "",
+  );
+  expect(controls && cssDeclarations(controls.body).get("block-size")).toEqual(["var(--k2b-pill-control)"]);
+  expect(controls && cssDeclarations(controls.body).get("min-block-size")).toEqual(["var(--k2b-pill-control)"]);
+  expect(controls && cssDeclarations(controls.body).get("border-radius")).toEqual(["999px"]);
+  expect(declarations('.k2b-ui .k2b-toolbar[data-variant="floating"]').get("pointer-events")).toEqual(["auto"]);
   const strip = declarations(".k2b-ui .k2b-toolbar-float");
   expect(strip.get("position")).toEqual(["sticky"]);
   expect(strip.get("margin-block-start")).toEqual(["auto"]);

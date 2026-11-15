@@ -411,7 +411,7 @@ export async function submitCodeVersion(
       version,
       binding,
       approvalId,
-      status: approvalId ? "pending" : "submitted",
+      status: approvalId ? ("pending" as const) : ("submitted" as const),
       decision: null,
       origin: CodeSubmissionOriginSchema.parse(context.submissionOrigin ?? { kind: "cli" }),
     };

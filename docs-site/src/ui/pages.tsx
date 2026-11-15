@@ -7,8 +7,10 @@ import gettingStartedMarkdown from "./context/getting-started.md" with { type: "
 import inputModeMarkdown from "./context/input-mode.md" with { type: "text" };
 import motionMarkdown from "./context/motion.md" with { type: "text" };
 import overviewMarkdown from "./context/overview.md" with { type: "text" };
+import primaryScopeMarkdown from "./context/primary-scope.md" with { type: "text" };
 import { showcaseDashboards } from "./demo-sections/charts/dashboards";
 import { chartShowcaseKinds } from "./demo-sections/charts/examples";
+import PrimaryScopeDemo from "./PrimaryScopeDemo.island";
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
 
 export const uiPages = [
@@ -126,6 +128,32 @@ export const uiPages = [
         </header>
         <section class="ui-reference-body" aria-label="Input mode guide">
           <div class="ui-documentation fibel-prose" innerHTML={content.html} />
+        </section>
+      </article>
+    ),
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/primary-scope",
+    title: "Primary scope",
+    navTitle: "Primary scope",
+    description: "Use the AI palette for primary actions, selection, and focus in a scoped area.",
+    section: "Start",
+    order: 6,
+    layout: "full",
+    content: primaryScopeMarkdown,
+    component: ({ content, page }) => (
+      <article class="ui-showcase ui-reference-showcase">
+        <header class="ui-reference-heading">
+          <div class="ui-page-heading">
+            <p>@k2b/ui</p>
+            <h1>{page.meta.title}</h1>
+          </div>
+        </header>
+        <section class="ui-reference-body" aria-label="Primary scope guide">
+          <div class="ui-documentation fibel-prose" innerHTML={content.html} />
+          <PrimaryScopeDemo />
         </section>
       </article>
     ),
