@@ -34,6 +34,8 @@ export async function readModelNames(
     }
     return pending;
   };
+  // The platform allows one child Query. The owner answer may already have used it.
+  let childReaderUsed = Boolean(context.ownerReaderAnswer);
   const targets = new Map<string, ReadModelTarget>();
   const operations = new Map<string, { title: string; app?: string; icon?: string; policyRow?: CodePolicyRow }>();
   const events = new Map<string, string>();
@@ -56,15 +58,24 @@ export async function readModelNames(
     const data = loaded?.ok ? loaded.data : null;
     const local = ref.type.slice(appId.length + 1);
     const type = data?.manifest.types.find((item) => item.localId === local)?.title ?? t.target;
-    const base = { name: ref.id === null ? t.dynamic({ type }) : t.hidden({ type }), readable: false };
+    const base = { name: ref.id === null ? t.dynamic({ type }) : t.unresolved({ type }), readable: false, unavailable: true };
     targets.set(keyOf(ref), base);
     if (!data || ref.id === null) return;
     if (ref.type === "app") {
       targets.set(keyOf(ref), { name: data.appName, readable: true });
       return;
     }
+    const owner = context.ownerReaderAnswer;
+    if (owner && owner.ref.type === ref.type && owner.ref.id === ref.id) {
+      targets.set(keyOf(ref), { name: owner.title, readable: true, ...(owner.href ? { href: owner.href } : {}) });
+      return;
+    }
     const reader = resolveCapabilityResourceReader(data.manifest, { type: ref.type, id: ref.id });
     if (!reader) return;
+    if (context.authority.credentialKind === "invocation") {
+      if (!context.query || childReaderUsed) return;
+      childReaderUsed = true;
+    }
     const result =
       context.authority.credentialKind === "invocation" && context.query
         ? await context.query({ appId, capabilityId: reader.localId, input: { id: ref.id }, signal: context.signal }, ReaderSchema)
@@ -73,7 +84,11 @@ export async function readModelNames(
             ReaderSchema,
             { authority: context.authority, locale, signal: context.signal },
           );
-    if (!result.ok) return;
+    if (!result.ok) {
+      if (context.authority.credentialKind !== "invocation" && ["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code))
+        targets.set(keyOf(ref), { name: t.hidden({ type }), readable: false });
+      return;
+    }
     const href = result.data.links?.find((link) => link.rel === "open")?.href;
     targets.set(keyOf(ref), { name: result.data.data.view.title, readable: true, ...(href ? { href } : {}) });
   };
@@ -99,7 +114,7 @@ export async function readModelNames(
     for (const event of data.manifest.events ?? []) events.set(`${appId}.${event.localId}`, event.title);
   }
   return {
-    target: (ref) => targets.get(keyOf(ref)) ?? { name: t.hidden({ type: t.target }), readable: false },
+    target: (ref) => targets.get(keyOf(ref)) ?? { name: t.unresolved({ type: t.target }), readable: false, unavailable: true },
     operation: (id) => operations.get(id) ?? { title: t.action },
     event: (id) => events.get(id) ?? t.event,
   };

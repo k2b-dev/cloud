@@ -7,7 +7,7 @@ import { codeTestFailure } from "@k2b/cloud/code";
 import { UserSchema } from "@k2b/cloud/contracts";
 import { auth } from "@k2b/cloud/server";
 import { createCodeAuthoringRoutes } from "../api/code-authoring";
-import type { CodeAuthoringData, CodeProject } from "../code/authoring-contracts";
+import { type CodeAuthoringData, type CodeProject, codeAuthoringContracts } from "../code/authoring-contracts";
 import type { Code } from "../code/contracts";
 import { codePolicyPreset } from "../code/policy-contracts";
 import type { CodeReview } from "../code/review-contracts";
@@ -385,7 +385,7 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
   const createdAt = "2026-10-31T12:00:00.000Z";
   const binding = {
     codeId: config.codeId,
-    versionId: uuid,
+    versionId: "22222222-2222-4222-8222-222222222222",
     sourceHash: "a".repeat(64),
     bundleHash: "b".repeat(64),
     manifestHash: "c".repeat(64),
@@ -395,7 +395,7 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
   };
   const submission = {
     version: {
-      id: uuid,
+      id: binding.versionId,
       codeId: config.codeId,
       number: 1,
       sourceHash: binding.sourceHash,
@@ -411,6 +411,7 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
     status: "submitted",
     approvalId: null,
     decision: null,
+    origin: { kind: "cli" },
   };
   const records: Array<{ args: string[]; flags: CloudCliFlags; data: unknown; text: string }> = [
     {
@@ -442,7 +443,12 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
     {
       args: ["submit", directory],
       flags: {},
-      data: { version: 1, submission, runningVersion: 4 },
+      data: codeAuthoringContracts.submit.data.parse({
+        version: 1,
+        submission,
+        runningVersion: 4,
+        nextStep: { next: "check_status", who: "code_editor" },
+      }),
       text: `✓ v${submission.version.number} hochgeladen, noch nicht eingeschaltet. Es läuft v4.`,
     },
     {
@@ -504,6 +510,7 @@ test.each(["text", "json", "jsonl"] as const)("all lifecycle commands honor %s o
     const exit = await code.run(run.ctx);
     expect(exit, JSON.stringify({ command: record.args, errors: run.errors, output: run.printed })).not.toBe(1);
     expect(run.errors).toEqual([]);
+    if (record.args[0] === "submit") expect((await loadCodeProject(directory)).config.baseVersionId).toBe(binding.versionId);
     if (output === "text") expect(run.printed.join("\n")).toBe(record.text);
     else expect(run.printed).toEqual([record.data]);
   }
@@ -599,15 +606,22 @@ const serverCode = {
   pauseReason: "manual",
   pauseRows: [],
   pausePolicyRevision: null,
+  activatedAt: "2026-10-31T12:00:00.000Z",
+  activatedBy: { name: "Lea Example" },
+  pausedAt: "2026-11-01T12:00:00.000Z",
   createdBy: uuid,
   createdAt: "2026-10-31T12:00:00.000Z",
 } satisfies Code;
 test.each(["text", "json", "jsonl"] as const)("show reports Code database storage in %s", async (output) => {
   const data = {
     version: 1,
-    code: { ...serverCode, database: { bytes: 1048576, limit: 104857600, state: "ready" } },
+    code: {
+      ...serverCode,
+      database: { bytes: 1048576, limit: 104857600, state: "ready" },
+    },
     permission: "editor",
   };
+  codeAuthoringContracts.show.data.parse(data);
   const invocation = context(["show", "c_1234"], {}, output, () => Response.json(data));
   expect(await code.run(invocation.ctx)).toBe(0);
   expect(invocation.requests).toEqual([{ path: "/api/code/authoring/show", input: { codeId: "c_1234" } }]);
@@ -1255,4 +1269,37 @@ test("review timeout refreshes durable state before printing JSON and rejects wa
   const invalid = context(["review", "wait", directory], { timeout: String(14 * 86400 + 1) }, "json");
   expect(await code.run(invalid.ctx)).toBe(1);
   expect(invalid.requests).toHaveLength(0);
+});
+
+test("test CLI accepts every server difference field without weakening the strict shared contract", async () => {
+  const { directory } = await project();
+  const response = codeAuthoringContracts.test.data.parse({
+    version: 1,
+    mode: "test",
+    ok: false,
+    error: null,
+    diagnostics: [],
+    cases: [
+      {
+        name: "fixture",
+        file: "test/result.json",
+        ok: false,
+        runs: [
+          {
+            entrypoint: "monday",
+            ok: true,
+            error: null,
+            value: null,
+            calls: [],
+            failures: ["value"],
+            differences: [{ path: "value", expected: "1", actual: "null" }],
+          },
+        ],
+      },
+    ],
+  });
+  const invocation = context(["test", directory], {}, "json", () => Response.json(response));
+  expect(await code.run(invocation.ctx)).toBe(1);
+  expect(invocation.errors).toEqual([]);
+  expect(invocation.printed).toEqual([response]);
 });
