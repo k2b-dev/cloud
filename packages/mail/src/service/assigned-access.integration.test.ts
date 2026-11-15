@@ -10,6 +10,7 @@ import {
   grantMailboxAccess,
   listMailboxAccess,
   listMailboxAccessMembers,
+  listMailboxManagers,
   type MailboxAccess,
   requireMailboxAccess,
   requireMailboxPermission,
@@ -100,6 +101,30 @@ suite("mail access to assigned conversations", () => {
     if (!mailbox.ok) throw new Error(mailbox.error.message);
     mailboxId = mailbox.data.id;
     conversations.push(await createConversation("Assigned"), await createConversation("Not assigned"));
+  });
+
+  test("background notices enumerate only full mailbox administrators and recheck revocation", async () => {
+    expect(await listMailboxManagers(mailboxId, { limit: 50 })).toEqual([owner.id]);
+    const granted = await grantMailboxAccess({
+      context: owner.context,
+      mailboxId,
+      principal: { type: "group", groupId },
+      permission: "admin",
+    });
+    expect(granted.ok).toBe(true);
+    try {
+      expect(await listMailboxManagers(mailboxId, { limit: 50 })).toEqual([owner.id, groupMember.id].sort());
+      expect(await listMailboxManagers(mailboxId, { userId: outsider.id, limit: 1 })).toEqual([]);
+      const first = await listMailboxManagers(mailboxId, { limit: 1 });
+      expect(await listMailboxManagers(mailboxId, { afterId: first[0], limit: 1 })).toHaveLength(1);
+      await sql`UPDATE auth.users SET profile='guest' WHERE id=${groupMember.id}::uuid`;
+      expect(await listMailboxManagers(mailboxId, { userId: groupMember.id, limit: 1 })).toEqual([]);
+      expect(await listMailboxManagers(mailboxId, { limit: 1 })).toEqual([owner.id]);
+    } finally {
+      await sql`UPDATE auth.users SET profile='user' WHERE id=${groupMember.id}::uuid`;
+      if (granted.ok) await revokeMailboxAccess({ context: owner.context, mailboxId, accessId: granted.data.id });
+    }
+    expect(await listMailboxManagers(mailboxId, { userId: groupMember.id, limit: 1 })).toEqual([]);
   });
 
   afterAll(async () => {

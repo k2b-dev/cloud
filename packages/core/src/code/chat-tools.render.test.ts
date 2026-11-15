@@ -155,4 +155,6 @@ test("every lasting Code chat tool has a step name that says what happens, in En
       expect(text).not.toMatch(/^Code [a-z]+$/);
     }
   expect(label(step("code_test", {}, "de"))).toBe("Testet mit erfundenen Daten");
+  expect(label(step("code_review", {}, "de"))).toBe("Liest die Rückmeldung");
+  expect(label(step("code_review", {}, "en"))).toBe("Reads the review feedback");
 });

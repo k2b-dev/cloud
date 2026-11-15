@@ -5,7 +5,7 @@ section: Platform services
 order: 564
 description: Declare resource containment, a standard reader presentation, and a discussions provider without application-specific consumers.
 tags: [capabilities, resources, discussions, authorization]
-updated: 2026-10-29
+updated: 2026-11-14
 ---
 
 # Resource types and discussions
@@ -144,6 +144,38 @@ limits. Chat uses this callback to share one budget with lists and readers.
 A discussions role works without reader checks. Push consumers require
 `access.readable` on both the item and container Types; otherwise they must
 report that push is not configured. The role itself grants no access.
+
+## Resolve managers for background notices
+
+A resource Type can declare `access.managers(input, context)` alongside its
+reader checks. The platform generates an app-only `<type>.managers` Query;
+it uses the calling application's workload identity and never a recipient's
+browser session. The same `resources:readers` admission and app-query rate
+limit apply. This Query returns identifiers, never resource content or titles.
+
+`ResourceManagersInputSchema` accepts `{ id, afterId?, userId?, limit? }`.
+Return at most `limit` human user UUIDs (default and maximum 50), ordered by
+UUID and strictly after `afterId`. `ResourceManagersDataSchema` wraps them as
+`{ userIds }`. With `userId`, return that person only if they still manage the
+resource. Resolve current direct and recursive group administration grants;
+assignment or read-only access does not confer management. Unknown or deleted
+resources return an empty list. The platform rejects pages outside the input
+bounds. Call `listResourceManagers` from `@k2b/cloud/capabilities/server` and
+continue while a page is full. A missing provider throws so durable callers
+can retry rather than silently dropping recipients. A healthy provider without
+this optional Query returns an empty manager list; Code's explicit editors
+still receive their notices. Types declared in `code.owners` should implement
+this callback so their owner administrators receive notices too.
+
+Apply the application's account-profile policy before pagination too. For
+example, Mail excludes guests even when a stored group grant names them.
+`listUsersWithAccess` supports `profile` and stable UUID pagination with
+`afterId` for this purpose.
+
+Core uses this contract to notify Code owner administrators after a decision,
+and rechecks each recipient's current management before delivery. The sender
+also checks account eligibility. Code's explicit editors and personal or app
+owners are resolved from their own grants without cross-application calls.
 
 ## Check current principal readability
 

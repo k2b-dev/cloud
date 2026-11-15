@@ -15,12 +15,30 @@ import { CodeExplanationUnavailableError, codeAdminOwnerNames, explainCodeVersio
 import { CodeIdSchema } from "../code/contracts";
 import { previewCodePolicy, readCodePolicy, requireCodePolicyAdmin, updateCodePolicy } from "../code/policy";
 import { codePolicyContracts } from "../code/policy-contracts";
+import { createCodeReviewComment, deleteCodeReviewComment, listCodeReviewComments } from "../code/review-comments";
+import { CodeReviewDecisionSchema, codeReviewCommentContracts } from "../code/review-contracts";
 import { CodeVersionBindingSchema } from "../code/version-contracts";
 import { CodeVersionDecisionError, CodeVersionError, decideCodeVersion, setCodePaused } from "../code/versions";
 
 /** Browser routes for Administration › Code. They call the same C7/C8 services as the `core.code.*` capabilities. */
 export const codeAdminContracts = {
-  decide: { input: z.object({ binding: CodeVersionBindingSchema, approved: z.boolean() }).strict() },
+  decide: {
+    input: z
+      .object({
+        binding: CodeVersionBindingSchema,
+        approved: z.boolean(),
+        outcome: CodeReviewDecisionSchema.shape.outcome.optional(),
+        comment: CodeReviewDecisionSchema.shape.comment,
+      })
+      .strict()
+      .refine(
+        (value) => value.outcome === undefined || value.approved === (value.outcome === "approved"),
+        "Decision outcome disagrees with approved.",
+      ),
+  },
+  commentCreate: codeReviewCommentContracts.create,
+  commentDelete: codeReviewCommentContracts.delete,
+  commentList: codeReviewCommentContracts.list,
   read: { input: z.object({}).strict() },
   explain: { input: z.object({ versionId: z.uuid() }).strict(), data: z.object({ text: z.string() }).strict() },
   pause: { input: z.object({ codeId: CodeIdSchema, paused: z.boolean() }).strict() },
@@ -58,13 +76,40 @@ export const createCodeAdminRoutes = () => {
   };
   return router
     .post(
+      "/comments/create",
+      auth.requireOAuthScope("write", "admin"),
+      middleware.openapi({ tags: ["Code"], summary: "Add a draft line comment or reply to a pending version" }),
+      v("json", codeAdminContracts.commentCreate.input),
+      (c) => run(() => createCodeReviewComment(c.req.valid("json"), context(c))),
+    )
+    .post(
+      "/comments/delete",
+      auth.requireOAuthScope("write", "admin"),
+      middleware.openapi({ tags: ["Code"], summary: "Delete your own comment before the version decision" }),
+      v("json", codeAdminContracts.commentDelete.input),
+      (c) => run(() => deleteCodeReviewComment(c.req.valid("json"), context(c))),
+    )
+    .post(
+      "/comments/list",
+      auth.readOnly,
+      middleware.openapi({ tags: ["Code"], summary: "Read a bounded page of version review comments as an administrator" }),
+      v("json", codeAdminContracts.commentList.input),
+      (c) => run(() => listCodeReviewComments(c.req.valid("json"), context(c))),
+    )
+    .post(
       "/decide",
       auth.requireOAuthScope("write", "admin"),
       middleware.openapi({ tags: ["Code"], summary: "Approve or reject one exact Code version as a Cloud administrator" }),
       v("json", codeAdminContracts.decide.input),
       (c) => {
         const input = c.req.valid("json");
-        return run(() => decideCodeVersion(input.binding, input.approved, context(c)));
+        return run(() =>
+          decideCodeVersion(
+            input.binding,
+            { outcome: input.outcome ?? (input.approved ? "approved" : "rejected"), comment: input.comment },
+            context(c),
+          ),
+        );
       },
     )
     .post(

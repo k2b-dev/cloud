@@ -520,7 +520,8 @@ const loadReady = async (
       viewer,
     ).catch(() => new Map<string, CodePagePerson>());
     // A rejected, expired or withdrawn submission can never run, so its binding still needs a version.
-    const latestUsable = latest && !["rejected", "expired", "cancelled"].includes(latest.status);
+    const latestUsable =
+      latest && !["changes_requested", "rejected", "withdrawn", "superseded", "expired", "cancelled"].includes(latest.status);
     const latestManifest = !latestUsable
       ? null
       : latest.version.id === code.activeVersionId

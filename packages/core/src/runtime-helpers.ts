@@ -12,6 +12,7 @@ import { codeDatabaseRetentionRuntime } from "./code/database-retention-runtime"
 import { codeDeletionOutbox, codeOwnerDeletedOutbox } from "./code/lifecycle";
 import { codePolicyPauseOutbox } from "./code/policy-outbox";
 import { startCodeRunRetention } from "./code/retention";
+import { createCodeReviewNotificationOutbox } from "./code/review-notifications";
 import { startCodeScheduling } from "./code/scheduling-runtime";
 import { startCodeVersionApprovals } from "./code/versions";
 import { migrate as migrateAppEvents } from "./migrate/core/app-events";
@@ -188,6 +189,7 @@ export const runCoreSetup = async (): Promise<void> => {
   }
 };
 
+let codeReviewNotices: ReturnType<typeof createCodeReviewNotificationOutbox> | undefined;
 /** Start core background services (account lifecycle jobs). */
 export const startCoreServices = async (
   notificationSender: CoreNotificationSender,
@@ -197,6 +199,8 @@ export const startCoreServices = async (
   await outgoingMailAllowlist();
   try {
     stopCodeVersionApprovals = startCodeVersionApprovals();
+    codeReviewNotices = createCodeReviewNotificationOutbox(notificationSender);
+    codeReviewNotices.start();
     await initializeIdentityAuthority();
     stopAppWorkloadBroker = await startAppWorkloadBroker();
     stopAppEventBroker = await startAppEventBroker();
@@ -272,6 +276,7 @@ export const startCoreServices = async (
     await codeActivationOutbox.stop();
     await codeActivationCleanupOutbox.stop();
     await codeOwnerDeletedOutbox.stop();
+    await codeReviewNotices?.stop();
     await codeDatabaseRetentionRuntime.stop();
     await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();
@@ -322,6 +327,7 @@ export const stopCoreServices = async (aiNotifications?: ReturnType<typeof creat
     await codeActivationOutbox.stop();
     await codeActivationCleanupOutbox.stop();
     await codeOwnerDeletedOutbox.stop();
+    await codeReviewNotices?.stop();
     await codeDatabaseRetentionRuntime.stop();
     await codeDeletionOutbox.stop();
     await stopCodeRunRetention?.();

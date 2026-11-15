@@ -84,6 +84,8 @@ describe("Core Code data contracts", () => {
       "code.policy.preview",
       "code.policy.read",
       "code.read",
+      "code.readable",
+      "code.resource.read",
       "code.run.count",
       "code.run.list",
       "code.run.read",
@@ -94,6 +96,7 @@ describe("Core Code data contracts", () => {
       "code.version.list",
       "code.version.origin",
       "code.version.read",
+      "code.version.review",
     ]);
     expect(
       manifest.actions.filter((action) => action.localId.startsWith("code.")).map((action) => ({ id: action.localId, code: action.code })),
@@ -111,6 +114,7 @@ describe("Core Code data contracts", () => {
         "code.secret.set",
         "code.version.approve",
         "code.version.reject",
+        "code.version.request_changes",
         "code.version.submit",
       ].map((id) => ({ id, code: false })),
     );
@@ -207,7 +211,10 @@ test("secret values cannot enter through Assistant, MCP or app capability tools"
 test("secret capability declarations compile with private writes and exact delete reviews", () => {
   const manifest = compileCapabilityManifest("core", {
     protocolVersion: 2,
-    queries: { "code.secret.list": aiCapabilities.queries["code.secret.list"] },
+    queries: {
+      "code.resource.read": aiCapabilities.queries["code.resource.read"],
+      "code.secret.list": aiCapabilities.queries["code.secret.list"],
+    },
     types: { code: aiCapabilities.types.code },
     actions: {
       "code.secret.set": aiCapabilities.actions["code.secret.set"],

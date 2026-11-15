@@ -283,3 +283,23 @@ describe("new-browser sign-in notice", () => {
       expect(prepared.html).toContain(style);
   });
 });
+
+test("Code review notices localize each outcome and link the immutable version", async () => {
+  const notice = app.notifications.codeReview;
+  const versionId = "11111111-1111-4111-8111-111111111111";
+  const base = { codeId: "c_notice", title: "Weekly report", versionId, number: 5, by: "Jana Probe" };
+  for (const [locale, outcomes] of [
+    ["de", ["freigegeben", "Änderungen an Version 5 angefordert", "abgelehnt"]],
+    ["en", ["approved", "requested changes", "rejected"]],
+  ] as const) {
+    for (const [index, outcome] of (["approved", "changes_requested", "rejected"] as const).entries()) {
+      const rendered = await notice.render({ ...base, kind: "decided", outcome }, { locale });
+      expect(rendered.title).toContain("Jana Probe");
+      expect(rendered.title).toContain(outcomes[index]!);
+      expect(rendered.targetHref).toBe(`/app/assistant/code/c_notice?tab=versions&version=${versionId}`);
+    }
+    expect((await notice.render({ ...base, kind: "submitted", outcome: null }, { locale })).targetHref).toBe(
+      `/admin/code?sec=approvals&id=${versionId}`,
+    );
+  }
+});

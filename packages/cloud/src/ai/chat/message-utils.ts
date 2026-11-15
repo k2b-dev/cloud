@@ -399,6 +399,7 @@ const FEAT_CODE_TOOLS: ReadonlySet<string> = new Set([
   "code_simulate",
   "code_submit",
   "code_diff",
+  "code_review",
   "code_read",
   "code_write",
   "code_check",

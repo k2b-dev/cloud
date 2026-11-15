@@ -25,12 +25,13 @@ import { simulateCodeEvent } from "./event-preview";
 import { listCodeRunsWithEvents } from "./events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
 import { type CodePolicyRow, codePolicyRow } from "./policy-contracts";
+import { readCodeReview, waitCodeReview } from "./review";
 import { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
 import { startCodeRun } from "./scheduling";
 import { checkCodeSecretBinding, currentCodeSecretBindings, deleteCodeSecret, listCodeSecrets, setCodeSecret } from "./secrets";
 import { codeSourceHash, createCode, listCodes, readCode, readCodeRun, readCodeVersion } from "./store";
 import { simulateCode, testCode } from "./testing";
-import { codeVersionReadiness, diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion } from "./versions";
+import { codeVersionReadiness, diffCodeVersion, listCodeVersions, setCodePaused, submitCodeVersion, withdrawCodeVersion } from "./versions";
 
 /** Read every chunk of one immutable version through the existing permission-aware reader. */
 async function versionText(
@@ -177,6 +178,9 @@ async function check(input: CodeAuthoringInput<"check">, context: CodeContext, p
 }
 /** Shared CLI/chat service. Calls the same owning services as capabilities and never executes source in Core. */
 export const codeAuthoringServices = {
+  review: readCodeReview,
+  reviewWait: waitCodeReview,
+  withdraw: withdrawCodeVersion,
   async init(input: CodeAuthoringInput<"init">, context: CodeContext): Promise<CodeAuthoringData<"init">> {
     const user = codePerson(context, true);
     const code = await createCode({ title: input.title, owner: input.owner ?? { kind: "person", userId: user.id } }, context);

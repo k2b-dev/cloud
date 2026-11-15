@@ -5746,6 +5746,10 @@ export const mailCapabilities = localizeCapabilityErrors(
         icon: "ti ti-inbox",
         reader: "mailbox.read",
         access: {
+          managers: async ({ id, ...page }) => {
+            const scope = await resolvePublicResource("mailboxes", id);
+            return scope.ok ? mailboxAccess.listMailboxManagers(scope.data, page) : [];
+          },
           readable: async ({ id, principals }) => {
             const scope = await resolvePublicResource("mailboxes", id);
             return scope.ok ? mailboxAccess.readableMailboxPrincipals(scope.data, principals) : [];

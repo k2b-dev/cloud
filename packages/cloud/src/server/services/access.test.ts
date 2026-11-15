@@ -186,6 +186,15 @@ suite("listUsersWithAccess", () => {
       expect(writers.map((user) => user.id)).not.toContain(fixture.userIds.direct);
       expect(writers.map((user) => user.id)).toContain(fixture.userIds.group);
 
+      const paged: string[] = [];
+      let afterId = "00000000-0000-0000-0000-000000000000";
+      for (let page = 0; page < users.length + 1; page++) {
+        const next = await listUsersWithAccess({ accessIds: fixture.accessIds, afterId, limit: 1 });
+        if (!next.length) break;
+        paged.push(next[0]!.id);
+        afterId = next[0]!.id;
+      }
+      expect(paged).toEqual(users.map((user) => user.id).sort());
       const transactionalUsers = await sql.begin((tx) => listUsersWithAccess({ accessIds: fixture.accessIds, limit: 20, db: tx }));
       expect(transactionalUsers.map((user) => user.id)).toEqual(users.map((user) => user.id));
 

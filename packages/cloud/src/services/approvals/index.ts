@@ -1,11 +1,16 @@
 import type { SQL } from "bun";
+import { z } from "zod";
 import { approvalMessages } from "../../approvals/messages";
 import { capabilityRequestHash } from "../../capabilities/claims";
 import { presentReview } from "../../capabilities/legacy-review-view";
 import { restoreReviewSnapshot, serializeReviewSnapshot } from "../../capabilities/review-storage";
 import { APPROVAL_ACP_CLIENT } from "../../contracts/approvals";
 import type { CapabilityActionReviewData } from "../../contracts/capabilities";
-import { CapabilityActionReviewPresentationSchema, CloudResourceHrefSchema } from "../../contracts/capabilities";
+import {
+  CAPABILITY_MAX_REVIEW_BYTES,
+  CapabilityActionReviewPresentationSchema,
+  CloudResourceHrefSchema,
+} from "../../contracts/capabilities";
 import { sql } from "../../runtime/clients";
 import { isAppSessionActor, userFromActor } from "../../server/actor";
 import type { RequestActor, RequestAuthority, RequestCredentialKind } from "../../server/middleware/auth";
@@ -15,12 +20,15 @@ import { toPgTextArray } from "../postgres";
 import { ConfirmedBrowserSignInError, requireConfirmedBrowserSignIn } from "../session/recent";
 import { approvalAdminActor, hasApprovalRoleAccess } from "./authority";
 import { compactApprovalDetailsSql } from "./content";
+import { approvalDecisionHints } from "./hints";
 import { lockCodeAdminPopulation, soleCodeAdmin } from "./policy";
 
 export type { ApprovalRoleContext } from "./authority";
 export { readApprovalContent } from "./content";
+export { approvalDecisionHints } from "./hints";
 export { countPending, listPending, presentPendingApproval } from "./list";
 export { migrateApprovals } from "./migrate";
+export { listApprovalAdminRecipients } from "./policy";
 export { type ApprovalActionPolicy, loadApprovalActionPolicies, pendingApprovalCard } from "./question";
 
 // Derived from chat's AI_ACTION_BUDGET_MS and Studio's one-day abandonment of pending calls.
@@ -262,7 +270,12 @@ export class ApprovalDecisionConflictError<C extends string = string> extends Er
  * back both writes. Called exactly once for the winning decision, never on replay. No external effects belong here.
  * Copy `request.soleAdmin` into the domain decision and events; the platform approval rule alone decides the self-approval exception.
  */
-export type ApprovalDecisionHandler = (tx: SQL, request: ApprovalRequest, actor: ApprovalDecisionActor) => Promise<void>;
+export type ApprovalDecisionHandler = (tx: SQL, request: ApprovalRequest, actor: ApprovalDecisionActor, detail?: unknown) => Promise<void>;
+/** Kind-owned decision data is passive JSON, bounded by the ordinary capability review budget. */
+export const APPROVAL_DECISION_DETAIL_BYTES = CAPABILITY_MAX_REVIEW_BYTES;
+const decisionDetail = z
+  .json()
+  .refine((value) => Buffer.byteLength(JSON.stringify(value)) <= APPROVAL_DECISION_DETAIL_BYTES, "Decision detail is too large.");
 /** A person and their credential channel. Role decisions require request authority, or an active Cloud Login device. */
 export type ApprovalDecisionActor = { userId: string; via: ApprovalDecisionChannel; deviceId?: string; authority?: RequestAuthority };
 const decisionHandlers = new Map<"code_version", ApprovalDecisionHandler>();
@@ -280,10 +293,11 @@ export const registerApprovalDecisionHandler = (kind: "code_version", handler: A
 /** Decide once under the current recipient policy, recording the decider and the owner's transition atomically. */
 export const decide = async (
   id: string,
-  decision: { approved: boolean; remember?: "chat" | "always"; digest?: string },
+  decision: { approved: boolean; remember?: "chat" | "always"; digest?: string; detail?: unknown },
   actor: ApprovalDecisionActor,
   db?: SQL,
 ): Promise<ApprovalDecisionResult> => {
+  const detail = decision.detail === undefined ? undefined : decisionDetail.parse(decision.detail);
   const result = await transaction(db, async (tx): Promise<ApprovalDecisionResult> => {
     // Inspect the immutable recipient before locking. A self-approval locks the full admin population first,
     // before user/device/request locks, so concurrent promotion wins without a lock-upgrade deadlock.
@@ -371,6 +385,7 @@ export const decide = async (
               : CapabilityActionReviewPresentationSchema.parse(presentReview(restoreReviewSnapshot(won.details), true)),
         },
         actor,
+        detail,
       );
       await audit.record(
         {
@@ -408,7 +423,8 @@ export const decide = async (
       return { ok: true, status: row.status, replay: true };
     return { ok: false, code: "ALREADY_DECIDED", status: row.status };
   });
-  // Publish a later NATS decision hint only after the owning transaction commits.
+  // An explicitly supplied transaction belongs to the caller: it publishes after its own commit.
+  if (!db && ((result.ok && !result.replay) || (!result.ok && result.code === "EXPIRED"))) approvalDecisionHints.publish(id);
   return result;
 };
 

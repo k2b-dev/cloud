@@ -11,12 +11,12 @@ import { isAppSessionActor } from "@k2b/cloud/server";
 import { audit, canRepairAppAccess } from "@k2b/cloud/services";
 import { cancelResourceEventSubscriptions } from "@k2b/cloud/services/app-events";
 import {
-  APPROVAL_MAX_WAIT_MS,
   type ApprovalDecisionActor,
   ApprovalDecisionConflictError,
   type ApprovalRequest,
   approvalArgsDigest,
   approvalDecisionChannel,
+  approvalDecisionHints,
   approvalReviewDigest,
   approvals,
   codeVersionSoleAdminNotice,
@@ -33,6 +33,14 @@ import { CODE_EVENT_CONSUMER, syncCodeEventSubscriptions } from "./event-subscri
 import { readCodePolicyGroups, readCodePolicySnapshot, replaceCodePolicyCoverage, requireCodePolicyAdmin } from "./policy";
 import { codePolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
+import {
+  CODE_REVIEW_MAX_WAIT_MS,
+  type CodeReviewDecision,
+  CodeReviewDecisionSchema,
+  type CodeSubmissionOrigin,
+  CodeSubmissionOriginSchema,
+} from "./review-contracts";
+import { codeReviewEventPublisher } from "./review-events";
 import { createRunnerCodeTestingHost } from "./runner-jobs";
 import { validateCodeSecretBindings } from "./secrets";
 import { codeSettings } from "./settings";
@@ -59,6 +67,8 @@ import { codeVersionDiff } from "./version-diff";
 import { type CodeVersionEvidence, codeVersionEvidence, NO_TESTS_EVIDENCE, unavailableEvidence } from "./version-evidence";
 import { codeVersionMessages } from "./version-messages";
 
+/** Code review binds immutable hashes, so it may wait two weeks; Action approvals remain one day. */
+export const CODE_VERSION_APPROVAL_MAX_WAIT_MS = CODE_REVIEW_MAX_WAIT_MS;
 /** Stable refusal codes for CLI, chat tools and activation. Conflict details contain the current full comparison. */
 export type CodeVersionErrorCode =
   | "code_version_unavailable"
@@ -364,7 +374,7 @@ export async function submitCodeVersion(
           sentence: review.sentence.action,
           input: approvalCall(binding),
           review,
-          expiresInMs: APPROVAL_MAX_WAIT_MS,
+          expiresInMs: CODE_VERSION_APPROVAL_MAX_WAIT_MS,
         },
         tx,
       );
@@ -372,8 +382,10 @@ export async function submitCodeVersion(
       approvalId = asked.id;
       reviewDigest = approvalReviewDigest(review);
     }
-    await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest,evidence)
-      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest},${JSON.stringify(evidence)}::text::jsonb)`;
+    await tx`INSERT INTO code.version_submissions(version_id,code_id,binding,approval_id,review_digest,evidence,origin,locale)
+      VALUES(${version.id}::uuid,${code.id},${JSON.stringify(binding)}::text::jsonb,${approvalId}::uuid,${reviewDigest},${JSON.stringify(evidence)}::text::jsonb,${JSON.stringify(CodeSubmissionOriginSchema.parse(context.submissionOrigin ?? { kind: "cli" }))}::text::jsonb,${context.locale ?? "en"})`;
+    if (approvalId)
+      await tx`INSERT INTO code.review_notification_outbox(version_id,kind) VALUES(${version.id}::uuid,'submitted') ON CONFLICT DO NOTHING`;
     await audit.record(
       {
         action: "core.code.version.submitted",
@@ -385,7 +397,14 @@ export async function submitCodeVersion(
       },
       tx,
     );
-    return { version, binding, approvalId, status: approvalId ? "pending" : "submitted", decision: null };
+    return {
+      version,
+      binding,
+      approvalId,
+      status: approvalId ? "pending" : "submitted",
+      decision: null,
+      origin: CodeSubmissionOriginSchema.parse(context.submissionOrigin ?? { kind: "cli" }),
+    };
   });
 }
 /** Compare against the last approved or successfully activated version, including every row of every file. */
@@ -437,7 +456,7 @@ export async function readCodeVersionDiff(input: z.infer<typeof codeVersionContr
 async function submissionFor(codeId: string, versionId: string, context: CodeContext, db: SQL = sql): Promise<CodeVersionSubmission> {
   const { version } = await readCodeVersion({ codeId, versionId, offset: 0, length: 1 }, context);
   const [row] = await db<SubmissionRow[]>`
-    SELECT s.*,r.status,(r.expires_at>statement_timestamp()) AS unexpired,d.approved,d.sole_admin,d.decided_by,d.decided_at FROM code.version_submissions s
+    SELECT s.*,EXISTS(SELECT 1 FROM code.version_withdrawals w WHERE w.version_id=s.version_id) AS withdrawn,r.status,(r.expires_at>statement_timestamp()) AS unexpired,d.approved,d.outcome,d.comment,d.sole_admin,d.decided_by,d.decided_at FROM code.version_submissions s
       LEFT JOIN approvals.requests r ON r.id=s.approval_id LEFT JOIN code.version_decisions d ON d.version_id=s.version_id
       WHERE s.code_id=${codeId} AND s.version_id=${versionId}::uuid`;
   if (!row) throw new CodeDataError("NOT_FOUND", "Code submission not found.");
@@ -445,10 +464,14 @@ async function submissionFor(codeId: string, versionId: string, context: CodeCon
 }
 type SubmissionRow = {
   binding: CodeVersionBinding;
+  withdrawn: boolean;
+  origin: CodeSubmissionOrigin;
   approval_id: string | null;
   status: string | null;
   unexpired: boolean | null;
   approved: boolean | null;
+  outcome: CodeReviewDecision["outcome"] | null;
+  comment: string | null;
   sole_admin: boolean | null;
   decided_by: string | null;
   decided_at: Date | null;
@@ -459,25 +482,35 @@ function submissionReceipt(version: CodeVersion, row: SubmissionRow, context: Co
     version,
     binding: CodeVersionBindingSchema.parse(row.binding),
     approvalId: row.approval_id,
-    status:
-      row.approved === true
+    origin: row.origin,
+    status: row.withdrawn
+      ? "withdrawn"
+      : row.approved === true
         ? "approved"
         : row.approved === false
-          ? "rejected"
+          ? (row.outcome ?? "rejected")
           : row.approval_id === null
             ? "submitted"
             : row.status === "pending" && row.unexpired
               ? "pending"
               : row.status === "cancelled"
-                ? "cancelled"
+                ? "superseded"
                 : "expired",
     decision: row.decided_at
       ? {
           approved: row.approved === true,
+          outcome: row.outcome ?? (row.approved ? "approved" : "rejected"),
+          comment: row.comment,
           soleAdmin: row.sole_admin === true,
           decidedBy: row.decided_by,
           decidedAt: row.decided_at.toISOString(),
-          label: row.sole_admin ? t.soleAdmin : row.approved ? t.approved : t.rejected,
+          label: row.sole_admin
+            ? t.soleAdmin
+            : row.approved
+              ? t.approved
+              : row.outcome === "changes_requested"
+                ? t.changesRequested
+                : t.rejected,
         }
       : null,
   };
@@ -486,7 +519,7 @@ function submissionReceipt(version: CodeVersion, row: SubmissionRow, context: Co
 export async function listCodeVersions(input: z.infer<typeof codeVersionContracts.list.input>, context: CodeContext) {
   await readCode(input.codeId, context);
   const rows = await sql<(SubmissionRow & { version: unknown; number: number })[]>`
-    SELECT v.number,s.*,r.status,(r.expires_at>statement_timestamp()) AS unexpired,d.approved,d.sole_admin,d.decided_by,d.decided_at,
+    SELECT v.number,s.*,EXISTS(SELECT 1 FROM code.version_withdrawals w WHERE w.version_id=s.version_id) AS withdrawn,r.status,(r.expires_at>statement_timestamp()) AS unexpired,d.approved,d.outcome,d.comment,d.sole_admin,d.decided_by,d.decided_at,
       jsonb_build_object('id',v.id,'codeId',v.code_id,'number',v.number,
         'files',ARRAY(SELECT path FROM jsonb_object_keys(v.source_files) path ORDER BY path COLLATE "C"),
         'sourceHash',v.source_hash,'bundleHash',v.bundle_hash,'sourceBytes',v.source_bytes,'bundleBytes',v.bundle_bytes,
@@ -511,7 +544,21 @@ export async function listCodeVersions(input: z.infer<typeof codeVersionContract
 }
 
 /** C5 invokes this only for its winning decision. Both domain evidence and audit commit with the platform request. */
-export async function applyCodeVersionDecision(tx: SQL, request: ApprovalRequest, actor: ApprovalDecisionActor): Promise<void> {
+export async function applyCodeVersionDecision(
+  tx: SQL,
+  request: ApprovalRequest,
+  actor: ApprovalDecisionActor,
+  detail?: unknown,
+): Promise<void> {
+  const parsedDecision = CodeReviewDecisionSchema.safeParse(detail ?? { outcome: request.status === "approved" ? "approved" : "rejected" });
+  if (!parsedDecision.success)
+    throw new ApprovalDecisionConflictError(
+      "code_review_message_required",
+      "Write a message when rejecting or requesting changes on the Code review page.",
+    );
+  const decision = parsedDecision.data;
+  if ((decision.outcome === "approved") !== (request.status === "approved"))
+    throw new CodeDataError("BAD_INPUT", "Decision detail disagrees with the platform outcome.");
   const [submission] = await tx<
     { code_id: string; version_id: string; binding: CodeVersionBinding; review_digest: string | null }[]
   >`SELECT * FROM code.version_submissions WHERE approval_id=${request.id}::uuid`;
@@ -541,20 +588,27 @@ export async function applyCodeVersionDecision(tx: SQL, request: ApprovalRequest
   )
     throw new CodeVersionError("code_comparison_stale", "The reviewed version snapshot changed.");
   if (!request.decidedByUserId || !request.approverAuthEpoch) throw new CodeDataError("FORBIDDEN", "Decision evidence is missing.");
-  await tx`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,decided_device_id,auth_epoch)
-    VALUES(${version.id}::uuid,${JSON.stringify(binding)}::text::jsonb,${request.status === "approved"},${request.soleAdmin},${request.decidedByUserId}::uuid,${request.decidedVia},${request.decidedDeviceId}::uuid,${request.approverAuthEpoch}::bigint)`;
+  await tx`INSERT INTO code.version_decisions(version_id,binding,approved,outcome,comment,sole_admin,decided_by,decided_via,decided_device_id,auth_epoch)
+    VALUES(${version.id}::uuid,${JSON.stringify(binding)}::text::jsonb,${request.status === "approved"},${decision.outcome},${decision.comment ?? null},${request.soleAdmin},${request.decidedByUserId}::uuid,${request.decidedVia},${request.decidedDeviceId}::uuid,${request.approverAuthEpoch}::bigint)`;
+  const [number] = await tx<{ number: number }[]>`SELECT number FROM code.versions WHERE id=${version.id}::uuid`;
+  await codeReviewEventPublisher.publish(tx, "code.version.decided", {
+    subject: code.id,
+    place: code.id,
+    data: { codeId: code.id, versionId: version.id, number: number!.number, outcome: decision.outcome },
+  });
+  await tx`INSERT INTO code.review_notification_outbox(version_id,kind) VALUES(${version.id}::uuid,'decided') ON CONFLICT DO NOTHING`;
   await replaceCodePolicyCoverage(version.id, request.status === "approved" ? manifest.policyRows : [], tx);
   if (request.status === "approved") await recordCodeVersionBaseline(code.id, version.id, tx);
   await audit.record(
     {
-      action: `core.code.version.${request.status}`,
+      action: `core.code.version.${decision.outcome}`,
       outcome: "allowed",
       actor: { userId: actor.userId },
       target: { type: "code", id: code.id },
       reason: request.soleAdmin ? "self_approved_sole_admin" : null,
       metadata: {
         ...binding,
-        event: `version.${request.status}`,
+        event: `version.${decision.outcome}`,
         approvalId: request.id,
         sole_admin: request.soleAdmin,
         soleAdmin: request.soleAdmin,
@@ -567,8 +621,44 @@ export async function applyCodeVersionDecision(tx: SQL, request: ApprovalRequest
 /** Install once per Core replica during lifecycle start; dispose at stop. Decisions fail closed without this owner. */
 export const startCodeVersionApprovals = () => registerApprovalDecisionHandler("code_version", applyCodeVersionDecision);
 
+/** Withdrawal and decision acquire request then Code, like superseding submission. Neither can overtake the other. */
+export async function withdrawCodeVersion(input: { codeId: string; versionId: string }, context: CodeContext) {
+  const person = codePerson(context, true);
+  const { code } = await readCode(input.codeId, context);
+  await requireCodePermission(code, context, true);
+  const approvalId = await sql.begin(async (tx) => {
+    const [request] = await tx<{ id: string; status: string; unexpired: boolean }[]>`SELECT r.id,r.status,(r.expires_at>now()) AS unexpired
+      FROM code.version_submissions s JOIN approvals.requests r ON r.id=s.approval_id
+      WHERE s.code_id=${input.codeId} AND s.version_id=${input.versionId}::uuid FOR UPDATE OF r`;
+    await lockCodeForEdit(input.codeId, context, tx);
+    if (!request || request.status !== "pending" || !request.unexpired)
+      throw new CodeDataError("CONFLICT", "Only a pending review can be withdrawn.");
+    await tx`INSERT INTO code.version_withdrawals(version_id,withdrawn_by) VALUES(${input.versionId}::uuid,${person.id}::uuid)`;
+    await approvals.cancel([request.id], tx);
+    await audit.record(
+      {
+        action: "core.code.version.withdrawn",
+        outcome: "allowed",
+        actor: { userId: person.id },
+        target: { type: "code", id: input.codeId },
+        requestId: context.requestId,
+        metadata: { versionId: input.versionId, approvalId: request.id },
+      },
+      tx,
+    );
+    return request.id;
+  });
+  approvalDecisionHints.publish(approvalId);
+  return submissionFor(input.codeId, input.versionId, context);
+}
+
 /** Direct CLI/admin decision uses the same C5 policy and transactional handler as shared approval cards and devices. */
-export async function decideCodeVersion(raw: CodeVersionBinding, approved: boolean, context: CodeContext): Promise<CodeVersionSubmission> {
+export async function decideCodeVersion(
+  raw: CodeVersionBinding,
+  rawDecision: CodeReviewDecision,
+  context: CodeContext,
+): Promise<CodeVersionSubmission> {
+  const decision = CodeReviewDecisionSchema.parse(rawDecision);
   const input = CodeVersionBindingSchema.parse(raw);
   const person = requireCodePolicyAdmin(context, true);
   const submission = await submissionFor(input.codeId, input.versionId, context);
@@ -583,14 +673,17 @@ export async function decideCodeVersion(raw: CodeVersionBinding, approved: boole
   if (!submission.approvalId) throw new CodeDataError("CONFLICT", "This version does not have an approval request.");
   const result = await approvals.decide(
     submission.approvalId,
-    { approved },
+    {
+      approved: decision.outcome === "approved",
+      detail: { outcome: decision.outcome, ...(decision.comment ? { comment: decision.comment } : {}) },
+    },
     {
       userId: person.id,
       via: approvalDecisionChannel({ credentialKind: context.authority.credentialKind, actor: context.authority.actor }),
       authority: context.authority,
     },
   );
-  if (!result.ok) {
+  if (!result.ok && result.code !== "ALREADY_DECIDED") {
     switch (result.code) {
       case "SELF_APPROVAL":
       case "REAUTHENTICATE":
@@ -602,7 +695,16 @@ export async function decideCodeVersion(raw: CodeVersionBinding, approved: boole
     }
     throw new CodeDataError("CONFLICT", `Version decision refused: ${result.code}.`);
   }
-  return submissionFor(input.codeId, input.versionId, context);
+  const receipt = await submissionFor(input.codeId, input.versionId, context);
+  if (!receipt.decision) throw new CodeDataError("CONFLICT", `Version review is ${receipt.status}.`);
+  if (receipt.decision.outcome !== decision.outcome) {
+    const [user] = await sql<
+      { name: string }[]
+    >`SELECT COALESCE(NULLIF(display_name,''),uid) AS name FROM auth.users WHERE id=${receipt.decision?.decidedBy ?? null}::uuid`;
+    const { t } = messages(context);
+    throw new CodeDataError("CONFLICT", t.alreadyDecided({ name: user?.name ?? t.admin, outcome: receipt.decision.outcome }));
+  }
+  return receipt;
 }
 /** C9 calls only after a successful activation, in its Code-locked transaction. Approval uses it too.
  * This records the comparison baseline only; it grants no access, mandate or activation authority.
@@ -621,8 +723,11 @@ export async function requireCodeVersionApproval(code: Code, versionId: string, 
     throw new CodeVersionError("code_sends_not_yet", "Unattended sending is available in Phase 3.");
   if (manifest.policyRows.some((row) => row.startsWith("ask_")))
     throw new CodeVersionError("code_unattended_forbidden", "In diesem Release läuft das nicht unbeaufsichtigt.");
-  const [submission] = await db`SELECT version_id FROM code.version_submissions WHERE version_id=${versionId}::uuid`;
+  const [submission] = await db<
+    { withdrawn: boolean }[]
+  >`SELECT EXISTS(SELECT 1 FROM code.version_withdrawals w WHERE w.version_id=s.version_id) AS withdrawn FROM code.version_submissions s WHERE s.version_id=${versionId}::uuid`;
   if (!submission) throw new CodeVersionError("code_approval_required", "The version must be submitted first.");
+  if (submission.withdrawn) throw new CodeVersionError("code_approval_revoked", "This version was withdrawn.");
   const policy = await readCodePolicySnapshot(db);
   const membership = await readCodePolicyGroups(code.owner.kind === "person" ? code.owner.userId : version.created_by, db);
   const rows = manifest.policyRows.map((row) => effective(row, code.owner, policy.definition, membership));
@@ -767,25 +872,35 @@ export async function setCodePaused(codeId: string, paused: boolean, context: Co
 
 /** Use the exact platform snapshot for direct capability approval reviews too. */
 export async function reviewCodeVersionDecision(
-  input: CodeVersionBinding,
-  approved: boolean,
+  input: CodeVersionBinding & { comment?: string },
+  outcome: CodeReviewDecision["outcome"],
   context: CodeContext,
 ): Promise<CapabilityActionCallReview> {
+  CodeReviewDecisionSchema.parse({ outcome, comment: input.comment });
   const person = requireCodePolicyAdmin(context, true);
   const submission = await submissionFor(input.codeId, input.versionId, context);
-  if (!sameBinding(input, submission.binding) || !submission.approvalId)
+  const { comment, ...binding } = input;
+  if (!sameBinding(binding, submission.binding) || !submission.approvalId)
     throw new CodeVersionError("code_comparison_stale", "Review does not match the submitted version.");
   const request = await approvals.get(submission.approvalId);
   if (!request?.details || !("sentence" in request.details)) throw new CodeDataError("CONFLICT", "Version review is unavailable.");
   const notice = await codeVersionSoleAdminNotice(request, person.id, context.authority, context.locale);
-  const details = notice ? { ...request.details, consequences: [{ text: notice }] } : request.details;
-  if (approved) return details;
+  const consequences = [
+    ...(request.details.consequences ?? []),
+    ...(notice ? [{ text: notice }] : []),
+    ...(comment ? [{ text: comment }] : []),
+  ];
+  const details = { ...request.details, ...(consequences.length ? { consequences } : {}) };
+  if (outcome === "approved") return details;
   const { t, locale } = messages(context);
   const { code } = await readCode(input.codeId, context);
   return {
     ...details,
     slots: { code: codeReviewSlot(code), version: { kind: "text", value: input.versionId } },
     locale,
-    sentence: { action: t.rejectAction, running: t.rejectRunning, done: t.rejectDone, confirm: t.decline, decline: t.keepPending },
+    sentence:
+      outcome === "changes_requested"
+        ? { action: t.changesAction, running: t.changesRunning, done: t.changesDone, confirm: t.changesConfirm, decline: t.keepPending }
+        : { action: t.rejectAction, running: t.rejectRunning, done: t.rejectDone, confirm: t.decline, decline: t.keepPending },
   };
 }

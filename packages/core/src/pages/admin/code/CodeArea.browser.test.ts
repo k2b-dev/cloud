@@ -127,9 +127,15 @@ test("rejecting asks first and cancel changes nothing", async () => {
   await dialog.getByRole("button", { name: "Abbrechen" }).click();
   expect(fixture.requests).toHaveLength(0);
   await page.getByRole("button", { name: "Ablehnen …" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("textbox", { name: "Nachricht an die einreichende Person" })
+    .fill("Bitte die Schreibrechte begrenzen.");
   await page.getByRole("dialog").getByRole("button", { name: "Version ablehnen" }).click();
   await page.getByText("Version 3 ist abgelehnt.").waitFor();
-  expect(fixture.requests).toEqual([{ path: "decide", body: { binding: fixtureApprovalDetail().binding, approved: false } }]);
+  expect(fixture.requests).toEqual([
+    { path: "decide", body: { binding: fixtureApprovalDetail().binding, approved: false, comment: "Bitte die Schreibrechte begrenzen." } },
+  ]);
   await page.waitForLoadState("load");
   await page.getByText("Version 3 ist abgelehnt.").waitFor();
   expect(await sidebarCode().innerText()).toContain("3");

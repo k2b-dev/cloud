@@ -209,7 +209,16 @@ export async function codeAreaBrowserFixture(options: { port?: number } = {}) {
           binding: detail.binding,
           status: decision ? "approved" : "rejected",
           approvalId: detail.approvalId,
-          decision: { approved: Boolean(decision), decidedBy: user.id, decidedAt: "2026-11-01T12:20:00.000Z", soleAdmin: false, label: "" },
+          origin: { kind: "cli" },
+          decision: {
+            approved: Boolean(decision),
+            outcome: decision ? "approved" : "rejected",
+            comment: body && typeof body === "object" && "comment" in body ? body.comment : null,
+            decidedBy: user.id,
+            decidedAt: "2026-11-01T12:20:00.000Z",
+            soleAdmin: false,
+            label: "",
+          },
         },
       });
     }

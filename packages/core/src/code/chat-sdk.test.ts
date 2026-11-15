@@ -62,13 +62,21 @@ test("the index names every app export, method and automation event with its pol
 
 test(`the index plus the declarations of any ${CODE_CHAT_SDK_APPS} apps fit the tool result budget of a 128k model`, () => {
   const index = codeChatSdkView(manifests, { mode: "personal" });
+  // Rank each app with its own catalog rather than regenerating the complete catalog for every app.
   const declarations = manifests
-    .map((manifest) => size(codeChatSdkView(manifests, { mode: "personal" }, [manifest.appId])))
-    .sort((a, b) => b - a);
+    .map((manifest) => ({ appId: manifest.appId, size: size(codeChatSdkView([manifest], { mode: "personal" }, [manifest.appId])) }))
+    .sort((a, b) => b.size - a.size);
+  const largestApps = declarations.slice(0, CODE_CHAT_SDK_APPS);
   const shared = size(codeChatSdkView(manifests, { mode: "personal" }, []));
   // Each further app adds its own declarations on top of the shared ones.
-  const largest = shared + declarations.slice(0, CODE_CHAT_SDK_APPS).reduce((sum, value) => sum + value - shared, 0);
+  const largest = shared + largestApps.reduce((sum, value) => sum + value.size - shared, 0);
   expect(size(index) + largest).toBeLessThanOrEqual(budget);
+  const combined = codeChatSdkView(
+    manifests,
+    { mode: "personal" },
+    largestApps.map((app) => app.appId),
+  );
+  expect(size(index) + size(combined)).toBeLessThanOrEqual(budget);
 });
 
 test("declarations cover the requested apps, the shared app, page and event types, and accept export names", () => {

@@ -72,6 +72,8 @@ test("shows built-in tools by their localized name and other tools by their name
   expect(displayToolName("code_import", "de")).toBe("App-Dateien importieren");
   expect(displayToolName("code_check", "en")).toBe("Checks the Code");
   expect(displayToolName("code_check", "de")).toBe("Prüft den Code");
+  expect(displayToolName("code_review", "en")).toBe("Reads the review feedback");
+  expect(displayToolName("code_review", "de")).toBe("Liest die Rückmeldung");
   expect(displayToolName("view_image", "de-AT")).toBe("Bild ansehen");
   expect(displayToolName("suggest_next_message", "en")).toBe("Suggest next message");
   expect(displayToolName("suggest_next_message", "de")).toBe("Nächste Nachricht vorschlagen");

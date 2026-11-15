@@ -69,6 +69,8 @@ import {
   CloudResourceViewSchema,
   capabilityActionPolicy,
   capabilityResultSchema,
+  ResourceManagersDataSchema,
+  ResourceManagersInputSchema,
   ResourceReadableDataSchema,
   ResourceReadableInputSchema,
   UniversalSearchDataSchema,
@@ -834,6 +836,31 @@ export const compileCapabilities = (
     if (Object.hasOwn(definition, "appOnly")) throw new Error(`Query ${localId}: appOnly is reserved for platform-generated reader checks`);
   const generated: Record<string, AppQueryDefinition> = {};
   for (const [localId, type] of Object.entries(definitions.types ?? {})) {
+    const managers = type.access?.managers;
+    if (managers) {
+      const queryId = `${localId}.managers`;
+      if (Object.hasOwn(definitions.queries ?? {}, queryId)) throw new Error(`Generated Query ${queryId} collides with a declared Query`);
+      generated[queryId] = {
+        title: "Resolve resource notification managers",
+        description: `Resolve current human managers of ${type.title} for background notices without impersonating them.`,
+        input: ResourceManagersInputSchema,
+        data: ResourceManagersDataSchema,
+        openWorld: false,
+        appOnly: true,
+        run: async (value: unknown, context) => {
+          if (!isAppCapabilityContext(context))
+            return { ok: false, error: { code: "FORBIDDEN", message: "App authority required", status: 403 } };
+          const input = ResourceManagersInputSchema.parse(value);
+          const userIds = [...new Set(await managers(input, context))];
+          if (
+            userIds.length > input.limit ||
+            userIds.some((id) => (input.afterId && id <= input.afterId) || (input.userId && id !== input.userId))
+          )
+            throw new Error(`Resource type ${localId} managers returned an invalid page`);
+          return { ok: true, data: { data: ResourceManagersDataSchema.parse({ userIds: userIds.sort() }) } };
+        },
+      };
+    }
     const readable = type.access?.readable ?? eventPlaceReader(definitions, localId);
     if (!readable) continue;
     const queryId = `${localId}.readable`;

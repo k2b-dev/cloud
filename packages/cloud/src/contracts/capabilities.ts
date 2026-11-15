@@ -183,6 +183,16 @@ export const ResourceReadableInputSchema = z
   .strict();
 export type ResourceReadableInput = z.output<typeof ResourceReadableInputSchema>;
 export const ResourceReadableDataSchema = z.object({ readable: z.array(ResourcePrincipalSchema).max(500) }).strict();
+/** Bounded audience of current human resource managers, for app-owned background notifications. */
+export const ResourceManagersInputSchema = z
+  .object({
+    id: CloudResourceRefSchema.shape.id,
+    afterId: z.uuid().optional().describe("Exclusive last user UUID from the preceding page; results are ordered by UUID."),
+    userId: z.uuid().optional().describe("Check only this recipient again immediately before delivery."),
+    limit: z.number().int().min(1).max(50).default(50).describe("Maximum current human managers in this page."),
+  })
+  .strict();
+export const ResourceManagersDataSchema = z.object({ userIds: z.array(z.uuid()).max(50) }).strict();
 
 // Consumer permalinks may encode all 512 UTF-16 units of an id (up to 4,608 characters).
 export const CloudResourceHrefSchema = z.string().min(1).max(8192).regex(CLOUD_PATH_PATTERN);
@@ -745,6 +755,11 @@ export type CapabilityResourceTypeDefinition = {
   /** Local type in the same application. Describes containment, never inherited authority. */
   container?: string;
   access?: {
+    /** Enumerate a bounded page of human managers from current domain grants; never read resource content. */
+    managers?: (
+      input: z.output<typeof ResourceManagersInputSchema>,
+      context: CapabilityAppExecutionContext,
+    ) => readonly string[] | Promise<readonly string[]>;
     /** Return only readable input principals, using current grants and account status, never credential scopes. */
     readable?: (
       input: ResourceReadableInput,

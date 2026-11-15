@@ -7,7 +7,7 @@ import type { CodePageRefusal } from "@k2b/cloud/ssr/code-page/data";
 import { catalogCache, presentRefusedCall } from "@k2b/cloud/ssr/code-page/load";
 import { diffArrays } from "diff";
 import { z } from "zod";
-import { type CodeContext, CodeDataError } from "./access";
+import { type CodeContext, CodeDataError, CodeOwnerUnavailableError, readCodeOwner } from "./access";
 import { type CodeAutomationView, describeCodeAutomations } from "./automation-view";
 import type { Code, CodeOwner, CodeRun, CodeSourceFiles } from "./contracts";
 import { type CodeDatabaseUsage, readCodeDatabaseUsage } from "./database";
@@ -24,6 +24,8 @@ import {
   CodePolicyValueSchema,
 } from "./policy-contracts";
 import { effective } from "./policy-effective";
+import { readCodeReviewComments } from "./review-comments";
+import type { CodeReviewComment, CodeSubmissionOrigin } from "./review-contracts";
 import { readCodeRunnerMetrics } from "./scheduling";
 import type { CodeRunnerMetrics } from "./scheduling-contracts";
 import { listCodeRuns, readCodeRun } from "./store";
@@ -35,6 +37,7 @@ import {
   type CodeVersionDiffFile,
 } from "./version-contracts";
 import { type CodeVersionEvidence, CodeVersionEvidenceSchema } from "./version-evidence";
+import { codeVersionMessages } from "./version-messages";
 import { diffCodeVersion, listCodeVersions } from "./versions";
 
 /**
@@ -50,7 +53,12 @@ export type CodeAdminApproval = {
   versionId: string;
   number: number;
   title: string;
-  author: { id: string | null; name: string | null };
+  author: { id: string | null; name: string | null; avatarHash?: string | null };
+  owner?: CodeOwner;
+  ownerName?: string | null;
+  /** The strictest changed classification needing an admin, as a complete sentence. */
+  mainChange?: string;
+  reason?: { row: CodePolicyRow; label: string } | null;
   submittedAt: string;
   /** Classifications of this version that currently need a Cloud admin for its author or owner. */
   rows: CodePolicyRow[];
@@ -76,10 +84,20 @@ export type CodeAdminPermissionChange = {
 export type CodeAdminWhyRow = { row: CodePolicyRow; source: "default" | "group" | "veto"; groups: string[] };
 export type CodeAdminApprovalDetail = {
   approvalId: string | null;
-  status: "submitted" | "pending" | "approved" | "rejected" | "expired" | "cancelled";
+  status: import("./version-contracts").CodeVersionSubmission["status"];
   code: Pick<Code, "id" | "title" | "owner" | "state">;
   /** The person, or the place as its type's reader names it for this admin; null when it cannot be read. */
   ownerName: string | null;
+  origin?: CodeSubmissionOrigin;
+  comments?: { items: CodeReviewComment[]; nextBefore: string | null; total: number };
+  previousChangesRequest?: {
+    versionId: string;
+    number: number;
+    message: string;
+    comments: CodeReviewComment[];
+    nextBefore: string | null;
+  } | null;
+  activeVersion?: { id: string; number: number } | null;
   version: { id: string; number: number; submittedAt: string; author: { id: string | null; name: string | null } };
   binding: CodeVersionBinding;
   comparison: { versionId: string; number: number; decidedAt: string | null; decidedBy: string | null } | null;
@@ -250,6 +268,7 @@ export async function listCodeAdminApprovals(
       owner_app_id: string | null;
       author_id: string | null;
       author_name: string | null;
+      author_avatar: string | null;
       created_at: Date;
       cursor_time: string;
       source_files: CodeSourceFiles;
@@ -257,7 +276,7 @@ export async function listCodeAdminApprovals(
       comparison_files: CodeSourceFiles | null;
     }[]
   >`SELECT to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_time,s.approval_id,s.code_id,s.version_id,v.number,c.title,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
-      v.created_by AS author_id,COALESCE(NULLIF(u.display_name,''),u.uid) AS author_name,r.created_at,v.source_files,v.manifest,
+      v.created_by AS author_id,COALESCE(NULLIF(u.display_name,''),u.uid) AS author_name,u.avatar_hash AS author_avatar,r.created_at,v.source_files,v.manifest,
       cmp.source_files AS comparison_files
     FROM code.version_submissions s JOIN approvals.requests r ON r.id=s.approval_id
       JOIN code.versions v ON v.id=s.version_id JOIN code.codes c ON c.id=s.code_id
@@ -271,15 +290,22 @@ export async function listCodeAdminApprovals(
   for (const row of rows.slice(0, PAGE)) {
     const owner = ownerOf(row);
     const manifest = parseManifest(row.manifest);
+    const why = manifest ? await whyRows(owner, row.author_id, manifest.policyRows) : [];
+    const strictest = [...why].sort((a, b) => CODE_POLICY_ROWS.indexOf(b.row) - CODE_POLICY_ROWS.indexOf(a.row))[0];
+    const texts = codeVersionMessages.resolve(context.locale ? [context.locale] : []).t;
     items.push({
+      owner,
+      ownerName: owner.kind === "person" ? await userName(owner.userId) : await reviewOwnerName(owner, context),
+      mainChange: strictest ? texts.reviewReason({ row: strictest.row }) : texts.reviewRequired,
+      reason: strictest ? { row: strictest.row, label: texts.reviewRequired } : null,
       approvalId: row.approval_id,
       codeId: row.code_id,
       versionId: row.version_id,
       number: row.number,
       title: row.title,
-      author: { id: row.author_id, name: row.author_name },
+      author: { id: row.author_id, name: row.author_name, avatarHash: row.author_avatar },
       submittedAt: iso(row.created_at),
-      rows: manifest ? (await whyRows(owner, row.author_id, manifest.policyRows)).map((why) => why.row) : [],
+      rows: why.map((item) => item.row),
       stat: codeAdminDiffStat(row.comparison_files, row.source_files, deadline),
     });
   }
@@ -397,14 +423,21 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
       request_status: string | null;
       unexpired: boolean | null;
       approved: boolean | null;
+      outcome: "approved" | "changes_requested" | "rejected" | null;
+      comment: string | null;
+      withdrawn: boolean;
+      origin: CodeSubmissionOrigin;
+      author_avatar: string | null;
       sole_admin: boolean | null;
       decided_by: string | null;
       decided_at: Date | null;
     })[]
   >`SELECT c.id AS code_id,c.title,c.state,c.owner_kind,c.owner_user_id,c.owner_type,c.owner_id,c.owner_app_id,
-      v.number,v.created_by,v.created_at,v.manifest,s.binding,s.evidence,s.approval_id,r.status AS request_status,
+      v.number,v.created_by,v.created_at,v.manifest,s.binding,s.evidence,s.approval_id,s.origin,
+      (SELECT avatar_hash FROM auth.users WHERE id=v.created_by) AS author_avatar,
+      EXISTS(SELECT 1 FROM code.version_withdrawals w WHERE w.version_id=v.id) AS withdrawn,r.status AS request_status,
       (SELECT e.text FROM code.version_explanations e WHERE e.version_id=v.id AND e.locale=${context.locale ?? ""}) AS explanation,(r.expires_at>now()) AS unexpired,
-      d.approved,d.sole_admin,d.decided_by,d.decided_at
+      d.approved,d.outcome,d.comment,d.sole_admin,d.decided_by,d.decided_at
     FROM code.versions v JOIN code.codes c ON c.id=v.code_id JOIN code.version_submissions s ON s.version_id=v.id
       LEFT JOIN approvals.requests r ON r.id=s.approval_id LEFT JOIN code.version_decisions d ON d.version_id=v.id
     WHERE v.id=${versionId}::uuid`;
@@ -453,22 +486,46 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
   const comparedOperations = (comparisonEvidence?.trial?.calls ?? []).map((call) => ({ operation: call.operation, target: null }));
   const [authorName, ownerName, decidedByName] = await Promise.all([
     userName(row.created_by),
-    owner.kind === "person" ? userName(owner.userId) : Promise.resolve(null),
+    owner.kind === "person" ? userName(owner.userId) : reviewOwnerName(owner, context),
     userName(row.decided_by),
   ]);
+  const [previous] = await sql<{ version_id: string; number: number; comment: string }[]>`SELECT d.version_id,v.number,d.comment
+    FROM code.version_decisions d JOIN code.versions v ON v.id=d.version_id
+    WHERE v.code_id=${row.code_id} AND v.number=(SELECT max(number) FROM code.versions WHERE code_id=${row.code_id} AND number<${row.number}) AND d.outcome='changes_requested' AND d.decided_by=${admin.id}::uuid
+    ORDER BY v.number DESC LIMIT 1`;
+  const previousComments = previous
+    ? await readCodeReviewComments({ codeId: row.code_id, versionId: previous.version_id, limit: 20 }, false)
+    : null;
+  const [active] = await sql<
+    { id: string; number: number }[]
+  >`SELECT v.id,v.number FROM code.codes c JOIN code.versions v ON v.id=c.active_version_id WHERE c.id=${row.code_id}`;
   return {
+    origin: row.origin,
+    comments: await readCodeReviewComments({ codeId: row.code_id, versionId, limit: 20 }, true),
+    activeVersion: active ?? null,
+    previousChangesRequest:
+      previous && previousComments
+        ? {
+            versionId: previous.version_id,
+            number: previous.number,
+            message: previous.comment,
+            comments: previousComments.items,
+            nextBefore: previousComments.nextBefore,
+          }
+        : null,
     approvalId: row.approval_id,
-    status:
-      row.approved === true
+    status: row.withdrawn
+      ? "withdrawn"
+      : row.approved === true
         ? "approved"
         : row.approved === false
-          ? "rejected"
+          ? (row.outcome ?? "rejected")
           : row.approval_id === null
             ? "submitted"
             : pending
               ? "pending"
               : row.request_status === "cancelled"
-                ? "cancelled"
+                ? "superseded"
                 : "expired",
     code: { id: row.code_id, title: row.title, owner, state: row.state },
     ownerName,
@@ -503,6 +560,8 @@ export async function readCodeAdminApproval(versionId: string, context: CodeCont
     decision: row.decided_at
       ? {
           approved: row.approved === true,
+          outcome: row.outcome ?? (row.approved ? "approved" : "rejected"),
+          comment: row.comment,
           soleAdmin: row.sole_admin === true,
           decidedBy: row.decided_by,
           decidedAt: iso(row.decided_at),
@@ -899,4 +958,14 @@ export async function readCodeAdminPolicyHistory(context: CodeContext, limit = 1
       ),
     };
   });
+}
+
+/** An unavailable owner must not hide the Code review; omit its name until its authorized reader answers. */
+async function reviewOwnerName(owner: CodeOwner, context: CodeContext) {
+  try {
+    return (await readCodeOwner(owner, context))?.title ?? null;
+  } catch (error) {
+    if (error instanceof CodeOwnerUnavailableError) return null;
+    throw error;
+  }
 }

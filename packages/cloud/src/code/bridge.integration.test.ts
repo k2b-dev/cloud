@@ -1566,8 +1566,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await error({}, "code_mandate_mismatch", 409);
   });
   test("a revoked administrator approval refuses calls", async () => {
-    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
-      SELECT version_id,binding,true,false,${userId}::uuid,'session',-1 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,outcome,sole_admin,decided_by,decided_via,auth_epoch)
+      SELECT version_id,binding,true,'approved',false,${userId}::uuid,'session',-1 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await error({}, "code_approval_revoked", 403);
     await expectPolicyRefusal("approval");
   });
@@ -1616,8 +1616,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await expectPolicyRefusal("approval");
   });
   test("an existing version approval cannot cover an omitted actual classification", async () => {
-    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
-      SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,outcome,sole_admin,decided_by,decided_via,auth_epoch)
+      SELECT version_id,binding,true,'approved',false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'silent_shared')`;
     await sql`UPDATE code.policy_rules SET value='admin' WHERE row='read' AND group_id IS NULL`;
     await error({ operation: "example.read" }, "code_approval_required", 403);
@@ -1630,8 +1630,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await expectPolicyRefusal("approval");
   });
   test("a changed decision binding is refused without reading executable payloads", async () => {
-    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
-      SELECT version_id,jsonb_set(binding,'{bundleHash}',to_jsonb(${"b".repeat(64)}::text)),true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,outcome,sole_admin,decided_by,decided_via,auth_epoch)
+      SELECT version_id,jsonb_set(binding,'{bundleHash}',to_jsonb(${"b".repeat(64)}::text)),true,'approved',false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await error({}, "code_hash_mismatch", 409);
     await expectPolicyRefusal("approval");
   });
@@ -1714,8 +1714,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
         );
       expect(await (await call()).json()).toEqual({ ok: false, error: { code: "code_approval_required", status: 403 } });
       expect(executed).toBe(0);
-      await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
-        SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+      await sql`INSERT INTO code.version_decisions(version_id,binding,approved,outcome,sole_admin,decided_by,decided_via,auth_epoch)
+        SELECT version_id,binding,true,'approved',false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
       if (row === "internet") {
         expect(await (await call()).json()).toEqual({ ok: false, error: { code: "code_approval_required", status: 403 } });
         expect(executed).toBe(0);
@@ -1732,8 +1732,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   ] as const)
     test(`an approved version declaring ${scenario.rows.join(",")} still refuses ${scenario.operation} at the bridge`, async () => {
       await resetFixture({ entry: true, policyRows: [...scenario.rows] });
-      await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
-        SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+      await sql`INSERT INTO code.version_decisions(version_id,binding,approved,outcome,sole_admin,decided_by,decided_via,auth_epoch)
+        SELECT version_id,binding,true,'approved',false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
       const call = { capability: scenario.operation, target: item, refs: {}, input: {} };
       await error(
         {
@@ -1948,8 +1948,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     await sql`UPDATE code.policy_rules SET value='admin' WHERE group_id IS NULL`;
     await error({ operation: "example.read" }, "code_approval_required", 403);
     await error({}, "code_approval_required", 403);
-    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
-      SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,outcome,sole_admin,decided_by,decided_via,auth_epoch)
+      SELECT version_id,binding,true,'approved',false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'silent_shared')`;
     expect(await (await send()).json()).toEqual({ ok: true, data: { value: "a" } });
     await error({ operation: "example.read" }, "code_approval_required", 403);
@@ -2630,8 +2630,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
       ok: false,
       error: { code: "code_approval_required", status: 403 },
     });
-    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
-      SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+    await sql`INSERT INTO code.version_decisions(version_id,binding,approved,outcome,sole_admin,decided_by,decided_via,auth_epoch)
+      SELECT version_id,binding,true,'approved',false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
     await sql`INSERT INTO code.policy_coverage(version_id,row) VALUES(${claims.versionId}::uuid,'read')`;
     expect(await invoke("example.read")).toEqual(await (await send({ operation: "example.read" })).json());
     expect(await invoke("example.asks")).toMatchObject({ ok: false, error: { code: "code_unattended_forbidden", status: 403 } });
@@ -3045,8 +3045,8 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   test("asking Actions remain forbidden unattended", async () => error({ operation: "example.asks" }, "code_unattended_forbidden", 403));
   for (const operation of ["removes", "sends", "interactive"]) {
     test(`${operation} remains forbidden under an approved Code version`, async () => {
-      await sql`INSERT INTO code.version_decisions(version_id,binding,approved,sole_admin,decided_by,decided_via,auth_epoch)
-        SELECT version_id,binding,true,false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
+      await sql`INSERT INTO code.version_decisions(version_id,binding,approved,outcome,sole_admin,decided_by,decided_via,auth_epoch)
+        SELECT version_id,binding,true,'approved',false,${userId}::uuid,'session',0 FROM code.version_submissions WHERE version_id=${claims.versionId}::uuid`;
       const capability = `example.${operation}`;
       const call = { capability, target: item, refs: {}, input: {} };
       await error(
