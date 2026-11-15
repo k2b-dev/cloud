@@ -36,6 +36,9 @@ export function openCodeReviewDialog(input: CodeReviewDialogInput): Promise<bool
   let field: HTMLElement | undefined;
   return dialogCore.open<boolean>(
     (close, context) => {
+      // The dialog opens from a button inside the approval, which carries the AI colour. The decision itself is
+      // Cloud's administration, not AI: it keeps the page's own colours (v12, picture 49).
+      queueMicrotask(() => context.dialog.removeAttribute("data-k2b-primary"));
       const errorId = `code-review-dialog-error-${createUniqueId()}`;
       const [text, setText] = createSignal(input.draft);
       const [error, setError] = createSignal<string | null>(null);
