@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
-import { bindView, validateBlocks } from "@k2b/cloud/blocks";
+import { bindView, blocksText, validateBlocks } from "@k2b/cloud/blocks";
 import { capabilityReviewRememberScope, capabilityReviewView } from "@k2b/cloud/capabilities";
 import { capabilityCallFromTool } from "@k2b/cloud/capabilities/server";
 import {
@@ -50,6 +50,14 @@ import {
 import type { SpaceAssignableUser, SpaceComment, SpaceItem, SpaceItemTemplate, SpaceTag } from "./contracts";
 import { spacesService } from "./service";
 import { type ResourceTable, spacesPublicResources } from "./service/public-resources";
+
+/** A review as people read it: its view's text, then its consequences such as "Deadline: {at}". */
+const reviewText = (result: unknown): string => {
+  const data = result && typeof result === "object" && "data" in result ? (result as { data: unknown }).data : undefined;
+  const review = CapabilityActionCallReviewSchema.parse(data);
+  const view = review.view ? blocksText(bindView(review.view, {}).blocks, { locale: review.locale, timeZone: "UTC" }) : "";
+  return [view, ...(review.consequences ?? []).map((consequence) => consequence.text)].join("\n");
+};
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const serviceAccountId = "22222222-2222-4222-8222-222222222222";
@@ -1333,8 +1341,9 @@ describe("spaces capabilities", () => {
       const result = await spacesCapabilities.actions["task.update"].review({ itemId, assigneeIds: [serviceAccountId] }, userContext);
       expect(result).toMatchObject({
         ok: true,
-        data: { ask: "involves_people", view: { blocks: [{ kind: "Text", text: expect.stringContaining("Assignees: Zebra helper") }] } },
+        data: { ask: "involves_people" },
       });
+      expect(reviewText(result)).toContain("Assignees: Zebra helper");
       expect(lookup).toHaveBeenCalledWith({ spaceId: spaceUuid, ids: [serviceAccountId], limit: 100 });
       expect(JSON.stringify(result)).not.toContain(serviceAccountId);
     });
@@ -1350,9 +1359,9 @@ describe("spaces capabilities", () => {
       ok: true,
       data: {
         ask: "involves_people",
-        view: { blocks: [{ kind: "Text", text: expect.stringContaining("Assignees: Unavailable assignee") }] },
       },
     });
+    expect(reviewText(result)).toContain("Assignees: Unavailable assignee");
     expect(JSON.stringify(result)).not.toContain(serviceAccountId);
   });
 
@@ -1375,13 +1384,13 @@ describe("spaces capabilities", () => {
     expect(JSON.stringify(result)).toContain("90 minutes");
     expect(result).toMatchObject({
       ok: true,
-      data: {
-        scope: `space:${spaceId}`,
-        view: { blocks: [{ kind: "Text", text: expect.stringContaining("Description: First line\n\nSecond line") }] },
-      },
+      data: { scope: `space:${spaceId}` },
     });
+    // The description reads as Markdown under its label; the deadline is a consequence the reader's zone formats.
+    expect(reviewText(result)).toContain("Description\nFirst line\n\nSecond line");
+    expect(reviewText(result)).toContain("Deadline: {at}");
     const allDay = await spacesCapabilities.actions["task.update"].review!({ itemId, deadline: "2026-10-24" }, userContext);
-    expect(allDay.ok && JSON.stringify(CapabilityActionCallReviewSchema.parse(allDay.data).view)).toContain("Deadline: 2026-10-24");
+    expect(allDay.ok && JSON.stringify(CapabilityActionCallReviewSchema.parse(allDay.data).consequences)).toContain("2026-10-24");
     const german = await spacesCapabilities.actions["task.update"].review!(
       { itemId, description: null, estimatedDurationMinutes: 90 },
       { ...userContext, locale: "de-CH" },
@@ -1392,9 +1401,9 @@ describe("spaces capabilities", () => {
       data: {
         locale: "de",
         sentence: { action: "Aufgabe {item} ändern" },
-        view: { blocks: [{ kind: "Text", text: expect.stringContaining("Beschreibung entfernen") }] },
       },
     });
+    expect(reviewText(german)).toContain("Beschreibung entfernen");
   });
 
   test("task policies allow unattended shared changes and retain per-call confirmation", async () => {
@@ -1426,13 +1435,12 @@ describe("spaces capabilities", () => {
       expect(structuredClone(long)).toMatchObject({
         ok: true,
         data: {
-          view: { blocks: [{ kind: "Text", text: expect.stringContaining(description) }] },
           consequences: [{ slots: { at: { kind: "time", start: "2026-08-20T15:00:00.000Z", format: "date-time" } } }],
         },
       });
+      expect(reviewText(long)).toContain(description);
       if (long.ok) {
         const view = capabilityReviewView(long.data, { timeZone: "Europe/Berlin" });
-        expect(JSON.stringify(view)).toContain("2026-08-20T15:00:00.000Z");
         expect(view).not.toEqual(capabilityReviewView(long.data, { timeZone: "UTC" }));
       }
     }
@@ -1450,8 +1458,9 @@ describe("spaces capabilities", () => {
     ]) {
       expect(structuredClone(reviewed)).toMatchObject({
         ok: true,
-        data: { view: { blocks: [{ kind: "Text", text: expect.stringContaining(description) }] } },
+        data: {},
       });
+      expect(reviewText(reviewed)).toContain(description);
       if (reviewed.ok) {
         expect(capabilityReviewRememberScope(reviewed.data, "rememberable")).toBe(`space:${spaceId}`);
         expect(capabilityReviewView(reviewed.data, { timeZone: "UTC" }).details).toContainEqual(
@@ -1476,9 +1485,9 @@ describe("spaces capabilities", () => {
       data: {
         scope: `space:${spaceId}`,
         sentence: { action: "Create task {item}" },
-        view: { blocks: [{ kind: "Text", text: expect.stringContaining("Deadline: 2026-10-20T09:00:00.000Z") }] },
       },
     });
+    expect(reviewText(plain)).toContain("Deadline: ");
     expect(plain.ok && "ask" in plain.data).toBeFalse();
     for (const [input, ask] of [
       [{ columnId: "Col001", title: "Prepare launch", assigneeIds: [userId] }, "involves_people"],
@@ -1510,8 +1519,9 @@ describe("spaces capabilities", () => {
     );
     expect(link).toMatchObject({
       ok: true,
-      data: { scope: `space:${spaceId}`, view: { blocks: [{ kind: "Text", text: expect.stringContaining("Incoming mail") }] } },
+      data: { scope: `space:${spaceId}` },
     });
+    expect(reviewText(link)).toContain("Incoming mail");
     expect(link.ok && "ask" in link.data).toBeFalse();
     spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
     expect((await create({ columnId: "Col001", title: "Prepare launch" }, userContext)).ok).toBeFalse();
@@ -1881,8 +1891,9 @@ describe("spaces capabilities", () => {
     const review = await spacesCapabilities.actions["task.create"].review!(input, userContext);
     expect(review).toMatchObject({
       ok: true,
-      data: { view: { blocks: [{ kind: "Text", text: expect.stringContaining("Column: To do") }] } },
+      data: {},
     });
+    expect(reviewText(review)).toContain("Column: To do");
     const result = await spacesCapabilities.actions["task.create"].run(input, userContext);
 
     expect(result.ok).toBeTrue();
@@ -3078,7 +3089,7 @@ test("creation reviews preserve every supplied domain field and bound compact pr
   if (taskReview.ok) {
     assertCapabilityReview(taskReview.data);
     for (const value of ["high", "90 minutes", "Spaces User", "Source: mail.message:Mail01", "Col001"])
-      expect(JSON.stringify(taskReview.data.view)).toContain(JSON.stringify(value).slice(1, -1));
+      expect(reviewText(taskReview)).toContain(value);
   }
   const eventReview = await spacesCapabilities.actions["event.create"].review!(
     {
@@ -3098,7 +3109,7 @@ test("creation reviews preserve every supplied domain field and bound compact pr
   if (eventReview.ok) {
     assertCapabilityReview(eventReview.data);
     for (const value of ["Office", "https://example.test/event", "FREQ=WEEKLY;COUNT=2", "All day: No"])
-      expect(JSON.stringify(eventReview.data.view)).toContain(JSON.stringify(value).slice(1, -1));
+      expect(reviewText(eventReview)).toContain(value);
     const { view: _view, ...compact } = eventReview.data;
     expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(32 * 1024);
   }
