@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
+import { children, createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
 import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import { useLocale } from "../intl/locale";
@@ -62,6 +62,11 @@ export type CodeDiffProps = {
   onRetry?: () => void;
   /** Accessible name of the code region. */
   label?: string;
+  /**
+   * Controls at the start of the file row, such as a version picker. They stay in place, with the file names, while
+   * the code loads or fails.
+   */
+  toolbarStart?: JSX.Element;
   class?: string;
 };
 
@@ -143,6 +148,7 @@ const itemsOf = (rows: readonly Row[], open: ReadonlySet<number>, whole: boolean
 export function CodeDiff(props: CodeDiffProps): JSX.Element {
   const messages = useCodeDiffMessages();
   const locale = useLocale();
+  const toolbar = children(() => props.toolbarStart);
   const count = (value: number) => new Intl.NumberFormat(locale()).format(value);
 
   const [chosen, setChosen] = createSignal<string>();
@@ -257,24 +263,29 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     }),
   );
 
+  // A file without rows, such as one the application has not loaded yet, has nothing to summarise.
   const detail = (file: CodeDiffFile) => {
+    if (file.lines.length === 0) return "";
     if (isNewFile(file)) return messages().codeDiffLines({ count: count(file.lines.length) });
     if (!hasChanges(file)) return messages().codeDiffSame;
     const added = file.lines.filter((line) => line.kind === "add").length;
     const removed = file.lines.filter((line) => line.kind === "del").length;
     return `+${count(added)} −${count(removed)}`;
   };
+  // The name alone is visible; the change summary is part of the tab's name for assistive technology.
   const fileLabel = (file: CodeDiffFile) => (
     <>
       <span class="k2b-code-diff__path">{file.path}</span>
-      <span class="k2b-code-diff__detail">{detail(file)}</span>
+      <Show when={detail(file)}>{(summary) => <span class="k2b-sr-only">, {summary()}</span>}</Show>
     </>
   );
+  // "New file" only means something beside files that have a predecessor; whole code alone is just the code.
+  const comparing = createMemo(() => props.files.some((file) => file.lines.some((line) => line.kind !== "add")));
   const regionLabel = () => {
     const file = current();
     const base = props.label ?? messages().codeDiffLabel;
     if (!file) return base;
-    return `${base} · ${whole() ? messages().codeDiffNewFile({ path: file.path }) : file.path}`;
+    return `${base} · ${whole() && comparing() ? messages().codeDiffNewFile({ path: file.path }) : file.path}`;
   };
 
   const line = (index: number) => {
@@ -323,8 +334,17 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     );
   };
 
+  // The body scrolls in both directions once the host gives it a height (`--k2b-code-diff-height`), so it is a stop
+  // in the tab order: keyboard users scroll it like everyone else.
   const diffBody = () => (
-    <div ref={body} class="k2b-code-diff__body" role="region" aria-label={regionLabel()} data-whole={whole() ? "true" : undefined}>
+    <div
+      ref={body}
+      class="k2b-code-diff__body"
+      role="region"
+      aria-label={regionLabel()}
+      data-whole={whole() ? "true" : undefined}
+      tabIndex={0}
+    >
       <For each={visible()}>
         {(item) =>
           item.type === "row" ? (
@@ -349,9 +369,40 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     </div>
   );
 
+  const loadingBody = () => (
+    <div class="k2b-code-diff__body" role="status" aria-busy="true">
+      <span class="k2b-sr-only">{messages().codeDiffLoading}</span>
+      <For each={Array.from({ length: LOADING_ROWS })}>
+        {() => (
+          <div class="k2b-code-diff__line k2b-code-diff__loading">
+            <Skeleton class="k2b-code-diff__skeleton" />
+          </div>
+        )}
+      </For>
+    </div>
+  );
+
+  // Loading and failure take the code's place under the file names; the surface keeps its height.
+  const Content = () => (
+    <Switch fallback={diffBody()}>
+      <Match when={props.status === "loading"}>{loadingBody()}</Match>
+      <Match when={props.status === "error"}>
+        <div class="k2b-code-diff__state">
+          <Placeholder
+            state="error"
+            icon="ti ti-cloud-off"
+            title={messages().codeDiffError}
+            description={props.errorDescription}
+            onRetry={props.onRetry}
+          />
+        </div>
+      </Match>
+    </Switch>
+  );
+
   // The tab panel holds the one code body: it names the file through its tab and takes keyboard focus.
   const FileTabs = () => {
-    const panel = diffBody();
+    const panel = <Content />;
     return (
       <Tabs
         variant="pill"
@@ -370,37 +421,24 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
 
   return (
     <div class={`k2b-code-diff ${props.class ?? ""}`}>
+      <Show when={toolbar()}>
+        <div class="k2b-code-diff__toolbar">{toolbar()}</div>
+      </Show>
       <Switch>
-        <Match when={props.status === "loading"}>
-          <div class="k2b-code-diff__body" role="status" aria-busy="true">
-            <span class="k2b-sr-only">{messages().codeDiffLoading}</span>
-            <For each={Array.from({ length: LOADING_ROWS })}>
-              {() => (
-                <div class="k2b-code-diff__line k2b-code-diff__loading">
-                  <Skeleton class="k2b-code-diff__skeleton" />
-                </div>
-              )}
-            </For>
+        <Match when={props.status === undefined && !props.files.some(hasChanges)}>
+          <div class="k2b-code-diff__state">
+            <Placeholder state="empty" icon="ti ti-equal" title={messages().codeDiffEmpty} />
           </div>
-        </Match>
-        <Match when={props.status === "error"}>
-          <Placeholder
-            state="error"
-            icon="ti ti-cloud-off"
-            title={messages().codeDiffError}
-            description={props.errorDescription}
-            onRetry={props.onRetry}
-          />
-        </Match>
-        <Match when={!props.files.some(hasChanges)}>
-          <Placeholder state="empty" icon="ti ti-equal" title={messages().codeDiffEmpty} />
         </Match>
         <Match when={props.files.length > 1}>
           <FileTabs />
         </Match>
         <Match when={props.files.length === 1}>
           <p class="k2b-code-diff__file">{fileLabel(props.files[0]!)}</p>
-          {diffBody()}
+          <Content />
+        </Match>
+        <Match when={props.files.length === 0}>
+          <Content />
         </Match>
       </Switch>
     </div>

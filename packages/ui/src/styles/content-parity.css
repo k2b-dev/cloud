@@ -4239,7 +4239,6 @@
   color: var(--k2b-code-punctuation);
 }
 
-.k2b-ui .cd-f,
 .k2b-ui .cd-md-directive,
 .k2b-ui .cd-md-code {
   color: var(--k2b-code-function);
@@ -4251,6 +4250,29 @@
 
 .k2b-ui .cd-md-formula {
   color: var(--k2b-code-formula);
+}
+
+/* TypeScript and JavaScript come from the stdlib code preset. Operators keep
+   the text colour; the scope leaves other hl-* hosts, such as help pages, alone. */
+.k2b-ui :is(.k2b-code-diff__body, .k2b-content-code-display__body, .k2b-content-doc-code__body) .hl-comment {
+  color: var(--k2b-code-comment);
+  font-style: italic;
+}
+
+.k2b-ui :is(.k2b-code-diff__body, .k2b-content-code-display__body, .k2b-content-doc-code__body) .hl-string {
+  color: var(--k2b-code-string);
+}
+
+.k2b-ui :is(.k2b-code-diff__body, .k2b-content-code-display__body, .k2b-content-doc-code__body) .hl-number {
+  color: var(--k2b-code-number);
+}
+
+.k2b-ui :is(.k2b-code-diff__body, .k2b-content-code-display__body, .k2b-content-doc-code__body) .hl-keyword {
+  color: var(--k2b-code-keyword);
+}
+
+.k2b-ui :is(.k2b-code-diff__body, .k2b-content-code-display__body, .k2b-content-doc-code__body) .hl-operator {
+  color: inherit;
 }
 
 /* Cloud's `.code-display` draws its 1px edge with a ring, not a border. Kept as
@@ -4327,20 +4349,83 @@
 }
 
 /* CodeDiff: one flat code surface. Old number, new number, sign, code; changes
-   carry a soft success or danger fill. Long lines wrap inside the code column.
-   Column widths follow the component's own width, not the window. */
+   carry a soft success or danger fill. Long lines scroll sideways inside the
+   surface and never widen the page. A host that sets --k2b-code-diff-height
+   gets a fixed surface that scrolls; loading, failure and "unchanged" keep that
+   height. Column widths follow the component's own width, not the window.
+   The row above the code holds the host's toolbar, then the file names. */
 .k2b-ui .k2b-code-diff {
   --k2b-code-diff-number: 2.25rem;
   --k2b-code-diff-sign: 1.125rem;
   container-type: inline-size;
   display: flex;
   min-width: 0;
-  flex-direction: column;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.k2b-ui .k2b-code-diff > * {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-code-diff > .k2b-code-diff__toolbar {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
+}
+
+/* The tabs join the toolbar's row; their panel takes the full width below. */
+.k2b-ui .k2b-code-diff > .k2b-code-diff__files {
+  display: contents;
+}
+
+.k2b-ui .k2b-code-diff__files > .k2b-tabs__bar,
+.k2b-ui .k2b-code-diff > .k2b-code-diff__file {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.k2b-ui .k2b-code-diff__files > .k2b-tabs__panel {
+  flex: 1 1 100%;
 }
 
 .k2b-ui .k2b-code-diff__files .k2b-tabs__list {
   flex-wrap: wrap;
+}
+
+/* File names: the chosen one strong on grey, the others plain text. */
+.k2b-ui .k2b-code-diff__files .k2b-tabs__item,
+.k2b-ui .k2b-code-diff__files .k2b-tabs__item:has([aria-selected="true"]) {
+  --k2b-edge-color: transparent;
+  border-radius: 0.375rem;
+  padding-right: 0;
+  background: transparent;
+}
+
+.k2b-ui .k2b-code-diff__files .k2b-tabs__item:hover {
+  background: var(--k2b-app-workspace-hover);
+}
+
+.k2b-ui .k2b-code-diff__files .k2b-tabs__item:has([aria-selected="true"]) {
+  background: var(--k2b-surface-muted);
+}
+
+.k2b-ui .k2b-code-diff__files .k2b-tabs__list button[role="tab"] {
+  min-height: 1.75rem;
+  padding: 0 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .k2b-code-diff__files .k2b-tabs__list button[role="tab"][aria-selected="true"] {
+  font-weight: 600;
+  color: var(--k2b-text);
 }
 
 .k2b-ui .k2b-code-diff__file {
@@ -4349,7 +4434,7 @@
   gap: 0.5rem;
   min-height: 1.875rem;
   margin: 0;
-  font-size: 0.78125rem;
+  font-size: 0.8125rem;
   color: var(--k2b-text);
 }
 
@@ -4357,18 +4442,11 @@
   font-family: var(--k2b-font-mono);
 }
 
-.k2b-ui .k2b-code-diff__detail {
-  margin-left: 0.5rem;
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--k2b-text-muted);
-}
-
-.k2b-ui .k2b-code-diff__file .k2b-code-diff__detail {
-  margin-left: 0;
-}
-
 .k2b-ui .k2b-code-diff__body {
+  display: grid;
+  align-content: start;
+  height: var(--k2b-code-diff-height, auto);
+  overflow: auto;
   padding: 0.625rem 0;
   border-radius: 0.625rem;
   font: 0.78125rem / 1.65 var(--k2b-font-mono);
@@ -4376,8 +4454,25 @@
   background: var(--k2b-surface-muted);
 }
 
+.k2b-ui .k2b-code-diff__body:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: var(--k2b-focus-offset);
+}
+
+.k2b-ui .k2b-code-diff__state {
+  display: grid;
+  height: var(--k2b-code-diff-height, auto);
+  align-content: center;
+  overflow: auto;
+  border-radius: 0.625rem;
+  background: var(--k2b-surface-muted);
+}
+
+/* Every row is at least as wide as the longest one, so fills reach the end of
+   the scrolled surface. */
 .k2b-ui .k2b-code-diff__line {
   display: grid;
+  min-width: max-content;
   grid-template-columns: var(--k2b-code-diff-number) var(--k2b-code-diff-number) var(--k2b-code-diff-sign) minmax(0, 1fr);
   padding-right: 0.75rem;
 }
@@ -4402,8 +4497,7 @@
 .k2b-ui .k2b-code-diff__line code {
   padding-left: 0.125rem;
   font: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
 }
 
 .k2b-ui .k2b-code-diff__line[data-kind="add"] {
