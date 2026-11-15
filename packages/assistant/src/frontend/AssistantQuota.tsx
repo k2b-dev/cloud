@@ -1,7 +1,7 @@
 import type { AiChatQuotaBalance, AiChatQuotaSnapshot } from "@k2b/cloud/shared";
 import { dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Chat, ProgressBar, ProgressRing, useLocale } from "@k2b/ui";
+import { Button, type ChatUsageSection, IconButton, ProgressBar, useLocale } from "@k2b/ui";
 import { createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { assistantApi } from "../api/client";
 import { quotaText } from "./quota-messages";
@@ -52,104 +52,141 @@ export function createAssistantQuota(initial: AiChatQuotaSnapshot | null | undef
   return { ...request, refresh };
 }
 
-export default function AssistantQuota(props: {
-  snapshot?: AiChatQuotaSnapshot | null;
-  model: string;
+/**
+ * The budget as one part of the composer's usage control. The part is there as long as a budget may apply: while the
+ * reading loads, when it failed, and when an allowance applies to the chosen model.
+ */
+export function createAssistantQuotaSections(input: {
+  quota: {
+    data: () => AiChatQuotaSnapshot | null | undefined;
+    error: () => unknown;
+    loading: () => boolean;
+    refreshing: () => boolean;
+    refresh: () => void;
+  };
+  model: () => string;
+  modelLabel: () => string;
+}): () => readonly ChatUsageSection[] {
+  const locale = useLocale(),
+    t = () => quotaText.resolve([locale()]).t;
+  const state = () => quotaState(input.quota.data(), input.model());
+  const failed = () => Boolean(input.quota.error());
+  const percent = (value: number) => new Intl.NumberFormat(locale(), { style: "percent" }).format(value / 100);
+  const value = () => {
+    if (failed() || !input.quota.data()) return failed() ? t().unavailable : undefined;
+    const used = state().usedPercent;
+    if (state().unlimited) return t().unlimited;
+    return used === null ? t().unavailable : t().used({ value: percent(used) });
+  };
+  const summary = () => {
+    const text = t().summary({ value: value() ?? t().unavailable });
+    const used = state().usedPercent;
+    if (failed() || used === null || used < NEAR_LIMIT_PERCENT) return text;
+    return `${text}, ${used >= 100 ? t().exhausted : t().nearLimit}`;
+  };
+  const section: ChatUsageSection = {
+    id: "budget",
+    get title() {
+      return t().title;
+    },
+    get percent() {
+      return failed() ? null : state().usedPercent;
+    },
+    warnAt: NEAR_LIMIT_PERCENT,
+    get value() {
+      return value();
+    },
+    get summary() {
+      return summary();
+    },
+    content: (
+      <QuotaDetails
+        snapshot={input.quota.data()}
+        state={state()}
+        failed={failed()}
+        refreshing={input.quota.loading() || input.quota.refreshing()}
+        modelLabel={input.modelLabel()}
+        onRefresh={input.quota.refresh}
+      />
+    ),
+    onOpen: () => input.quota.refresh(),
+  };
+  const sections = [section];
+  return () => (!input.model() ? [] : failed() || !input.quota.data() || state().balances.length ? sections : []);
+}
+
+function QuotaDetails(props: {
+  snapshot: AiChatQuotaSnapshot | null | undefined;
+  state: ReturnType<typeof quotaState>;
+  failed: boolean;
+  refreshing: boolean;
   modelLabel: string;
-  error?: unknown;
   onRefresh: () => void;
 }) {
   const locale = useLocale(),
     t = () => quotaText.resolve([locale()]).t;
-  const state = () => quotaState(props.snapshot, props.model);
-  const failed = () => Boolean(props.error);
   const percent = (value: number) => new Intl.NumberFormat(locale(), { style: "percent" }).format(value / 100);
-  const value = (usedPercent: number | null, unlimited: boolean) =>
-    unlimited ? t().unlimited : usedPercent === null ? t().unavailable : percent(usedPercent);
-  const summary = () => {
-    if (failed()) return t().summary({ value: t().unavailable });
-    const used = state().usedPercent;
-    const text = t().summary({ value: value(used, state().unlimited) });
-    if (used === null || used < NEAR_LIMIT_PERCENT) return text;
-    return `${text}, ${used >= 100 ? t().exhausted : t().nearLimit}`;
-  };
   // The exact reset time follows the browser's time zone, which the server does not know.
   const [mounted, setMounted] = createSignal(false);
   onMount(() => setMounted(true));
-
-  // Without a current reading the indicator shows a dashed circle: an empty ring would read as "nothing used".
-  const noReading = () => <i class="ti ti-circle-dashed" aria-hidden="true" />;
-
+  const refresh = () => (
+    <IconButton label={t().refresh} size="xs" loading={props.refreshing} onClick={props.onRefresh}>
+      <i class="ti ti-refresh" aria-hidden="true" />
+    </IconButton>
+  );
   return (
-    <Show
-      when={props.snapshot}
-      fallback={
-        // Usage is not known yet: keep the indicator's box so the composer does not move once it is.
-        <span class="k2b-chat-context" data-usage="loading" aria-hidden="true">
-          {noReading()}
-        </span>
-      }
-    >
-      <Show when={props.model && state().balances.length}>
-        <Chat.ContextPopup
-          aria-label={summary()}
-          data-usage={
-            failed() ? "unavailable" : state().unlimited ? "unlimited" : state().unknown ? "unknown" : toneOf(state().usedPercent)
-          }
-          onOpen={props.onRefresh}
-          content={
-            <Chat.ContextPanel title={t().title}>
-              <Show when={!failed()} fallback={<p role="status">{t().loadFailed}</p>}>
-                <For each={state().balances}>
-                  {(balance) => {
-                    const reset = () => {
-                      const at = balance.resetsAt ? new Date(balance.resetsAt) : null;
-                      return at && at.getTime() > Date.now() ? at : null;
-                    };
-                    return (
-                      <section>
-                        <dl>
-                          <div>
-                            <dt>{state().balances.length === 1 ? t().used : balance.scope === "*" ? t().all : props.modelLabel}</dt>
-                            <dd>{value(balance.usedPercent, balance.unlimited)}</dd>
-                          </div>
-                        </dl>
-                        <Show when={balance.usedPercent !== null}>
-                          <ProgressBar
-                            value={balance.usedPercent ?? 0}
-                            size="xs"
-                            tone={toneOf(balance.usedPercent)}
-                            label={state().balances.length === 1 ? t().title : balance.scope === "*" ? t().all : props.modelLabel}
-                          />
-                        </Show>
-                        <Show when={reset()}>
-                          {(at) => (
-                            <p>
-                              <time
-                                datetime={at().toISOString()}
-                                title={mounted() ? dates.formatDateTime(at(), { locale: locale() }) : undefined}
-                              >
-                                {t().resets({ when: dates.formatTimeSpan(at(), { locale: locale() }) })}
-                              </time>
-                            </p>
-                          )}
-                        </Show>
-                      </section>
-                    );
-                  }}
-                </For>
-              </Show>
-            </Chat.ContextPanel>
-          }
-        >
-          <Switch fallback={<ProgressRing value={state().usedPercent ?? 0} tone={toneOf(state().usedPercent)} />}>
-            <Match when={failed()}>{noReading()}</Match>
-            <Match when={state().unlimited}>
-              <i class="ti ti-infinity" aria-hidden="true" />
-            </Match>
-          </Switch>
-        </Chat.ContextPopup>
-      </Show>
-    </Show>
+    <Switch>
+      <Match when={props.failed}>
+        <div class="k2b-chat-usage__row">
+          <p role="status">{t().loadFailed}</p>
+          <Button size="xs" variant="subtle" loading={props.refreshing} onClick={props.onRefresh}>
+            {t().retry}
+          </Button>
+        </div>
+      </Match>
+      <Match when={!props.snapshot}>
+        <p role="status">{t().loading}</p>
+      </Match>
+      <Match when={props.snapshot}>
+        <For each={props.state.balances}>
+          {(balance, index) => {
+            const name = () => (balance.scope === "*" ? t().all : props.modelLabel);
+            const reset = () => {
+              const at = balance.resetsAt ? new Date(balance.resetsAt) : null;
+              return at && at.getTime() > Date.now() ? at : null;
+            };
+            const amount = () =>
+              balance.unlimited ? t().unlimited : balance.usedPercent === null ? t().unavailable : percent(balance.usedPercent);
+            return (
+              <>
+                <Show when={balance.usedPercent !== null}>
+                  <ProgressBar value={balance.usedPercent ?? 0} size="xs" tone={toneOf(balance.usedPercent)} label={name()} />
+                </Show>
+                <div class="k2b-chat-usage__row">
+                  <p>
+                    {name()}
+                    <Show when={props.state.balances.length > 1}>{` · ${amount()}`}</Show>
+                    <Show when={reset()}>
+                      {(at) => (
+                        <>
+                          {" · "}
+                          <time
+                            datetime={at().toISOString()}
+                            title={mounted() ? dates.formatDateTime(at(), { locale: locale() }) : undefined}
+                          >
+                            {t().resets({ when: dates.formatTimeSpan(at(), { locale: locale() }) })}
+                          </time>
+                        </>
+                      )}
+                    </Show>
+                  </p>
+                  <Show when={index() === props.state.balances.length - 1}>{refresh()}</Show>
+                </div>
+              </>
+            );
+          }}
+        </For>
+      </Match>
+    </Switch>
   );
 }

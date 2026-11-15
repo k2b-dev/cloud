@@ -65,7 +65,7 @@ export function LayoutHelpPanel(props: LayoutHelpPanelProps) {
           searchRef={() => {}}
         />
       </Show>
-      <ScrollArea class="min-h-0 flex-1 p-4 sm:p-5">
+      <ScrollArea class="help-scroll min-h-0 flex-1 p-4 sm:p-5">
         <Show when={props.state !== "unavailable"} fallback={<HelpNotAvailableView />}>
           <div class="help-start help-measure" data-help-results="" hidden={!!topic}>
             <div data-help-start-content="">

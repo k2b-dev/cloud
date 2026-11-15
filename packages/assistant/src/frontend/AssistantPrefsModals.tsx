@@ -31,7 +31,7 @@ import { assistantBrowserText, useAssistantCopy, useAssistantText } from "./ui-c
 // Kept in sync with the server limits; browser code does not import server-only constants.
 const MEMORY_MAX_CHARS = 500;
 
-type AssistantPrefsTab = "personalization" | "skills" | "system-prompt" | "approvals" | "api-access";
+type AssistantPrefsTab = "personalization" | "chat" | "skills" | "system-prompt" | "approvals" | "api-access";
 
 /** Present only while the operator offers the OpenAI-compatible API. */
 type OpenAiApiAccess = { baseUrl: string; models: import("@k2b/cloud/ai").AiPeopleModels["options"] };
@@ -521,7 +521,7 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
                               {text(memoryKindLabel(memory.kind))}
                               <Show when={memory.priority === "pinned"}>
                                 {" · "}
-                                <span class="font-medium text-blue-600 dark:text-blue-400">{text("Pinned")}</span>
+                                <span class="font-medium text-[var(--k2b-action)]">{text("Pinned")}</span>
                               </Show>
                               {` · ${text("Updated")} ${new Date(memory.updatedAt).toLocaleDateString(locale())}`}
                             </>
@@ -588,6 +588,38 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
   );
 }
 
+/** Chat helpers that apply at once, as a switch does; a failed save turns the switch back and says so. The dialog owns
+ *  the choice, so leaving the tab and coming back shows what was saved. */
+function ChatSettings(props: { suggest: boolean; onSuggestChange: (next: boolean) => void }) {
+  const text = useAssistantText();
+  const [saving, setSaving] = createSignal(false);
+  const change = async (next: boolean) => {
+    props.onSuggestChange(next);
+    setSaving(true);
+    try {
+      await assistantApi.updatePrefs({ suggestNextMessage: next });
+    } catch (error) {
+      props.onSuggestChange(!next);
+      toast.error(error instanceof Error ? error.message : text("Failed to save AI preferences"));
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <SettingsGroup title={text("Composer")}>
+      <Switch
+        label={text("Suggest next message")}
+        description={text(
+          "After an answer, the empty field shows what you might write next. Tab takes it over; nothing is sent. It costs hardly any budget.",
+        )}
+        value={() => props.suggest}
+        onValueChange={(next) => void change(next)}
+        disabled={saving()}
+      />
+    </SettingsGroup>
+  );
+}
+
 function PrefsDialog(props: {
   prefs: AiUserPrefs;
   openAiApiAccess: OpenAiApiAccess | null;
@@ -598,6 +630,7 @@ function PrefsDialog(props: {
   const text = useAssistantText();
   const [activeTab, setActiveTab] = createSignal<AssistantPrefsTab>(props.initialTab);
   const [personalizationDirty, setPersonalizationDirty] = createSignal(false);
+  const [suggestNextMessage, setSuggestNextMessage] = createSignal(props.prefs.suggestNextMessage);
   const [skillEditor, setSkillEditor] = createSignal<AssistantSkillEditorRequest | undefined>(props.initialSkillEditor);
   const [skillsRefreshKey, setSkillsRefreshKey] = createSignal(0);
   const requestClose = async () => {
@@ -622,6 +655,17 @@ function PrefsDialog(props: {
               description={text("Facts, preferences, and workflow defaults Gustav may carry into future conversations.")}
             >
               <MemorySettings prefs={props.prefs} onDirtyChange={setPersonalizationDirty} />
+            </SettingsModal.Tab>
+
+            <SettingsModal.Tab
+              id="chat"
+              title={text("Chat")}
+              icon="ti ti-message-circle"
+              description={text("How the composer helps you write your next message.")}
+            >
+              <Show when={activeTab() === "chat"}>
+                <ChatSettings suggest={suggestNextMessage()} onSuggestChange={setSuggestNextMessage} />
+              </Show>
             </SettingsModal.Tab>
 
             <SettingsModal.Tab
