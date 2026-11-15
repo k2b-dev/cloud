@@ -90,6 +90,29 @@ test("a jump to a version waiting to be switched on focuses the card's main butt
   }
 });
 
+test("a card loaded on demand gets the focus once its module has loaded and its main button is there", async () => {
+  const page = await open();
+  try {
+    // The card's place comes first, without buttons; its module loads after the jump has landed in the chat.
+    await page.evaluate(() => {
+      document
+        .getElementById("content")!
+        .insertAdjacentHTML("beforeend", '<article data-chat-anchor="code-version-v3"><p>Version 3 wird geladen …</p></article>');
+      setTimeout(async () => {
+        const source = 'export const button = () => \'<button class="k2b-button" data-variant="primary">Version 3 einschalten</button>\';';
+        const module = await import(URL.createObjectURL(new Blob([source], { type: "text/javascript" })));
+        document.querySelector("[data-chat-anchor='code-version-v3']")!.insertAdjacentHTML("beforeend", module.button());
+      }, 1200);
+    });
+    const started = Date.now();
+    await land(page, "code-version-v3");
+    expect(await focused(page)).toEqual({ tag: "BUTTON", text: "Version 3 einschalten" });
+    expect(Date.now() - started).toBeLessThan(3000);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 test("a decision card keeps the focus on its sentence, and a card that never comes is reported gone", async () => {
   const page = await open();
   try {
