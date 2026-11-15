@@ -16,7 +16,13 @@ afterEach(() => {
 
 // Fictitious entries in the order the server received them: one's own, an automation, another chat, one's own again.
 const ENTRIES: AssistantQueueEntry[] = [
-  { id: "q1", text: "Und markiere die Buchungen über 300 €", origin: { kind: "person", id: "u1", name: "Lena Vogt" }, state: "pending", authorIsViewer: true },
+  {
+    id: "q1",
+    text: "Und markiere die Buchungen über 300 €",
+    origin: { kind: "person", id: "u1", name: "Lena Vogt" },
+    state: "pending",
+    authorIsViewer: true,
+  },
   {
     id: "q2",
     text: "Briefing für Montag: 3 neue Lieferavise, 1 Mahnung fällig, 2 Termine am Vormittag und eine offene Rückfrage von Holzhandel Nord",
@@ -24,8 +30,20 @@ const ENTRIES: AssistantQueueEntry[] = [
     state: "pending",
     authorIsViewer: false,
   },
-  { id: "q3", text: "Bitte prüfe, ob die Anzahlung eingegangen ist", origin: { kind: "chat", id: "c1", name: "Messe Köln" }, state: "pending", authorIsViewer: false },
-  { id: "q4", text: "Leg die Tabelle danach in den Space Buchhaltung", origin: { kind: "person", id: "u1", name: "Lena Vogt" }, state: "pending", authorIsViewer: true },
+  {
+    id: "q3",
+    text: "Bitte prüfe, ob die Anzahlung eingegangen ist",
+    origin: { kind: "chat", id: "c1", name: "Messe Köln" },
+    state: "pending",
+    authorIsViewer: false,
+  },
+  {
+    id: "q4",
+    text: "Leg die Tabelle danach in den Space Buchhaltung",
+    origin: { kind: "person", id: "u1", name: "Lena Vogt" },
+    state: "pending",
+    authorIsViewer: true,
+  },
 ];
 
 const mount = (overrides: Partial<AssistantQueueProps> = {}, locale = "de") => {
@@ -140,9 +158,9 @@ test("Send now shows a ring in its place and locks every other button until Clou
   expect(labels(sending)).toEqual(["slot", "ring", "Entfernen"]);
   expect(sending.querySelector('[role="status"]')!.getAttribute("aria-label")).toBe("Wird gesendet…");
   expect(sending.querySelector(".assistant-queue__actions")!.hasAttribute("data-pinned")).toBe(true);
-  expect(Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".assistant-queue__actions button")).every((button) => button.disabled)).toBe(
-    true,
-  );
+  expect(
+    Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".assistant-queue__actions button")).every((button) => button.disabled),
+  ).toBe(true);
 });
 
 test("an entry that was not sent says so in the list and in the row, and its send sign reads Send again", () => {

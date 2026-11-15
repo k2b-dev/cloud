@@ -15,9 +15,27 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 const [{ default: AssistantQueue }, { LocaleProvider }] = await Promise.all([import("./AssistantQueue"), import("@k2b/ui")]);
 
 const ENTRIES: AssistantQueueEntry[] = [
-  { id: "q1", text: "Und markiere die Buchungen über 300 €", origin: { kind: "person", id: "u1", name: "Lena Vogt" }, state: "pending", authorIsViewer: true },
-  { id: "q2", text: "Briefing für Montag", origin: { kind: "automation", id: "a1", name: "Morgen-Briefing" }, state: "pending", authorIsViewer: false },
-  { id: "q3", text: "Bitte prüfe die Anzahlung", origin: { kind: "chat", id: "c1", name: "Messe Köln" }, state: "pending", authorIsViewer: false },
+  {
+    id: "q1",
+    text: "Und markiere die Buchungen über 300 €",
+    origin: { kind: "person", id: "u1", name: "Lena Vogt" },
+    state: "pending",
+    authorIsViewer: true,
+  },
+  {
+    id: "q2",
+    text: "Briefing für Montag",
+    origin: { kind: "automation", id: "a1", name: "Morgen-Briefing" },
+    state: "pending",
+    authorIsViewer: false,
+  },
+  {
+    id: "q3",
+    text: "Bitte prüfe die Anzahlung",
+    origin: { kind: "chat", id: "c1", name: "Messe Köln" },
+    state: "pending",
+    authorIsViewer: false,
+  },
 ];
 
 const html = (props: Partial<AssistantQueueProps> = {}, locale = "de") =>
@@ -79,13 +97,17 @@ describe("queued messages", () => {
     expect(markup).toContain('class="assistant-queue__head"');
     expect(visibleText(markup)).toContain("Automation „Morgen-Briefing“");
     expect(visibleText(markup)).toContain("Chat „Messe Köln“");
-    expect(markup).toMatch(/class="assistant-queue__text" title="Briefing für Montag">Briefing für Montag<\/span><span class="assistant-queue__origin">/);
+    expect(markup).toMatch(
+      /class="assistant-queue__text" title="Briefing für Montag">Briefing für Montag<\/span><span class="assistant-queue__origin">/,
+    );
   });
 
   test("sending shows a ring for status and disables all other buttons; a failed entry reads Not sent and Send again", () => {
     const sending = html({ sendingId: "q2" });
     expect(places(sending)[1]).toEqual(["slot", "ring", "Entfernen"]);
-    expect([...sending.matchAll(/<button[^>]*class="[^"]*k2b-icon-button[^"]*"[^>]*>/g)].every((match) => match[0].includes("disabled"))).toBe(true);
+    expect(
+      [...sending.matchAll(/<button[^>]*class="[^"]*k2b-icon-button[^"]*"[^>]*>/g)].every((match) => match[0].includes("disabled")),
+    ).toBe(true);
     const failed = html({ failedIds: new Set(["q1"]) });
     expect(places(failed)[0]).toEqual(["Bearbeiten", "Erneut senden", "Entfernen"]);
     expect(visibleText(failed)).toContain("Nicht gesendet");

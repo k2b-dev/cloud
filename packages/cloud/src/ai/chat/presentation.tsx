@@ -349,8 +349,7 @@ const storedItems = (
       // "Send now" interrupted the turn for a queued message: it keeps its text and says "paused", nothing more.
       const queueInterrupted = last && segmentPhase === "stopped" && item.entries.some((entry) => entry.meta?.queueInterrupted === true);
       const byPerson = last && segmentPhase === "stopped" && !queueInterrupted && stoppedByPerson(item.entries);
-      const stopNotice =
-        index === lastAssistant && lastMessage && !byPerson && !queueInterrupted ? aiMessageStopNotice(lastMessage) : null;
+      const stopNotice = index === lastAssistant && lastMessage && !byPerson && !queueInterrupted ? aiMessageStopNotice(lastMessage) : null;
       if (isEmptyLayout(layout) && !messageActions && !task && !error && !stopNotice) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
       return [

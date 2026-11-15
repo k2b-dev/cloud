@@ -971,8 +971,14 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
         </Show>
         {/* Without a work line, a turn that "Send now" interrupted still says so, quietly and without a button. */}
-        <Show when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().queueInterrupted && !layout().showWork}>
-          <Chat.Activity class="ai-turn__paused" icon="ti ti-player-pause" label={aiChatMessages(locale()).workedPaused({ duration: "" })} />
+        <Show
+          when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().queueInterrupted && !layout().showWork}
+        >
+          <Chat.Activity
+            class="ai-turn__paused"
+            icon="ti ti-player-pause"
+            label={aiChatMessages(locale()).workedPaused({ duration: "" })}
+          />
         </Show>
         <Show when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().stoppedByPerson}>
           {/* Calm by design: the person stopped it, so this is a quiet line, not a warning. */}

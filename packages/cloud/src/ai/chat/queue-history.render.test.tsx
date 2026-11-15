@@ -76,7 +76,11 @@ test("a turn that Send now interrupted says paused and offers neither answering 
     loopDoneReason: "aborted",
     meta: { queueInterrupted: true },
   });
-  const html = render([message(1, "user", "Gleiche PayPal mit dem Konto ab"), interrupted, message(3, "user", "Und markiere die Buchungen über 300 €")]);
+  const html = render([
+    message(1, "user", "Gleiche PayPal mit dem Konto ab"),
+    interrupted,
+    message(3, "user", "Und markiere die Buchungen über 300 €"),
+  ]);
   expect(html).toContain("Im November gab es 37 PayPal-Buchungen");
   expect(html).toContain("Angehalten");
   // No stopped line with "Answer again", no "Continue": Gustav takes the queued message and decides himself.

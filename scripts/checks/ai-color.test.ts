@@ -59,7 +59,8 @@ test("accepts the named machine-written surface and reports plum mixed into the 
       "packages/assistant/src/styles/app.css":
         ".hover { background: color-mix(in srgb, var(--k2b-ai-accent) 14%, var(--k2b-surface)); }\n" +
         ".bubble { background: color-mix(in srgb, var(--k2b-ai-accent) 8%, var(--k2b-surface-muted)); }\n",
-      "packages/chat/src/frontend/Row.tsx": 'const style = { background: "color-mix(in srgb, var(--k2b-surface-muted), var(--k2b-ai-accent) 9%)" };\n',
+      "packages/chat/src/frontend/Row.tsx":
+        'const style = { background: "color-mix(in srgb, var(--k2b-surface-muted), var(--k2b-ai-accent) 9%)" };\n',
     }),
   ).toEqual([
     "packages/assistant/src/styles/app.css:2 Plum mixed into the bubble grey is the named machine-written case; use var(--k2b-chat-machine-surface) instead of mixing it here.",

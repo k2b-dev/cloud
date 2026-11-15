@@ -83,7 +83,11 @@ export const aiUserMessageSource = (entry: AiStoredMessage, locale: string): JSX
   const label = origin.kind === "automation" ? t.messageFromAutomation({ name: origin.name }) : t.messageFromChat({ name: origin.name });
   const content = (
     <>
-      <i class={`ai-message-source__icon ${origin.kind === "automation" ? "ti ti-app-window" : "ti ti-sparkles"}`} data-kind={origin.kind} aria-hidden="true" />
+      <i
+        class={`ai-message-source__icon ${origin.kind === "automation" ? "ti ti-app-window" : "ti ti-sparkles"}`}
+        data-kind={origin.kind}
+        aria-hidden="true"
+      />
       <span>{label}</span>
     </>
   );
