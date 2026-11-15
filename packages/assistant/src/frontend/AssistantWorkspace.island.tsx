@@ -97,7 +97,7 @@ import AssistantPanelContext from "./AssistantPanelContext";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
-import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
+import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
 import { assistantChatFilePaths } from "./assistant-context";
@@ -156,6 +156,7 @@ import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
+import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
 import { finishedPlanShown, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
@@ -414,6 +415,11 @@ export default function AssistantWorkspace(props: Props) {
       if (id) return id;
     }
     return "";
+  });
+  const quotaSections = createAssistantQuotaSections({
+    quota: quotas,
+    model: selectedModelId,
+    modelLabel: () => props.models.find((m) => m.id === selectedModelId())?.label ?? selectedModelId(),
   });
   /** A class when the person chose one, so the chat follows the administration's assignment. */
   const setSelectedModelRequest = (request: AiModelRequest) => {
@@ -2496,15 +2502,7 @@ export default function AssistantWorkspace(props: Props) {
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,
           }}
-          modelDetails={
-            <AssistantQuota
-              snapshot={quotas.data()}
-              model={selectedModelId()}
-              modelLabel={props.models.find((m) => m.id === selectedModelId())?.label ?? selectedModelId()}
-              error={quotas.error()}
-              onRefresh={quotas.refresh}
-            />
-          }
+          contextSections={quotaSections()}
           disabled={
             (props.embedded && !workspaceMounted()) ||
             composerPicking() > 0 ||
@@ -2588,9 +2586,10 @@ export default function AssistantWorkspace(props: Props) {
             !projectComposer() && activeConversation() && chat.messages().length > 0
               ? {
                   id: "compact-context",
-                  label: t().compactContext,
-                  icon: "ti ti-package",
+                  label: quotaText.resolve([locale()]).t.compactNow,
+                  icon: "ti ti-arrows-diagonal-minimize-2",
                   disabled: chat.running(),
+                  disabledReason: quotaText.resolve([locale()]).t.compactWhileRunning,
                   onSelect: async () => {
                     if (!chat.activeConversationId()) return;
                     await chat.compactConversation({ model: selectedModelRequest() });
@@ -2606,6 +2605,7 @@ export default function AssistantWorkspace(props: Props) {
                   loopUsage: usageSnapshot()?.loop ?? null,
                   contextWindow: usageModel()?.contextWindow,
                   modelLabel: usageModel()?.label,
+                  note: quotaText.resolve([locale()]).t.contextNote,
                 }
           }
         />
