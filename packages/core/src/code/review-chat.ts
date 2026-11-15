@@ -128,17 +128,18 @@ export async function deliverCodeReviewChatFacts(effects: readonly ReviewChatEff
       { version_id: string; decision_message_id: string | null; activation_message_id: string | null; decision_suppressed: boolean }[]
     >`
       SELECT version_id,decision_message_id,activation_message_id,decision_suppressed FROM code.review_chat_work WHERE version_id=ANY(${sql.array(ids, "uuid")})`;
-    const suppressed: string[] = [];
+    const suppressed: { versionId: string; reason: "access_lost" | "conversation_gone" }[] = [];
     const deliver = rows.filter((row) => {
+      if (!chats.some((chat) => chat.id === row.conversation_id && chat.created_by_user_id === row.user_id)) {
+        suppressed.push({ versionId: row.version_id, reason: "conversation_gone" });
+        return false;
+      }
       if (!allowed.has(row.version_id) && unavailable.has(row.version_id)) {
         deferred.push(...effects.filter((effect) => effect.version_id === row.version_id).map((effect) => effect.id));
         return false;
       }
-      if (
-        !allowed.has(row.version_id) ||
-        !chats.some((chat) => chat.id === row.conversation_id && chat.created_by_user_id === row.user_id)
-      ) {
-        suppressed.push(row.version_id);
+      if (!allowed.has(row.version_id)) {
+        suppressed.push({ versionId: row.version_id, reason: "access_lost" });
         return false;
       }
       const receipt = existing.find((receipt) => receipt.version_id === row.version_id);
@@ -155,9 +156,11 @@ export async function deliverCodeReviewChatFacts(effects: readonly ReviewChatEff
       return true;
     });
     if (!activation && suppressed.length)
-      await tx`UPDATE code.review_chat_work SET decision_suppressed=TRUE,
-      state=CASE WHEN state='queued' THEN 'skipped' ELSE state END,reason=CASE WHEN state='queued' THEN 'access_lost' ELSE reason END,updated_at=now()
-      WHERE version_id=ANY(${sql.array(suppressed, "uuid")})`;
+      await tx`UPDATE code.review_chat_work w SET decision_suppressed=TRUE,
+      state=CASE WHEN w.state='queued' THEN 'skipped' ELSE w.state END,
+      reason=CASE WHEN w.state='queued' THEN suppressed.reason ELSE w.reason END,updated_at=now()
+      FROM jsonb_to_recordset(${JSON.stringify(suppressed)}::text::jsonb) AS suppressed("versionId" uuid,reason text)
+      WHERE w.version_id=suppressed."versionId"`;
     const receipts = await appendAiBackgroundMessages(
       tx,
       deliver.map((row) => {

@@ -1595,6 +1595,31 @@ describe("ACP session/load", () => {
   const said = (updates: ReturnType<typeof of>, kind: "user_message_chunk" | "agent_message_chunk") =>
     updates.flatMap((u) => (u.sessionUpdate === kind && u.content.type === "text" ? [u.content.text] : [])).join("");
 
+  test("Code decision activities replay as facts instead of human requests", async () => {
+    const h = await harness();
+    const decision: AiStoredMessage = {
+      ...stored({ role: "assistant", content: [{ type: "text", text: "Version 5 wurde freigegeben." }] }, null),
+      meta: {
+        codeDecision: {
+          codeId: "c_review",
+          versionId: "v",
+          number: 5,
+          outcome: "approved",
+          person: { id: null, name: null },
+          anchor: "tool-submit",
+        },
+      },
+    };
+    const start: AiStoredMessage = {
+      ...stored({ role: "user", content: ["Gustav startet von selbst, einmal."] }, null),
+      meta: { codeReviewStart: { codeId: "c_review", versionId: "v" } },
+    };
+    h.streams.push([state([decision, start])]);
+    await load(h);
+    expect(said(of(h), "agent_message_chunk")).toBe("Version 5 wurde freigegeben.\n\nGustav startet von selbst, einmal.\n\n");
+    expect(said(of(h), "user_message_chunk")).toBe("");
+  });
+
   test("a chat that is not listed opens by its ID and replays its history before the response", async () => {
     const h = await harness();
     h.streams.push([
