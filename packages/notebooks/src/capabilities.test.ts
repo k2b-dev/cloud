@@ -1517,11 +1517,14 @@ test("note.create starts from a page template only for writers, with the caller 
   const review = await operation.review!(input, userContext);
   expect(review.ok).toBe(true);
   if (review.ok) {
-    const content = CapabilityActionCallReviewSchema.parse(review.data).view?.blocks[0];
-    expect(content?.kind).toBe("Text");
-    if (content?.kind === "Text") {
-      expect(content.text).toContain("Template: Meeting notes");
-      expect(content.text).toMatch(/Text checksum: sha256:[a-f0-9]{64}/);
+    // The facts name the template; the whole filled-in text follows as Markdown, with no technical lines.
+    const [facts, body] = CapabilityActionCallReviewSchema.parse(review.data).view?.blocks ?? [];
+    expect(facts?.kind).toBe("Detail");
+    if (facts?.kind === "Detail") expect(facts.items).toContainEqual({ label: "Template", value: "Meeting notes" });
+    expect(body).toMatchObject({ kind: "Text", format: "markdown" });
+    if (body?.kind === "Text") {
+      expect(body.text).toStartWith("# Meeting ");
+      expect(body.text).not.toMatch(/checksum|characters/i);
     }
   }
   expect((await operation.run(input, userContext)).ok).toBe(true);
@@ -1563,8 +1566,9 @@ test("shared creation reviews keep complete text, notebook scope and current wri
       expect(review.locale).toBe(locale);
       expect(review.scope).toBe(`notebook:${notebook.shortId}`);
       expect(review.ask).toBeUndefined();
-      expect(review.view?.blocks[0]?.kind).toBe("Text");
-      const body = review.view?.blocks[0];
+      expect(review.view?.blocks[0]?.kind).toBe("Detail");
+      const body = review.view?.blocks.at(-1);
+      expect(body).toMatchObject({ kind: "Text", format: "markdown" });
       if (body?.kind === "Text") expect(body.text).toContain(text);
     }
   }
