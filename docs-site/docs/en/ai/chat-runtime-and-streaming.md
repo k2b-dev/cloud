@@ -564,7 +564,10 @@ A worker appends it once to the original author's chat while holding the chat
 lock, after its active turn finishes. It rechecks current management and chat
 ownership before delivery. The write updates `background_received_at` and
 invalidates `conversation-detail` and `code-versions`; cards keep listening
-when ready and during a revision. Model history receives a fixed historical
+when ready and during a revision. Navigation targets the card's
+`code-version-<versionId>` DOM anchor rather than the submission tool call.
+Renewing an expired request keeps the first card's anchor, including for its
+new version's waiting item, event and notification. Model history receives a fixed historical
 fact without names, titles or administrator instructions.
 
 The following `codeReviewStart` message marks the start of the automatic

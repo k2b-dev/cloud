@@ -120,8 +120,10 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
       codeId: f.codeId,
       versionId: f.versionId,
       outcome: "approved",
-      anchor: "tool-submit",
+      anchor: `code-version-${f.versionId}`,
     });
+    const waiting = await listCodeWaiting({ ownerUserId: owner, locale: "de", timeZone: "UTC", versionId: f.versionId }, signal());
+    expect(waiting.items[0]?.anchor).toBe(messages[0]?.meta?.codeDecision?.anchor);
     expect(JSON.stringify(messages[0]?.message)).not.toContain("send mail");
     expect(messages[0]?.loopId).toBeNull();
     const fork = await aiConversations.forkConversation({

@@ -8,7 +8,7 @@ import { createPgOutbox, type OutboxRow, PgOutboxDeferred } from "@k2b/cloud/ser
 import { type CodeContext, CodeDataError, codePermission, codePerson, readCodeOwner } from "./access";
 import { schedulerNextRun } from "./automations";
 import { currentChatManagers } from "./manager-recipients";
-import { CodeSubmissionOriginSchema } from "./review-contracts";
+import { CodeSubmissionOriginSchema, codeVersionChatAnchor } from "./review-contracts";
 import { findCode } from "./store";
 
 export type ReviewChatEffect = OutboxRow & { version_id: string; kind: "decision" | "activation" | "revision" };
@@ -178,8 +178,7 @@ export async function deliverCodeReviewChatFacts(effects: readonly ReviewChatEff
               person: { id: row.person_id, name: row.person_name },
               at: row.at.toISOString(),
               ...(activation ? { nextRunAt: nextRuns.get(row.version_id) ?? null } : {}),
-              anchor:
-                origin.kind === "ai_chat" ? (origin.cardAnchor ?? `code-version-${row.version_id}`) : `code-version-${row.version_id}`,
+              anchor: codeVersionChatAnchor(row.version_id, origin),
             },
           },
         };

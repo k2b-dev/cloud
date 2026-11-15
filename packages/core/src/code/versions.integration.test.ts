@@ -566,7 +566,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       codeAuthoringServices.reviewRequestAgain({ codeId: code.id, versionId: submitted.version.id }, context(strangerId)),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     const next = codeAuthoringContracts.reviewRequestAgain.data.parse(await retry());
-    expect(next.origin).toEqual(origin);
+    expect(next.origin).toEqual({ ...origin, cardAnchor: `code-version-${submitted.version.id}` });
     expect(next.binding.sourceHash).toBe(submitted.binding.sourceHash);
     expect(next.binding.bundleHash).toBe(submitted.binding.bundleHash);
     expect(next.status).toBe("pending");

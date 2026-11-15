@@ -42,6 +42,7 @@ import {
   CodeReviewDecisionSchema,
   type CodeSubmissionOrigin,
   CodeSubmissionOriginSchema,
+  codeVersionChatAnchor,
 } from "./review-contracts";
 import { codeReviewEventPublisher } from "./review-events";
 import { createRunnerCodeTestingHost } from "./runner-jobs";
@@ -345,7 +346,11 @@ export async function requestCodeVersionApprovalAgain(input: { codeId: string; v
       manifest: CodeCheckedVersionManifestSchema.parse(snapshot.manifest),
       baseVersionId: input.versionId,
     },
-    { ...context, submissionOrigin: chat ? origin : { kind: "cli" } },
+    {
+      ...context,
+      submissionOrigin:
+        chat && origin.kind === "ai_chat" ? { ...origin, cardAnchor: codeVersionChatAnchor(input.versionId, origin) } : { kind: "cli" },
+    },
     { retryExpired: true },
   );
 }
