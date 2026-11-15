@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to resource providers.
-updated: 2026-10-30
+updated: 2026-11-15
 ---
 
 # Chat system conversations
@@ -103,6 +103,27 @@ are previous conversation authors, excluding the caller. Mentioning someone
 does not grant access: the feed, count, message reads, and content-bearing live
 events still use that reader's own container and item authority. The personal
 `for-you` live hint carries no content or resource identity.
+
+## Open beside the resource
+
+Chat's [panel](/en/docs/platform/panels) starts in the discussion about the
+host page's resource. When the page shares a `scope` through
+`Layout context={{ scope }}` and the reader allowed **Share context** for
+Chat, `/app/chat/panel` opens that container's conversation through the same
+open operation as above and moves to `/app/chat/panel/c/:conversation`,
+keeping the shared context. The scope is only a selector: opening needs
+container read access, and a scope that is not a declared container type,
+or that the reader cannot read, leaves the panel at the chat list without
+naming the resource. A later context change moves the panel to the new
+resource's discussion only while it shows the previous one; elsewhere only
+the way back changes.
+
+In the panel, the head's **All chats** opens the chat list inside the panel,
+and **Chat about …** returns to the resource's discussion. The panel has no
+link to the full view and no search, **New chat**, or **For you** rows.
+To appear there, an application reports its page's place and declares that
+place's type as the container of its `discussions` role; Chat needs no
+application-specific code.
 
 ## Search the chat list
 

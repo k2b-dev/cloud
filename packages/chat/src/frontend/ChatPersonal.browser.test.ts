@@ -97,7 +97,7 @@ for (const phone of [false, true]) {
       }
     }, 30_000);
 
-    test("panel archive preserves its route through reload, chat and full-view navigation", async () => {
+    test("panel archive preserves its route through reload, chat and list navigation", async () => {
       const chat = add("Archived panel chat", 2);
       harness.archive(chat, true);
       const { page, context, errors } = await start(phone, locale, "/app/chat/panel/archive?filter=unread");
@@ -111,12 +111,10 @@ for (const phone of [false, true]) {
         await row.click();
         await page.waitForURL(`**/app/chat/panel/c/${chat}?filter=unread&list=archive`);
         const header = page.locator(".chat-conversation__header");
-        await header.getByRole("link", { name: t.openFullView, exact: true }).waitFor();
-        expect(await header.getByRole("link", { name: t.openFullView, exact: true }).getAttribute("href")).toBe(
-          `/app/chat/c/${chat}?filter=unread&list=archive`,
-        );
+        // The panel has no full view link; its way to the list is "All chats".
+        expect(await header.locator('a[href^="/app/chat/c/"]').count()).toBe(0);
         if (phone) {
-          await header.getByRole("link", { name: t.backToChats, exact: true }).click();
+          await header.getByRole("link", { name: t.panelAllChats, exact: true }).click();
           await page.waitForURL("**/app/chat/panel/archive?filter=unread");
         }
         expect(errors).toEqual([]);

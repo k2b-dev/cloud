@@ -63,7 +63,7 @@ afterAll(async () => {
   rmSync(root, { recursive: true, force: true });
 });
 for (const width of [1440, 390]) {
-  test(`Chat reads and sends in the real panel, restores its draft and opens full view at ${width}px`, async () => {
+  test(`Chat reads and sends in the real panel and restores its draft in the full view at ${width}px`, async () => {
     fixture.backend.reset();
     const chat = fixture.backend.addChat({ members: [viewer, nora], name: "Project planning", count: 3, end: fixture.backend.now() });
     const context = await newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
@@ -85,8 +85,10 @@ for (const width of [1440, 390]) {
       await page.locator('[data-cloud-panel-provider="second"]').click();
       await page.locator('#cloud-panel[data-provider="second"][data-state="ready"]').waitFor();
       await page.locator('[data-cloud-panel-provider="chat"]').click();
-      await panel.locator(`a[href="/app/chat/c/${chat}"]`).waitFor();
+      await panel.getByRole("link", { name: "All chats", exact: true }).waitFor();
       expect(await composer.inputValue()).toBe("Unsent draft for this conversation");
+      // The panel has no full view link: the full view is the app itself, and it shows the same saved draft.
+      expect(await panel.locator('a[href^="/app/chat/c/"]').count()).toBe(0);
       expect(await panel.locator(".cloud-app-canvas").count()).toBe(0);
       if (process.env.PANEL_SCREENSHOTS) {
         mkdirSync(process.env.PANEL_SCREENSHOTS, { recursive: true });
@@ -109,12 +111,113 @@ for (const width of [1440, 390]) {
       await panel.locator("html.dark").waitFor();
       if (process.env.PANEL_SCREENSHOTS)
         await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `chat-result-dark-${width}.png`), animations: "disabled" });
-      await panel.getByRole("link", { name: "Open full view", exact: true }).click();
-      await page.waitForURL(`**/app/chat/c/${chat}`);
+      await page.goto(fixture.url + `app/chat/c/${chat}`);
       await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
       expect(await page.locator('textarea:not([aria-hidden="true"])').inputValue()).toBe("Unsent draft for this conversation");
       expect(fixture.backend.posted).toHaveLength(1);
     } finally {
+      await context.close();
+    }
+  }, 30_000);
+}
+
+for (const width of [1440, 390]) {
+  test(`Chat starts in the discussion about the host page's resource and follows its place at ${width}px`, async () => {
+    fixture.backend.reset();
+    fixture.allowChatContext(true);
+    const other = fixture.backend.addChat({ members: [viewer, nora], name: "Project planning", count: 2, end: fixture.backend.now() });
+    const shelf = fixture.backend.addChat({ members: [viewer, nora], name: "Lager Ost", count: 2, end: fixture.backend.now() });
+    fixture.backend.setSystem(shelf, { type: "inventory.collection", id: "Shelf-7" });
+    const yard = fixture.backend.addChat({ members: [viewer, nora], name: "Hof West", count: 1, end: fixture.backend.now() });
+    fixture.backend.setSystem(yard, { type: "inventory.collection", id: "Yard-2" });
+    const context = await newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    const chatFrame = () => {
+      const frame = page.frames().find((frame) => frame.url().includes("/app/chat/panel"));
+      if (!frame) throw new Error("Missing real Chat panel frame");
+      return frame;
+    };
+    try {
+      await page.goto(fixture.url + "app/fixture/board/Shelf-7");
+      await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
+      await page.locator("#open-chat").click();
+      const panel = page.frameLocator("[data-cloud-panel-frame]");
+      const header = panel.locator(".chat-conversation__header");
+      await header.getByText("Lager Ost", { exact: true }).waitFor();
+      await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      expect(new URL(chatFrame().url()).pathname).toBe(`/app/chat/panel/c/${shelf}`);
+      // No way out of the panel and no head row; the resource's own discussion needs no way back to itself.
+      expect(await panel.locator('a[href^="/app/chat/c/"]').count()).toBe(0);
+      expect(await header.getByRole("link", { name: "Chat about Lager Ost", exact: true }).count()).toBe(0);
+      if (process.env.PANEL_SCREENSHOTS) {
+        mkdirSync(process.env.PANEL_SCREENSHOTS, { recursive: true });
+        await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `chat-resource-light-${width}.png`), animations: "disabled" });
+      }
+      // "All chats" switches chats inside the panel; the list neither searches nor starts chats.
+      const allChats = header.getByRole("link", { name: "All chats", exact: true });
+      await allChats.focus();
+      await page.keyboard.press("Enter");
+      const otherRow = panel.locator(`a[href="/app/chat/panel/c/${other}"]:visible`);
+      await otherRow.waitFor();
+      expect(await panel.locator('input[type="search"]').count()).toBe(0);
+      expect(await panel.getByText("New chat", { exact: true }).count()).toBe(0);
+      expect(await panel.getByText("For you", { exact: true }).count()).toBe(0);
+      const back = panel.getByRole("link", { name: "Chat about Lager Ost", exact: true });
+      await back.waitFor();
+      if (process.env.PANEL_SCREENSHOTS)
+        await page.screenshot({
+          path: resolve(process.env.PANEL_SCREENSHOTS, `chat-resource-list-light-${width}.png`),
+          animations: "disabled",
+        });
+      await otherRow.click();
+      await header.getByText("Project planning", { exact: true }).waitFor();
+      await back.click();
+      await header.getByText("Lager Ost", { exact: true }).waitFor();
+      expect(new URL(chatFrame().url()).pathname).toBe(`/app/chat/panel/c/${shelf}`);
+      // The host page moves to another resource, as a page swap does: the panel follows from the old discussion.
+      const shared = JSON.parse(new URL(chatFrame().url()).searchParams.get("cloud_panel_context")!) as { pageId: string; seq: number };
+      const move = (id: string, seq: number) =>
+        page.evaluate(
+          ({ pageId, id, seq }) => {
+            const frame = document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")!;
+            frame.contentWindow!.postMessage(
+              {
+                type: "cloud.panel.context",
+                v: 1,
+                context: { v: 1, seq, pageId, app: "fixture", scope: { type: "inventory.collection", id } },
+              },
+              location.origin,
+            );
+          },
+          { pageId: shared.pageId, id, seq },
+        );
+      await move("Yard-2", shared.seq + 1);
+      await header.getByText("Hof West", { exact: true }).waitFor();
+      await page.waitForFunction(
+        (path) => document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentWindow?.location.pathname === path,
+        `/app/chat/panel/c/${yard}`,
+      );
+      // Away from the resource's discussion, a host move only changes where the icon leads.
+      await header.getByRole("link", { name: "All chats", exact: true }).click();
+      await otherRow.click();
+      await header.getByText("Project planning", { exact: true }).waitFor();
+      await move("Shelf-7", shared.seq + 2);
+      await header.getByRole("link", { name: "Chat about Lager Ost", exact: true }).waitFor();
+      expect(new URL(chatFrame().url()).pathname).toBe(`/app/chat/panel/c/${other}`);
+      // A place without a discussion leaves no way back to a stale one.
+      await move("Unknown-1", shared.seq + 3);
+      await header.getByRole("link", { name: /^Chat about/ }).waitFor({ state: "detached" });
+      await page.evaluate(() => {
+        document.documentElement.classList.remove("light");
+        document.documentElement.classList.add("dark");
+        window.dispatchEvent(new Event("cloud:theme-preference"));
+      });
+      await panel.locator("html.dark").waitFor();
+      if (process.env.PANEL_SCREENSHOTS)
+        await page.screenshot({ path: resolve(process.env.PANEL_SCREENSHOTS, `chat-resource-dark-${width}.png`), animations: "disabled" });
+    } finally {
+      fixture.allowChatContext(false);
       await context.close();
     }
   }, 30_000);
@@ -353,11 +456,12 @@ for (const provider of ["chat", "assistant"] as const) {
       await composer.waitFor();
       expect(await composer.isDisabled()).toBe(true);
       expect(await panel.locator('html[data-fixture-ready="true"]').count()).toBe(0);
-      const fullView = panel.getByRole("link", { name: provider === "chat" ? "Open full view" : "All chats", exact: true });
-      expect(await fullView.getAttribute("target")).toBe("_top");
+      // Only Assistant links out of its panel; that link opens in the host until the guard is registered.
+      const fullView = panel.getByRole("link", { name: "All chats", exact: true });
+      if (provider === "assistant") expect(await fullView.getAttribute("target")).toBe("_top");
       release();
       await panel.locator('html[data-fixture-ready="true"]').waitFor();
-      expect(await fullView.getAttribute("target")).toBeNull();
+      if (provider === "assistant") expect(await fullView.getAttribute("target")).toBeNull();
       await composer.fill("Input after guard registration");
       expect(await composer.inputValue()).toBe("Input after guard registration");
     } finally {
@@ -948,7 +1052,7 @@ for (const preparation of ["resource", "image"] as const) {
   }
 }
 
-for (const provider of ["chat", "assistant"] as const) {
+for (const provider of ["assistant"] as const) {
   test(`${provider} opens the SSR full-view link in the host before provider scripts load`, async () => {
     fixture.backend.reset();
     fixture.assistant.reset();
@@ -969,7 +1073,7 @@ for (const provider of ["chat", "assistant"] as const) {
       await page.locator("#open-chat").click();
       if (provider === "assistant") await page.locator('[data-cloud-panel-provider="assistant"]').click();
       const panel = page.frameLocator("[data-cloud-panel-frame]");
-      const link = panel.getByRole("link", { name: provider === "chat" ? "Open full view" : "All chats", exact: true });
+      const link = panel.getByRole("link", { name: "All chats", exact: true });
       await link.waitFor();
       expect(await panel.locator('html[data-fixture-ready="true"]').count()).toBe(0);
       await link.click();
@@ -1856,8 +1960,7 @@ test("Chat synchronizes panel and full-view drafts and preserves a simultaneous 
     await panel.locator(`a[href="/app/chat/panel/c/${id}"]:visible`).click();
     const panelComposer = panel.locator('textarea:not([aria-hidden="true"])');
     await panelComposer.fill("Original draft");
-    await panel.getByRole("link", { name: "Open full view", exact: true }).click();
-    await page.waitForURL(`**/app/chat/c/${id}`);
+    await page.goto(fixture.url + `app/chat/c/${id}`);
     await page.locator('html[data-fixture-ready="true"]').waitFor();
     await panel.locator('html[data-fixture-ready="true"]').waitFor();
     const fullComposer = page.locator('textarea:not([aria-hidden="true"])');

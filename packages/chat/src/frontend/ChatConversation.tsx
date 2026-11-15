@@ -171,6 +171,8 @@ export type ChatConversationProps = {
   backCount?: number;
   /** Below 64 rem the chat is a page of its own; its back button returns to the list. */
   onBack: (navigation: LinkNavigateEvent) => void | Promise<void>;
+  /** In the panel, which starts at a resource's discussion, the way to the list reads "All chats" instead of back. */
+  allChats?: boolean;
   /** Receives the history's controller, for example to follow the end after a send. */
   controller?: (controller: VirtualFeedController) => void;
   /** Key of the first new message when the chat opened; "New messages" stays above it until the chat closes. */
@@ -447,11 +449,17 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             navigation="enhanced"
             onNavigate={props.onBack}
             label={
-              props.backHref ? t().backToThreads : props.backCount ? t().backToChatsUnread({ count: props.backCount }) : t().backToChats
+              props.backHref
+                ? t().backToThreads
+                : props.allChats
+                  ? t().panelAllChats
+                  : props.backCount
+                    ? t().backToChatsUnread({ count: props.backCount })
+                    : t().backToChats
             }
-            tooltip={false}
+            tooltip={props.allChats && !props.backHref ? undefined : false}
           >
-            <i class="ti ti-chevron-left" aria-hidden="true" />
+            <i class={props.allChats && !props.backHref ? "ti ti-list" : "ti ti-chevron-left"} aria-hidden="true" />
             <Show when={!props.backHref && props.backCount !== undefined}>
               <span class="chat-conversation__back-count" aria-hidden="true">
                 {props.backCount ? (props.backCount > 99 ? "99+" : props.backCount) : ""}

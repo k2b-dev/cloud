@@ -1,6 +1,6 @@
 import type { DictationSource } from "@k2b/cloud/ai/browser";
 import { refreshAppBadges } from "@k2b/cloud/browser/app-badges";
-import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
@@ -87,6 +87,7 @@ import { createItemEventsApi } from "./item-events-api";
 import type { ChosenMember } from "./MemberPicker";
 
 import { createNotificationCleanup } from "./notification-cleanup";
+import type { ResourceChat } from "./panel-resource";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
 import {
@@ -121,6 +122,8 @@ type Sends = ReturnType<typeof createChatSends>;
 export type ChatWorkspaceProps = {
   /** The same workspace served without the Cloud shell in its provider route. */
   embedded?: boolean;
+  /** In the panel: the discussion about the host page's resource, which the panel opens first and leads back to. */
+  resourceChat?: ResourceChat | null;
   /** Live dictation is set up and allowed for this person; the composer then shows Dictate. */
   liveDictation?: boolean;
   /** The Cloud app's Chat below `/pwa/chat`: the list beside the open chat from 64 rem, one after the other below. */
@@ -251,6 +254,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     messageId: props.open?.focus ?? null,
     panel: props.panel,
   });
+  const [resourceChat, setResourceChat] = createSignal(props.resourceChat ?? null);
   // History is not reactive; keep its list marker for the header rendered before each address commit.
   const [listPredecessor, setListPredecessor] = createSignal(false);
   const [archived, setArchived] = createSignal(props.archived ?? false);
@@ -2174,6 +2178,28 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       live.dispose();
     });
     if (props.embedded) {
+      // The host page changed its place: the panel follows to that resource's discussion only from the previous one.
+      let scopeToken = 0;
+      onCleanup(
+        onContextChange((context) => {
+          const scope = context?.scope;
+          const previous = resourceChat();
+          if (scope && previous && scope.type === previous.ref.type && scope.id === previous.ref.id) return;
+          const token = ++scopeToken;
+          if (!scope) return void setResourceChat(null);
+          openSystemChat({ resourceType: scope.type, resourceId: scope.id })
+            .then(async (current) => {
+              if (disposed || token !== scopeToken) return;
+              store?.includeSystemChats([current]);
+              setResourceChat({ id: current.id, ref: scope, title: current.title });
+              if (previous && route().chatId === previous.id && (await open(chatRoute(current.id))) === "applied")
+                navigate(viewHref(threadHref(current.id, "all")), { replace: true, scroll: "preserve" });
+            })
+            .catch(() => {
+              if (token === scopeToken) setResourceChat(null);
+            });
+        }),
+      );
       try {
         const selected = props.chatId ?? savedDrafts?.selection();
         if (props.chatId) savedDrafts?.select(props.chatId);
@@ -2373,6 +2399,29 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       onRetry={() => void store?.refreshThreads()}
     />
   );
+  const openResourceChat = async (navigation: LinkNavigateEvent) => {
+    const target = resourceChat();
+    if (!target) return;
+    const fromList = route().chatId === null;
+    if ((await open(chatRoute(target.id))) !== "applied") return;
+    setListPredecessor(fromList);
+    navigation.push(viewHref(threadHref(target.id, "all")), { scroll: "preserve", state: { chatFromList: fromList } });
+  };
+  /** In the panel: back to the discussion about the host page's resource, wherever the reader went from there. */
+  const resourceChatButton = (currentId: string | null) => (
+    <Show when={resourceChat()?.id !== currentId && resourceChat()}>
+      {(target) => (
+        <IconButtonLink
+          href={listHref(threadHref(target().id, "all"))}
+          navigation="enhanced"
+          onNavigate={openResourceChat}
+          label={t().chatAboutResource({ title: target().title })}
+        >
+          <i class="ti ti-message-circle-share" aria-hidden="true" />
+        </IconButtonLink>
+      )}
+    </Show>
+  );
   const conversationView = (): JSX.Element => (
     <>
       {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
@@ -2383,15 +2432,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               dictation={props.liveDictation ? liveDictationSource : undefined}
               actions={
                 <>
-                  <Show when={props.embedded}>
-                    <IconButtonLink
-                      href={listHref(conversationHref(current().id, null, route().messageId, route().view))}
-                      target={composerReady() ? undefined : "_top"}
-                      label={t().openFullView}
-                    >
-                      <i class="ti ti-arrows-maximize" aria-hidden="true" />
-                    </IconButtonLink>
-                  </Show>
+                  <Show when={props.embedded}>{resourceChatButton(current().id)}</Show>
                   <Show when={!system() && current().permission === "admin"}>
                     <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
                       <i class="ti ti-user-plus" aria-hidden="true" />
@@ -2577,6 +2618,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               onPickResource={pickResource}
               onBack={backToThreadDirectory() ? backToThreads : backToList}
               backCount={props.app ? othersUnread(current().id) : undefined}
+              allChats={props.embedded}
               busy={busy()}
               dateConfig={props.dateConfig}
               now={now}
@@ -2737,7 +2779,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
   const listContent = (includeArchive = true) => (
     <>
-      {searchField()}
+      {/* The panel is about the host page's resource; it switches chats but does not start or search them. */}
+      <Show when={!props.embedded}>{searchField()}</Show>
       <Show
         when={!searchQuery().trim()}
         fallback={
@@ -2784,12 +2827,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         <Show when={rows().length > 0 && !listError()}>
           <ChatDeviceNotice notice={deviceNotice()} onNotice={setDeviceNotice} dateConfig={props.dateConfig} now={now} />
         </Show>
-        <Show when={!props.app}>
+        <Show when={!props.app && !props.embedded}>
           <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
             {t().newChat}
           </AppWorkspace.SidebarItem>
         </Show>
-        <Show when={!props.app}>
+        <Show when={!props.app && !props.embedded}>
           <AppWorkspace.SidebarItem
             href={listHref(`${basePath}/for-you`)}
             navigation="enhanced"
@@ -2896,22 +2939,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   return (
     <>
       <Show when={!openChat()}>{draftNotice()}</Show>
-      <Show when={props.embedded && !openChat()}>
-        <div class="flex shrink-0 justify-end p-1">
-          <IconButtonLink
-            href={listHref(
-              route().chatId
-                ? conversationHref(route().chatId!, null, route().messageId, route().view)
-                : archived()
-                  ? "/app/chat/archive"
-                  : "/app/chat",
-            )}
-            target={composerReady() ? undefined : "_top"}
-            label={t().openFullView}
-          >
-            <i class="ti ti-arrows-maximize" aria-hidden="true" />
-          </IconButtonLink>
-        </div>
+      <Show when={props.embedded && !openChat() && resourceChat()}>
+        <div class="flex shrink-0 justify-end p-1">{resourceChatButton(null)}</div>
       </Show>
       <AppWorkspace
         mobileSurface="flush"

@@ -10,11 +10,13 @@ import { chatService, loadChatView } from "../service";
 import ChatWorkspace from "./ChatWorkspace.island";
 import { chatTitle } from "./chat-title";
 import { CHAT_DEVICE_NOTICE_COOKIE, parseDeviceNotice } from "./device-notice";
+import { panelResourceChat } from "./panel-resource";
 
 /**
  * `/app/chat`, a chat (`/c/:chat`), one of its threads (`/c/:chat/t/:thread`), each with a message deep link (`/m/:message`),
  * and the phone's thread page (`/c/:chat/threads`): the full view with the authorized snapshot. The universal panel
- * serves the same addresses below `/app/chat/panel`.
+ * serves the same addresses below `/app/chat/panel`. There it starts in the discussion about the host page's resource
+ * when the page shares a scope that a discussion provider declares as its container.
  */
 export default ssr<AuthContext>(async (c) => {
   const embedded = c.req.path === "/app/chat/panel" || c.req.path.startsWith("/app/chat/panel/");
@@ -22,6 +24,13 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = chatMessages.resolve([locale]);
   const accessSubject = c.get("accessSubject");
   if (accessSubject.type !== "user") return ssr.error(c, 403);
+  const { resourceChat, redirect } = embedded
+    ? await panelResourceChat(c, async (ref) => {
+        const opened = await chatService.systemChats.open({ ...chatRequestContext(c), resourceType: ref.type, resourceId: ref.id });
+        return opened.ok ? opened.data : null;
+      })
+    : { resourceChat: null, redirect: null };
+  if (redirect) return c.redirect(redirect, 302);
   const archived = c.req.path.endsWith("/archive") || c.req.query("list") === "archive";
   let unread = (c.req.query("listFilter") ?? c.req.query("filter")) === "unread";
   const channelsPage = /\/channels\/?$/.test(c.req.path);
@@ -69,6 +78,7 @@ export default ssr<AuthContext>(async (c) => {
   const workspace = () => (
     <ChatWorkspace
       embedded={embedded}
+      resourceChat={resourceChat}
       archived={archived}
       filter={unread ? "unread" : "all"}
       collapsed={collapsed}

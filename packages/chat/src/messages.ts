@@ -168,7 +168,8 @@ export const chatMessages = i18n.define({
       browseChannels: "Discover channels",
       newChannel: "New channel",
       channels: "Channels",
-      openFullView: "Open full view",
+      panelAllChats: "All chats",
+      chatAboutResource: ({ title }: { title: string }) => `Chat about ${title}`,
       draftChangedElsewhere: "Another view changed this draft",
       draftChangedElsewhereDescription:
         "Your text is still in the composer. Compare it with the saved text below and choose which to keep.",
@@ -668,7 +669,8 @@ export const chatMessages = i18n.define({
       browseChannels: "Kanäle entdecken",
       newChannel: "Neuer Kanal",
       channels: "Kanäle",
-      openFullView: "In Vollansicht öffnen",
+      panelAllChats: "Alle Chats",
+      chatAboutResource: ({ title }: { title: string }) => `Über ${title} chatten`,
       draftChangedElsewhere: "Eine andere Ansicht hat diesen Entwurf geändert",
       draftChangedElsewhereDescription:
         "Dein Text steht weiter im Eingabefeld. Vergleiche ihn mit dem gespeicherten Text unten und wähle, welchen du behalten möchtest.",

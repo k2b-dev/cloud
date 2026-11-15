@@ -214,7 +214,7 @@ test("SSR retains personal archive and Unread navigation and saved collapsed sta
   );
 });
 
-test("the panel renders the same authorized chat with internal links and an explicit full-view link", () => {
+test("the panel renders the same authorized chat with internal links and no way out of the panel", () => {
   const html = render("en", {
     ...props(),
     embedded: true,
@@ -229,13 +229,13 @@ test("the panel renders the same authorized chat with internal links and an expl
   });
   expect(html).toContain('href="/app/chat/panel/c/Chat01"');
   expect(html).toContain('href="/app/chat/panel"');
-  expect(html).toContain('href="/app/chat/c/Chat01"');
-  expect(html).toContain("Open full view");
+  expect(html).not.toContain('href="/app/chat/c/');
+  expect(html).toContain("All chats");
   expect(html).toMatch(/<textarea[^>]*disabled/);
   expect(html).toContain(conversation.title);
 });
 
-test("panel personal navigation retains archive and unread context when opening the full view", () => {
+test("panel personal navigation retains archive and unread context", () => {
   const html = render("en", {
     ...props(),
     embedded: true,
@@ -252,11 +252,10 @@ test("panel personal navigation retains archive and unread context when opening 
   });
   expect(html).toContain('href="/app/chat/panel/archive?filter=unread"');
   expect(html).toContain('href="/app/chat/panel/c/Chat01?filter=unread&amp;list=archive"');
-  expect(html).toContain('href="/app/chat/c/Chat01?filter=unread&amp;list=archive"');
-  expect(html).toContain("Open full view");
+  expect(html).not.toContain('href="/app/chat/c/');
 });
 
-test("the panel keeps a chat's threads below the panel route; the full view opens the same thread", () => {
+test("the panel keeps a chat's threads below the panel route", () => {
   const html = render("en", {
     ...props(),
     embedded: true,
@@ -271,7 +270,6 @@ test("the panel keeps a chat's threads below the panel route; the full view open
     },
   });
   expect(html).toContain('href="/app/chat/panel/c/Chat01/threads"');
-  expect(html).toContain('href="/app/chat/c/Chat01/t/general"');
   expect(html).not.toContain('href="/app/chat/c/Chat01/threads"');
 });
 
