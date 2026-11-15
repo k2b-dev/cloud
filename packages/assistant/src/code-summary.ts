@@ -10,6 +10,8 @@ const CodeItemSchema = z.object({
   id: z.string(),
   title: z.string(),
   state: z.enum(["draft", "active", "paused", "deleting"]),
+  /** When the Code was paused; absent from older Core answers. */
+  pausedAt: z.string().nullable().optional(),
 });
 const CodeListSchema = z.object({ items: z.array(CodeItemSchema), nextCursor: z.string().nullable() });
 const RunListSchema = z.object({
@@ -63,6 +65,8 @@ export type CodeSummary = z.infer<typeof CodeItemSchema> & {
   automations?: CodeAutomation[];
   /** Targets that removed access, also when no automation could be named for them. */
   removedTargets?: CodeAutomationTarget[];
+  /** A draft's timing in Core's words, one per automation of its newest version; absent when unknown. */
+  proposedTiming?: string[];
 };
 /** One page of Code the person may see for an owner. `nextCursor` continues the list; null means it is complete. */
 export type CodeSummaryPage = { items: CodeSummary[]; nextCursor: string | null };
@@ -72,6 +76,25 @@ export type CodeQueryInvoke = <T extends z.ZodType>(
   invocation: CapabilityInvocation,
   schema: T,
 ) => Promise<CapabilityClientResult<z.output<T>>>;
+
+const VersionListSchema = z.object({ items: z.array(z.object({ version: z.object({ id: z.string() }) })) });
+const VersionWordsSchema = z.object({ timing: z.object({ items: z.array(z.object({ text: z.string() })) }) });
+
+/**
+ * A draft runs nothing yet, so Core lists no automations for it. Its newest version's read model still says when each
+ * would run, in the person's language: two Queries per draft, bounded by the page size.
+ */
+const loadProposedTiming = async (invoke: CodeQueryInvoke, codeId: string): Promise<string[] | undefined> => {
+  try {
+    const versions = await invoke(query("code.version.list", { codeId, limit: 1 }), VersionListSchema);
+    const versionId = versions.ok ? versions.data.data.items[0]?.version.id : undefined;
+    if (!versionId) return undefined;
+    const words = await invoke(query("code.version.words", { codeId, versionId }), VersionWordsSchema);
+    return words.ok ? words.data.data.timing.items.map((item) => item.text) : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 /** Core pages at most 20 Code items; the list loads further pages on request. */
 export const CODE_SUMMARY_LIMIT = 20;
@@ -96,15 +119,17 @@ export const loadCodeSummaries = async (invoke: CodeQueryInvoke, owner: CodeOwne
   if (!listed.ok) throw new CodeSummaryError(listed.error.message);
   const items = await Promise.all(
     listed.data.data.items.map(async (code): Promise<CodeSummary> => {
-      const [runs, automations] = await Promise.all([
+      const [runs, automations, proposedTiming] = await Promise.all([
         invoke(query("code.run.list", { codeId: code.id, limit: 1 }), RunListSchema),
         invoke(query("code.automation.list", { codeId: code.id }), AutomationListSchema).catch(() => null),
+        code.state === "draft" ? loadProposedTiming(invoke, code.id) : Promise.resolve(undefined),
       ]);
       // A missing run history does not hide the Code; it shows that its last run is unknown.
       return {
         ...code,
         lastRun: runs.ok ? (runs.data.data.items[0] ?? null) : undefined,
         ...(automations?.ok ? { automations: automations.data.data.items, removedTargets: automations.data.data.removedTargets } : {}),
+        ...(proposedTiming ? { proposedTiming } : {}),
       };
     }),
   );
@@ -208,54 +233,4 @@ export const loadCodeAttention = async (invoke: CodeQueryInvoke, cursor?: string
     if (!next) break;
   }
   return { items, nextCursor: next };
-};
-
-const RunCountSchema = z.object({ runs: z.number().int(), failed: z.number().int() });
-export type CodeRunCount = z.infer<typeof RunCountSchema>;
-/** Runs and failed runs of the person's own Code since `since`. */
-export const countOwnRunsSince = async (invoke: CodeQueryInvoke, since: string): Promise<CodeRunCount> => {
-  const result = await invoke(query("code.run.count", { since }), RunCountSchema);
-  if (!result.ok) throw new CodeSummaryError(result.error.message);
-  return result.data.data;
-};
-
-const zoned = (timeZone: string, at: Date) => {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(at);
-  const part = (type: string) => Number(parts.find((entry) => entry.type === type)?.value ?? 0);
-  return { year: part("year"), month: part("month"), day: part("day"), hour: part("hour"), minute: part("minute"), second: part("second") };
-};
-/** How far the zone's wall clock is ahead of UTC at one instant, in milliseconds. */
-const offsetAt = (timeZone: string, at: Date) => {
-  const local = zoned(timeZone, at);
-  return Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) - Math.floor(at.getTime() / 1000) * 1000;
-};
-/**
- * The instant the person's current day began in their time zone, so "today" means their day on server and browser.
- * Clock changes can repeat or skip local midnight, so it tries the zone's offsets around that day and takes the
- * earliest instant that already falls on the local date.
- */
-export const startOfDayIn = (timeZone: string, now: Date): string => {
-  const today = zoned(timeZone, now);
-  const midnightAsUtc = Date.UTC(today.year, today.month - 1, today.day);
-  const hour = 60 * 60 * 1000;
-  const offsets = new Set([-36, -24, -12, 0, 12].map((hours) => offsetAt(timeZone, new Date(midnightAsUtc + hours * hour))));
-  offsets.add(offsetAt(timeZone, now));
-  const sameDay = (instant: number) => {
-    const local = zoned(timeZone, new Date(instant));
-    return local.year === today.year && local.month === today.month && local.day === today.day;
-  };
-  const starts = [...offsets].map((offset) => midnightAsUtc - offset).filter(sameDay);
-  // No offset lands on local midnight when the day starts later (midnight skipped): its first hour on the date.
-  let start = starts.length > 0 ? Math.min(...starts) : midnightAsUtc - offsetAt(timeZone, now);
-  while (sameDay(start - hour)) start -= hour;
-  return new Date(start).toISOString();
 };

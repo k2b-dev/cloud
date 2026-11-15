@@ -54,8 +54,10 @@ export type LiveChannel<Scope extends z.ZodType = z.ZodType> = {
   keys(scope: z.output<Scope>, viewer: LiveViewer): Promise<readonly string[] | null>;
   /** IDs of the viewers allowed to read `key`. Called with at most 500 viewers. */
   authorize(key: string, viewers: readonly LiveViewer[], context?: { identityChanged: boolean }): Promise<ReadonlySet<string>>;
-  /** Explicit opt-in: every decision input must have an access event. Defaults retain 2/10/60-second checks. */
+  /** Delivery uses admitted keys. Every decision input needs an access event or the reauthorize sweep. */
   eventOnly?: true;
+  /** Keep the ten-second credential/access sweep for eventOnly channels with external owner authority. */
+  reauthorize?: true;
   /** Canonical access key for related delivery keys, e.g. mailbox:principal -> mailbox. */
   accessKey?: (key: string) => string;
   /** Collections refresh on access events and, by default, every minute. */
@@ -160,8 +162,8 @@ const eachLimited = async <T>(items: readonly T[], limit: number, run: (item: T)
 /**
  * Delivery of one application's live topic in this process: one follower with a
  * ring of recent events and an index of authorized subscriptions. Only setup
- * and domain/identity access events authorize eventOnly channels. Other channels
- * retain the public cache and periodic refresh contract.
+ * and domain/identity access events authorize eventOnly channels, with an optional
+ * reauthorize sweep. Other channels retain the public cache and periodic refresh contract.
  */
 export const createLiveEngine = (input: {
   appId: string;
@@ -177,7 +179,7 @@ export const createLiveEngine = (input: {
   const accessIndex = new Map<string, Map<string, number>>();
   const keyVersions = new Map<string, number>();
   const cache = new Map<string, { at: number; ok: boolean }>();
-  const periodic = Object.values(channels).some((channel) => !channel.eventOnly);
+  const periodic = Object.values(channels).some((channel) => !channel.eventOnly || channel.reauthorize);
   let stopAccess: (() => void) | undefined;
   let ring: Entry[] = [];
   let ringBytes = 0;
@@ -414,7 +416,7 @@ export const createLiveEngine = (input: {
   /** Rechecks the subscribers named by an access update; denied viewers lose the key. */
   const reauthorize = async (key: string, selected?: ReadonlySet<Connection>, periodicOnly = false, identityChanged = false) => {
     for (const [channel] of viewersOf(key)) {
-      if (periodicOnly && channels[channel]?.eventOnly) continue;
+      if (periodicOnly && channels[channel]?.eventOnly && !channels[channel]?.reauthorize) continue;
       const subs = [...(index.get(key) ?? [])].filter((sub) => sub.channel === channel && (!selected || selected.has(sub.conn)));
       if (!subs.length) continue;
       const viewers = subs.map((sub) => sub.conn.viewer);
@@ -978,7 +980,11 @@ export const createLiveEngine = (input: {
     if (sweeping || stopping.signal.aborted) return;
     sweeping = true;
     round++;
-    const selected = new Set([...connections].filter((conn) => [...conn.subs.values()].some((sub) => !channels[sub.channel]?.eventOnly)));
+    const selected = new Set(
+      [...connections].filter((conn) =>
+        [...conn.subs.values()].some((sub) => !channels[sub.channel]?.eventOnly || channels[sub.channel]?.reauthorize),
+      ),
+    );
     try {
       await eachLimited([...selected], LIVE_LIMITS.sweepInFlight, async (conn) => {
         try {
