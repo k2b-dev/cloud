@@ -155,6 +155,7 @@ import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
+import { finishedPlanShown, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
 
@@ -1485,7 +1486,7 @@ export default function AssistantWorkspace(props: Props) {
    * already done when the chat opened stays out of the way behind "Show tasks", as before.
    */
   const todoChoiceKey = () => `assistant.tasks-open:${chat.activeConversationId() ?? ""}`;
-  const readTodoChoice = (): "open" | "closed" | null => {
+  const readTodoChoice = (): TaskHostChoice => {
     try {
       const value = window.sessionStorage.getItem(todoChoiceKey());
       return value === "open" || value === "closed" ? value : null;
@@ -1493,7 +1494,7 @@ export default function AssistantWorkspace(props: Props) {
       return null;
     }
   };
-  const [todoChoice, setTodoChoice] = createSignal<"open" | "closed" | null>(null);
+  const [todoChoice, setTodoChoice] = createSignal<TaskHostChoice>(null);
   const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
   createEffect(
     on(
@@ -1510,10 +1511,7 @@ export default function AssistantWorkspace(props: Props) {
       if (before && before[1] === id && before[0] && !open) setShowCompletedTodos(true);
     }),
   );
-  const todoOpen = () => {
-    const choice = todoChoice();
-    return hasOpenTodos() ? choice !== "closed" : choice === "open";
-  };
+  const todoOpen = () => taskHostOpen({ hasOpenTasks: hasOpenTodos(), choice: todoChoice() });
   const setTodoOpen = (open: boolean) => {
     const choice = open ? "open" : "closed";
     setTodoChoice(choice);
@@ -1524,7 +1522,7 @@ export default function AssistantWorkspace(props: Props) {
     }
   };
   /** A finished plan shows when it just finished here or when the person opened it in this chat. */
-  const completedPlanShown = () => showCompletedTodos() || todoChoice() === "open";
+  const completedPlanShown = () => finishedPlanShown({ finishedHere: showCompletedTodos(), choice: todoChoice() });
   /** "2 of 4": done tasks of those that count; cancelled ones do not. */
   const todoProgress = () => {
     const counted = todoItems().filter((item) => item.status !== "cancelled");
@@ -2287,6 +2285,8 @@ export default function AssistantWorkspace(props: Props) {
                   onOpenChange={setTodoOpen}
                   label={todoLabel()}
                   progressLabel={todoProgress()}
+                  // A plan whose turn is not running (stopped, failed, or waiting for the person) stands still.
+                  paused={chat.activeTurn()?.status !== "running"}
                   statusLabels={
                     locale().startsWith("de")
                       ? {
