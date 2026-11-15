@@ -28,7 +28,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { LocaleProvider } from "@k2b/ui";
 import { SidebarHarness } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatSidebar.browser-fixture.tsx"))};
-import { openAssistantContextBoxSheet } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatContextBox.tsx"))};
+import { openAssistantContextBoxSheet } from ${JSON.stringify(resolve(import.meta.dir, "AssistantChatContextSheet.tsx"))};
 import { revealChatDelivery } from ${JSON.stringify(resolve(import.meta.dir, "chat-sidebar-layout.ts"))};
 
 const config = window.harness;

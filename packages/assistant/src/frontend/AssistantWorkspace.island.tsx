@@ -90,7 +90,7 @@ import {
   type ContextView,
   createAssistantChatContextState,
 } from "./AssistantChatContext";
-import { AssistantChatContextPlaces, type ContextBoxActions, openAssistantContextBoxSheet } from "./AssistantChatContextBox";
+import { AssistantChatContextPlaces, type ContextBoxActions } from "./AssistantChatContextBox";
 import type { ChatSidebarJump } from "./AssistantChatSidebar";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
@@ -1544,16 +1544,19 @@ export default function AssistantWorkspace(props: Props) {
     onOpenContext: () => openContextOverview("context", artifactCopy().context),
   });
   const openContextSheet = () =>
-    void openAssistantContextBoxSheet({
-      state: contextState,
-      actions: contextBoxActions(),
-      project: activeConversationProject(),
-      wrap: (content) => (
-        <LocaleProvider locale={locale()}>
-          <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
-        </LocaleProvider>
-      ),
-    });
+    // The phone sheet loads when it opens.
+    void import("./AssistantChatContextSheet").then(({ openAssistantContextBoxSheet }) =>
+      openAssistantContextBoxSheet({
+        state: contextState,
+        actions: contextBoxActions(),
+        project: activeConversationProject(),
+        wrap: (content) => (
+          <LocaleProvider locale={locale()}>
+            <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
+          </LocaleProvider>
+        ),
+      }),
+    );
   // The tabs belong to the chat and the person: another chat shows its own tabs.
   createEffect(
     on(
