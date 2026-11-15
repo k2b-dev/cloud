@@ -142,7 +142,9 @@ export function validateBlocks(value: unknown, host: BlockHost, ctx: BlockContex
       for (const row of node.rows) {
         for (const column of node.columns) {
           const cell = mapped(row, column.path ?? [column.key!]);
-          if (cell !== undefined && cell !== null && !["string", "number", "boolean"].includes(typeof cell))
+          // A cell is one plain value or a list of them, such as the options of a multiple choice field.
+          const plain = (value: unknown) => ["string", "number", "boolean"].includes(typeof value);
+          if (cell !== undefined && cell !== null && !plain(cell) && !(Array.isArray(cell) && cell.every(plain)))
             throw new Error("blocks_table_cell");
         }
         if (node.rowId) mapped(row, node.rowId, true);

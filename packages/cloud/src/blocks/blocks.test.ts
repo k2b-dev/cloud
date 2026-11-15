@@ -292,3 +292,15 @@ test("terminal text retains table destinations and card image labels and badges"
   expect(text).toContain("Vase | /app/catalog/v1");
   expect(text).toContain("Blue porcelain vase\nNew, Porcelain");
 });
+
+test("a table cell may list plain values, such as a multiple choice field, and reads them as a list", () => {
+  const listed = bound([
+    { ...table, rows: [{ name: "Vase", tags: ["open", "urgent"] }], columns: [...table.columns, { path: ["tags"], label: "Tags" }] },
+  ]);
+  expect(validateBlocks(listed, "result", ctx)).toHaveLength(1);
+  expect(blocksText(listed, { locale: "en", timeZone: "UTC" })).toContain("Vase | open, urgent");
+  const nested = bound([
+    { ...table, rows: [{ name: "Vase", tags: [{ id: "t1" }] }], columns: [...table.columns, { path: ["tags"], label: "Tags" }] },
+  ]);
+  expect(() => validateBlocks(nested, "result", ctx)).toThrow("blocks_table_cell");
+});
