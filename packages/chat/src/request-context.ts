@@ -5,6 +5,14 @@ import type { ChatContext } from "./service/access";
 
 export type ChatRequestContext = ChatContext & { caller: CapabilityCaller; credentialPrincipal: string };
 const contexts = new WeakMap<Request, ChatRequestContext>();
+/**
+ * Whether this request's credential may change data: an OAuth token needs `write` or `admin`, as Cloud requires for
+ * every OAuth mutation; sessions and personal API keys keep their own contracts.
+ */
+export const oauthAllowsWrites = <Env extends AuthContext>(c: Context<Env>): boolean => {
+  const scopes = c.get("oauthScopes");
+  return !scopes || scopes.includes("write") || scopes.includes("admin");
+};
 /** API and SSR use the same caller and credential partition as Cloud's LiveViewer. */
 export const chatRequestContext = <Env extends AuthContext>(c: Context<Env>): ChatRequestContext => {
   const existing = contexts.get(c.req.raw);

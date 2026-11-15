@@ -1,0 +1,6 @@
+### A menu whose sheet code loads later could stay shut, open late, or open after its owner
+
+- **What happened:** To keep phone-only sheet code out of every app's first JavaScript, `Dropdown`, `GestureMenu` and the `AppWorkspace` All sheet started to load it on demand. A review of that change found four ways the deferred open went wrong. If the code did not load, the menu never opened. A second tap while it loaded left a sheet open under a trigger that read as closed. The All sheet could open after its sidebar was gone. And the stand-in menu inside a modal dialog could not be used, because `ContextMenu` put its menu on the inert page (#1332).
+- **Root cause:** A synchronous open became a promise. Its failure, its cancellation, and the owner's end were then separate events that nothing handled.
+- **Error class:** A deferred open drops the failure, the second request, or the owner's lifecycle that a synchronous open handled implicitly.
+- **Guard:** `menu-sheet-fallback.behavior.test.tsx` makes every sheet import fail. The menus must still open in their in-page form and work, also inside a modal dialog. A second tap must cancel. The next open must try again exactly once. `context-menu.browser.test.ts` checks that a context menu in a transformed modal dialog opens at the pointer and takes clicks.

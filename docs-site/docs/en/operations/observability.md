@@ -5,7 +5,7 @@ section: Operations
 order: 1160
 description: Use logs, traces, metrics, and health data to operate Cloud applications.
 tags: [observability, health, logs]
-updated: 2026-11-02
+updated: 2026-11-15
 ---
 
 # Observability
@@ -238,6 +238,24 @@ into that document and keep the route template of its first page.
 Compare cold and warm visits to the same production build, including its
 precompressed assets, on a machine without competing builds. Keep browser
 metrics separate from gateway duration and development-server timings.
+
+## Page swap fallbacks
+
+In an application with `pageSwap`, a page change that cannot swap loads the
+whole page instead. Each such fallback of a signed-in person is one warning
+with source **page-swap** in Core's logs. It carries the application ID, a
+stable reason, and for `status` the HTTP status. It carries no URL, page
+content, or user ID, and its Referer names only the origin. Reporting is always on and shares the authenticated
+self-service API's rate limit.
+
+A few fallbacks are expected: a new release (`assets`, `module`), an expired
+session (`status` 401 or 403, `redirect`), a changed language or profile
+(`shell`). Look at an application whose rate keeps rising, or at `timeout`,
+`network`, `commit`, `history`, `history-limit`, and `error`, which point to slow
+pages, failing modules, or page code that fights the swap; `history-limit`
+means the page wrote browser history too often, for example an island that
+replaces the URL on every keystroke. See
+[Swap stability](/en/docs/frontend/url-state-and-navigation#swap-stability).
 
 ## Inspect routes and background work
 
