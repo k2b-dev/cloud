@@ -14,7 +14,7 @@ import { toPgTextArray } from "../services/postgres";
 import type { AiMessageOrigin, AiStoredMessageOrigin } from "./queue-contracts";
 import { addCloudResourceHrefs } from "./resource-refs";
 
-export type AiOriginViewer = { userId?: string | null; authority?: RequestAuthority; locale?: string };
+export type AiOriginViewer = { userId?: string | null; authority?: RequestAuthority | null; locale?: string };
 
 /** One bounded snapshot read, never called from the live event delivery path. */
 export const projectAiMessageOrigins = async (
@@ -34,7 +34,8 @@ export const projectAiMessageOrigins = async (
   const known = new Map(rows.map((row) => [`${row.kind}:${row.id}`, row]));
   const resources = new Map<string, Promise<{ name: string; href?: string } | null>>();
   const resolveAutomation = (origin: Extract<AiStoredMessageOrigin, { kind: "automation" }>) => {
-    if (!origin.resource || !viewer.authority) return Promise.resolve(null);
+    const authority = viewer.authority;
+    if (!origin.resource || !authority) return Promise.resolve(null);
     const ref = origin.resource;
     const key = `${ref.type}:${ref.id}`;
     const cached = resources.get(key);
@@ -54,7 +55,7 @@ export const projectAiMessageOrigins = async (
         appId: app.appId,
         capabilityId: reader.localId,
         input: { id: ref.id },
-        authority: viewer.authority!,
+        authority,
         locale: viewer.locale ?? "en",
       });
       if (!response.ok) return null;

@@ -55,6 +55,7 @@ import * as stream from "./stream";
 import { type AiLiveTopicEvent, aiStreamTopic } from "./stream";
 import type { PreparedAiTools } from "./tools";
 import type { AiChatTurnRunConfig, AiModelProfile, AiTurnFinalizedEvent } from "./types";
+import { AiTurnInterruption } from "./turn-interruption";
 import { aiUsage } from "./usage";
 import type { validateAiTurnRequest } from "./validate";
 import { createCloudAiViewImageTool } from "./vision-tool";
@@ -1389,6 +1390,7 @@ suite("AI executor integration", () => {
             capabilityActionReviews: new Map(),
             approvalTargets: new Map(),
             linkedApprovals: new Map(),
+            interruption: new AiTurnInterruption(() => {}),
           });
           expect(suspended).toBe(false);
           if (!background) {
@@ -1412,6 +1414,7 @@ suite("AI executor integration", () => {
               capabilityActionReviews: new Map(),
               approvalTargets: new Map(),
               linkedApprovals: new Map(),
+              interruption: new AiTurnInterruption(() => {}),
               onBackgroundBlocked: (message) => {
                 blocked = message;
               },
@@ -1503,6 +1506,7 @@ suite("AI executor integration", () => {
             capabilityActionReviews: new Map(),
             approvalTargets: new Map(),
             linkedApprovals: new Map(),
+            interruption: new AiTurnInterruption(() => {}),
             onBackgroundBlocked: (message) => {
               blocked = message;
             },
@@ -1613,6 +1617,7 @@ suite("AI executor integration", () => {
           capabilityActionReviews: reviews,
           approvalTargets: new Map(),
           linkedApprovals: new Map([[callId, approvalId]]),
+          interruption: new AiTurnInterruption(() => {}),
         });
       const linked = await studio("studio_app", fullContent ? fullReview : undefined);
       await ask("run-approval-0", linked);
@@ -1751,6 +1756,7 @@ suite("AI executor integration", () => {
             capabilityActionReviews: new Map(),
             approvalTargets,
             linkedApprovals: new Map(),
+            interruption: new AiTurnInterruption(() => {}),
           });
           // Resolved from a remembered approval, or saved as a question for the person.
           const asked = (await aiConversations.listPendingActionRecords({ conversationId: chat.id, turnId: turn.id })).some(
