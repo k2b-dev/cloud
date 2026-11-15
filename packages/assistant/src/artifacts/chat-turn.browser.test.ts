@@ -170,7 +170,8 @@ for (const viewport of [
 
       // The turn ends: the same elements stay in place; only the work line text and the message actions change.
       await step(page, "finish");
-      await page.getByRole("button", { name: "Kopieren", exact: true }).waitFor();
+      // The answer's own actions appear; the person's message has a Copy of its own.
+      await page.locator(".k2b-chat-message[data-role=assistant]").getByRole("button", { name: "Kopieren", exact: true }).waitFor();
       await announced(page, "Antwort fertig");
       const after = await measure(page);
       expect(after).toEqual(before);
@@ -179,7 +180,10 @@ for (const viewport of [
       expect(counts.start).toBe(1);
       expect(await page.getByRole("button", { name: "Stoppen", exact: true }).count()).toBe(1);
       expect(await app(page).locator("#total").textContent()).toBe("30");
-      expect(await page.locator(".ai-turn-work > summary").textContent()).toBe("3 Min. gearbeitet6 Schritte");
+      // The line says what the turn did, its steps, and how long it worked.
+      expect(await page.locator(".ai-turn-work > summary").textContent()).toBe(
+        "In Mail geändert, Dateien gelesen, Dateien erstellt · 6 Schritte3 Min.",
+      );
       expect(await page.locator(".ai-turn").textContent()).not.toContain("Now I build the dashboard.");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
       await page.screenshot({ path: `/tmp/assistant-turn-${viewport.width}.png`, fullPage: false });
@@ -233,7 +237,9 @@ test("a stop while a question waits leaves a not-run line at the card's place", 
     expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(false);
     // A stopped turn has no valid status any more: its texts fold into the work line.
     expect(after.text).toBeNull();
-    expect(await page.locator(".ai-turn-work > summary").textContent()).toBe("3 Min. gearbeitet · gestoppt6 Schritte");
+    expect(await page.locator(".ai-turn-work > summary").textContent()).toBe(
+      "Dateien gelesen, Dateien erstellt · 6 Schritte, gestoppt3 Min.",
+    );
   } finally {
     await page.close();
   }

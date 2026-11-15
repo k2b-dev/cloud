@@ -1,9 +1,9 @@
 export type { ChatContextPanelProps, ChatContextPopupProps } from "./ChatContextPopup";
 
 import { ChatContextPanel, ChatContextPopup } from "./ChatContextPopup";
-import { ChatTasks } from "./ChatTasks";
+import { ChatTaskList, ChatTasks } from "./ChatTasks";
 
-export type { ChatTask, ChatTasksProps } from "./ChatTasks";
+export type { ChatTask, ChatTaskListProps, ChatTasksProps } from "./ChatTasks";
 
 import { ChatComposer } from "./ChatComposer";
 import { ChatDecision, ChatMark, ChatOutcome, ChatPreview } from "./ChatDecision";
@@ -76,6 +76,7 @@ export type {
  */
 export const Chat = Object.assign(ChatRoot, {
   Tasks: ChatTasks,
+  TaskList: ChatTaskList,
   Timeline: ChatTimeline,
   Message: ChatMessage,
   Activity: Object.assign(ChatActivity, { Toggle: ChatActivityToggle }),

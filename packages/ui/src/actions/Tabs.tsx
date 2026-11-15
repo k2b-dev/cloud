@@ -15,6 +15,15 @@ export type TabOption<T extends string = string> = {
   icon?: string;
   disabled?: boolean;
   panel?: JSX.Element;
+  /** A small count after the label, such as "3" or "+2 −1", in tabular figures. */
+  count?: JSX.Element;
+  /**
+   * The widest the count gets, such as "99" or "+99 −99": the count keeps this width, so the tab and its neighbours
+   * never move when the number changes.
+   */
+  countReserve?: string;
+  /** What the count says for assistive technology, such as "3 comments" or "2 lines added, 1 removed". */
+  countLabel?: string;
   onClose?: () => void;
   closeLabel?: string;
 };
@@ -190,6 +199,14 @@ function TabsRoot<T extends string = string>(props: TabsProps<T>): JSX.Element {
                   >
                     <Show when={option().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
                     <span class={props.variant === "pill" ? "k2b-truncate-fade" : undefined}>{option().label}</span>
+                    <Show when={option().count !== undefined}>
+                      {/* The name reads "Code, 3 comments", never "Code3". */}
+                      <span class="k2b-sr-only">, {option().countLabel ?? ""}</span>
+                      <span class="k2b-tabs__count" aria-hidden={option().countLabel ? "true" : undefined}>
+                        <span>{option().count}</span>
+                        <Show when={option().countReserve}>{(reserve) => <span aria-hidden="true">{reserve()}</span>}</Show>
+                      </span>
+                    </Show>
                   </button>
                   <Show when={option().onClose}>
                     <button
