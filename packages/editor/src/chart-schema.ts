@@ -341,6 +341,8 @@ export const chartKinds = (limits?: ChartLimits) => {
         legend: z.boolean().optional(),
         area: z.boolean().optional(),
         smooth: z.boolean().optional(),
+        /** A hollow point on every value; off by default. */
+        points: z.boolean().optional(),
         step: z.enum(["after", "before", "middle"]).optional(),
         zero: z.boolean().optional(),
         legendValues: z.boolean().optional(),

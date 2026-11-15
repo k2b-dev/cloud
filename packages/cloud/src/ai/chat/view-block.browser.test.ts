@@ -2037,7 +2037,7 @@ const quiet = {
 };
 files["/views/returns-per-day-3c4d5e6f.view.json"] = quiet;
 for (const width of [1440, 390])
-  test(`a view-file chart and table are islands, and the chart's zeros stay on the zero line (${width})`, async () => {
+  test(`a view-file chart and table are islands, the chart's zeros stay on the zero line and its values have hollow points (${width})`, async () => {
     const context = await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" });
     try {
       const page = await context.newPage();
@@ -2064,6 +2064,15 @@ for (const width of [1440, 390])
           .filter((d) => /[Cc]/.test(d)),
       );
       expect(curves).toEqual([]);
+      // v12, chart in an island: a hollow point on each of the 14 values, the surface inside a ring in the line's colour.
+      const points = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<SVGCircleElement>("[data-view-path] .k2b-line-point")).map((point) => {
+          const style = getComputedStyle(point);
+          return { fill: style.fill, stroke: style.stroke };
+        }),
+      );
+      expect(points).toHaveLength(quiet.series[0]!.data.length);
+      expect(points[0]!.fill).not.toBe(points[0]!.stroke);
       if (process.env.VIEW_SHOTS)
         await page.screenshot({ path: `${process.env.VIEW_SHOTS}/gustav-insel-light-${width}.png`, fullPage: true });
     } finally {

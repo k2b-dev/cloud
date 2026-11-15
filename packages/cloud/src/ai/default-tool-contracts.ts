@@ -306,6 +306,7 @@ const flatChartSchema = () => {
     threshold: z.object({ value: z.number(), label: ChartLabel }).optional().describe("line: labelled warning threshold."),
     marker: z.object({ at: ChartCoordinate, label: ChartLabel }).optional().describe("line: labelled vertical marker, for example Today."),
     smooth: z.boolean().optional().describe("line: smooth curves."),
+    points: z.boolean().optional().describe("line: a hollow point on every value."),
     showLabels: z.boolean().optional().describe("pie, donut: name slices next to them."),
     bins: ChartBins.optional(),
     value: z.number().optional().describe("gauge, stat: value."),

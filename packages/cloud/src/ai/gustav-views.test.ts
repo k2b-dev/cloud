@@ -18,6 +18,18 @@ test("one chart becomes one Chart block with the same description", () => {
   expect(view?.blocks[0]).toMatchObject({ kind: "Chart", description: { kind: "bar", title: "Revenue per month", subtitle: "EUR, 2026" } });
 });
 
+test("Gustav's lines are straight with hollow points unless he says otherwise; other kinds stay as described", () => {
+  const saldo = {
+    kind: "line",
+    title: "Saldo",
+    series: [{ label: "Saldo", data: [1, 0, 0, 3].map((y, index) => ({ x: `2026-0${index + 6}-01`, y })) }],
+  };
+  const description = (args: unknown) => (chartToolView(args)?.blocks[0] as { description?: Record<string, unknown> }).description;
+  expect(description(saldo)).toMatchObject({ smooth: false, points: true });
+  expect(description({ ...saldo, smooth: true, points: false })).toMatchObject({ smooth: true, points: false });
+  expect(description(revenue)).not.toHaveProperty("points");
+});
+
 test("a group becomes its charts under the group's title, side by side in a grid", () => {
   const view = chartToolView({ title: "Shop", layout: "grid", charts: [revenue, { ...revenue, title: "Orders" }] });
   expect(view?.blocks).toEqual([

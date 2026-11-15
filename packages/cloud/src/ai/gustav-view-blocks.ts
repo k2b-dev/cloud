@@ -7,21 +7,24 @@ import { parseCloudAiChartToolView } from "./view-block";
  * before it stores them with the result. One chart becomes a `Chart` block; a group its charts under the group's
  * title, side by side for a grid. A card becomes one flat key figure.
  */
-/** Gustav's lines are straight unless he asks for a smooth curve, which can swing past its values (zeros dip below 0). */
-const straight = <T extends { kind: string; smooth?: boolean }>(description: T): T =>
-  description.kind === "line" && description.smooth === undefined ? { ...description, smooth: false } : description;
+/**
+ * Gustav's lines are straight with a hollow point on every value unless he says otherwise (v12, chart in an island): a
+ * smooth curve can swing past its values, so a run of zeros would dip below zero.
+ */
+export const gustavLine = <T extends { kind: string; smooth?: boolean; points?: boolean }>(description: T): T =>
+  description.kind === "line" ? { ...description, smooth: description.smooth ?? false, points: description.points ?? true } : description;
 
 export const chartToolBlocks = (args: unknown): BoundBlockView | null => {
   const parsed = parseCloudAiChartToolView(args);
   if (!parsed) return null;
   if (parsed.view === "chart") {
     const { view: _view, ...description } = parsed;
-    return { version: 1, blocks: [{ kind: "Chart", description: straight(description) }] };
+    return { version: 1, blocks: [{ kind: "Chart", description: gustavLine(description) }] };
   }
   const width = parsed.layout === "grid" ? ("half" as const) : undefined;
   const charts = parsed.charts.map((description) => ({
     kind: "Chart" as const,
-    description: straight(description),
+    description: gustavLine(description),
     ...(width ? { width } : {}),
   }));
   return {

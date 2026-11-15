@@ -1,3 +1,4 @@
+import { gustavLine } from "../gustav-view-blocks";
 import {
   CLOUD_AI_VIEW_MAX_BYTES,
   type CloudAiView,
@@ -22,7 +23,7 @@ export async function loadView(
     const blob = await response.blob();
     if (blob.size > CLOUD_AI_VIEW_MAX_BYTES) return null;
     const view = parseCloudAiView(JSON.parse(await blob.text()));
-    return view && matches(view, summary) ? cloudAiViewDescription(view) : null;
+    return view && matches(view, summary) ? gustavLines(cloudAiViewDescription(view)) : null;
   } catch {
     return null;
   }
@@ -68,4 +69,11 @@ const matches = (view: CloudAiView, summary: CloudAiViewSummary) => {
     loaded.charts.length === summary.charts.length &&
     loaded.charts.every((chart, index) => chart.kind === summary.charts[index]?.kind && sameHeading(chart, summary.charts[index]))
   );
+};
+
+/** A view file is Gustav's: its lines draw as his chart tool's do, straight with a hollow point on every value. */
+const gustavLines = (description: CloudViewDescription): CloudViewDescription => {
+  if ("kind" in description) return gustavLine(description);
+  if (description.block === "group") return { ...description, charts: description.charts.map(gustavLine) };
+  return description;
 };
