@@ -203,7 +203,6 @@ type Props = {
   initialTabs?: { chatId: string; snapshot: ChatWorkspaceSnapshot } | null;
   /** The hint that tabs can be arranged was dismissed. */
   arrangeHintSeen?: boolean;
-  /** The person closed the chat sidebar's column before; the server renders it closed. */
   projects: AiProject[];
   initialProject: AiProject | null;
   initialProjectChats: AiConversationPage | null;
