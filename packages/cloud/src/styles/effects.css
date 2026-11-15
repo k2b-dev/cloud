@@ -1686,8 +1686,9 @@ dialog:has(.launchpad-panel)::backdrop {
 
 .k2b-ui .ai-code-examples__item {
   display: grid;
-  /* The result word keeps the width of the longest word, so "Running" becoming "Successful" moves nothing. */
-  grid-template-columns: 1.125rem minmax(0, 1fr) minmax(7.5rem, auto);
+  /* The result word has one fixed column, as wide as the longest word ("Fehlgeschlagen"), so a change of word or a
+     longer word in another row moves no text beside it. */
+  grid-template-columns: 1.125rem minmax(0, 1fr) 8.5rem;
   column-gap: 0.625rem;
   row-gap: 0.125rem;
   align-items: baseline;
@@ -1711,6 +1712,8 @@ dialog:has(.launchpad-panel)::backdrop {
 
 .k2b-ui .ai-code-examples__name {
   grid-column: 2;
+  justify-self: stretch;
+  min-width: 0;
   font-size: 0.875rem;
   font-weight: 600;
 }
@@ -1718,7 +1721,7 @@ dialog:has(.launchpad-panel)::backdrop {
 .k2b-ui .ai-code-examples__status {
   grid-column: 3;
   grid-row: 1;
-  min-width: 7.5rem;
+  min-width: 0;
   text-align: end;
   color: var(--k2b-success-text);
   font-size: 0.875rem;
