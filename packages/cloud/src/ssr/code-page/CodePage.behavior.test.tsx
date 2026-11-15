@@ -271,3 +271,33 @@ test.skipIf(isServer)("a new result after a live run is named only where the rea
     invoke.mockRestore();
   }
 });
+
+// #77 in the browser: "What it may do" links a target only where the server read its name as the person; a target
+// they may not read keeps Core's type-only words, without link or reference.
+test.skipIf(isServer)("what it may do links only targets named for the person", () => {
+  const data = codePageFixture("overview", "en");
+  const current = data.state.kind === "ready" ? data.state.words?.current : null;
+  if (!current) throw new Error("Expected ready fixture with version words");
+  current.mayDo = {
+    items: [
+      { text: "Create task · Space “Logistics”", app: "Spaces", href: "/app/spaces/GPzX93" },
+      {
+        text: "Create task · a target of type Space",
+        app: "Spaces",
+        target: { ref: { type: "spaces.space", id: "HidN3x" }, text: "Create task · Space “{name}”" },
+      },
+    ],
+    more: 0,
+    moreText: null,
+  };
+  const page = mount(data);
+  try {
+    const list = page.dom.document.querySelector(".cloud-code__rows[data-plain]");
+    expect(list?.querySelector('a[href="/app/spaces/GPzX93"]')?.textContent).toBe("Space “Logistics”");
+    expect(list?.querySelectorAll("a")).toHaveLength(1);
+    expect(list?.textContent).toContain("a target of type Space");
+    expect(page.dom.root.innerHTML).not.toMatch(/HidN3x|\{name\}/);
+  } finally {
+    page.dispose();
+  }
+});

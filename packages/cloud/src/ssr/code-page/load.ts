@@ -3,6 +3,7 @@ import { z } from "zod";
 import { aiLive } from "../../ai/live";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "../../capabilities/server";
 import type { CapabilityCaller } from "../../capabilities/server-invoke";
+import { nameCodeGrantTargets } from "../../code/read-model-targets";
 import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "../../contracts/capabilities";
 import {
   CodeActivityReadModelSchema,
@@ -645,10 +646,24 @@ const loadReady = async (
       ? latest
       : undefined);
   const currentId = code.activeVersionId ?? proposalReceipt?.version.id ?? latest?.version.id ?? null;
-  const versionWords = (versionId: string | null | undefined) =>
-    versionId
-      ? words<CodeVersionReadModel>(invoke(coreQuery("code.version.words", { codeId: code.id, versionId }), CodeVersionReadModelSchema))
-      : Promise.resolve(null);
+  /**
+   * One source for every target name on the page: a type's canonical reader from the per-page catalog, read with the
+   * person's authority. "What it may do" and the latest results both read their targets through it, each target in
+   * its own call with the person's rights; Core's one child Query is never involved.
+   */
+  const readerOf = async (type: string): Promise<string | null> => {
+    if (!type.includes(".")) return null;
+    const app = await catalog(cloudResourceRefAppId({ type, id: "" }));
+    return app?.ok && app.data ? (resolveCapabilityResourceReader(app.data.manifest, { type, id: "" })?.localId ?? null) : null;
+  };
+  const versionWords = async (versionId: string | null | undefined) => {
+    if (!versionId) return null;
+    const model = await words<CodeVersionReadModel>(
+      invoke(coreQuery("code.version.words", { codeId: code.id, versionId }), CodeVersionReadModelSchema),
+    );
+    // A name that cannot be read leaves Core's sentence with the target's type, never an empty row.
+    return model ? nameCodeGrantTargets(model, invoke, readerOf, c.req.raw.signal).catch(() => model) : null;
+  };
   const runFilter = readRunFilter(url.searchParams.get("filter"));
   const runsListed =
     tab === "runs"
@@ -701,6 +716,7 @@ const loadReady = async (
         ]
       : [],
   );
+  // The browser names a live result with the same readers, so they travel with the page.
   const recentReaders: Record<string, string> = {};
   for (const appId of readerApps) {
     const app = await catalog(appId);
@@ -710,9 +726,7 @@ const loadReady = async (
       if (reader) recentReaders[`${appId}.${type.localId}`] = reader.localId;
     }
   }
-  const namedActivity = activity
-    ? { ...activity, recent: await nameRecentResults(activity.recent, invoke, (type) => recentReaders[type] ?? null) }
-    : null;
+  const namedActivity = activity ? { ...activity, recent: await nameRecentResults(activity.recent, invoke, readerOf) } : null;
   const byId = new Map([currentWords, proposalWords, selectedWords].flatMap((item) => (item ? [[item.versionId, item] as const] : [])));
   const secretNames = [
     ...new Set([...(activeManifest?.secrets ?? []), ...(waitingManifest?.secrets ?? [])].map((binding) => binding.name)),
