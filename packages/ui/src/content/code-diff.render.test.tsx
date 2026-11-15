@@ -240,11 +240,5 @@ describe("CodeDiff server rendering", () => {
       expect(rowNumbers(markup)).toHaveLength(800);
       expect(text(markup)).toContain("Thread big.ts:700");
     });
-
-    test("the end of the file row comes before the code", () => {
-      const markup = html({ files, lineAction, toolbarEnd: "Keyboard: Tab into the code" });
-      expect(markup.indexOf("k2b-code-diff__toolbar-end")).toBeGreaterThan(-1);
-      expect(markup.indexOf("k2b-code-diff__toolbar-end")).toBeLessThan(markup.indexOf('role="region"'));
-    });
   });
 });

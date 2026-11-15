@@ -382,10 +382,8 @@ const files = [
   { path: "code.ts", lines: [same("import { app } from '@sdk';"), same(""), same("app.schedule({ cron: '0 8 * * 1-5' }, async () => {"), del("  await draft.create();"), add("  await task.create();"), add("  await tag.set();"), same("});")] },
 ];
 const [slotLines, setSlotLines] = createSignal([]);
-const [focusLine, setFocusLine] = createSignal();
 window.selected = [];
 window.setSlotLines = setSlotLines;
-window.setFocusLine = setFocusLine;
 render(
   () =>
     createComponent(CodeDiff, {
@@ -401,10 +399,6 @@ render(
         box.textContent = "Thread on line " + line;
         return box;
       },
-      get focusLine() {
-        return focusLine();
-      },
-      toolbarEnd: "Keyboard: Tab into the code",
     }),
   document.getElementById("app"),
 );
@@ -422,7 +416,6 @@ const annotatedScript = await annotatedBuild.outputs[0]!.text();
 type Annotated = {
   selected: number[];
   setSlotLines: (lines: { path: string; line: number }[]) => void;
-  setFocusLine: (line?: { path: string; line: number }) => void;
 };
 
 const openAnnotated = async (touch = false): Promise<Page> => {
@@ -514,9 +507,9 @@ describe("CodeDiff line actions in a browser", () => {
       expect(Math.round((await box(page, '[data-row="4"]')).top)).toBe(Math.round(below.top + slot.height));
       expect(await page.locator('[data-row="2"] .k2b-code-diff__noted').count()).toBe(1);
 
-      // The host asks for the focus after closing its content; it lands on that line's action.
+      // The host hands the focus back after closing its content: each action names its line.
       await page.evaluate(() => (window as unknown as Annotated).setSlotLines([]));
-      await page.evaluate(() => (window as unknown as Annotated).setFocusLine({ path: "code.ts", line: 3 }));
+      await page.evaluate(() => document.querySelector<HTMLElement>('[data-action-line="3"]')!.focus());
       await page.waitForFunction(() => (document.activeElement as HTMLElement | null)?.dataset.actionRow === "2");
       expect(await box(page, '[data-row="4"]')).toEqual(below);
     } finally {

@@ -942,13 +942,18 @@ main > .code-page-host {
 .core-code-review__files-icon {
   color: var(--k2b-text-muted);
 }
+/* The keyboard hint closes the line; it wraps below the lock sentence where the field is narrow. */
 .core-code-review__foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.375rem;
   margin: 0;
   font-size: var(--k2b-type-12, 0.75rem);
   color: var(--k2b-text-subtle, var(--k2b-text-muted));
+}
+.core-code-review__foot > .core-code-review__keys {
+  margin-left: auto;
 }
 /* A fixed line height, so the writing field and the comment it becomes measure alike and sending moves nothing. */
 .core-code-review__thread {

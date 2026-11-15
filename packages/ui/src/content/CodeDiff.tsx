@@ -1,4 +1,4 @@
-import { children, createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
+import { children, createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch, untrack } from "solid-js";
 import { Button } from "../actions/Button";
 import { Tabs } from "../actions/Tabs";
 import { Tooltip } from "../feedback/Tooltip";
@@ -78,8 +78,6 @@ export type CodeDiffProps = {
    * the code loads or fails.
    */
   toolbarStart?: JSX.Element;
-  /** Quiet content at the end of the file row, such as a keyboard hint. */
-  toolbarEnd?: JSX.Element;
   /** An action on each line of the new version. The code is then one tab stop: arrow keys, Home and End move between lines. */
   lineAction?: CodeDiffLineAction;
   /**
@@ -93,8 +91,6 @@ export type CodeDiffProps = {
    * tracking scope, so the content keeps its own state; it reads its own data reactively.
    */
   lineSlot?: (location: CodeDiffLocation) => JSX.Element;
-  /** Moves keyboard focus to the action of this line; every new object is a new request, such as after a slot closes. */
-  focusLine?: CodeDiffLocation;
   class?: string;
 };
 
@@ -182,7 +178,6 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
   const messages = useCodeDiffMessages();
   const locale = useLocale();
   const toolbar = children(() => props.toolbarStart);
-  const toolbarEnd = children(() => props.toolbarEnd);
   const count = (value: number) => new Intl.NumberFormat(locale()).format(value);
 
   const [chosen, setChosen] = createSignal<string>();
@@ -207,17 +202,13 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
   };
   // The place for the line action and the slot marker exists whenever the host may use it, so a first slot moves nothing.
   const annotated = () => props.lineAction !== undefined || props.lineSlot !== undefined;
-  /** New line numbers of the current file that have content below them. */
-  const slotted = createMemo(() => {
-    const path = currentPath();
-    return new Set((props.slotLines ?? []).filter((line) => line.path === path && line.side !== "old").map((line) => line.line));
-  });
+  /** Rows of the current file that have content below them. */
   const keep = createMemo(() => {
-    const lines = slotted();
+    const path = currentPath();
+    const lines = new Set((props.slotLines ?? []).filter((line) => line.path === path && line.side !== "old").map((line) => line.line));
     const indexes = new Set<number>();
-    if (lines.size === 0) return indexes;
     rows().forEach((row, index) => {
-      if (row.kind !== "del" && row.new !== undefined && lines.has(row.new)) indexes.add(index);
+      if (row.kind !== "del" && lines.has(row.new!)) indexes.add(index);
     });
     return indexes;
   });
@@ -253,22 +244,12 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     itemCache = next;
     return result;
   });
-  // Pages render cumulatively; a marked line renders the pages up to its own.
-  const markPages = createMemo(() => {
-    const target = markIndex();
-    if (target === undefined) return 0;
-    return Math.ceil((items().findIndex((item) => item.type === "row" && item.index === target) + 1) / PAGE);
-  });
-  // Every line with content below it renders, with the pages before it.
-  const keepPages = createMemo(() => {
-    const kept = keep();
-    if (kept.size === 0) return 0;
-    let last = -1;
-    items().forEach((item, position) => {
-      if (item.type === "row" && kept.has(item.index)) last = position;
-    });
-    return Math.ceil((last + 1) / PAGE);
-  });
+  /** Pages render cumulatively: the pages up to the last row that passes the test. */
+  const pagesUpTo = (test: (index: number) => boolean) =>
+    Math.ceil((items().findLastIndex((item) => item.type === "row" && test(item.index)) + 1) / PAGE);
+  // A marked line renders the pages up to its own, and so does every line with content below it.
+  const markPages = createMemo(() => pagesUpTo((index) => index === markIndex()));
+  const keepPages = createMemo(() => pagesUpTo((index) => keep().has(index)));
   const shown = createMemo(() =>
     Math.min(items().length, Math.max(pages().get(currentPath() ?? "") ?? 1, markPages(), keepPages()) * PAGE),
   );
@@ -288,8 +269,8 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     const first = visible().length;
     setPages((current) => new Map(current).set(path, Math.ceil(shown() / PAGE) + 1));
     const item = items()[first];
-    if (item?.type === "row") setFocusRow(item.index);
-    else if (item?.type === "fold") setFocusRow(item.start);
+    // A note only ever opens the list, so the next page starts with a row or a fold.
+    if (item && item.type !== "note") setFocusRow(item.type === "row" ? item.index : item.start);
   };
 
   // A mark switches to its file, also when that file arrives later. Afterwards the person may choose another file.
@@ -360,41 +341,17 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
   const moveAction = (event: KeyboardEvent, index: number) => {
     const candidates = actionRows();
     const at = candidates.indexOf(index);
-    let next: number | undefined;
-    if (event.key === "ArrowDown") next = candidates[Math.min(candidates.length - 1, at + 1)];
-    else if (event.key === "ArrowUp") next = candidates[Math.max(0, at - 1)];
-    else if (event.key === "Home") next = candidates[0];
-    else if (event.key === "End") next = candidates.at(-1);
-    else if ((event.key === "ArrowLeft" || event.key === "ArrowRight") && body) {
-      // The code itself is no tab stop while it has actions; sideways keys scroll long lines.
-      event.preventDefault();
-      body.scrollBy?.({ left: event.key === "ArrowLeft" ? -48 : 48, behavior: "instant" });
-      return;
-    }
-    if (next === undefined) return;
+    const steps: Partial<Record<string, number>> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: candidates.length - 1 };
+    // The code itself is no tab stop while it has actions; sideways keys scroll long lines.
+    const sideways: Partial<Record<string, number>> = { ArrowLeft: -48, ArrowRight: 48 };
+    const step = steps[event.key];
+    const scroll = sideways[event.key];
+    const next = step === undefined ? undefined : candidates[Math.max(0, Math.min(candidates.length - 1, step))];
+    if (next === undefined && scroll === undefined) return;
     event.preventDefault();
-    focusAction(next);
+    if (next !== undefined) focusAction(next);
+    else body?.scrollBy?.({ left: scroll, behavior: "instant" });
   };
-  // After the host's own updates settle, such as a closing thread that hands its focus back to itself.
-  let focusTimer: ReturnType<typeof setTimeout> | undefined;
-  onCleanup(() => clearTimeout(focusTimer));
-  createEffect(
-    on(
-      () => props.focusLine,
-      (target) => {
-        if (!target) return;
-        clearTimeout(focusTimer);
-        focusTimer = setTimeout(() => {
-          if (target.path !== currentPath()) choose(target.path);
-          queueMicrotask(() => {
-            const index = rows().findIndex((row) => row.kind !== "del" && row.new === target.line);
-            if (index >= 0) focusAction(index);
-          });
-        }, 0);
-      },
-      { defer: true },
-    ),
-  );
 
   // A file without rows, such as one the application has not loaded yet, has nothing to summarise.
   const detail = (file: CodeDiffFile) => {
@@ -422,40 +379,38 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
   };
 
   // The fixed place between the numbers and the code: the line action, and a mark while the line has content below it.
-  const gutter = (index: number, noted: () => boolean) => {
-    const location = locationOf(index);
-    return (
-      <span class="k2b-code-diff__gutter">
-        <Show when={noted()}>
-          <i class="ti ti-message-2 k2b-code-diff__noted" aria-hidden="true" />
-        </Show>
-        <Show when={props.lineAction && location}>
-          {(where) => {
-            const label = () => props.lineAction?.label(where()) ?? "";
-            return (
-              <Tooltip.Trigger
-                type="button"
-                class="k2b-code-diff__action"
-                data-action-row={index}
-                aria-label={label()}
-                content={label()}
-                placement="right"
-                tabIndex={tabStop() === index ? 0 : -1}
-                onFocus={() => setStopRow(index)}
-                onClick={() => {
-                  setStopRow(index);
-                  props.lineAction?.onSelect(where());
-                }}
-                onKeyDown={(event) => moveAction(event, index)}
-              >
-                <i class="ti ti-plus" aria-hidden="true" />
-              </Tooltip.Trigger>
-            );
-          }}
-        </Show>
-      </span>
-    );
-  };
+  const gutter = (index: number, location: CodeDiffLocation | undefined, noted: () => boolean) => (
+    <span class="k2b-code-diff__gutter">
+      <Show when={noted()}>
+        <i class="ti ti-message-2 k2b-code-diff__noted" aria-hidden="true" />
+      </Show>
+      <Show when={props.lineAction && location}>
+        {(where) => {
+          const label = () => props.lineAction?.label(where()) ?? "";
+          return (
+            <Tooltip.Trigger
+              type="button"
+              class="k2b-code-diff__action"
+              data-action-row={index}
+              data-action-line={where().line}
+              aria-label={label()}
+              content={label()}
+              placement="right"
+              tabIndex={tabStop() === index ? 0 : -1}
+              onFocus={() => setStopRow(index)}
+              onClick={() => {
+                setStopRow(index);
+                props.lineAction?.onSelect(where());
+              }}
+              onKeyDown={(event) => moveAction(event, index)}
+            >
+              <i class="ti ti-plus" aria-hidden="true" />
+            </Tooltip.Trigger>
+          );
+        }}
+      </Show>
+    </span>
+  );
 
   const line = (index: number) => {
     const row = rows()[index]!;
@@ -479,7 +434,7 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
                 <span class="k2b-code-diff__number" aria-hidden="true">
                   {row.new}
                 </span>
-                <Show when={annotated()}>{gutter(index, noted)}</Show>
+                <Show when={annotated()}>{gutter(index, location, noted)}</Show>
               </>
             }
           >
@@ -489,7 +444,7 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
             <span class="k2b-code-diff__number" aria-hidden="true">
               {row.new}
             </span>
-            <Show when={annotated()}>{gutter(index, noted)}</Show>
+            <Show when={annotated()}>{gutter(index, location, noted)}</Show>
             <span class="k2b-code-diff__sign" aria-hidden="true">
               {row.kind === "add" ? "+" : row.kind === "del" ? "−" : ""}
             </span>
@@ -608,10 +563,6 @@ export function CodeDiff(props: CodeDiffProps): JSX.Element {
     <div class={`k2b-code-diff ${props.class ?? ""}`}>
       <Show when={toolbar()}>
         <div class="k2b-code-diff__toolbar">{toolbar()}</div>
-      </Show>
-      {/* Before the code in reading order, after the file names on screen. */}
-      <Show when={toolbarEnd()}>
-        <div class="k2b-code-diff__toolbar-end">{toolbarEnd()}</div>
       </Show>
       <Switch>
         <Match when={props.status === undefined && !props.files.some(hasChanges) && !props.slotLines?.length}>

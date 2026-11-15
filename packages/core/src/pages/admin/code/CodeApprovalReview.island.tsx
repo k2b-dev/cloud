@@ -326,7 +326,6 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
   const [olderCursor, setOlderCursor] = createSignal(props.commentsNext);
   const [total, setTotal] = createSignal(props.commentsTotal);
   const [opened, setOpened] = createSignal<CodeDiffLocation | null>(null);
-  const [focusLine, setFocusLine] = createSignal<CodeDiffLocation>();
   const [deleteFailed, setDeleteFailed] = createSignal<string | null>(null);
   const threads = createMemo(() => threadsOf(comments()));
   const threadAt = (path: string, line: number) => threads().find((thread) => thread.path === path && thread.line === line);
@@ -420,8 +419,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       return open?.path === line.path && open.line === line.line;
     };
     const editable = () => !closed();
+    let box: HTMLDivElement | undefined;
     return (
-      <div class="core-code-review__thread">
+      <div class="core-code-review__thread" ref={box}>
         <Discussion.Thread
           label={t().threadLabel({ path: line.path, n: line.line })}
           placeholder={thread() ? t().replyPlaceholder : t().commentPlaceholder({ n: line.line })}
@@ -431,9 +431,10 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
           writing={writingHere() ? true : undefined}
           onWritingChange={(writing) => {
             if (writing) return;
+            // Sent or cancelled: the focus goes back to the "+" of this line, also when a new thread closes with it.
+            const code = box?.closest('[role="region"]');
             if (writingHere()) setOpened(null);
-            // Sent or cancelled: the focus goes back to the "+" of this line.
-            setFocusLine({ path: line.path, line: line.line, side: "new" });
+            setTimeout(() => code?.querySelector<HTMLElement>(`[data-action-line="${line.line}"]`)?.focus());
           }}
           onSubmit={editable() ? (message) => post(line.path, line.line, message, thread()?.rootId) : undefined}
         >
@@ -484,7 +485,6 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         onRetry={() => reloadCodeArea()}
         label={t().codeLabel}
         toolbarStart={<i class="ti ti-file-code core-code-review__files-icon" aria-hidden="true" />}
-        toolbarEnd={closed() ? undefined : <span class="core-code-review__keys">{t().keysHint}</span>}
         lineAction={
           closed()
             ? undefined
@@ -498,11 +498,13 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
         }
         slotLines={slotLines()}
         lineSlot={(location) => <LineThread path={location.path} line={location.line} />}
-        focusLine={focusLine()}
       />
       <p class="core-code-review__foot">
         <i class="ti ti-lock" aria-hidden="true" />
         <span>{closed() ? t().footDecided : t().footOpen}</span>
+        <Show when={!closed()}>
+          <span class="core-code-review__keys">{t().keysHint}</span>
+        </Show>
       </p>
     </Section>
   );

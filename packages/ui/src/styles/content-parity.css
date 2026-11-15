@@ -4403,22 +4403,6 @@
   display: contents;
 }
 
-/* The end of the file row: after the file names on screen, before the code in
-   reading order. The code below takes the full width. */
-.k2b-ui .k2b-code-diff > .k2b-code-diff__toolbar-end {
-  flex: 0 1 auto;
-  order: 1;
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: var(--k2b-text-muted);
-}
-
-.k2b-ui .k2b-code-diff > .k2b-code-diff__body,
-.k2b-ui .k2b-code-diff > .k2b-code-diff__state,
-.k2b-ui .k2b-code-diff__files > .k2b-tabs__panel {
-  order: 2;
-}
-
 .k2b-ui .k2b-code-diff__files > .k2b-tabs__bar,
 .k2b-ui .k2b-code-diff > .k2b-code-diff__file {
   flex: 1 1 12rem;

@@ -126,8 +126,6 @@ type CodeDiffLineAction = {
 lineAction?: CodeDiffLineAction;
 slotLines?: readonly CodeDiffLocation[]; // lines of the new version with content below them
 lineSlot?: (location: CodeDiffLocation) => JSX.Element;
-focusLine?: CodeDiffLocation; // every new object moves the focus to that line's action
-toolbarEnd?: JSX.Element; // quiet text at the end of the file row, such as a keyboard hint
 ```
 
 - **Place:** with `lineAction` or `lineSlot`, every line gets a fixed place between the line number and the code
@@ -145,9 +143,8 @@ toolbarEnd?: JSX.Element; // quiet text at the end of the file row, such as a ke
 - **Unchanged file:** a file without changes but with listed lines shows "This file is unchanged. The commented lines
   follow." and only those lines with their content, so nothing listed disappears in any view.
 - **Keyboard:** the code is one tab stop. Tab reaches the action of one line; ↑, ↓, Home and End move the real focus
-  from line to line and skip removed lines; ← and → scroll long lines; Enter or Space selects. After the host closes
-  its content, it passes a new `focusLine` object; the focus returns to that line's action once the host's own
-  updates have settled.
+  from line to line and skip removed lines; ← and → scroll long lines; Enter or Space selects. Each action carries
+  `data-action-line` with its line number, so a host returns the focus to it after closing its content.
 
 ```tsx
 <CodeDiff
@@ -155,7 +152,5 @@ toolbarEnd?: JSX.Element; // quiet text at the end of the file row, such as a ke
   lineAction={{ label: ({ line }) => `Comment on line ${line}`, onSelect: (location) => openThread(location) }}
   slotLines={threadLines()}
   lineSlot={(location) => <LineThread location={location} />}
-  focusLine={returnFocus()}
-  toolbarEnd="Keyboard: Tab into the code, ↑ ↓ chooses the line, Enter comments"
 />
 ```

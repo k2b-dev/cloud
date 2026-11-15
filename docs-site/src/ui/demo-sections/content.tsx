@@ -772,10 +772,10 @@ const CodeDiffDemo = () => {
 // The same review with an action on every line: a note opens below the line and closes back to its action.
 const CodeDiffLinesDemo = () => {
   const [notes, setNotes] = createSignal<CodeDiffLocation[]>([{ path: "index.ts", line: 14 }]);
-  const [focusLine, setFocusLine] = createSignal<CodeDiffLocation>();
   const close = (location: CodeDiffLocation) => {
     setNotes((current) => current.filter((note) => note.path !== location.path || note.line !== location.line));
-    setFocusLine({ ...location });
+    // The host returns the focus to the line's action once the note has gone.
+    setTimeout(() => document.querySelector<HTMLElement>(`#code-diff-lines [data-action-line="${location.line}"]`)?.focus());
   };
   return (
     <DemoCard
@@ -787,7 +787,6 @@ const CodeDiffLinesDemo = () => {
   lineAction={{ label: ({ line }) => \`Comment on line \${line}\`, onSelect: open }}
   slotLines={notes()}
   lineSlot={(location) => <Note location={location} onClose={() => close(location)} />}
-  focusLine={focusLine()}
 />`}
     >
       <CodeDiff
@@ -808,8 +807,6 @@ const CodeDiffLinesDemo = () => {
             </Button>
           </p>
         )}
-        focusLine={focusLine()}
-        toolbarEnd="Keyboard: Tab into the code, ↑ ↓ chooses the line, Enter comments"
       />
     </DemoCard>
   );
