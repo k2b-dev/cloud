@@ -61,7 +61,7 @@
     --k2b-hover: light-dark(#eff6ff, #252c35);
     --k2b-selected: light-dark(#dbeafe, #172554);
     --k2b-action: light-dark(#1d4ed8, #93c5fd);
-    --k2b-action-hover: light-dark(#1e40af, #bfdbfe);
+    --k2b-action-hover: light-dark(#1e3a8a, #dbeafe);
     --k2b-action-solid: light-dark(#1d4ed8, #2563eb);
     --k2b-action-solid-hover: light-dark(#1e40af, #1d4ed8);
     --k2b-selection: light-dark(rgb(29 78 216 / 0.35), rgb(147 197 253 / 0.35));
@@ -217,7 +217,6 @@
 
   a:hover {
     color: var(--k2b-action-hover);
-    text-decoration: underline;
   }
 
   strong,
