@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { qr } from "@k2b/stdlib/qr";
 import { type Browser, type BrowserContextOptions, devices, type Page } from "playwright";
@@ -30,6 +31,7 @@ render(
 const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the QR scanner fixture for the browser.");
 const script = await build.outputs[0]!.text();
+const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 
 const CODE = "https://cloud.example/pair#code";
 // The QR modules as one SVG path, with the module count of its view box, for a camera that films the code.
@@ -52,6 +54,8 @@ type Probe = {
   turned: boolean;
   /** Media events of the preview and play() calls, for the report of a scan that never ends (#2187). */
   media: string[];
+  /** Where "Try again" sat each time it appeared, read as it was inserted. */
+  retryPlaces: { x: number; y: number }[];
 };
 
 /**
@@ -86,6 +90,15 @@ function stubDevice({
       },
       true,
     );
+  probe.retryPlaces = [];
+  new MutationObserver((records) => {
+    for (const record of records)
+      for (const node of record.addedNodes)
+        if (node instanceof HTMLElement && node.matches(".k2b-qr-scanner__retry")) {
+          const { x, y } = node.getBoundingClientRect();
+          probe.retryPlaces.push({ x, y });
+        }
+  }).observe(document, { childList: true, subtree: true });
   const ownPlay = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
     note("play()");
@@ -233,6 +246,8 @@ async function open(options: {
   context?: BrowserContextOptions;
   play?: Play;
   blockWorker?: boolean;
+  /** Lays the scanner out with the shipped stylesheet, as in Cloud, instead of the bare elements. */
+  styled?: boolean;
 }): Promise<Page> {
   const context = await browser.newContext(options.context ?? phone);
   await context.addInitScript(stubDevice, {
@@ -251,6 +266,7 @@ async function open(options: {
   );
   const page = await context.newPage();
   await page.goto("https://scanner.test/");
+  if (options.styled) await page.addStyleTag({ content: css });
   await page.addScriptTag({ content: script });
   return page;
 }
@@ -384,10 +400,19 @@ describe("@k2b/ui QrScanner in a browser", () => {
     ["hang", "the player never starts it"],
   ] as const) {
     test(`offers to start the camera picture again when ${story}, then reads the code`, async () => {
-      const page = await open({ detector: "none", camera: "code", play });
+      const page = await open({ detector: "none", camera: "code", play, styled: true });
       try {
         const retry = page.getByRole("button", { name: "Try again" });
         await retry.waitFor({ timeout: 10_000 });
+        // A refused play() offers "Try again" before the picture has a size. The square preview keeps the button in
+        // place when the picture arrives. Bare, the video grew from 300 × 150 to the picture's 640 × 640 and moved the
+        // button from under a press in progress, so the press reached the video and nothing restarted (#2187).
+        await page.waitForFunction(() => document.querySelector("video")!.videoWidth > 0);
+        const places = await page.evaluate(() => {
+          const { x, y } = document.querySelector(".k2b-qr-scanner__retry")!.getBoundingClientRect();
+          return { appeared: (globalThis as unknown as Probe).retryPlaces[0], now: { x, y } };
+        });
+        expect(places.appeared).toEqual(places.now);
         expect(await status(page)).toBe("The camera is on, but its picture did not start.");
         expect(await calls(page)).toEqual({ results: [], errors: [], stops: 0 });
         await retry.click();
