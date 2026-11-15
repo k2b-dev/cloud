@@ -144,8 +144,9 @@ describe("HoverCard with actions", () => {
         expect(await isOpen(page)).toBe(true);
         const surface = await box(page, card);
         const pill = await box(page, "#pill");
-        expect(surface.bottom).toBe(pill.top - 6);
-        expect(surface.right).toBe(pill.right);
+        // The card is placed on whole pixels; WebKit measures text controls in fractions.
+        expect(Math.abs(surface.bottom - (pill.top - 6))).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(surface.right - pill.right)).toBeLessThanOrEqual(0.5);
         expect(surface.top).toBeGreaterThanOrEqual(8);
         expect(surface.width).toBe(368);
         const title = await box(page, `${card} .k2b-hover-card__title`);

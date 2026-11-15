@@ -1049,6 +1049,13 @@
   gap: 0.75rem;
 }
 .k2b-ui .k2b-hover-card__foot > .k2b-hover-card__hint { margin-inline-start: auto; text-align: end; }
+/* Links in the last line read as text; only the underline carries the link accent. */
+.k2b-ui .k2b-hover-card__actions a {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: var(--k2b-link-accent);
+  text-underline-offset: 0.15em;
+}
 /* The dialog itself takes the focus only to hand it to its controls, as AnchoredPopover does. */
 .k2b-ui [popover].k2b-hover-card[role="dialog"] { outline: none; }
 
