@@ -1,4 +1,5 @@
 import { createRenderEffect, createSignal, type JSX, on, onCleanup, onMount } from "solid-js";
+import { announce } from "../feedback/announce";
 import { prefersReducedMotion } from "../motion";
 
 /** The host's first word stands this long before the first change. */
@@ -18,7 +19,10 @@ export type ChatActivityWordsProps = {
    * first browser frame shows the same word; the browser counts on from there.
    */
   elapsedMs: number;
-  /** The one sentence screen readers hear for this phase, such as "Gustav is thinking". Words and seconds stay silent. */
+  /**
+   * The one sentence screen readers hear for this phase, such as "Gustav is thinking", once, through the page's live
+   * region. Words and seconds stay silent.
+   */
   announce: string;
 };
 
@@ -107,6 +111,9 @@ export function ChatActivityWords(props: ChatActivityWordsProps): JSX.Element {
     document.addEventListener("visibilitychange", visibility);
     base = { elapsed: props.elapsedMs, at: now() };
     schedule();
+    // Once per phase, through the page's one live region: a status inside the busy row and message could be held back
+    // until the row is gone.
+    announce(props.announce);
     onCleanup(() => {
       clearTimeout(tickTimer);
       clearTimeout(swapTimer);
@@ -127,15 +134,12 @@ export function ChatActivityWords(props: ChatActivityWordsProps): JSX.Element {
         <span
           class="k2b-chat-activity__word"
           data-phase={phase()}
-          onAnimationEnd={() => {
+          onTransitionEnd={() => {
             if (phase() === "in") setPhase("still");
           }}
         >
           {shown()}
         </span>
-      </span>
-      <span class="k2b-sr-only" role="status">
-        {props.announce}
       </span>
     </>
   );

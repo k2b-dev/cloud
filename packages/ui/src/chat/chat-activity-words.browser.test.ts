@@ -173,7 +173,7 @@ describe("Chat.Activity.Words in the browser", () => {
   );
 
   test(
-    "a pointer on the row holds the word, and screen readers hear one stable sentence",
+    "a pointer on the row holds the word, and the row holds no status of its own",
     async () => {
       const page = await open(1440);
       try {
@@ -183,7 +183,7 @@ describe("Chat.Activity.Words in the browser", () => {
         await page.clock.runFor(10_000);
         // settled: the page clock is installed, so runFor has already run every timer and frame this read depends on.
         expect((await sample(page)).words.map((word) => word.text)).toEqual([held]);
-        expect(await page.locator('[role="status"]').allTextContents()).toEqual(["Gustav denkt nach"]);
+        expect(await page.locator('.k2b-chat-activity [role="status"]').count()).toBe(0);
         expect(await page.locator(".k2b-chat-activity__words").getAttribute("aria-hidden")).toBe("true");
       } finally {
         await page.close();

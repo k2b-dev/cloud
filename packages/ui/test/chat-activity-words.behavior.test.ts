@@ -61,8 +61,8 @@ else {
     expect(view.dom.root.querySelector(".k2b-chat-activity__word")?.getAttribute("data-phase")).toBe("in");
     observer.disconnect();
     expect(seen.every((frame) => frame.length === 1)).toBe(true);
-    // The announcement stays one stable sentence; words and seconds are silent.
-    expect(view.dom.root.querySelectorAll('[role="status"]')).toHaveLength(1);
+    // Words and seconds are silent; the row holds no status of its own.
+    expect(view.dom.root.querySelectorAll('[role="status"]')).toHaveLength(0);
     expect(view.dom.root.querySelector(".k2b-chat-activity__words")?.getAttribute("aria-hidden")).toBe("true");
     view.close();
   });
@@ -108,3 +108,21 @@ else {
     }
   });
 }
+
+if (!isServer)
+  test("the phase is announced once through the page's live region, outside the busy row", async () => {
+    const view = await mount(5_400);
+    try {
+      await wait(400);
+      const lines = () =>
+        [...view.dom.document.querySelectorAll("[aria-live] div")]
+          .map((line) => line.textContent)
+          .filter((text) => text === "Gustav denkt nach");
+      expect(lines()).toHaveLength(1);
+      expect(view.dom.document.querySelector("[aria-live]")?.closest('[aria-busy="true"]')).toBeNull();
+      await wait(300);
+      expect(lines().length).toBeLessThanOrEqual(1);
+    } finally {
+      view.close();
+    }
+  });

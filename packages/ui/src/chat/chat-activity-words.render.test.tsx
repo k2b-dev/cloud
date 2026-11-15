@@ -31,7 +31,7 @@ test("the word follows the phase time: the first word for 3 s, then one word per
   expect(chatActivityWordAt(FIRST, WORDS, Number.NaN)).toBe(FIRST);
 });
 
-test("the server renders exactly one word, the one for its time, silent beside one announcement", () => {
+test("the server renders exactly one word, the one for its time, and no announcement in the row", () => {
   for (const [elapsedMs, word] of [
     [2_999, FIRST],
     [3_000, "Grübelt"],
@@ -53,8 +53,9 @@ test("the server renders exactly one word, the one for its time, silent beside o
     expect(slot.match(/data-phase="still">([^<]*)/)?.[1], String(elapsedMs)).toBe(word);
     // The resting first word is in the server's HTML too; only the stylesheet decides which of the two shows.
     expect(slot.match(/k2b-chat-activity__word-rest">([^<]*)/)?.[1], String(elapsedMs)).toBe(FIRST);
-    expect(html.match(/role="status"/g)?.length).toBe(1);
-    expect(html).toContain(">Gustav denkt nach<");
+    // The announcement goes through the page's live region in the browser, never through the row.
+    expect(html).not.toContain('role="status"');
+    expect(html).not.toContain("Gustav denkt nach");
   }
 });
 

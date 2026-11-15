@@ -500,6 +500,43 @@ const renderTimeline = async (
   }
 });
 
+(isServer ? test.skip : test)("a timeline built after the page was rendered times its turn by the real clock", async () => {
+  jest.useFakeTimers();
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  // The page was rendered an hour ago; this timeline is built now, such as for another chat.
+  const renderedAt = new Date(Date.now() - 3_600_000).toISOString();
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider actions={{}}>
+        {(() => {
+          const items = createAiChatTimeline({
+            messages: createMemo(() => visibleMessages(state)),
+            activeTurn: () => state.activeTurn,
+            renderedAt,
+          });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const clock = () => dom.root.querySelector(".ai-turn-work .ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+    jest.advanceTimersByTime(5_000);
+    expect(clock()).toBe("5 s");
+  } finally {
+    dispose();
+    dom.cleanup();
+    jest.useRealTimers();
+  }
+});
+
 (isServer ? test.skip : test)("the work line says that the stream reconnects and how long a long step runs", async () => {
   jest.useFakeTimers();
   const dom = createDomTestHarness();

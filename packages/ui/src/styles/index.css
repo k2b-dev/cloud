@@ -15006,24 +15006,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: none;
 }
 
+/* Transitions, not animations, so a host may still run its own animation on the word, such as a shimmer. The new word
+   arrives while the place is at opacity 0 and comes back in with the "in" timing. */
+.k2b-ui .k2b-chat-activity__word {
+  transition: opacity var(--k2b-motion-word-in) var(--k2b-ease-out);
+}
+
 .k2b-ui .k2b-chat-activity__word[data-phase="out"] {
-  animation: k2b-chat-activity-word-out var(--k2b-motion-word-out) var(--k2b-ease-in) forwards;
-}
-
-.k2b-ui .k2b-chat-activity__word[data-phase="in"] {
-  animation: k2b-chat-activity-word-in var(--k2b-motion-word-in) var(--k2b-ease-out) both;
-}
-
-@keyframes k2b-chat-activity-word-out {
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes k2b-chat-activity-word-in {
-  from {
-    opacity: 0;
-  }
+  opacity: 0;
+  transition: opacity var(--k2b-motion-word-out) var(--k2b-ease-in);
 }
 
 .k2b-ui .k2b-chat-activity__chevron {
