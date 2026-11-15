@@ -167,7 +167,10 @@ stand-in of the same width, such as the widest time of the day, until the real
 value is known, so the line cannot wrap when it arrives. Only the current line is visible and
 accessible; inactive action links leave the tab order. `actions` under a line
 stay in the cell while the line is hidden, so a line with buttons reserves
-their row from the start. When a line's own action switches `current`, such
+their row from the start. Inside a decision, a `Button` or `ButtonLink` with
+`variant="text"` among those `actions`, such as "See everything", reads like the
+decision's quiet text answers in the AI colour; a bare link reads as plain text.
+When a line's own action switches `current`, such
 as "Send again" to running, focus stays on the outcome instead of the hidden
 link. `running` sets `aria-busy` on the words only, never
 on an ancestor of the live region. Pass `onActionError` to receive an error a

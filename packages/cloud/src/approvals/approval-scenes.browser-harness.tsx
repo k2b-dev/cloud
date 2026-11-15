@@ -1,4 +1,4 @@
-import { ChangeList, type ChatDecisionState, LocaleProvider } from "@k2b/ui";
+import { ButtonLink, ChangeList, Chat, type ChatDecisionState, LocaleProvider } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
 import type { ActionCard, ActionText } from "../ai/chat/action-card";
@@ -392,6 +392,31 @@ const scenes: Record<string, () => JSX.Element> = {
           ]}
           more={[{ label: "Erst Beispiele ausprobieren", onSelect: () => {} }]}
           confirm={{ label: "Trotzdem einschalten", icon: "ti ti-power", onSelect: () => {} }}
+        />
+        <Label>Wartet auf Admin, auf der Code-Seite</Label>
+        <ApprovalFrame
+          locale="de"
+          state="decided"
+          source={code}
+          status={{ tone: "waiting", label: "Wartet auf Admin" }}
+          reason={{ text: "In eurer Cloud gibt ein Admin jede Automation frei, die etwas tut, das andere sehen.", icon: "ti ti-eye" }}
+          outcome={
+            <Chat.Outcome
+              current="state"
+              lines={{
+                state: {
+                  tone: "waiting",
+                  text: "Version 5 wartet auf die Freigabe eines Admins.",
+                  detail: "Die Admins wissen Bescheid. Bis dahin bleibt Version 4 eingeschaltet.",
+                  actions: (
+                    <ButtonLink variant="text" href="/app/code/info">
+                      Alles ansehen
+                    </ButtonLink>
+                  ),
+                },
+              }}
+            />
+          }
         />
         <Label>Lädt</Label>
         <ApprovalFrame locale="de" state="loading" source={code} reason={{ text: "" }} />

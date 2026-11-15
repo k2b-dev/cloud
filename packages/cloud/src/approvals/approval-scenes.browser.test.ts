@@ -253,6 +253,15 @@ describe("Approval scenes", () => {
               ]),
               sticky: answers ? getComputedStyle(answers).position : null,
               status: node.querySelector(".k2b-chat-decision__status")?.textContent ?? null,
+              // A text action reads the same wherever the card shows it: among the answers or under a decided outcome.
+              textAction: (() => {
+                const action = node.querySelector<HTMLElement>(
+                  '.k2b-chat-decision__buttons > [data-variant="text"], .k2b-chat-outcome__actions > *',
+                );
+                if (!action) return null;
+                const style = getComputedStyle(action);
+                return { text: action.textContent?.trim(), color: style.color, weight: style.fontWeight, fill: style.backgroundColor };
+              })(),
               busy: node.querySelector("[aria-busy='true']") !== null,
               origin: node.querySelector(".k2b-chat-decision__details-label strong")
                 ? getComputedStyle(node.querySelector(".k2b-chat-decision__details-label strong")!).fontWeight
@@ -271,7 +280,7 @@ describe("Approval scenes", () => {
         );
         await shot(page, `40-freigabe-rahmen-light-${width}`);
         expect(frames.map((frame) => [frame.primary, frame.radius, frame.shadow])).toEqual(
-          Array.from({ length: 4 }, () => ["ai", "12px", "none"]),
+          Array.from({ length: 5 }, () => ["ai", "12px", "none"]),
         );
         // The answers come first and "See everything" last; side answers are white without an edge.
         expect(frames[0]).toMatchObject({
@@ -304,7 +313,12 @@ describe("Approval scenes", () => {
         });
         // On a wide card the short fact stands left in the answer row, not on a line of its own.
         if (width === 1440) expect(frames[1]!.oneLine).toBe(true);
-        expect(frames[3]).toMatchObject({ status: "Lädt", busy: true, sentence: null });
+        // On the Code page a waiting version's "See everything" sits under its outcome: the same text action in the
+        // place's colour as among the answers, not black text.
+        expect(frames[3]!.status).toBe("Wartet auf Admin");
+        expect(frames[3]!.textAction).toEqual(frames[0]!.textAction);
+        expect(frames[0]!.textAction).toMatchObject({ text: "Alles ansehen", weight: "600", fill: "rgba(0, 0, 0, 0)" });
+        expect(frames[4]).toMatchObject({ status: "Lädt", busy: true, sentence: null });
       } finally {
         await page.context().close();
       }
