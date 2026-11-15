@@ -726,6 +726,56 @@ const renderFailedTurnTimeline = async (
   }
 });
 
+(isServer ? test.skip : test)("a failed answer keeps the text it had begun and is not announced as ready", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    "de",
+    () => {},
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/q1.csv" } };
+  const answer = "Jana fragt zwei Dinge:";
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 2, type: "block_set", block: { ...read, status: "completed", result: "a" } });
+    emit({ ...base, seq: 3, type: "block_delta", blockId: "a2-t0-0", blockKind: "text", delta: answer });
+    await tick();
+    emit({
+      ...base,
+      seq: 4,
+      type: "turn_finished",
+      status: "failed",
+      error: "Der KI-Dienst hat nicht geantwortet.",
+      messages: [
+        storedMessage(10, { role: "user", content: [{ type: "text", text: "Was fragt Jana?" }] }),
+        storedMessage(11, { role: "assistant", content: [{ type: "tool_call", id: "read", name: "read_file", args: read.args }] }),
+        storedMessage(12, { role: "tool_result", callId: "read", name: "read_file", result: "a", isError: false }),
+        storedMessage(
+          13,
+          { role: "assistant", content: [{ type: "text", text: answer }] },
+          { loopDoneReason: "error", meta: { turnError: { code: "model_unavailable" } } },
+        ),
+      ],
+    });
+    await tick();
+    expect(dom.root.querySelector(".ai-turn__text")?.textContent).toContain(answer);
+    expect(dom.root.querySelector(".ai-turn__notice")?.textContent).toContain("Was bis hier steht, bleibt erhalten.");
+    // Screen readers hear why the answer broke off, never that it is ready.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const heard = document.querySelector("[data-k2b-live]")?.textContent ?? "";
+    expect(heard).toContain("Der KI-Dienst hat nicht geantwortet.");
+    expect(heard).not.toContain("Antwort fertig");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 (isServer ? test.skip : test)("a failed turn keeps its elements and names its reason and next step in the reader's language", async () => {
   const dom = createDomTestHarness();
   const [state, setState] = createStore(emptyProjection());

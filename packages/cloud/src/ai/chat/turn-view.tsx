@@ -649,6 +649,8 @@ function AiTurnText(props: {
   quiet: Accessor<boolean>;
   /** An earlier segment of a split turn: it stops being live while the turn goes on. */
   earlier: Accessor<boolean>;
+  /** The turn ended with its answer; a stopped or failed turn keeps its text but its answer is not ready. */
+  completed: Accessor<boolean>;
 }) {
   const locale = useLocale();
   const status = () => props.live() && props.folding();
@@ -700,7 +702,8 @@ function AiTurnText(props: {
   );
   createEffect(
     on(props.live, (live, wasLive) => {
-      if (wasLive === true && !live && untrack(props.folding) && !untrack(props.earlier)) announce(aiChatMessages(locale()).answerReady);
+      if (wasLive === true && !live && untrack(props.folding) && !untrack(props.earlier) && untrack(props.completed))
+        announce(aiChatMessages(locale()).answerReady);
     }),
   );
   return (
@@ -742,6 +745,19 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
   const actions = createMemo(() => new Map(layout().actions.map((action) => [action.id, action])));
   const actionIds = createMemo(() => [...actions().keys()]);
   const live = () => isLive(props.segment().phase);
+  // One "Answer again" at a time: a second click while the first is on its way would ask the controller to stop it.
+  const [answering, setAnswering] = createSignal(false);
+  const answerAgain = async (run: () => unknown) => {
+    if (answering()) return;
+    setAnswering(true);
+    try {
+      await run();
+    } catch {
+      // The chat controller shows why the message could not be answered again.
+    } finally {
+      setAnswering(false);
+    }
+  };
   // The sources the finished answer cites, numbered as in its text. Read once the turn ends, from the same sanitized HTML
   // the answer shows, so a link the sanitizer drops never comes back as a source.
   const sources = createMemo(() => {
@@ -801,6 +817,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             folding={() => layout().steps > 0}
             quiet={() => layout().textIsStatus}
             earlier={() => props.segment().earlier}
+            completed={() => props.segment().phase === "completed"}
           />
         </Show>
         <Show when={!live() && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
@@ -835,7 +852,13 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             trailing={
               <Show when={props.segment().answerAgain}>
                 {(again) => (
-                  <Button variant="secondary" size="sm" onClick={() => void again()()} disabled={chatActions.actionDisabled?.()}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={answering()}
+                    onClick={() => void answerAgain(again())}
+                    disabled={chatActions.actionDisabled?.()}
+                  >
                     <i class="ti ti-refresh" aria-hidden="true" /> {aiChatMessages(locale()).actionAnswerAgain}
                   </Button>
                 )}
