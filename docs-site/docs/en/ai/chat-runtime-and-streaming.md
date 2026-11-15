@@ -1200,3 +1200,39 @@ and its account-scoped idempotency key, independently of the queue's personal
 author field.
 The optional host-owned `runConfig.codeOrigin` is copied to the user message
 and turn record for attribution; it grants no tool authority.
+
+## Host admission and terminal bookkeeping
+
+The first `startAiRuntime` call from `@k2b/cloud/ai/runtime` can register
+`beforeChatTurn: AiChatTurnAdmission` and `onSweep`. The admission callback runs
+after current model resolution and access validation, before any model request.
+It receives `turnId`, `conversationId`, `leaseOwner`, the persisted `runConfig`
+and the executed `profile`. The host must fence its transaction against the
+current running turn lease. A Code-attributed turn without this callback fails
+closed. Core uses it for policy and whole-turn daily cost reservations.
+
+`onTurnFinalized` runs after durable completion. `onSweep` independently recovers
+host bookkeeping when a terminal callback was missed, even if the platform sweep
+fails. Callbacks must be idempotent across worker retries and process restarts.
+`AiTurnFailure` carries a stable public turn-error code and a private diagnostic
+message. The exported `AUTOMATION_TURN_BUDGET` defines the shared 512,000-input /
+16-call allocation, including retries and compaction; it grants no authority.
+
+The host installs `runConfig.inferenceBudget` in the same fenced transaction as
+its durable cost reservation. Provider admission rereads this snapshot under
+the existing accounting lock. It binds model identity, prices, context/output
+ceilings, total input and call allocation. All inference attributed to that turn
+shares it, including structured/vision tool attempts; output is clamped to the
+reserved ceiling and unreserved models fail before dispatch. Core preserves the
+framework's source-turn attribution on nested generation/decision capabilities.
+Callers must retain that attribution when starting related inference. The
+ordinary unbounded-person accounting path keeps its existing statement count;
+a bounded turn adds one aggregate per provider attempt, never per stream event.
+
+Code-attributed turns pin nested inference to the admitted model and output
+ceiling. A tool that needs another profile, or System One's uncapped output,
+is refused before inference rather than spending outside the reservation.
+Answering a choice starts a new person-triggered turn; its Query uses that new
+turn's invocation lease. Background memory learning skips turns with a bounded
+inference allocation, so it cannot reopen their ended reservation. Normal personal calls without a source
+turn keep the optional nested-invocation lease behavior.

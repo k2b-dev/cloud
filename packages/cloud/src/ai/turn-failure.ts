@@ -12,6 +12,13 @@ export class AiTurnFailure extends Error {
   }
 }
 
+/** Shared provider admission reached its allocation, including attributed tool calls. */
+export class AiTurnInferenceLimit extends AiTurnFailure {
+  constructor(readonly reason: "model_calls" | "input_tokens") {
+    super("automation_turn_limit", "The turn's shared inference allowance is exhausted.");
+  }
+}
+
 /**
  * Why a turn failed. `error` is what a person reads, worded by the reader's client; `detail` is the diagnostic cause, which
  * only the log keeps. Provider diagnostics have already been reduced to fixed text. `message`, when set, is Cloud's

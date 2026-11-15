@@ -263,13 +263,13 @@ export const CODE_SETTINGS = {
     default: 1,
     label: "AI reference budget per attempt (USD)",
     description:
-      "Reference allowance for text AI calls (generate/decide) in one Code attempt; zero disables those calls. Chat turns use actual daily costs.",
+      "Reference allowance for text AI calls (generate/decide) in one Code attempt; zero disables those calls. Chat turns reserve their maximum against the daily budgets and settle measured cost.",
     presentation: {
       translations: {
         de: {
           label: "KI-Referenzbudget je Versuch (USD)",
           description:
-            "Referenzbudget für Text-KI (generate/decide) je Code-Versuch; 0 sperrt diese Aufrufe. Chat-Läufe zählen mit ihren tatsächlichen Tageskosten.",
+            "Referenzbudget für Text-KI (generate/decide) je Code-Versuch; 0 sperrt diese Aufrufe. Chat-Züge reservieren ihren Höchstbetrag gegen die Tagesbudgets und rechnen danach den Verbrauch ab.",
         },
       },
     },
@@ -281,13 +281,13 @@ export const CODE_SETTINGS = {
     default: 1,
     label: "Daily AI reference budget per Code (USD)",
     description:
-      "Aggregate reference allowance across attempts, including actual Code-started chat costs, per installation calendar day; zero disables AI.",
+      "Aggregate reference allowance across attempts, including whole-turn reservations and settled Code-started chat costs, per installation calendar day; zero disables AI.",
     presentation: {
       translations: {
         de: {
           label: "KI-Tagesbudget je Code (USD)",
           description:
-            "Referenzbudget aller Versuche eines Codes einschließlich tatsächlicher Chat-Kosten je Kalendertag der Installation; 0 sperrt KI.",
+            "Referenzbudget aller Versuche eines Codes einschließlich reservierter Höchstbeträge und abgerechneter Chat-Kosten je Kalendertag der Installation; 0 sperrt KI.",
         },
       },
     },
@@ -299,13 +299,13 @@ export const CODE_SETTINGS = {
     default: 1,
     label: "Daily AI reference budget per owner (USD)",
     description:
-      "Aggregate reference allowance across all Code of one exact owner, including actual Code-started chat costs, per installation calendar day; zero disables AI.",
+      "Aggregate reference allowance across all Code of one exact owner, including whole-turn reservations and settled Code-started chat costs, per installation calendar day; zero disables AI.",
     presentation: {
       translations: {
         de: {
           label: "KI-Tagesbudget je Besitzer (USD)",
           description:
-            "Referenzbudget aller Codes eines exakten Besitzers einschließlich tatsächlicher Chat-Kosten je Kalendertag der Installation; 0 sperrt KI.",
+            "Referenzbudget aller Codes eines exakten Besitzers einschließlich reservierter Höchstbeträge und abgerechneter Chat-Kosten je Kalendertag der Installation; 0 sperrt KI.",
         },
       },
     },

@@ -515,6 +515,7 @@ const runClaimedTurn = async (
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   onApprovalRequested?: ApprovalRequestedListener,
   tools?: readonly AiRuntimeTool[],
+  beforeChatTurn?: ExecutorConfig["beforeChatTurn"],
 ): Promise<void> => {
   const timeoutMinutes = await coreSettings.get<number>("ai.turn_timeout_minutes");
   const runBudgetMs = Math.max(0, Number(timeoutMinutes ?? 30)) * 60_000;
@@ -545,6 +546,7 @@ const runClaimedTurn = async (
     enqueueContinuation: (input) => enqueueAiTurn(input).then(() => undefined),
     onTurnFinalized,
     onApprovalRequested,
+    beforeChatTurn,
   });
   await executor.run({ conversationId: job.conversationId, turnId: job.turnId, claim, signal });
 };
@@ -555,6 +557,7 @@ const processMessage = async (
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>,
   onApprovalRequested?: ApprovalRequestedListener,
   tools?: readonly AiRuntimeTool[],
+  beforeChatTurn?: ExecutorConfig["beforeChatTurn"],
 ): Promise<void> => {
   const leaseOwner = `${AI_WORKER_ID}:${message.messageId}:${crypto.randomUUID()}`;
   let heartbeatFailed = false;
@@ -577,7 +580,7 @@ const processMessage = async (
   }, AI_TURN_HEARTBEAT_MS);
   if (typeof touch === "object" && "unref" in touch) touch.unref();
   try {
-    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized, onApprovalRequested, tools);
+    await runClaimedTurn(message.data, signal, leaseOwner, onTurnFinalized, onApprovalRequested, tools, beforeChatTurn);
   } catch (error) {
     log.error("AI turn worker error", {
       conversationId: message.data.conversationId,
@@ -652,6 +655,10 @@ export const startAiRuntime = (
     /** Host-owned tools for default Assistant turns. Register on the first runtime start. */
     tools?: readonly AiRuntimeTool[];
     concurrency?: number;
+    /** Host-owned admission after the worker resolves the executed model. */
+    beforeChatTurn?: ExecutorConfig["beforeChatTurn"];
+    /** Recover host-owned terminal bookkeeping after crashes. */
+    onSweep?: () => Promise<void>;
     /** Host-owned admission policy; runs on the current queued snapshot under the conversation lock. */
     validateQueuedChatStart?: ValidateQueuedChatStart;
     onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
@@ -693,7 +700,7 @@ export const startAiRuntime = (
     signal: controller.signal,
     run: async (signal) => {
       const worker = await aiTurnQueue().process({ concurrency, signal }, (message) =>
-        processMessage(message, message.signal, dispatchTurnFinalized, dispatchApprovalRequested, input.tools),
+        processMessage(message, message.signal, dispatchTurnFinalized, dispatchApprovalRequested, input.tools, input.beforeChatTurn),
       );
       try {
         await new Promise<void>((resolve) => {
@@ -713,7 +720,7 @@ export const startAiRuntime = (
   });
 
   const runSweep = () =>
-    void sweepAiRuntime(dispatchTurnFinalized).catch((error) =>
+    void Promise.all([sweepAiRuntime(dispatchTurnFinalized), input.onSweep?.()]).catch((error) =>
       log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
     );
   const sweepTimer = setInterval(runSweep, AI_SWEEP_INTERVAL_MS);
@@ -772,4 +779,7 @@ export const notifyAiConversationUnwatched = async (conversationId: string): Pro
 
 export const __aiRuntimeTest = { actionMatchesResolvedEvent, processMessage, publishSweepFinished };
 
+export { AUTOMATION_TURN_BUDGET } from "./code-authoring-turn";
 export { editAiApprovalDraft } from "./draft-edit";
+export type AiChatTurnAdmission = NonNullable<ExecutorConfig["beforeChatTurn"]>;
+export { AiTurnFailure } from "./turn-failure";

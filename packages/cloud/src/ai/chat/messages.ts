@@ -60,6 +60,16 @@ const messages = /* @__PURE__ */ i18n.define({
         if (code === "provider_stopped") return "The model provider ended this answer early.";
         if (code === "tool_failed") return "A step failed, and the model stopped without an answer.";
         if (code === "quota_exhausted") return "Your AI usage limit for this period is reached. You can continue once it resets.";
+        if (code === "automation_turn_limit") return "This turn reached its safety limit. The results so far are kept.";
+        if (code === "code_ai_turn_exceeds_daily_budget")
+          return "This model’s maximum turn cost exceeds the Code daily budget. Choose a less expensive model or ask your administrator to adjust the Code budget.";
+        if (code === "code_ai_daily_budget_limit" || code === "code_ai_owner_daily_budget_limit")
+          return "The daily Code AI budget is spent or reserved by running work. This message has failed; a later scheduled run can try again.";
+        if (code === "code_ai_budget_unknown")
+          return "This model has no known maximum turn cost. Choose a model with known context and output limits.";
+        if (code === "code_ai_budget_changed")
+          return "The model or its price changed after this turn started. This turn cannot resume with the old reservation.";
+        if (code === "code_ai_budget_settled") return "This Code turn has already ended and been accounted for. Start a new run.";
         if (code === "context_full") return "This chat is too long for the model. Start a new chat to continue; this one stays as it is.";
         if (code === "time_limit")
           return limitMinutes ? `The run time limit of ${limitMinutes} minutes was reached.` : "The run time limit was reached.";
@@ -452,6 +462,17 @@ const messages = /* @__PURE__ */ i18n.define({
         if (code === "tool_failed") return "Ein Schritt ist fehlgeschlagen, und das Modell hat danach nicht geantwortet.";
         if (code === "quota_exhausted")
           return "Dein KI-Kontingent für diesen Zeitraum ist aufgebraucht. Du kannst weiterarbeiten, sobald es sich erneuert.";
+        if (code === "automation_turn_limit")
+          return "Dieser Zug hat seine Sicherheitsgrenze erreicht. Die bisherigen Ergebnisse bleiben erhalten.";
+        if (code === "code_ai_turn_exceeds_daily_budget")
+          return "Der Höchstbetrag dieses Modells übersteigt das Code-Tagesbudget. Wähle ein günstigeres Modell oder bitte die Administration, das Code-Budget anzupassen.";
+        if (code === "code_ai_daily_budget_limit" || code === "code_ai_owner_daily_budget_limit")
+          return "Das KI-Tagesbudget des Codes ist verbraucht oder durch laufende Arbeit reserviert. Diese Nachricht ist gescheitert; ein späterer Zeitplan-Lauf kann es erneut versuchen.";
+        if (code === "code_ai_budget_unknown")
+          return "Für dieses Modell ist kein Höchstbetrag bekannt. Wähle ein Modell mit bekannten Kontext- und Ausgabegrenzen.";
+        if (code === "code_ai_budget_changed")
+          return "Das Modell oder sein Preis hat sich seit dem Zugstart geändert. Der Zug kann mit der bisherigen Reservierung nicht weiterlaufen.";
+        if (code === "code_ai_budget_settled") return "Dieser Code-Zug ist bereits beendet und abgerechnet. Starte einen neuen Lauf.";
         if (code === "context_full")
           return "Dieser Chat ist zu lang für das Modell. Starte einen neuen Chat, um weiterzuarbeiten; dieser bleibt erhalten.";
         if (code === "time_limit")

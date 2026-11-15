@@ -19,6 +19,7 @@ const ROW_EN: Record<CodePolicyRow, [string, string]> = {
   ask_sensitive: ["Sensitive", "personnel and health data"],
   ask_app_asks: ["App asks", "the app asks for confirmation"],
   ai: ["AI use", "classifying text, writing a reply"],
+  ai_chat_you: ["AI in your own chat", "bounded turns with a priced model and a reserved daily budget"],
   internet: ["Internet", "calling addresses outside Cloud"],
   public_routes: ["Public routes", "returning Code data to people without signing in"],
 };
@@ -36,6 +37,7 @@ const ROW_DE: Record<CodePolicyRow, [string, string]> = {
   ask_sensitive: ["Sensibel", "Personal- und Gesundheitsdaten"],
   ask_app_asks: ["App fragt nach", "Die App verlangt eine Rückfrage"],
   ai: ["KI-Nutzung", "Text einordnen, Antwort schreiben"],
+  ai_chat_you: ["KI im eigenen Chat", "begrenzte Züge mit bepreistem Modell und reserviertem Tagesbudget"],
   internet: ["Ins Internet", "Adressen außerhalb von Cloud aufrufen"],
   public_routes: ["Öffentliche Routen", "Code-Daten ohne Anmeldung zurückgeben"],
 };

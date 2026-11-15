@@ -126,6 +126,35 @@ databaseSuite()("AI memory learning (integration)", () => {
     await migrateCloudAi();
   });
 
+  test("background learning skips a completed bounded turn even when already listed", async () => {
+    const userId = await insertLearningUser();
+    try {
+      await aiUserPrefs.update(userId, { memoryLearningEnabled: true });
+      const candidate = await insertLearningTurn(userId);
+      await sql`UPDATE ai.turns SET run_config=run_config || ${JSON.stringify({
+        turnTrigger: { kind: "chat", id: "Source" },
+        inferenceBudget: { inputTokens: 512000, modelCalls: 16, unknownInputTokens: 64000 },
+      })}::jsonb WHERE id=${candidate.turnId}::uuid`;
+      expect((await listAiMemoryLearningCandidates(100, 1_000_000)).some((item) => item.turnId === candidate.turnId)).toBe(false);
+      let calls = 0;
+      const summary = await learnAiMemoriesFromPrivateChats({
+        deps: {
+          ...learningDeps(),
+          listCandidates: async () => [candidate],
+          structured: async () => {
+            calls += 1;
+            throw new Error("A completed allocation must never be reopened");
+          },
+        },
+      });
+      expect(summary.skipped).toBe(1);
+      expect(summary.failed).toBe(0);
+      expect(calls).toBe(0);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+    }
+  });
+
   test("marks Project chats for learning and keeps a working rule naming a person", async () => {
     const userId = await insertLearningUser();
     let projectId: string | undefined;

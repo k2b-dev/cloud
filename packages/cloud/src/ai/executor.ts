@@ -110,12 +110,14 @@ import {
   rememberProviderErrors,
 } from "./turn-failure";
 import { type AiTurnGuidance, loadAiTurnGuidance } from "./turn-guidance";
+import { installAiTurnInferenceAllocation } from "./turn-inference-budget";
 import { type AiTurnPolicyToolCall, applyAiTurnPolicy } from "./turn-policy";
 import { createTurnTimingRecorder, withDurableTurnTiming } from "./turn-timing";
 import type {
   AiApprovalTarget,
   AiChatTurnRunConfig,
   AiFrontendToolMode,
+  AiModelProfile,
   AiPendingTurnActionRecord,
   AiRuntimeTool,
   AiStoredMessage,
@@ -303,6 +305,14 @@ export type ExecutorConfig = {
   enqueueContinuation: (input: { conversationId: string; turnId: string }) => Promise<void>;
   /** Settings/model resolution seam — tests inject a fake so they never touch shared settings. */
   validateTurn?: typeof validateAiTurnRequest;
+  /** Host policy sees the executed profile, never a requested class or display label. */
+  beforeChatTurn?: (input: {
+    turnId: string;
+    conversationId: string;
+    leaseOwner: string;
+    runConfig: AiChatTurnRunConfig;
+    profile: AiModelProfile;
+  }) => Promise<void>;
   /** Runs after the durable turn state and final wire event are flushed. */
   onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
   onApprovalRequested?: (event: { approvalId: string }) => Promise<void>;
@@ -953,6 +963,16 @@ export class AiTurnExecutor {
       if (isAssistantChatTurn(config)) {
         await aiModelAccess.assertAllowed(validated.resolved.profile.modelId, accessSubjectForActor(material.actor));
       }
+      if (config.codeOrigin && !this.config.beforeChatTurn) throw new AiTurnFailure("not_allowed", "Code chat admission is unavailable.");
+      await this.config.beforeChatTurn?.({
+        turnId,
+        conversationId,
+        leaseOwner: this.config.leaseOwner,
+        runConfig: config,
+        profile: validated.resolved.profile,
+      });
+      if (!config.codeOrigin && config.turnTrigger?.kind !== "person")
+        await installAiTurnInferenceAllocation({ turnId, conversationId, leaseOwner: this.config.leaseOwner });
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
       await this.finalize(
@@ -1598,11 +1618,12 @@ export class AiTurnExecutor {
     };
     const nonPerson = config.turnTrigger?.kind !== "person";
     const allocation = nonPerson ? AUTOMATION_TURN_BUDGET : CODE_AUTHORING_TURN_BUDGET;
-    const usage = await readAiTurnCallUsage(turnId);
+    const inputTokenCeiling = config.codeOrigin ? resolved.profile.contextWindow : undefined;
+    const usage = await readAiTurnCallUsage(turnId, inputTokenCeiling);
     authoringBudget = createCodeAuthoringTurnBudget({
       priorCalls: {
         calls: usage.calls,
-        inputTokens: usage.inputTokens + usage.unknownCalls * allocation.unknownInputTokens,
+        inputTokens: usage.inputTokens + usage.unknownCalls * (inputTokenCeiling ?? allocation.unknownInputTokens),
       },
       finishedToolCalls: turnBlocks.flatMap((block) =>
         block.kind === "tool" && !isMalformedToolCallId(block.callId)
@@ -1611,6 +1632,7 @@ export class AiTurnExecutor {
       ),
       selected: loadedSkills.some((skill) => skill.name === "code-authoring"),
       nonPerson,
+      inputTokenCeiling,
       onStop: (reason) => log.info("AI chat turn reached its safety budget", { conversationId, turnId, reason }),
     });
     const turnPolicy = applyAiTurnPolicy({
@@ -1689,7 +1711,7 @@ export class AiTurnExecutor {
       },
       ...(turnPolicy.maxTurns === undefined ? {} : { maxTurns: turnPolicy.maxTurns }),
       temperature: resolved.profile.temperature,
-      maxOutputTokens: resolved.profile.maxOutputTokens,
+      maxOutputTokens: resolved.profile.maxOutputTokens ?? (config.codeOrigin ? resolved.profile.outputTokenLimit : undefined),
       reasoningEffort: resolved.profile.reasoningEffort,
       coalesce: { ms: AI_COALESCE_MS, maxChars: AI_COALESCE_MAX_CHARS },
       // Steps of tools that declare `streamArgs` show those arguments while the model writes them.
@@ -1716,7 +1738,7 @@ export class AiTurnExecutor {
             "compaction",
           ),
           additionalInstructions: settings.compactionInstructions,
-          maxOutputTokens: resolved.profile.maxOutputTokens,
+          maxOutputTokens: resolved.profile.maxOutputTokens ?? (config.codeOrigin ? resolved.profile.outputTokenLimit : undefined),
           signal: abortController.signal,
         }),
       ),
@@ -2322,7 +2344,7 @@ export class AiTurnExecutor {
         modelId: resolved.profile.id,
         providerType: resolved.profile.provider,
         additionalInstructions: settings.compactionInstructions,
-        maxOutputTokens: resolved.profile.maxOutputTokens,
+        maxOutputTokens: resolved.profile.maxOutputTokens ?? (config.codeOrigin ? resolved.profile.outputTokenLimit : undefined),
         signal: abortController.signal,
         // Manual /compact means "make the context small": summarize everything
         // except the latest loop, so the marker lands right above the newest

@@ -163,6 +163,7 @@ export const listAiMemoryLearningCandidates = async (limit: number, monthlyToken
         AND COALESCE(prefs.memory_learning_enabled, ${AI_MEMORY_LEARNING_DEFAULT_ENABLED})
         AND turn.status = 'completed'
         AND COALESCE(turn.run_config->>'kind', 'chat') = 'chat'
+        AND NOT (turn.run_config ? 'inferenceBudget')
         AND turn.memory_learned_at IS NULL
         AND COALESCE(usage.used_tokens, 0) < ${monthlyTokenBudget}
         AND (
@@ -218,6 +219,7 @@ const turnEligible = async (candidate: Candidate): Promise<boolean> => {
       AND conversation.archived_at IS NULL
       AND turn.status = 'completed'
       AND turn.memory_learned_at IS NULL
+      AND NOT (turn.run_config ? 'inferenceBudget')
   `;
   return Boolean(row);
 };
@@ -385,6 +387,7 @@ const workflowPatternInput = async (
         JOIN ai.conversations conversation ON conversation.id = turn.conversation_id
         WHERE turn.id = ${turnId}::uuid AND conversation.created_by_user_id = ${pattern.userId}::uuid
           AND conversation.archived_at IS NULL
+          AND NOT (turn.run_config ? 'inferenceBudget')
       `;
       if (!row) return null;
       return loadTurnEvidence({

@@ -416,6 +416,13 @@ export type AiTurnErrorCode =
   | "provider_stopped"
   | "tool_failed"
   | "quota_exhausted"
+  | "automation_turn_limit"
+  | "code_ai_turn_exceeds_daily_budget"
+  | "code_ai_daily_budget_limit"
+  | "code_ai_owner_daily_budget_limit"
+  | "code_ai_budget_unknown"
+  | "code_ai_budget_changed"
+  | "code_ai_budget_settled"
   | "context_full"
   | "time_limit"
   | "step_limit"
@@ -717,6 +724,17 @@ export type AiChatTurnRunConfig = {
   sourceRestricted?: true;
   /** Account-scoped send receipt on the existing queue, independent of personal authorship. */
   send?: { id: string; accountId: string; keyHash: string; requestHash: string };
+  /** Server-owned provider admission, installed with the host's cost reservation.
+   * All attributed model attempts share it, including tool/vision requests. */
+  inferenceBudget?: {
+    modelProfileId?: string;
+    pricing?: import("../shared/ai-costs").AiModelPricing;
+    contextWindow?: number;
+    maxOutputTokens?: number;
+    inputTokens: number;
+    modelCalls: number;
+    unknownInputTokens: number;
+  };
   /** Trusted Core review entrypoint; the executor offers only the bounded Code tool set. */
   codeReview?: { codeId: string; versionId: string };
   /** Trusted host attribution; never grants tool authority. */

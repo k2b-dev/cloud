@@ -16,7 +16,8 @@ results come from [application capability manifests](/en/docs/platform/capabilit
 Third-party applications use the same path as built-in applications.
 
 Gustav's `code_sdk` index shows each method's policy classification. Inference
-calls (`core.ai.generate`, `core.ai.decide` and `core.ai.chat.send`) use `ai`,
+calls (`core.ai.generate` and `core.ai.decide`) use `ai`; `core.ai.chat.send` uses
+`ai_chat_you`, subject to the executed model and whole-turn budget checks,
 including inference Queries. Reading a stored chat run uses `read`; delivering
 a chat message retains its Action policy. The index, checker and runtime use
 the same inference classification.
@@ -891,13 +892,17 @@ again (`chat_chain_forbidden`). Retry, resume and queue promotion preserve the
 original initiator; missing trigger information never grants chaining authority.
 
 Only `ai.generate`, `ai.decide` and `ai.chat.send` count as Code AI operations.
-Chat reads use the `read` policy. Send currently uses the `ai` row, including its
-version approval. A sent turn uses the owner's normal Assistant allowance by
-actual usage, without passing the Code mandate to its tools or debiting the
-whole text-AI attempt allowance. Existing Code daily admission checks still
-apply; they do not reserve a whole future turn. See the
-[send contract](/en/docs/platform/capabilities#write-to-a-gustav-chat) for limits
-and error codes.
+`send` qualifies for automatic `ai_chat_you` only with a positive reference price
+and a fully reserved turn maximum. Zero-priced and unpriced models still require
+ordinary `ai` authority. See [Code policy](/en/docs/platform/code-policy#ai-in-a-personal-chat).
+Chat reads use `read`. A priced Code-started turn uses `ai_chat_you` and
+reserves its whole maximum against the Code and owner daily limits at execution.
+The maximum includes 512,000 input tokens, one model context window for the last
+round's estimation margin, and sixteen maximum completions. Compaction shares
+the allowance. Missing context/output limits refuse a priced turn. Unpriced or
+zero-priced models require the ordinary `ai` rule and approval coverage; a pure
+`send` version under the default policy should use a priced model. The Code
+mandate never passes to the target chat's tools.
 
 ## Name an automation
 

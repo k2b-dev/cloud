@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { memoryStore, type Provider, type ProviderRequest } from "@k2b/nessi";
 import { AUTOMATION_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
 import { retryTransientProviderErrors } from "./provider-retry";
+import { AiTurnInferenceLimit } from "./turn-failure";
 
 const budget = (priorCalls = { calls: 0, inputTokens: 0 }) =>
   createCodeAuthoringTurnBudget({ priorCalls, finishedToolCalls: [], selected: false, nonPerson: true });
@@ -110,4 +111,39 @@ test("automatic authoring retains its saved progress receipt under the same hard
   );
   expect(guard.stopped()).toMatchObject({ reason: "model_calls", drafts: 0 });
   expect(guard.automationStopped()).toBeNull();
+});
+
+test("Code attempts without input usage consume an authoritative context window", async () => {
+  let calls = 0;
+  const guard = createCodeAuthoringTurnBudget({
+    priorCalls: { calls: 0, inputTokens: 0 },
+    finishedToolCalls: [],
+    selected: false,
+    nonPerson: true,
+    inputTokenCeiling: 128000,
+  });
+  const base = {
+    ...fixture(() => {}),
+    async *stream() {
+      calls++;
+    },
+  };
+  for (let i = 0; i < 6; i++) await consume(guard.wrap(base));
+  expect(calls).toBe(4);
+  expect(guard.automationStopped()).toEqual({ reason: "input_tokens" });
+});
+
+test("tool inference exhausting the durable allowance still emits the visible local stop", async () => {
+  for (const reason of ["model_calls", "input_tokens"] as const) {
+    const guard = budget();
+    const provider = guard.wrap({
+      ...fixture(() => {}),
+      async *stream() {
+        throw new AiTurnInferenceLimit(reason);
+      },
+    });
+    const events = await Array.fromAsync(provider.stream({ messages: [] }));
+    expect(guard.automationStopped()).toEqual({ reason });
+    expect(events.at(-1)).toMatchObject({ type: "block_end", block: { type: "text", text: "" } });
+  }
 });

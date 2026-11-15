@@ -113,4 +113,11 @@ suite("Code authoring usage recovery", () => {
     }
     expect(guard.automationStopped()).toEqual({ reason: "model_calls" });
   });
+  test("priced Code recovery floors estimated attempts at the authoritative model window", async () => {
+    const id = "00000000-0000-4000-8000-000000003326";
+    await sql`INSERT INTO ai.inference_calls(id,model_profile_id,turn_id,input,output,estimated,kind,task,provider_model,lease_expires_at,status)
+      VALUES('00000000-0000-4000-8000-000000003327','fixture',${id}::uuid,10,1,true,'chat','chat','fixture','2026-11-14T12:02:00Z','failed')`;
+    expect(await readAiTurnCallUsage(id, 128000)).toEqual({ calls: 1, inputTokens: 128000, unknownCalls: 0 });
+    expect(await readAiTurnCallUsage(id)).toEqual({ calls: 1, inputTokens: 10, unknownCalls: 0 });
+  });
 });

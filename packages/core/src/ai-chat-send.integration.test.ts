@@ -27,6 +27,7 @@ import { validateQueuedChatStart } from "./ai-chat-queue";
 import { aiChatSendAction } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
+import { reserveCodeChatTurnBudget } from "./code/chat-turn-budget";
 import { codeSettings } from "./code/settings";
 import { migrate as migrateCode } from "./migrate/core/code";
 
@@ -530,7 +531,7 @@ suiteFor(
 
   test("three cheap turns fit the daily USD budget and leave generate/decide allowance available", async () => {
     const { prepare, prepareTurn } = await setup();
-    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
+    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 }, contextWindow: 128000, maxOutputTokens: 1000 });
     const state = aiSettingsFixture({ profiles: [profile] });
     spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(state);
     const subject = { type: "user" as const, userId: owner };
@@ -599,7 +600,7 @@ suiteFor(
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
-    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
+    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 }, contextWindow: 128000, maxOutputTokens: 1000 });
     const call = await beginAiCall(
       profile,
       { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
@@ -626,7 +627,7 @@ suiteFor(
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
-    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
+    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 }, contextWindow: 128000, maxOutputTokens: 1000 });
     const call = await beginAiCall(
       profile,
       { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
@@ -649,7 +650,7 @@ suiteFor(
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
-    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
+    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 }, contextWindow: 128000, maxOutputTokens: 1000 });
     spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [profile] }));
     const rules = [
       { scope: "*", hours: 24, anchor: "1970-01-01T00:00:00Z", grants: [{ principal: { type: "user", userId: owner }, limit: 1 }] },
@@ -763,6 +764,12 @@ suiteFor(
         leaseOwner: "4f-executor",
         heartbeatMs: 5000,
         enqueueContinuation: async () => {},
+        // This seam isolates owner tool approval; actual Core admission is covered by chat-turn-budget.integration.test.ts.
+        beforeChatTurn: async ({ turnId, profile }) => {
+          await sql.begin((db) =>
+            reserveCodeChatTurnBudget({ turnId, profile, codeId, ownerUserId: owner }, db, { code: 1, owner: 1, timeZone: "UTC" }),
+          );
+        },
         validateTurn: async () => ({
           settings: aiSettingsFixture({ profiles: [profile], assignments: [aiAssignmentFixture("balanced", profile.id)] }),
           resolved: { model: { id: profile.id }, profile, provider: createAiProvider(profile, "test") },

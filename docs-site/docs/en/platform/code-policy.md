@@ -5,7 +5,7 @@ section: Platform services
 order: 569
 description: Set classification rules for Code, preview affected versions and understand policy pauses.
 tags: [code, administration, policy, permissions]
-updated: 2026-10-31
+updated: 2026-11-15
 ---
 
 # Code policy
@@ -35,6 +35,7 @@ The values are `automatic` (**Automatisch**), `admin` (**Admin gibt frei**) and
 | Sensitive | `ask_sensitive` | Never |
 | App asks | `ask_app_asks` | Never |
 | AI use | `ai` | Admin approval |
+| Bounded AI in the person’s own chat | `ai_chat_you` | Automatic |
 | External requests and public endpoints | `internet` | Admin approval |
 
 **Off** (`off`, **Aus**) sets every row to `never`. **Open** (`open`, **Offen**)
@@ -56,6 +57,43 @@ The classification follows the declared Action policy; an Action without one
 uses `ask_app_asks`. Separate execution restrictions still apply. In particular,
 the Open preset does not enable unattended sending in Phase 1 or allow an
 Action that declares `code: false`.
+
+## AI in a personal chat
+
+The checker, submitted manifest and SDK index classify `core.ai.chat.send` as
+`ai_chat_you`. `core.ai.generate` and `core.ai.decide` use `ai`; chat reads use
+`read`, and creating a chat uses `silent_you`.
+
+The chat worker rechecks the current policy and the **executed model** before
+inference. Only a positive input or output reference price qualifies for
+`ai_chat_you`. A missing price or two zero prices require the ordinary `ai`
+rule and its version approval coverage. An automatic personal-chat rule alone
+cannot start such a model. Choose a priced model or obtain the ordinary AI
+authority through an `ai`-classified version or an automatic `ai` rule before retrying. A `send`-only version cannot request that fallback approval. Model names and requested model classes grant no
+exception.
+
+A priced turn must have known context and output ceilings. At start, Cloud atomically
+reserves 512,000 input tokens, one additional model context window for the last
+round’s estimation margin, and sixteen maximum completions against both
+the Code and owner's remaining daily allowance, using the executed profile's
+prices. Reasoning tokens share the completion ceiling. Compaction and attributed tool inference share the
+same call allocation and reservation. Nested inference may use only the reserved
+model and output ceiling; another model fails before dispatch. If the full maximum does not fit, the
+turn fails before inference. The person's configured AI allowance also applies.
+
+Worker retries and approval resumptions reuse the reservation. A changed price,
+profile or output ceiling stops a resumed turn instead of enlarging its budget.
+At terminal completion, Cloud books measured cost and releases the remainder
+on the original admission day. Unknown or estimated priced usage retains the reservation.
+A sweep recovers missed finalization after a worker crash. Deleting a chat,
+Code or run does not restore a day's spend.
+
+Existing installations acquire the new automatic row, preserving `off` and
+existing default/group AI vetoes. F3=B deliberately gives priced bounded chat
+turns an automatic row even when a group's ordinary `ai` rule is `admin`; an
+`ai=never` veto is copied. Operators who also require approval for these bounded
+chat turns must set `ai_chat_you=admin`. Operators can set this row to `admin` or
+`never`; the ordinary pause preview and worker include it.
 
 ## Resolve groups
 
