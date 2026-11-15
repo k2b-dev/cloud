@@ -244,8 +244,8 @@ It requires no AI schema or foreign key. Changing the owner clears the binding
 and advances its revision. `chat.send` uses the ordinary chat handle with the
 reserved ID `bound-chat`. Core resolves it inside Send for each personal Code
 call; the runner lease carries no chat ID. Missing bound chats appear as
-`chat_missing` in attention and fail with `chat_unavailable`. Explicit chat
-handles return the same error (409) when the target is not an active chat owned
-by the caller. Restore the chat
-or have the personal Code owner choose another active chat through
+`chat_missing` in attention and fail with `chat_unavailable` during resolution. Explicit chat
+handles return `NOT_FOUND` (404) for missing, archived or foreign chats.
+For a missing bound chat, restore it or have the personal Code owner choose
+another active chat through
 [`code.chat_binding.set`](/en/docs/platform/code-data-model#choose-a-personal-codes-chat).

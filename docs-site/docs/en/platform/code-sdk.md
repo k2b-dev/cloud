@@ -855,11 +855,14 @@ Only the personal owner may change the binding; a shared Code editor cannot.
 Read its revision and state through
 [`code.chat_binding.read`](/en/docs/platform/code-data-model#choose-a-personal-codes-chat).
 `chat_unbound` means that no chat is bound. `chat_unavailable` means that the
-target is not an own active chat: it was archived or deleted, or belongs to
-another person. This applies to explicit chat handles and the bound chat alike.
-Both return HTTP 409 before queuing a message. Choose another own active chat or restore the
+bound chat was archived or deleted, or is no longer the owner's active chat.
+Both return HTTP 409 during bound-chat resolution, before queuing a message.
+Choose another own active chat or restore the
 archived chat. A missing bound chat supplies the `chat_missing` attention reason
 and a recoverable notice on the Code page and in Waiting for you.
+Explicit chat handles return `NOT_FOUND` (404) for missing, archived or foreign
+chats, keeping those targets hidden. If a resolved bound chat becomes unavailable
+during preparation, the subsequent chat lookup also returns `NOT_FOUND`.
 
 The checker records `chat.send` as `core.ai.chat.send` with dynamic target
 `{ type: "core.ai.chat", id: null }`; normal policy, authority and chain checks

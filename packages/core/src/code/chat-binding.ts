@@ -3,13 +3,27 @@ import { aiProjects } from "@k2b/cloud/ai";
 import { CODE_BOUND_CHAT_ID } from "@k2b/cloud/code";
 import type { CapabilityExecutionContext } from "@k2b/cloud/contracts";
 import { audit } from "@k2b/cloud/services";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import type { SQL } from "bun";
 import { z } from "zod";
 import { codeChatDestination, ownedActiveChat, personalCodeRun } from "../ai-code-chat";
 import { type CodeContext, CodeDataError, codePerson, requireCodePermission } from "./access";
 import { CodeIdSchema } from "./contracts";
 import { type CodeRow, mapCode } from "./store";
+
+const messages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      chat_unbound: "Choose a chat for this Code before sending.",
+      chat_unavailable: "The bound chat is unavailable. Restore it or choose another chat.",
+    },
+    de: {
+      chat_unbound: "Wähle vor dem Senden einen Chat für diesen Code.",
+      chat_unavailable: "Der gebundene Chat ist nicht verfügbar. Stelle ihn wieder her oder wähle einen anderen Chat.",
+    },
+  },
+});
 
 type BindingRow = CodeRow & { chat_conversation_id: string | null; chat_binding_revision: number };
 const revision = z.number().int().nonnegative().describe("Current revision from code.chat_binding.read.");
@@ -105,10 +119,9 @@ export async function resolveCodeChatDestination(
   const binding = await readCodeChatBinding(current.id, db);
   if (!binding || binding.code.owner_kind !== "person" || binding.code.owner_user_id !== run.userId)
     return fail(err.forbidden("The personal Code owner changed."));
-  if (!binding.code.chat_conversation_id)
-    return fail({ code: "chat_unbound", status: 409, message: "Choose a chat for this Code before sending." });
-  if (!binding.chat || binding.chat.archived_at)
-    return fail({ code: "chat_unavailable", status: 409, message: "The bound chat is unavailable. Restore it or choose another chat." });
+  const t = messages.resolve([context.locale ?? "en"]).t;
+  if (!binding.code.chat_conversation_id) return fail({ code: "chat_unbound", status: 409, message: t.chat_unbound });
+  if (!binding.chat || binding.chat.archived_at) return fail({ code: "chat_unavailable", status: 409, message: t.chat_unavailable });
   return ok({ chatId: binding.chat.short_id, binding: { codeId: current.id, revision: binding.code.chat_binding_revision } });
 }
 async function bindingRow(codeId: string, context: CodeContext, db: SQL, lock = false) {

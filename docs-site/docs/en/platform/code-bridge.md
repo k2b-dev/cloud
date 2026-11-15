@@ -24,11 +24,13 @@ additional fields. The actual destination never enters the bundle or runner leas
 
 Core resolves that ID inside Send's review and execution phases, requiring a
 current personal Code run and its owner. No binding returns `chat_unbound`;
-an archived, deleted or no longer owned chat returns `chat_unavailable` (409),
-before a message is queued. Other callers receive `FORBIDDEN`.
+an archived, deleted or no longer owned bound chat returns `chat_unavailable`.
+Both errors have HTTP status 409 and arise during resolution, before queuing. Other callers receive `FORBIDDEN`.
 Literal chat IDs are used directly. If their target is not an own active chat,
-Send returns the same `chat_unavailable` (409). Normal declaration, mandate,
-policy, approval, authority and chain checks still apply.
+Send returns `NOT_FOUND` (404), keeping missing, archived and foreign targets
+hidden. If a bound chat becomes unavailable after resolution, subsequent chat
+lookups also return `NOT_FOUND`. Normal declaration, mandate, policy, approval,
+authority and chain checks still apply.
 
 ## One-off chat authority
 

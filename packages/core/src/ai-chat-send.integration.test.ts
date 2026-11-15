@@ -3,6 +3,7 @@ import { sql } from "@k2b/cloud";
 import * as publicAi from "@k2b/cloud/ai";
 import { AiQuotaError, aiConversations, createAiProvider } from "@k2b/cloud/ai";
 import * as runtime from "@k2b/cloud/ai/runtime";
+import { CODE_BOUND_CHAT_ID } from "@k2b/cloud/code";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { coreSettings } from "@k2b/cloud/services";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
@@ -402,28 +403,33 @@ suiteFor(
     expect(await read(queued.id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed" } } } });
   });
 
-  test.each(["archived", "deleted"])("an own %s literal target is unavailable before preparation", async (state) => {
+  test.each(["archived", "deleted"])("an own %s literal target stays hidden before preparation", async (state) => {
     const { prepare } = await setup();
     if (state === "archived") await sql`UPDATE ai.conversations SET archived_at=clock_timestamp() WHERE id=${chat.id}::uuid`;
     else await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
-    expect(await invoke()).toMatchObject({ ok: false, error: { code: "chat_unavailable", status: 409 } });
+    expect(await invoke()).toMatchObject({ ok: false, error: { code: "NOT_FOUND", status: 404 } });
     expect(prepare).not.toHaveBeenCalled();
   });
 
-  test("a target archived during preparation is unavailable at the admission recheck", async () => {
+  test.each(["literal", "bound"])("a %s target archived during preparation stays hidden at the admission recheck", async (kind) => {
     const { prepare, prepareTurn } = await setup();
+    if (kind === "bound")
+      await sql`UPDATE code.codes SET chat_conversation_id=${chat.id}::uuid,chat_binding_revision=chat_binding_revision+1 WHERE id=${codeId}`;
     prepare.mockImplementation(async (input) => {
       await sql`UPDATE ai.conversations SET archived_at=clock_timestamp() WHERE id=${chat.id}::uuid`;
       return prepareTurn(input);
     });
-    expect(await invoke()).toMatchObject({ ok: false, error: { code: "chat_unavailable", status: 409 } });
+    expect(await invoke(kind === "bound" ? CODE_BOUND_CHAT_ID : chat.shortId)).toMatchObject({
+      ok: false,
+      error: { code: "NOT_FOUND", status: 404 },
+    });
     const rows = await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid`;
     expect(rows).toHaveLength(0);
   });
 
   test("stranger Code and a reader of shared personal Code cannot start an owner's turn", async () => {
     await setup();
-    expect(await invoke(foreign.shortId)).toMatchObject({ ok: false, error: { code: "chat_unavailable", status: 409 } });
+    expect(await invoke(foreign.shortId)).toMatchObject({ ok: false, error: { code: "NOT_FOUND", status: 404 } });
     const otherUser = { ...user, id: other };
     const context = ctx();
     expect(

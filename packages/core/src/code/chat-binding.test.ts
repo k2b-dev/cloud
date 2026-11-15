@@ -178,7 +178,7 @@ test("each bound call reads the current short ID and binding revision", async ()
   });
 });
 
-test("unbound, archived, deleted and absent-schema destinations return recoverable conflicts", async () => {
+test.each(["en", "de"])("unbound, archived, deleted and absent-schema destinations return recoverable conflicts in %s", async (locale) => {
   const prefix = [[{ id: "c_fixture" }]];
   for (const rows of [
     [...prefix, [{ ...boundRow, chat_conversation_id: null }]],
@@ -186,9 +186,20 @@ test("unbound, archived, deleted and absent-schema destinations return recoverab
     [...prefix, [boundRow], [{ available: true }], []],
     [...prefix, [boundRow], [{ available: false }]],
   ]) {
-    expect(await resolveCodeChatDestination(runContext(), bindingDb(rows).db)).toMatchObject({
+    const unbound = rows.length === 2;
+    expect(await resolveCodeChatDestination({ ...runContext(), locale }, bindingDb(rows).db)).toEqual({
       ok: false,
-      error: { code: rows.length === 2 ? "chat_unbound" : "chat_unavailable", status: 409 },
+      error: {
+        code: unbound ? "chat_unbound" : "chat_unavailable",
+        status: 409,
+        message: unbound
+          ? locale === "de"
+            ? "Wähle vor dem Senden einen Chat für diesen Code."
+            : "Choose a chat for this Code before sending."
+          : locale === "de"
+            ? "Der gebundene Chat ist nicht verfügbar. Stelle ihn wieder her oder wähle einen anderen Chat."
+            : "The bound chat is unavailable. Restore it or choose another chat.",
+      },
     });
   }
 });
