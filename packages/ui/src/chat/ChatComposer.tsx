@@ -2410,6 +2410,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             <span hidden id={suggestionDescriptionId}>
               {suggestionDescription(text())}
             </span>
+            {/* One ordinary space before the pill: a line breaks there, so the pill wraps only as a whole. */}
+            <span class="k2b-chat-composer__suggestion-gap" aria-hidden="true">
+              {" "}
+            </span>
             {/* With a keyboard Tab accepts; the hint takes a click too, without taking the focus from the field. */}
             <span
               class="k2b-chat-composer__suggestion-key"
