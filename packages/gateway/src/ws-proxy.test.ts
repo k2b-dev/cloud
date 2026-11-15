@@ -283,6 +283,8 @@ describe("gateway WebSocket proxy", () => {
 });
 
 test("maintenance closes every open proxied socket once with 1012, and closed sockets are forgotten", () => {
+  // Earlier tests in this file may leave sockets open in the shared module set.
+  closeProxiedSockets(1000, "reset");
   const first = setup();
   const second = setup();
   const a = clientFor(first.data()!);
