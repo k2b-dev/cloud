@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { AiConversation } from "@k2b/cloud/ai";
 import { codePageFixture } from "@k2b/cloud/ssr/code-page/code-page.fixture";
 import type { Browser, Page, Route } from "playwright";
-import { launchBrowser, pageErrors } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import type { CodeVersionPreview } from "./code-activation";
 
 // Gustav in the Assistant workspace: the renamed footer, "My apps & automations" with the person's own Code, and the
@@ -41,7 +41,7 @@ render(
             {window.harness.decision ? (
               <div style="height:140vh" data-history>
                 <div style="position:absolute;bottom:2rem;left:1rem;right:1rem">
-                  <AssistantCodeDecisionLine decision={window.harness.decision} at={new Date().toISOString()} timeZone="Europe/Berlin" />
+                  <AssistantCodeDecisionLine decision={window.harness.decision} at={window.harness.decisionAt} timeZone="Europe/Berlin" />
                 </div>
               </div>
             ) : null}
@@ -436,6 +436,8 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
                 person: { id: "u-jana", name: "Jana Probe" },
                 anchor: `code-version-${cardVersionId}`,
               },
+              // The line's own time comes from the fixture clock, like the page's pinned Date.
+              decisionAt: at(1),
             }
           : {}),
       };
@@ -801,6 +803,7 @@ describe("Gustav", () => {
           for (const pattern of [/code\.tsx?/, /[\w./-]+\.[a-z]{1,8}:\d+/, /\bcode_[a-z_]+/, /sp_2lg8/, /\b[0-9a-f]{8,}\b/])
             expect(shown).not.toMatch(pattern);
           // The card has no frame and no shadow; the details lie on white inside the plum ground.
+          await settled(h.page);
           const look = await card.evaluate((element) => {
             const style = getComputedStyle(element);
             return { shadow: style.boxShadow, radius: style.borderTopLeftRadius };

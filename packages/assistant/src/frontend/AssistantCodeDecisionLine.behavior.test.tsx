@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, setSystemTime, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import type { AssistantCodeDecision } from "./AssistantCodeDecisionLine";
@@ -111,6 +111,9 @@ test("a card not on the page is revealed by the host first; if that fails, the l
 
 test("changes that Gustav revises by himself carry the mark and no action; a settled approval stays as history", () => {
   const { AssistantCodeReviewStartLine } = lines;
+  // The next run is counted from now: the clock stands at the decision's time.
+  setSystemTime(new Date(at));
+  restore.push(() => setSystemTime());
   const dom = createDomTestHarness();
   restore.push(() => dom.cleanup());
   const dispose = render(
@@ -119,7 +122,7 @@ test("changes that Gustav revises by himself carry the mark and no action; a set
         <AssistantCodeDecisionLine decision={decision("changes_requested")} at={at} timeZone="Europe/Berlin" automatic />
         <AssistantCodeDecisionLine decision={decision("approved")} at={at} timeZone="Europe/Berlin" settled />
         <AssistantCodeDecisionLine
-          decision={{ ...decision("activated"), nextRunAt: new Date(Date.now() + 11 * 60_000).toISOString() }}
+          decision={{ ...decision("activated"), nextRunAt: new Date(Date.parse(at) + 11 * 60_000).toISOString() }}
           at={at}
           timeZone="Europe/Berlin"
         />

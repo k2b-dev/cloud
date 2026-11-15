@@ -1,4 +1,4 @@
-import { afterEach, expect, spyOn, test } from "bun:test";
+import { afterEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { AssistantLiveProvider, createAssistantLiveHub } from "./assistant-live";
@@ -666,12 +666,17 @@ test("waiting for admin names why exactly this version, marks the row, and offer
 });
 
 test("a version submitted moments ago appears once; history stays still", async () => {
+  // The clock stands a minute after the fresh submission; the fixture's own version is hours older.
+  setSystemTime(new Date("2026-11-12T12:01:00.000Z"));
+  restore.push(() => setSystemTime());
   const fresh = await mount({
-    [WORDS]: () => ({ json: { data: words({ submittedAt: new Date().toISOString() }) } }),
+    [WORDS]: () => ({ json: { data: words({ submittedAt: "2026-11-12T12:00:00.000Z" }) } }),
     "activation/preview": () => ({ json: { data: preview() } }),
   });
   expect(fresh.dom.root.querySelector(".assistant-code-version")?.hasAttribute("data-appear")).toBe(true);
   for (const undo of restore.splice(0)) undo();
+  setSystemTime(new Date("2026-11-12T12:01:00.000Z"));
+  restore.push(() => setSystemTime());
   const old = await mount({ "activation/preview": () => ({ json: { data: preview() } }) });
   expect(old.dom.root.querySelector(".assistant-code-version")?.hasAttribute("data-appear")).toBe(false);
 });
