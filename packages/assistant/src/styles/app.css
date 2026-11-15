@@ -483,16 +483,11 @@
   font-weight: 400;
 }
 
-/* Reserve the chat list's scroll track in the surrounding inset, so rows and
-   the non-scrolling search header share the same content edge. */
+/* Reserve the chat list's shared 0.5rem scroll track in the surrounding inset,
+   so rows and the non-scrolling search header share the same content edge. */
 .k2b-ui .assistant-project-chats-scroll {
   margin-inline-end: -0.5rem;
-  scrollbar-width: auto;
-  scrollbar-color: auto;
   scrollbar-gutter: stable;
-}
-.k2b-ui .assistant-project-chats-scroll::-webkit-scrollbar {
-  width: 0.5rem;
 }
 /* An overlay scrollbar takes no width, so the list's content stops at the
    section's own edge instead of running into the inset. */
@@ -512,19 +507,6 @@
 @media (min-width: 1024px) {
   .assistant-standalone-runner { padding: 0; }
   .assistant-standalone-page .assistant-standalone-runner { padding: var(--ui-space-section); }
-}
-
-/* Keep the scroll thumb visible alongside the standard ScrollArea edge fade. */
-.k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog) {
-  scrollbar-width: auto;
-  scrollbar-color: var(--k2b-text-muted) transparent;
-}
-.k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog)::-webkit-scrollbar {
-  width: .375rem;
-}
-.k2b-ui .k2b-scroll-area:has(> .assistant-studio-catalog)::-webkit-scrollbar-thumb {
-  background: var(--k2b-text-muted);
-  border-radius: 999px;
 }
 
 .k2b-ui .k2b-scroll-area[data-viewport-size="compact"]:has(> :is(.assistant-studio-catalog, .assistant-project-catalog)) {

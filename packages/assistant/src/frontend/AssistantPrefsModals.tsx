@@ -521,7 +521,7 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
                               {text(memoryKindLabel(memory.kind))}
                               <Show when={memory.priority === "pinned"}>
                                 {" · "}
-                                <span class="font-medium text-blue-600 dark:text-blue-400">{text("Pinned")}</span>
+                                <span class="font-medium text-[var(--k2b-action)]">{text("Pinned")}</span>
                               </Show>
                               {` · ${text("Updated")} ${new Date(memory.updatedAt).toLocaleDateString(locale())}`}
                             </>

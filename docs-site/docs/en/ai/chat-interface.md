@@ -106,6 +106,12 @@ export function ItemChat(props: {
 Keep the `k2b-ui` scope on the nearest stable application root and import
 `@k2b/ui/styles.css` once in the application stylesheet.
 
+Each entry of `AiPeopleModels["options"]` carries `contextWindow` when the
+model catalog knows it. Pass it as `contextUsage.contextWindow` to
+`Chat.Composer`, so the usage ring shows how full the chat's context is and
+turns to the warning colour at 85 %. Without it the ring follows only the other
+sections, such as a budget.
+
 The controller exposes:
 
 - conversations and active conversation state;
@@ -1345,10 +1351,11 @@ replaying an uncertain operation.
 Assistant shows the current working plan above its composer. The collapsible
 list uses the portable, controlled `Chat.Tasks` component from `@k2b/ui`.
 Applications supply items, disclosure state, localized labels and progress text.
-One segment per task shows completed work in green, the current step in the
-accent color, pending work in gray, and cancelled work with a striped segment.
-Symbols and text provide the same information without color. Cancelled tasks
-are counted separately. The current step remains visible after stopping; it is
+A progress ring and the count sit in the header at the composer; the list opens
+upwards with a check for completed work, a turning ring on a white highlight for
+the current step, a circle for open work, and a struck-through cross for
+cancelled work. Symbols and status words provide the same information without
+color. Cancelled tasks are counted separately. The current step remains visible after stopping; it is
 only described as in progress while its turn is actually running.
 
 Compact context entries use one line and consistent icon alignment. One-off
