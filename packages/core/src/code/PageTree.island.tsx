@@ -26,7 +26,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { codePageFailure, codePageMessages } from "./page-messages";
-import { type CodePageEventSource, codePageFormBody, requestCodePage } from "./page-request";
+import { CODE_PAGE_TREE_EVENT, type CodePageEventSource, codePageFormBody, requestCodePage } from "./page-request";
 
 /**
  * Draws a checked Code page tree with shared components. Server and first client render show the same page; the
@@ -274,6 +274,7 @@ function CodePageContent(props: PageProps) {
         ? (main?.querySelector<HTMLElement>('[aria-invalid="true"]') ?? again ?? heading)
         : again;
     target?.focus({ preventScroll: !moved });
+    main?.dispatchEvent(new CustomEvent(CODE_PAGE_TREE_EVENT, { bubbles: true }));
   };
 
   let reloading = false;
