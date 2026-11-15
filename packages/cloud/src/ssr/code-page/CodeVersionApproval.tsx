@@ -1,4 +1,4 @@
-import { ChangeList, Chat, type ChatDecisionAnswer, type ChatDecisionFact, type ChatOutcomeTone } from "@k2b/ui";
+import { Button, ButtonLink, ChangeList, Chat, type ChatDecisionAnswer, type ChatDecisionFact, type ChatOutcomeTone } from "@k2b/ui";
 import { type JSX, Show } from "solid-js";
 import type { ActionText } from "../../ai/chat/action-card";
 import { actionMessages } from "../../ai/chat/action-messages";
@@ -149,15 +149,15 @@ export function CodeVersionApproval(props: {
   const outcomeActions = () => (
     <>
       <Show when={!props.onPage}>
-        <a class="link" href={withQuery(props.data.href, { tab: "versions", version: props.version.id })}>
+        <ButtonLink variant="text" href={withQuery(props.data.href, { tab: "versions", version: props.version.id })}>
           {t().seeAll}
-        </a>
+        </ButtonLink>
       </Show>
       <Show when={kind() !== "waiting" && panel()}>
         {(editorPanel) => (
-          <button type="button" class="link" onClick={() => openPanel(editorPanel().provider)}>
+          <Button variant="text" onClick={() => openPanel(editorPanel().provider)}>
             {kind() === "changes" ? t().reworkWith({ name: editorPanel().label }) : t().rebuildWith({ name: editorPanel().label })}
-          </button>
+          </Button>
         )}
       </Show>
     </>
