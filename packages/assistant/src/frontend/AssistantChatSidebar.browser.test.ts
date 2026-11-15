@@ -771,6 +771,19 @@ describe(`Box "In this chat" in ${browserName}`, () => {
   }, 20_000);
 });
 
+/** Three mails among the sources, which Mail counts in its own nouns. */
+const withMails = (snapshot: AssistantChatContextSnapshot): AssistantChatContextSnapshot => ({
+  ...snapshot,
+  sources: [
+    ...["M1", "M2", "M3"].map((id) =>
+      source("resource", `mail.message:${id}`, `Lieferavis ${id}`, minutesAgo(40), { ref: { type: "mail.message", id } }),
+    ),
+    ...snapshot.sources,
+  ],
+  sourceCount: snapshot.sourceCount + 3,
+  resourceCounts: [{ type: "mail.message", count: 3, label: "3 Mails" }],
+});
+
 // Screenshots of every state of the box for the image comparison with the concept, when asked for.
 const shots = process.env.ASSISTANT_SCREENSHOT_DIR;
 test.skipIf(!shots)(
@@ -781,7 +794,7 @@ test.skipIf(!shots)(
     await (await import("../../../core/scripts/font-assets")).buildFontAssets(publicDir);
     await (await import("../../../core/scripts/tabler-assets")).buildTablerIconAssets(publicDir);
     const states: Array<[string, number, AssistantChatContextSnapshot, Omit<HarnessView, "view">, ((page: Page) => Promise<void>)?]> = [
-      ["kasten-normal", 1440, sidebarSnapshot({ groups: [automationsGroup()] }), {}],
+      ["kasten-normal", 1440, withMails(sidebarSnapshot({ groups: [automationsGroup()] })), {}],
       [
         "kasten-zeigen",
         1440,
