@@ -25,11 +25,13 @@ const OPERATION = "00000000-0000-4000-8000-0000000000aa";
 const time = (day: number) => `2026-11-${String(day).padStart(2, "0")}T08:${String(day).padStart(2, "0")}:00.000Z`;
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 
+/** Fictional subjects of delivery notices, as a mail client shows them. */
+const subjects = ["Lieferavis Polsterei Weber", "Lieferavis Stoffe Nord", "Lieferavis Beschläge Kern", "Lieferavis Holz Brandt"];
 /** Twelve delivery notices in the Möbel Beispiel mailbox, oldest first. */
 const selection = (count: number, more = false): MailCodeSelection => ({
   cutoffAt: "2026-11-14T09:00:00.000Z",
   items: Array.from({ length: count }, (_, index) => ({
-    title: `Lieferavis ${index + 1}`,
+    title: subjects[index % subjects.length]!,
     event: {
       id: id(100 + index),
       type: "mail.message.received",

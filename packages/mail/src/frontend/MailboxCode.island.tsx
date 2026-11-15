@@ -72,13 +72,15 @@ export default function MailboxCode(props: {
             <Show
               when={props.catchUp}
               fallback={
-                <>
-                  <CodePage data={props.code} />
-                  {/* Until the Code page offers a footer slot, the line stands where "Incoming mail" stood. */}
-                  <Show when={props.code.tab === "overview" && mailCodeCatchUpAvailable(props.code, props.mailbox)}>
-                    <MailCodeBackfillLink href={mailCodeCatchUpHref(props.code.href)} />
-                  </Show>
-                </>
+                <CodePage
+                  data={props.code}
+                  footer={
+                    // The Code page shows its footer only on the overview of a running automation.
+                    <Show when={mailCodeCatchUpAvailable(props.code, props.mailbox)}>
+                      <MailCodeBackfillLink href={mailCodeCatchUpHref(props.code.href)} />
+                    </Show>
+                  }
+                />
               }
             >
               {(data) => <MailCodeCatchUp data={data()} />}

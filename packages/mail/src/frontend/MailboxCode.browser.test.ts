@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CODE_PAGE_FIXTURE_STATES } from "@k2b/cloud/ssr/code-page/code-page.fixture";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { MAIL_CODE_CATCH_UP_STATES } from "./MailCodeTools.fixture";
@@ -150,21 +151,7 @@ const overflow = (page: Page) => page.evaluate(() => document.documentElement.sc
 describe("Mailbox Code page in a browser", () => {
   for (const [name, width] of Object.entries(widths))
     test(`${name} ${width}px: every state fits without horizontal scrolling`, async () => {
-      for (const state of [
-        "overview",
-        "waiting",
-        "refused",
-        "refused-nolink",
-        "refused-reader",
-        "refused-policy",
-        "refused-approval",
-        "internet",
-        "runs",
-        "run-failed",
-        "versions",
-        "empty",
-        "error",
-      ]) {
+      for (const state of CODE_PAGE_FIXTURE_STATES) {
         const page = await load(state, width);
         try {
           expect({ state, overflow: await overflow(page) }).toEqual({ state, overflow: 0 });
@@ -176,22 +163,26 @@ describe("Mailbox Code page in a browser", () => {
       }
     }, 60_000);
 
-  test("the page is titled Code and its row titles stay smaller than the section headings", async () => {
+  test("the page heads with its state and its row titles stay no larger than the island titles", async () => {
     for (const width of [1440, 390])
-      for (const state of ["overview", "runs", "versions", "empty"]) {
+      for (const state of ["overview", "runs", "versions"]) {
         const page = await load(state, width);
         try {
           const measured = await page.evaluate(() => {
             const size = (element: Element) => Number.parseFloat(getComputedStyle(element).fontSize);
-            const heading = document.querySelector(".cloud-code__h2");
+            const titles = Array.from(document.querySelectorAll(".cloud-code__island .k2b-section__title"));
+            const largest = Math.max(0, ...titles.map(size));
             return {
-              title: document.querySelector(".cloud-code h1 .cloud-featcode[aria-hidden=true]")?.getAttribute("data-variant"),
-              rowsAboveHeading: heading
-                ? Array.from(document.querySelectorAll(".cloud-code__title")).filter((row) => size(row) > size(heading)).length
-                : 0,
+              state: document.querySelector(".cloud-code h1 .cloud-code__state")?.textContent?.trim() ?? null,
+              rowsAboveIsland: Array.from(document.querySelectorAll(".cloud-code__row-title")).filter((row) => size(row) > largest).length,
             };
           });
-          expect({ state, width, ...measured }).toEqual({ state, width, title: "wordmark", rowsAboveHeading: 0 });
+          expect({ state, width, heading: Boolean(measured.state), rowsAboveIsland: measured.rowsAboveIsland }).toEqual({
+            state,
+            width,
+            heading: true,
+            rowsAboveIsland: 0,
+          });
         } finally {
           await page.context().close();
         }
@@ -316,13 +307,13 @@ describe("Mailbox Code page in a browser", () => {
     }
   }, 30_000);
 
-  test("a phone session explains why it cannot switch on", async () => {
+  test("a phone session explains why it cannot switch on, at the button and without a dialog", async () => {
     const page = await load("waiting", 390, { phone: true });
     try {
-      await page.getByRole("button", { name: "Version 5 einschalten" }).first().click();
-      const dialog = page.getByRole("dialog");
-      expect(await dialog.getByText("Am Telefon lässt sich Code nicht einschalten.", { exact: false }).isVisible()).toBe(true);
-      expect(await dialog.getByRole("button", { name: "Version 5 einschalten" }).isDisabled()).toBe(true);
+      const button = page.getByRole("button", { name: "Version 5 einschalten" }).first();
+      expect(await button.isDisabled()).toBe(true);
+      expect(await page.getByRole("dialog").count()).toBe(0);
+      expect(await page.locator(".cloud-code").getByText("Telefon", { exact: false }).first().isVisible()).toBe(true);
       expect(await overflow(page)).toBe(0);
       await shoot(page, "telefon-gesperrt-390");
     } finally {
@@ -333,7 +324,10 @@ describe("Mailbox Code page in a browser", () => {
   test("dark theme keeps the page readable", async () => {
     const page = await load("refused", 1440, { dark: true });
     try {
-      const color = await page.locator(".cloud-code__lead").evaluate((element) => getComputedStyle(element).color);
+      const color = await page
+        .locator(".cloud-code__meta")
+        .first()
+        .evaluate((element) => getComputedStyle(element).color);
       expect(color).not.toBe("rgb(0, 0, 0)");
       await shoot(page, "refused-dark-1440");
     } finally {

@@ -641,6 +641,7 @@ describe("Code page loader", () => {
     firstCall = policyCall,
     checkedManifest: unknown = manifest,
     cloudTimeZone?: string,
+    roles: string[] = ["user"],
   ) => {
     const appCalls: string[] = [];
     const coreCalls: string[] = [];
@@ -677,7 +678,7 @@ describe("Code page loader", () => {
       settings: { app: { timezone: cloudTimeZone } },
       actor: { kind: "user", sessionKind: "web" },
       credentialKind: "session",
-      user: { id: "00000000-0000-4000-8000-0000000000a1", roles: ["user"] },
+      user: { id: "00000000-0000-4000-8000-0000000000a1", roles },
       runtime: { apps: [] },
     };
     const c = {
@@ -858,6 +859,25 @@ describe("Code page loader", () => {
     expect(editor.data.tab).toBe("code");
     if (editor.data.state.kind !== "ready") throw new Error("Expected a ready page");
     expect(editor.data.state.sourceTab).not.toBeUndefined();
+  });
+
+  test("F30: a Cloud admin without the editor right gets no code tab and no source, like any reader", async () => {
+    // Core answers a Cloud admin who does not edit this Code as a reader; the page never widens that.
+    const admin = await load("reader", "?tab=code", failedRun, policyCall, manifest, undefined, ["user", "admin"]);
+    expect(admin.data.cloudAdmin).toBe(true);
+    expect(admin.data.tab).toBe("overview");
+    expect(admin.coreCalls).not.toContain("code.source.tab");
+    const markup = renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data: admin.data });
+        },
+      }),
+    );
+    expect(markup).not.toContain("?tab=code");
+    expect(markup).not.toContain("data-code-source-region");
+    expect(markup).not.toContain("k2b-code-diff");
   });
 
   test("a failed read model is a part that did not load, never an empty one", async () => {

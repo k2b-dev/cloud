@@ -1,13 +1,16 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import type { LiveViewer } from "@k2b/cloud/events";
-import { createLiveEngine, LIVE_LIMITS, type LiveEnvelope } from "@k2b/cloud/events/testing";
+import { createLiveEngine, LIVE_LIMITS, type LiveEnvelope, liveOutbox, liveTopicConfig } from "@k2b/cloud/events/testing";
 import { accounts } from "@k2b/cloud/services";
 import { createSync, type Sync, type Topic } from "@k2b/sync";
+import { z } from "zod";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
-import { CodeRunEventSchema } from "../../../cloud/src/code/live-events";
-import { liveOutbox, liveTopicConfig } from "../../../cloud/src/events/live";
+
+/** The hint Core publishes on its `code` channel, as browsers parse it. */
+const CodeRunEventSchema = z.object({ type: z.literal("code.run"), runId: z.uuid(), state: z.string(), at: z.string() }).strict();
+
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateCodeLive } from "../migrate/core/code-live";
