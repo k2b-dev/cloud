@@ -1,6 +1,0 @@
-### A Unicode property class turned into literal letters in a registered capability schema
-
-- **What happened:** `core.code.automation.list` answered every caller with `INVALID_APP_RESPONSE` (#3426). The Code page then said the next run was unknown, and "My apps & automations" showed "Automation" instead of the schedule and next run.
-- **Root cause:** `CodeAutomationTitleSchema` checked titles with `/^[^<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u`. A capability's data schema is registered as JSON Schema and read back with `z.fromJSONSchema`, which builds patterns without the `u` flag. Without it, `\p{Cc}` means the letters `p`, `{`, `C`, `c` and `}`, so any title with one of them, such as "Lieferavise abgleichen", failed the gateway's result check.
-- **Error class:** A schema rule that holds in Zod but changes meaning after the JSON Schema round trip that the capability registry performs.
-- **Guard:** `code-automation-title.test.ts` checks ordinary and forbidden titles against the source schema and the round-tripped one. The title pattern now names its characters by code unit; format characters are a refinement. Other contracts with `\p{…}` patterns (`app-approval.ts`, `outgoing-mail.ts`, `core/src/code/files/contracts.ts`, Grids and Pulse) have the same exposure when they travel as registered schemas.
