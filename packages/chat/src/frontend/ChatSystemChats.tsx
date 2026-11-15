@@ -76,11 +76,14 @@ export default function ChatSystemChats(props: {
       },
     ),
   );
+  // While discovery has more pages, it is not known yet that there are none.
+  const hasMore = () => Object.values(props.state.page()?.cursors ?? {}).some(Boolean);
   const unread = () => rows().reduce((sum, row) => sum + row.unread, 0);
   const incomplete = () => rows().some((row) => row.summaryCursor != null || row.incomplete);
-  // Without discussions the section is gone, without a placeholder; trouble stays visible with its retry.
+  // Without discussions the section is gone, without a placeholder; trouble stays visible with its retry, and so does
+  // a discovery with more pages to read.
   return (
-    <Show when={rows().length > 0 || trouble()}>
+    <Show when={rows().length > 0 || trouble() || hasMore()}>
       <AppWorkspace.SidebarSection
         class={`chat-system-chats${unread() === 0 && !incomplete() ? " chat-system-chats--read" : ""}`}
         title={t().systemChats}
@@ -112,7 +115,7 @@ export default function ChatSystemChats(props: {
               </Button>
             </InlineGuidance>
           </Show>
-          <Show when={Object.values(props.state.page()?.cursors ?? {}).some(Boolean)}>
+          <Show when={hasMore()}>
             <Button variant="ghost" size="sm" loading={props.state.status() === "loading"} onClick={() => void props.state.load(true)}>
               {t().showMoreChats}
             </Button>

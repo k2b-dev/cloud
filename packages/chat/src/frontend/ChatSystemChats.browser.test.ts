@@ -216,7 +216,7 @@ for (const [name, options, mobile] of [
         await page.unroute("**/api/chat/system-chats");
         await section.getByRole("button", { name: "Erneut versuchen" }).click();
         await section.waitFor({ state: "detached" });
-        expect(await list(page, mobile).getByText("Noch keine", { exact: false }).count()).toBe(0);
+        expect(await list(page, mobile).getByText("Sobald jemand über eine Ressource schreibt", { exact: false }).count()).toBe(0);
       } finally {
         release();
         await page.context().close();
