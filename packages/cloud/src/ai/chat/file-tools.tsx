@@ -43,7 +43,7 @@ const preparingView = (block: ToolBlock) =>
     : false;
 
 /** A presented file: a view file shows as its chart or table, every other file as a chip to open and download. */
-const ISLANDS: ReadonlySet<string> = new Set(["chart", "table", "group", "explorer"]);
+const ISLANDS: ReadonlySet<string> = new Set(["chart", "group", "explorer"]);
 
 export function PresentToolBlock(props: { block: ToolBlock }) {
   const locale = useLocale();
@@ -69,7 +69,8 @@ export function PresentToolBlock(props: { block: ToolBlock }) {
           large={() => <CloudViewBlock path={view.path} summary={view.summary} />}
           data={props.block.result}
         >
-          {/* A chart, table or explorer is an island, as in an app's view; key figures and details stay flat. */}
+          {/* A chart, group or explorer is an island, as in an app's view; a table keeps its own frame, the same as a
+              Markdown table in the answer, and key figures and details stay flat. */}
           <Show when={ISLANDS.has(view.summary.view)} fallback={<CloudViewBlock path={view.path} summary={view.summary} />}>
             <Paper class="k2b-dashboard-frame">
               <CloudViewBlock path={view.path} summary={view.summary} />

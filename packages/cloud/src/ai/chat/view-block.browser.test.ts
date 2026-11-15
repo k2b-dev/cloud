@@ -2006,3 +2006,52 @@ for (const width of [1280, 390])
       await context.close();
     }
   });
+
+// Gustav's view-file chart stands as an island under his head, and a run of zeros stays on the zero line: his lines are
+// straight unless the file asks for a curve, which could swing below zero between two values.
+const quiet = {
+  view: "chart",
+  kind: "line",
+  title: "Rückläufer pro Tag",
+  subtitle: "November 2026",
+  area: true,
+  series: [
+    {
+      label: "Rückläufer",
+      data: [0, 0, 0, 4, 0, 0, 0, 6, 1, 0, 0, 0, 3, 0].map((y, index) => ({ x: `2026-11-${String(index + 1).padStart(2, "0")}`, y })),
+    },
+  ],
+};
+files["/views/returns-per-day-3c4d5e6f.view.json"] = quiet;
+for (const width of [1280, 390])
+  test(`a view-file chart is an island and its zeros stay on the zero line (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de`);
+      await page.evaluate(
+        (value) => window.show(value),
+        [
+          present("/views/returns-per-day-3c4d5e6f.view.json", {
+            view: "chart",
+            kind: "line",
+            title: quiet.title,
+            subtitle: quiet.subtitle,
+          }),
+        ],
+      );
+      await page.waitForFunction(() => document.querySelector("[data-view-path] .k2b-chart[data-chart-kind] svg path"));
+      await settled(page);
+      expect(await page.locator(".k2b-dashboard-frame > [data-view-path]").count()).toBe(1);
+      const curves = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("[data-view-path] .k2b-chart svg path"))
+          .map((path) => path.getAttribute("d") ?? "")
+          .filter((d) => /[Cc]/.test(d)),
+      );
+      expect(curves).toEqual([]);
+      if (process.env.VIEW_SHOTS)
+        await page.screenshot({ path: `${process.env.VIEW_SHOTS}/gustav-insel-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  });
