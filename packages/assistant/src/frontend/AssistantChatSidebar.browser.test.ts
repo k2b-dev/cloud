@@ -6,7 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { browserName, hoverInPlace, launchBrowser } from "../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, settled } from "../../../ui/test/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { codeChatGroup } from "../code-chat-group";
 import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
@@ -663,10 +663,11 @@ describe(`Box "In this chat" in ${browserName}`, () => {
       expect(rings[0]).not.toBe(rings[1]);
       expect(rings[1]).toBe(rings[2]);
       const first = rows.first();
+      await settled(page);
       const before = await layout(page);
       const height = (await first.boundingBox())!.height;
       await hoverInPlace(first);
-      await frames(page);
+      await settled(page);
       expect((await first.boundingBox())!.height).toBe(height);
       expect(await layout(page)).toEqual(before);
       const shown = await first.evaluate(
