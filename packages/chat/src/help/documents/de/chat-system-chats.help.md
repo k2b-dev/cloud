@@ -17,13 +17,24 @@ Der Chat eines Bereichs bringt seine Nachrichten zusammen. Jedes Element hat ein
 3. Wähle einen Thread, um nur die Nachrichten zu diesem Element zu lesen.
 :::
 
-Hier erscheinen nur Diskussionen, die bereits einen Chat haben. Ein leerer Abschnitt erklärt, wann ein Chat erscheint. Falls der Abschnitt nicht lädt, wähle **Erneut versuchen** neben dem Fehler.
+Hier erscheinen nur Diskussionen, die bereits einen Chat haben. Gibt es keine, fehlt der Abschnitt. Falls er nicht lädt, öffnet er sich mit dem Fehler; wähle daneben **Erneut versuchen**.
 
 Die Kurzliste zeigt zuletzt aktive, ungelesene und den offenen Thread innerhalb einer Seite. Wähle **Alle N Threads** oder **Alle Threads durchsuchen**, um weitere zu finden. Nutze **Threads suchen** und die Filter **Offen**, **Erledigt** oder **Ungelesen**. **Weitere Threads anzeigen** lädt die nächste Seite.
 
 Auf großen Bildschirmen bietet eine eigene Thread-Spalte dieselbe Suche und Filter. Auf dem Telefon führt der Zurück-Pfeil im Thread zur Thread-Übersicht.
 
 Die zugehörige App liefert eine Kontextzeile. Zuständige und genaue Terminzeiten erscheinen nur, wenn die App sie dort nennt.
+
+## Neben der Ressource chatten {icon="layout-sidebar-right"}
+
+Öffne das Panel **Chat**, während du eine Ressource ansiehst, zum Beispiel ein Notizbuch. Das Panel öffnet die Diskussion über diese Ressource. Hat dort noch niemand geschrieben, ist sie leer und bereit; deine erste Nachricht beginnt sie. Wechselst du zu einer anderen Ressource, folgt das Panel, solange es noch die Diskussion der vorigen Ressource zeigt.
+
+:::reference
+- **Alle Chats** oben links zeigt deine anderen Chats im Panel.
+- **Über … chatten** oben rechts führt zurück zur Diskussion der Ressource.
+- Chat erfährt die Ressource erst, wenn du im Panel **Kontext teilen** für Chat erlaubst.
+- Du siehst die Diskussion nur, wenn du die Ressource lesen darfst.
+:::
 
 ## Über ein Element schreiben {icon="message-plus"}
 

@@ -72,15 +72,17 @@ The popover stays open after the lift. Further movement of the held finger
 never scrolls the page underneath it, and the lift never presses a menu item.
 Focus moves to the first item; Escape closes the menu and returns focus to
 the element. A tap outside or a scroll closes it. Inside a modal dialog the
-hold keeps the sheet at every width, because everything outside the dialog is
-inert.
+hold keeps the sheet at every width: it opens as a level of the same dialog
+stack, so Escape and Back close it before the dialog.
 
 Hold, then drag hands over to a surrounding or nested [`DragSource`](../actions/drag-and-drop): the menu or sheet closes and the drag begins. Without that movement, the long press keeps its usual behavior.
 
 The touch that opened the sheet never presses anything in it either. An item
 chosen in the sheet runs once the sheet has closed and left the history, so
 it may navigate or open a dialog. The sheet closes when the element goes,
-for example when its message is deleted.
+for example when its message is deleted. If the sheet's code cannot load, the
+hold opens the menu at the finger instead, as from 48rem, and the error goes to
+`reportError`; the next hold tries the sheet again.
 
 **Other input.** A second finger anywhere on the screen ends a swipe or a
 long press. A touch or pen press that ran a gesture or opened the menu does

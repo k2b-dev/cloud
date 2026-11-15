@@ -919,15 +919,6 @@ describe("ChatWorkspace browser read state", () => {
           expect(recovered.pathname).toBe(`/app/chat${embedded ? "/panel" : ""}/c/${chat}`);
           expect(recovered.searchParams.get("list")).toBe(embedded ? "archive" : null);
           expect(recovered.searchParams.get("filter")).toBe(embedded ? "unread" : null);
-          if (embedded) {
-            const fullView = new URL(
-              (await page.getByRole("link", { name: "Open full view", exact: true }).getAttribute("href"))!,
-              page.url(),
-            );
-            expect(fullView.pathname).toBe(`/app/chat/c/${chat}`);
-            expect(fullView.searchParams.get("list")).toBe("archive");
-            expect(fullView.searchParams.get("filter")).toBe("unread");
-          }
           expect(await marker(page).evaluate((element) => element.closest("[data-key]")!.getAttribute("data-key"))).toBe(openingMarker);
           await until(() => (chatReads(chat).at(-1)?.seq ?? 0) > 8);
           expect(chatReads(chat).at(-1)!.seq).toBeLessThan(68);

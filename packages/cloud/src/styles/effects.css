@@ -165,15 +165,39 @@
   animation: k2b-chat-activity-shimmer 2.2s linear infinite;
 }
 
+/* A changing thinking word (`Chat.Activity.Words`) carries the shimmer itself: a light painted on the sentence would
+   show through the word's own fade, so the word could never fade out. The " …" after it keeps the sentence colour. */
+.k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence:has(.k2b-chat-activity__words) {
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+}
+
+.k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence .k2b-chat-activity__word {
+  background-image: linear-gradient(
+    90deg,
+    var(--k2b-text-secondary) 0 40%,
+    var(--k2b-ai-accent) 50%,
+    var(--k2b-text-secondary) 60% 100%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: k2b-chat-activity-shimmer 2.2s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence {
+  .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence,
+  .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence .k2b-chat-activity__word {
     background-image: none;
     -webkit-text-fill-color: currentColor;
     animation: none;
   }
 }
 
-:where(html[data-k2b-motion="reduced"]) .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence {
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence,
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence .k2b-chat-activity__word {
   background-image: none;
   -webkit-text-fill-color: currentColor;
   animation: none;

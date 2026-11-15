@@ -5,7 +5,7 @@ section: Reference
 order: 1262
 description: React to contact creation and field changes, and use bounded tag and note Actions.
 tags: [contacts, capabilities, events, automation]
-updated: 2026-11-07
+updated: 2026-11-15
 ---
 
 # Contacts automation capabilities
@@ -31,3 +31,31 @@ Deleting and moving contacts retain their existing approvals.
 Imports are limited to 1,000 entries and bulk tag/move operations to 500 selected
 contacts. They use the same transactional publication path and the
 [shared event capacity budget](/en/docs/operations/app-events#plan-retention-and-outage-capacity).
+
+## Resource readers and discussions
+
+Contacts declares `contact`, `book`, `tag`, and `note` Types. `contact` is
+contained by `book`. Each stored contact belongs to exactly one book; matching
+people in several books are separate contacts with distinct refs. The reader
+uses the contact's current book after a move and checks its current grants.
+It never selects another book to gain access.
+
+`contact.read` adds a standard `view` with the contact title, effective
+permission and `container: { ref, title }` of its book. `book.read` adds a
+standard `view` with the book title and effective permission. Existing domain
+fields and open links remain available; mutation results and `book.list`
+retain their existing shapes.
+
+The `discussions` role declares `item: "contact"` and
+`containers: "book.containers"`. The latter accepts the standard
+`{ query?, cursor?, limit? }` and returns `{ items, next }`. Items contain a
+public `contacts.book` ref and title. Pass `next` unchanged as `cursor`;
+changing `limit` continues at the next offset. Results are ordered by book
+name and ID. Changes to books or grants between pages can change that order;
+restart listing to refresh it.
+
+All reads use the incoming actor and access subject through the Contacts
+permission service, including resource bindings and credential scope limits.
+Page context refs convey no permission. Activity and account readability
+checks for resource discussion push are not provided. See
+[Resource types and discussions](/en/docs/platform/resource-types-and-discussions).
