@@ -8176,7 +8176,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* A menu that is chosen from by letter shows its signs at 16 px, as its rows carry a key cap at the end. */
-.k2b-ui .k2b-dropdown__item:has(> .k2b-dropdown__key) > i:first-child {
+.k2b-ui .k2b-dropdown__item[data-key] > i:first-child {
   font-size: 1rem;
 }
 
