@@ -67,7 +67,7 @@ function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: Pa
         capabilityId: "code.chat_binding.set",
         kind: "action",
         target: { type: "core.code", id: props.codeId },
-        input: { codeId: props.codeId, chatId, revision: props.binding.revision },
+        input: { chatId, revision: props.binding.revision },
         idempotencyKey: crypto.randomUUID(),
       },
       CodeChatBindingSchema,
