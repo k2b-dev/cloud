@@ -179,6 +179,30 @@ test("code_run uses the runner fixture, generated SDK, same result card and capt
   }
 }, 20_000);
 
+test("code_run unpacks a ZIP, reads XML and captures a newly created ZIP", async () => {
+  const f = fixture();
+  try {
+    const result = await f.execute("code_run", {
+      code: `export default async () => {
+        const source = await cloud.zip.create([{name:"bank/report.xml", data:"<Document>bank report</Document>"}], "input.ZIP");
+        const zip = await cloud.zip.open(source);
+        const xml = await zip.text("bank/report.xml");
+        const bytes = await zip.read("bank/report.xml");
+        const output = await cloud.zip.create([{name:"report.xml", data:bytes}], "reports.zip");
+        await cloud.download(output.name, output);
+        return {entries:zip.entries.length, xml};
+      }`,
+    });
+    expect(result).toMatchObject({
+      status: "ready",
+      output: '{"entries":1,"xml":"<Document>bank report</Document>"}',
+      files: [{ name: "reports.zip", type: "application/zip" }],
+    });
+  } finally {
+    await f.close();
+  }
+});
+
 test("raw code_run retries a failed catalog load without admitting an unchecked call", async () => {
   const f = fixture();
   f.sdk.mockRejectedValueOnce(new Error("Catalog temporarily unavailable"));

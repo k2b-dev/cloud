@@ -192,3 +192,30 @@ uploads; keep the existing upload cleanup running. No new service or
 configuration is needed. Files keeps its upload quota, collision, versioning
 and confirmation rules; Mail keeps its
 draft-write policy and never sends as part of attachment import.
+
+## ZIP files in chat Code Mode
+
+One-off Assistant scripts can use `cloud.zip.open(file)` to list entries and
+read their bytes (`read(name)`) or UTF-8 text (`text(name)`).
+`cloud.zip.create([{name,data}], "files.zip")` returns a ZIP `File` for the
+existing `cloud.download`, `code_export` and `present` flow. CAMT parsing is
+available through `cloud.finance.camt.parse`, backed by `@k2b/stdlib/finance` (camt.052.001.08 only).
+Read the Assistant code-mode ZIP reference for bank-report and download scripts.
+
+The ZIP SDK retains the 50 MiB chat-file ceiling. Expanded data is limited to
+16 MiB per archive, the smaller of the existing chat-file and runtime-data
+budgets, with 64 entries matching the runner input-path ceiling. Each entry
+may expand at most 64:1: one 16 MiB expanded-data budget per 256 KiB
+bridge-sized compressed input. These SDK ceilings cannot be raised by scripts.
+The runner's memory, wall-clock and bridge limits still apply; selected input files and captured outputs
+include base64 and envelope overhead in the 256 KiB bridge limit. Actual
+`code_run` binary transfers are therefore below 192 KiB (about 190 KiB after
+envelope overhead). Larger archives may be attached to chat but must be split
+locally before loading into a run.
+
+No service, setting or dependency is added. ZIP creation uses the installed
+stdlib writer; extraction uses bounded native decompression streams in the
+runner. Archive paths never reach a filesystem. Encrypted, multipart and ZIP64
+archives, symlinks, duplicate names and unsafe paths are refused. Declared
+size and ratio limits are checked before extraction, and actual output is
+bounded while reading.
