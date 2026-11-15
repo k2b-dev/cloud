@@ -45,7 +45,7 @@ const snapshot = emptySidebarSnapshot({
   results: [
     {
       ...fileResult("/Offene Rückfragen Kern.csv", {
-        at: new Date().toISOString(),
+        at: today,
         turn: "t1",
         seq: 3,
         mediaType: "text/csv",
