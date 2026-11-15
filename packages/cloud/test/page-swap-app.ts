@@ -519,7 +519,10 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
           undefined,
           { timeout: 15_000 },
         );
-        await click(tab.page, `[data-nav-root] a[href="${target}"]`);
+        // The link must be visible, but this run measures leaks: Playwright's actionability wait spans several animation
+        // frames, which headless WebKit delivers at about 30 per second, so it cost about 0.7 s per click while the
+        // link stood still from the first frame. The links test keeps the full click checks.
+        await tab.page.locator(`[data-nav-root] a[href="${target}"] >> visible=true`).first().click({ force: true });
         await at(tab.page, target);
       };
       try {
