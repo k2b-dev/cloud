@@ -420,6 +420,8 @@ async function open(width: number, options: OpenOptions = {}) {
             return ["qr_code"];
           }
           async detect() {
+            // A test points the camera away to keep a scanner open, as a person does before the code is in view.
+            if ((globalThis as { cameraSeesCode?: boolean }).cameraSeesCode === false) return [];
             const corners = [
               { x: 0, y: 0 },
               { x: 1, y: 0 },
@@ -779,7 +781,11 @@ describe("Code page in a browser", () => {
       expect(await page.getByLabel("Title", { exact: true }).inputValue()).toBe("Typed");
       expect(state.treeLoads).toBe(0);
       expect(state.posts).toEqual([]);
-      // Back closes the scanner, not the page, and keeps what was typed.
+      // Back closes the scanner, not the page, and keeps what was typed. The camera sees no code now, so this scanner
+      // stays open until Back; one that read a code would close itself with its own Back, racing the test's (#3478).
+      await page.evaluate(() => {
+        (globalThis as { cameraSeesCode?: boolean }).cameraSeesCode = false;
+      });
       await page.getByRole("button", { name: "Scan", exact: true }).click();
       await page.getByRole("dialog", { name: "Scan code" }).waitFor();
       await page.goBack();
