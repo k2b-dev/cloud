@@ -245,7 +245,7 @@ In an application with `pageSwap`, a page change that cannot swap loads the
 whole page instead. Each such fallback of a signed-in person is one warning
 with source **page-swap** in Core's logs. It carries the application ID, a
 stable reason, and for `status` the HTTP status. It carries no URL, page
-content, or user ID. Reporting is always on and shares the authenticated
+content, or user ID, and its Referer names only the origin. Reporting is always on and shares the authenticated
 self-service API's rate limit.
 
 A few fallbacks are expected: a new release (`assets`, `module`), an expired

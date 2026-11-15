@@ -346,8 +346,10 @@ with `detail: { reason, url, status? }`; `reason` is a stable code (`network`,
 `module`, `commit`, `history`, `error`) for counting fallbacks. Strip `url`
 before reporting it. `installPageSwap({ timeout })` bounds fetch and module
 loading in milliseconds; past it the document loads instead. The head stays:
-title and `<meta name="description">` follow the fetched page, while base,
-stylesheets, and `<html lang>`/`dir` must match.
+title and `<meta name="description">` follow the fetched page. Nav compares
+only base, stylesheet links, and `<html lang>`/`dir`; put every other head
+difference, such as inline styles, viewport, or canonical links, into the shell
+signature.
 
 For unsaved input, `protectUnsavedInput({ dirty, confirm })` asks `confirm`
 before a swap and lets the browser ask before a document load.

@@ -90,7 +90,11 @@ beforeAll(async () => {
     async fetch(request) {
       const url = new URL(request.url);
       if (url.pathname === "/api/me/page-swap-fallbacks") {
-        fallbackReports.push(await request.json());
+        fallbackReports.push({
+          body: await request.json(),
+          referer: request.headers.get("referer"),
+          origin: request.headers.get("origin"),
+        });
         return new Response(null, { status: 204 });
       }
       if (url.pathname === "/fixture.css") return new Response(css, { headers: { "content-type": "text/css" } });
@@ -390,7 +394,8 @@ for (const [name, value] of [
       await swapTo(f.page, "A");
       expect(f.documents).toEqual(["/app/fixture/A"]);
       for (let attempt = 0; attempt < 50 && fallbackReports.length === 0; attempt++) await Bun.sleep(20);
-      expect(fallbackReports).toEqual([{ appId: "fixture", reason: "shell" }]);
+      // Neither the body nor the Referer carries the page's path; the Origin guard still sees the real origin.
+      expect(fallbackReports).toEqual([{ body: { appId: "fixture", reason: "shell" }, referer: `${origin}/`, origin }]);
     } finally {
       await f.close();
     }

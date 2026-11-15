@@ -206,8 +206,10 @@ strip it before reporting. Links outside the scope are not failures and emit
 nothing.
 
 A swap keeps the document's `<head>`. It takes the fetched page's title and
-`<meta name="description">`; everything else in the head must match, or the
-swap loads the document.
+`<meta name="description">`. It compares only `<base>`, the stylesheet links,
+and `lang` and `dir` on `<html>`; a difference there loads the document. Put
+every other head difference, such as inline styles, the viewport, or a
+canonical link, into the shell signature. Cloud does that for its layouts.
 
 Back and Forward fetch another server page's column without a document load.
 Within the shown page, `listenPopState()` lets islands restore state from the
@@ -289,7 +291,7 @@ Protect unsaved column state with `protectUnsavedInput()` as described below.
 Cloud bounds each swap by the gateway's idle timeout of 10 seconds. A page
 that takes longer loads as a document instead. Each fallback of a signed-in
 person is recorded once in the `page-swap` log with the app and the reason,
-without URL or person (see [Observability](/en/docs/operations/observability#page-swap-fallbacks)).
+without path, query or person (see [Observability](/en/docs/operations/observability#page-swap-fallbacks)).
 
 ### Swap stability
 
@@ -307,7 +309,7 @@ and each app's swap tests check it in Chromium and WebKit:
   and the title is announced to screen readers.
 - **Head:** title and description follow the page. Language, theme, user,
   build and app are part of the shell signature, so a change of any of them
-  loads the document, and with it the right `lang` and accent color.
+  loads the document, and with it the right `lang`, head and accent color.
 - **Cleanup:** the old column's islands are disposed before the new ones mount,
   so their `onCleanup` stops timers, sockets, listeners and live
   subscriptions. 50 swaps leave window and document listeners, the head and
