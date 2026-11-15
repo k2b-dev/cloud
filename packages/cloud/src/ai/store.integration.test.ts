@@ -681,7 +681,7 @@ suite("AI conversation store integration", () => {
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: source.id,
         modelId: "test-model",
-        runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" } },
+        runConfig: { kind: "chat", input: "Send", toolSource: { kind: "none" }, writerOrigin: { kind: "automation", id: "c_report" } },
         userMessage: userMessage("Send"),
       });
       const session = aiConversations.createSessionStore({ conversationId: source.id, turnId: turn.id });
@@ -704,6 +704,7 @@ suite("AI conversation store integration", () => {
       await aiConversations.copyMessages({ sourceConversationId: source.id, targetConversationId: target.id, throughSeq: seq });
       for (const conversationId of [fork.id, target.id]) {
         const messages = await aiConversations.listMessages({ conversationId });
+        expect(messages[0]?.meta?.writerOrigin).toEqual({ kind: "automation", id: "c_report" });
         const block = buildBlocksFromMessages(messages).find((block) => block.kind === "tool" && block.callId === "send");
         expect(block).toMatchObject({ review, check });
         const context = await aiConversations.createSessionStore({ conversationId }).load();

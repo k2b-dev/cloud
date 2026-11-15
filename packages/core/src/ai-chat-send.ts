@@ -47,13 +47,11 @@ const messages = i18n.define({
   },
 });
 
-/** The existing queue ID is stable within the account + operation + key scope, including across Code runs. */
-const sendId = (account: string, key: string) => {
-  const hex = createHash("sha256")
+/** Logical admission key; public queue IDs are independently generated. */
+const sendKeyHash = (account: string, key: string) =>
+  createHash("sha256")
     .update(JSON.stringify([account, "ai.chat.send", key]))
     .digest("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
-};
 const result = async (conversationId: string, chatId: string, id: string) => {
   const snapshot = await chatSendSnapshot(conversationId, chatId, id);
   return snapshot.ok
@@ -128,16 +126,18 @@ export const aiChatSendAction = {
     const parsed = aiChatSendInput.safeParse(input);
     if (!key.success || !parsed.success) return fail(err.badInput("Supply text and a valid idempotency key"));
     const owner = context.user.id;
-    const id = sendId(owner, key.data);
+    const keyHash = sendKeyHash(owner, key.data);
+    const id = crypto.randomUUID();
     const hash = approvalArgsDigest({ chatId: codeChatDestination(context), ...parsed.data });
     const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
     if (!chat) return fail(err.notFound("Chat"));
     const existing = async (db = sql) => {
-      const [row] = await db<{ hash: string; conversation_id: string }[]>`
-        SELECT submission->'runConfig'->'send'->>'requestHash' AS hash,conversation_id FROM ai.queued_messages WHERE id=${id}::uuid`;
+      const [row] = await db<{ id: string; hash: string; conversation_id: string }[]>`
+        SELECT id,submission->'runConfig'->'send'->>'requestHash' AS hash,conversation_id FROM ai.queued_messages
+        WHERE author_user_id=${owner}::uuid AND submission#>>'{runConfig,send,keyHash}'=${keyHash}`;
       if (!row) return null;
       return row.hash === hash && row.conversation_id === chat.id
-        ? result(chat.id, chat.short_id, id)
+        ? result(chat.id, chat.short_id, row.id)
         : fail(capabilityIdempotencyConflict("The key was used for a different chat message"));
     };
     const previous = await existing();
@@ -165,7 +165,7 @@ export const aiChatSendAction = {
         actor,
         locale: context.locale,
         writerOrigin: source.data.origin,
-        send: { id, requestHash: hash },
+        send: { id, keyHash, requestHash: hash },
         ...(code
           ? {
               codeOrigin: {
@@ -195,7 +195,7 @@ export const aiChatSendAction = {
           }
         : null;
       const admitted = await sql.begin(async (db) => {
-        await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send:${id}`},0))`;
+        await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send:${keyHash}`},0))`;
         const previous = await existing(db);
         if (previous) return previous;
         if (code && limits) {
@@ -214,6 +214,7 @@ export const aiChatSendAction = {
         return ok(null);
       });
       if (!admitted.ok) return admitted;
+      if (admitted.data) return ok(admitted.data);
       wakeAiMessageQueue(chat.id);
       return result(chat.id, chat.short_id, id);
     } catch (cause) {

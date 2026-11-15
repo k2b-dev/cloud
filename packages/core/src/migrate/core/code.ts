@@ -87,12 +87,12 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         END IF;
       END IF;
     END $$`.simple();
-    await tx`DROP TABLE IF EXISTS code.chat_deliveries`.simple();
     await tx`DO $$ BEGIN
-      IF to_regclass('ai.messages') IS NOT NULL THEN
+      IF to_regclass('code.chat_deliveries') IS NOT NULL AND to_regclass('ai.messages') IS NOT NULL THEN
         UPDATE ai.messages SET meta=meta-'codeDelivery' WHERE meta ? 'codeDelivery';
       END IF;
     END $$`.simple();
+    await tx`DROP TABLE IF EXISTS code.chat_deliveries`.simple();
     await tx`DROP TABLE IF EXISTS code.chat_runs`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_code_history ON code.runs(code_id,created_at DESC,id DESC)`.simple();
     await tx`CREATE INDEX IF NOT EXISTS runs_retention ON code.runs(ended_at,id) WHERE ended_at IS NOT NULL`.simple();

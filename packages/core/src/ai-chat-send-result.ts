@@ -33,13 +33,14 @@ export const chatSendSnapshot = async (conversationId: string, chatId: string, i
   const origin = AiChatOriginSchema.safeParse(entry.origin);
   if (!origin.success) return fail(err.notFound("Sent chat message"));
   const status: z.infer<typeof aiChatSendData>["status"] =
-    entry.status === "cancelled" || entry.turn_status === "aborted"
+    entry.status === "cancelled" || entry.turn_status === "aborted" || (entry.status === "submitted" && !entry.turn_id)
       ? "cancelled"
       : entry.turn_status === "completed"
         ? "done"
         : entry.turn_status === "waiting_for_action"
           ? "waiting"
-          : entry.turn_status === "failed" || entry.status === "failed"
+          : entry.turn_status === "failed" ||
+              (entry.status === "failed" && !["quota_exhausted", "quota_usage_unknown"].includes(entry.error ?? ""))
             ? "failed"
             : entry.turn_status === "running"
               ? "running"

@@ -637,7 +637,8 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
   'toolReviews', ${todoMetaJson()}->'toolReviews',
   'toolChecks', ${todoMetaJson()}->'toolChecks',
   'codeDecision', ${todoMetaJson()}->'codeDecision',
-  'codeReviewStart', ${todoMetaJson()}->'codeReviewStart'
+  'codeReviewStart', ${todoMetaJson()}->'codeReviewStart',
+  'writerOrigin', ${todoMetaJson()}->'writerOrigin'
 )), '{}'::jsonb)`;
 
 // A background result arriving during an interactive turn becomes context on the next turn.
@@ -3379,7 +3380,7 @@ export const aiConversations: AiConversationService = {
       }
       if (input.queuedMessageId) {
         await tx`UPDATE ai.queued_messages SET status = 'submitted',
-          submission = CASE WHEN submission->'runConfig' ? 'send' THEN submission ELSE '{}'::jsonb END,
+          submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}')) ELSE '{}'::jsonb END,
           content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
         await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${input.queuedMessageId}::uuid`;
       }

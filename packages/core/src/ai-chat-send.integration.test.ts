@@ -330,6 +330,53 @@ suiteFor(
     expect(Number(debit?.cost)).toBe(0);
   });
 
+  test("an accepted key survives a new Code run while another account has an independent key scope", async () => {
+    await setup();
+    const first = await start();
+    await sql`UPDATE code.runs SET state='completed',ended_at=clock_timestamp() WHERE id=${runId}::uuid`;
+    runId = `4f000000-0000-4000-8000-${String(++ordinal).padStart(12, "0")}`;
+    await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
+      VALUES(${runId}::uuid,${codeId},${versionId}::uuid,'schedule','morning','running',32768,10)`;
+    expect(await invoke()).toMatchObject({ ok: true, data: { data: { id: first.id, origin: first.origin } } });
+    const otherUser = { ...user, id: other };
+    const context: CapabilityExecutionContext = {
+      ...personContext(),
+      user: otherUser,
+      actor: { kind: "user", user: otherUser },
+      accessSubject: { type: "user", userId: other },
+      authority: {
+        actor: { kind: "user", user: otherUser },
+        accessSubject: { type: "user", userId: other },
+        credentialKind: "session",
+        scopes: [],
+      },
+    };
+    const response = await invoke(foreign.shortId, context);
+    if (!response.ok) throw new Error(response.error.message);
+    const second = dataSchema.parse(response.data.data);
+    expect(second.id).not.toBe(first.id);
+    expect(second.origin).toEqual({ kind: "person", id: other });
+  });
+
+  test("queue admission keeps only its receipt after promotion and maps removed turns and retryable quota", async () => {
+    await setup();
+    const sent = await start();
+    const [entry] = await sql<{ submission: unknown }[]>`SELECT submission FROM ai.queued_messages WHERE id=${sent.id}::uuid`;
+    expect(entry?.submission).toEqual({
+      runConfig: { send: expect.objectContaining({ id: sent.id, keyHash: expect.any(String), requestHash: expect.any(String) }) },
+    });
+    const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
+    await sql`DELETE FROM ai.turns WHERE id=${turn!.id}::uuid`;
+    expect(await read(sent.id)).toMatchObject({ ok: true, data: { data: { message: { status: "cancelled" } } } });
+    const response = await invoke(chat.shortId, ctx("quota-wait"));
+    if (!response.ok) throw new Error(response.error.message);
+    const queued = dataSchema.parse(response.data.data);
+    await sql`UPDATE ai.queued_messages SET status='failed',error='quota_exhausted' WHERE id=${queued.id}::uuid`;
+    expect(await read(queued.id)).toMatchObject({ ok: true, data: { data: { message: { status: "queued", reason: "quota_exhausted" } } } });
+    await sql`UPDATE ai.queued_messages SET error='dispatch_failed' WHERE id=${queued.id}::uuid`;
+    expect(await read(queued.id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed" } } } });
+  });
+
   test("stranger Code and a reader of shared personal Code cannot start an owner's turn", async () => {
     await setup();
     expect(await invoke(foreign.shortId)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
@@ -495,7 +542,7 @@ suiteFor(
     const final = await beginAiCall(profile, { kind: "chat", task: "chat", subject }, 5_000, 5_000);
     await finishAiCall(final.id, { input: 5_000, output: 5_000 }, "ok");
     expect(await invoke(chat.shortId, ctx("exhausted"))).toMatchObject({ ok: false, error: { code: "quota_exhausted" } });
-    expect(await sql`SELECT * FROM ai.queued_messages WHERE submission#>>'{runConfig,codeOrigin,runId}'=${runId}`).toHaveLength(3);
+    expect(await sql`SELECT * FROM ai.queued_messages WHERE origin->>'runId'=${runId}`).toHaveLength(3);
   });
 
   test.each(["code", "owner"] as const)("actual turn cost counts toward the existing %s daily Code USD budget", async (scope) => {

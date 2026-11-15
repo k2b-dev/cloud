@@ -221,7 +221,17 @@ the new input, review and result contracts; there are no compatibility aliases.
 
 Before switching versions, deliver all pending `ai.inter_chat_messages` with
 the previous release and stop its workers. Core refuses migration while any
-pending row remains. Back up the database before upgrading. The migration
+pending row remains. Check the old release before stopping it:
+
+```sql
+SELECT count(*) AS pending FROM ai.inter_chat_messages WHERE status = 'pending';
+```
+
+The count must be zero. Resolve waiting approvals in target chats and let the
+old delivery worker finish before retrying the upgrade. A pending message whose
+target is unavailable needs operator investigation on the old release; the
+migration never silently fails or discards an accepted message. Back up the
+database before upgrading. The migration
 removes `code.chat_deliveries`, its recovery path, `code.chat_runs` and old
 `meta.codeDelivery` markers. Existing message text stays readable. Send uses
 the normal turn-completion notification path. Rollback requires the pre-upgrade

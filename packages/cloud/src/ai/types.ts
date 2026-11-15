@@ -709,7 +709,7 @@ export type AiChatTurnRunConfig = {
   /** Source credential limits cannot be widened through another chat. */
   sourceRestricted?: true;
   /** Server-owned identity on the existing queue, retained through retries. */
-  send?: { id: string; requestHash: string };
+  send?: { id: string; keyHash: string; requestHash: string };
   /** Trusted Core review entrypoint; the executor offers only the bounded Code tool set. */
   codeReview?: { codeId: string; versionId: string };
   /** Trusted host attribution; never grants tool authority. */
