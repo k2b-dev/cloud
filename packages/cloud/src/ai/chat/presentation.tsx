@@ -207,10 +207,13 @@ const storedItems = (
       },
     ];
   };
+  // The person's message an answer belongs to, so the answer can be given again.
+  let prompt: AiStoredMessage | null = null;
   return timeline.flatMap((item, itemIndex): ChatTimelineItem | ChatTimelineItem[] => {
     if (item.type === "user") {
       const text = aiUserMessageText(item.entry);
       const agentMessage = item.entry.meta?.agentMessage;
+      prompt = agentMessage ? null : item.entry;
       if (agentMessage) {
         const separator = text.indexOf("\n\n");
         const forwardedText = separator >= 0 ? text.slice(separator + 2) : text;
@@ -256,7 +259,7 @@ const storedItems = (
         content: text ? <p class="whitespace-pre-wrap">{text}</p> : undefined,
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
-        actionDisplay: "menu",
+        actionDisplay: "inline",
         anchorId: item.entry.seq,
       };
       // A removed model: the chat says once which model answers from now on, right before the message it took over.
@@ -311,6 +314,9 @@ const storedItems = (
     if (segments.length === 0 || (turnError && segments.at(-1)?.type === "survey")) segments.push({ type: "assistant", blocks: [] });
     const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
     const scheduledTask = item.entries.find((entry) => entry.meta?.scheduledTask)?.meta?.scheduledTask ?? null;
+    // Only the answer right after the person's message can be given again; a delivered routine result has no prompt.
+    const answerPrompt = scheduledTask ? null : prompt;
+    prompt = null;
     let firstSegment = true;
     let opener = leadingSteerOpener(item.blocks) ?? "start";
     return segments.flatMap((segment, index): ChatTimelineItem[] => {
@@ -325,7 +331,13 @@ const storedItems = (
       const layout = layoutAiTurn(segment.blocks, { phase: segmentPhase, codePresentations: Boolean(actions.renderCodePresentation) });
       const messageActions =
         actionEntry && index === lastAssistant
-          ? createAssistantMessageActions({ entry: actionEntry, entries: item.entries, copyText: finalText(layout), actions })
+          ? createAssistantMessageActions({
+              entry: actionEntry,
+              entries: item.entries,
+              copyText: finalText(layout),
+              actions,
+              prompt: answerPrompt,
+            })
           : undefined;
       const task = firstSegment ? scheduledTask : null;
       firstSegment = false;

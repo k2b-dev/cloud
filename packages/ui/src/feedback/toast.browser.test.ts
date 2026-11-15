@@ -243,6 +243,62 @@ test("a loading toast turns into its result in place, without changing its size"
   }
 }, 30_000);
 
+test("a message alone reads calmly in the regular weight, only a title is semibold, and neither moves the stack", async () => {
+  const page = await open();
+  try {
+    await page.evaluate(() => {
+      const { toast } = window as unknown as ToastWindow;
+      toast.success("This browser now signs out after 10 minutes without input and when it closes, so nobody else sees your data.", {
+        duration: 0,
+        link: { label: "Open settings", href: "https://cloud.example/me" },
+      });
+      toast.success("Budget 2027.xlsx · 48 KB", { title: "Export finished", duration: 0 });
+    });
+    await arrived(page);
+    await settled(page);
+    const read = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>(".k2b-toast")].map((card) => {
+          const style = (selector: string) => {
+            const element = card.querySelector<HTMLElement>(selector);
+            if (!element || element.hidden) return null;
+            const { fontWeight, fontSize, lineHeight, color } = getComputedStyle(element);
+            return { fontWeight, fontSize, lineHeight, muted: color !== getComputedStyle(card).color };
+          };
+          return {
+            title: style(".k2b-toast__title"),
+            message: style(".k2b-toast__description"),
+            link: style(".k2b-toast__link"),
+            height: Math.round(card.getBoundingClientRect().height),
+          };
+        }),
+      );
+    const folded = await read();
+    expect(folded.map(({ title, message, link }) => ({ title, message, link: link?.fontWeight ?? null }))).toEqual([
+      // Alone, however long, the message is body text: regular weight in the text colour, never a headline. Its link
+      // keeps that weight and differs only by colour and underline.
+      { title: null, message: { fontWeight: "400", fontSize: "14px", lineHeight: "20px", muted: false }, link: "400" },
+      // With a title, only the title is semibold; the message is the smaller, muted line under it.
+      {
+        title: { fontWeight: "600", fontSize: "14px", lineHeight: "20px", muted: false },
+        message: { fontWeight: "400", fontSize: "13px", lineHeight: "18px", muted: true },
+        link: null,
+      },
+    ]);
+    // Fanning the stack out under the pointer keeps every text style and the front toast's size; the toast folded
+    // behind it shows its own height only once it is fanned out, as before.
+    const front = (await page.locator(".k2b-toast-slot").last().boundingBox())!;
+    await page.mouse.move(front.x + front.width / 2, front.y + front.height / 2);
+    await page.waitForFunction(() => document.querySelector("[data-k2b-toast-container]")?.getAttribute("data-expanded") === "true");
+    await settled(page);
+    const fanned = await read();
+    expect(fanned.map(({ title, message }) => ({ title, message }))).toEqual(folded.map(({ title, message }) => ({ title, message })));
+    expect(fanned[1]!.height).toBe(folded[1]!.height);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
 test("a custom slot stays pinned at the edge, outside the limit of three, with toasts stacked in front of it", async () => {
   const page = await open();
   try {

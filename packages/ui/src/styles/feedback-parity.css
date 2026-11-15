@@ -938,7 +938,8 @@
   inset: auto;
   z-index: 100;
   width: min(var(--k2b-hover-card-width, 20rem), calc(100vw - 1rem));
-  max-height: calc(100dvh - 1rem);
+  /* Never taller than the room on its side, so it never covers its control (set while open). */
+  max-height: min(var(--k2b-hover-card-room, 100dvh), calc(100dvh - 1rem));
   flex-direction: column;
   gap: 0.625rem;
   margin: 0;
@@ -1034,6 +1035,34 @@
   font-size: 0.75rem;
   line-height: 1rem;
 }
+
+/* A card with actions: one last line, actions at the start and the hint at the end. It stays put while the body scrolls. */
+.k2b-ui .k2b-hover-card__foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+.k2b-ui .k2b-hover-card__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+.k2b-ui .k2b-hover-card__foot > .k2b-hover-card__hint { margin-inline-start: auto; text-align: end; }
+/* Links in the last line read as text; only the underline carries the link accent. */
+.k2b-ui .k2b-hover-card__actions a {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: var(--k2b-link-accent);
+  text-underline-offset: 0.15em;
+}
+/* The dialog itself takes the focus only to hand it to its controls, as AnchoredPopover does. */
+.k2b-ui [popover].k2b-hover-card[role="dialog"] { outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui [popover].k2b-hover-card {
@@ -1227,8 +1256,11 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   animation: k2b-parity-spin 900ms linear infinite;
 }
 
-/* Title, bar and message in one column. A message without a title is the one
-   line of the toast and reads in the body size. */
+/* Title, bar and message in one column. A message without a title reads as
+   calm body text in the regular weight, however long it is; only a title is
+   semibold, and the message under it turns smaller and muted. A link in the
+   message keeps its weight, so a toast has at most these two text styles. The
+   line heights stay the same in both forms. */
 .k2b-ui .k2b-toast__content {
   display: flex;
   min-width: 0;
@@ -1265,7 +1297,7 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   overscroll-behavior: contain;
   overflow-wrap: anywhere;
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 400;
   line-height: 1.25rem;
 }
 
@@ -1273,13 +1305,12 @@ html[data-k2b-mobile-shell]:not([data-k2b-mobile-shell-modal]) .k2b-ui [data-k2b
   margin-top: calc(0.0625rem - 2px);
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
-  font-weight: 400;
   line-height: 1.125rem;
 }
 
 .k2b-ui .k2b-toast__link {
   color: var(--k2b-action);
-  font-weight: 500;
+  font-weight: inherit;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;

@@ -1556,7 +1556,8 @@ function createMailboxController(props: MailboxControllerProps) {
         .catch((error: unknown) => {
           // A navigation that replaced the list cancels this reload; that is not a failure.
           if (error instanceof Error && error.name === "AbortError") return;
-          reportRefreshFailure(error instanceof Error ? error : new Error(String(error)), t().refreshMailboxFailed);
+          // A short title and the explanation as the message, the same notice its Retry shows when it fails again.
+          reportRefreshFailure(new Error(t().refreshMailboxFailed), t().mailboxNotRefreshed);
         })
         .finally(() => setRowRefreshes((count) => count - 1));
     }
@@ -2124,7 +2125,7 @@ function createMailboxController(props: MailboxControllerProps) {
     onSuccess: (result, context) => {
       if (!result) return;
       toast.success(context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved);
-      if (result.refreshError) reportRefreshFailure(result.refreshError, t().refreshMailboxFailed);
+      if (result.refreshError) reportRefreshFailure(result.refreshError, t().mailboxNotRefreshed);
     },
     onError: (error, context) =>
       prompts.error(error.message, {
@@ -2450,6 +2451,7 @@ function createMailboxController(props: MailboxControllerProps) {
         const notice = toast.success(t().actionMoved({ actionId, count, messages: messageRows, folder }), {
           action: {
             label: t().undo,
+            variant: "ghost",
             onClick: () => {
               notice.dismiss();
               undoNotices.delete(notice);
@@ -2661,7 +2663,10 @@ function createMailboxController(props: MailboxControllerProps) {
           },
           refresh: () => captureMailWorkspaceRefreshError(requireWorkspaceReconcile),
           success: (message, undo) =>
-            toast.success(message, undo ? { duration: 8_000, action: { label: undo.label, onClick: undo.run } } : undefined),
+            toast.success(
+              message,
+              undo ? { duration: 8_000, action: { label: undo.label, variant: "ghost", onClick: undo.run } } : undefined,
+            ),
           error: (message, title) => void toast.error(message, title ? { title } : undefined),
           refreshFailed: (error, title) => reportRefreshFailure(error, title),
           active: () => !abortSignal.aborted && !disposed,
@@ -2694,6 +2699,7 @@ function createMailboxController(props: MailboxControllerProps) {
       const notice = toast(message({ subject: item.conversation.subject }), {
         action: {
           label: automationText().redo,
+          variant: "ghost",
           onClick: () => {
             notice.dismiss();
             void automationRequest(item, "redo")

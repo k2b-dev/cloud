@@ -440,7 +440,18 @@ for (const view of [
           await page.evaluate(() => document.querySelector(".ai-turn")?.lastElementChild === document.querySelector(".ai-turn__notice")),
         ).toBe(true);
         expect(await page.getByRole("button", { name: de ? "Weiterarbeiten" : "Continue", exact: true }).isVisible()).toBe(true);
-        expect(await page.locator(".ai-turn-work").innerText()).toContain(de ? "4 Min. gearbeitet" : "Worked 4 min");
+        // The line says what the turn did, how many steps, and how long it worked. A turn whose only read failed did
+        // nothing to name, so it says how long it worked and that a step failed.
+        if (failureCode === "tool_failed")
+          expect(await page.locator(".ai-turn-work .ai-turn-work__text").textContent()).toContain(
+            de ? "4 Min. gearbeitet · 2 Schritte, 1 fehlgeschlagen" : "Worked 4 min · 2 steps, 1 failed",
+          );
+        else {
+          expect(await page.locator(".ai-turn-work .ai-turn-work__text").textContent()).toContain(
+            de ? "Dateien gelesen · 2 Schritte" : "Read files · 2 steps",
+          );
+          expect(await page.locator(".ai-turn-work .ai-turn-work__meta").innerText()).toBe(de ? "4 Min." : "4 min");
+        }
         expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
         expect(
           await page.evaluate(() => {

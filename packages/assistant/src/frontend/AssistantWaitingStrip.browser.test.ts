@@ -256,7 +256,6 @@ const propsOf = (state: State, url: URL) => {
     initialWorkspaceHref: `${url.pathname}${url.search}`,
     initialDetail: detail,
     initialContext: null,
-    initialContextClosed: true,
     projects: [],
     initialProject: null,
     initialProjectChats: null,

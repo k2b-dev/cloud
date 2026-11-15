@@ -171,7 +171,6 @@
   border: 0 !important;
   outline: 0 !important;
   background: transparent !important;
-  scrollbar-width: thin !important;
   resize: none !important;
 }
 
@@ -207,7 +206,6 @@
   color: var(--k2b-text);
   pointer-events: none;
   user-select: none;
-  scrollbar-color: transparent transparent !important;
 }
 
 .k2b-ui .k2b-autocomplete:not([data-overlay="true"]) .k2b-autocomplete__preview {
@@ -488,7 +486,6 @@
   outline: 0 !important;
   background: transparent !important;
   resize: none !important;
-  scrollbar-width: thin !important;
 }
 
 .k2b-ui .k2b-markdown-editor__input {
@@ -505,14 +502,23 @@
   color: var(--k2b-text);
   pointer-events: none;
   user-select: none;
-  scrollbar-color: transparent transparent !important;
 }
 
+/* The highlighted layer under a textarea mirrors the textarea's scrollbar
+   space, so its lines wrap at the same width, but never paints a thumb of its
+   own beside the textarea's. */
+/* scrollbars: allow the mirror layer keeps the shared gutter without a thumb */
 .k2b-ui .k2b-markdown-editor__preview::-webkit-scrollbar-thumb,
-.k2b-ui .k2b-markdown-editor__preview::-webkit-scrollbar-track,
-.k2b-ui .k2b-autocomplete__preview::-webkit-scrollbar-thumb,
-.k2b-ui .k2b-autocomplete__preview::-webkit-scrollbar-track {
+.k2b-ui .k2b-autocomplete__preview::-webkit-scrollbar-thumb {
   background: transparent !important;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .k2b-ui .k2b-markdown-editor__preview,
+  .k2b-ui .k2b-autocomplete__preview {
+    /* scrollbars: allow the mirror layer keeps the shared gutter without a thumb */
+    scrollbar-color: transparent transparent;
+  }
 }
 
 .k2b-ui .k2b-markdown-editor__preview .md-syntax,

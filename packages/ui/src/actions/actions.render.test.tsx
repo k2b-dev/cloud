@@ -117,6 +117,34 @@ describe("@k2b/ui complete action migrations", () => {
     );
   });
 
+  test("a tab count keeps the width of its reserve in tabular figures, in Tabs and ViewTabs", () => {
+    const tabs = renderToString(() =>
+      createComponent(Tabs, {
+        ariaLabel: "Review",
+        value: "overview",
+        onValueChange: () => {},
+        options: [
+          { value: "overview", label: "Overview" },
+          { value: "code", label: "Code", count: "3", countReserve: "99", countLabel: "3 comments" },
+          { value: "diff", label: "Diff", count: "+2 −1", countReserve: "+99 −99" },
+        ],
+      }),
+    );
+    // The name reads "Code, 3 comments"; the drawn count is hidden when a label speaks for it.
+    expect(tabs).toContain(
+      '<span class="k2b-sr-only">, 3 comments</span><span class="k2b-tabs__count" aria-hidden="true"><span>3</span><span aria-hidden="true">99</span></span>',
+    );
+    expect(tabs).toContain('<span aria-hidden="true">+99 −99</span>');
+    const views = renderToString(() =>
+      createComponent(ViewTabs, {
+        label: "Code",
+        current: "versions",
+        items: [{ id: "versions", label: "Versions", href: "?view=versions", count: 4, countReserve: "99" }],
+      }),
+    );
+    expect(views).toContain('class="k2b-view-tabs__count" data-reserve=""');
+  });
+
   test("keeps the first enabled tab in the tab order when the controlled value is unavailable", () => {
     const unavailable = renderToString(() =>
       createComponent(Tabs, {
@@ -1030,7 +1058,7 @@ describe("@k2b/ui action geometry parity", () => {
   });
 });
 
-test("floating Toolbar renders a space-keeping pending pill with every action and keyboard hint", () => {
+test("floating Toolbar renders a space-keeping pending pill with every action and its shortcuts in the tooltips", () => {
   const html = renderToString(() =>
     createComponent(Toolbar, {
       label: "Selection actions",
@@ -1048,13 +1076,14 @@ test("floating Toolbar renders a space-keeping pending pill with every action an
       },
     }),
   );
-  expect(html).toMatch(/<div class="k2b-toolbar-float"><div[^>]*class="k2b-toolbar selection-tools"[^>]*role="toolbar"/);
+  expect(html).toMatch(/<div class="k2b-toolbar-float"><div[^>]*class="k2b-toolbar k2b-pill selection-tools"[^>]*role="toolbar"/);
   expect(html).toContain('data-variant="floating"');
   expect(html).toContain("data-overflow-pending");
   expect(html).toContain('data-orientation="horizontal"');
   expect(html).not.toContain('data-wrap="true"');
   expect(html.match(/<button[^>]*k2b-toolbar__action/g)).toHaveLength(3);
-  expect(html).toContain('class="k2b-kbd k2b-kbd-hint k2b-toolbar__hint"');
+  // The pill's small controls leave no room for a hint below the icon.
+  expect(html).not.toContain("k2b-toolbar__hint");
   expect(html).toContain('aria-label="Archive"');
   expect(html).toContain('title="Archive (E)"');
   expect(html).toContain('aria-keyshortcuts="E"');

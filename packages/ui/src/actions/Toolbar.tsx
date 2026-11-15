@@ -423,6 +423,7 @@ export const Toolbar = Object.assign(
     const danger = () => (floating && props.tone === "danger" ? "danger" : undefined);
     const orientation = () => (floating ? "horizontal" : (props.orientation ?? "horizontal"));
     const messages = useToolbarMessages();
+    const hints = useContext(ToolbarHintsContext);
     const actions = new Set<RegisteredAction>();
     const [revision, setRevision] = createSignal(0);
     const [moved, setMoved] = createSignal<RegisteredAction[]>([]);
@@ -521,36 +522,39 @@ export const Toolbar = Object.assign(
       <ToolbarOrientationContext.Provider value={orientation}>
         <ToolbarDangerContext.Provider value={!!danger()}>
           <ToolbarActionsContext.Provider value={floating ? register : undefined}>
-            <div
-              ref={root}
-              onKeyDown={(event) => navigation?.keydown(event)}
-              class={`k2b-toolbar ${props.class ?? ""}`}
-              role="toolbar"
-              aria-label={props.label}
-              aria-orientation={orientation()}
-              data-orientation={orientation()}
-              data-variant={floating ? "floating" : undefined}
-              data-tone={danger()}
-              data-wrap={!floating && props.wrap ? "true" : undefined}
-              data-overflow-pending={floating ? "" : undefined}
-            >
-              {props.children}
-              <Show when={floating}>
-                <div ref={more} class="k2b-toolbar__more" data-overflow="hidden">
-                  <Dropdown.Root
-                    items={menuItems()}
-                    position="top-left"
-                    label={messages().moreActions}
-                    // An open menu closes when its last row returns to the toolbar.
-                    disabled={moved().length === 0 && !props.moreItems?.length}
-                  >
-                    <Dropdown.Trigger ref={trigger} iconOnly label={messages().moreActions}>
-                      <i class="ti ti-dots" aria-hidden="true" />
-                    </Dropdown.Trigger>
-                  </Dropdown.Root>
-                </div>
-              </Show>
-            </div>
+            {/* A floating pill's 24 px controls leave no room below the icon: shortcuts show in the tooltips. */}
+            <ToolbarHintsContext.Provider value={!floating && hints}>
+              <div
+                ref={root}
+                onKeyDown={(event) => navigation?.keydown(event)}
+                class={`k2b-toolbar${floating ? " k2b-pill" : ""} ${props.class ?? ""}`}
+                role="toolbar"
+                aria-label={props.label}
+                aria-orientation={orientation()}
+                data-orientation={orientation()}
+                data-variant={floating ? "floating" : undefined}
+                data-tone={danger()}
+                data-wrap={!floating && props.wrap ? "true" : undefined}
+                data-overflow-pending={floating ? "" : undefined}
+              >
+                {props.children}
+                <Show when={floating}>
+                  <div ref={more} class="k2b-toolbar__more" data-overflow="hidden">
+                    <Dropdown.Root
+                      items={menuItems()}
+                      position="top-left"
+                      label={messages().moreActions}
+                      // An open menu closes when its last row returns to the toolbar.
+                      disabled={moved().length === 0 && !props.moreItems?.length}
+                    >
+                      <Dropdown.Trigger ref={trigger} iconOnly label={messages().moreActions}>
+                        <i class="ti ti-dots" aria-hidden="true" />
+                      </Dropdown.Trigger>
+                    </Dropdown.Root>
+                  </div>
+                </Show>
+              </div>
+            </ToolbarHintsContext.Provider>
           </ToolbarActionsContext.Provider>
         </ToolbarDangerContext.Provider>
       </ToolbarOrientationContext.Provider>
