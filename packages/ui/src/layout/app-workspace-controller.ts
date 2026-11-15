@@ -26,7 +26,8 @@ import {
   shouldCollapseAppWorkspaceSidebar,
 } from "./app-workspace-state";
 import { readAppWorkspaceWidth, resolveAppWorkspaceWidth } from "./app-workspace-width";
-import { installScrollFades } from "./scroll-fade";
+import { installScrollFades, scrollFadeEdges } from "./scroll-fade";
+import { followSidebarScroll } from "./sidebar-scroll-memory";
 
 export type AppWorkspaceControllerOptions = {
   root?: Document | HTMLElement;
@@ -1691,6 +1692,8 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
   };
 
   const stopScrollFades = installScrollFades(eventRoot);
+  // Hosts install again after a page swap, whose server sidebars ran no inline script.
+  const stopSidebarScroll = followSidebarScroll(eventRoot, scrollFadeEdges);
   let layoutState = normalizeAppWorkspaceLayoutState(options.readState?.()) ?? { version: 2 as const };
   type ResetRegion = {
     kind: AppWorkspaceResizeKind;
@@ -2284,6 +2287,7 @@ export const installAppWorkspaceController = (options: AppWorkspaceControllerOpt
     pendingAnchors.forEach((cancel) => cancel());
     slides.forEach((end) => end());
     stopScrollFades();
+    stopSidebarScroll();
     finishDetailDrag(true);
     if (suppressedClickTimer !== null) clearTimeout(suppressedClickTimer);
     motionFrames.forEach(cancelAnimationFrame);

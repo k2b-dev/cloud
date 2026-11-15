@@ -16,7 +16,6 @@ import {
   ButtonLink,
   Dropdown,
   dialogCore,
-  FilterToggle,
   IconButton,
   IconButtonLink,
   InlineGuidance,
@@ -31,6 +30,7 @@ import {
   type VirtualFeedController,
 } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import type { z } from "zod";
 import { chatMessages } from "../messages";
 import {
@@ -87,8 +87,10 @@ import { createItemEventsApi } from "./item-events-api";
 import type { ChosenMember } from "./MemberPicker";
 
 import { createNotificationCleanup } from "./notification-cleanup";
+import ResourceChatStart from "./ResourceChatStart";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
+import { type ResourceChat, resourceChatExists, resourceChatPath } from "./resource-chat";
 import {
   panelHref as conversationHref,
   parseRoute,
@@ -97,7 +99,7 @@ import {
   threadsPageHref as threadsPageAddress,
   UNREAD_COUNT_PATH,
 } from "./route";
-import { containerIcon, openResourceThread, openSystemChat } from "./system-chats";
+import { containerIcon, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
 
 import {
   chatHasThreads,
@@ -121,6 +123,12 @@ type Sends = ReturnType<typeof createChatSends>;
 export type ChatWorkspaceProps = {
   /** The same workspace served without the Cloud shell in its provider route. */
   embedded?: boolean;
+  /** In the panel: the discussion about the host page's resource, which the panel opens first and leads back to. */
+  resourceChat?: ResourceChat | null;
+  /** In the panel: the address is the ready discussion about the resource, while nobody has written there. */
+  resourcePage?: boolean;
+  /** In the panel: the place the server read from the shared context, the start the browser's context is compared to. */
+  panelScope?: ResourceChat["ref"] | null;
   /** Live dictation is set up and allowed for this person; the composer then shows Dictate. */
   liveDictation?: boolean;
   /** The Cloud app's Chat below `/pwa/chat`: the list beside the open chat from 64 rem, one after the other below. */
@@ -244,6 +252,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [route, setRoute] = createSignal<Route>({
     channels: props.channelsPage,
     forYou: props.forYouPage,
+    resource: props.resourcePage,
     query: props.channelQuery,
     chatId: props.chatId,
     view: props.view,
@@ -251,6 +260,20 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     messageId: props.open?.focus ?? null,
     panel: props.panel,
   });
+  const [resourceChat, setResourceChat] = createSignal(props.resourceChat ?? null);
+  /** The panel shows the resource's discussion: its container's chat, an item's thread, or the ready start. */
+  const atResource = () => {
+    const target = resourceChat();
+    const current = route();
+    if (!target) return false;
+    if (!resourceChatExists(target)) return Boolean(current.resource);
+    return current.chatId === target.id && !current.channels && (!target.item || current.view === target.thread);
+  };
+  /** The discussion about the resource before anyone wrote there. */
+  const pendingResource = () => {
+    const target = resourceChat();
+    return route().resource && target && !resourceChatExists(target) ? target : null;
+  };
   // History is not reactive; keep its list marker for the header rendered before each address commit.
   const [listPredecessor, setListPredecessor] = createSignal(false);
   const [archived, setArchived] = createSignal(props.archived ?? false);
@@ -1619,7 +1642,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     return "chatInfoFromChat" in state && state.chatInfoFromChat === true ? 2 : 1;
   };
   const listDepth = () => predecessorDepth("chatFromList");
-  const backToThreadDirectory = () => threaded() && !listPredecessor();
+  // The panel starts in a resource's discussion; its way back is always "All chats", the thread picker stays in the head.
+  const backToThreadDirectory = () => !props.embedded && threaded() && !listPredecessor();
   const backToList = async (navigation: LinkNavigateEvent) => {
     const depth = listDepth();
     // Refused before history moves: a refused Back would show the list's address until it returned (#2503).
@@ -1729,9 +1753,6 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   const showForYou = async (navigation: LinkNavigateEvent) => {
     if ((await open(chatRoute(null, "all", { forYou: true }))) === "applied") navigation.push(listHref(`${basePath}/for-you`));
-  };
-  const discover = async (navigation: LinkNavigateEvent) => {
-    if ((await open(chatRoute(null, "all", { channels: true }))) === "applied") navigation.push(listHref(`${basePath}/channels`));
   };
   const subscribe = async (id: string) => {
     const api = await channelApi();
@@ -2174,10 +2195,31 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       live.dispose();
     });
     if (props.embedded) {
+      // Following the host page's place loads with the panel, outside the first bundle.
+      let stopFollowing: (() => void) | undefined;
+      onCleanup(() => stopFollowing?.());
+      void importOnDemand(() => import("./panel-follow")).then((module) => {
+        if (!module || disposed) return;
+        stopFollowing = module.followPanelContext({
+          route,
+          resourceChat,
+          setResourceChat,
+          atResource,
+          opens: () => openToken,
+          open,
+          routeHref: (target) => viewHref(routeAddress(target, basePath)),
+          resourceHref: (target) => viewHref(resourceChatPath(target, basePath)),
+          navigateReplace: (href) => navigate(href, { replace: true, scroll: "preserve" }),
+          chatRoute,
+          served: props.panelScope ?? null,
+          disposed: () => disposed,
+        });
+      });
       try {
         const selected = props.chatId ?? savedDrafts?.selection();
         if (props.chatId) savedDrafts?.select(props.chatId);
-        else if (selected) {
+        // Only the list's start restores the last chat; the resource's ready discussion stays where the server put it.
+        else if (selected && !props.resourcePage) {
           void open(chatRoute(selected)).then((result) => {
             if (result === "applied") navigate(listHref(panelHref(selected, null)), { replace: true, scroll: "manual" });
           });
@@ -2289,9 +2331,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       );
     if (current.channel && !current.member)
       return (
-        <Button loading={subscribing()} onClick={() => void subscribeOpen(current.id)}>
-          {t().subscribe}
-        </Button>
+        <>
+          <span>{t().subscribeQuestion}</span>
+          <Button loading={subscribing()} onClick={() => void subscribeOpen(current.id)}>
+            {t().subscribe}
+          </Button>
+        </>
       );
     if (current.permission === "read")
       return (
@@ -2373,6 +2418,53 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       onRetry={() => void store?.refreshThreads()}
     />
   );
+  const openResourceChat = async (navigation: LinkNavigateEvent) => {
+    const target = resourceChat();
+    if (!target) return;
+    const fromList = route().chatId === null;
+    const next = resourceChatExists(target) ? chatRoute(target.id, target.thread ?? "all") : chatRoute(null, "all", { resource: true });
+    if ((await open(next)) !== "applied") return;
+    setListPredecessor(fromList);
+    navigation.push(viewHref(resourceChatPath(target, basePath)), { scroll: "preserve", state: { chatFromList: fromList } });
+  };
+  /**
+   * The first message starts the discussion: the server opens it with the same checks, then the message goes in. The
+   * text moves into the new chat's draft before the ready start leaves, so a failed open or send keeps it there.
+   */
+  const startResourceChat = async (text: string) => {
+    const target = resourceChat();
+    if (!target || resourceChatExists(target)) return false;
+    let found: Awaited<ReturnType<typeof openResourceDiscussion>>;
+    try {
+      found = await openResourceDiscussion(target.ref);
+    } catch {
+      toast.error(t().requestFailed);
+      return false;
+    }
+    store?.includeSystemChats([found.conversation]);
+    const view = found.thread ?? "all";
+    if ((await open(chatRoute(found.conversation.id, view))) !== "applied") return false;
+    navigate(viewHref(threadHref(found.conversation.id, view)), { replace: true, scroll: "preserve" });
+    if (resourceChat() === target) setResourceChat({ ...target, id: found.conversation.id, thread: found.thread });
+    changeDraft(text);
+    if (await send(text)) changeDraft("");
+    return true;
+  };
+  /** In the panel: back to the discussion about the host page's resource, wherever the reader went from there. */
+  const resourceChatButton = () => (
+    <Show when={!atResource() && resourceChat()}>
+      {(target) => (
+        <IconButtonLink
+          href={listHref(resourceChatPath(target(), basePath))}
+          navigation="enhanced"
+          onNavigate={openResourceChat}
+          label={t().chatAboutResource({ title: target().title })}
+        >
+          <i class="ti ti-message-circle-share" aria-hidden="true" />
+        </IconButtonLink>
+      )}
+    </Show>
+  );
   const conversationView = (): JSX.Element => (
     <>
       {/* One history per chat: a new chat starts at its end or its linked message, never at the last chat's place. */}
@@ -2383,15 +2475,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               dictation={props.liveDictation ? liveDictationSource : undefined}
               actions={
                 <>
-                  <Show when={props.embedded}>
-                    <IconButtonLink
-                      href={listHref(conversationHref(current().id, null, route().messageId, route().view))}
-                      target={composerReady() ? undefined : "_top"}
-                      label={t().openFullView}
-                    >
-                      <i class="ti ti-arrows-maximize" aria-hidden="true" />
-                    </IconButtonLink>
-                  </Show>
+                  <Show when={props.embedded}>{resourceChatButton()}</Show>
                   <Show when={!system() && current().permission === "admin"}>
                     <IconButton label={t().addPeople} variant="ghost" onClick={() => void addPeople()}>
                       <i class="ti ti-user-plus" aria-hidden="true" />
@@ -2577,6 +2661,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               onPickResource={pickResource}
               onBack={backToThreadDirectory() ? backToThreads : backToList}
               backCount={props.app ? othersUnread(current().id) : undefined}
+              allChats={props.embedded}
               busy={busy()}
               dateConfig={props.dateConfig}
               now={now}
@@ -2688,6 +2773,46 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     </div>
   );
 
+  // "Discover channels" opens the catalog beside the Channels section; its code loads with the first opening.
+  // The catalog stays mounted once loaded; it is open while its anchor is set, as the shared popover expects.
+  const [catalogView, setCatalogView] = createSignal<typeof import("./ChannelCatalog").default>();
+  const [catalogAnchor, setCatalogAnchor] = createSignal<HTMLElement>();
+  const toggleCatalog = async (anchor: HTMLElement) => {
+    if (catalogAnchor()) return void setCatalogAnchor(undefined);
+    if (!catalogView()) {
+      const module = await importOnDemand(() => import("./ChannelCatalog"));
+      if (!module) return;
+      setCatalogView(() => module.default);
+    }
+    if (anchor.isConnected) setCatalogAnchor(anchor);
+  };
+  const discoverButton = () => (
+    <>
+      <IconButton
+        size="xs"
+        variant="ghost"
+        label={t().browseChannels}
+        aria-haspopup="dialog"
+        aria-expanded={catalogAnchor() ? "true" : "false"}
+        onClick={(event) => void toggleCatalog(event.currentTarget)}
+      >
+        <i class="ti ti-info-circle text-xs" aria-hidden="true" />
+      </IconButton>
+    </>
+  );
+  // Section actions render once per sidebar form; the catalog lives once, beside the workspace.
+  const catalogPopover = () => (
+    <Show when={catalogView()}>
+      {(view) => (
+        <Dynamic
+          component={view()}
+          anchor={catalogAnchor()}
+          onClose={() => setCatalogAnchor(undefined)}
+          onOpen={(id: string) => void openChosen(id)}
+        />
+      )}
+    </Show>
+  );
   const archiveLink = () => (
     <AppWorkspace.SidebarItem
       href={`${basePath}/archive`}
@@ -2699,6 +2824,45 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       {t().archive}
     </AppWorkspace.SidebarItem>
   );
+  /** The list's view: all chats by default, or only unread ones, also in the archive; the order stays by recent activity. */
+  const filterMenu = () => {
+    const label = () => (filter() === "unread" ? t().filterChatsActive({ name: t().unreadChats }) : t().filterChats);
+    return (
+      <Dropdown.Root
+        position="bottom-right"
+        label={t().filterChats}
+        items={[
+          {
+            choice: "radio" as const,
+            label: t().allChats,
+            icon: "ti ti-messages",
+            // "All" is the active list, also from the archive, as the list's way back there.
+            checked: () => !archived() && filter() === "all",
+            action: () => void (!archived() && filter() === "all" ? undefined : changeList("all")),
+          },
+          {
+            choice: "radio" as const,
+            label: t().unreadChats,
+            icon: "ti ti-mail",
+            checked: () => filter() === "unread",
+            action: () => void (filter() === "unread" ? undefined : changeList("unread")),
+          },
+        ]}
+      >
+        <Dropdown.Trigger
+          iconOnly
+          variant="ghost"
+          class="chat-list-filter"
+          label={label()}
+          tooltip={label()}
+          disabled={listLoading() || listPending()}
+          data-active={filter() === "unread" ? "true" : undefined}
+        >
+          <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
+        </Dropdown.Trigger>
+      </Dropdown.Root>
+    );
+  };
   const searchField = () => (
     <div class="chat-list-search">
       <TextInput
@@ -2715,6 +2879,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           setSearchQuery("");
         }}
       />
+      {filterMenu()}
     </div>
   );
   const listErrorLine = () => (
@@ -2737,7 +2902,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
   const listContent = (includeArchive = true) => (
     <>
-      {searchField()}
+      {/* The panel is about the host page's resource; it switches chats but does not start or search them. */}
+      <Show when={!props.embedded}>{searchField()}</Show>
       <Show
         when={!searchQuery().trim()}
         fallback={
@@ -2784,12 +2950,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         <Show when={rows().length > 0 && !listError()}>
           <ChatDeviceNotice notice={deviceNotice()} onNotice={setDeviceNotice} dateConfig={props.dateConfig} now={now} />
         </Show>
-        <Show when={!props.app}>
+        <Show when={!props.app && !props.embedded}>
           <AppWorkspace.SidebarItem icon="ti ti-message-plus" onClick={() => void newChat()}>
             {t().newChat}
           </AppWorkspace.SidebarItem>
         </Show>
-        <Show when={!props.app}>
+        <Show when={!props.app && !props.embedded}>
           <AppWorkspace.SidebarItem
             href={listHref(`${basePath}/for-you`)}
             navigation="enhanced"
@@ -2801,24 +2967,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             {t().forYou}
           </AppWorkspace.SidebarItem>
         </Show>
-        <div class="chat-list-filters" role="group" aria-label={t().chats}>
-          <FilterToggle
-            label={t().allChats}
-            icon="ti ti-messages"
-            active={!archived() && filter() === "all"}
-            disabled={listLoading() || listPending()}
-            onClick={() => void changeList("all")}
-          />
-          <FilterToggle
-            label={t().unreadChats}
-            icon="ti ti-mail"
-            active={filter() === "unread"}
-            disabled={listLoading() || listPending()}
-            onClick={() => void changeList("unread")}
-          />
-        </div>
         <div class="chat-list-feedback">
-          <p role="status" aria-live="polite" class="chat-list-status">
+          {/* Loading is quiet: the list keeps its rows and place, and only screen readers hear the progress. */}
+          <p role="status" aria-live="polite" class="sr-only">
             {!listError() && (listLoading() ? t().loadingChats : listPending() ? t().savingList : "")}
           </p>
           {listErrorLine()}
@@ -2859,20 +3010,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               </AppWorkspace.SidebarSection>
               <AppWorkspace.SidebarSection
                 title={t().channels}
+                actions={discoverButton()}
                 collapsible
                 open={!collapsed().includes("channels")}
                 onOpenChange={(open) => void collapse("channels", open)}
               >
                 {list(() => listRows().filter((row) => row.channel && row.pinnedRank === null && row.kind !== "system"))}
-                <AppWorkspace.SidebarItem
-                  href={listHref(`${basePath}/channels`)}
-                  navigation="enhanced"
-                  onNavigate={discover}
-                  active={route().channels}
-                  icon="ti ti-compass"
-                >
-                  {t().browseChannels}
-                </AppWorkspace.SidebarItem>
               </AppWorkspace.SidebarSection>
             </>
           }
@@ -2895,23 +3038,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   );
   return (
     <>
+      {catalogPopover()}
       <Show when={!openChat()}>{draftNotice()}</Show>
-      <Show when={props.embedded && !openChat()}>
-        <div class="flex shrink-0 justify-end p-1">
-          <IconButtonLink
-            href={listHref(
-              route().chatId
-                ? conversationHref(route().chatId!, null, route().messageId, route().view)
-                : archived()
-                  ? "/app/chat/archive"
-                  : "/app/chat",
-            )}
-            target={composerReady() ? undefined : "_top"}
-            label={t().openFullView}
-          >
-            <i class="ti ti-arrows-maximize" aria-hidden="true" />
-          </IconButtonLink>
-        </div>
+      <Show when={props.embedded && !openChat() && !atResource() && resourceChat()}>
+        <div class="flex shrink-0 justify-end p-1">{resourceChatButton()}</div>
       </Show>
       <AppWorkspace
         mobileSurface="flush"
@@ -3000,6 +3130,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 <Match when={threadsPageOpen()}>{(current) => threadsPageView(current())}</Match>
                 <Match when={openChat()?.id}>{conversationView()}</Match>
                 <Match when={noAccess()}>{noAccessView()}</Match>
+                <Match when={pendingResource()}>
+                  {(target) => (
+                    <ResourceChatStart
+                      title={target().title}
+                      canWrite={target().canWrite}
+                      listHref={listHref(basePath)}
+                      onBack={backToList}
+                      onStart={startResourceChat}
+                    />
+                  )}
+                </Match>
                 <Match when={true}>
                   <nav class="chat-list-page" aria-label={t().chats}>
                     {listContent()}

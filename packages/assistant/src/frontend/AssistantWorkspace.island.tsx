@@ -2736,6 +2736,7 @@ export default function AssistantWorkspace(props: Props) {
       activeTurn: chat.activeTurn,
       reconnecting: () => chat.streamStatus() === "reconnecting",
       timeZone: props.timeZone,
+      renderedAt: props.renderedAt,
     });
 
     return (
@@ -2980,12 +2981,8 @@ export default function AssistantWorkspace(props: Props) {
                               }
                             >
                               <AssistantEmptyChat
-                                composer={
-                                  <div class="flex flex-col gap-2">
-                                    <WaitingRow />
-                                    <AssistantComposer />
-                                  </div>
-                                }
+                                // The start screen keeps only the field (v12 image 11); what waits is in the navigation.
+                                composer={<AssistantComposer />}
                                 notices={<ComposerNotices />}
                                 modelNote={modelNote()}
                                 projects={projects()}
