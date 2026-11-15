@@ -1,6 +1,6 @@
 import type { DictationSource } from "@k2b/cloud/ai/browser";
 import { refreshAppBadges } from "@k2b/cloud/browser/app-badges";
-import { getContext, onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
 import { pwaDrafts } from "@k2b/cloud/browser/pwa-drafts";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { CloudResourcePickerOptions } from "@k2b/cloud/browser/resource-picker";
@@ -99,7 +99,7 @@ import {
   threadsPageHref as threadsPageAddress,
   UNREAD_COUNT_PATH,
 } from "./route";
-import { containerIcon, locateResource, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
+import { containerIcon, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
 
 import {
   chatHasThreads,
@@ -2198,66 +2198,26 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       live.dispose();
     });
     if (props.embedded) {
-      // The host page changed its place: the panel follows to that resource's discussion only while it shows the
-      // previous one. Every change invalidates the earlier ones. An open the reader starts meanwhile (`openToken`)
-      // wins over following. A follow whose open is still loading is superseded by the next follow's open, or, when
-      // the host returns or shares no place, by reopening where the follow started. The shown resource changes only
-      // once its discussion is in place, so the next change compares against what the reader sees.
-      let scopeToken = 0;
-      let inflight: { start: Route } | null = null;
-      let followedRoute: Route | undefined;
-      const returnFromFollow = () => {
-        const start = inflight?.start;
-        inflight = null;
-        if (start)
-          void open(start).then((result) => {
-            if (result === "applied" && !disposed) navigate(viewHref(routeAddress(start, basePath)), { replace: true, scroll: "preserve" });
-          });
-      };
-      const follow = (context: ReturnType<typeof getContext>) => {
-        const scope = context?.scope;
-        const shown = resourceChat();
-        const token = ++scopeToken;
-        if (scope && shown && scope.type === shown.ref.type && scope.id === shown.ref.id) return void returnFromFollow();
-        if (!scope) {
-          setResourceChat(null);
-          return void returnFromFollow();
-        }
-        const start = inflight?.start ?? route();
-        const shownRoute = route();
-        const following = atResource() || inflight !== null;
-        const opens = openToken;
-        locateResource(scope)
-          .then(async (found) => {
-            if (disposed || token !== scopeToken) return;
-            const { conversation, ...location } = found;
-            const next: ResourceChat = { ...location, id: conversation, ref: scope };
-            // A chat the reader opened meanwhile, even one still loading, wins; a route an earlier follow put in place
-            // does not count as the reader's choice.
-            const moved = route() !== shownRoute && route() !== followedRoute;
-            if (!following || openToken !== opens || moved) return void setResourceChat(next);
-            const target = resourceChatExists(next) ? chatRoute(next.id, next.thread ?? "all") : chatRoute(null, "all", { resource: true });
-            inflight = { start };
-            const result = await open(target);
-            if (disposed) return;
-            // An applied open keeps its address in step, also when a newer place already waits for its own.
-            if (result === "applied") {
-              navigate(viewHref(resourceChatPath(next, basePath)), { replace: true, scroll: "preserve" });
-              followedRoute = route();
-            }
-            if (token !== scopeToken) return;
-            inflight = null;
-            setResourceChat(next);
-          })
-          .catch(() => {
-            if (token === scopeToken) setResourceChat(null);
-          });
-      };
-      onCleanup(onContextChange(follow));
-      // A change the panel runtime accepted while this island loaded has no event of its own.
-      const loaded = getContext()?.scope ?? null;
-      const served = props.panelScope ?? null;
-      if (loaded?.type !== served?.type || loaded?.id !== served?.id) follow(getContext());
+      // Following the host page's place loads with the panel, outside the first bundle.
+      let stopFollowing: (() => void) | undefined;
+      onCleanup(() => stopFollowing?.());
+      void importOnDemand(() => import("./panel-follow")).then((module) => {
+        if (!module || disposed) return;
+        stopFollowing = module.followPanelContext({
+          route,
+          resourceChat,
+          setResourceChat,
+          atResource,
+          opens: () => openToken,
+          open,
+          routeHref: (target) => viewHref(routeAddress(target, basePath)),
+          resourceHref: (target) => viewHref(resourceChatPath(target, basePath)),
+          navigateReplace: (href) => navigate(href, { replace: true, scroll: "preserve" }),
+          chatRoute,
+          served: props.panelScope ?? null,
+          disposed: () => disposed,
+        });
+      });
       try {
         const selected = props.chatId ?? savedDrafts?.selection();
         if (props.chatId) savedDrafts?.select(props.chatId);
