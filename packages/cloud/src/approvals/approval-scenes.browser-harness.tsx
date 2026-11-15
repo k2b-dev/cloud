@@ -292,6 +292,57 @@ const scenes: Record<string, () => JSX.Element> = {
     );
   },
   // Gustav's own question with options (v12 07): the same flat choice as a view's.
+  // Durchgang 5, #78: Gustav asked for three key figures, once as stat charts, once as cards with their signs; both
+  // stand as the flat row of key figures under his head.
+  kennzahlen: () => {
+    const tool = (id: string, name: string, args: Record<string, unknown>, result: unknown): AiTurnBlock => ({
+      id,
+      kind: "tool",
+      callId: id,
+      name,
+      args,
+      status: "completed",
+      at: FIXTURE_AT,
+      result,
+      view: capabilityResultView(result) ?? undefined,
+    });
+    const statArgs = {
+      title: "Logistik – Kennzahlen",
+      subtitle: "Stand 15.11., 13:35",
+      layout: "grid",
+      charts: [
+        { kind: "stat", title: "Offene Aufgaben", value: 1366, subtitle: "Momentaufnahme" },
+        { kind: "stat", title: "Diese Woche fällig", value: 3, subtitle: "15. – 21.11." },
+        { kind: "stat", title: "Ohne Fälligkeit", value: 1363, subtitle: "Überwiegend Automation-Duplikate" },
+      ],
+    };
+    const card = (id: string, args: Record<string, unknown>) => tool(id, "card", args, cardToolResult(args));
+    const segment = (id: string, blocks: AiTurnBlock[]) => (
+      <AiTurnView
+        segment={() => ({
+          id: `ai-turn:${id}:start`,
+          turnId: id,
+          phase: "completed",
+          layout: layoutAiTurn(blocks, { phase: "completed" }),
+          earlier: false,
+          duration: () => null,
+        })}
+        disclosureState={createAiToolDisclosureState()}
+      />
+    );
+    return (
+      <>
+        <Label>Als Stat-Diagramme</Label>
+        {segment("turn-1", [tool("s1", "chart", statArgs, chartToolResult(statArgs))])}
+        <Label>Als Karten</Label>
+        {segment("turn-2", [
+          card("c1", { icon: "list-check", title: "Offene Aufgaben", value: "1.366", caption: "Momentaufnahme" }),
+          card("c2", { icon: "calendar-due", title: "Diese Woche fällig", value: "3", caption: "15. – 21.11." }),
+          card("c3", { icon: "calendar-off", title: "Ohne Fälligkeit", value: "1.363", caption: "Überwiegend Automation-Duplikate" }),
+        ])}
+      </>
+    );
+  },
   survey: () => (
     <>
       <Label>Auswahl</Label>

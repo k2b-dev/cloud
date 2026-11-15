@@ -30,6 +30,37 @@ test("Gustav's lines are straight with hollow points unless he says otherwise; o
   expect(description(revenue)).not.toHaveProperty("points");
 });
 
+test("plain stat charts become one flat row of key figures; a stat with its own change or unit stays a chart", () => {
+  const group = chartToolView({
+    title: "Logistik",
+    subtitle: "Stand 13:35",
+    charts: [
+      { kind: "stat", title: "Offene Aufgaben", value: 1366, subtitle: "Momentaufnahme" },
+      { kind: "stat", title: "Diese Woche fällig", value: 3 },
+    ],
+  });
+  expect(group?.blocks).toEqual([
+    {
+      kind: "Section",
+      title: "Logistik",
+      description: "Stand 13:35",
+      children: [
+        {
+          kind: "Stats",
+          items: [
+            { label: "Offene Aufgaben", value: 1366, note: "Momentaufnahme" },
+            { label: "Diese Woche fällig", value: 3 },
+          ],
+        },
+      ],
+    },
+  ]);
+  expect(chartToolView({ kind: "stat", title: "Umsatz", value: 12, sparkline: [1, 2, 3] })?.blocks).toEqual([
+    { kind: "Stats", items: [{ label: "Umsatz", value: 12, trend: [1, 2, 3] }] },
+  ]);
+  expect(chartToolView({ kind: "stat", title: "Umsatz", value: 12, delta: 2 })?.blocks[0]).toMatchObject({ kind: "Chart" });
+});
+
 test("a group becomes its charts under the group's title, side by side in a grid", () => {
   const view = chartToolView({ title: "Shop", layout: "grid", charts: [revenue, { ...revenue, title: "Orders" }] });
   expect(view?.blocks).toEqual([

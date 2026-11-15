@@ -189,7 +189,11 @@ asks for a short value of about 20 characters and a one-line caption.
 Optional `icon` is a Tabler icon name, such as `wallet`, drawn as the small
 sign before the title; a name that is no Tabler icon name is left out.
 Several figures computed in `code_run` belong in `cloud.view.stats` in that
-run, followed by `present({path})`.
+run, followed by `present({path})`. Consecutive cards stand together as one
+flat row of key figures under one head, and a chart call whose charts are all
+plain `stat` figures (title, value, subtitle, recent values) stands as the same
+row. Both are results of the chat: the box "In this chat" lists them and jumps
+to them.
 
 The built-in `chart` tool is a `clientView()` for a few values the model already
 has that did not come from a code run. It shares the chart contract of

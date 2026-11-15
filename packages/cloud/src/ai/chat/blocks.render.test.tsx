@@ -1999,6 +1999,25 @@ describe("turn places in the reader's language", () => {
     const old = renderPlaces([card("o1", { title: "Girokonto", value: "2.481,20 €" }, false)], { locale: "de" });
     expect(old).not.toContain("cloud-capability-view");
     expect(old).toContain("2.481,20 €");
+    // Key figures asked for as `stat` charts stand as the same flat row under the head "Kennzahlen", not as islands.
+    const statArgs = {
+      title: "Logistik – Kennzahlen",
+      layout: "grid",
+      charts: [
+        { kind: "stat", title: "Offene Aufgaben", value: 1366 },
+        { kind: "stat", title: "Diese Woche fällig", value: 3, subtitle: "15. – 21.11." },
+        { kind: "stat", title: "Ohne Fälligkeit", value: 1363 },
+      ],
+    };
+    const statResult = chartToolResult(statArgs);
+    const stats = renderPlaces(
+      [{ ...chart, id: "s1", callId: "s1", args: statArgs, result: statResult, view: capabilityResultView(statResult) ?? undefined }],
+      { locale: "de" },
+    );
+    expect(stats).toContain("· Kennzahlen");
+    expect(stats.split('data-kind="Stats"').length - 1).toBe(1);
+    expect(stats).not.toContain('data-kind="Chart"');
+    for (const label of ["Offene Aufgaben", "Diese Woche fällig", "Ohne Fälligkeit"]) expect(stats).toContain(`>${label}</span>`);
   });
 
   test("a query's table stands under Cloud's head, and an action's table shows its summary and links once", () => {

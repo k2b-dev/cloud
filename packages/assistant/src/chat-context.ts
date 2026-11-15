@@ -183,6 +183,8 @@ export const loadAssistantChatContextSnapshot = async (
         },
       ];
     }
+    // Gustav's own chart or key figure stands in the chat; the box jumps to it there.
+    if (source.key.startsWith("view:")) return [{ ...base, kind: "visualization", title: source.title, icon: source.icon }];
     return [];
   });
   const runs = await sql<{ id: string; status: string; createdAt: string }[]>`SELECT run.call_id AS id,

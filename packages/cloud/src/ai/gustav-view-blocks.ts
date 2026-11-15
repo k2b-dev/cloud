@@ -5,7 +5,8 @@ import { parseCloudAiChartToolView } from "./view-block";
  * The narrow translation of Gustav's own visuals into blocks, without checking them: the chat uses it while a call
  * still runs, so the island stands from the first frame, and `gustav-views.ts` checks the same blocks on the server
  * before it stores them with the result. One chart becomes a `Chart` block; a group its charts under the group's
- * title, side by side for a grid. A card becomes one flat key figure.
+ * title, side by side for a grid; plain `stat` charts become one flat row of key figures. A card becomes one flat key
+ * figure.
  */
 /**
  * Gustav's lines are straight with a hollow point on every value unless he says otherwise (v12, chart in an island): a
@@ -14,9 +15,39 @@ import { parseCloudAiChartToolView } from "./view-block";
 export const gustavLine = <T extends { kind: string; smooth?: boolean; points?: boolean }>(description: T): T =>
   description.kind === "line" ? { ...description, smooth: description.smooth ?? false, points: description.points ?? true } : description;
 
+type StatItem = { label: string; value: number; note?: string; trend?: number[] };
+/**
+ * A `stat` chart is a key figure: it stands as one in the flat row of key figures, not as a chart island. Only a plain
+ * figure translates (title, value, subtitle, recent values); one with a unit, format, change or tooltip stays a chart,
+ * because a key figure's change is a share and its format a number format.
+ */
+const statItem = (description: Record<string, unknown>): StatItem | null => {
+  if (description.kind !== "stat" || typeof description.value !== "number" || !Number.isFinite(description.value)) return null;
+  if (Object.keys(description).some((key) => !["view", "kind", "title", "subtitle", "value", "sparkline"].includes(key))) return null;
+  const label = cut(description.title);
+  if (!label) return null;
+  const note = cut(description.subtitle);
+  const trend = Array.isArray(description.sparkline) ? description.sparkline.filter(Number.isFinite).slice(-60) : [];
+  return { label, value: description.value, ...(note ? { note } : {}), ...(trend.length > 1 ? { trend } : {}) };
+};
+
 export const chartToolBlocks = (args: unknown): BoundBlockView | null => {
   const parsed = parseCloudAiChartToolView(args);
   if (!parsed) return null;
+  const figures = (parsed.view === "chart" ? [parsed] : parsed.charts).map((chart) => statItem(chart as Record<string, unknown>));
+  if (figures.every((figure) => figure !== null)) {
+    const rows = Array.from({ length: Math.ceil(figures.length / 6) }, (_, index) => ({
+      kind: "Stats" as const,
+      items: (figures as StatItem[]).slice(index * 6, index * 6 + 6),
+    }));
+    return {
+      version: 1,
+      blocks:
+        parsed.view === "group" && parsed.title
+          ? [{ kind: "Section", title: parsed.title, ...(parsed.subtitle ? { description: parsed.subtitle } : {}), children: rows }]
+          : rows,
+    };
+  }
   if (parsed.view === "chart") {
     const { view: _view, ...description } = parsed;
     return { version: 1, blocks: [{ kind: "Chart", description: gustavLine(description) }] };

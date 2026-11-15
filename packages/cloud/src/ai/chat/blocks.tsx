@@ -7,7 +7,7 @@ import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
 import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { hasCapabilityView } from "./capability-result";
-import { CapabilityViewBlock, gustavOrigin, gustavViewBlock } from "./capability-view";
+import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, isKeyFigureView } from "./capability-view";
 import { CodeStepBody, hasCodeStepView } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
@@ -467,7 +467,7 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
               block={shown()}
               turnId={props.turnId}
               live={props.active ?? false}
-              {...gustavOrigin(props.block, locale())}
+              {...gustavOrigin(props.block, locale(), isKeyFigureView(shown().view) ? aiChatMessages(locale()).keyFigures : undefined)}
             />
           )}
         </Match>

@@ -49,6 +49,13 @@ export const gustavViewBlock = (block: ToolBlock): ToolBlock | undefined => {
   return view ? { ...block, status: "completed", view } : undefined;
 };
 
+/** Whether a view of Gustav's holds only key figures, such as a chart call of plain `stat` charts: its head says so. */
+export const isKeyFigureView = (view: ToolBlock["view"]): boolean =>
+  (view?.blocks.length ?? 0) > 0 &&
+  (view?.blocks ?? []).every(
+    (block) => block.kind === "Stats" || (block.kind === "Section" && block.children.every((child) => child.kind === "Stats")),
+  );
+
 /** Consecutive key figures as one row: one bound view with their figures, at most six to a row as the tiles allow. */
 export const keyFigureGroup = (blocks: readonly ToolBlock[]): ToolBlock => {
   const items = blocks.flatMap((block) => (block.view?.blocks ?? []).flatMap((entry) => (entry.kind === "Stats" ? entry.items : [])));

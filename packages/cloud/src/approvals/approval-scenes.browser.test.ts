@@ -202,6 +202,31 @@ describe("Approval scenes", () => {
     });
 
   for (const width of [1440, 390])
+    test(`key figures Gustav drew as stat charts or as cards stand as one flat row under his head at ${width} px`, async () => {
+      const page = await open("kennzahlen", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        await page.locator(".k2b-stat-cell:not([data-status='loading'])").first().waitFor();
+        await settled(page);
+        const look = await page.evaluate(() => ({
+          heads: [...document.querySelectorAll(".cloud-capability-view__head")].map((head) =>
+            head.textContent?.replace(/\s+/g, " ").trim(),
+          ),
+          rows: document.querySelectorAll('.cloud-blocks__cell[data-kind="Stats"]').length,
+          charts: document.querySelectorAll('.cloud-blocks__cell[data-kind="Chart"]').length,
+          cells: document.querySelectorAll(".k2b-stat-cell").length,
+          signs: document.querySelectorAll(".k2b-stat-cell__head > .k2b-stat-cell__icon").length,
+        }));
+        await shot(page, `78-kennzahlen-light-${width}`);
+        expect(look.heads).toHaveLength(2);
+        for (const head of look.heads) expect(head).toContain("Kennzahlen");
+        expect(look).toMatchObject({ rows: 2, charts: 0, cells: 6, signs: 3 });
+      } finally {
+        await page.close();
+      }
+    });
+
+  for (const width of [1440, 390])
     test(`Gustav's survey at ${width} px is a flat choice: no hull, flat cards, the chosen one tinted`, async () => {
       const page = await open("survey", width);
       try {

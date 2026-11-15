@@ -24,7 +24,7 @@ import { toolSubject, useReaderTimeZone } from "./action-sentences";
 import { AiAnswerSources, AiAppTile, answerSources } from "./answer-sources";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { hasCapabilityView } from "./capability-result";
-import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, keyFigureGroup } from "./capability-view";
+import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, isKeyFigureView, keyFigureGroup } from "./capability-view";
 import { PresentToolBlock } from "./file-tools";
 import { AiMapToolBlock } from "./map-widget";
 import { useAiChatActions } from "./message-actions";
@@ -605,7 +605,12 @@ function AiTurnResultView(props: {
               view keep their own drawing below. */}
           <Match when={isChartToolName(current().name) && gustavViewBlock(current())}>
             {(shown) => (
-              <CapabilityViewBlock block={shown()} turnId={props.turnId} live={props.live} {...gustavOrigin(current(), locale())} />
+              <CapabilityViewBlock
+                block={shown()}
+                turnId={props.turnId}
+                live={props.live}
+                {...gustavOrigin(current(), locale(), isKeyFigureView(shown().view) ? aiChatMessages(locale()).keyFigures : undefined)}
+              />
             )}
           </Match>
           <Match when={isKeyFigureResult(current())}>
