@@ -851,6 +851,44 @@ const SegmentedDemo = () => {
   );
 };
 
+const TabCountsDemo = () => {
+  const [tab, setTab] = createSignal("overview");
+  const [comments, setComments] = createSignal(0);
+  return (
+    <DemoCard
+      id="tabs-counts"
+      chip={{ kind: "component", name: "Tabs", from: "@k2b/ui" }}
+      description="A count after the label in tabular figures. With countReserve the count keeps the width of its widest value, so no tab moves when a comment arrives."
+      code={`<Tabs
+  ariaLabel="Review"
+  value={tab}
+  onValueChange={setTab}
+  options={[
+    { value: "overview", label: "Overview" },
+    { value: "code", label: "Code", count: String(comments()), countReserve: "99" },
+    { value: "diff", label: "Diff", count: "+2 −1", countReserve: "+99 −99" },
+  ]}
+/>`}
+    >
+      <div style={{ display: "grid", gap: "0.75rem", "justify-items": "start" }}>
+        <Tabs
+          ariaLabel="Review"
+          value={tab}
+          onValueChange={setTab}
+          options={[
+            { value: "overview", label: "Overview" },
+            { value: "code", label: "Code", count: String(comments()), countReserve: "99" },
+            { value: "diff", label: "Diff", count: "+2 −1", countReserve: "+99 −99" },
+          ]}
+        />
+        <Button size="sm" variant="secondary" onClick={() => setComments((count) => Math.min(99, count + 7))}>
+          Add comments
+        </Button>
+      </div>
+    </DemoCard>
+  );
+};
+
 const TabsDemo = () => {
   const [tab, setTab] = createSignal("overview");
   const [workspaceTab, setWorkspaceTab] = createSignal("overview");
@@ -1458,6 +1496,7 @@ const demos: DemoSection = {
   tabs: () => (
     <DemoGrid columns="one">
       <TabsDemo />
+      <TabCountsDemo />
     </DemoGrid>
   ),
   disclosure: () => (

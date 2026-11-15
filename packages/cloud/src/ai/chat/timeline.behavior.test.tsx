@@ -204,7 +204,9 @@ import { aiTurnErrorText } from "./turn-error";
     emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: 2, type: "provider_retry" });
     await settle();
-    expect(rows()).toEqual(["Reconnecting"]);
+    // The running turn has its work line from the start; it says in place that it reconnects, its time standing.
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toStartWith("Reconnecting");
 
     emit({ ...base, seq: 3, type: "block_delta", blockId: "text-1", blockKind: "text", delta: "Checking the files." });
     emit({
@@ -517,7 +519,7 @@ const renderTimeline = async (
     emit({ ...base, seq: 2, type: "block_set", block: { ...run, status: "running" } });
     jest.advanceTimersByTime(10_000);
     expect(label()).toBe("Running code · Report");
-    expect(clock()).toBe("0:10");
+    expect(clock()).toBe("10 s");
     const nodes = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
 
     // The connection drops: the line says so in place, calmly, and its clock stands.
@@ -525,13 +527,13 @@ const renderTimeline = async (
     expect(label()).toBe("Reconnecting");
     expect(workLine()?.getAttribute("data-busy")).toBeNull();
     jest.advanceTimersByTime(20_000);
-    expect(clock()).toBe("0:10");
+    expect(clock()).toBe("10 s");
     expect(Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"))).toEqual(nodes);
 
     // Back online, the clock shows the true work time, and the step that ran all along shows how long.
     setReconnecting(false);
     jest.advanceTimersByTime(1_000);
-    expect(clock()).toBe("0:31");
+    expect(clock()).toBe("31 s");
     expect(label()).toBe("Running code · Report");
     jest.advanceTimersByTime(15_000);
     expect(label()).toBe("Running code · 46 s");
@@ -582,11 +584,11 @@ const renderTimeline = async (
     emit({ ...base, seq: 3, type: "provider_retry" });
     expect(label()).toBe("Reconnecting");
     jest.advanceTimersByTime(30_000);
-    expect(clock()).toBe("0:05");
+    expect(clock()).toBe("5 s");
 
     // The next step starts with the true work time and is timed from there.
     emit({ ...base, seq: 4, type: "block_set", block: { ...run, status: "running" } });
-    expect(clock()).toBe("0:35");
+    expect(clock()).toBe("35 s");
     jest.advanceTimersByTime(16_000);
     expect(label()).toBe("Running code · Report");
     jest.advanceTimersByTime(30_000);

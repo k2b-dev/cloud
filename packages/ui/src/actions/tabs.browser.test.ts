@@ -75,7 +75,8 @@ describe("@k2b/ui tab list scrolling", () => {
             [3, 24].map((count) => ({
               list: `${variant} with ${count} tabs`,
               overflow: "auto hidden",
-              scrollbar: "thin",
+              // The shared scrollbar from index.css; Chromium ignores it beside a local `scrollbar-width`.
+              scrollbar: "auto",
               verticalOverflow: 0,
               // Twenty-four tabs overflow both widths; three fit on a phone too.
               scrollsSideways: count === 24,

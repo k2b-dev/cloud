@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Avatar } = await import("./Avatar");
 const { DescriptionList } = await import("./DescriptionList");
+const { ChangeList } = await import("./ChangeList");
 const { DotStrip } = await import("./DotStrip");
 const { LinkCard } = await import("./LinkCard");
 const { NotFoundState } = await import("./NotFoundState");
@@ -507,6 +508,60 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(ai.match(/class="k2b-dot-strip__dot[ "]/g)).toHaveLength(2);
     // Only the AI tone uses the AI palette, through its own `-ai` class.
     expect(ai.match(/k2b-dot-strip__dot-ai/g)).toHaveLength(1);
+  });
+
+  test("dot strip draws bars and places, and turns into a list of links with a name per run", () => {
+    const strip = (props: Parameters<typeof DotStrip>[0]) => renderToString(() => createComponent(DotStrip, props));
+    const runs = strip({
+      dots: ["success", "danger", "muted", "running"],
+      variant: "bar",
+      size: "lg",
+      label: "Last 4 runs: 1 failed",
+      links: ["#run-1", "#run-2", undefined, "#run-4"],
+      dotLabels: ["Run 1: succeeded", "Run 2: failed", "Run 3: skipped", "Run 4: running"],
+    });
+    expect(runs).toContain('data-variant="bar"');
+    expect(runs).toContain('role="list"');
+    // Every run is a list item; a linked one holds a real link, one tab stop on the newest.
+    expect(runs.match(/<span class="k2b-dot-strip__place" role="listitem">/g)).toHaveLength(4);
+    expect(runs.match(/<a class="k2b-dot-strip__target"/g)).toHaveLength(3);
+    expect(runs).toContain('href="#run-2" aria-label="Run 2: failed" data-dot-index="1" tabindex="-1"');
+    expect(runs).toContain('href="#run-4" aria-label="Run 4: running" data-dot-index="3" tabindex="0"');
+    // A run without a link stays a named mark.
+    expect(runs).toContain('<span class="k2b-dot-strip__target" role="img" aria-label="Run 3: skipped">');
+    // The running mark draws in the AI palette, through its own `-ai` class.
+    expect(runs).toContain('class="k2b-dot-strip__dot k2b-dot-strip__dot-ai" data-state="running"');
+    const places = strip({ dots: ["accent", "muted"], variant: "slot", label: "Runner: 1 of 2 places taken" });
+    expect(places).toContain('data-variant="slot"');
+    expect(places).toContain('role="img"');
+  });
+
+  test("change list shows bare signs on one edge with quiet marks, and keeps its icon chips by default", () => {
+    const list = (props: Parameters<typeof ChangeList>[0]) => renderToString(() => createComponent(ChangeList, props));
+    const version = list({
+      label: "What changes",
+      marker: "sign",
+      items: [
+        { tone: "add", content: "May save files", marks: [{ label: "needs approval", icon: "ti ti-eye" }] },
+        { tone: "remove", content: "May no longer mark conversations" },
+        { tone: "same", content: "5 more stay the same." },
+      ],
+    });
+    expect(version).toContain('data-marker="sign"');
+    expect(version).toContain("ti ti-plus k2b-change-list__icon");
+    expect(version).toContain("ti ti-minus k2b-change-list__icon");
+    expect(version).toContain("ti ti-equal k2b-change-list__icon");
+    expect(version).toContain(
+      '<span class="k2b-change-list__mark" data-tone="neutral"><i class="ti ti-eye" aria-hidden="true"></i>needs approval</span>',
+    );
+    // The bare sign is hidden; its meaning is read first.
+    expect(version).toContain('<span class="k2b-sr-only">New: </span>');
+    expect(version).toContain('<span class="k2b-sr-only">Dropped: </span>');
+    expect(version).toContain('<span class="k2b-sr-only">Unchanged: </span>');
+    const access = list({ label: "What changes", items: [{ tone: "add", icon: "ti ti-user-plus", content: "Tom gets Edit" }] });
+    expect(access).toContain('data-marker="icon"');
+    expect(access).toContain("ti ti-user-plus k2b-change-list__icon");
+    expect(access).not.toContain("k2b-sr-only");
   });
 
   test("progress ring draws a rounded, clamped share and marks warning and danger beyond colour", () => {

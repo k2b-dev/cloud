@@ -318,6 +318,7 @@ export default function SpaceList(props: Props) {
     const notice = toast.success(t().done, {
       action: {
         label: t().undo,
+        variant: "ghost",
         onClick: () => {
           notice.dismiss();
           void undo(row);

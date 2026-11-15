@@ -1202,6 +1202,114 @@ const BudgetDemo = () => (
   </DemoCard>
 );
 
+const runTones: DotStripTone[] = [
+  "success",
+  "success",
+  "success",
+  "danger",
+  "success",
+  "muted",
+  "success",
+  "success",
+  "success",
+  "success",
+  "success",
+  "muted",
+  "success",
+  "success",
+  "danger",
+  "success",
+  "success",
+  "success",
+  "success",
+  "running",
+];
+
+const RunStripDemo = () => (
+  <DemoCard
+    id="run-strip"
+    chip={{ kind: "component", name: "DotStrip", from: "@k2b/ui" }}
+    description="The last runs as bars, each a link to its run: green when it worked, red and broken when it failed, short when it was skipped, a pulsing plum bar while it runs. Dots change shape with the state; square places show a runner's slots."
+    code={`<DotStrip
+  variant="bar"
+  size="lg"
+  dots={runs.map((run) => run.tone)}
+  links={runs.map((run) => run.href)}
+  dotLabels={runs.map((run) => run.label)}
+  label="Last 20 runs: 17 succeeded, 2 failed, 1 running"
+/>
+<DotStrip dots={["success", "danger", "muted"]} size="lg" label="Last 3 checks: 1 failed, 1 skipped" />
+<DotStrip variant="slot" size="lg" dots={["accent", "accent", "muted", "muted"]} label="Runner: 2 of 4 places taken" />`}
+  >
+    <div class="ui-demo-form-grid">
+      <DotStrip
+        variant="bar"
+        size="lg"
+        dots={runTones}
+        links={runTones.map((_, index) => `#run-strip-${index + 1}`)}
+        dotLabels={runTones.map(
+          (tone, index) =>
+            `Run ${index + 1}: ${tone === "danger" ? "failed" : tone === "muted" ? "skipped" : tone === "running" ? "running" : "succeeded"}`,
+        )}
+        label="Last 20 runs: 16 succeeded, 2 failed, 1 skipped, 1 running"
+      />
+      <DotStrip dots={["success", "danger", "muted"]} size="lg" label="Last 3 checks: 1 failed, 1 skipped" />
+      <DotStrip variant="slot" size="lg" dots={["accent", "accent", "muted", "muted"]} label="Runner: 2 of 4 places taken" />
+    </div>
+  </DemoCard>
+);
+
+const ChangeSignsDemo = () => (
+  <DemoCard
+    id="change-list-signs"
+    chip={[{ kind: "component", name: "ChangeList", from: "@k2b/ui" }]}
+    description="What a new version changes against the one before: a bare sign per line on one text edge, quiet marks such as which change needs approval."
+    code={`<ChangeList
+  label="What changes against version 4"
+  marker="sign"
+  items={[
+    { tone: "add", content: <>Also runs <b>Mon–Fri at 08:00</b></> },
+    { tone: "add", content: <>May save files in the folder <b>Delivery notes 2026</b></>, marks: [{ label: "needs approval", icon: "ti ti-eye" }] },
+    { tone: "remove", content: "May no longer mark conversations in the mailbox" },
+    { tone: "same", content: <>5 more stay the same. <a href="#all">Show</a></> },
+  ]}
+/>`}
+  >
+    <ChangeList
+      label="What changes against version 4"
+      marker="sign"
+      items={[
+        {
+          tone: "add",
+          content: (
+            <>
+              Also runs <b>Mon–Fri at 08:00</b>
+            </>
+          ),
+        },
+        {
+          tone: "add",
+          content: (
+            <>
+              May save files in the folder <b>Delivery notes 2026</b>
+            </>
+          ),
+          marks: [{ label: "needs approval", icon: "ti ti-eye" }],
+        },
+        { tone: "remove", content: "May no longer mark conversations in the mailbox" },
+        {
+          tone: "same",
+          content: (
+            <>
+              5 more stay the same. <a href="#change-list-signs">Show</a>
+            </>
+          ),
+        },
+      ]}
+    />
+  </DemoCard>
+);
+
 const ChangeListDemo = () => (
   <DemoCard
     id="change-list"
@@ -1813,12 +1921,14 @@ const demos: DemoSection = {
   progress: () => (
     <DemoGrid columns="one">
       <ProgressDemo />
+      <RunStripDemo />
       <BudgetDemo />
     </DemoGrid>
   ),
   "change-list": () => (
     <DemoGrid columns="one">
       <ChangeListDemo />
+      <ChangeSignsDemo />
     </DemoGrid>
   ),
   stats: () => (

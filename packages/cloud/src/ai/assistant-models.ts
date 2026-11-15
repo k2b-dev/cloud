@@ -80,6 +80,7 @@ export const peopleAiModels = async (
       classes: AI_MODEL_CLASSES.filter((modelClass) =>
         state.assignments.some((assignment) => assignment.slot === modelClass && assignment.variantId === profile.id),
       ),
+      ...(profile.contextWindow ? { contextWindow: profile.contextWindow } : {}),
       ...(reason ? { unavailable: reason } : {}),
     });
   }
