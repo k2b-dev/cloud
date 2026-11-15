@@ -5,7 +5,7 @@ import { z } from "zod";
 import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { CodeActivityReadModelSchema } from "../../contracts/code-read-model";
-import { openActivationDialog } from "./CodeActivation";
+import { openActivationDialog, switchOnReady } from "./CodeActivation";
 import { type CodeLive, type CodeLiveFeed, createCodeLive } from "./CodeLiveStrip";
 import { CodeLede, CodeOverview, lastFinishedRun } from "./CodeOverview";
 import { copyHandle } from "./CodeRefusalNotice";
@@ -322,7 +322,14 @@ function ReadyPage(props: {
     return t().headVersion({ version: active.number, name: active.createdBy?.name ?? null, date: props.text.short(active.createdAt) });
   };
   /** "Change with Gustav" is filled unless a waiting version or "Resume" takes that place. */
-  const changeFilled = () => !paused() && !props.state.proposal && !props.state.waiting;
+  // One filled action: "Change with Gustav", unless the approval below offers switching on or "Resume" leads (#55).
+  const changeFilled = () =>
+    !paused() &&
+    !(
+      props.state.waiting &&
+      (props.state.waiting.status === "submitted" || props.state.waiting.status === "approved") &&
+      switchOnReady(props.state)
+    );
   return (
     <>
       <header class="cloud-code__head">

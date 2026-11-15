@@ -49,14 +49,14 @@ export function createCodeLive(state: CodePageReady) {
 export type CodeLive = ReturnType<typeof createCodeLive>;
 
 const tone = (state: CodePageRun["state"]): DotStripTone =>
-  state === "succeeded" ? "success" : state === "failed" || state === "cancelled" ? "danger" : state === "skipped" ? "skipped" : "running";
+  state === "succeeded" ? "success" : state === "failed" || state === "cancelled" ? "danger" : state === "skipped" ? "muted" : "running";
 
 /** The legend of the strip: each form with its word, in the strip's own shapes. */
 function Legend(props: { text: PageText }) {
   const t = props.text.t;
   const item = (state: DotStripTone, label: string) => (
     <span class="cloud-code__legend-item">
-      <DotStrip dots={[state]} shape="bar" label={label} />
+      <DotStrip dots={[state]} variant="bar" label={label} />
       {label}
     </span>
   );
@@ -64,7 +64,7 @@ function Legend(props: { text: PageText }) {
     <span class="cloud-code__legend" role="group" aria-label={t().legendLabel}>
       {item("success", t().legendSucceeded)}
       {item("danger", t().legendFailed)}
-      {item("skipped", t().legendSkipped)}
+      {item("muted", t().legendSkipped)}
     </span>
   );
 }
@@ -86,12 +86,12 @@ export function RunStrip(props: { data: CodePageData; live: CodeLive; text: Page
       </div>
       <DotStrip
         class="cloud-code__strip"
-        shape="bar"
+        variant="bar"
         size="lg"
         length={CODE_STRIP_RUNS}
         dots={shown().map((run) => tone(run.state))}
-        hrefs={shown().map((run) => withQuery(props.data.href, { tab: "runs", run: run.id }))}
-        labels={shown().map((run) => t().slotLabel({ when: props.text.moment(run.createdAt), status: runStatus(run.state, t()).label }))}
+        links={shown().map((run) => withQuery(props.data.href, { tab: "runs", run: run.id }))}
+        dotLabels={shown().map((run) => t().slotLabel({ when: props.text.moment(run.createdAt), status: runStatus(run.state, t()).label }))}
         label={t().stripLabel({ count: shown().length, failed: failed() })}
       />
       <Legend text={props.text} />
@@ -121,6 +121,8 @@ export function CodeLiveStrip(props: {
   text: PageText;
   /** The next scheduled start; null when none is planned. */
   next: string | null;
+  /** `none` only when Core says nothing is planned; otherwise an unknown next run reads as unknown. */
+  nextState?: "planned" | "none" | "unavailable";
 }) {
   const t = props.text.t;
   const paused = () => props.state.code.state === "paused";
@@ -135,7 +137,15 @@ export function CodeLiveStrip(props: {
     <section class="cloud-code__lage" aria-label={t().nextRunLabel}>
       <div class="cloud-code__lage-cell">
         <span class="cloud-code__meta">{t().nextRunLabel}</span>
-        <span class="cloud-code__lage-value">{paused() ? t().nextPaused : props.next ? props.text.moment(props.next) : t().nextNone}</span>
+        <span class="cloud-code__lage-value">
+          {paused()
+            ? t().nextPaused
+            : props.next
+              ? props.text.moment(props.next)
+              : props.nextState === "unavailable"
+                ? t().nextUnknown
+                : t().nextNone}
+        </span>
       </div>
       <div class="cloud-code__lage-cell">
         <span class="cloud-code__meta">{t().lastLabel}</span>

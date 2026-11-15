@@ -123,10 +123,8 @@ and aligns with the header title. Do not repeat the summary for every group.
 The panel uses `--k2b-detail-panel-accent` for restrained identity and action
 accents, with the portable UI accent as its fallback. Text actions in section
 and summary headings fall back to the theme's action color instead, so they
-keep their contrast in dark mode. On hover they darken to
-`--k2b-detail-panel-accent-hover`, which falls back to `--k2b-action-hover`;
-they never take the body ink. A host may map both hooks to its own theme
-tokens; `DetailPanel` does not know how the host derives them.
+keep their contrast in dark mode. A host may map that hook to its own theme
+token; `DetailPanel` does not know how the host derives it.
 
 Every topic of a panel is a [`Section`](/en/ui/surfaces/section), the same
 component that frames the topics of a full page. Inside `DetailPanel` a section

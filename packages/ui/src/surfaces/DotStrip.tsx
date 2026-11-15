@@ -1,15 +1,15 @@
-import { createEffect, createSignal, For, type JSX, on, Show } from "solid-js";
+import { createSignal, For, type JSX, Show } from "solid-js";
 
 /**
- * `accent` = the app colour (it worked), `ai` = came from AI, `muted` = nothing happened. Run outcomes: `success` worked,
- * `danger` failed, `skipped` did not start, `running` runs right now, `planned` starts later.
+ * `accent` = the app colour (it worked), `success` = it worked, in the success colour, `ai` = came from AI,
+ * `warning` = skipped or needs a look, `danger` = failed, `muted` = nothing to do, `running` = runs now.
  */
-export type DotStripTone = "accent" | "warning" | "danger" | "ai" | "muted" | "success" | "skipped" | "running" | "planned";
+export type DotStripTone = "accent" | "success" | "warning" | "danger" | "ai" | "muted" | "running";
 
-export type DotStripProps = {
+type DotStripBase = {
   /** Outcomes in order, left to right. */
   dots: readonly DotStripTone[];
-  /** Total slots. Slots after `dots` show as empty rings, so a growing strip keeps its size. Defaults to `dots.length`. */
+  /** Total slots. Slots after `dots` show as empty places, so a growing strip keeps its size. Defaults to `dots.length`. */
   length?: number;
   /** Shows every slot as a quiet placeholder, for "nothing checked yet". */
   waiting?: boolean;
@@ -17,102 +17,117 @@ export type DotStripProps = {
   selected?: number | null;
   size?: "md" | "lg";
   /**
-   * `dot` draws round dots; `bar` draws upright bars, as a run history does. In both, form carries the state as well as
-   * colour: a failed bar is interrupted, a skipped or planned one is short, a running one is a ring.
+   * `dot`, the default: round marks whose shape follows the state, so colour is never the only sign. `bar`: upright
+   * bars, 5 × 22 px at `lg`, as for the last runs beside a time. `slot`: square places, as for the places of a runner.
    */
-  shape?: "dot" | "bar";
+  variant?: "dot" | "bar" | "slot";
   /** Dots per row; more wrap into further rows of the same width. Defaults to one row. */
   columns?: number;
   /** Names the strip and its counts, for example "Last 50 mails: 17 matched, 6 skipped, 27 not". */
   label: string;
-  /** Opens the item behind each slot, such as one run; a slot without one stays a plain mark. */
-  hrefs?: readonly (string | undefined)[];
-  /** Names each slot for a link or tooltip, such as "Run at 13:45: failed". */
-  labels?: readonly string[];
   class?: string;
 };
 
-/** States that end a run: a slot that reaches one of them from `running` settles with one short spring. */
-const SETTLED = new Set(["success", "danger", "skipped", "accent", "warning", "muted"]);
-
-function Slot(props: { state: string; selected: boolean; href?: string; label?: string }) {
-  // Only a change seen in the browser animates; the first render, on the server or after hydration, stands still.
-  const [settled, setSettled] = createSignal(false);
-  createEffect(
-    on(
-      () => props.state,
-      (state, previous) => setSettled(previous === "running" && SETTLED.has(state)),
-      { defer: true },
-    ),
-  );
-  const mark = () => (
-    // The AI tone carries its own `-ai` class: the AI palette stays with AI surfaces (F3).
-    <i
-      class={
-        props.state === "ai"
-          ? "k2b-dot-strip__dot k2b-dot-strip__dot-ai"
-          : props.state === "running"
-            ? "k2b-dot-strip__dot k2b-dot-strip__live-ai"
-            : "k2b-dot-strip__dot"
+export type DotStripProps = DotStripBase &
+  (
+    | { links?: undefined; dotLabels?: undefined }
+    | {
+        /**
+         * One link per dot, such as the run it stands for; a dot without a link stays a named mark. The strip is then a
+         * list with one tab stop: arrow keys, Home, and End move between the links.
+         */
+        links: readonly (string | undefined)[];
+        /** One accessible name per dot, such as "Run at 14:01: failed". */
+        dotLabels: readonly string[];
       }
-      data-state={props.state}
-      data-selected={props.selected ? "" : undefined}
-      data-settled={settled() ? "" : undefined}
-    />
   );
-  return (
-    <Show when={props.href} fallback={mark()}>
-      {(href) => (
-        <a class="k2b-dot-strip__link" role="listitem" href={href()} aria-label={props.label} title={props.label}>
-          {mark()}
-        </a>
-      )}
-    </Show>
-  );
-}
 
-/** A fixed-size row of outcome dots or bars: the last runs, checks or mails at a glance. */
+type DotState = DotStripTone | "pending" | "waiting";
+
+/** A fixed-size row of outcome marks: the last runs, checks or mails at a glance, each optionally a link. */
 export function DotStrip(props: DotStripProps): JSX.Element {
   const length = () => Math.max(props.length ?? props.dots.length, props.dots.length);
   const slots = () => Array.from({ length: length() }, (_, index) => index);
-  const state = (index: number) => {
+  const state = (index: number): DotState => {
     if (props.waiting) return "waiting";
     return props.dots[index] ?? "pending";
   };
-  const linked = () => Boolean(props.hrefs?.some(Boolean));
-  const shared = () => ({
-    class: `k2b-dot-strip ${props.class ?? ""}`,
-    "data-size": props.size ?? "md",
-    "data-shape": props.shape ?? "dot",
-    "aria-label": props.label,
-    style: { "--k2b-dot-strip-columns": String(props.columns ?? length()) },
-  });
-  const slotsView = () => (
-    <For each={slots()}>
-      {(index) => (
-        <Slot
-          state={state(index)}
-          selected={props.selected === index}
-          href={props.waiting ? undefined : props.hrefs?.[index]}
-          label={props.labels?.[index]}
-        />
-      )}
-    </For>
+  const linked = () => Boolean(props.links?.length);
+  const linkIndexes = () => slots().filter((index) => props.links?.[index]);
+  // One tab stop for the whole strip, on the newest run until the person moves it.
+  const [current, setCurrent] = createSignal<number>();
+  const stop = () => {
+    const indexes = linkIndexes();
+    const chosen = current();
+    return chosen !== undefined && indexes.includes(chosen) ? chosen : indexes.at(-1);
+  };
+  let root: HTMLDivElement | undefined;
+  const move = (event: KeyboardEvent) => {
+    const indexes = linkIndexes();
+    const at = indexes.indexOf(stop() ?? -1);
+    const next =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? indexes[Math.min(indexes.length - 1, at + 1)]
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? indexes[Math.max(0, at - 1)]
+          : event.key === "Home"
+            ? indexes[0]
+            : event.key === "End"
+              ? indexes.at(-1)
+              : undefined;
+    if (next === undefined) return;
+    event.preventDefault();
+    setCurrent(next);
+    root?.querySelector<HTMLElement>(`[data-dot-index="${next}"]`)?.focus();
+  };
+  const mark = (index: number) => (
+    // The AI tones carry their own `-ai` class: the AI palette stays with AI surfaces (F3).
+    <i
+      class={state(index) === "ai" || state(index) === "running" ? "k2b-dot-strip__dot k2b-dot-strip__dot-ai" : "k2b-dot-strip__dot"}
+      data-state={state(index)}
+      data-selected={props.selected === index ? "" : undefined}
+    />
   );
-  // Linked slots are a list of links; otherwise the strip is one image with one name.
   return (
-    <Show
-      when={linked()}
-      fallback={
-        <div {...shared()} role="img">
-          {slotsView()}
-        </div>
-      }
+    <div
+      ref={root}
+      class={`k2b-dot-strip ${props.class ?? ""}`}
+      data-size={props.size ?? "md"}
+      data-variant={props.variant ?? "dot"}
+      {...{ role: linked() ? "list" : "img", "aria-label": props.label }}
+      style={{ "--k2b-dot-strip-columns": String(props.columns ?? length()) }}
     >
-      <div {...shared()} role="list">
-        {slotsView()}
-      </div>
-    </Show>
+      <For each={slots()}>
+        {(index) => (
+          <Show when={linked()} fallback={mark(index)}>
+            <span class="k2b-dot-strip__place" role="listitem">
+              <Show
+                when={props.links?.[index]}
+                fallback={
+                  <span class="k2b-dot-strip__target" role="img" aria-label={props.dotLabels?.[index]}>
+                    {mark(index)}
+                  </span>
+                }
+              >
+                {(href) => (
+                  <a
+                    class="k2b-dot-strip__target"
+                    href={href()}
+                    aria-label={props.dotLabels?.[index]}
+                    data-dot-index={index}
+                    tabIndex={stop() === index ? 0 : -1}
+                    onFocus={() => setCurrent(index)}
+                    onKeyDown={move}
+                  >
+                    {mark(index)}
+                  </a>
+                )}
+              </Show>
+            </span>
+          </Show>
+        )}
+      </For>
+    </div>
   );
 }
 

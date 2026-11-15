@@ -48,7 +48,7 @@ export function VersionChanges(props: { words: CodeVersionReadModel; text: PageT
         <p class="cloud-code__quiet-line">{t().firstVersionNote}</p>
       </Show>
       <Show when={changes().state !== "unavailable"} fallback={<p class="cloud-code__quiet-line">{changes().text}</p>}>
-        <ChangeList label={first() ? t().firstTitle : t().changesTitle} items={items()} />
+        <ChangeList marker="sign" label={first() ? t().firstTitle : t().changesTitle} items={items()} />
       </Show>
       <p class="cloud-code__foot">{changes().assurance}</p>
     </Island>

@@ -808,7 +808,13 @@ export type CapabilityActionSentences = {
 };
 
 /** Evidence-backed result wording. Only {target} is substituted, through the caller's resource reader. */
-export type CapabilityActionResultForm = { text: string; targetType: string; kind: string };
+export type CapabilityActionResultForm = {
+  text: string;
+  targetType: string;
+  kind: string;
+  /** Plural past-tense label beside a separate confirmed-effect count; no target names or tokens. */
+  countText?: string;
+};
 
 export type CapabilityOperationPresentationTranslation = {
   /** Past-tense result for one confirmed effect; targetType is an app-local Type. */
@@ -821,6 +827,8 @@ export type CapabilityOperationPresentationTranslation = {
   data?: CapabilitySchemaPresentation;
   /** Search-tag presentation keyed by the stable tag token. */
   searchTags?: Readonly<Record<string, { title?: string; description?: string }>>;
+  /** Queries only: what the Query did, in this locale; see `CapabilityPresentationCatalog.doneTitles`. */
+  doneTitle?: string;
   /** @deprecated removed with the next major; return per-call review forms. */
   sentences?: CapabilityActionSentences;
 };
@@ -850,6 +858,12 @@ export type CapabilityPresentationCatalog = {
   baseLocale: string;
   /** @deprecated removed with the next major; return per-call review forms. */
   sentences?: Readonly<Record<string, CapabilityActionSentences>>;
+  /**
+   * What a finished Query did, keyed by its localId, as plain text in the base locale: "Searched mail" for
+   * "Search mail". The chat names a finished step with it; a translation gives its own `doneTitle` beside its
+   * `title`. Without one, the step reads "<title> · done" in the reader's language.
+   */
+  doneTitles?: Readonly<Record<string, string>>;
   /** Partial presentation overlays with exact -> ancestor -> base fallback. */
   translations: Readonly<Record<string, CapabilityPresentationTranslation>>;
 };

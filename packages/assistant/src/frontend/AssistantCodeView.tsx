@@ -1,17 +1,19 @@
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
+import { followCodeRuns } from "@k2b/cloud/ssr/code-live";
 import {
   AppOverview,
   Button,
   DotStrip,
   type DotStripTone,
   FilterToggle,
+  LinkCard,
   Paper,
   Placeholder,
   ScrollArea,
   Skeleton,
   useLocale,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { nextCodeRun } from "../code-summary";
 import { browserCodeInvoke } from "./code-client";
@@ -25,6 +27,7 @@ import {
   type DayLine,
   type DayMark,
   dayLine,
+  loadCodeCardExtras,
   loadCodeOverview,
   localDay,
   needsPerson,
@@ -88,7 +91,7 @@ const runTone = (run: CodeCardRun): DotStripTone =>
     : run.state === "failed" || run.state === "cancelled"
       ? "danger"
       : run.state === "skipped"
-        ? "skipped"
+        ? "muted"
         : "running";
 const runWord = (state: CodeCardRun["state"], t: Messages) =>
   state === "succeeded"
@@ -163,33 +166,38 @@ function CodeCard(props: { item: CodeOverviewItem; timeZone: string; now: Date }
       failed: runs().filter((run) => run.state === "failed" || run.state === "cancelled").length,
     });
   return (
-    <Paper as="a" href={codeHref(props.item.id)} interactive class="assistant-apps__card" data-status={status()}>
-      <span class="assistant-apps__card-top">
+    <LinkCard
+      href={codeHref(props.item.id)}
+      title={props.item.title}
+      description={cardSchedule(props.item, t(), locale())}
+      media={
         <span class="assistant-apps__tile" aria-hidden="true">
           <FeatCodeMark variant="glyph" tone="current" size={16} decorative />
         </span>
-        <span class="assistant-apps__card-copy">
-          <span class="assistant-apps__card-title">{props.item.title}</span>
-          <span class="assistant-apps__card-schedule">{cardSchedule(props.item, t(), locale())}</span>
-        </span>
+      }
+      aside={
         <Show when={runs().length > 0}>
-          <DotStrip shape="bar" dots={runs().map(runTone)} label={runsLabel()} class="assistant-apps__bars" />
+          <DotStrip variant="bar" dots={runs().map(runTone)} label={runsLabel()} class="assistant-apps__bars" />
         </Show>
-      </span>
-      <span class="assistant-apps__card-last">
-        <i class="ti ti-arrow-forward-up" aria-hidden="true" />
-        <Show when={props.item.extras} fallback={<Skeleton class="assistant-apps__card-last-skeleton" />}>
-          <span>{cardLast(props.item, status(), t(), locale(), props.timeZone, props.now)}</span>
-        </Show>
-      </span>
-      <span class="assistant-apps__card-foot">
-        <span class="assistant-apps__state" data-tone={shown().tone}>
-          <i class={shown().icon} aria-hidden="true" />
-          {shown().word(t())}
+      }
+      body={
+        <span class="assistant-apps__card-last">
+          <i class="ti ti-arrow-forward-up" aria-hidden="true" />
+          <Show when={props.item.extras} fallback={<Skeleton class="assistant-apps__card-last-skeleton" />}>
+            <span>{cardLast(props.item, status(), t(), locale(), props.timeZone, props.now)}</span>
+          </Show>
         </span>
-        <span class="assistant-apps__card-when">{cardWhen(props.item, status(), t(), locale(), props.timeZone, props.now)}</span>
-      </span>
-    </Paper>
+      }
+      footer={{
+        start: (
+          <span class="assistant-apps__state" data-tone={shown().tone}>
+            <i class={shown().icon} aria-hidden="true" />
+            {shown().word(t())}
+          </span>
+        ),
+        end: <span class="assistant-apps__card-when">{cardWhen(props.item, status(), t(), locale(), props.timeZone, props.now)}</span>,
+      }}
+    />
   );
 }
 
@@ -424,6 +432,43 @@ export default function AssistantCodeView(props: {
   onMount(() => {
     if (props.initial === undefined) void load();
     else void completeExtras();
+  });
+  // Runs move live (6a): a card says "Running" when its run starts and reads its last result once it ends. One
+  // subscription per listed Code on the shared live socket; nothing polls (#59).
+  const followed = new Map<string, () => void>();
+  const changeRun = (codeId: string, event: { runId: string; state: CodeCardRun["state"]; at: string }) => {
+    const current = page();
+    if (!current) return;
+    setPage({
+      ...current,
+      items: current.items.map((item) => {
+        if (item.id !== codeId || !item.extras) return item;
+        const runs = item.extras.runs ?? [];
+        const known = runs.some((run) => run.id === event.runId);
+        const next = known
+          ? runs.map((run) => (run.id === event.runId ? { ...run, state: event.state } : run))
+          : [{ id: event.runId, state: event.state, createdAt: event.at, startedAt: event.at, endedAt: null }, ...runs];
+        return { ...item, extras: { ...item.extras, runs: next } };
+      }),
+    });
+    if (event.state === "succeeded" || event.state === "failed" || event.state === "skipped") {
+      void loadCodeCardExtras(browserCodeInvoke, codeId, day()).then((extras) => {
+        const latest = page();
+        if (latest) setPage({ ...latest, items: latest.items.map((item) => (item.id === codeId ? { ...item, extras } : item)) });
+      });
+    }
+  };
+  createEffect(() => {
+    for (const item of page()?.items ?? []) {
+      if (followed.has(item.id) || item.state !== "active") continue;
+      followed.set(
+        item.id,
+        followCodeRuns(item.id, (event) => changeRun(item.id, event)),
+      );
+    }
+  });
+  onCleanup(() => {
+    for (const stop of followed.values()) stop();
   });
 
   const items = () => page()?.items ?? [];

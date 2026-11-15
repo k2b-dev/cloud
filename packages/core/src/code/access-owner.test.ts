@@ -1,6 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import * as provider from "@k2b/cloud/capabilities/server";
-import { codePageOwnerPersonName, isCodePageMember, readCodeOwner } from "./access";
+import { type CodeContext, codePageOwnerPersonName, isCodePageMember, readCodeOwner } from "./access";
+import { readModelNames } from "./read-model/names";
 
 const owner = { kind: "resource" as const, ref: { type: "mail.mailbox", id: "m1" } };
 const authority = (credentialKind: string) =>
@@ -10,7 +11,12 @@ const authority = (credentialKind: string) =>
     credentialKind,
     scopes: [],
   }) as never;
-const manifest = { appId: "mail", types: [{ localId: "mailbox", reader: "mailbox.read" }], queries: [{ localId: "mailbox.read" }] };
+const manifest = {
+  appId: "mail",
+  types: [{ localId: "mailbox", reader: "mailbox.read" }],
+  queries: [{ localId: "mailbox.read" }],
+  actions: [],
+};
 const answer = { ok: true, data: { data: { view: { title: "info@", permission: "admin" } } } };
 const spies: { mockRestore(): void }[] = [];
 afterEach(() => {
@@ -26,21 +32,27 @@ test("under a capability invocation the owner is asked through the nested query,
     asked.push(invocation);
     return answer;
   }) as never;
-  expect(await readCodeOwner(owner, { authority: authority("invocation"), query })).toEqual({ title: "info@", admin: true });
+  const context: CodeContext = { authority: authority("invocation"), query, ownerReaderAnswer: null };
+  expect(await readCodeOwner(owner, context)).toEqual({ title: "info@", admin: true });
+  expect(await readCodeOwner(owner, context)).toEqual({ title: "info@", admin: true });
+  const names = await readModelNames([], context, [], [owner.ref, { ...owner.ref, id: "other-mailbox" }]);
+  expect(names.target(owner.ref)).toEqual({ name: "info@", readable: true });
+  expect(names.target({ ...owner.ref, id: "other-mailbox" })).toMatchObject({ readable: false, unavailable: true });
+  expect(JSON.stringify(names.target({ ...owner.ref, id: "other-mailbox" }))).not.toContain("info@");
   expect(asked).toEqual([{ appId: "mail", capabilityId: "mailbox.read", input: { id: "m1" }, signal: undefined }]);
   expect(direct).not.toHaveBeenCalled();
 });
 
-test("one query invocation asks the owner once: every permission check of that query shares the answer (#31)", async () => {
+test("a read that keeps the owner reader answer asks the owner once for all its permission checks (#31)", async () => {
   spies.push(spyOn(provider, "getCapabilityCatalogApp").mockResolvedValue({ ok: true, data: { manifest } } as never));
   let asked = 0;
   // A second nested query under the same invocation is refused, as the platform allows only one.
   const query = (async () =>
     ++asked === 1 ? answer : { ok: false, error: { code: "FORBIDDEN", message: "one dependency only" } }) as never;
-  const context = { authority: authority("invocation"), query, ownerReads: new Map() };
+  const context = { authority: authority("invocation"), query, ownerReaderAnswer: null };
   for (let check = 0; check < 3; check++) expect(await readCodeOwner(owner, context)).toEqual({ title: "info@", admin: true });
   expect(asked).toBe(1);
-  // Without the per-invocation memory (durable work), every read asks again.
+  // Without the kept answer (actions, durable work), every read asks again.
   asked = 0;
   const durable = { authority: authority("invocation"), query };
   expect(await readCodeOwner(owner, durable)).toEqual({ title: "info@", admin: true });
@@ -83,13 +95,4 @@ test("F26 leaves readCodeOwner alone: it names a person only to that person, als
   const self = { authority: { ...(viewer("user") as object), scopes: [] } as never };
   expect(await readCodeOwner({ kind: "person", userId: "u1" }, self)).toEqual({ title: "Lea Muster", admin: true });
   expect(await readCodeOwner({ kind: "person", userId: "someone-else" }, self)).toBeNull();
-});
-
-test("only read-only queries share one owner read; Actions check the owner again before every write", async () => {
-  const { runCodeQuery } = await import("./queries");
-  const seen: boolean[] = [];
-  const execution = { authority: authority("invocation"), actor: {}, accessSubject: {}, user: null } as never;
-  await runCodeQuery(execution, async (context) => void seen.push(Boolean(context.ownerReads)), true);
-  await runCodeQuery(execution, async (context) => void seen.push(Boolean(context.ownerReads)));
-  expect(seen).toEqual([true, false]);
 });

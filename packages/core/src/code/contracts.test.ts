@@ -10,7 +10,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { aiCapabilities } from "../capabilities";
-import { CodeOwnerUnavailableError, codePerson, readCodeOwner } from "./access";
+import { type CodeContext, CodeOwnerUnavailableError, codePerson, readCodeOwner } from "./access";
 import {
   CodeCallRefusalKindSchema,
   type CodeEventDeliverySchema,
@@ -22,6 +22,7 @@ import {
   codeQueryContracts,
 } from "./contracts";
 import { runCodeQuery } from "./queries";
+import { readModelNames } from "./read-model/names";
 import { codeSourceHash, codeTextChunk, createCode } from "./store";
 import { CodeVersionError } from "./versions";
 
@@ -264,12 +265,35 @@ test("owner presentation and default editorship use the live authorized canonica
   });
   try {
     const owner = { kind: "resource" as const, ref: { type: "example.mailbox", id: "m_1234" } };
-    expect(await readCodeOwner(owner, { authority, locale: "de", signal: context.signal })).toEqual({ title: "Live title", admin: true });
+    const requestContext: CodeContext = { authority, locale: "de", signal: context.signal, ownerReaderAnswer: null };
+    expect(await readCodeOwner(owner, requestContext)).toEqual({ title: "Live title", admin: true });
     expect(invoke).toHaveBeenCalledWith(
       { appId: "example", capabilityId: "mailbox.read", kind: "query", input: { id: "m_1234" } },
       expect.anything(),
       { authority, locale: "de", signal: context.signal },
     );
+    const checked = CodeCheckedVersionManifestSchema.parse({
+      version: 1,
+      entry: "code.ts",
+      entrypoints: [],
+      ai: false,
+      policyRows: [],
+      permissions: [{ operation: "example.mailbox.read", target: owner.ref, file: "code.ts", line: 1 }],
+      hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+    });
+    // The same owner answer provides its name without spending another child Query.
+    const calls = invoke.mock.calls.length;
+    const names = await readModelNames([checked], requestContext);
+    expect(names.target(owner.ref)).toEqual({ name: "Live title", readable: true });
+    expect(invoke).toHaveBeenCalledTimes(calls);
+    // Another request has no reused answer; its current reader permission decides.
+    invoke.mockResolvedValue({ ok: false, error: { code: "FORBIDDEN", message: "Hidden", status: 403 } });
+    const denied = await readModelNames([checked], { authority, locale: "de" });
+    expect(denied.target(owner.ref).readable).toBe(false);
+    expect(JSON.stringify(denied.target(owner.ref))).not.toContain("Live title");
+    invoke.mockResolvedValue({ ok: false, error: { code: "APP_UNAVAILABLE", message: "Unavailable", status: 503 } });
+    const unknown = await readModelNames([checked], { authority, locale: "de" });
+    expect(unknown.target(owner.ref)).toEqual({ name: "ein Ziel vom Typ „Mailbox“", readable: false, unavailable: true });
     invoke.mockResolvedValue({ ok: true, data: { data: { view: { title: "Renamed", permission: "read" } } } });
     expect(await readCodeOwner(owner, { authority })).toEqual({ title: "Renamed", admin: false });
     invoke.mockResolvedValue({ ok: false, error: { code: "NOT_FOUND", message: "Not found", status: 404 } });

@@ -184,7 +184,14 @@ export const ActivationSchema = z.object({
 export type CodeActivationStatus = z.infer<typeof ActivationSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
 export const AutomationListSchema = z.object({
-  items: z.array(z.object({ entrypoint: z.string(), title: z.string().optional(), nextRunAt: z.string().nullable() })),
+  items: z.array(
+    z.object({
+      entrypoint: z.string(),
+      title: z.string().optional(),
+      nextRunAt: z.string().nullable(),
+      nextRunState: z.enum(["planned", "none", "unavailable"]).optional(),
+    }),
+  ),
 });
 /** Metadata only: Core has no operation that returns a secret's value. */
 const SecretSchema = z.object({
@@ -295,6 +302,7 @@ export type CodePageAutomation = {
   nextRunAt?: string | null;
   /** When it runs, in words from the version's read model, such as "every 15 minutes" or an event as a sentence. */
   timingText?: string;
+  nextRunState?: "planned" | "none" | "unavailable";
 };
 /**
  * A refused call of a failed run, as the bridge recorded it. It is a fact, not the run's cause: the Code may have

@@ -197,6 +197,7 @@ function ActivationDialog(props: {
       <p>{personal(props.data) ? t().personalActivateIntro : t().activateIntro({ name: props.data.owner.title })}</p>
       <Show when={changes()?.length}>
         <ChangeList
+          marker="sign"
           label={t().changesTitle}
           items={changes()!.map((row) => ({
             tone: row.kind === "remove" ? ("remove" as const) : ("add" as const),

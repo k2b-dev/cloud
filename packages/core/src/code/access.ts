@@ -29,11 +29,8 @@ export type CodeContext = {
   query?: CapabilityExecutionContext["query"];
   /** Authenticated submission provenance; chat tools set this from their actual conversation. */
   submissionOrigin?: import("./review-contracts").CodeSubmissionOrigin;
-  /**
-   * Owner reads of one read-only query invocation. An invocation may ask another app once, so every permission check of
-   * the same query shares that answer instead of asking again and failing closed. Durable work never sets it.
-   */
-  ownerReads?: Map<string, Promise<{ title: string; admin: boolean } | null>>;
+  /** One read-model load may reuse its owner reader answer for the same target, never another identity or request. */
+  ownerReaderAnswer?: { ref: { type: string; id: string }; title: string; admin: boolean; href?: string } | null;
 };
 export class CodeDataError extends Error {
   constructor(
@@ -82,19 +79,7 @@ export const codePerson = (context: CodeContext, write = false) => {
 };
 
 /** Resolve the resource's current title and permission through its canonical reader under this exact authority. */
-export const readCodeOwner = (owner: CodeOwner, context: CodeContext): Promise<{ title: string; admin: boolean } | null> => {
-  const reads = context.ownerReads;
-  if (!reads) return readCodeOwnerNow(owner, context);
-  const key =
-    owner.kind === "person" ? `person:${owner.userId}` : owner.kind === "app" ? `app:${owner.appId}` : `${owner.ref.type}:${owner.ref.id}`;
-  let read = reads.get(key);
-  if (!read) {
-    read = readCodeOwnerNow(owner, context);
-    reads.set(key, read);
-  }
-  return read;
-};
-const readCodeOwnerNow = async (owner: CodeOwner, context: CodeContext): Promise<{ title: string; admin: boolean } | null> => {
+export const readCodeOwner = async (owner: CodeOwner, context: CodeContext): Promise<{ title: string; admin: boolean } | null> => {
   if (owner.kind === "person") {
     const user = codePerson(context);
     return user.id === owner.userId ? { title: user.displayName || user.uid, admin: true } : null;
@@ -113,6 +98,9 @@ const readCodeOwnerNow = async (owner: CodeOwner, context: CodeContext): Promise
     });
     return { title: app.name, admin: permission === "admin" };
   }
+  const previous = context.ownerReaderAnswer;
+  if (previous && previous.ref.type === owner.ref.type && previous.ref.id === owner.ref.id)
+    return { title: previous.title, admin: previous.admin };
   const appId = cloudResourceRefAppId(owner.ref);
   const catalog = await getCapabilityCatalogApp(appId, context.locale, context.authority);
   if (!catalog.ok) {
@@ -134,6 +122,14 @@ const readCodeOwnerNow = async (owner: CodeOwner, context: CodeContext): Promise
     if (["FORBIDDEN", "NOT_FOUND", "APP_ACCESS_DENIED"].includes(result.error.code)) return null;
     throw new CodeOwnerUnavailableError("Code owner reader unavailable");
   }
+  const href = result.data.links?.find((link) => link.rel === "open")?.href;
+  if (context.ownerReaderAnswer !== undefined)
+    context.ownerReaderAnswer = {
+      ref: owner.ref,
+      title: result.data.data.view.title,
+      admin: result.data.data.view.permission === "admin",
+      ...(href ? { href } : {}),
+    };
   return { title: result.data.data.view.title, admin: result.data.data.view.permission === "admin" };
 };
 

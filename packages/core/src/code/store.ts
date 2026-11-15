@@ -415,8 +415,10 @@ export const readCodeVersion = async (
     offset: number;
     length: number;
   },
-  context: CodeContext,
+  outer: CodeContext,
 ) => {
+  // A read: its permission checks share one owner reader answer, as an invocation may ask the owner app only once.
+  const context: CodeContext = { ...outer, ownerReaderAnswer: outer.ownerReaderAnswer ?? null };
   const { code } = await readCode(input.codeId, context);
   if (input.content?.kind === "source" || input.content?.kind === "bundle") await requireCodeSourcePermission(code, context);
   const [row] = await sql<VersionRow[]>`SELECT * FROM code.versions WHERE code_id = ${input.codeId} AND id = ${input.versionId}::uuid`;

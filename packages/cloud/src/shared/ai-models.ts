@@ -223,6 +223,8 @@ export type AiPeopleModels = {
     description: string;
     icon: AiPeopleModelIcon;
     classes: AiModelClass[];
+    /** Tokens the model reads at once, when the catalog knows it; the composer shows how full a chat is with it. */
+    contextWindow?: number;
     unavailable?: AiModelUnavailableReason;
   }[];
 };

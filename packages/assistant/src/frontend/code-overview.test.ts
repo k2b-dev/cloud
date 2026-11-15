@@ -100,7 +100,7 @@ test("an automation's timing is a sentence and never the schedule expression", (
   expect(automationTiming(schedule("0 7 * * 1"), "de")).toBe("Montags um 07:00");
   expect(automationTiming(schedule("30 6 * * *"), "de")).toBe("Täglich um 06:30");
   expect(automationTiming(schedule("0 7 * * 1"), "en")).toBe("Mondays at 07:00");
-  expect(automationTiming(schedule("*/5 3 * * 1-5"), "de")).toBe("Nach Zeitplan");
+  expect(automationTiming(schedule("*/5 3 * * 1-5"), "de")).toBe("Alle 5 Minuten von 3:00 bis 3:59 Uhr · Mo–Fr");
   expect(automationTiming({ kind: "event", cron: null }, "de")).toBe("Bei einem Ereignis");
   expect(automationTiming({ kind: "manual", cron: null }, "en")).toBe("Started by hand");
 });

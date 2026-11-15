@@ -13,6 +13,8 @@ export const codeReadModelMessages = i18n.define({
       approval_public_routes: "This change makes a page available to people who are not signed in.",
       modelLabel: "✦ Described by Gustav · not checked by Cloud",
       restricted: "The description names targets you cannot see",
+      unresolvedDescription: "The description is hidden because Cloud cannot establish read access to all targets",
+      unresolved: ({ type }: { type: string }) => `a target of type “${type}”`,
       hidden: ({ type }: { type: string }) => `a ${type} you cannot see`,
       dynamic: ({ type }: { type: string }) => `a ${type} chosen during the run`,
       target: "target",
@@ -93,6 +95,8 @@ export const codeReadModelMessages = i18n.define({
       approval_public_routes: "Diese Änderung macht eine Seite für Personen ohne Anmeldung zugänglich.",
       modelLabel: "✦ Von Gustav beschrieben · nicht von Cloud geprüft",
       restricted: "Die Beschreibung nennt Ziele, die du nicht sehen darfst",
+      unresolvedDescription: "Die Beschreibung bleibt verborgen, weil Cloud nicht für alle Ziele Leserechte feststellen kann",
+      unresolved: ({ type }) => `ein Ziel vom Typ „${type}“`,
       hidden: ({ type }) =>
         type === "Space" ? "ein Space, den du nicht sehen darfst" : `ein Ziel vom Typ „${type}“, das du nicht sehen darfst`,
       dynamic: ({ type }) => `${type}: wird beim Lauf gewählt`,
