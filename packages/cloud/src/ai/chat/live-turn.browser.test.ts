@@ -689,7 +689,9 @@ for (const view of [
         const summary = ".ai-turn-work > summary";
         const isOpen = () =>
           page.$eval(".ai-turn-work", (node) => (node as HTMLDetailsElement).open && node.querySelector(".ai-turn-steps") !== null);
-        const before = await viewportBox(page, summary);
+        // The line stays where it is; its width follows its sentence (v12), so only position and height are pinned.
+        const placeOf = (box: number[] | null) => (box ? [box[0], box[1], box[3]] : null);
+        const before = placeOf(await viewportBox(page, summary));
         // A press on the ticking clock that spans a tick still opens the line.
         // The clock re-renders every second, so its box is read in one go inside the page.
         const meta = await page.evaluate(() => {
@@ -703,7 +705,7 @@ for (const view of [
         await frames(page);
         await frames(page);
         expect(await isOpen()).toBe(true);
-        expect(await viewportBox(page, summary)).toEqual(before);
+        expect(placeOf(await viewportBox(page, summary))).toEqual(before);
         // One indent below the work line: no second summary, and steps sit at the same left edge as the texts.
         expect(await page.locator(".ai-turn-steps .ai-turn-steps").count()).toBe(0);
 
@@ -731,7 +733,7 @@ for (const view of [
         });
         await frames(page);
         expect(await isOpen()).toBe(true);
-        expect(await viewportBox(page, summary)).toEqual(before);
+        expect(placeOf(await viewportBox(page, summary))).toEqual(before);
         expect(await page.locator(".ai-turn-work > summary").innerText()).toContain(
           de ? "Wartet auf deine Freigabe" : "Waiting for your approval",
         );
@@ -743,7 +745,7 @@ for (const view of [
           await page.keyboard.press(key);
           await frames(page);
           expect(await isOpen()).toBe(!open);
-          expect(await viewportBox(page, summary)).toEqual(before);
+          expect(placeOf(await viewportBox(page, summary))).toEqual(before);
         }
         expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
       } finally {

@@ -554,10 +554,32 @@ describe("Waiting for you", () => {
           // Every entry is a chip that goes to its question; there is no way to answer several at once.
           expect(await strip(page).locator(".assistant-waiting__entry").count()).toBe(3);
           expect(await page.getByRole("button", { name: /alle (freigeben|bestätigen|erlauben)|approve all/i }).count()).toBe(0);
-          // Wide, all three fit and "+n" stays away; narrow, one chip and "+2" for the rest.
+          // Narrow, one chip and "+2" for the rest. Wide, chips keep their whole sentence (13 px, regular) and what does not
+          // fit beside them is counted in "+n" (v12 image 69), so the row and "+n" always add up to every entry.
           const narrow = view !== desktop;
-          expect((await visibleEntries(page)).length).toBe(narrow ? 1 : 3);
-          expect(await moreLabel(page)).toEqual(narrow ? ["+2"] : []);
+          const visible = await visibleEntries(page);
+          const more = await moreLabel(page);
+          if (narrow) {
+            expect(visible.length).toBe(1);
+            expect(more).toEqual(["+2"]);
+          } else {
+            expect(visible.length).toBeGreaterThanOrEqual(2);
+            expect(visible.length + Number(more[0]?.slice(1) ?? 0)).toBe(3);
+            const chips = await strip(page)
+              .locator(".assistant-waiting__entry")
+              .evaluateAll((buttons) =>
+                buttons
+                  .filter((button) => button.getClientRects().length > 0)
+                  .map((button) => {
+                    const sentence = button.querySelector(".assistant-waiting__short")!;
+                    const style = getComputedStyle(button);
+                    // A sentence may fade only in a chip at its full 250 px.
+                    const whole = sentence.scrollWidth <= sentence.clientWidth + 1 || button.getBoundingClientRect().width >= 249;
+                    return { whole, size: style.fontSize, weight: style.fontWeight };
+                  }),
+              );
+            for (const chip of chips) expect(chip).toEqual({ whole: true, size: "13px", weight: "400" });
+          }
           // The row sits right above everything over the field (here the model notice), inside the composer's width, at
           // one fixed height, and never wraps.
           const row = await rect(page, "nav.assistant-waiting");
@@ -744,7 +766,8 @@ describe("Waiting for you", () => {
     }, 60_000);
 
   test("a second press while the other chat opens keeps the chat it started from in the history", async () => {
-    const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "three" }, { slowChat: "Tops42" });
+    // Two entries, so the other chat's chip stands in the row beside this chat's one.
+    const { page, errors, unrouted, close } = await open(desktop, { locale: "de", scenario: "two" }, { slowChat: "Tops42" });
     try {
       await strip(page).waitFor();
       // By the question, since the entry drops "in Team Ops Wochenplanung" once that chat is the open one.

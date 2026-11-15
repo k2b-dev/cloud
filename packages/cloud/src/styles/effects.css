@@ -51,11 +51,11 @@
   font-size: 0.8125rem;
 }
 
-/* The row has a fixed width, at most the row measure, so nothing in it depends on the changing words: the time stands
-   on the right in a fixed-width cell, close to the sentence, and the chevron ends the row. The hover surface reaches
-   4 px past the text edge. */
+/* The row is as wide as its words (v12): the time follows the sentence in a fixed-width cell, then the chevron, at most
+   the row measure. The hover surface reaches 4 px past the text edge. */
 .k2b-ui .ai-turn-work > .k2b-chat-activity__row {
-  width: min(calc(100% + 0.25rem), var(--k2b-row-measure, 40rem));
+  width: fit-content;
+  max-width: min(calc(100% + 0.25rem), var(--k2b-row-measure, 40rem));
   min-height: 1.75rem;
   margin-inline-start: -0.25rem;
   padding: 0.1875rem 0.5rem 0.1875rem 0.25rem;
@@ -129,11 +129,12 @@
   margin-inline-start: auto;
 }
 
+/* The time keeps a fixed cell after the sentence, so a ticking clock never moves the chevron. */
 .k2b-ui .ai-turn-work__meta {
   min-width: 3.25rem;
   font-size: 0.75rem;
   line-height: 1.25rem;
-  text-align: end;
+  text-align: start;
 }
 
 /* Only the sentence shimmers while Gustav works: a plum light runs over it every 2.2 s, on the sentence itself so its

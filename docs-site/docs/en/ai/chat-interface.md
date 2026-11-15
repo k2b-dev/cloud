@@ -551,6 +551,10 @@ order, as a pill with its number, the owning app's icon tile, and its title. The
 title and app come from the turn's own tool results; a source no result names
 keeps its number with the app's name or the web page's host. Only completed calls
 name sources, and the chat never builds a link the answer did not cite.
+A model that writes bare numbers ("[1]") and adds its own sources paragraph or
+list at the end ("Sources: [1] …") gets the same result: the numbers become
+chips with the destinations of that paragraph, which leaves the answer, so the
+sources appear once and the row matches the numbers in the text.
 
 Turns with a work line, results, actions, or a failure notice span the full
 message column, so disclosure chevrons share one right edge. Plain prose keeps

@@ -476,7 +476,7 @@ test("web prompt stays byte-identical with organization and selected Cloud Skill
     loadedSkills: [{ name: "invoice", revision: 2, instructions: "Read rules.", files: ["/skills/invoice/SKILL.md"] }],
   });
   expect(new Bun.CryptoHasher("sha256").update(prompt).digest("hex")).toBe(
-    "79f5cb664a7defdffd58495923b57eef991fa988a4ee1e343dfaab83aa428b18",
+    "c0be90713613913172ec683a1e1c4e2f0eceabe21ade12076881df72692a6a01",
   );
 });
 
