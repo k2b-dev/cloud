@@ -84,6 +84,10 @@ Other actions run after the sheet has left the history, so they may navigate
 or open a dialog. Set `immediate: true` on an action that needs the tap itself,
 such as a clipboard write or a download; it runs during the tap and must not
 navigate or open a dialog.
+The sheet's code loads only on phones, in the background as the menus load, so
+wide screens never download it. If it cannot load, for example offline or
+after a deploy, the same menu opens beside its trigger instead and the error
+goes to `reportError`; the next open tries the sheet again.
 
 ## Search
 
@@ -332,7 +336,7 @@ Interactive menus close synchronously; `@k2b/ui` does not inherit a host's
 generic `[popover]` exit transition. Animate decorative surfaces such as
 tooltips separately instead of delaying an action menu's dismissal.
 
-`ContextMenu` opens from the pointer context-menu event, the Context Menu key, or Shift+F10. From the keyboard it opens beside the focused element inside it, such as a row of a tree, and otherwise beside the wrapper. Pair it with a visible `Dropdown` when the same actions must remain discoverable without knowing the shortcut. For touch, [`GestureMenu`](../actions/gestures) adds swipe, double-tap, and long-press shortcuts to the same item model and opens the menu as a bottom sheet on phones and at the finger from 48rem.
+`ContextMenu` opens from the pointer context-menu event, the Context Menu key, or Shift+F10. From the keyboard it opens beside the focused element inside it, such as a row of a tree, and otherwise beside the wrapper. Inside an open dialog the menu stays in that dialog and shows in the top layer, so it opens at the pointer and works in a modal dialog too. Pair it with a visible `Dropdown` when the same actions must remain discoverable without knowing the shortcut. For touch, [`GestureMenu`](../actions/gestures) adds swipe, double-tap, and long-press shortcuts to the same item model and opens the menu as a bottom sheet on phones and at the finger from 48rem.
 
 Labels must describe the action without relying on their icons. External links open in a new tab with the appropriate relationship attributes.
 
