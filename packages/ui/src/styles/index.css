@@ -17898,6 +17898,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui.k2b-context-menu {
   position: fixed;
   z-index: 1001;
+  /* A popover in the top layer: no centring inset or margin of the browser's own. */
+  inset: unset;
   display: flex;
   /* Sized to its longest entry like a dropdown menu; entries wrap only at
      the viewport. */
@@ -17911,6 +17913,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   padding: 0.25rem;
   border: 1px solid var(--k2b-border);
   border-radius: var(--k2b-radius-surface);
+  margin: 0;
+  color: var(--k2b-text);
   background: var(--k2b-surface-elevated);
   box-shadow: var(--k2b-shadow-float);
 }
