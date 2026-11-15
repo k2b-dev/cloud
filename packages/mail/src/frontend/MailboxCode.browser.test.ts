@@ -269,7 +269,8 @@ describe("Mailbox Code page in a browser", () => {
       await dialog.getByRole("button", { name: "Version 5 einschalten" }).click();
       await page.waitForURL(/activated=5/);
       expect(activations).toHaveLength(1);
-      expect(unexpectedRoutes).toEqual([]);
+      // The page's own run updates follow Core's live socket; that is no target preflight.
+      expect(unexpectedRoutes.filter((path) => path !== "/api/ai/live")).toEqual([]);
     } finally {
       await page.context().close();
     }
@@ -382,8 +383,8 @@ describe("Process existing mail in a browser", () => {
         expect({ state, count: await link.count() }).toEqual({ state, count: shown ? 1 : 0 });
         if (shown) {
           expect(await link.getAttribute("href")).toBe("/app/mail/Mb4kd2/code/catch-up");
-          // The line stands after the Code page, where "Incoming mail" stood, without a divider.
-          expect(await page.locator(".cloud-code ~ .mail-code-backfill").count()).toBe(1);
+          // The line ends the Code page's overview, where "Incoming mail" stood, without a divider.
+          expect(await page.locator(".cloud-code .mail-code-backfill").count()).toBe(1);
           expect(await page.locator("main hr").count()).toBe(0);
         }
       } finally {

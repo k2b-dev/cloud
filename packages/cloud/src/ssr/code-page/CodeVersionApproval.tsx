@@ -179,7 +179,7 @@ export function CodeVersionApproval(props: {
           ...(props.words ? { note: { text: props.words.changes.assurance, icon: "ti ti-info-circle" } } : {}),
         }}
         meta={facts()}
-        confirm={phone() ? undefined : switchOn()}
+        confirm={switchOn()}
         unavailable={phone() && canSwitchOn() ? { text: t().phoneShort, icon: "ti ti-device-mobile-off", tone: "warning" } : undefined}
         link={
           props.onPage ? undefined : { label: t().seeAll, href: withQuery(props.data.href, { tab: "versions", version: props.version.id }) }
