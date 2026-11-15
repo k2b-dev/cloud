@@ -1,4 +1,5 @@
 /** Existing line renderer, separated so detailed drawing stays behind lazy chart boundaries. */
+import { tickRoomStyle, tickRooms } from "../../content/chart-tick-room";
 import type { ChartTimeAxis, ChartTimeStep } from "../../content/chart-time-calendar";
 import { lineForecastLayout, lineLegendX } from "./line-options";
 import {
@@ -126,13 +127,19 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
   );
   if (timeAxis) {
     let index = 0;
+    const step = timeStep;
+    const label = (tick: number) => opts.xAxis?.format?.(tick) ?? (step ? chartTimeLabel(tick, step, timeAxis) : String(tick));
+    // A box narrower than the drawing hides every second date first, so dates never meet (`tickRooms`).
+    const rooms = tickRooms(xAxis.ticks.map(x), xAxis.ticks.map(label), width);
     // Edge labels point into the plot, keeping the first date clear of the Y ticks.
     xLabels = xLabels.replace(/<text class="stdlib-chart-tick-label"[^>]*>/g, (tag) => {
       const anchor = index === 0 ? "start" : index === xAxis.ticks.length - 1 ? "end" : "middle";
+      const room = rooms[index] ?? 0;
       index++;
       return tag
         .replace('class="stdlib-chart-tick-label"', 'class="stdlib-chart-tick-label k2b-line-time-tick"')
-        .replace('text-anchor="middle"', `text-anchor="${anchor}"`);
+        .replace('text-anchor="middle"', `text-anchor="${anchor}"`)
+        .replace(/>$/, ` data-time-tick${tickRoomStyle(room)}>`);
     });
   }
   body.push(xLabels);
