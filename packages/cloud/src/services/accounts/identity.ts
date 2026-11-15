@@ -5,9 +5,12 @@ import { EMERGENCY_ADMIN_UID } from "../providers/local/constants";
 
 export type EmergencyIdentityRow = { uid: string; provider: UserProvider; emergency_admin: boolean };
 
-/** The stored marker, local provider and reserved UID identify the emergency account together. */
-export const isEmergencyIdentity = (row: EmergencyIdentityRow): boolean =>
-  row.emergency_admin === true && row.provider === "local" && row.uid === EMERGENCY_ADMIN_UID;
+/** Reserved-name restrictions and the email exemption also apply to unmarked legacy accounts. */
+export const hasReservedEmergencyUid = (row: Pick<EmergencyIdentityRow, "uid" | "provider">): boolean =>
+  row.provider === "local" && row.uid === EMERGENCY_ADMIN_UID;
+
+/** Reviewer exclusion requires the stored marker as well as the reserved local identity. */
+export const isEmergencyIdentity = (row: EmergencyIdentityRow): boolean => row.emergency_admin === true && hasReservedEmergencyUid(row);
 
 /** SQL counterpart of isEmergencyIdentity for a user-table alias. */
 export const emergencyIdentitySql = (alias: string): SQLQuery =>

@@ -14,7 +14,7 @@ import * as settings from "../settings";
 import { buildRoles } from "./authz";
 import { buildBaseUser, resolveProviderProfile } from "./base-user";
 import { managedGroupIdsSubquery, managedGroupsNamesSubquery, recursiveGroupIdsSubquery, recursiveUserGroupsSubquery } from "./group-sql";
-import { type EmergencyIdentityRow, isEmergencyIdentity } from "./identity";
+import { type EmergencyIdentityRow, hasReservedEmergencyUid } from "./identity";
 import { buildIpaUserData, emptyIpaUserData, userIpaDataColumns, userIpaDataJoin } from "./ipa-data";
 import {
   canPersistStoredAdmin,
@@ -619,7 +619,7 @@ export const setExpiry = async (params: {
  * actions stay attributed to the administrator who performs them.
  */
 const emergencyAdminSignInError = (user: EmergencyIdentityRow): MutationResult<never> | null =>
-  isEmergencyIdentity(user)
+  hasReservedEmergencyUid(user)
     ? { ok: false, error: "The emergency admin account has no login tokens or links. Use the admin login token instead.", status: 403 }
     : null;
 

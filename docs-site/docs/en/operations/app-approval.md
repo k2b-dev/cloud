@@ -986,7 +986,9 @@ Returning the account to an ordinary provider or profile ends the marker, so the
 restored human admin counts as a reviewer. An ordinary IPA account named `admin`
 also counts after switching to local Login and receiving admin access. An
 existing emergency account without the marker counts conservatively as an
-ordinary admin until it carries the marker. The emergency admin may self-approve
+ordinary admin until it carries the marker. This conservative reviewer count
+does not change the reserved local account’s sign-in restrictions or its email
+exemption: both also apply without the marker. The emergency admin may self-approve
 only when no active human admin exists, with recent sign-in and the same visible
 self-approval audit and history. An active ordinary bootstrap account such as
 `dev-admin` counts even without a previous sign-in.

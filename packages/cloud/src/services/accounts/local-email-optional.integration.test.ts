@@ -193,13 +193,19 @@ suite("local accounts without email", () => {
         ok: false,
         error: { code: "FORBIDDEN", message: expect.stringContaining("admin login token") },
       });
-      // An unmarked reserved name is an ordinary identity; the same account rules apply.
+      // Reserved-name restrictions and the mail exemption also apply before the identity carries a marker.
       await sql`UPDATE auth.users SET emergency_admin=false WHERE id=${id}::uuid`;
       expect(await update(id, address("ordinary-admin"))).toMatchObject({ ok: true });
-      expect(await accountsAppService.user.createLoginToken({ actor: admin, id })).toMatchObject({ ok: true });
-      expect(await accountsAppService.user.sendLoginLink({ actor: admin, id, notificationSender: sender })).toMatchObject({ ok: true });
-      expect(loginLinks).toHaveLength(1);
-      expect(await update(id, null)).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+      expect(await accountsAppService.user.createLoginToken({ actor: admin, id })).toMatchObject({
+        ok: false,
+        error: { code: "FORBIDDEN" },
+      });
+      expect(await accountsAppService.user.sendLoginLink({ actor: admin, id, notificationSender: sender })).toMatchObject({
+        ok: false,
+        error: { code: "FORBIDDEN" },
+      });
+      expect(loginLinks).toHaveLength(0);
+      expect(await update(id, null)).toMatchObject({ ok: true });
     } finally {
       await sql`UPDATE auth.users SET mail = ${before?.mail ?? null}, emergency_admin=${before?.emergency_admin ?? true} WHERE uid = 'admin'`;
       if (previousToken === undefined) delete process.env.ADMIN_LOGIN_TOKEN;

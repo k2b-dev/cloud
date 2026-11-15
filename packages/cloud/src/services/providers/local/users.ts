@@ -4,7 +4,7 @@ import { sql } from "../../../runtime/clients";
 import { isAccountCategoryAllowed } from "../../account-category-policy";
 import { writeDeletedAccountAudit } from "../../account-lifecycle/audit";
 import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../../accounts/email-write";
-import { type EmergencyIdentityRow, isEmergencyIdentity, ordinaryAccountIdentity } from "../../accounts/identity";
+import { type EmergencyIdentityRow, hasReservedEmergencyUid, ordinaryAccountIdentity } from "../../accounts/identity";
 import { resolveStoredAdminState } from "../../accounts/model";
 import { writeLocalAccount } from "../../accounts/posix";
 import type { AuditActor } from "../../audit";
@@ -30,7 +30,7 @@ export type LocalUserCreateData = {
  * existing accounts stay valid when it is turned off.
  */
 const missingEmailError = async (profile: UserProfile, identity?: EmergencyIdentityRow): Promise<MutationResult<never> | null> => {
-  if (identity && isEmergencyIdentity(identity)) return null;
+  if (identity && hasReservedEmergencyUid(identity)) return null;
   if (profile !== "user") return { ok: false, error: "Guest accounts need an email address.", status: 400 };
   if (await settings.get<boolean>("user.local_email_optional")) return null;
   return {
