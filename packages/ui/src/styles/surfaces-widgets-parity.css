@@ -2168,6 +2168,13 @@
   line-height: 1.25rem;
 }
 
+/* Under a body that reaches the frame's edges, such as a table, the line does too, below the table's own line. */
+:where(.k2b-ui) .k2b-dashboard-frame__stack + .k2b-dashboard-frame__footer {
+  margin: 1rem -1rem -1rem;
+  padding: 0.5rem 1rem 0.625rem;
+  box-shadow: inset 0 1px 0 var(--k2b-border);
+}
+
 /* Try again inside a line of text: underlined like every link in running text, and never taller than the line. */
 :where(.k2b-ui) .k2b-dashboard-frame__link {
   display: inline;
