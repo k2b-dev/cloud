@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { AiDraftContentPart } from "./types";
 
-/** Admission limit for the existing personal composer queue. */
+/**
+ * Personal-chat contract: bound waiting follow-ups to 20 per chat and reject
+ * overload without dropping accepted entries. Automation capacity is separate.
+ */
 export const AI_MESSAGE_QUEUE_LIMIT = 20;
 
 /** Server-authored display metadata. href is projected for the current viewer. */

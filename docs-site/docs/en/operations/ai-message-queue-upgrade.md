@@ -21,6 +21,11 @@ Existing queues above 20 remain intact and readable. New entries are refused
 until fewer than 20 remain; no migration deletes or reorders them. Legacy
 entries without provenance are attributed to their chat owner.
 
+Automations as Code will add separate automation capacity: up to 32 entries
+per chat and one waiting entry per source (Code or source chat). Those slots
+will preserve the person's 20 places. This automation queue comes with
+Automations as Code in a later upgrade.
+
 A send-now request is durable before its control signal is published. A worker
 finishes its started effect before stopping, and its existing lease heartbeat
 recovers missed control delivery. Pending client effects retain the existing

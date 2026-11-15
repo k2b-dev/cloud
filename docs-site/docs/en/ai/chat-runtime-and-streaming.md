@@ -29,13 +29,18 @@ and exact attachment bytes. Repeating the same `queueId` is idempotent, includin
 after the message has started. A later composer draft remains independent.
 
 The personal composer queue accepts up to 20 pending or failed messages per
-conversation. Queued attachment
-snapshots share a 250 MiB budget. The existing turn worker processes messages in
+conversation. Queued attachment snapshots share a 250 MiB budget. The existing turn worker processes messages in
 acceptance order, one active turn per conversation. Queues survive navigation,
 reloads and worker restarts. Completion, failure or cancellation of a turn allows
 the next queued message to start; a dispatch failure keeps the failed entry at the
 head until the user retries or removes it. Approval waits keep the current turn
 active and do not advance the queue.
+
+With **Automations as Code**, automation messages will use a separate queue:
+up to **32 entries per chat**, with at most **one waiting entry per source**
+(Code or source chat). These entries will have their own capacity, preserving
+the person's 20 places. The automation queue will arrive with Automations as
+Code; the personal queue described here is available independently.
 
 The owner-authorized queue API provides:
 
