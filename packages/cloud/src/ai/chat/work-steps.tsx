@@ -183,15 +183,25 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
   });
   const shown = () => lines().filter(Boolean);
   const checkable = () => failure() === "unknown" && !settled() && work.turnId() !== undefined;
+  // A step that waits for the person leads to its approval or question, with the landing of "Waiting for you".
+  const chatActions = useAiChatActions();
+  const showable = () => waitsForUser(props.block) && Boolean(chatActions.onShowQuestion);
   // Built once: the card keeps its content and its check button while the step updates around them.
   const content = <For each={shown()}>{(line) => <p class="ai-step-card__line">{line}</p>}</For>;
   const actions = (
-    <Show when={checkable() ? work.turnId() : undefined}>
-      {(turnId) => <StepCheck block={props.block} turnId={turnId()} onChecked={setChecked} />}
-    </Show>
+    <>
+      <Show when={checkable() ? work.turnId() : undefined}>
+        {(turnId) => <StepCheck block={props.block} turnId={turnId()} onChecked={setChecked} />}
+      </Show>
+      <Show when={showable()}>
+        <Button size="sm" variant="secondary" onClick={() => chatActions.onShowQuestion?.(props.block.id)}>
+          {props.block.status === "awaiting_approval" ? t().stepShowApproval : t().stepShowQuestion}
+        </Button>
+      </Show>
+    </>
   );
   const info = createMemo((): ChatActivityInfo | undefined =>
-    shown().length > 0 || checkable()
+    shown().length > 0 || checkable() || showable()
       ? {
           label: t().stepDetails({ step: label() }),
           title: label(),

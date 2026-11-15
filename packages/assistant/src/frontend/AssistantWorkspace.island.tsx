@@ -1134,7 +1134,7 @@ export default function AssistantWorkspace(props: Props) {
   });
   let questionJump = 0;
   /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
-  const jumpToQuestion = async (question: AiOpenQuestion) => {
+  const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor">) => {
     const jump = ++questionJump;
     // The question replaces any message the chat was opened at, also after a reload.
     const reveal = ++revealRequest;
@@ -2913,6 +2913,10 @@ export default function AssistantWorkspace(props: Props) {
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",
                                     onCheckAction: (request) => chat.checkAction(request),
+                                    onShowQuestion: (anchor) => {
+                                      const conversationId = chat.activeConversationId();
+                                      if (conversationId) void jumpToQuestion({ conversationId, anchor });
+                                    },
                                     onApproval: async (request, input) => {
                                       if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
                                     },

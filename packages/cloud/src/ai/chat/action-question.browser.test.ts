@@ -557,3 +557,27 @@ describe("a step whose outcome Cloud could not see", () => {
       }
     }, 30_000);
 });
+
+test("a step that waits for an approval leads to it from its card", async () => {
+  const { page, errors, close } = await open(VIEWS[0], "scenarios=mail");
+  try {
+    await page.locator(".ai-turn-work > summary").click();
+    await settled(page);
+    const step = page.locator(".ai-turn-steps > .k2b-chat-activity", { has: page.locator('.k2b-chat-activity__meta[data-tone="ai"]') });
+    expect(await step.locator(".k2b-chat-activity__meta").innerText()).toBe("Wartet auf dich");
+    await step.getByRole("button", { name: /^Details: / }).click();
+    const card = page.locator(".k2b-hover-card:popover-open");
+    await card.waitFor();
+    await card.getByRole("button", { name: "Zur Freigabe" }).click();
+    // The host lands on the question's anchor, the step's block id, with the landing of "Waiting for you".
+    expect(await page.evaluate(() => (window as unknown as { shownQuestions: string[] }).shownQuestions)).toEqual([
+      await page
+        .locator(".k2b-chat-decision")
+        .first()
+        .evaluate((node) => node.closest("[data-chat-anchor]")?.getAttribute("data-chat-anchor") ?? ""),
+    ]);
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+}, 30_000);

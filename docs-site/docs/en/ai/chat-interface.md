@@ -321,7 +321,10 @@ order:
    consequence, or the whole text of a note, stand in a card behind its ⓘ; the
    row itself never opens. A step whose outcome Cloud could not see offers
    **Check status** in its card, which runs the review's check once per press,
-   like **Check again**. The running step's duration counts on the work clock;
+   like **Check again**. A step that waits for the person leads to its
+   approval or question from its card, **Go to the approval** or **Go to the
+   question**, through `onShowQuestion`, which the Assistant connects to the
+   landing of "Waiting for you". The running step's duration counts on the work clock;
    finished steps show none, since blocks carry no start time. A long list
    opens on its newest six rows after one row "Show n earlier steps", which
    opens the earlier ones in place; while the list is open it only grows, and
