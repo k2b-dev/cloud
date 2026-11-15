@@ -396,6 +396,9 @@
 .core-code-approvals__go {
   color: var(--k2b-text-muted);
 }
+.core-code-approvals__close {
+  display: inline-flex;
+}
 .core-code-approvals__position {
   display: inline-flex;
   align-items: center;
@@ -423,7 +426,7 @@
     display: none;
   }
   /* On a phone the head's back arrow closes; the count and arrows keep their room. */
-  .k2b-ui .core-code-approvals__position > :last-child {
+  .core-code-approvals__close {
     display: none;
   }
 }

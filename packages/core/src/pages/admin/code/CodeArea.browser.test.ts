@@ -79,6 +79,8 @@ test("a review opens at its head with one row of tabs, and the approval with thr
     for (const name of ["Ablehnen …", "Änderungen anfordern …", "Version 3 freigeben"])
       expect(await page.getByRole("button", { name }).count()).toBe(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    // A phone closes the review with the head's back arrow; the close button shows only beside the columns.
+    expect(await page.getByRole("link", { name: "Schließen, zurück zur Liste" }).isVisible()).toBe(viewport.width > 600);
   }
 }, 30_000);
 

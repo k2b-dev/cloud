@@ -501,14 +501,17 @@ export function CodeAreaView(props: Props) {
     const list = ok(data.approvals) ? data.approvals.items : [];
     const index = list.findIndex((entry) => entry.versionId === query.id);
     const detail = ok(data.approval) ? data.approval : null;
+    // Its own wrapper: on a phone the head's back arrow closes, and only this wrapper's display hides the button.
     const close = (
-      <IconButtonLink
-        label={r.close}
-        size="sm"
-        href={codeAreaHref(detail && detail.status !== "pending" ? { sec: "approvals", tab: "decided" } : { sec: "approvals" })}
-      >
-        <i class="ti ti-x" aria-hidden="true" />
-      </IconButtonLink>
+      <span class="core-code-approvals__close">
+        <IconButtonLink
+          label={r.close}
+          size="sm"
+          href={codeAreaHref(detail && detail.status !== "pending" ? { sec: "approvals", tab: "decided" } : { sec: "approvals" })}
+        >
+          <i class="ti ti-x" aria-hidden="true" />
+        </IconButtonLink>
+      </span>
     );
     if (index < 0) return close;
     const previous = list[index - 1];
