@@ -21,7 +21,7 @@ import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatT
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
-import { AiAnswerSources, AiAppTile, answerSources } from "./answer-sources";
+import { AiAnswerSources, answerSources } from "./answer-sources";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
@@ -37,8 +37,8 @@ import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } fr
 import { aiTurnErrorCanContinue } from "./turn-error";
 import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
-import { AiThoughtStep, AiWorkFollowedContext, AiWorkStep, keepsStepDetail } from "./work-steps";
-import { AI_WORK_APP_TILES, workApps, workStepLine, workStepParts, workSummary } from "./work-summary";
+import { AiNoteStep, AiThoughtStep, AiWorkContext, type AiWorkContextValue, AiWorkStep, keepsStepDetail } from "./work-steps";
+import { workStepLine, workStepParts, workSummary } from "./work-summary";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type Messages = ReturnType<typeof aiChatMessages>;
@@ -187,7 +187,6 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const duration = segment().duration();
     return !segment().earlier && duration && duration.workedMs > 0 ? duration.workedMs : null;
   };
-  const apps = createMemo(() => workApps(layout().work));
   const summary = createMemo(() => (isLive(segment().phase) ? "" : workSummary(layout().work, locale())));
   const ending = () => {
     const phase = segment().phase;
@@ -205,12 +204,12 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     if (ending() === "failed") return t().workedInterrupted({ duration: short });
     return short ? t().workedFor({ duration: short }) : t().worked;
   };
-  /** After a finished turn's sentence: its steps, what did not go through, and how it ended. */
+  /** In meta after a finished turn: its steps, what did not go through, and how it ended. */
   const stepParts = () => {
     if (isLive(segment().phase) || (!layout().steps && !summary())) return null;
     const parts = workStepParts(layout().work, layout().steps, locale());
     const ended = summary() && ending() ? (ending() === "stopped" ? t().workEndedStopped : t().workEndedInterrupted) : "";
-    return { count: parts.count, issues: [...parts.issues, ended].filter(Boolean).join(", ") };
+    return { count: parts.count, issues: ended ? [...parts.issues, { text: ended }] : parts.issues };
   };
   const ariaLabel = () => {
     if (isLive(segment().phase)) return undefined;
@@ -229,7 +228,13 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const index = work.findIndex((block) => block.id === id);
     return (index >= 0 && index < work.length - 1) || layout().text.length > 0 || segment().phase === "completed";
   };
-  const steps = () => <AiWorkSteps blocks={layout().work} active={working()} followed={followed} />;
+  const work: AiWorkContextValue = {
+    followed,
+    ending,
+    liveDuration: () => (working() ? formatWorkDuration(Math.max(1000, stepMs()), t()) : undefined),
+    turnId: () => segment().turnId,
+  };
+  const steps = () => <AiWorkSteps blocks={layout().work} active={working()} work={work} />;
   /** The time beside the sentence, in tabular figures: the work time while it runs, how long it waits, or the total. */
   const time = () => {
     const duration = segment().duration();
@@ -243,37 +248,32 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     <AiToolActivity
       blockId={`work:${segment().id}`}
       class="ai-turn-work"
-      label={
-        <span class="ai-turn-work__text">
-          <span class="ai-turn-work__sentence k2b-truncate-fade">{sentence()}</span>
-          <Show when={stepParts()}>
-            {(parts) => (
-              <span class="ai-turn-work__steps" data-issues={parts().issues ? "" : undefined}>
-                {" · "}
-                <span class="ai-turn-work__count">{parts().count}</span>
-                <Show when={parts().issues}>
-                  <span class="ai-turn-work__count">, </span>
-                  <span>{parts().issues}</span>
-                </Show>
-              </span>
-            )}
-          </Show>
-        </span>
-      }
+      label={<span class="ai-turn-work__sentence">{sentence()}</span>}
       ariaLabel={ariaLabel()}
-      leading={
-        <span class="ai-turn-work__lead">
-          <i class={waiting() ? "ti ti-hand-stop" : "ti ti-sparkles"} />
-          <For each={apps().slice(0, AI_WORK_APP_TILES)}>{(app) => <AiAppTile icon={app.icon} accent={app.accent} />}</For>
-        </span>
-      }
+      icon={waiting() ? "ti ti-hand-stop" : "ti ti-sparkles"}
       tone="ai"
       busy={working()}
-      trailing={
-        <Show when={time()}>
-          <span class="ai-turn-work__meta">{time()}</span>
+      meta={
+        <Show when={stepParts()}>
+          {(parts) => (
+            <span class="ai-turn-work__steps" data-issues={parts().issues.length > 0 ? "" : undefined}>
+              <span class="ai-turn-work__count">
+                {parts().count}
+                {parts().issues.length > 0 ? " · " : ""}
+              </span>
+              <For each={parts().issues}>
+                {(issue, index) => (
+                  <>
+                    {index() > 0 ? " · " : ""}
+                    <span data-tone={issue.tone}>{issue.text}</span>
+                  </>
+                )}
+              </For>
+            </span>
+          )}
         </Show>
       }
+      duration={time() || undefined}
       bodyInset={false}
       // Nothing to open before the first step, so no chevron yet. Read through a memo, so the open list is built once
       // and never rebuilt while the turn updates.
@@ -329,9 +329,8 @@ function HousekeepingGroup(props: { id: string; entries: AiWorkEntry[]; active: 
     <AiToolActivity
       blockId={`group:${props.id}`}
       label={aiChatMessages(locale()).groupLoad}
-      trailing={<span class="ai-turn-work__meta">{countWorkSteps(props.entries, locale())}</span>}
+      meta={countWorkSteps(props.entries, locale())}
       icon="ti ti-stack-2"
-      bodyInset={false}
       busy={props.active && last().kind === "tool" && (last() as ToolBlock).status === "running"}
       renderBody={() => <WorkEntries entries={props.entries} active={props.active} />}
     />
@@ -351,9 +350,9 @@ function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry
       blockId={`repeat:${props.id}`}
       label={first().presentation?.title ?? displayToolName(first().name, locale())}
       description={props.target}
-      trailing={<span class="ai-turn-work__meta">{aiChatMessages(locale()).repeatCount({ count: tools().length })}</span>}
+      meta={aiChatMessages(locale()).repeatCount({ count: tools().length })}
       icon={aiToolIcon(first().name, first().presentation?.appIcon)}
-      bodyInset={false}
+      accent={first().presentation?.appAccent}
       busy={props.active && tools().at(-1)?.status === "running"}
       renderBody={() => <WorkEntries entries={props.entries} active={props.active} />}
     />
@@ -443,37 +442,18 @@ function AiClampedText(props: { html: string; clamp: boolean; reset?: unknown })
 }
 
 /**
- * What Gustav wrote between two steps, kept at the step it followed as a note: one quiet line "Note on this step" that
- * opens the text in place, again at most three lines with its chevron for the rest (Bauplan 3o). Nothing is lost, and
- * the opened work stays a list of steps.
+ * What Gustav wrote between two steps: a step of its own, "Thought it over", with the whole text in its card, where a
+ * long text scrolls. The opened work stays a list of one-line steps.
  */
-function WorkText(props: { text: string; noteId: string }) {
+function WorkNote(props: { text: string }) {
   const locale = useLocale();
-  const id = createUniqueId();
-  // The reader's choice survives the work line closing and a reload, like every other disclosure in the turn.
-  const disclosure = useAiToolDisclosure(() => props.noteId);
-  const open = () => disclosure.open() === true;
   // Render Markdown only when the text itself changes, not on every update of the turn around it.
   const text = createMemo(() => props.text);
   const html = createMemo(() => markdown.renderSync(text(), { locale: locale() }));
   return (
-    <div class="ai-turn-steps__text ai-turn-note" data-open={open() ? "" : undefined}>
-      <button
-        type="button"
-        class="ai-turn-note__toggle"
-        aria-expanded={open() ? "true" : "false"}
-        aria-controls={id}
-        onClick={() => disclosure.onOpenChange(!open())}
-      >
-        <i class="ti ti-chevron-right" aria-hidden="true" />
-        {aiChatMessages(locale()).stepNote}
-      </button>
-      <div id={id} class="ai-turn-note__body" hidden={!open()}>
-        <Show when={open()}>
-          <AiClampedText html={html()} clamp />
-        </Show>
-      </div>
-    </div>
+    <AiNoteStep label={aiChatMessages(locale()).stepThought} busy={false}>
+      <AssistantMarkdownBlock html={html()} />
+    </AiNoteStep>
   );
 }
 
@@ -486,13 +466,36 @@ const workItemKey = (item: AiWorkItem): string =>
         ? `repeat:${item.id}`
         : `group:${item.id}`;
 
+/** On opening, a long list shows its newest rows; the earlier ones wait behind one row in the same form. */
+const AI_WORK_SHOWN_ROWS = 6;
+
+/** One row of the opened work: a step, a note, or a folded group, keyed so it keeps its element while it updates. */
+function WorkItemRow(props: { item: AiWorkItem | undefined; active: boolean }) {
+  const text = () => (props.item?.kind === "text" ? props.item.block.text : undefined);
+  const step = () => (props.item?.kind === "step" ? props.item.entry : undefined);
+  const group = () => (props.item?.kind === "housekeeping" ? props.item : undefined);
+  const repeat = () => (props.item?.kind === "repeat" ? props.item : undefined);
+  return (
+    <Switch>
+      <Match when={text()}>{(value) => <WorkNote text={value()} />}</Match>
+      <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={props.active} />}</Match>
+      <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={props.active} />}</Match>
+      <Match when={repeat()}>
+        {(value) => <RepeatedSteps id={value().id} target={value().target} entries={value().entries} active={props.active} />}
+      </Match>
+    </Switch>
+  );
+}
+
 /**
- * Expanded work, at the work line's indent and one size: intermediate texts as quiet paragraphs, the steps between
- * them directly, and housekeeping or repeated steps folded at step level. A row shown while this list is open never
+ * Expanded work, at the work line's edge and on its grid: one row per step, Gustav's notes as steps of their own, and
+ * housekeeping or repeated steps folded into groups that open in place. A row shown while this list is open never
  * folds away under the reader, also when reasoning or arguments that would fold it arrive later; the next time it
- * opens, it folds like in history.
+ * opens, it folds like in history. A long list opens on its newest rows, after one row "Show n earlier steps"; while
+ * it is open it only grows, and that row stays as it was.
  */
-function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; followed: (id: string) => boolean }) {
+function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; work: AiWorkContextValue }) {
+  const locale = useLocale();
   const shown = new Set<string>();
   const items = createMemo(() => {
     const work = groupWorkBlocks(props.blocks, shown);
@@ -500,43 +503,30 @@ function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; followed: 
     return new Map(work.map((item) => [workItemKey(item), item]));
   });
   const keys = createMemo(() => [...items().keys()]);
+  // Counted once, when the list opens.
+  const earlier = untrack(() => Math.max(0, keys().length - AI_WORK_SHOWN_ROWS));
+  const row = (key: string, index: () => number) => (
+    <WorkItemRow item={items().get(key)} active={props.active && index() === keys().length - 1} />
+  );
   return (
-    <AiWorkFollowedContext.Provider value={props.followed}>
+    <AiWorkContext.Provider value={props.work}>
       <div class="ai-turn-steps">
-        <For each={keys()}>
-          {(key, index) => {
-            const item = () => items().get(key);
-            const text = () => {
-              const value = item();
-              return value?.kind === "text" ? value.block.text : undefined;
-            };
-            const step = () => {
-              const value = item();
-              return value?.kind === "step" ? value.entry : undefined;
-            };
-            const group = () => {
-              const value = item();
-              return value?.kind === "housekeeping" ? value : undefined;
-            };
-            const repeat = () => {
-              const value = item();
-              return value?.kind === "repeat" ? value : undefined;
-            };
-            const active = () => props.active && index() === keys().length - 1;
-            return (
-              <Switch>
-                <Match when={text()}>{(value) => <WorkText text={value()} noteId={`note:${key}`} />}</Match>
-                <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={active()} />}</Match>
-                <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={active()} />}</Match>
-                <Match when={repeat()}>
-                  {(value) => <RepeatedSteps id={value().id} target={value().target} entries={value().entries} active={active()} />}
-                </Match>
-              </Switch>
-            );
-          }}
-        </For>
+        <Show when={earlier > 0}>
+          <Chat.Activity
+            class="ai-turn-steps__earlier"
+            icon="ti ti-history"
+            label={aiChatMessages(locale()).stepsEarlier({ count: earlier })}
+            bodyInset={false}
+            renderBody={() => (
+              <div class="ai-turn-steps">
+                <For each={keys().slice(0, earlier)}>{(key, index) => row(key, index)}</For>
+              </div>
+            )}
+          />
+        </Show>
+        <For each={keys().slice(earlier)}>{(key, index) => row(key, () => index() + earlier)}</For>
       </div>
-    </AiWorkFollowedContext.Provider>
+    </AiWorkContext.Provider>
   );
 }
 

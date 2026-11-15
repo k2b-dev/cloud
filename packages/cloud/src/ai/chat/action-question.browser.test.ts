@@ -513,3 +513,47 @@ describe("complete review proposal", () => {
       }, 30_000);
     }
 });
+
+describe("a step whose outcome Cloud could not see", () => {
+  for (const view of [VIEWS[0], VIEWS[1]])
+    test(`says so in meta, and its card offers Check status only on a press or Enter (${view.name})`, async () => {
+      const { page, errors, close } = await open(view, "scenarios=mail&state=pending");
+      try {
+        await page.locator(".ai-turn-work > summary").click();
+        await settled(page);
+        const step = page.locator(".ai-turn-steps > .k2b-chat-activity", {
+          has: page.locator('.k2b-chat-activity__meta[data-tone="warning"]'),
+        });
+        expect(await step.locator(".k2b-chat-activity__meta").innerText()).toBe("Ausgang unklar");
+        const info = step.getByRole("button", { name: /^Details: / });
+        expect(await info.getAttribute("aria-haspopup")).toBe("dialog");
+        const card = page.locator(".k2b-hover-card:popover-open");
+        if (!view.touch) {
+          // A resting pointer opens no card with an action.
+          await info.hover();
+          await page.waitForTimeout(700); // fixed wait: nothing may open, so there is no event to await
+          expect(await card.count()).toBe(0);
+        }
+        // Enter on a phone stands for the tap that opens it as a sheet; the focus moves in and Escape brings it back.
+        await info.focus();
+        await page.keyboard.press("Enter");
+        await card.waitFor();
+        if (view.touch) expect(await card.getAttribute("data-sheet")).toBe("");
+        expect(await card.innerText()).toContain("Ob das geschehen ist, steht nicht fest.");
+        const check = card.getByRole("button", { name: "Stand prüfen" });
+        await check.waitFor();
+        expect(await page.evaluate(() => document.querySelector(".k2b-hover-card:popover-open")?.contains(document.activeElement))).toBe(
+          true,
+        );
+        await check.click();
+        await page.waitForFunction(() => (window as unknown as { checks: string[] }).checks.length === 1);
+        await page.keyboard.press("Escape");
+        await card.waitFor({ state: "detached" }).catch(() => undefined);
+        expect(await page.locator(".k2b-hover-card:popover-open").count()).toBe(0);
+        expect(await info.evaluate((node) => node === document.activeElement)).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await close();
+      }
+    }, 30_000);
+});

@@ -67,12 +67,22 @@ const failureCode = (tool: ToolBlock): string | null => {
   return typeof code === "string" ? code.toUpperCase() : null;
 };
 
-/** Why a failed call did not go through, as a kind the chat words itself; codes and messages never reach the person. */
-export type AiStepFailure = "denied" | "not_found" | "timeout" | "other";
+/**
+ * Codes that say Cloud could not see whether an Action happened; nothing may repeat it blindly. Core rewrites a failure
+ * after it reached the app to ACTION_OUTCOME_UNKNOWN.
+ */
+export const OUTCOME_UNKNOWN_CODES = new Set(["ACTION_OUTCOME_UNKNOWN", "IDEMPOTENCY_UNCERTAIN", "IDEMPOTENCY_IN_PROGRESS"]);
+
+/**
+ * Why a failed call did not go through, as a kind the chat words itself; codes and messages never reach the person.
+ * `unknown`: Cloud could not see whether it happened.
+ */
+export type AiStepFailure = "denied" | "not_found" | "timeout" | "unknown" | "other";
 
 export const stepFailure = (tool: ToolBlock): AiStepFailure | null => {
   if (!isFailedTool(tool)) return null;
   const code = failureCode(tool) ?? "";
+  if (OUTCOME_UNKNOWN_CODES.has(code)) return "unknown";
   if (/^(?:FORBIDDEN|UNAUTHORIZED|ACCESS_DENIED|PERMISSION_DENIED)$/.test(code)) return "denied";
   if (/^(?:NOT_FOUND|GONE)$/.test(code)) return "not_found";
   if (/TIMEOUT|DEADLINE/.test(code)) return "timeout";
@@ -122,28 +132,31 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
   return sentence ? sentence.charAt(0).toLocaleUpperCase(locale) + sentence.slice(1) : "";
 };
 
+/** One part of the step meta that names an outcome needing attention, in its colour: a failure red, the rest in warning. */
+export type AiWorkIssue = { text: string; tone?: "danger" | "warning" };
+
 /**
- * The step line after the sentence: how many steps, and what did not go through. Thinking counts as a step, like in the
- * opened list. `issues` stays visible where the count gives way to the sentence.
+ * The work line's meta: how many steps, and what did not go through. Thinking counts as a step, like in the opened
+ * list. On a phone `issues` stays where the count gives way to the sentence.
  */
-export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: string): { count: string; issues: string[] } => {
+export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: string): { count: string; issues: AiWorkIssue[] } => {
   const t = aiChatMessages(locale);
   const thoughts = blocks.filter((block) => block.kind === "thinking" && block.text.trim()).length;
   const calls = tools(blocks);
-  const denied = calls.filter(isAccessDenied).length;
-  const failed = calls.filter(isFailedTool).length - denied;
+  const failures = calls.map(stepFailure);
+  const denied = failures.filter((kind) => kind === "denied").length;
+  const unclear = failures.filter((kind) => kind === "unknown").length;
+  const failed = failures.filter((kind) => kind !== null).length - denied - unclear;
   const rejected = calls.filter((tool) => tool.status === "rejected").length;
-  return {
-    count: t.steps({ count: steps + thoughts }),
-    issues: [
-      denied ? t.workNoAccess({ count: denied }) : "",
-      failed ? t.workFailed({ count: failed }) : "",
-      rejected ? t.workRejected({ count: rejected }) : "",
-    ].filter(Boolean),
-  };
+  const issues: AiWorkIssue[] = [];
+  if (failed) issues.push({ text: t.workFailed({ count: failed }), tone: "danger" });
+  if (unclear) issues.push({ text: t.workUnclear({ count: unclear }), tone: "warning" });
+  if (denied) issues.push({ text: t.workNoAccess({ count: denied }), tone: "warning" });
+  if (rejected) issues.push({ text: t.workRejected({ count: rejected }) });
+  return { count: t.steps({ count: steps + thoughts }), issues };
 };
 
 export const workStepLine = (blocks: AiTurnBlock[], steps: number, locale: string): string => {
   const parts = workStepParts(blocks, steps, locale);
-  return [parts.count, ...parts.issues].join(", ");
+  return [parts.count, ...parts.issues.map((issue) => issue.text)].join(", ");
 };

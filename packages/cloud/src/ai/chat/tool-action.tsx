@@ -13,15 +13,14 @@ import { capabilityErrorDescription, isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
 import { legacyOutcomeWords } from "./tool-action-words";
 import type { AiTurnActionState, AiTurnPhase } from "./turn-layout";
+import { OUTCOME_UNKNOWN_CODES } from "./work-summary";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
 /**
- * Codes that say Cloud could not see whether the Action happened; nothing may repeat it blindly. Core rewrites a
- * failure after it reached the app to ACTION_OUTCOME_UNKNOWN, so a bare transport code such as APP_UNAVAILABLE failed
- * before the app saw anything, or comes from older history; either way it reads as a failure with its message.
+ * A bare transport code such as APP_UNAVAILABLE failed before the app saw anything, or comes from older history; either
+ * way it reads as a failure with its message, never as an unknown outcome (`OUTCOME_UNKNOWN_CODES`).
  */
-const UNKNOWN_CODES = new Set(["ACTION_OUTCOME_UNKNOWN", "IDEMPOTENCY_UNCERTAIN", "IDEMPOTENCY_IN_PROGRESS"]);
 
 /** Cloud's own transport codes: they say the call failed, not that the app refused it, so they never claim "not run". */
 const TRANSPORT_CODES = new Set([
@@ -103,7 +102,7 @@ const flowOf = (input: {
   if (input.state === "failed") {
     const code = toolErrorCode(block.result);
     if (code === "ACTION_NOT_DONE") return { flow: "check", current: "checkedNotDone" };
-    if (code && UNKNOWN_CODES.has(code)) {
+    if (code && OUTCOME_UNKNOWN_CODES.has(code)) {
       return { flow: "check", current: "noCheck" };
     }
     // A failure with an app's code was refused before anything happened; a transport code or none proves nothing.

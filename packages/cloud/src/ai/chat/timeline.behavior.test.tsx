@@ -28,10 +28,8 @@ import { aiTurnErrorText } from "./turn-error";
     dom.root,
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
-  // Text between steps is a note at its step; opened, every text shows exactly once.
+  // Text between steps is a step of its own whose card holds the text; every text shows exactly once.
   const openNotes = async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    for (const toggle of dom.root.querySelectorAll<HTMLButtonElement>('.ai-turn-note__toggle[aria-expanded="false"]')) toggle.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
   try {
@@ -518,7 +516,7 @@ const renderTimeline = async (
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
   const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
-  const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const clock = () => workLine()?.querySelector(".k2b-chat-activity__duration")?.textContent?.trim();
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {
     emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
@@ -578,7 +576,7 @@ const renderTimeline = async (
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
   const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
-  const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const clock = () => workLine()?.querySelector(".k2b-chat-activity__duration")?.textContent?.trim();
   const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/a.csv" } };
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {
