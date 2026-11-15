@@ -5,8 +5,11 @@ import type { ActionCard, ActionText } from "../ai/chat/action-card";
 import { toolActionCard } from "../ai/chat/action-card";
 import type { ActionLine } from "../ai/chat/action-question";
 import { actionFixtures, FIXTURE_AT } from "../ai/chat/action-question.fixtures";
+import { AiTurnBlockView } from "../ai/chat/blocks";
 import { legacyOutcomeWords } from "../ai/chat/tool-action-words";
 import { CloudSurveyBlock } from "../ai/chat/visual-tools";
+import { chartToolResult } from "../ai/gustav-views";
+import { capabilityResultView } from "../ai/result-view";
 import type { ApprovalPage } from "../contracts/approvals";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import { ApprovalCard } from "./ApprovalCard";
@@ -198,6 +201,41 @@ const scenes: Record<string, () => JSX.Element> = {
     </>
   ),
   // The frame a Code version fills (Gustav v12, version card): data only, no Capability.
+  // Gustav's own chart (v12 06): the same island under Cloud's head as an app's result, with Gustav as its origin.
+  gustav: () => {
+    const args = {
+      kind: "line",
+      title: "Gesamtsaldo",
+      subtitle: "letzte 6 Monate, in Tausend Euro",
+      area: true,
+      series: [
+        {
+          label: "Saldo",
+          data: [13.4, 14.1, 13.2, 14.2, 15, 15.5].map((y, index) => ({ x: `2026-${String(index + 6).padStart(2, "0")}-01`, y })),
+        },
+      ],
+    };
+    const result = chartToolResult(args);
+    return (
+      <>
+        <Label>Gustavs Diagramm</Label>
+        <AiTurnBlockView
+          turnId="turn-1"
+          block={{
+            id: "tool-chart",
+            kind: "tool",
+            callId: "chart-1",
+            name: "chart",
+            args,
+            status: "completed",
+            at: FIXTURE_AT,
+            result,
+            view: capabilityResultView(result) ?? undefined,
+          }}
+        />
+      </>
+    );
+  },
   // Gustav's own question with options (v12 07): the same flat choice as a view's.
   survey: () => (
     <>

@@ -21,6 +21,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { AiReaderTimeZoneProvider } = await import("./action-sentences");
 const { AiTurnBlockView } = await import("./blocks");
 const { capabilityResultView } = await import("../result-view");
+const { chartToolResult } = await import("../gustav-views");
 const { AiChatActionsProvider } = await import("./message-actions");
 const { createAiChatTimeline } = await import("./presentation");
 const { AiTurnView } = await import("./turn-view");
@@ -79,6 +80,44 @@ const block = (status: "running" | "awaiting_approval" | "completed" | "failed")
     title: "List contacts",
     capabilityKind: "query",
   },
+});
+
+describe("Gustav's own charts", () => {
+  const revenue = {
+    kind: "bar",
+    title: "Revenue per month",
+    subtitle: "EUR, 2026",
+    data: [
+      { label: "Jan", value: 1200 },
+      { label: "Feb", value: 980 },
+    ],
+  };
+  const chartBlock = (result: unknown): AiTurnBlock => ({
+    id: "tool-chart",
+    kind: "tool",
+    callId: "chart-1",
+    name: "chart",
+    args: revenue,
+    status: "completed",
+    result,
+    view: capabilityResultView(result) ?? undefined,
+  });
+  test("a chart whose result carries its view stands under Cloud's head with Gustav as its origin", () => {
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: chartBlock(chartToolResult(revenue)), turnId: "turn-1" }));
+    expect(html).toContain('class="cloud-capability-view"');
+    expect(html).toContain("<strong>Gustav</strong>");
+    expect(html).toContain("· Revenue per month");
+    expect(html).toContain('aria-label="Open large"');
+    expect(html).toContain('aria-label="Show data"');
+    expect(html).toContain('data-kind="Chart"');
+    // No step row of its own above the view.
+    expect(html).not.toContain("k2b-chat-activity");
+  });
+  test("an older stored chart without a view keeps its own drawing", () => {
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: chartBlock({ displayed: true }), turnId: "turn-1" }));
+    expect(html).not.toContain("cloud-capability-view");
+    expect(html).toContain("Revenue per month");
+  });
 });
 
 describe("capability tool presentation", () => {

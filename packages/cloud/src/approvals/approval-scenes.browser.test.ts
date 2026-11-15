@@ -101,7 +101,7 @@ const open = async (scene: string, width: number, theme: "light" | "dark" = "lig
     });
   });
   await page.goto(`${origin}/?scene=${scene}`);
-  await page.locator(".k2b-chat-decision, .cloud-blocks__choice").first().waitFor();
+  await page.locator(".k2b-chat-decision, .cloud-blocks__choice, .cloud-capability-view").first().waitFor();
   await settled(page);
   return page;
 };
@@ -122,6 +122,32 @@ const shot = async (page: Page, name: string) => {
 const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 describe("Approval scenes", () => {
+  for (const width of [1440, 390])
+    test(`Gustav's chart at ${width} px is an island under Cloud's head, like an app's result`, async () => {
+      const page = await open("gustav", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        await page.locator('.cloud-blocks__cell[data-kind="Chart"] .k2b-dashboard-frame').first().waitFor();
+        await settled(page);
+        const look = await page.evaluate(() => {
+          const head = document.querySelector(".cloud-capability-view__head");
+          const frame = document.querySelector<HTMLElement>('.cloud-blocks__cell[data-kind="Chart"] .k2b-dashboard-frame');
+          return {
+            head: head?.textContent?.replace(/\s+/g, " ").trim(),
+            tools: [...(head?.querySelectorAll("button") ?? [])].map((button) => button.getAttribute("aria-label")),
+            island: frame ? getComputedStyle(frame).boxShadow !== "none" || getComputedStyle(frame).borderTopWidth !== "0px" : false,
+          };
+        });
+        await shot(page, `06-gustav-diagramm-light-${width}`);
+        expect(look.head).toContain("Gustav");
+        expect(look.head).toContain("Gesamtsaldo");
+        expect(look.tools).toEqual(["Groß öffnen", "Daten zeigen"]);
+        expect(look.island).toBe(true);
+      } finally {
+        await page.close();
+      }
+    });
+
   for (const width of [1440, 390])
     test(`Gustav's survey at ${width} px is a flat choice: no hull, flat cards, the chosen one tinted`, async () => {
       const page = await open("survey", width);

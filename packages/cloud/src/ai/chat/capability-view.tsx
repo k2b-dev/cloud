@@ -29,13 +29,20 @@ export function CapabilityViewBlock(props: {
   turnId: string;
   /** The response that produced the result still runs: an open choice waits until it ends. */
   live: boolean;
+  /** Who shows it when no app does, such as Gustav for his own charts; the title names the view. */
+  origin?: { name: string; icon: string; accent?: string; title: string };
+  /** What "Data" shows instead of the result, such as the values Gustav drew. */
+  data?: unknown;
 }): JSX.Element {
   const locale = useLocale();
   const timeZone = useReaderTimeZone();
   const actions = useAiChatActions();
   const words = () => blockWords(locale());
   const [data, setData] = createSignal(false);
-  const app = () => props.block.presentation;
+  const app = () =>
+    props.origin
+      ? { appName: props.origin.name, appIcon: props.origin.icon, appAccent: props.origin.accent, title: props.origin.title }
+      : props.block.presentation;
   const title = () => app()?.title ?? displayToolName(props.block.name, locale());
   // When the app answered, as day and minute in the reader's time zone: the same on the server and in the browser.
   const asOf = () => {
@@ -109,7 +116,10 @@ export function CapabilityViewBlock(props: {
               </IconButton>
             </span>
           </div>
-          <Show when={data() && isStructuredDataValue(props.block.result) ? props.block.result : undefined} fallback={tree(view())}>
+          <Show
+            when={data() && isStructuredDataValue(props.data ?? props.block.result) ? (props.data ?? props.block.result) : undefined}
+            fallback={tree(view())}
+          >
             {(result) => <StructuredDataPreview data={result()} />}
           </Show>
         </section>

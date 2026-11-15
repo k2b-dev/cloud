@@ -42,6 +42,7 @@ import { createCloudCompactFn } from "./compaction";
 import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { editedDraftArguments } from "./draft-edit";
 import { aiFileStore } from "./files-store";
+import { chartToolResult } from "./gustav-views";
 import { readAiTurnCallUsage } from "./inference-calls";
 import { AI_LIVE_ARGS_INTERVAL_MS, createLiveArgsReader } from "./live-tool-args";
 import { AI_LOCAL_TOOL_NAMES } from "./local-tool-contracts";
@@ -2041,11 +2042,13 @@ export class AiTurnExecutor {
     // nessi emits no tool_execution_end for client tools, so Cloud ends the call itself.
     if (frontendMode === "client_view") {
       loop.push({ type: "tool_result", callId: event.callId, result: { displayed: true } });
+      // The model reads only `displayed`; the stored result also carries the chart as blocks, so people see it as
+      // the same island an app's result is (`gustav-views.ts`). Older results without a view keep their drawing.
       await pipeline.apply({
         type: "tool_execution_end",
         callId: event.callId,
         name: event.name,
-        result: { displayed: true },
+        result: toolName === "chart" ? chartToolResult(event.args) : { displayed: true },
         isError: false,
       } as OutboundEvent);
       await aiToolAudit
