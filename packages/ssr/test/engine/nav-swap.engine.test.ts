@@ -634,24 +634,40 @@ test(`${browserName}: 50 swaps keep window and document listeners, the head and 
         }),
       });
     });
+    await recordFallbacks(page);
+    const consoleErrors: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "error") consoleErrors.push(message.text());
+    });
     await open(page);
     const documents = trackDocuments(page);
     const footprint = () => page.evaluate(() => (window as unknown as { footprint: () => Record<string, number> }).footprint());
+    let step = 0;
+    const swap = async (label: string) => {
+      step++;
+      await page.click(`#${label}`);
+      await page.waitForFunction((value) => document.querySelector("main [data-mounted]")?.textContent === value, label);
+      // Name the step and the reason at once: a document load anywhere in 52 swaps breaks the contract.
+      if (documents.length > 0)
+        expect({ step, label, documents, fallbacks: await fallbacks(page), consoleErrors }).toEqual({
+          step,
+          label,
+          documents: [],
+          fallbacks: [],
+          consoleErrors: [],
+        });
+    };
     // One round trip first: the first swap preloads the shared modules once.
-    await page.click("#B");
-    await page.waitForFunction(() => document.querySelector("main [data-mounted]")?.textContent === "B");
-    await page.click("#new");
-    await page.waitForFunction(() => document.querySelector("main [data-mounted]")?.textContent === "new");
+    await swap("B");
+    await swap("new");
     const first = await footprint();
     for (let round = 0; round < 25; round++) {
-      for (const label of ["B", "new"]) {
-        await page.click(`#${label}`);
-        await page.waitForFunction((value) => document.querySelector("main [data-mounted]")?.textContent === value, label);
-      }
+      await swap("B");
+      await swap("new");
     }
     expect(await footprint()).toEqual(first);
     expect(first).toMatchObject({ announcers: 1, islands: 2, mounted: 1 });
-    expect(documents).toEqual([]);
+    expect({ documents, fallbacks: await fallbacks(page) }).toEqual({ documents: [], fallbacks: [] });
   } finally {
     await context.close();
   }
