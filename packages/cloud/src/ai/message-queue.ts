@@ -25,15 +25,17 @@ export const migrateAiMessageQueue = async () => {
     status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','failed','submitted','cancelled')),
     error text, created_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
-  const [originColumn] = await sql<{ present: boolean }[]>`SELECT EXISTS (
-    SELECT 1 FROM information_schema.columns WHERE table_schema='ai' AND table_name='queued_messages' AND column_name='origin'
-  ) AS present`;
-  await sql`ALTER TABLE ai.queued_messages ADD COLUMN IF NOT EXISTS origin jsonb,
-    ADD COLUMN IF NOT EXISTS author_user_id uuid`.simple();
-  if (!originColumn!.present)
-    await sql`UPDATE ai.queued_messages q SET origin=jsonb_build_object('kind','person','id',COALESCE(q.submission#>>'{runConfig,actor,user,id}',c.created_by_user_id::text)),
-      author_user_id=c.created_by_user_id FROM ai.conversations c WHERE c.id=q.conversation_id
-      AND COALESCE(q.submission#>>'{runConfig,actor,user,id}',c.created_by_user_id::text) IS NOT NULL`.simple();
+  await sql.begin(async (tx) => {
+    const [originColumn] = await tx<{ present: boolean }[]>`SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns WHERE table_schema='ai' AND table_name='queued_messages' AND column_name='origin'
+    ) AS present`;
+    await tx`ALTER TABLE ai.queued_messages ADD COLUMN IF NOT EXISTS origin jsonb,
+      ADD COLUMN IF NOT EXISTS author_user_id uuid`.simple();
+    if (!originColumn!.present)
+      await tx`UPDATE ai.queued_messages q SET origin=jsonb_build_object('kind','person','id',COALESCE(q.submission#>>'{runConfig,actor,user,id}',c.created_by_user_id::text)),
+        author_user_id=c.created_by_user_id FROM ai.conversations c WHERE c.id=q.conversation_id
+        AND COALESCE(q.submission#>>'{runConfig,actor,user,id}',c.created_by_user_id::text) IS NOT NULL`.simple();
+  });
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_queued_messages_send_key
     ON ai.queued_messages(author_user_id,(submission#>>'{runConfig,send,keyHash}'))
     WHERE submission#>>'{runConfig,send,keyHash}' IS NOT NULL`.simple();

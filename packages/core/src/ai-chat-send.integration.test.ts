@@ -326,6 +326,8 @@ suiteFor(
     prepare.mockRejectedValue(new AiQuotaError("quota_exhausted", "Empty"));
     expect(await invoke()).toEqual(results[0]);
     expect(await invoke(chat.shortId, ctx(), "Changed instructions")).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } });
+    const otherChat = await aiConversations.createConversation({ ownerUserId: owner });
+    expect(await invoke(otherChat.shortId)).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT" } });
     const [debit] = await sql<{ cost: string }[]>`SELECT ai_reference_cost::text AS cost FROM code.runs WHERE id=${runId}::uuid`;
     expect(Number(debit?.cost)).toBe(0);
   });
@@ -503,7 +505,7 @@ suiteFor(
       await finishAiCall(call.id, { input, output }, "ok");
     };
     for (let i = 0; i < 3; i++) {
-      const started = await start(ctx(`cheap-${i}`));
+      await start(ctx(`cheap-${i}`));
       const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
       await charge(turn!.id);
       await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${turn!.id}::uuid`;
@@ -547,7 +549,7 @@ suiteFor(
 
   test.each(["code", "owner"] as const)("actual turn cost counts toward the existing %s daily Code USD budget", async (scope) => {
     await setup();
-    const started = await start();
+    await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
     const call = await beginAiCall(
@@ -574,7 +576,7 @@ suiteFor(
 
   test("unknown turn usage blocks another turn without adding a text-AI-only budget refusal", async () => {
     await setup();
-    const started = await start();
+    await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
     const call = await beginAiCall(
@@ -597,7 +599,7 @@ suiteFor(
 
   test("a live owner inference reservation counts until it settles to actual usage", async () => {
     await setup();
-    const started = await start();
+    await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 } });
     spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [profile] }));
