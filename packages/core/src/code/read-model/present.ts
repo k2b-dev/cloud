@@ -1,4 +1,5 @@
 import type { CodeTestLimits } from "@k2b/cloud/code";
+import { describeCodeTiming } from "@k2b/cloud/code/schedule";
 import {
   CODE_READ_MODEL_LIST_LIMIT,
   type CodeCheckedVersionManifest,
@@ -6,7 +7,6 @@ import {
   type CodeReadModelRow,
   type CodeVersionReadModel,
 } from "@k2b/cloud/contracts";
-import { describeCodeTiming } from "@k2b/cloud/ssr/code-page/schedule";
 import { codeAdminPermissionChanges } from "../permission-changes";
 import { type CodePolicyRow, type CodePolicyValue, isCodeAiOperation } from "../policy-contracts";
 import type { CodeVersionEvidence } from "../version-evidence";
