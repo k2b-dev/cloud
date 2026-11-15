@@ -454,6 +454,14 @@ export const assistantApi = {
     return response.json();
   },
 
+  /** Escape on a suggested next message: it stays dismissed for this answer, also after a reload. */
+  dismissNextMessage: async (conversationId: string, messageId: string): Promise<void> => {
+    const response = await client.conversations[":conversationId"].messages[":messageId"]["suggested-next-message"].$delete({
+      param: { conversationId, messageId },
+    });
+    if (!response.ok) throw new Error(await readError(response, "Failed to dismiss the suggestion"));
+  },
+
   getPrefs: async (): Promise<AiUserPrefs> => {
     const response = await client.prefs.$get();
     if (!response.ok) throw new Error(await readError(response, "Failed to load AI preferences"));

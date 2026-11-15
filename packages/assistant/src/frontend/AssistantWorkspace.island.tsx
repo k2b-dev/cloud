@@ -156,6 +156,7 @@ import {
 import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
+import { createAssistantNextMessage } from "./next-message";
 import { assistantTaskTitle } from "./scheduled-task-format";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { waitingQuestionsView } from "./waiting-questions";
@@ -1953,6 +1954,20 @@ export default function AssistantWorkspace(props: Props) {
     const projectComposer = () => Boolean(composerProps.projectId);
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
+    const nextMessage = createAssistantNextMessage({
+      conversationId: () => (projectComposer() ? null : chat.activeConversationId()),
+      messages: chat.messages,
+      blocked: () =>
+        chat.running() ||
+        Boolean(chat.activeTurn()) ||
+        waiting().entries.some((question) => question.conversationId === chat.activeConversationId()) ||
+        queuedMessagesFor(chat.activeConversationId() ?? "").length > 0,
+      dismiss: assistantApi.dismissNextMessage,
+      onDismissFailed: (retry) =>
+        toast.error(contextText("Failed to dismiss the suggestion"), {
+          action: { label: commandCopy().commandTryAgain, onClick: retry },
+        }),
+    });
     const catalog = createCloudComposerCatalog();
     let commandTarget: string | undefined;
     const [commandCreating, setCommandCreating] = createSignal(false);
@@ -2452,6 +2467,7 @@ export default function AssistantWorkspace(props: Props) {
                   : "idle"
           }
           focusToken={projectComposer() ? undefined : composerFocusToken()}
+          suggestion={nextMessage()}
           submitDisabled={aiModelBlocksSending(modelState(), selectedModelRequest())}
           runningSubmitIntent={!projectComposer() ? "queue" : undefined}
           placeholder={
