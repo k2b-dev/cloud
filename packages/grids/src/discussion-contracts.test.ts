@@ -16,7 +16,7 @@ const record = {
 
 test("base readers require a standard view with an effective permission", () => {
   expect(BaseReaderDataSchema.safeParse(base).success).toBe(false);
-  for (const permission of ["read", "write", "admin"]) {
+  for (const permission of ["read", "write", "admin"] as const) {
     const data = { ...base, view: { title: base.name, permission } };
     expect(BaseReaderDataSchema.parse(data)).toEqual(data);
   }
@@ -24,7 +24,7 @@ test("base readers require a standard view with an effective permission", () => 
 });
 
 test("record readers require the current container ref and title beside existing metadata", () => {
-  const view = { title: "Tasks · REC001", permission: "read" };
+  const view = { title: "Tasks · REC001", permission: "read" as const };
   expect(RecordReaderDataSchema.safeParse(record).success).toBe(false);
   expect(RecordReaderDataSchema.safeParse({ ...record, view }).success).toBe(false);
   const data = { ...record, view: { ...view, container: { ref: { type: "grids.base", id: base.id }, title: base.name } } };

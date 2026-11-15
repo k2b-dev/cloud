@@ -337,6 +337,7 @@ describe("Grids capabilities", () => {
     expect(gridsCapabilities.protocolVersion).toBe(2);
     expect(Object.keys(gridsCapabilities.types ?? {}).sort()).toEqual(["base", "document", "record", "table", "view", "workflow-run"]);
     expect(Object.keys(gridsCapabilities.queries ?? {}).sort()).toEqual([
+      "base.containers",
       "base.list",
       "base.read",
       "base.search",
