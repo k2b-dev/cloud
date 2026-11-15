@@ -47,18 +47,22 @@ const person: User = {
   managesGroupIds: [],
 };
 const notebook = { type: "inventory.collection", id: "Shelf-7" };
-// The discussion about the host page's resource; Werk01 is the fixture chat with an open snapshot.
-const resourceConversation = { ...conversations[0]!, kind: "system" as const, resource: notebook, title: "Lager Ost" };
+// The discussion about the host page's resource is Werk01, the fixture chat with an open snapshot.
 const context = (scope?: { type: string; id: string }) =>
   encodeURIComponent(
     JSON.stringify({ v: 1, seq: 1, pageId: "0b6f6a2e-4f6f-4c43-9d3c-2d6a9a0d7c11", app: "inventory", ...(scope ? { scope } : {}) }),
   );
 
 const viewSpy = spyOn(snapshot, "loadChatView").mockImplementation(async (_context, input) => chatView(input.conversationId));
-const opened = ok({ conversation: resourceConversation, thread: null, title: resourceConversation.title });
-const openSpy = spyOn(systemChats, "openFor").mockResolvedValue(opened);
+const found = ok({ conversation: "Werk01", thread: null, item: false, title: "Lager Ost", canWrite: true });
+const locateSpy = spyOn(systemChats, "locate").mockResolvedValue(found);
+// Looking never starts a discussion: the page only locates it.
+const createSpy = spyOn(systemChats, "openFor");
+const openSpy = spyOn(systemChats, "open");
 const spies = [
   viewSpy,
+  locateSpy,
+  createSpy,
   openSpy,
   spyOn(personal, "preferences").mockResolvedValue(ok({ collapsed: [] })),
   spyOn(conversationService, "list").mockResolvedValue(ok({ items: conversations, nextCursor: null })),
@@ -74,8 +78,10 @@ const spies = [
 ];
 afterEach(() => {
   viewSpy.mockClear();
-  openSpy.mockClear();
-  openSpy.mockResolvedValue(opened);
+  expect(createSpy).not.toHaveBeenCalled();
+  expect(openSpy).not.toHaveBeenCalled();
+  locateSpy.mockClear();
+  locateSpy.mockResolvedValue(found);
 });
 afterAll(() => {
   for (const spy of spies) spy.mockRestore();
@@ -104,20 +110,55 @@ describe("Chat in the panel beside a resource", () => {
     const response = await request(`/app/chat/panel?${PANEL_CONTEXT_PARAM}=${context(notebook)}`);
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(`/app/chat/panel/c/Werk01?${PANEL_CONTEXT_PARAM}=${context(notebook)}`);
-    // The scope only selects: opening reads the container as this reader, through the same service as the list.
-    expect(openSpy).toHaveBeenCalledTimes(1);
-    const input = openSpy.mock.calls[0]![0];
+    // The scope only selects: the container is read as this reader, and nothing is created.
+    expect(locateSpy).toHaveBeenCalledTimes(1);
+    const input = locateSpy.mock.calls[0]![0];
     expect(input.ref).toEqual(notebook);
     expect(input.accessSubject).toMatchObject({ type: "user", userId: person.id });
   });
 
   test("an item the host page shares opens its thread in its container's discussion", async () => {
-    openSpy.mockResolvedValue(ok({ conversation: resourceConversation, thread: "Thrd01", title: "Lieferplan KW47.csv" }));
+    locateSpy.mockResolvedValue(ok({ conversation: "Werk01", thread: "Thrd01", item: true, title: "Lieferplan KW47.csv", canWrite: true }));
     const item = { type: "inventory.item", id: "Plan-47" };
     const response = await request(`/app/chat/panel?${PANEL_CONTEXT_PARAM}=${context(item)}`);
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(`/app/chat/panel/c/Werk01/t/Thrd01?${PANEL_CONTEXT_PARAM}=${context(item)}`);
-    expect(openSpy.mock.calls[0]![0].ref).toEqual(item);
+    expect(locateSpy.mock.calls[0]![0].ref).toEqual(item);
+  });
+
+  test("before anyone wrote, the panel shows a ready discussion and creates nothing", async () => {
+    locateSpy.mockResolvedValue(ok({ conversation: null, thread: null, item: false, title: "Lager Ost", canWrite: true }));
+    const start = await request(`/app/chat/panel?${PANEL_CONTEXT_PARAM}=${context(notebook)}`);
+    expect(start.status).toBe(302);
+    expect(start.headers.get("location")).toBe(`/app/chat/panel/resource?${PANEL_CONTEXT_PARAM}=${context(notebook)}`);
+    const { response, document } = await render(`/app/chat/panel/resource?${PANEL_CONTEXT_PARAM}=${context(notebook)}`);
+    expect(response.status).toBe(200);
+    const view = document.querySelector('.chat-resource-start[aria-label="About Lager Ost"]')!;
+    expect(view.querySelector('a[aria-label="All chats"]')?.getAttribute("href")).toBe("/app/chat/panel");
+    expect(view.textContent).toContain("Nobody has written here yet.");
+    expect(view.querySelector('textarea[placeholder="Message Lager Ost"]')).not.toBeNull();
+    // An item without its thread is the same ready start, even when its container's chat exists.
+    locateSpy.mockResolvedValue(ok({ conversation: "Werk01", thread: null, item: true, title: "Lieferplan KW47.csv", canWrite: true }));
+    const item = { type: "inventory.item", id: "Plan-47" };
+    expect((await request(`/app/chat/panel?${PANEL_CONTEXT_PARAM}=${context(item)}`)).headers.get("location")).toBe(
+      `/app/chat/panel/resource?${PANEL_CONTEXT_PARAM}=${context(item)}`,
+    );
+  });
+
+  test("a reader who may not write sees the empty discussion without a composer", async () => {
+    locateSpy.mockResolvedValue(ok({ conversation: null, thread: null, item: false, title: "Lager Ost", canWrite: false }));
+    const { document } = await render(`/app/chat/panel/resource?${PANEL_CONTEXT_PARAM}=${context(notebook)}`);
+    const view = document.querySelector(".chat-resource-start")!;
+    expect(view.textContent).toContain("People who may edit it can start the discussion.");
+    expect(view.querySelector("textarea")).toBeNull();
+  });
+
+  test("the start page moves to the discussion once it exists, and to the list without a place", async () => {
+    const exists = await request(`/app/chat/panel/resource?${PANEL_CONTEXT_PARAM}=${context(notebook)}`);
+    expect(exists.headers.get("location")).toBe(`/app/chat/panel/c/Werk01?${PANEL_CONTEXT_PARAM}=${context(notebook)}`);
+    const none = await request("/app/chat/panel/resource");
+    expect(none.status).toBe(302);
+    expect(none.headers.get("location")).toBe("/app/chat/panel");
   });
 
   test("in the resource's discussion the header leads to all chats, and nowhere out of the panel", async () => {
@@ -140,12 +181,12 @@ describe("Chat in the panel beside a resource", () => {
   });
 
   test("a resource the reader cannot read, or no shared place, leaves the panel at the chat list", async () => {
-    openSpy.mockResolvedValue(fail({ code: "NOT_FOUND", status: 404, message: "Not found" }));
+    locateSpy.mockResolvedValue(fail({ code: "NOT_FOUND", status: 404, message: "Not found" }));
     const denied = await render(`/app/chat/panel?${PANEL_CONTEXT_PARAM}=${context(notebook)}`);
     expect(denied.response.status).toBe(200);
     expect(denied.document.querySelector('a[aria-label^="Chat about"]')).toBeNull();
     expect(denied.document.body.textContent).not.toContain("Lager Ost");
-    openSpy.mockClear();
+    locateSpy.mockClear();
     for (const path of [
       `/app/chat/panel?${PANEL_CONTEXT_PARAM}=${context()}`,
       `/app/chat/panel?${PANEL_CONTEXT_PARAM}=%7Bbroken`,
@@ -153,11 +194,11 @@ describe("Chat in the panel beside a resource", () => {
     ]) {
       expect((await request(path)).status).toBe(200);
     }
-    expect(openSpy).not.toHaveBeenCalled();
+    expect(locateSpy).not.toHaveBeenCalled();
   });
 
   test("the full view ignores a shared place", async () => {
     expect((await request(`/app/chat?${PANEL_CONTEXT_PARAM}=${context(notebook)}`)).status).toBe(200);
-    expect(openSpy).not.toHaveBeenCalled();
+    expect(locateSpy).not.toHaveBeenCalled();
   });
 });

@@ -1025,15 +1025,31 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
           skipped: [],
         });
       }
-      // The discussion about a container the host page shares, as the panel opens it.
-      if (url.pathname === "/api/chat/system-chats/for-resource" && request.method === "POST") {
-        systemRequests.push({ path: url.pathname, query: {} });
-        const { ref } = (await request.json()) as { ref: CloudResourceRef };
+      // The discussion about a container the host page shares: GET finds it and creates nothing, POST starts it.
+      if (url.pathname === "/api/chat/system-chats/for-resource") {
+        systemRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+        const ref =
+          request.method === "POST"
+            ? ((await request.json()) as { ref: CloudResourceRef }).ref
+            : { type: url.searchParams.get("type") ?? "", id: url.searchParams.get("id") ?? "" };
         const container = containers.get(`${ref.type}:${ref.id}`);
-        const chat = container?.chat ? chats.get(container.chat) : undefined;
-        return chat
-          ? Response.json({ conversation: chat.conversation, thread: null, title: chat.conversation.title })
-          : Response.json({ code: "NOT_FOUND", message: "Unavailable" }, { status: 404 });
+        if (!container) return Response.json({ code: "NOT_FOUND", message: "Unavailable" }, { status: 404 });
+        if (request.method === "GET") {
+          const chat = container.chat ? chats.get(container.chat) : undefined;
+          return Response.json({
+            conversation: chat?.conversation.id ?? null,
+            thread: null,
+            item: false,
+            title: container.name,
+            canWrite: true,
+          });
+        }
+        if (!container.chat) {
+          container.chat = addChat({ members: [viewer], name: container.name, count: 0, end: now() });
+          systemize(container.chat, ref);
+        }
+        const chat = chats.get(container.chat)!;
+        return Response.json({ conversation: chat.conversation, thread: null, title: container.name });
       }
       const systemOpen = /^\/api\/chat\/system-chats\/([^/]+)\/([^/]+)\/open$/.exec(url.pathname);
       if (systemOpen && request.method === "POST") {
@@ -1867,6 +1883,21 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     },
   });
 
+  /** A chat becomes the system conversation of a container. */
+  function systemize(id: string, ref: CloudResourceRef) {
+    const chat = chats.get(id)!;
+    chat.conversation = {
+      ...chat.conversation,
+      kind: "system",
+      channel: false,
+      member: false,
+      resource: ref,
+      summaryCursor: null,
+      icon: "ti ti-box",
+      discussionItemType: ref.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
+    };
+    containers.set(`${ref.type}:${ref.id}`, { ref, name: chat.conversation.title, chat: id });
+  }
   recorder.listen(server.url);
   return {
     url: server.url.href,
@@ -1875,20 +1906,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     now,
     addChat,
     systemRequests,
-    setSystem: (id: string, ref: CloudResourceRef) => {
-      const chat = chats.get(id)!;
-      chat.conversation = {
-        ...chat.conversation,
-        kind: "system",
-        channel: false,
-        member: false,
-        resource: ref,
-        summaryCursor: null,
-        icon: "ti ti-box",
-        discussionItemType: ref.type === "notebooks.notebook" ? "notebooks.note" : "spaces.item",
-      };
-      containers.set(`${ref.type}:${ref.id}`, { ref, name: chat.conversation.title, chat: id });
-    },
+    setSystem: (id: string, ref: CloudResourceRef) => systemize(id, ref),
     emptyContainer: (ref: CloudResourceRef, name: string) => containers.set(`${ref.type}:${ref.id}`, { ref, name, chat: null }),
     systemElement: (element: {
       id: string;

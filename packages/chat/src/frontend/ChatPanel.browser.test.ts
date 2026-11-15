@@ -223,6 +223,54 @@ for (const width of [1440, 390]) {
   }, 30_000);
 }
 
+for (const width of [1440, 390]) {
+  test(`Chat shows a ready discussion about a resource nobody wrote about and starts it with the first message at ${width}px`, async () => {
+    fixture.backend.reset();
+    fixture.allowChatContext(true);
+    fixture.backend.emptyContainer({ type: "inventory.collection", id: "Bay-9" }, "Halle Süd");
+    const context = await newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    const page = await context.newPage();
+    page.setDefaultTimeout(8_000);
+    const frame = () => page.frames().find((candidate) => candidate.url().includes("/app/chat/panel"))!;
+    const starts = () =>
+      fixture.backend.systemRequests.filter(
+        (request) => request.path === "/api/chat/system-chats/for-resource" && !("type" in request.query),
+      ).length;
+    try {
+      await page.goto(fixture.url + "app/fixture/board/Bay-9");
+      await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
+      await page.locator("#open-chat").click();
+      const panel = page.frameLocator("[data-cloud-panel-frame]");
+      const start = panel.getByRole("region", { name: "About Halle Süd", exact: true });
+      await start.getByText("Nobody has written here yet.", { exact: true }).waitFor();
+      await panel.locator('html[data-fixture-ready="true"]').waitFor();
+      expect(new URL(frame().url()).pathname).toBe("/app/chat/panel/resource");
+      // Looking creates nothing.
+      expect(starts()).toBe(0);
+      if (process.env.PANEL_SCREENSHOTS) {
+        mkdirSync(process.env.PANEL_SCREENSHOTS, { recursive: true });
+        await page.screenshot({
+          path: resolve(process.env.PANEL_SCREENSHOTS, `chat-resource-start-light-${width}.png`),
+          animations: "disabled",
+        });
+      }
+      const composer = start.locator('textarea:not([aria-hidden="true"])');
+      const before = await composer.boundingBox();
+      await composer.fill("Wer prüft die Anlieferung?");
+      await composer.press("Enter");
+      await panel.locator('[data-status="sent"]').filter({ hasText: "Wer prüft die Anlieferung?" }).waitFor();
+      expect(starts()).toBe(1);
+      expect(new URL(frame().url()).pathname).toMatch(/^\/app\/chat\/panel\/c\/[^/]+$/);
+      // The composer keeps its place from the ready start into the started discussion.
+      const after = await panel.locator('.chat-conversation textarea:not([aria-hidden="true"])').boundingBox();
+      expect(Math.abs(after!.y + after!.height - (before!.y + before!.height))).toBeLessThanOrEqual(1);
+    } finally {
+      fixture.allowChatContext(false);
+      await context.close();
+    }
+  }, 30_000);
+}
+
 test("Chat follows only the latest host place when earlier places answer late", async () => {
   fixture.backend.reset();
   fixture.allowChatContext(true);

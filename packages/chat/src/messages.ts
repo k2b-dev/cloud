@@ -170,6 +170,9 @@ export const chatMessages = i18n.define({
       channels: "Channels",
       panelAllChats: "All chats",
       chatAboutResource: ({ title }: { title: string }) => `Chat about ${title}`,
+      aboutResource: ({ title }: { title: string }) => `About ${title}`,
+      resourceChatEmpty: "Nobody has written here yet.",
+      resourceChatReadOnly: "Nobody has written here yet. People who may edit it can start the discussion.",
       draftChangedElsewhere: "Another view changed this draft",
       draftChangedElsewhereDescription:
         "Your text is still in the composer. Compare it with the saved text below and choose which to keep.",
@@ -671,6 +674,9 @@ export const chatMessages = i18n.define({
       channels: "Kanäle",
       panelAllChats: "Alle Chats",
       chatAboutResource: ({ title }: { title: string }) => `Über ${title} chatten`,
+      aboutResource: ({ title }: { title: string }) => `Über ${title}`,
+      resourceChatEmpty: "Hier hat noch niemand geschrieben.",
+      resourceChatReadOnly: "Hier hat noch niemand geschrieben. Wer die Ressource bearbeiten darf, kann die Diskussion beginnen.",
       draftChangedElsewhere: "Eine andere Ansicht hat diesen Entwurf geändert",
       draftChangedElsewhereDescription:
         "Dein Text steht weiter im Eingabefeld. Vergleiche ihn mit dem gespeicherten Text unten und wähle, welchen du behalten möchtest.",

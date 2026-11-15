@@ -42,6 +42,54 @@ const open = async (input: ChatContext & { resourceType: string; resourceId: str
   return opened.ok ? conversations.get(context) : opened;
 };
 /**
+ * Where the discussion about one resource is, as the panel beside it shows it. It creates nothing: someone who only
+ * looks leaves no conversation behind; the first message opens it through `openFor`. The ref is a selector only.
+ */
+const locate = async (input: ChatContext & { ref: { type: string; id: string } }) => {
+  const missing = () => fail({ code: "NOT_FOUND", status: 404, message: messages(input).notFound });
+  const parsed = SystemChatParamSchema.safeParse({ resourceType: input.ref.type, resourceId: input.ref.id });
+  if (!parsed.success) return fail(err.badInput(messages(input).invalidInput));
+  const readable = async (ref: { type: string; id: string }) => {
+    const resource = await readResource(input, ref);
+    return resource && capPermission(resource.permission, input.actor) !== "none" ? resource : null;
+  };
+  let container: { type: string; id: string } | undefined;
+  let title: string;
+  let item = false;
+  if (await providerFor(input, input.ref.type, "container")) {
+    const resource = await readable(input.ref);
+    if (!resource) return missing();
+    container = input.ref;
+    title = resource.title;
+  } else if (await providerFor(input, input.ref.type, "item")) {
+    const resource = await readable(input.ref);
+    container = resource?.container?.ref;
+    if (!resource || !container) return missing();
+    title = resource.title;
+    item = true;
+  } else return missing();
+  const place = item ? await readable(container) : await readResource(input, container);
+  const bound = boundConversation(input.actor, input.locale);
+  if (!place || !bound.ok) return missing();
+  const permission = capPermission(place.permission, input.actor);
+  if (permission === "none") return missing();
+  const [conversation] = await sql<{ id: string; short_id: string }[]>`SELECT id, short_id FROM chat.conversations
+    WHERE kind = 'system' AND resource_type = ${container.type} AND resource_id = ${container.id}`;
+  if (bound.data !== null && conversation?.short_id !== bound.data) return missing();
+  const [thread] =
+    conversation && item
+      ? await sql<{ short_id: string }[]>`SELECT short_id FROM chat.threads
+          WHERE conversation_id = ${conversation.id}::uuid AND resource_type = ${input.ref.type} AND resource_id = ${input.ref.id}`
+      : [];
+  return ok({
+    conversation: conversation?.short_id ?? null,
+    thread: thread?.short_id ?? null,
+    item,
+    title,
+    canWrite: permission !== "read",
+  });
+};
+/**
  * The discussion about one resource, as the panel beside it opens it: a container's chat, or an item's thread in its
  * container's chat. The ref is a selector only; the item and container readers decide as this reader. A reader who
  * may not write keeps an item's existing thread or, without one, the container's chat.
@@ -147,4 +195,4 @@ const list = async (input: ChatContext & { query?: unknown }) => {
   }
   return ok({ items: visible, cursors, skipped });
 };
-export const systemChats = { open, openFor, list };
+export const systemChats = { open, openFor, locate, list };

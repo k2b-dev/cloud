@@ -26,8 +26,10 @@ export default ssr<AuthContext>(async (c) => {
   if (accessSubject.type !== "user") return ssr.error(c, 403);
   const { resourceChat, redirect, scope } = embedded
     ? await panelResourceChat(c, async (ref) => {
-        const opened = await chatService.systemChats.openFor({ ...chatRequestContext(c), ref });
-        return opened.ok ? { id: opened.data.conversation.id, thread: opened.data.thread, title: opened.data.title } : null;
+        const found = await chatService.systemChats.locate({ ...chatRequestContext(c), ref });
+        if (!found.ok) return null;
+        const { conversation, ...location } = found.data;
+        return { ...location, id: conversation };
       })
     : { resourceChat: null, redirect: null, scope: null };
   if (redirect) return c.redirect(redirect, 302);
@@ -39,6 +41,8 @@ export default ssr<AuthContext>(async (c) => {
     ? await chatService.channels.browse({ actor: c.get("actor"), accessSubject, locale, query: { q: channelQuery } }).catch(() => null)
     : null;
   const forYouPage = /\/for-you\/?$/.test(c.req.path);
+  // The panel's ready start in a resource's discussion while nobody has written there.
+  const resourcePage = embedded && resourceChat !== null && /\/resource\/?$/.test(c.req.path);
   const forYouResult = forYouPage ? await chatService.forYou.list({ ...chatRequestContext(c), query: {} }).catch(() => null) : null;
   const chatId = c.req.param("chat") ?? null;
   const thread = c.req.param("thread") ?? "all";
@@ -67,18 +71,22 @@ export default ssr<AuthContext>(async (c) => {
   const collapsed = preferences.data.collapsed;
   const liveDictation = (await getLiveDictationStatus(accessSubject)).available;
   // Without access the page names neither the chat nor whether it exists.
-  const title = channelsPage
-    ? t.browseChannels
-    : forYouPage
-      ? t.forYou
-      : chatId
-        ? (view.open?.conversation.title ?? t.noAccessTitle)
-        : undefined;
+  const title =
+    resourcePage && resourceChat
+      ? t.aboutResource({ title: resourceChat.title })
+      : channelsPage
+        ? t.browseChannels
+        : forYouPage
+          ? t.forYou
+          : chatId
+            ? (view.open?.conversation.title ?? t.noAccessTitle)
+            : undefined;
   const now = new Date();
   const workspace = () => (
     <ChatWorkspace
       embedded={embedded}
       resourceChat={resourceChat}
+      resourcePage={resourcePage}
       panelScope={scope}
       archived={archived}
       filter={unread ? "unread" : "all"}

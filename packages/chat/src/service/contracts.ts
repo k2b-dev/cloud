@@ -402,6 +402,21 @@ export const ConversationSchema = z.object({
   lastActivityAt: z.string(),
   lastMessage: LastMessageSchema.extend({ thread: z.strictObject({ id: ThreadIdSchema, name: z.string() }).nullable() }).nullable(),
 });
+/**
+ * Where the discussion about one resource is, read without creating anything: `conversation` and `thread` are null
+ * until someone writes. `item` says whether the resource is an item, whose discussion is its thread.
+ */
+export const ResourceLocationSchema = z.strictObject({
+  conversation: ShortIdSchema.nullable(),
+  thread: ThreadIdSchema.nullable(),
+  item: z.boolean(),
+  title: z.string(),
+  canWrite: z.boolean(),
+});
+export const ResourceLocationQuerySchema = z.object({
+  type: CloudResourceRefSchema.shape.type,
+  id: CloudResourceRefSchema.shape.id,
+});
 /** The discussion about one resource: a container's chat, or the chat of an item's container with the item's thread. */
 export const ResourceDiscussionSchema = z.strictObject({
   conversation: ConversationSchema,

@@ -27,7 +27,7 @@ Die zugehörige App liefert eine Kontextzeile. Zuständige und genaue Terminzeit
 
 ## Neben der Ressource chatten {icon="layout-sidebar-right"}
 
-Öffne das Panel **Chat**, während du eine Ressource ansiehst, zum Beispiel ein Notizbuch. Das Panel öffnet die Diskussion über diese Ressource. Hat dort noch niemand geschrieben, beginnt sie leer. Wechselst du zu einer anderen Ressource, folgt das Panel, solange es noch die Diskussion der vorigen Ressource zeigt.
+Öffne das Panel **Chat**, während du eine Ressource ansiehst, zum Beispiel ein Notizbuch. Das Panel öffnet die Diskussion über diese Ressource. Hat dort noch niemand geschrieben, ist sie leer und bereit; deine erste Nachricht beginnt sie. Wechselst du zu einer anderen Ressource, folgt das Panel, solange es noch die Diskussion der vorigen Ressource zeigt.
 
 :::reference
 - **Alle Chats** oben links zeigt deine anderen Chats im Panel.

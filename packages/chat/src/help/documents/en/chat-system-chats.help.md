@@ -25,7 +25,7 @@ On large screens, a separate thread column provides the same search and filters.
 
 ## Talk beside the resource {icon="layout-sidebar-right"}
 
-Open the **Chat** panel while you look at a resource, such as a notebook. The panel opens the discussion about that resource. If nobody has written there yet, it starts empty. When you move to another resource, the panel follows, as long as it still shows the previous resource's discussion.
+Open the **Chat** panel while you look at a resource, such as a notebook. The panel opens the discussion about that resource. If nobody has written there yet, it is ready and empty; your first message starts it. When you move to another resource, the panel follows, as long as it still shows the previous resource's discussion.
 
 :::reference
 - **All chats** at the top left shows your other chats in the panel.

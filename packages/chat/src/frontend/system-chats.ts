@@ -5,6 +5,7 @@ import {
   ConversationSchema,
   type ForResourceSchema,
   ResourceDiscussionSchema,
+  ResourceLocationSchema,
   SystemChatPageSchema,
   type SystemChatParamSchema,
   ThreadListSchema,
@@ -32,7 +33,10 @@ export const loadSystemChats = async (query: { cursors?: SystemChatPage["cursors
 };
 export const openSystemChat = async (param: z.infer<typeof SystemChatParamSchema>) =>
   response(await client()["system-chats"][":resourceType"][":resourceId"].open.$post({ param }), ConversationSchema);
-/** The discussion about a resource the host page shares: its container's chat, or its item's thread there. */
+/** Where the discussion about a resource the host page shares is; reading creates nothing. */
+export const locateResource = async (ref: z.infer<typeof ForResourceSchema>["ref"]) =>
+  response(await client()["system-chats"]["for-resource"].$get({ query: { type: ref.type, id: ref.id } }), ResourceLocationSchema);
+/** Starts or opens the discussion about a resource: its container's chat, or its item's thread there. */
 export const openResourceDiscussion = async (ref: z.infer<typeof ForResourceSchema>["ref"]) =>
   response(await client()["system-chats"]["for-resource"].$post({ json: { ref } }), ResourceDiscussionSchema);
 export const loadSystemThreads = async (id: string, query: ThreadQuery, signal: AbortSignal) =>

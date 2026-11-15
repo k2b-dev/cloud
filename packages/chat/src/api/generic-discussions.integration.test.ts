@@ -13,6 +13,7 @@ import {
   ItemEventsPageSchema,
   MessagePageSchema,
   ResourceDiscussionSchema,
+  ResourceLocationSchema,
   SharedPageSchema,
   SystemChatPageSchema,
   ThreadListSchema,
@@ -589,12 +590,27 @@ suiteFor(
     expect(partial.incomplete).toBeTrue();
     expect(partial.items).toHaveLength(3);
   });
-  test("the panel opens the discussion about a shared container or item only through its readers", async () => {
+  test("the panel finds a shared container or item without creating it, and starts it only on request", async () => {
     const person = await f.person();
     trackKeys(person, collection);
     trackKeys(person, item);
     const openFor = (ref: { type: string; id: string }) => api(person, "/system-chats/for-resource", "POST", { ref });
+    const locate = async (ref: { type: string; id: string }) =>
+      ResourceLocationSchema.parse(await (await api(person, `/system-chats/for-resource?type=${ref.type}&id=${ref.id}`)).json());
+    const systemRows = async () =>
+      Number(
+        (
+          await sql<{ count: string }[]>`SELECT count(*) FROM chat.conversations
+            WHERE kind = 'system' AND resource_type = ${collection.type} AND resource_id = ${collection.id}`
+        )[0]!.count,
+      );
+    // Looking creates nothing: no conversation, no thread, until the first message starts it.
+    expect(await locate(collection)).toEqual({ conversation: null, thread: null, item: false, title: "Warehouse", canWrite: true });
+    expect(await locate(item)).toEqual({ conversation: null, thread: null, item: true, title: "Box", canWrite: true });
+    expect(await systemRows()).toBe(0);
     const container = ResourceDiscussionSchema.parse(await (await openFor(collection)).json());
+    expect((await locate(collection)).conversation).toBe(container.conversation.id);
+    expect((await locate(item)).thread).toBeNull();
     f.trackChat(container.conversation.id);
     expect(container).toMatchObject({ thread: null, title: "Warehouse", conversation: { kind: "system", resource: collection } });
     // An item opens its container's chat and its thread, created once.
@@ -603,9 +619,11 @@ suiteFor(
     expect(first.title).toBe("Box");
     expect(first.thread).not.toBeNull();
     expect(ResourceDiscussionSchema.parse(await (await openFor(item)).json()).thread).toBe(first.thread);
+    expect((await locate(item)).thread).toBe(first.thread);
     // A reader who may not write keeps the existing thread and starts none.
     writable = false;
     await redis.send("DEL", trackKeys(person, collection));
+    expect((await locate(collection)).canWrite).toBeFalse();
     expect(ResourceDiscussionSchema.parse(await (await openFor(item)).json()).thread).toBe(first.thread);
     await sql`DELETE FROM chat.threads WHERE short_id = ${first.thread}`;
     expect(ResourceDiscussionSchema.parse(await (await openFor(item)).json()).thread).toBeNull();
@@ -615,7 +633,9 @@ suiteFor(
     const denied = await openFor(item);
     expect(denied.status).toBe(404);
     expect(await denied.text()).not.toContain("Box");
+    expect((await api(person, `/system-chats/for-resource?type=${item.type}&id=${item.id}`)).status).toBe(404);
     expect((await openFor({ type: "other.thing", id: "x" })).status).toBe(404);
+    expect((await api(person, "/system-chats/for-resource?type=other.thing&id=x")).status).toBe(404);
     expect((await api(person, "/system-chats/for-resource", "POST", { ref: { type: "", id: "" } })).status).toBe(400);
   });
 });

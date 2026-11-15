@@ -87,7 +87,8 @@ import { createItemEventsApi } from "./item-events-api";
 import type { ChosenMember } from "./MemberPicker";
 
 import { createNotificationCleanup } from "./notification-cleanup";
-import type { ResourceChat } from "./panel-resource";
+import { type ResourceChat, resourceChatExists, resourceChatPath } from "./panel-resource";
+import ResourceChatStart from "./ResourceChatStart";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
 import {
@@ -98,7 +99,7 @@ import {
   threadsPageHref as threadsPageAddress,
   UNREAD_COUNT_PATH,
 } from "./route";
-import { containerIcon, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
+import { containerIcon, locateResource, openResourceDiscussion, openResourceThread, openSystemChat } from "./system-chats";
 
 import {
   chatHasThreads,
@@ -124,6 +125,8 @@ export type ChatWorkspaceProps = {
   embedded?: boolean;
   /** In the panel: the discussion about the host page's resource, which the panel opens first and leads back to. */
   resourceChat?: ResourceChat | null;
+  /** In the panel: the address is the ready discussion about the resource, while nobody has written there. */
+  resourcePage?: boolean;
   /** In the panel: the place the server read from the shared context, the start the browser's context is compared to. */
   panelScope?: ResourceChat["ref"] | null;
   /** Live dictation is set up and allowed for this person; the composer then shows Dictate. */
@@ -249,6 +252,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const [route, setRoute] = createSignal<Route>({
     channels: props.channelsPage,
     forYou: props.forYouPage,
+    resource: props.resourcePage,
     query: props.channelQuery,
     chatId: props.chatId,
     view: props.view,
@@ -257,13 +261,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     panel: props.panel,
   });
   const [resourceChat, setResourceChat] = createSignal(props.resourceChat ?? null);
-  /** The panel shows the resource's discussion: its container's chat, or, for an item, the item's thread. */
+  /** The panel shows the resource's discussion: its container's chat, an item's thread, or the ready start. */
   const atResource = () => {
     const target = resourceChat();
     const current = route();
-    return Boolean(
-      target && current.chatId === target.id && !current.channels && (target.thread === null || current.view === target.thread),
-    );
+    if (!target) return false;
+    if (!resourceChatExists(target)) return Boolean(current.resource);
+    return current.chatId === target.id && !current.channels && (!target.item || current.view === target.thread);
+  };
+  /** The discussion about the resource before anyone wrote there. */
+  const pendingResource = () => {
+    const target = resourceChat();
+    return route().resource && target && !resourceChatExists(target) ? target : null;
   };
   // History is not reactive; keep its list marker for the header rendered before each address commit.
   const [listPredecessor, setListPredecessor] = createSignal(false);
@@ -2201,18 +2210,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         if (scope && shown && scope.type === shown.ref.type && scope.id === shown.ref.id) return;
         if (!scope) return void setResourceChat(null);
         const following = atResource() || followPending;
-        openResourceDiscussion(scope)
+        locateResource(scope)
           .then(async (found) => {
             if (disposed || token !== scopeToken) return;
-            store?.includeSystemChats([found.conversation]);
-            const next = { id: found.conversation.id, thread: found.thread, ref: scope, title: found.title };
+            const { conversation, ...location } = found;
+            const next: ResourceChat = { ...location, id: conversation, ref: scope };
             setResourceChat(next);
             if (!following) return;
-            const view = next.thread ?? "all";
+            const target = resourceChatExists(next) ? chatRoute(next.id, next.thread ?? "all") : chatRoute(null, "all", { resource: true });
             followPending = true;
             try {
-              if ((await open(chatRoute(next.id, view))) === "applied" && !disposed)
-                navigate(viewHref(threadHref(next.id, view)), { replace: true, scroll: "preserve" });
+              if ((await open(target)) === "applied" && !disposed)
+                navigate(viewHref(resourceChatPath(next, basePath)), { replace: true, scroll: "preserve" });
             } finally {
               if (token === scopeToken) followPending = false;
             }
@@ -2429,17 +2438,35 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     const target = resourceChat();
     if (!target) return;
     const fromList = route().chatId === null;
-    const view = target.thread ?? "all";
-    if ((await open(chatRoute(target.id, view))) !== "applied") return;
+    const next = resourceChatExists(target) ? chatRoute(target.id, target.thread ?? "all") : chatRoute(null, "all", { resource: true });
+    if ((await open(next)) !== "applied") return;
     setListPredecessor(fromList);
-    navigation.push(viewHref(threadHref(target.id, view)), { scroll: "preserve", state: { chatFromList: fromList } });
+    navigation.push(viewHref(resourceChatPath(target, basePath)), { scroll: "preserve", state: { chatFromList: fromList } });
+  };
+  /** The first message starts the discussion: the server opens it with the same checks, then the message goes in. */
+  const startResourceChat = async (text: string) => {
+    const target = resourceChat();
+    if (!target || resourceChatExists(target)) return false;
+    try {
+      const found = await openResourceDiscussion(target.ref);
+      store?.includeSystemChats([found.conversation]);
+      const next = { ...target, id: found.conversation.id, thread: found.thread };
+      if (resourceChat() === target) setResourceChat(next);
+      const view = next.thread ?? "all";
+      if ((await open(chatRoute(next.id, view))) !== "applied") return false;
+      navigate(viewHref(threadHref(next.id, view)), { replace: true, scroll: "preserve" });
+      return await send(text);
+    } catch {
+      toast.error(t().requestFailed);
+      return false;
+    }
   };
   /** In the panel: back to the discussion about the host page's resource, wherever the reader went from there. */
   const resourceChatButton = () => (
     <Show when={!atResource() && resourceChat()}>
       {(target) => (
         <IconButtonLink
-          href={listHref(threadHref(target().id, target().thread ?? "all"))}
+          href={listHref(resourceChatPath(target(), basePath))}
           navigation="enhanced"
           onNavigate={openResourceChat}
           label={t().chatAboutResource({ title: target().title })}
@@ -2966,7 +2993,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   return (
     <>
       <Show when={!openChat()}>{draftNotice()}</Show>
-      <Show when={props.embedded && !openChat() && resourceChat()}>
+      <Show when={props.embedded && !openChat() && !atResource() && resourceChat()}>
         <div class="flex shrink-0 justify-end p-1">{resourceChatButton()}</div>
       </Show>
       <AppWorkspace
@@ -3056,6 +3083,17 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 <Match when={threadsPageOpen()}>{(current) => threadsPageView(current())}</Match>
                 <Match when={openChat()?.id}>{conversationView()}</Match>
                 <Match when={noAccess()}>{noAccessView()}</Match>
+                <Match when={pendingResource()}>
+                  {(target) => (
+                    <ResourceChatStart
+                      title={target().title}
+                      canWrite={target().canWrite}
+                      listHref={listHref(basePath)}
+                      onBack={backToList}
+                      onStart={startResourceChat}
+                    />
+                  )}
+                </Match>
                 <Match when={true}>
                   <nav class="chat-list-page" aria-label={t().chats}>
                     {listContent()}

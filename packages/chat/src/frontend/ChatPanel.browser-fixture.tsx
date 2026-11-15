@@ -126,14 +126,17 @@ export async function startConversationPanelFixture() {
           const { resourceChat, redirect, scope } =
             chatPage && embedded
               ? await panelResourceChat(c, async (ref) => {
-                  const response = await fetch(new URL("api/chat/system-chats/for-resource", backend.url), {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ ref }),
-                  });
+                  const query = new URLSearchParams({ type: ref.type, id: ref.id });
+                  const response = await fetch(new URL(`api/chat/system-chats/for-resource?${query}`, backend.url));
                   if (!response.ok) return null;
-                  const found = (await response.json()) as { conversation: { id: string }; thread: string | null; title: string };
-                  return { id: found.conversation.id, thread: found.thread, title: found.title };
+                  const { conversation, ...location } = (await response.json()) as {
+                    conversation: string | null;
+                    thread: string | null;
+                    item: boolean;
+                    title: string;
+                    canWrite: boolean;
+                  };
+                  return { ...location, id: conversation };
                 })
               : { resourceChat: null, redirect: null, scope: null };
           if (redirect) return c.redirect(redirect, 302);
@@ -148,6 +151,7 @@ export async function startConversationPanelFixture() {
             }),
             embedded,
             resourceChat,
+            resourcePage: chatPage && embedded && resourceChat !== null && url.pathname.endsWith("/resource"),
             panelScope: scope,
           };
           const content = () =>
