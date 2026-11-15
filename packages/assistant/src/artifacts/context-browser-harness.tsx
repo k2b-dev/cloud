@@ -12,7 +12,7 @@ function ChatSidebar(props: { open: (view: ContextView) => void; openApp: (id: s
   const state = createAssistantChatContextState({ chatId: "chat-one" });
   return (
     // The chat's whole list, as the tab "In this chat" shows it.
-    <div id="assistant-chat-context">
+    <div id="assistant-chat-context" style={{ flex: "1", "min-height": "0" }}>
       <AssistantChatSidebarTab
         state={state}
         runCount={state.snapshot()?.runCount}
@@ -63,8 +63,8 @@ render(() => {
                   <div class="assistant-chat-composer">
                     <input aria-label="Message" />
                   </div>
-                  <ChatSidebar open={open} openApp={(id, title) => controller.open(appTab(id, title))} />
                 </div>
+                <ChatSidebar open={open} openApp={(id, title) => controller.open(appTab(id, title))} />
               </div>
             </AppWorkspace.MainPane>
             <AppWorkspace.MainPane id="workspace" label="Workspace" open={controller.state().tabs.length > 0} defaultSize={620}>
@@ -75,7 +75,6 @@ render(() => {
                 refreshKey="initial"
                 onOpenView={open}
                 conversationId="chat-one"
-                menuItems={menuItems}
               />
             </AppWorkspace.MainPane>
           </AppWorkspace.Main>

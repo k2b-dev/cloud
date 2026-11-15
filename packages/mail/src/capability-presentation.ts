@@ -56,6 +56,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         attachment: {
           title: "Mail-Anhang",
           description: "Begrenzte Metadaten für einen Nachrichtenanhang.",
+          count: { one: "Mail-Anhang", other: "Mail-Anhänge" },
         },
         comment: {
           title: "Mail-Kommentar",
@@ -64,6 +65,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         conversation: {
           title: "Mail-Unterhaltung",
           description: "Eine gruppierte E-Mail-Konversation mit dem Status der Zusammenarbeit.",
+          count: { one: "Mail-Unterhaltung", other: "Mail-Unterhaltungen" },
         },
         delivery: {
           title: "Mail-Zustellung",
@@ -72,6 +74,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         draft: {
           title: "Mail-Entwurf",
           description: "Eine bearbeitbare ausgehende Nachricht.",
+          count: { one: "Mail-Entwurf", other: "Mail-Entwürfe" },
         },
         folder: {
           title: "Mail-Ordner",
@@ -88,6 +91,7 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
         message: {
           title: "Mail-Nachricht",
           description: "Eine Nachricht in einem zugänglichen Postfach.",
+          count: { one: "Mail", other: "Mails" },
         },
         reminder: {
           title: "Mail-Erinnerung",

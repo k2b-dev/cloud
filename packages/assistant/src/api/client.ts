@@ -31,6 +31,7 @@ type AiEditableMemoryKind = Exclude<AiMemoryKind, "workflow">;
 
 import { api } from "@k2b/cloud/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
+import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput, SaveChatWorkspaceResult } from "../chat-workspace";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
 import type { ApiType } from ".";
@@ -318,6 +319,21 @@ export const assistantApi = {
     return response.json();
   },
 
+  getChatTabs: async (conversationId: string): Promise<ChatWorkspaceSnapshot> => {
+    const response = await assistantClient.workspace.conversations[":conversationId"].tabs.$get({ param: { conversationId } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load chat tabs"));
+    return response.json();
+  },
+
+  saveChatTabs: async (conversationId: string, body: SaveChatWorkspaceInput): Promise<SaveChatWorkspaceResult> => {
+    const response = await assistantClient.workspace.conversations[":conversationId"].tabs.$put({
+      param: { conversationId },
+      json: body,
+    });
+    if (!response.ok) throw new Error(await readError(response, "Failed to save chat tabs"));
+    return response.json();
+  },
+
   /** One page of a chat's sources, with apps as the viewer may see them: unreadable apps left out, current titles. */
   listConversationSources: async (input: {
     conversationId: string;
@@ -345,6 +361,12 @@ export const assistantApi = {
     );
     if (!response.ok) throw new Error(await readError(response, "Failed to load chat sources"));
     return (await response.json()) as { sources: AiConversationSource[]; nextCursor?: string; total: number };
+  },
+
+  getWebReader: async (): Promise<{ available: boolean }> => {
+    const response = await assistantClient.workspace["web-reader"].$get();
+    if (!response.ok) throw new Error(await readError(response, "Failed to check web reading availability"));
+    return response.json();
   },
 
   listConversationFiles: async (input: { conversationId: string; signal?: AbortSignal }): Promise<AiFileStat[]> => {

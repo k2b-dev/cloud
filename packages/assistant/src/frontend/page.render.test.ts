@@ -12,6 +12,7 @@ import * as rail from "@k2b/cloud/services/rail-snapshot";
 import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import * as chatContext from "../chat-context";
+import * as chatWorkspace from "../chat-workspace-service";
 import * as projectContext from "../project-context";
 import * as sidebar from "../sidebar";
 
@@ -239,6 +240,9 @@ test.each(["/app/assistant", "/app/assistant/panel"])(
     spies.push(spyOn(ai.aiConversations, "markConversationViewed").mockResolvedValue(true));
     spies.push(spyOn(ai.aiConversations, "listConversationTimeline").mockResolvedValue([]));
     spies.push(spyOn(chatContext, "loadAssistantChatContextSnapshot").mockResolvedValue(null));
+    spies.push(
+      spyOn(chatWorkspace, "loadAssistantChatWorkspace").mockResolvedValue({ state: { tabs: [], layout: null, front: null }, revision: 0 }),
+    );
     const state = spyOn(ai, "loadAiStreamState").mockResolvedValue({
       type: "state",
       conversation: chat,

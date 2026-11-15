@@ -24,6 +24,8 @@ test("the API schema tree and mounted machine operations use the same declared p
     ["PUT", "/artifacts/machine/:id/storage/file"],
     ["POST", "/artifacts/machine/:id/database"],
     ["PUT", "/artifacts/machine/:id/access/:accessId"],
+    ["GET", "/workspace/conversations/:conversationId/tabs"],
+    ["PUT", "/workspace/conversations/:conversationId/tabs"],
   ];
   for (const [method, path] of routes) {
     expect(apiRoutes.routes.some((route) => route.method === method && route.path === path)).toBe(true);

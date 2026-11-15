@@ -42,6 +42,12 @@
       "import": "./dist/ssr/country-map.js",
       "default": "./dist/ssr/country-map.js"
     },
+    "./panes": {
+      "types": "./dist/types/panes.d.ts",
+      "browser": "./dist/browser/panes.js",
+      "import": "./dist/ssr/panes.js",
+      "default": "./dist/ssr/panes.js"
+    },
     "./package.json": "./package.json",
     "./map-glyphs/*": "./map-glyphs/*",
     "./text-editor": {
