@@ -154,6 +154,21 @@ export const routineChat = (): AiStoredMessage[] => [
   ),
 ];
 
+/** `#g-anhaenge`: a photo and a PDF go along with the question. */
+const attachmentChat = (): AiStoredMessage[] => {
+  seq = 0;
+  return [
+    stored({
+      role: "user",
+      content: [
+        { type: "text", text: '<attachment path="/uploads/vase.jpg" media-type="image/jpeg" size="482133" />' },
+        { type: "text", text: '<attachment path="/uploads/Nachlass-Liste.pdf" media-type="application/pdf" size="126204" />' },
+        { type: "text", text: "Was ist diese Vase wert? Sie steht auf Seite 2 der Liste." },
+      ],
+    }),
+  ];
+};
+
 const QUESTION = "Was hat Jana zum Angebot für den Messestand gefragt? Und was kostet uns die Beleuchtung?";
 
 /** A live turn that started `seconds` ago with these blocks. */
@@ -212,6 +227,8 @@ export const galleryScenes = {
   gestoppt: () => ({ messages: cutAnswer("stopped") }),
   /** `#g-antwort/fehler` */
   fehler: () => ({ messages: cutAnswer("failed") }),
+  /** `#g-anhaenge` */
+  anhaenge: () => ({ messages: attachmentChat() }),
   antwort: () => ({ messages: answerChat() }),
   routine: () => ({ messages: routineChat() }),
   /** `#g-antwort/denkt`: the turn started and Gustav thinks. */

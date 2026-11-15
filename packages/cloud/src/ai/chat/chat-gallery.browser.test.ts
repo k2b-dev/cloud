@@ -36,6 +36,8 @@ const box = (page: Page, selector: string) =>
         height: rect.height,
         top: rect.top,
         bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
         radius: style.borderRadius,
         background: style.backgroundColor,
         color: style.color,
@@ -170,6 +172,26 @@ test("a delivered routine result offers no answer again, so a retry never target
     expect(await labels(1)).not.toContain("Neu antworten");
   } finally {
     await close();
+  }
+}, 60_000);
+
+test("what a message brings along stands above it: images as previews, files as tiles with name and size", async () => {
+  for (const width of [1440, 390]) {
+    const { page, close } = await open("anhaenge", width);
+    try {
+      const image = await box(page, '.k2b-chat-message__attachment[data-kind="image"]');
+      expect([image.width, image.height, image.radius]).toEqual([148, 110, "12px"]);
+      const file = page.locator('.k2b-chat-message__attachment[data-kind="file"]');
+      expect((await file.innerText()).replace(/\s+/g, " ").trim()).toMatch(/^Nachlass-Liste\.pdf 12\d\S* [KkM]i?B$/);
+      const tile = await box(page, '.k2b-chat-message__attachment[data-kind="file"]');
+      // Grey tiles without an edge, on the bubble's right edge.
+      expect(tile.radius).toBe("12px");
+      expect(await file.evaluate((node) => getComputedStyle(node).borderTopWidth)).toBe("0px");
+      const bubble = await box(page, ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble");
+      expect(Math.abs(tile.right - bubble.right)).toBeLessThan(1);
+    } finally {
+      await close();
+    }
   }
 }, 60_000);
 

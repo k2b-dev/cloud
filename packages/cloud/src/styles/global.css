@@ -348,7 +348,7 @@ solid-island {
   /* A page that scrolls its content in a ScrollArea grows with it here, so
      the area does not scroll and reserves no second gutter beside the
      document's. From md, `main` bounds its height and it scrolls. */
-  .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated]) .layout-content-main > .k2b-scroll-area { scrollbar-gutter: auto; }
+  .cloud-app-canvas:not([data-layout-full-page], [data-layout-authenticated]) .layout-content-main > .k2b-scroll-area { overflow-y: auto; scrollbar-gutter: auto; }
   .cloud-app-canvas > .layout-shell-content { gap: 0; }
   /* The anonymous header floats as the same card as from md, with the shell
      spacing that the canvas gives it there. */

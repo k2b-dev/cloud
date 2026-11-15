@@ -3804,9 +3804,12 @@ html {
     /* Every shared scroller that exists to scroll keeps the same
        always-present track, for the same reason: WebKit's scrollbar-gutter
        reserves nothing until content overflows. Chromium draws the same empty
-       track either way. Regions that often do not scroll, such as Main,
-       MainPane, and a plain ScrollArea, keep their gutter and draw no empty
-       track; an inset ScrollArea takes it from its inset (above). */
+       track either way, so a ScrollArea is as wide in Safari as in Chrome and
+       never narrows when it starts to scroll. Where it has end padding, its
+       owner takes the track from it (see the ScrollArea guide). Layout regions
+       that often do not scroll, such as Main and MainPane, keep their gutter
+       and draw no empty track. */
+    .k2b-ui .k2b-scroll-area[data-orientation="vertical"],
     .k2b-ui .k2b-app-workspace__sidebar-desktop > .k2b-app-workspace__sidebar-body,
     .k2b-ui .k2b-detail-panel__body,
     .k2b-ui .k2b-chat-timeline__viewport,

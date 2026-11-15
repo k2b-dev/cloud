@@ -12,13 +12,11 @@ import { auth, expectUserBackedActor, getLocale, getTimeZone, loadPendingApprova
 import { coreSettings } from "@k2b/cloud/services";
 import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
-import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
 import AssistantWorkspace from "./AssistantWorkspace.island";
-import { ASSISTANT_CONTEXT_COOKIE, assistantContextClosedFromCookie } from "./chat-sidebar-layout";
 import { assistantMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
@@ -130,7 +128,6 @@ export default ssr<AuthContext>(async (c) => {
           : null
       }
       initialContext={initialContext}
-      initialContextClosed={assistantContextClosedFromCookie(getCookie(c, ASSISTANT_CONTEXT_COOKIE))}
       projects={projects}
       initialProject={activeProject}
       initialProjectChats={

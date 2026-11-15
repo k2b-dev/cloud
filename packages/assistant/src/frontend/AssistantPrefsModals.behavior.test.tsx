@@ -251,3 +251,73 @@ test("a Skill link opens that Skill's editor directly", async () => {
     dom.cleanup();
   }
 });
+
+test("the Chat tab turns the suggested next message off at once and turns it back when saving fails", async () => {
+  const dom = createDomTestHarness();
+  dom.root.className = "k2b-ui";
+  const { dialogCore, toast } = await import("@k2b/ui");
+  const { openAssistantPrefsModal } = await import("./AssistantPrefsModals");
+  const prefs: AiUserPrefs = {
+    userId: "user",
+    memoryEnabled: true,
+    memoryLearningEnabled: true,
+    suggestNextMessage: true,
+    selection: null,
+    updatedAt: new Date(0).toISOString(),
+  };
+  const getPrefs = spyOn(assistantApi, "getPrefs").mockResolvedValue(prefs);
+  const listMemories = spyOn(assistantApi, "listMemories").mockResolvedValue([]);
+  let fail = false;
+  const updatePrefs = spyOn(assistantApi, "updatePrefs").mockImplementation(async (input) => {
+    if (fail) throw new Error("Failed to save AI preferences");
+    return { ...prefs, ...input };
+  });
+  const failed = spyOn(toast, "error").mockReturnValue({ dismiss() {}, update() {} });
+  const fetchMock = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(async () => Response.json([]), { preconnect: globalThis.fetch.preconnect }),
+  );
+  const toggle = () => {
+    const switches = Array.from(dom.document.querySelectorAll<HTMLInputElement>('input[role="switch"]'));
+    expect(switches).toHaveLength(1);
+    expect(switches[0]!.closest("label, .k2b-switch, div")?.textContent).toContain("Suggest next message");
+    return switches[0]!;
+  };
+  try {
+    const dialog = openAssistantPrefsModal("chat");
+    await tick();
+    expect(toggle().checked).toBe(true);
+
+    // No Save button: the switch applies at once.
+    toggle().click();
+    await tick();
+    expect(updatePrefs.mock.calls).toEqual([[{ suggestNextMessage: false }]]);
+    expect(toggle().checked).toBe(false);
+
+    // Leaving the tab and coming back shows the saved choice, not the one the dialog opened with.
+    const tab = (name: string) =>
+      Array.from(dom.document.querySelectorAll<HTMLElement>('[role="tab"]')).find((item) => item.textContent?.trim() === name)!;
+    tab("Personalization").click();
+    await tick();
+    tab("Chat").click();
+    await tick();
+    expect(toggle().checked).toBe(false);
+
+    fail = true;
+    toggle().click();
+    await tick();
+    expect(updatePrefs.mock.calls[1]).toEqual([{ suggestNextMessage: true }]);
+    expect(toggle().checked).toBe(false);
+    expect(failed).toHaveBeenCalledTimes(1);
+
+    dialogCore.close();
+    await dialog;
+  } finally {
+    while (dialogCore.isOpen()) dialogCore.close();
+    getPrefs.mockRestore();
+    listMemories.mockRestore();
+    updatePrefs.mockRestore();
+    failed.mockRestore();
+    fetchMock.mockRestore();
+    dom.cleanup();
+  }
+});
