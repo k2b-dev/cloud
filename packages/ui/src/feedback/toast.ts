@@ -48,7 +48,11 @@ export type ToastOptions = {
 
 export type ToastHandle = {
   dismiss: () => void;
-  update: (description: string, options?: ToastOptions) => void;
+  /**
+   * Changes the toast in place. Returns `false` when the toast is already gone, closed by the person or a timer, so the
+   * caller can still report a result, such as a failure, with a new toast. (`void` keeps existing test doubles valid.)
+   */
+  update: (description: string, options?: ToastOptions) => boolean | void;
 };
 
 export type ToastSlotOptions = {
@@ -747,8 +751,7 @@ const actionVariant = (action: ToastAction, paired: boolean, first: boolean): "p
 const showToast = (description: string, options?: ToastOptions): ToastHandle => {
   const initialContainer = ensureContainer();
   if (!initialContainer) {
-    const noop = () => {};
-    return { dismiss: noop, update: noop };
+    return { dismiss: () => {}, update: () => false };
   }
   const toastMessages = resolveToastMessages();
   const doc = initialContainer.ownerDocument;
@@ -982,8 +985,8 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     contentElement.dataset.swap = "true";
   };
 
-  const update = (nextDescription: string, nextOptions?: ToastOptions) => {
-    if (dismissed) return;
+  const update = (nextDescription: string, nextOptions?: ToastOptions): boolean => {
+    if (dismissed) return false;
     const has = (key: keyof ToastOptions) => nextOptions !== undefined && Object.prototype.hasOwnProperty.call(nextOptions, key);
     const previousProgress = currentProgress;
     currentDescription = nextDescription;
@@ -1022,6 +1025,7 @@ const showToast = (description: string, options?: ToastOptions): ToastHandle => 
     if ((!ticking || halfway || variantChanged) && spoken() !== lastAnnouncement) say();
     // Finished progress or a new duration can make this toast one the rail limit removes.
     enforceCap();
+    return true;
   };
 
   closeButton.addEventListener("click", () => dismiss());

@@ -1096,6 +1096,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       toast.success(t().archived({ title: conversation.title }), {
         action: {
           label: t().undo,
+          variant: "ghost",
           onClick: () =>
             void mutate(t().restore, async () => {
               await assistantApi.restoreConversation(id);

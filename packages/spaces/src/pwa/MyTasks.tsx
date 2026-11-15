@@ -227,6 +227,7 @@ export default function MyTasks(props: Props) {
     const notice = toast.success(t.done, {
       action: {
         label: t.undo,
+        variant: "ghost",
         onClick: () => {
           notice.dismiss();
           undo(item, place);

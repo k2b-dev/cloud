@@ -1,9 +1,12 @@
+import { useLocale } from "@k2b/ui";
 import { createEffect, onCleanup, onMount } from "solid-js";
 import { rootResourceLinks } from "./answer-links";
 import { useAiChatActions } from "./message-actions";
+import { aiChatMessages } from "./messages";
 
 export function AssistantMarkdownBlock(props: { html: string }) {
   const actions = useAiChatActions();
+  const locale = useLocale();
   let element!: HTMLDivElement;
   const originals = new WeakMap<HTMLAnchorElement, { href: string; target: string | null }>();
   const files = new WeakMap<HTMLAnchorElement, string>();
@@ -42,5 +45,11 @@ export function AssistantMarkdownBlock(props: { html: string }) {
     element.addEventListener("click", handleClick);
     onCleanup(() => element.removeEventListener("click", handleClick));
   });
-  return <div ref={element} class="assistant-markdown-block" innerHTML={rootResourceLinks(props.html)} />;
+  return (
+    <div
+      ref={element}
+      class="assistant-markdown-block"
+      innerHTML={rootResourceLinks(props.html, (number) => aiChatMessages(locale()).citeLabel({ number }))}
+    />
+  );
 }
