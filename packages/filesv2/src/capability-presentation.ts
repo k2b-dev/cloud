@@ -3,6 +3,22 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 /** What people see for Files capabilities in the Assistant, approvals, search, and the capability catalog. */
 export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
+  // What a finished Query did, named in the chat's step list; each German translation gives its own `doneTitle`.
+  doneTitles: {
+    "bases.list": "Listed storage bases",
+    "entry.list": "Listed folder entries",
+    "entry.search-in-base": "Searched within storage",
+    "trash.list": "Listed trash",
+    "content.read": "Read file content",
+    "content.download": "Got file download link",
+    "provider.list": "Browsed files for a file chooser",
+    "activity.get": "Read one file history event",
+    "activity.list": "Read file history",
+    "activity.chain": "Followed a file movement",
+    "share.access": "Read public-link access counts",
+    "entry.read": "Read file entry",
+    "entry.search": "Searched files",
+  },
   sentences: {
     "entry.trash": {
       approval: "Move {input.path} to the trash",
@@ -47,58 +63,71 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
       queries: {
         "activity.get": {
           title: "Verlaufseintrag lesen",
+          doneTitle: "Verlaufseintrag gelesen",
           description: "Einen Eintrag mit denselben aktuellen Sichtrechten wie die Verlaufsliste lesen.",
         },
         "activity.list": {
           title: "Dateiverlauf lesen",
+          doneTitle: "Dateiverlauf gelesen",
           description:
             "Eine berechtigte Verlaufsseite lesen oder Namen und alte Pfade suchen. Filter beim Blättern beibehalten; Momentaufnahmen gewähren keinen aktuellen Zugriff.",
         },
         "activity.chain": {
           title: "Dateiumzug verfolgen",
+          doneTitle: "Dateiumzug verfolgt",
           description:
             "Bis zu 20 sichtbare Umzugsschritte verfolgen. Das aktuelle Ziel wird nur nach erneuter Rechteprüfung angezeigt; ohne feste Identität bleibt es eine Vermutung.",
         },
         "share.access": {
           title: "Linkzugriffe lesen",
+          doneTitle: "Linkzugriffe gelesen",
           description:
             "Als Ersteller oder Administrator Aufruf-, Download- und Passwortfehlerzahlen eines öffentlichen Links im UTC-Datumsbereich lesen.",
         },
         "bases.list": {
           title: "Ablagen auflisten",
+          doneTitle: "Ablagen aufgelistet",
           description: "Zugängliche persönliche Ablagen und Gruppenablagen auflisten. Nicht verfügbare Ablagen zeigen ihren Zustand.",
         },
         "entry.list": {
           title: "Ordnerinhalt auflisten",
+          doneTitle: "Ordnerinhalt aufgelistet",
           description: "Eine Seite der Einträge direkt in einem bekannten Ordner lesen.",
         },
         "entry.search-in-base": {
           title: "In einer Ablage suchen",
+          doneTitle: "In einer Ablage gesucht",
           description: "Datei- und Ordnernamen in einer bekannten Ablage oder einem Ordner finden. Dateiinhalte werden nicht durchsucht.",
         },
         "trash.list": {
           title: "Papierkorb auflisten",
+          doneTitle: "Papierkorb aufgelistet",
           description: "Eine Seite wiederherstellbarer Einträge im Papierkorb auflisten.",
         },
         "content.read": {
           title: "Dateiinhalt lesen",
+          doneTitle: "Dateiinhalt gelesen",
           description: "Eine Datei vollständig als geschützten Datenstrom öffnen.",
         },
         "content.download": {
           title: "Download-Link abrufen",
+          doneTitle: "Download-Link abgerufen",
           description: "Einen kurzlebigen Download-Link für eine einzelne Datei anfordern. Der Zugriff wird dabei erneut geprüft.",
         },
         "provider.list": {
           title: "Dateien zur Auswahl durchsuchen",
+          doneTitle: "Dateien zur Auswahl durchsucht",
           description:
             "Einen Ordner zum Auswählen oder Speichern von Dateien öffnen: zuerst die zugänglichen Ablagen, darin Ordner und Dateien.",
         },
         "entry.read": {
           title: "Dateieintrag lesen",
+          doneTitle: "Dateieintrag gelesen",
           description: "Die aktuellen Angaben zu einer Datei oder einem Ordner nach einer Zugriffsprüfung lesen.",
         },
         "entry.search": {
           title: "Dateien durchsuchen",
+          doneTitle: "Dateien durchsucht",
           description:
             "Datei- und Ordnernamen in bis zu 10 zugänglichen Ablagen finden. Für vollständige Ergebnisse in Dateien weitersuchen.",
           searchTags: { file: { title: "Dateien", description: "Datei- und Ordnernamen durchsuchen." } },

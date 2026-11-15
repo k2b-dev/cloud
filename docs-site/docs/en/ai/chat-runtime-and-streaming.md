@@ -532,7 +532,9 @@ const questions = await listAiOpenQuestions({
 ```
 
 `AiOpenQuestions` contains at most 20 `items`, newest first, and a `count` of
-all matching questions. Each `AiOpenQuestion` carries the approval ID, chat
+all matching questions. Each `AiOpenQuestion` carries its `kind` (today
+`approval`; a further source of things that wait for the person adds its own
+kind, and Assistant gives each kind its sign in "Waiting for you"), the approval ID, chat
 short ID and current title, tool-block `anchor`, short plain text, app
 presentation, and ISO creation time. The short text uses the review's `short`
 template when provided, otherwise its action sentence, rendered like the card's

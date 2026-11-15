@@ -181,6 +181,16 @@ test("what a message brings along stands above it: images as previews, files as 
     try {
       const image = await box(page, '.k2b-chat-message__attachment[data-kind="image"]');
       expect([image.width, image.height, image.radius]).toEqual([148, 110, "12px"]);
+      // Without its preview the image shows its sign in the quiet third grey, not in full ink.
+      const ink = await page.locator('.k2b-chat-message__attachment[data-kind="image"] > i').evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-text-subtle)";
+        node.parentElement!.append(probe);
+        const subtle = getComputedStyle(probe).color;
+        probe.remove();
+        return { icon: getComputedStyle(node).color, subtle };
+      });
+      expect(ink.icon).toBe(ink.subtle);
       const file = page.locator('.k2b-chat-message__attachment[data-kind="file"]');
       expect((await file.innerText()).replace(/\s+/g, " ").trim()).toMatch(/^Nachlass-Liste\.pdf 12\d\S* [KkM]i?B$/);
       const tile = await box(page, '.k2b-chat-message__attachment[data-kind="file"]');
@@ -247,6 +257,10 @@ for (const width of [1440, 390])
       const steps = page.locator(".ai-turn-steps > .k2b-chat-activity");
       expect(await steps.count()).toBe(5);
       expect(await steps.first().innerText()).toContain("Nachgedacht");
+      // Finished reading steps say what happened, in the app's own past form (v12 image 03).
+      expect(await steps.nth(1).innerText()).toContain("In Mail gesucht");
+      expect(await steps.nth(2).innerText()).toContain("Unterhaltung gelesen");
+      expect(await steps.nth(3).innerText()).toContain("Datei gelesen");
       const axis = await steps.evaluateAll((nodes) =>
         nodes.map((node) => Math.round(node.querySelector(".ai-app-tile")!.getBoundingClientRect().left)),
       );

@@ -279,3 +279,37 @@ domTest("a failed read stays outside repeated reads as its own row", async () =>
     view.cleanup();
   }
 });
+
+domTest("a finished app Query says what it did: the app's past form, else its title marked done; a running one its title", async () => {
+  const query = (id: string, status: "completed" | "running", doneTitle?: string): AiTurnBlock => ({
+    id,
+    kind: "tool",
+    callId: id,
+    name: `acme__query__${id}`,
+    status,
+    args: { query: "Messestand" },
+    result: { data: "hidden payload" },
+    presentation: {
+      kind: "capability",
+      appId: "acme",
+      appName: "Acme",
+      appIcon: "ti ti-box",
+      title: `Search ${id}`,
+      capabilityKind: "query",
+      ...(doneTitle ? { doneTitle } : {}),
+    },
+  });
+  const view = await mount(() => [query("mail", "completed", "Searched mail"), query("notes", "completed"), query("files", "running")]);
+  try {
+    view.toggle(view.work());
+    const labels = view.steps().map((step) => step.querySelector(".k2b-chat-activity__label")?.textContent ?? step.textContent);
+    expect(labels[0]).toContain("Searched mail");
+    expect(labels[1]).toContain("Search notes · done");
+    expect(labels[2]).toContain("Search files");
+    expect(labels[2]).not.toContain("done");
+    // What the step looked for stays below it.
+    expect(view.steps()[0]?.textContent).toContain("Messestand");
+  } finally {
+    view.cleanup();
+  }
+});

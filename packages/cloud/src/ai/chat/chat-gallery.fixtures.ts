@@ -38,7 +38,14 @@ const stored = (message: Part, options: { loopId?: string; minute?: number; meta
 
 const user = (text: string) => stored({ role: "user", content: [{ type: "text", text }] });
 
-const app = (appId: string, appName: string, appIcon: string, appAccent: string, title: string): AiToolPresentation => ({
+const app = (
+  appId: string,
+  appName: string,
+  appIcon: string,
+  appAccent: string,
+  title: string,
+  doneTitle?: string,
+): AiToolPresentation => ({
   kind: "capability",
   appId,
   appName,
@@ -46,10 +53,11 @@ const app = (appId: string, appName: string, appIcon: string, appAccent: string,
   appAccent,
   title,
   capabilityKind: "query",
+  ...(doneTitle ? { doneTitle } : {}),
 });
 
-const mail = (title: string) => app("mail", "Mail", "ti ti-mail", "var(--app-mail, #1d4ed8)", title);
-const files = (title: string) => app("files", "Dateien", "ti ti-folder", "var(--app-files, #b45309)", title);
+const mail = (title: string, doneTitle?: string) => app("mail", "Mail", "ti ti-mail", "var(--app-mail, #1d4ed8)", title, doneTitle);
+const files = (title: string, doneTitle?: string) => app("files", "Dateien", "ti ti-folder", "var(--app-files, #b45309)", title, doneTitle);
 const spaces = (title: string) => app("spaces", "Spaces", "ti ti-layout-kanban", "var(--app-spaces, #0f766e)", title);
 
 type Call = {
@@ -93,21 +101,21 @@ export const answerChat = (): AiStoredMessage[] => {
           name: "mail__query__search",
           args: { query: "Messestand" },
           result: { summary: "3 Unterhaltungen gefunden" },
-          presentation: mail("In Mail suchen"),
+          presentation: mail("In Mail suchen", "In Mail gesucht"),
         },
         {
           id: "call-read",
           name: "mail__query__thread",
           args: { title: "Messestand Köln" },
           result: { ref: messestandThread, href: "/open/mail.thread/~messestand-koeln", title: "Messestand Köln · Jana Berger" },
-          presentation: mail("Unterhaltung lesen"),
+          presentation: mail("Unterhaltung lesen", "Unterhaltung gelesen"),
         },
         {
           id: "call-file",
           name: "files__query__read",
           args: { title: "Angebot-2026-118.pdf" },
           result: { ref: angebotFile, href: "/open/files.file/~angebot-2026-118", title: "Angebot-2026-118.pdf", summary: "4 Seiten" },
-          presentation: files("Datei lesen"),
+          presentation: files("Datei lesen", "Datei gelesen"),
         },
         {
           id: "call-space",
@@ -190,7 +198,7 @@ const searchBlock: AiTurnBlock = {
   args: { query: "Messestand" },
   status: "completed",
   result: { summary: "3 Unterhaltungen gefunden" },
-  presentation: mail("In Mail suchen"),
+  presentation: mail("In Mail suchen", "In Mail gesucht"),
 };
 
 const readingBlock: AiTurnBlock = {
@@ -200,7 +208,7 @@ const readingBlock: AiTurnBlock = {
   name: "files__query__read",
   args: { title: "Angebot-2026-118.pdf" },
   status: "running",
-  presentation: files("Datei lesen"),
+  presentation: files("Datei lesen", "Datei gelesen"),
 };
 
 export type GalleryChat = { messages: AiStoredMessage[]; active?: AiActiveTurn };

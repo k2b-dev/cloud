@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import type { Tool, ToolContext, ToolResolver } from "@k2b/nessi";
 import { z } from "zod";
-import { isPersonVisibleCapabilityQuery, resolveCapabilityActionWording, resolveCapabilityOperationTitle } from "../_internal/capabilities";
+import {
+  isPersonVisibleCapabilityQuery,
+  resolveCapabilityActionWording,
+  resolveCapabilityOperationTitle,
+  resolveCapabilityQueryDoneTitle,
+} from "../_internal/capabilities";
 import { capabilityReviewView } from "../_internal/capability-reviews";
 import {
   CAPABILITY_APPROVAL_REASON_FIELD,
@@ -67,7 +72,12 @@ export type AiCapabilityCatalogEntry = AiCapabilityCatalogItem & {
    * the base `title`, `description`, and schemas: they are prompt text, and stable prompts do not change
    * with the reader's language.
    */
-  display: { appName: string; title: string };
+  display: {
+    appName: string;
+    title: string;
+    /** Queries: what a finished call did, when the app gives a past form in this locale. */
+    doneTitle?: string;
+  };
 };
 
 export type AiToolKind = "builtin" | AiCapabilityKind;
@@ -148,6 +158,17 @@ export const buildAiCapabilityAppCatalog = (apps: readonly CapabilityRegistryEnt
  * Build one deterministic, immutable view of the current live registry. `locale` selects the human
  * presentation in `display`; model-facing fields always stay in the app's base presentation.
  */
+const doneTitleOf = (
+  kind: "query" | "action",
+  operation: CapabilityQueryManifest | CapabilityActionManifest,
+  catalog: CapabilityRegistryEntry["presentation"],
+  locale: string | undefined,
+): { doneTitle?: string } => {
+  if (kind !== "query") return {};
+  const doneTitle = locale ? resolveCapabilityQueryDoneTitle(operation, catalog, locale) : catalog?.doneTitles?.[operation.localId];
+  return doneTitle ? { doneTitle } : {};
+};
+
 export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[], locale?: string): AiCapabilityCatalogEntry[] => {
   const entries = [...apps]
     .sort(
@@ -186,6 +207,7 @@ export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[], locale
           title: locale
             ? resolveCapabilityOperationTitle(operation, kind === "action" ? "actions" : "queries", app.presentation, locale)
             : operation.title,
+          ...doneTitleOf(kind, operation, app.presentation, locale),
         },
       }),
     )
@@ -1083,6 +1105,7 @@ export const createAiToolResolver =
         appAccent: entry.app.appAccent,
         title: entry.display.title,
         capabilityKind: entry.kind,
+        ...(entry.display.doneTitle ? { doneTitle: entry.display.doneTitle } : {}),
         ...(wording?.sentences ? { sentences: wording.sentences } : {}),
         ...(wording?.fields?.length ? { fields: [...wording.fields] } : {}),
         ...(offersApprovalReason(entry) ? { approvalReason: true as const } : {}),

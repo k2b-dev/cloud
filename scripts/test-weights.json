@@ -289,6 +289,7 @@
     "@k2b/ui src/chat/chat-composer-suggestion.browser.test.ts": 8.2,
     "@k2b/ui src/chat/chat-composer.browser.test.ts": 63.6,
     "@k2b/ui src/chat/chat-decision.browser.test.ts": 14,
+    "@k2b/ui src/chat/chat-usage.browser.test.ts": 13,
     "@k2b/ui src/content/area.browser.test.ts": 6.8,
     "@k2b/ui src/content/calendar-days.browser.test.ts": 36.1,
     "@k2b/ui src/content/calendar-detail-trail.browser.test.ts": 45.1,
