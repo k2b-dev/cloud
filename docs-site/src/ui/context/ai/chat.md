@@ -55,6 +55,19 @@ only links, buttons, and other controls inside it stay their own targets. With
 a controlled `open`, the body renders as soon as the row opens, before the host
 passes its new state back.
 
+Put `Chat.Activity.Words` in the `label` of a running activity whose word may
+change with time, such as thinking. It shows `first` for 3 s, then one of
+`words` every 2.4 s, round after round. The old word fades out completely
+before the next one fades in, so one word stands in its place at any moment.
+`elapsedMs` is how long the phase has run by the host's clock: the server
+renders the word for that time, and the first browser frame shows the same
+word. A pointer or the focus on the row holds the word, a hidden tab changes
+nothing, and with reduced motion the stylesheet shows a resting `first`, already in the server's HTML. The words are `aria-hidden`; screen
+readers hear `announce` once, from one status element. Keep the time beside it
+in `trailing`, so a longer or shorter word moves nothing. The host owns the
+words and their order; key the component by the phase, so each phase starts
+over.
+
 ## Import
 
 ```tsx
@@ -642,6 +655,12 @@ type ChatActivityToggleProps = { children: JSX.Element };
 `Chat.Activity.Toggle` takes `ChatActivityToggleProps`. Put it in an activity's
 `label` to open only that activity's body.
 
+```ts
+type ChatActivityWordsProps = { first: string; words: readonly string[]; elapsedMs: number; announce: string };
+```
+
+`Chat.Activity.Words` takes `ChatActivityWordsProps`.
+
 `ChatRootProps` belongs to `Chat`, the other component props to `.Timeline`, `.Composer`, `.Message`, and `.Activity`. `ChatActionBase` is the common shape shown here; consumers import `ChatAction`. For usage data see [Context usage](/en/ui/ai/context-usage#api-reference).
 
 Defaults: composer `state="idle"`, `runningSubmitIntent="steer"`; timeline `followThreshold=96` CSS pixels. Set `runningSubmitIntent="queue"` to submit queued messages while running. `submitting` and `stopping` block submission. `onLoadOlder` can return false to report that no page was loaded; rejected loads become retryable history errors. `onStop` may be async and failures reach `onError`.
@@ -897,7 +916,12 @@ plain plus, a quiet pill-shaped field, and a round Send button. The field has th
 shared 2 px field edge of every input: grey at rest, a slightly darker fill on
 hover, the blue edge of the same width on focus, red with `error`, and a muted
 well without an edge when `disabled`. It casts no shadow; only its paint changes.
-Formatting, emoji, and the microphone sit inside the field at its end. Send is
+Formatting, emoji, and the microphone sit inside the field at its end. While
+the text fits one row beside them, the field stays one row. Once it does not,
+the text takes the field's whole width, so its scrollbar sits at the field's
+edge, and the tools stand at the bottom right over a row of their own, so the
+text always ends above them. Whether the text fits is measured at the one-row
+width, so the field does not switch back while the text stays. Send is
 dimmed until there is something to send. With `fileSelection` alone, the
 attach button opens the file choice directly; with `menuActions`, it opens the
 add menu. With `addOpensCommands` and commands available, **+** opens the

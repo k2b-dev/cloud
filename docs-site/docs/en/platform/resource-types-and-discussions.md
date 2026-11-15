@@ -250,15 +250,18 @@ expected container.
 ## Built-in providers
 
 Spaces declares `item` inside `space`; Notebooks declares `note` inside
-`notebook`; Grids declares `record` inside `base`. Each pair supplies standard
-reader views. Spaces and Notebooks also expose `access.readable` on both Types.
-Grids does not yet offer those account reader checks, so resource discussion
-push is not configured for Grids. Its ordinary readers enforce current Base
-grants, credential scopes, and Base resource bindings. Table and View are not
-separate discussion containers. Grids uses `base.containers` for the standard
-container list and offers no activity query.
+`notebook`; Contacts declares `contact` inside `book`; Grids declares `record`
+inside `base`. Contacts uses `book.containers` and standard reader views,
+without activity or `access.readable` checks. Its discussion messages work
+through current reader permissions; resource discussion push is not configured
+for Contacts. Grids uses `base.containers` and standard reader views and offers
+no activity query or account reader checks, so resource discussion push is not
+configured for Grids either. Its ordinary readers enforce current base grants,
+credential scopes, and base resource bindings. Table and View are not separate
+discussion containers.
 
-Spaces task views include the current column or localized Done
+Both Types in the Spaces and Notebooks pairs expose `access.readable` and a
+standard reader view. Spaces task views include the current column or localized Done
 status, completion flag, and a due date when relevant. Event views include the
 localized schedule and completion flag. Notebook and note views describe
 their resource without a task status or completion flag.

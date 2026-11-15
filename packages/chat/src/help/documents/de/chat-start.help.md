@@ -44,16 +44,16 @@ Jeder Thread-Treffer sagt, wo er steht, zum Beispiel **Thread in IT** oder **Thr
 Antwortet eine zugehörige App nicht, siehst du die übrigen Treffer trotzdem, und **Erneut versuchen** fragt noch einmal.
 Drücke `Escape` oder leere das Feld, um wieder die Liste zu sehen.
 
-## Kanäle entdecken {icon="compass"}
+## Kanäle entdecken {icon="info-circle"}
 
 :::steps
-1. Wähle **Kanäle entdecken** unter **Kanäle**.
+1. Wähle **Kanäle entdecken** neben der Überschrift **Kanäle**.
 2. Suche mit **Kanäle suchen** nach Name oder Zweck.
-3. Wähle **Abonnieren** neben einem Kanal.
-4. Wähle **Abonniert**, um ihn zu öffnen.
+3. Wähle einen Kanal, um ihn zu lesen.
+4. Wähle unter seinen Nachrichten **Abonnieren**.
 :::
 
-Der Kanal erscheint unter **Kanäle**, mit seinem Zweck unter dem Namen.
+Der Kanal erscheint unter **Kanäle**, mit seinem Zweck unter dem Namen. Ein Haken markiert Kanäle, die du schon abonniert hast.
 Mit **Weitere anzeigen** lädst du weitere Suchergebnisse. Schlägt das Laden fehl, wähle **Erneut versuchen**.
 Mit Zugriff **Lesen** steht **Nur die Redaktion schreibt hier.** anstelle des Nachrichtenfelds.
 Kanäle haben keine Threads.

@@ -50,24 +50,19 @@ for (const mode of [
       await context.close();
       harness.reset();
     });
-    const discover = () => page.getByRole("link", { name: t.browseChannels, exact: true }).filter({ visible: true });
+    // "Discover channels" is the button beside the Channels section; it opens the catalog in a popover.
+    const discover = () => page.getByRole("button", { name: t.browseChannels, exact: true }).filter({ visible: true });
     const catalog = () => page.getByRole("region", { name: t.browseChannels, exact: true });
     const newChannel = async () => {
       await page.getByRole("button", { name: t.newChat, exact: true }).filter({ visible: true }).click();
       await page.getByRole("radio", { name: t.channelChoice, exact: true }).click();
       return page.getByRole("dialog");
     };
-    test("discover is an enhanced page; search, pending, failure/retry, subscribe and Back preserve the page", async () => {
+    test("the catalog address stays a page; search, pending, failure/retry, subscribe and Back preserve it", async () => {
       const id = harness.addChannel("Atlas", "Project decisions");
       harness.addChat({ name: "Planning", members: [viewer, nora], count: 1, end: chatTestNow });
-      await mount(page, mode.locale);
-      await page.evaluate(() => {
-        document.body.dataset.navigationMarker = "kept";
-      });
-      await discover().click();
-      await page.waitForURL("**/app/chat/channels");
+      await mount(page, mode.locale, "/app/chat/channels");
       await catalog().getByText(t.discoverSubtitle).waitFor();
-      expect(await page.locator("body").getAttribute("data-navigation-marker")).toBe("kept");
       await catalog().getByRole("searchbox").fill("decisions");
       await page.waitForURL("**/app/chat/channels?q=decisions");
       const row = catalog().getByRole("listitem").filter({ hasText: "Atlas" });
@@ -113,6 +108,37 @@ for (const mode of [
         await catalog().getByRole("link", { name: t.backToChats, exact: true }).click();
         await discover().waitFor();
       }
+    });
+    test("Discover channels opens beside its section; an unsubscribed channel asks to subscribe instead of the composer", async () => {
+      const id = harness.addChannel("Atlas", "Project decisions");
+      harness.addChat({ name: "Planning", members: [viewer, nora], count: 1, end: chatTestNow });
+      const resource = harness.addChat({ name: "Lager Ost", members: [viewer, nora], count: 1, end: chatTestNow });
+      harness.setSystem(resource, { type: "spaces.space", id: "Shelf-7" });
+      await mount(page, mode.locale);
+      const sections = page.locator(".k2b-app-workspace__sidebar-section:visible");
+      // Chats, Channels and Discussions end in one chevron column at the right edge.
+      await sections.filter({ hasText: t.systemChats }).waitFor();
+      await settled(page);
+      const edges = await sections
+        .locator(".k2b-app-workspace__sidebar-section-chevron i")
+        .evaluateAll((icons) => icons.map((icon) => Math.round(icon.getBoundingClientRect().right * 2) / 2));
+      expect(edges.length).toBeGreaterThanOrEqual(3);
+      expect(new Set(edges).size).toBe(1);
+      await discover().focus();
+      await page.keyboard.press("Enter");
+      const popover = page.getByRole("dialog", { name: t.browseChannels, exact: true });
+      await popover.getByRole("searchbox").waitFor();
+      expect(await popover.getByRole("searchbox").evaluate((element) => element === document.activeElement)).toBe(true);
+      await popover.getByText("Atlas", { exact: true }).click();
+      await page.waitForURL(`**/app/chat/c/${id}`);
+      await popover.waitFor({ state: "detached" });
+      await page.getByText(t.subscribeQuestion, { exact: true }).waitFor();
+      expect(await page.locator('.chat-conversation textarea:not([aria-hidden="true"])').count()).toBe(0);
+      await page.getByRole("button", { name: t.subscribe, exact: true }).click();
+      await page.locator('.chat-conversation textarea:not([aria-hidden="true"])').waitFor();
+      expect(harness.props({}).sidebar.items.some((row) => row.id === id && row.member)).toBe(true);
+      if (mode.width === 1440)
+        await page.locator(".k2b-app-workspace__sidebar-desktop").getByRole("link").filter({ hasText: "Atlas" }).waitFor();
     });
     test("a subscription made in another tab shows in the open catalog", async () => {
       harness.addChannel("Atlas", "Project decisions");

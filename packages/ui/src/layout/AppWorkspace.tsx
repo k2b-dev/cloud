@@ -1489,6 +1489,11 @@ const AppWorkspaceSidebarSection = (props: AppWorkspaceSidebarSectionProps) => {
   const [expanded, setExpanded] = createSignal(props.defaultOpen ?? true);
   const open = () => !props.collapsible || (props.open ?? expanded());
   const id = `sidebar-section-${createUniqueId()}`;
+  const toggle = () => {
+    const next = !open();
+    setExpanded(next);
+    props.onOpenChange?.(next);
+  };
   const title = () => (
     <>
       <Show when={props.icon}>
@@ -1523,18 +1528,20 @@ const AppWorkspaceSidebarSection = (props: AppWorkspaceSidebarSectionProps) => {
               class="k2b-app-workspace__sidebar-section-toggle"
               aria-expanded={open()}
               aria-controls={id}
-              onClick={() => {
-                const next = !open();
-                setExpanded(next);
-                props.onOpenChange?.(next);
-              }}
+              onClick={toggle}
             >
               {title()}
-              <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
             </button>
           </Show>
           <Show when={props.actions}>
             <div class="k2b-app-workspace__sidebar-section-actions">{props.actions}</div>
+          </Show>
+          {/* The chevron closes every header in one column at the right edge, after any actions, so sections with
+              and without actions or counts line up. The heading button stays the control for keyboard and readers. */}
+          <Show when={props.collapsible}>
+            <span class="k2b-app-workspace__sidebar-section-chevron" aria-hidden="true" onClick={toggle}>
+              <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} />
+            </span>
           </Show>
         </header>
       </Show>

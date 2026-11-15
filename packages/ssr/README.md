@@ -288,7 +288,7 @@ Navigation behavior:
 
 Available exports:
 
-- `Link`, `installPageSwap()`, `swapPage()`, `onBeforeLeave()`
+- `Link`, `installPageSwap()`, `swapPage()`, `onBeforeLeave()`, `protectUnsavedInput()`
 - `navigate()`, `navigateTo()`, `documentNavigate()`, `currentPathWithQuery()`, `refreshCurrentPath()`
 - `captureScroll()`, `restoreScroll()`, `listenPopState()`, `startViewTransition()`
 - `BeforeLeaveEvent`, `LinkNavigateEvent`, `LinkProps`, `EnhancedNavigateOptions`, `NavigationScrollMode`, `PopStateNavigationEvent`, `ScrollSnapshot`
@@ -339,6 +339,21 @@ links outside the scope, and hash links on the same page stay native.
 `swapPage(currentUrl, { replace: true, scroll: "preserve" })` shows the page
 again where it was: the window and keyed regions keep their scroll position.
 
+Any failure loads the requested URL once as a document and leaves the old
+column untouched until then. Right before, `window` receives `ssr:nav-fallback`
+with `detail: { reason, url, status? }`; `reason` is a stable code (`network`,
+`timeout`, `status`, `content-type`, `redirect`, `shell`, `assets`, `head`,
+`module`, `commit`, `history`, `history-limit`, `error`) for counting fallbacks. Strip `url`
+before reporting it. `installPageSwap({ timeout })` bounds fetch and module
+loading in milliseconds; past it the document loads instead. The head stays:
+title and `<meta name="description">` follow the fetched page. Nav compares
+only base, stylesheet links, and `<html lang>`/`dir`; put every other head
+difference, such as inline styles, viewport, or canonical links, into the shell
+signature.
+
+For unsaved input, `protectUnsavedInput({ dirty, confirm })` asks `confirm`
+before a swap and lets the browser ask before a document load.
+
 In a swap host, the loader imports modules used only outside the column
 first. A module with an instance in the column loads after them, also for its
 instances outside, because importing a module mounts every instance. So an
@@ -349,7 +364,7 @@ history. Use the installer island only outside the column.
 A swap fetches the page, then loads its island modules, and only then disposes
 the old islands. It pushes history, replaces the column, sets the title and
 the declared attributes, mounts the new islands, scrolls to the top or to
-the hash, focuses the first heading of the column, and announces the title in
+the hash, focuses the first rendered heading of the column, and announces the title in
 a polite live region. A newer navigation aborts a pending swap: another swap,
 Back or Forward, a native link or form submission, an enhanced `Link` click,
 or a call to `navigate()` or `documentNavigate()`. A swap that starts while

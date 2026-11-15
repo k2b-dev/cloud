@@ -201,6 +201,7 @@
   --k2b-ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* standard curve */
   --k2b-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* small marks only: check, switch knob, badge */
   --k2b-ease-morph: cubic-bezier(0.2, 0, 0, 1); /* with --k2b-motion-morph: a soft start and a long, calm landing */
+  --k2b-ease-in: ease-in; /* something leaves: it speeds up as it goes */
   /* Moments of work in progress. Each follows a change of state; only "running" loops. */
   --k2b-motion-glide: 380ms; /* the highlight of the current step glides to the next row */
   --k2b-motion-check: 260ms; /* a check springs open when a step is done */
@@ -214,6 +215,9 @@
   --k2b-motion-arrive: 460ms; /* an approval rises 10 px into place */
   --k2b-motion-ring-out: 1100ms; /* a ring around a new approval loosens outwards once */
   --k2b-motion-busy: 1300ms; /* one pass of the shimmer over a filled button while Cloud works; loops until an answer */
+  --k2b-motion-word-out: 120ms; /* a changing word of a running activity fades out completely ... */
+  --k2b-motion-word-in: 160ms; /* ... and only then the next word fades in */
+  --k2b-motion-word-hold: 2400ms; /* how long one such word stands */
   --k2b-motion-switch-on: 340ms; /* a card changes in place to "on" */
   --k2b-motion-pulse: 1100ms; /* one pulse of a running run; loops until its result */
   --k2b-motion-settle: 300ms; /* a value fades over to its new text */
@@ -321,6 +325,9 @@
     --k2b-motion-settle: 0ms;
     --k2b-motion-enter-row: 0ms;
     --k2b-motion-think: 0ms;
+    --k2b-motion-word-out: 0ms;
+    --k2b-motion-word-in: 0ms;
+    --k2b-motion-word-hold: 0ms;
   }
   .k2b-ui,
   .k2b-ui::before,
@@ -363,6 +370,9 @@ html[data-k2b-motion="reduced"] .k2b-ui {
   --k2b-motion-settle: 0ms;
   --k2b-motion-enter-row: 0ms;
   --k2b-motion-think: 0ms;
+  --k2b-motion-word-out: 0ms;
+  --k2b-motion-word-in: 0ms;
+  --k2b-motion-word-hold: 0ms;
 }
 html[data-k2b-motion="reduced"] .k2b-ui,
 html[data-k2b-motion="reduced"] .k2b-ui::before,
@@ -14959,6 +14969,54 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-left: auto;
 }
 
+/* A changing word of a running activity (`Chat.Activity.Words`): one word in its place at any moment. The old word
+   fades out completely, only then the next fades in; opacity only, so nothing beside it moves. */
+.k2b-ui .k2b-chat-activity__words {
+  display: inline-grid;
+  vertical-align: top;
+}
+
+.k2b-ui .k2b-chat-activity__word,
+.k2b-ui .k2b-chat-activity__word-rest {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+/* The resting first word stands in for the changing one only with reduced motion, by the stylesheet alone, so the
+   server's HTML and the first frame already agree. */
+.k2b-ui .k2b-chat-activity__word-rest {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .k2b-chat-activity__word-rest {
+    display: inline;
+  }
+
+  .k2b-ui .k2b-chat-activity__word {
+    display: none;
+  }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity__word-rest {
+  display: inline;
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity__word {
+  display: none;
+}
+
+/* Transitions, not animations, so a host may still run its own animation on the word, such as a shimmer. The new word
+   arrives while the place is at opacity 0 and comes back in with the "in" timing. */
+.k2b-ui .k2b-chat-activity__word {
+  transition: opacity var(--k2b-motion-word-in) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-chat-activity__word[data-phase="out"] {
+  opacity: 0;
+  transition: opacity var(--k2b-motion-word-out) var(--k2b-ease-in);
+}
+
 .k2b-ui .k2b-chat-activity__chevron {
   transition: transform 120ms ease;
 }
@@ -16577,11 +16635,42 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* The pill carries the shared field edge (see `.k2b-chat-composer__field` above). */
 .k2b-ui .k2b-chat-composer__field {
+  position: relative;
   display: flex;
   flex: 1 1 0;
   min-width: 0;
   align-items: flex-end;
   border-radius: 1.125rem;
+}
+
+/* Text that does not fit one row beside the tools takes the pill's whole width, so its scrollbar sits at the pill's
+   edge. The tools stand over a row of their own below the text, at the bottom right, and the text always ends above
+   them. Whether it fits is measured at the one-row width, so the layout never flips back while the text stays. */
+.k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__input {
+  padding-bottom: calc(var(--k2b-chat-composer-control) - 2 * var(--k2b-edge-width));
+}
+
+.k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__field-tools {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+}
+
+/* With the whole width the text keeps the same inset from the pill's end as from its start, and the scrollbar its own
+   gutter, so the text never rewraps when the field reaches its cap. The space above the tools is the tools' row alone.
+   The measuring copy takes this layout only while it measures the height of several rows. */
+.k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__input :is(textarea:not(.k2b-chat-composer__measure), .k2b-chat-composer__highlight),
+.k2b-ui .k2b-chat-composer .k2b-chat-composer__input textarea.k2b-chat-composer__measure[data-mode="many"] {
+  padding-right: calc(0.875rem - 1px);
+  padding-bottom: 0;
+  scrollbar-gutter: stable;
+}
+
+@media (any-pointer: coarse) {
+  .k2b-ui .k2b-chat-composer__field[data-lines="many"] .k2b-chat-composer__input :is(textarea:not(.k2b-chat-composer__measure), .k2b-chat-composer__highlight),
+  .k2b-ui .k2b-chat-composer .k2b-chat-composer__input textarea.k2b-chat-composer__measure[data-mode="many"] {
+    padding-right: calc(1rem - 1px);
+  }
 }
 
 .k2b-ui .k2b-chat-composer__field .k2b-chat-composer__input {
@@ -19832,7 +19921,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1rem;
   cursor: pointer;
 }
-.k2b-ui .k2b-app-workspace__sidebar-section-toggle > i { margin-inline-start: auto; }
+.k2b-ui .k2b-app-workspace__sidebar-section-chevron {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  width: 1.25rem;
+  align-self: stretch;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
 .k2b-ui .k2b-app-workspace__sidebar-section-toggle:focus-visible { outline: var(--k2b-focus-width) solid var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 .k2b-ui .k2b-app-workspace__sidebar-preview-body {
   max-height: min(calc(32rem - 2px), calc(100dvh - 1rem - 2px));
