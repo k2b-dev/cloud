@@ -237,6 +237,10 @@ export default function AssistantCodeVersionCard(props: {
     const current = loaded();
     return current && typeof current === "object" ? current : null;
   };
+  const selfApproval = () => {
+    const readiness = preview()?.readiness;
+    return readiness?.state === "approval_pending" && readiness.selfApproval === true;
+  };
   const busy = () => activation().kind === "progress";
   const spinning = () => {
     const current = activation();
@@ -528,8 +532,9 @@ export default function AssistantCodeVersionCard(props: {
               <p class="assistant-code-version__note">
                 <i class="ti ti-hourglass" aria-hidden="true" />
                 <span>
-                  {t().codeVersionApprovalPending} {t().codeVersionKeepsRunning({ version: current().running })}{" "}
-                  {t().codeVersionApprovalLive}
+                  {selfApproval() ? t().codeVersionSelfApprovalPending : t().codeVersionApprovalPending}{" "}
+                  {t().codeVersionKeepsRunning({ version: current().running })}{" "}
+                  <Show when={!selfApproval()}>{t().codeVersionApprovalLive}</Show>
                 </span>
               </p>
             </Show>

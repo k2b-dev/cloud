@@ -238,6 +238,7 @@ export const assistantMessages = i18n.define({
       codeVersionDiff: "Difference",
       codeVersionKeepsRunning: ({ version }: { version: number | null }) =>
         version ? `Until then version ${version} keeps running.` : "Until then nothing runs.",
+      codeVersionSelfApprovalPending: "You can approve it yourself.",
       codeVersionApprovalPending: "A Cloud administrator must approve this version first.",
       codeVersionApprovalLive: "This card shows their decision as soon as it is made.",
       codeVersionRejected: "A Cloud administrator did not approve this version.",
@@ -547,6 +548,7 @@ export const assistantMessages = i18n.define({
       codeVersionSwitchOn: "Einschalten",
       codeVersionDiff: "Unterschied",
       codeVersionKeepsRunning: ({ version }) => (version ? `Bis dahin läuft Version ${version} weiter.` : "Bis dahin läuft nichts."),
+      codeVersionSelfApprovalPending: "Du kannst sie selbst freigeben.",
       codeVersionApprovalPending: "Diese Version muss erst ein Cloud-Admin freigeben.",
       codeVersionApprovalLive: "Die Karte zeigt die Entscheidung, sobald sie fällt.",
       codeVersionRejected: "Ein Cloud-Admin hat diese Version nicht freigegeben.",

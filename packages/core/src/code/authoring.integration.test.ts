@@ -192,6 +192,7 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
         if (!tool || !("location" in tool) || tool.location !== "server") throw new Error("Expected server tool");
         return tool.run(tool.def.inputSchema.parse(input), {
           actor: author.authority.actor,
+          locale: author.locale,
           conversationId,
           turnId: id,
           signal: new AbortController().signal,
@@ -242,6 +243,50 @@ databaseSuite()("Code authoring CLI/chat seam", () => {
       await codeAuthoringServices.policyUpdate({ revision: updated.policy.revision, definition: policy.definition }, context);
     }
   });
+
+  for (const locale of ["de", "en"] as const) {
+    for (const otherAdmin of [false, true]) {
+      test(`submit handover and card use the same sole-approver state (${locale}, other=${otherAdmin})`, async () => {
+        const secondId = "33240000-0000-4000-8000-000000000002";
+        const current = { ...context, locale };
+        const { policy } = await codeAuthoringServices.policyRead({}, context);
+        const updated = await codeAuthoringServices.policyUpdate(
+          { revision: policy.revision, definition: codePolicyPreset("admin") },
+          context,
+        );
+        if (otherAdmin)
+          await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${secondId}::uuid,'second-reviewer','local','user',true)`;
+        runner.mockReturnValue({
+          check: async (request) => {
+            const result = checked(request);
+            return result.ok ? { ...result, manifest: { ...result.manifest, internet: ["https://example.com"] } } : result;
+          },
+        });
+        try {
+          await withDraftChat(async (invoke) => {
+            const project = codeAuthoringContracts.init.data.parse(await invoke("code_init", { title: "Approver handover" }));
+            const saved = codeAuthoringContracts.submit.data.parse(await invoke("code_submit", { codeId: project.config.codeId }));
+            expect(saved.nextStep).toEqual({ next: "admin_approval", who: otherAdmin ? "cloud_admin" : "you" });
+            const input = { codeId: project.config.codeId, versionId: saved.submission.version.id };
+            expect((await previewCodeActivation(input, current)).readiness).toEqual({
+              state: "approval_pending",
+              selfApproval: !otherAdmin,
+            });
+            if (!otherAdmin) {
+              // A retained admin claim must not produce self-approval copy after live demotion.
+              await sql`UPDATE auth.users SET admin=false WHERE id=${id}::uuid`;
+              expect((await previewCodeActivation(input, current)).readiness).toEqual({ state: "approval_pending", selfApproval: false });
+            }
+          }, current);
+        } finally {
+          await sql`UPDATE auth.users SET admin=true WHERE id=${id}::uuid`;
+          await sql`DELETE FROM auth.users WHERE id=${secondId}::uuid`;
+          runner.mockReturnValue({ check: async (request) => checked(request) });
+          await codeAuthoringServices.policyUpdate({ revision: updated.policy.revision, definition: policy.definition }, context);
+        }
+      });
+    }
+  }
 
   test("chat checks, tests, simulations and submit share exactly the server-held files and fixtures", async () => {
     await withDraftChat(async (invoke) => {

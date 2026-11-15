@@ -226,7 +226,7 @@ export async function previewCodeActivation(
   }
   // An older card in a chat asks no target again: nothing can be switched on from there.
   if (version.number < base.latest) return { ...base, activated: null, readiness: { state: "ready" }, place, page };
-  const readiness = await codeVersionReadiness(code, input.versionId, sql);
+  const readiness = await codeVersionReadiness(code, input.versionId, sql, context);
   const targets = manifest.success ? await previewTargets(code, manifest.data, catalog) : undefined;
   const operationLabels = targets
     ? await describeOperations(

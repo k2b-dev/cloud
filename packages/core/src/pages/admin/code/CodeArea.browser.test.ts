@@ -95,7 +95,7 @@ test("approving sends the unchanged hash binding, shows the result and lowers th
   await goto(review);
   await page.getByText("Lieferungen eintragen", { exact: true }).waitFor();
   expect(await page.getByText("lieferungenEintragen", { exact: true }).count()).toBe(1);
-  expect(await sidebarCode().innerText()).toContain("4");
+  expect(await sidebarCode().innerText()).toContain("5");
   await page.getByText("„Für andere sichtbar“ steht für Lea Muster auf Admin gibt frei, aus dem Standard.").waitFor();
   await page.getByText("https://api.buchhaltung-beispiel.de", { exact: true }).waitFor();
   // The person read down to the diff and decides in the footer.
@@ -111,11 +111,11 @@ test("approving sends the unchanged hash binding, shows the result and lowers th
   expect(fixture.requests).toEqual([{ path: "decide", body: { binding: fixtureApprovalDetail().binding, approved: true } }]);
   await page.getByRole("link", { name: "Code öffnen" }).waitFor();
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).count()).toBe(0);
-  expect(await sidebarCode().innerText()).toContain("3");
+  expect(await sidebarCode().innerText()).toContain("4");
   expect(await page.locator(`a[href*="sec=approvals"][href*="id=${FIXTURE_VERSIONS.rueckruf3}"]`).count()).toBe(0);
   await page.reload();
   await page.getByText("Version 3 ist freigegeben.").waitFor();
-  expect(await sidebarCode().innerText()).toContain("3");
+  expect(await sidebarCode().innerText()).toContain("4");
   expect(await page.locator(`a[href*="sec=approvals"][href*="id=${FIXTURE_VERSIONS.rueckruf3}"]`).count()).toBe(0);
 }, 20_000);
 
@@ -138,7 +138,7 @@ test("rejecting asks first and cancel changes nothing", async () => {
   ]);
   await page.waitForLoadState("load");
   await page.getByText("Version 3 ist abgelehnt.").waitFor();
-  expect(await sidebarCode().innerText()).toContain("3");
+  expect(await sidebarCode().innerText()).toContain("4");
 }, 20_000);
 
 test("a line reference opens its file and marks the line in the Code difference without moving the shell", async () => {
@@ -167,7 +167,7 @@ test("an outdated, own or unloaded version cannot be approved and says why", asy
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).count()).toBe(0);
 
   await goto(`${review}&state=sole`);
-  await page.getByText("Es gibt keinen zweiten Cloud-Admin", { exact: false }).waitFor();
+  await page.getByText("Du bist der einzige Admin und gibst deine eigene Version frei.").waitFor();
   expect(await page.getByRole("button", { name: "Version 3 freigeben" }).isEnabled()).toBe(true);
 
   await goto(`${review}&state=difffail`);
