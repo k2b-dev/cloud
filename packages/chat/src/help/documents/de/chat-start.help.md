@@ -44,7 +44,7 @@ Jeder Thread-Treffer sagt, wo er steht, zum Beispiel **Thread in IT** oder **Thr
 Antwortet eine zugehörige App nicht, siehst du die übrigen Treffer trotzdem, und **Erneut versuchen** fragt noch einmal.
 Drücke `Escape` oder leere das Feld, um wieder die Liste zu sehen.
 
-## Kanäle entdecken {icon="compass"}
+## Kanäle entdecken {icon="info-circle"}
 
 :::steps
 1. Wähle **Kanäle entdecken** neben der Überschrift **Kanäle**.

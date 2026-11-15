@@ -2705,7 +2705,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         aria-expanded={catalog() ? "true" : "false"}
         onClick={(event) => void toggleCatalog(event.currentTarget)}
       >
-        <i class="ti ti-compass text-xs" aria-hidden="true" />
+        <i class="ti ti-info-circle text-xs" aria-hidden="true" />
       </IconButton>
       <Show when={catalog()}>
         {(open) => (

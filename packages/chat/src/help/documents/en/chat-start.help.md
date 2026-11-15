@@ -44,7 +44,7 @@ Each thread hit says where it is, for example **Thread in IT** or **Thread in Sp
 If a resource provider does not answer, you still see the other hits, and **Try again** asks again.
 Press `Escape` or empty the field to see the list again.
 
-## Discover channels {icon="compass"}
+## Discover channels {icon="info-circle"}
 
 :::steps
 1. Choose **Discover channels** beside the **Channels** heading.
