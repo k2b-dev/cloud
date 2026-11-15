@@ -60,7 +60,7 @@ describe("The Assistant part on a phone", () => {
 
       await page.click("a[href='/pwa/assistant/c/retro']");
       await page.waitForURL(/\/pwa\/assistant\/c\/retro$/);
-      await page.locator(".k2b-chat-decision__card").waitFor();
+      await page.locator(".k2b-chat-decision").waitFor();
       expect(await tabBarShown(page)).toBe(false);
       const chatComposer = await box(page, ".assistant-pwa-chat__composer");
       // Without the tab bar the field reaches down to the level's bottom padding.

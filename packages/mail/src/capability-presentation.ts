@@ -776,6 +776,8 @@ export const mailCapabilityPresentation: CapabilityPresentationCatalog = {
           input: {
             draftId: "Exaktes mail.draft ID, zurückgegeben durch Listenentwürfe oder einen getippten Entwurf ref.",
             expectedRevision: "Aktuelle Ressourcenrevision, die für optimistische Parallelität verwendet wird.",
+            subject: "Ersetzender Betreff, geprüft gegen den Ausgangsentwurf.",
+            body: "Ersetzender Text im aktuellen Format des Entwurfs.",
             expectedContentHash: "Inhaltsfingerabdruck contentHash aus draft.send.review unter demselben Ausführungsakteur.",
             senderIdentityId: "Verifizierte Absenderidentität ID.",
             scheduledAt: "Optionale zukünftige Lieferzeit.",

@@ -34,6 +34,7 @@ import {
   type SearchStreamLine,
   SearchStreamLineSchema,
 } from "./search/schemas";
+import { createSearchPreviewRoutes, type SearchPreviewDependencies } from "./search-preview";
 
 const log = logger("search");
 const SearchProviderResultSchema = capabilityResultSchema(UniversalSearchDataSchema);
@@ -82,7 +83,7 @@ const getSearchProviders = (entries: CapabilityRegistryEntry[]): HttpSearchProvi
   });
 };
 
-type SearchRouteDependencies = {
+type SearchRouteDependencies = SearchPreviewDependencies & {
   listCapabilities?: () => Promise<CapabilityRegistryEntry[]>;
   fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
   authenticate?: MiddlewareHandler<AuthContext>;
@@ -109,7 +110,9 @@ type AppOutcome = { appId: string; status: SearchProviderStatus; items: SearchIt
 export const createSearchRoutes = (dependencies: SearchRouteDependencies = {}) => {
   const registry = dependencies.listCapabilities ?? listCapabilities;
   const fetchProvider = dependencies.fetch ?? globalThis.fetch;
-  const router = new Hono<AuthContext>().use("/search/*", noTransform());
+  const router = new Hono<AuthContext>()
+    .use("/search/*", noTransform())
+    .route("/", createSearchPreviewRoutes(dependencies, PROVIDER_TIMEOUT_MS));
   return router.use(dependencies.authenticate ?? auth.requireRole("authenticated")).get(
     "/search",
     describeRoute({

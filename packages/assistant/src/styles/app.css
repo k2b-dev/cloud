@@ -660,6 +660,9 @@
   .k2b-ui :is(.assistant-waiting__entry, .assistant-waiting__more) { position: relative; }
   .k2b-ui :is(.assistant-waiting__entry, .assistant-waiting__more)::after { position: absolute; inset: -.5625rem 0; content: ""; }
 }
+.k2b-ui .assistant-waiting__short { font-weight: 600; overflow-wrap: anywhere; }
+.k2b-ui .assistant-waiting__chat { color: var(--k2b-text-muted); font-size: .75rem; }
+.k2b-ui .assistant-waiting__view { flex: none; background: var(--k2b-surface); }
 @media (prefers-reduced-motion: reduce) {
   .k2b-ui .assistant-chat-sidebar-item--leaving { transition: none; }
 }

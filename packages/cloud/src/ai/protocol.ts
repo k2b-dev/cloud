@@ -1,4 +1,5 @@
 import type { CompactResult, InboundEvent, Message } from "@k2b/nessi";
+import type { BoundBlockView } from "../blocks/schema";
 import type { CapabilityActionReviewPresentation } from "../contracts/capabilities";
 import type { AiActionCheck, AiStoredActionReview } from "./action-review";
 import type { AiConversation, AiFrontendToolMode, AiStoredMessage, AiToolPresentation, AiTurnStatus } from "./types";
@@ -50,9 +51,14 @@ export type AiTurnBlock =
       /** Localized transient host status, without tool payload data. */
       progress?: string;
       result?: unknown;
+      /** Bound on the server from the stored raw capability result. */
+      view?: BoundBlockView;
+      choice?: import("./choice-state").AiChoiceState;
       isError?: boolean;
       /** Present while status is awaiting_approval. */
       approval?: {
+        requestId?: string;
+        digest?: string;
         message?: string;
         review?: CapabilityActionReviewPresentation;
         allowAlways: boolean;
@@ -264,6 +270,8 @@ export const buildBlocksFromMessages = (
     message: Message;
     meta?: {
       steerId?: string;
+      resultView?: BoundBlockView;
+      resultChoice?: import("./choice-state").AiChoiceState;
       toolPresentations?: Record<string, AiToolPresentation>;
       toolReviews?: Record<string, AiStoredActionReview>;
       toolChecks?: Record<string, AiActionCheck>;
@@ -322,6 +330,8 @@ export const buildBlocksFromMessages = (
         blocks[at!] = {
           ...existing,
           status: outcome === "rejected" ? "rejected" : message.isError ? "failed" : "completed",
+          ...(meta?.resultView ? { view: meta.resultView } : {}),
+          ...(meta?.resultChoice ? { choice: meta.resultChoice } : {}),
           result: message.isError && existing.result !== undefined ? existing.result : message.result,
           isError: message.isError,
           ...(createdAt ? { at: createdAt } : {}),

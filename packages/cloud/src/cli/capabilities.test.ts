@@ -383,7 +383,7 @@ test("read reuses its manifest when it covers every result ref", async () => {
 });
 
 test("generic CLI review returns the complete unsaved proposal without executing an Action", async () => {
-  const review = { ...reviewFixture(), content: { kind: "page", title: "Unsaved", body: "x".repeat(300_000), format: "plain" } };
+  const review = { ...reviewFixture(), view: { version: 1, blocks: [{ kind: "Text", text: "x".repeat(60_000) }] } };
   const calls: string[] = [];
   const { ctx, lines } = createContext(["review", "demo", "write"], { input: '{"body":"new"}' }, async (path, init) => {
     calls.push(path);

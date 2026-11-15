@@ -815,20 +815,23 @@ for (const view of [
             },
           },
         });
-        const card = ".ai-turn__action .k2b-chat-decision__card";
+        const card = ".ai-turn__action .k2b-chat-decision";
         await settled(page, ".ai-turn");
         const cardBox = (await viewportBox(page, card))!;
         const workBox = await viewportBox(page, ".ai-turn-work");
         const textBox = await viewportBox(page, ".ai-turn__text");
-        // Card v4: the old message is the question, Cloud says why, and there is no box around it.
+        // The approval frame: the old message is the question, Cloud says why, on the AI ground with 12 px corners.
         expect(await page.locator(`${card} .k2b-chat-decision__sentence`).innerText()).toBe("Send the offer to Jana Berger.");
         expect(await page.locator(`${card} .k2b-chat-decision__reason`).innerText()).toBe(
           de ? "Ich frage, weil Mail hier jedes Mal fragt." : "I'm asking because Mail always asks for this.",
         );
-        expect(await page.$eval(card, (node) => getComputedStyle(node).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
-        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopWidth)).toBe("0px");
-        const approve = page.locator(`${card} .k2b-chat-decision__answer`).first();
-        const decline = page.locator(`${card} .k2b-chat-decision__answer`).nth(1);
+        expect(await page.$eval(card, (node) => getComputedStyle(node).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
+        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopLeftRadius)).toBe("12px");
+        // No visible edge: the frame keeps a transparent one so a draft can raise it without moving.
+        expect(await page.$eval(card, (node) => getComputedStyle(node).borderTopColor)).toBe("rgba(0, 0, 0, 0)");
+        // The filled answer stands last; the other answer before it.
+        const approve = page.locator(`${card} .k2b-chat-decision__answer[data-variant="ai"]`);
+        const decline = page.locator(`${card} .k2b-chat-decision__answer[data-variant="secondary"]`);
         const approveBox = (await approve.boundingBox())!;
         const declineBox = (await decline.boundingBox())!;
         expect(await approve.innerText()).toBe(de ? "E-Mail senden" : "Send email");
@@ -841,17 +844,23 @@ for (const view of [
         }
         expect((await layout(page)).overflowX).toBeLessThanOrEqual(0);
 
-        // Approving collapses the card at once to its outcome line in its place, with focus on it; nothing above moves.
+        // Approving turns the frame at once into its outcome line where the question stood, with focus on it; the frame and
+        // everything above it stay where they were.
+        const sentenceBox = (await viewportBox(page, `${card} .k2b-chat-decision__sentence`))!;
         await approve.click();
         await settled(page, ".ai-turn");
         expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
           { callId: "send", approved: true },
         ]);
-        expect(await page.locator(card).count()).toBe(0);
+        expect(await page.locator(`${card}[data-state="open"]`).count()).toBe(0);
         const receipt = ".ai-turn__action .k2b-chat-outcome";
         const current = `${receipt} .k2b-chat-outcome__text[data-current="true"]`;
         const receiptBox = (await viewportBox(page, receipt))!;
-        expect(receiptBox[1]).toBe(cardBox[1]);
+        expect((await viewportBox(page, card))![1]).toBe(cardBox[1]);
+        // The line takes the question's place under the head: never above the head, never lower than the question stood.
+        const [, headTop = 0, , headHeight = 0] = (await viewportBox(page, `${card} .k2b-chat-decision__head`))!;
+        expect(receiptBox[1]).toBeGreaterThanOrEqual(headTop + headHeight);
+        expect(receiptBox[1]).toBeLessThanOrEqual(sentenceBox[1]!);
         expect(receiptBox[3]).toBeLessThanOrEqual(48);
         expect(await viewportBox(page, ".ai-turn-work")).toEqual(workBox);
         expect(await viewportBox(page, ".ai-turn__text")).toEqual(textBox);
@@ -1183,7 +1192,7 @@ for (const width of [390, 320])
           approval: { allowAlways: false, message: "Einstellungen: " + title },
         },
       });
-      const card = ".ai-turn__action .k2b-chat-decision__card";
+      const card = ".ai-turn__action .k2b-chat-decision";
       await settled(page, ".ai-turn");
       const boxes = await page.evaluate((query) => {
         const box = (selector: string) => document.querySelector(`${query} ${selector}`)!.getBoundingClientRect();
@@ -1347,11 +1356,13 @@ for (const view of [
           },
         },
       });
-      const card = ".ai-turn__action .k2b-chat-decision__card";
+      const card = ".ai-turn__action .k2b-chat-decision";
       expect(await page.locator(card).innerText()).toContain(url);
       // The quiet third answer remembers this website for the chat; Always is no longer offered.
       expect(await page.locator(card).innerText()).not.toContain("Always approve");
-      await page.getByRole("button", { name: "Yes, and allow this website in this chat", exact: true }).click();
+      // Remembering is a box to tick before the answer.
+      await page.getByRole("checkbox", { name: "Allow this website in this chat", exact: true }).click();
+      await page.locator(`${card} .k2b-chat-decision__answer[data-variant="ai"]`).click();
       await frames(page);
       expect(await page.evaluate(() => (window as unknown as { approvals: unknown[] }).approvals)).toEqual([
         { callId: "run-approval-0", approved: true, remember: "chat" },
