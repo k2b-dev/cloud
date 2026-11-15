@@ -244,3 +244,28 @@ test("a Code with a page and an event keeps its schedule's next run", async () =
   });
   expect(await loadCodeNextRun(core.invoke, "c_info01")).toBe("2026-11-03T06:00:00.000Z");
 });
+
+// #75: a draft runs nothing yet, so Core lists no automations; its card says when its newest version would run.
+test("a draft carries its newest version's timing in Core's words; active Code asks no version", async () => {
+  const core = fakeCore({
+    "code.list": () => ({ items: [code("c_draft1", "draft"), code("c_live01")], nextCursor: null }),
+    "code.run.list": () => ({ items: [], nextCursor: null }),
+    "code.automation.list": (input) => ({ codeId: input.codeId, items: [], removedTargets: [] }),
+    "code.version.list": () => ({ items: [{ version: { id: "77777777-7777-4777-8777-777777777777" } }] }),
+    "code.version.words": () => ({ timing: { items: [{ text: "Freitags um 15:00" }] } }),
+  });
+  const page = await loadCodeSummaries(core.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" });
+  expect(page.items.map((item) => [item.id, item.proposedTiming])).toEqual([
+    ["c_draft1", ["Freitags um 15:00"]],
+    ["c_live01", undefined],
+  ]);
+  expect(core.calls.filter((call) => call.capabilityId.startsWith("code.version.")).map((call) => call.input)).toEqual([
+    { codeId: "c_draft1", limit: 1 },
+    { codeId: "c_draft1", versionId: "77777777-7777-4777-8777-777777777777" },
+  ]);
+  // Without a version or its words the card keeps its general word.
+  const bare = fakeCore({ "code.list": () => ({ items: [code("c_draft2", "draft")], nextCursor: null }) });
+  expect(
+    (await loadCodeSummaries(bare.invoke, { kind: "person", userId: "11111111-1111-4111-8111-111111111111" })).items[0]?.proposedTiming,
+  ).toBe(undefined);
+});

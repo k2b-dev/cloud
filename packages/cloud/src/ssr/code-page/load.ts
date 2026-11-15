@@ -13,7 +13,7 @@ import {
 } from "../../contracts/code-read-model";
 import { cloudResourcePageHref } from "../../contracts/resource-pages";
 import { sql } from "../../runtime/clients";
-import { getDateConfig, getLocale, isAppSessionActor } from "../../server";
+import { auth, getDateConfig, getLocale, isAppSessionActor } from "../../server";
 import { CORE_SETTINGS } from "../../services/settings/core-settings";
 import { visiblePanelProviders } from "../app-navigation";
 import { getDisplayRuntimeContext } from "../runtime";
@@ -95,6 +95,15 @@ const callerOf = (c: Context): CapabilityCaller => ({
   requestId: c.req.header("x-request-id"),
 });
 
+/** The person's authority for registry reads; null where the route has no authenticated request. */
+const requestAuthority = (c: Context) => {
+  try {
+    return auth.getAuthority(c);
+  } catch {
+    return null;
+  }
+};
+
 const readTab = (value: string | null): CodePageTab =>
   value === "runs" || value === "versions" || value === "secrets" || value === "code" ? value : "overview";
 const readRunFilter = (value: string | null): CodeRunFilter => (value === "failed" || value === "skipped" ? value : "all");
@@ -145,13 +154,17 @@ export const loadPeople = async (ids: Iterable<string | null | undefined>, viewe
 };
 
 type CatalogApp = Awaited<ReturnType<typeof getCapabilityCatalogApp>>;
-/** One registry catalog read per app and page, shared by every target of that app; never a call to the app. */
-export const catalogCache = (locale: string) => {
+/**
+ * One registry catalog read per app and page, shared by every target of that app; never a call to the app. The
+ * catalog answers only for apps the person may use, so it reads with the request's authority: without it, every app
+ * with an entry rule (such as Spaces) looks unusable and its types have no reader.
+ */
+export const catalogCache = (locale: string, authority: Parameters<typeof getCapabilityCatalogApp>[2] = null) => {
   const apps = new Map<string, Promise<CatalogApp | null>>();
   return (appId: string) => {
     let app = apps.get(appId);
     if (!app) {
-      app = getCapabilityCatalogApp(appId, locale).catch(() => null);
+      app = getCapabilityCatalogApp(appId, locale, authority).catch(() => null);
       apps.set(appId, app);
     }
     return app;
@@ -310,7 +323,7 @@ const loadReady = async (
   /** The Code's owner in Core's terms, for the attention query. */
   codeOwner: { kind: "resource"; ref: CloudResourceRef } | { kind: "person"; userId: string },
 ): Promise<CodePageReady> => {
-  const catalog = catalogCache(getLocale(c));
+  const catalog = catalogCache(getLocale(c), requestAuthority(c));
   const code = listed;
   const [versionsResult, runsResult, attentionResult, automationResult] = await Promise.all([
     invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), VersionListSchema),

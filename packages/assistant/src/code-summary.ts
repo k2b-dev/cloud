@@ -65,6 +65,8 @@ export type CodeSummary = z.infer<typeof CodeItemSchema> & {
   automations?: CodeAutomation[];
   /** Targets that removed access, also when no automation could be named for them. */
   removedTargets?: CodeAutomationTarget[];
+  /** A draft's timing in Core's words, one per automation of its newest version; absent when unknown. */
+  proposedTiming?: string[];
 };
 /** One page of Code the person may see for an owner. `nextCursor` continues the list; null means it is complete. */
 export type CodeSummaryPage = { items: CodeSummary[]; nextCursor: string | null };
@@ -74,6 +76,25 @@ export type CodeQueryInvoke = <T extends z.ZodType>(
   invocation: CapabilityInvocation,
   schema: T,
 ) => Promise<CapabilityClientResult<z.output<T>>>;
+
+const VersionListSchema = z.object({ items: z.array(z.object({ version: z.object({ id: z.string() }) })) });
+const VersionWordsSchema = z.object({ timing: z.object({ items: z.array(z.object({ text: z.string() })) }) });
+
+/**
+ * A draft runs nothing yet, so Core lists no automations for it. Its newest version's read model still says when each
+ * would run, in the person's language: two Queries per draft, bounded by the page size.
+ */
+const loadProposedTiming = async (invoke: CodeQueryInvoke, codeId: string): Promise<string[] | undefined> => {
+  try {
+    const versions = await invoke(query("code.version.list", { codeId, limit: 1 }), VersionListSchema);
+    const versionId = versions.ok ? versions.data.data.items[0]?.version.id : undefined;
+    if (!versionId) return undefined;
+    const words = await invoke(query("code.version.words", { codeId, versionId }), VersionWordsSchema);
+    return words.ok ? words.data.data.timing.items.map((item) => item.text) : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 /** Core pages at most 20 Code items; the list loads further pages on request. */
 export const CODE_SUMMARY_LIMIT = 20;
@@ -98,15 +119,17 @@ export const loadCodeSummaries = async (invoke: CodeQueryInvoke, owner: CodeOwne
   if (!listed.ok) throw new CodeSummaryError(listed.error.message);
   const items = await Promise.all(
     listed.data.data.items.map(async (code): Promise<CodeSummary> => {
-      const [runs, automations] = await Promise.all([
+      const [runs, automations, proposedTiming] = await Promise.all([
         invoke(query("code.run.list", { codeId: code.id, limit: 1 }), RunListSchema),
         invoke(query("code.automation.list", { codeId: code.id }), AutomationListSchema).catch(() => null),
+        code.state === "draft" ? loadProposedTiming(invoke, code.id) : Promise.resolve(undefined),
       ]);
       // A missing run history does not hide the Code; it shows that its last run is unknown.
       return {
         ...code,
         lastRun: runs.ok ? (runs.data.data.items[0] ?? null) : undefined,
         ...(automations?.ok ? { automations: automations.data.data.items, removedTargets: automations.data.data.removedTargets } : {}),
+        ...(proposedTiming ? { proposedTiming } : {}),
       };
     }),
   );

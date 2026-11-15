@@ -244,6 +244,26 @@ describe("Mailbox Code page in a browser", () => {
     }
   });
 
+  test("390px: the last run keeps its whole title on lines of its own, at a fixed height (#76)", async () => {
+    const page = await load("overview", 390);
+    try {
+      const last = await page.evaluate(() => {
+        const cell = document.querySelector<HTMLElement>(".cloud-code__lage-last");
+        const what = document.querySelector<HTMLElement>(".cloud-code__lage-what");
+        return {
+          title: what?.textContent ?? null,
+          cut: what ? what.scrollWidth > what.clientWidth + 1 || what.scrollHeight > what.clientHeight + 1 : null,
+          height: cell ? Math.round(cell.getBoundingClientRect().height) : 0,
+        };
+      });
+      expect(last.title).toBeTruthy();
+      expect({ title: last.title, cut: last.cut }).toEqual({ title: last.title, cut: false });
+      expect(last.height).toBeGreaterThanOrEqual(40);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
     for (const [state, dot] of [
       ["refused", true],

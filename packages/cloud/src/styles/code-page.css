@@ -925,6 +925,22 @@ a.cloud-code__row-main:focus-visible {
   .cloud-code__lage .cloud-code__runs {
     grid-column: 1 / -1;
   }
+  /* Half a phone is too narrow for the result and its title on one line: the title takes its own lines, at most two,
+     and the cell keeps the height of all three, so a new last run never moves the strip (6b). */
+  .cloud-code__lage-last {
+    flex-wrap: wrap;
+    align-content: flex-start;
+    row-gap: 0;
+    height: calc(24px + 2 * 1.125rem);
+  }
+  .cloud-code__lage-what {
+    display: -webkit-box;
+    flex-basis: 100%;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 1.125rem;
+    white-space: normal;
+  }
   .cloud-code__did-counts {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.875rem 1.25rem;
