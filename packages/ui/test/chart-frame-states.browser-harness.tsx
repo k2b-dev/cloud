@@ -3,6 +3,7 @@ import { render } from "solid-js/web";
 import Chart, { renderChartSvg } from "../src/content/Chart";
 import { ChartExplorer, type ChartFrameRequest } from "../src/content/ChartExplorer";
 import { responsiveChartSvg } from "../src/content/chart-svg";
+import { stretchedTickRoomsSvg } from "../src/content/chart-tick-room";
 
 type Row = { key: string; label: string; value: number };
 const rows: Row[] = [
@@ -65,24 +66,26 @@ render(
             class={`k2b-chart__svg ${name}`}
             data-stretch="true"
             style={{ "--k2b-chart-width": "480px", "--k2b-chart-height": "260px", height: "100%" }}
-            innerHTML={responsiveChartSvg(
-              renderChartSvg(
-                {
-                  kind: "line",
-                  timeAxis: { timeZone: "UTC", locale: "de" },
-                  xAxis: { ticks: 6 },
-                  series: [
-                    {
-                      label: "Saldo",
-                      data: Array.from({ length: 28 }, (_, week) => ({
-                        x: Date.UTC(2026, 4, 25) + week * 7 * 86_400_000,
-                        y: 13 + (week % 5),
-                      })),
-                    },
-                  ],
-                },
-                480,
-                260,
+            innerHTML={stretchedTickRoomsSvg(
+              responsiveChartSvg(
+                renderChartSvg(
+                  {
+                    kind: "line",
+                    timeAxis: { timeZone: "UTC", locale: "de" },
+                    xAxis: { ticks: 6 },
+                    series: [
+                      {
+                        label: "Saldo",
+                        data: Array.from({ length: 28 }, (_, week) => ({
+                          x: Date.UTC(2026, 4, 25) + week * 7 * 86_400_000,
+                          y: 13 + (week % 5),
+                        })),
+                      },
+                    ],
+                  },
+                  480,
+                  260,
+                ),
               ),
             )}
           />

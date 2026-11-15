@@ -1,5 +1,4 @@
 import { instantToZonedInput, zonedDateTimeToInstant } from "@k2b/stdlib";
-import { tickRoomStyle, tickRooms } from "./chart-tick-room";
 import { type ChartTimeAxis, type ChartTimeStep, calendarTimeLabel, calendarTimeTicks, chartTimeStep } from "./chart-time-calendar";
 
 export type { ChartTimeAxis, ChartTimeStep, ChartTimeUnit } from "./chart-time-calendar";
@@ -37,21 +36,12 @@ export function timeAxisSvg(
     x1 = Number(axisLine[3]),
     y = first[2];
   const step = chartTimeStep(domain[1] - domain[0], maxTicks);
-  const ticks = chartTimeTicks(domain, axis.timeZone, step).map((tick) => ({
-    x: x0 + ((tick - domain[0]) / (domain[1] - domain[0])) * (x1 - x0),
-    label: format ? format(tick) : chartTimeLabel(tick, step, axis),
-  }));
-  const drawWidth = Number(/viewBox="0 0 ([\d.]+) /.exec(svg)?.[1] ?? x1);
-  const rooms = tickRooms(
-    ticks.map((tick) => tick.x),
-    ticks.map((tick) => tick.label),
-    drawWidth,
-  );
-  const labels = ticks
-    .map(
-      ({ x, label }, index) =>
-        `<text class="stdlib-chart-tick-label" x="${Math.round(x * 100) / 100}" y="${y}" text-anchor="middle" data-time-tick${tickRoomStyle(rooms[index]!)}>${escapeText(label)}</text>`,
-    )
+  const labels = chartTimeTicks(domain, axis.timeZone, step)
+    .map((tick) => {
+      const x = x0 + ((tick - domain[0]) / (domain[1] - domain[0])) * (x1 - x0);
+      const label = format ? format(tick) : chartTimeLabel(tick, step, axis);
+      return `<text class="stdlib-chart-tick-label" x="${Math.round(x * 100) / 100}" y="${y}" text-anchor="middle">${escapeText(label)}</text>`;
+    })
     .join("");
   let inserted = false;
   return svg.replace(xTickLabel, () => {

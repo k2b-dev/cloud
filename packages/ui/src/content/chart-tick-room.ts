@@ -21,3 +21,48 @@ export const tickRooms = (positions: readonly number[], texts: readonly string[]
 
 /** The style that lets CSS hide a time label (`data-time-tick`) in a box narrower than it needs (`tickRooms`). */
 export const tickRoomStyle = (room: number) => (room > 0 ? ` style="--k2b-tick-room:${room}px"` : "");
+
+const tickLabel = /<text class="stdlib-chart-tick-label[^"]*"[^>]*>[^<]*<\/text>/g;
+const attribute = (tag: string, name: string) => new RegExp(` ${name}="(-?[\\d.]+)"`).exec(tag)?.[1];
+
+/**
+ * Marks the X tick labels of a line drawing that its host stretches (`data-stretch`) with the box width each needs.
+ * The X labels are the bottom row of tick labels, the lowest `y` that several labels share; Y labels each have their
+ * own. The drawing itself stays as the renderer made it, so only stretching hosts carry the marks.
+ */
+export const stretchedTickRoomsSvg = (svg: string): string => {
+  const drawWidth = Number(/viewBox="0 0 ([\d.]+) /.exec(svg)?.[1]);
+  if (!(drawWidth > 0)) return svg;
+  const labels = [...svg.matchAll(tickLabel)].map((match) => ({
+    tag: match[0],
+    x: Number(attribute(match[0], "x")),
+    y: attribute(match[0], "y"),
+    text: />([^<]*)</.exec(match[0])?.[1] ?? "",
+  }));
+  const shared = new Map<string, number>();
+  for (const label of labels) if (label.y !== undefined) shared.set(label.y, (shared.get(label.y) ?? 0) + 1);
+  const row = [...shared]
+    .filter(([, count]) => count > 1)
+    .map(([y]) => y)
+    .sort((a, b) => Number(b) - Number(a))[0];
+  const axis = labels.filter((label) => label.y === row && Number.isFinite(label.x));
+  if (axis.length < 2) return svg;
+  const rooms = tickRooms(
+    axis.map((label) => label.x),
+    axis.map((label) => label.text),
+    drawWidth,
+  );
+  const marks = new Map(axis.map((label, index) => [label, rooms[index]!]));
+  let next = 0;
+  return svg.replace(tickLabel, (tag) => {
+    const label = labels[next++];
+    const room = label ? marks.get(label) : undefined;
+    if (room === undefined) return tag;
+    // A responsive drawing already gives each label a style; the room joins it, a second attribute would be ignored.
+    const marked = tag.replace(/^<text /, "<text data-time-tick ");
+    if (room <= 0) return marked;
+    return / style="/.test(marked)
+      ? marked.replace(/ style="([^"]*)"/, (_match, style: string) => ` style="${style};--k2b-tick-room:${room}px"`)
+      : marked.replace(/^(<text[^>]*)>/, `$1${tickRoomStyle(room)}>`);
+  });
+};
