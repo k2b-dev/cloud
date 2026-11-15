@@ -930,7 +930,8 @@ describe("capability tool presentation", () => {
     expect(customHtml).toContain("Proposed body: Hello **Ada**");
     expect(customHtml).toContain("&lt;script>alert('plain text')&lt;/script>");
     expect(customHtml).toContain("Spaces · Read only");
-    expect(customHtml).not.toContain("<strong>");
+    expect(customHtml).not.toContain("<strong>Read calendar</strong>");
+    expect(customHtml).not.toContain("<strong>Ada</strong>");
     expect(customHtml).not.toContain("<script>");
     // Read it all opens the thing the review links, and every other link of the review stays before the answer.
     expect(customHtml).toContain('href="/app/contacts"');
@@ -1226,7 +1227,7 @@ describe("live tool disclosure stability", () => {
 });
 
 describe("survey presentation", () => {
-  test("uses a neutral action sheet with vertical choices and a bottom action footer", () => {
+  test("is a flat choice like a view's: no hull, flat option cards, the state and one quiet answer below", () => {
     const html = renderToString(() =>
       createComponent(CloudSurveyBlock, {
         args: {
@@ -1257,16 +1258,20 @@ describe("survey presentation", () => {
     );
 
     expect(html).toContain("Choose a follow-up time");
-    expect(html).toContain('class="w-full min-w-0 overflow-hidden');
-    expect(html).toContain('class="mt-2 grid gap-1.5"');
-    expect(html).toContain('type="radio"');
+    // The same parts as a view's Choice block, never a box around boxes.
+    expect(html).toContain('class="cloud-blocks__choice');
+    expect(html).toContain('class="cloud-blocks__question"');
+    expect(html).toContain("k2b-choice-list");
+    expect(html).toContain('role="radio"');
     expect(html).toContain('class="k2b-slider"');
-    expect(html).toContain("var(--k2b-surface-muted)");
+    expect(html).not.toContain("rounded-xl border");
+    expect(html).not.toContain(">Survey</p>");
     expect(html).toContain("Tomorrow morning");
     expect(html).toContain("Friday afternoon");
     expect(html).not.toMatch(/border-t\b/);
-    expect(html).toContain("k2b-button ml-auto");
-    expect(html).toContain("Submit");
+    expect(html).toContain('class="cloud-blocks__choice-foot"');
+    expect(html).toMatch(/data-variant="secondary"[^>]*>(?:(?!<\/button>).)*Submit/s);
+    expect(html).not.toContain('data-variant="ai"');
   });
 
   test("speaks the reader's language and labels a text answer with its question", () => {
@@ -1281,7 +1286,6 @@ describe("survey presentation", () => {
         },
       }),
     );
-    expect(html).toContain(">Umfrage</p>");
     expect(html).toContain("Absenden");
     // The input is named by its visible question, not by a copy that can drift from it.
     const labelledBy = /<input[^>]*aria-labelledby="([^"]+)"/.exec(html)?.[1];

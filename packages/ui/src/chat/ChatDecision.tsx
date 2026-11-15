@@ -54,7 +54,11 @@ export type ChatDecisionProps = {
    * The thing itself on the surface colour, under its own label such as "Details from Mail". `note` is one quiet line
    * under it that holds for every such question, such as what Cloud checked.
    */
-  details?: { label: string; content: JSX.Element; note?: { text: string; icon?: string } };
+  /**
+   * The thing itself under its label, such as "Details from Code"; `context` is a quiet addition after it, such as
+   * "compared with version 4", and `note` one quiet line under the details.
+   */
+  details?: { label: string; context?: string; content: JSX.Element; note?: { text: string; icon?: string } };
   /** Lines after the details, each with its icon, such as what happens now and what holds until then. */
   notes?: readonly ChatDecisionReason[];
   /** Quiet facts at the start of the answer row, such as when the question expires. */
@@ -272,7 +276,12 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                   >
                     <i class={props.source.icon} aria-hidden="true" />
                   </span>
-                  {details().label}
+                  <span>
+                    <strong>{details().label}</strong>
+                    <Show when={details().context}>
+                      {(context) => <span class="k2b-chat-decision__details-context"> · {context()}</span>}
+                    </Show>
+                  </span>
                 </p>
                 {details().content}
                 <Show when={details().note}>
@@ -323,13 +332,6 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
               </span>
             </Show>
             <span class="k2b-chat-decision__buttons">
-              <Show when={props.link}>
-                {(link) => (
-                  <ButtonLink class="k2b-chat-decision__answer" wrap variant="text" href={link().href}>
-                    {link().label}
-                  </ButtonLink>
-                )}
-              </Show>
               <Show when={props.back}>
                 {(back) => (
                   <Button
@@ -391,6 +393,14 @@ export function ChatDecision(props: ChatDecisionProps): JSX.Element {
                     <Show when={confirmAnswer().icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
                     {confirmAnswer().label}
                   </Button>
+                )}
+              </Show>
+              {/* A link to read everything comes last, after the answers: it leaves the question, it does not answer it. */}
+              <Show when={props.link}>
+                {(link) => (
+                  <ButtonLink class="k2b-chat-decision__answer" wrap variant="text" href={link().href}>
+                    {link().label}
+                  </ButtonLink>
                 )}
               </Show>
             </span>
