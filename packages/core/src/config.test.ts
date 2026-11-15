@@ -60,3 +60,22 @@ test("a browser visitor without a session reaches a public Code page; app access
   expect(response.status).toBe(200);
   expect(await response.text()).toBe("route-owned authentication");
 });
+
+test("the label card of a public Code page answers visitors without a session; reports and neighbors stay behind entry", async () => {
+  const request = (path: string) =>
+    new Hono()
+      .use(requireAppAccess(app.meta, async (c) => c.text("Core access denied", 403)))
+      .post(path, (c) => c.text("route-owned admission"))
+      .request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  // The card admits like the page itself, so entry lets every visitor reach the route's own admission.
+  const card = await request("/api/code/pages/provenance");
+  expect(card.status).toBe(200);
+  expect(await card.text()).toBe("route-owned admission");
+  // Only members report (F28): the report route and the label's neighbors keep the normal entry.
+  for (const path of ["/api/code/pages/report", "/api/code/pages/provenance/extra", "/api/code/pages"]) {
+    const response = await request(path);
+    // A visitor without a session is sent to sign in before any route sees the request.
+    expect(response.status).toBe(401);
+    expect(await response.text()).not.toBe("route-owned admission");
+  }
+});

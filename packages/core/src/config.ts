@@ -15,6 +15,9 @@ export const app = defineApp({
   access: appAccess.signedIn({
     publicRoutes: [
       "/code/:codeId/*",
+      // A Code page's label card admits like the page itself, also for visitors of public pages. Reports need a
+      // member and stay behind the normal entry.
+      "/api/code/pages/provenance",
       "/_internal/apps/bootstrap",
       "/_internal/code/runner/call",
       "/_internal/code/runner/config",

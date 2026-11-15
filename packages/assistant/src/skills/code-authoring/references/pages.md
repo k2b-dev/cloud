@@ -20,10 +20,16 @@ workspace, with the icon bar and their apps. Visitors
 who are not signed in, on a public route, see the signed-out header with the
 Cloud logo and **Sign in**; signing in returns to the page. Someone who opens a
 non-public page without a session goes to sign-in and comes back to it.
-Every page also carries a **Made with feat/code** label at the bottom edge,
-outside the page; it warns visitors never to enter passwords there, and pages
-with a form show that line without a press. There is no password field. Do not
-ask visitors for passwords, recovery codes or other credentials.
+Every page also carries a label in a footer at the bottom edge, outside the
+page. It says whose page it is: members see the owner (a person's name, an
+app's name, or only the type of a mailbox or place), visitors without an
+account see that someone built it. Pages with a form also show "no passwords"
+in it without a press. A press opens a card with what Cloud checks, which
+version runs (only for people who may see the Code), what Cloud passes to the
+page about the visitor's account, and, for members, **Report page**, which goes
+to the Cloud's admins, never to the owner. A page cannot reach, restyle, cover
+or word this label. There is no password field. Do not ask visitors for
+passwords, recovery codes or other credentials.
 
 `{ layout: "plain" }` on a route draws its pages alone, without the layout:
 for a page you hand out, such as a public survey
