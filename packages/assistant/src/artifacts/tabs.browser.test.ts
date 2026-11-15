@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { browserName, hoverInPlace, launchBrowser } from "../../../ui/test/browser";
+import { browserName, hoverInPlace, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { sidebarSnapshot } from "../frontend/AssistantChatSidebar.fixture";
 
 // The tabs beside the chat are the real Panes of @k2b/ui: arranging, dragging, boundaries, and the hint carry over
@@ -24,6 +24,7 @@ const webReader = async (request: Request) => {
     markdown:
       "Pakete bis 31,5 kg erreichen Frankreich in zwei bis vier Werktagen. Die Laufzeit gilt ab Übergabe an den Paketdienst.\n\n## Preise\n\nEin Paket bis 5 kg kostet 17,99 €, bis 10 kg 23,99 €. [Alle Preise](https://paketdienst-beispiel.de/preise)\n\n## Zerbrechliche Ware\n\nFür Glas und Keramik empfiehlt der Paketdienst einen doppelwandigen Karton.",
     truncated: false,
+    // real clock: the reading view names the content's time against the browser's own "today".
     contentAt: new Date().toISOString(),
   });
 };
@@ -86,8 +87,7 @@ const openPage = async (width = 1440, path = "/") => {
     hasTouch: width < 768,
   });
   page.setDefaultTimeout(5000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(new URL(path, server.url).href);
   await page.locator("#root > *").first().waitFor();
   return { page, errors };
@@ -95,11 +95,14 @@ const openPage = async (width = 1440, path = "/") => {
 const open = (page: Page, name: "report" | "table" | "sources" | "web" | "ask") =>
   page.evaluate((key) => (window as unknown as { open: Record<string, () => void> }).open[key]!(), name);
 const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-const chatBox = (page: Page) =>
-  page.evaluate(() => {
+/** The chat's place and size once the page settled. */
+const chatBox = async (page: Page) => {
+  await settled(page);
+  return page.evaluate(() => {
     const rect = document.querySelector(".harness-chat")!.getBoundingClientRect();
     return { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) };
   });
+};
 
 describe(`Tabs beside the chat in ${browserName}`, () => {
   test("Panes carries tabs with grip, Add pane, Arrange and its menu; the chat stays ≥ 360 px behind a shadow edge", async () => {

@@ -65,7 +65,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { assistantApi } from "../api/client";
 import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
 import { revokeChatWebsite } from "../artifacts/approval-preferences";
@@ -74,7 +74,7 @@ import { ChatPresentation } from "../artifacts/ChatPresentation";
 import { scheduleChartPreparation } from "../artifacts/html/prepare-assets";
 import { artifactMessages } from "../artifacts/messages";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
-import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
+import { createArtifactWorkspace } from "../artifacts/workspace-controller";
 import { appTab, contextTab, fileTab, taskTab, webTab } from "../artifacts/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { ChatWorkspaceSnapshot } from "../chat-workspace";
@@ -219,6 +219,9 @@ type ProjectViewState = {
   page: AiConversationPage;
   context: AssistantProjectContextSnapshot;
 };
+
+/** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
+const ArtifactWorkspace = lazy(() => import("../artifacts/Workspace").then((module) => ({ default: module.ArtifactWorkspace })));
 
 export default function AssistantWorkspace(props: Props) {
   const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
@@ -2951,28 +2954,36 @@ export default function AssistantWorkspace(props: Props) {
                   </div>
                 }
               >
-                <ArtifactWorkspace
-                  onEditTask={(task, repair) => void editScheduledTask(task, repair)}
-                  onOpenView={openContextView}
-                  project={activeConversationProject()}
-                  conversationId={chat.activeConversationId()}
-                  controller={artifactWorkspace}
-                  userId={props.userId}
-                  refreshKey={filesRefreshKey()}
-                  onJump={(target) => void jumpTo(target)}
-                  onOpenSecrets={openChatSecrets}
-                  snapshot={contextState.snapshot}
-                  onAsk={askAboutTab}
-                  onAdd={() => openContextOverview("files", sidebarCopy().title)}
-                  webReader={webReader() === true}
-                  arrangeHint={{
-                    open: arrangeHintOpen(),
-                    onDismiss: () => {
-                      setArrangeHintOpen(false);
-                      dismissAssistantPanesHint();
-                    },
-                  }}
-                />
+                <Suspense
+                  fallback={
+                    <div class="flex h-full items-center justify-center">
+                      <Placeholder state="loading" title={artifactCopy().loading} />
+                    </div>
+                  }
+                >
+                  <ArtifactWorkspace
+                    onEditTask={(task, repair) => void editScheduledTask(task, repair)}
+                    onOpenView={openContextView}
+                    project={activeConversationProject()}
+                    conversationId={chat.activeConversationId()}
+                    controller={artifactWorkspace}
+                    userId={props.userId}
+                    refreshKey={filesRefreshKey()}
+                    onJump={(target) => void jumpTo(target)}
+                    onOpenSecrets={openChatSecrets}
+                    snapshot={contextState.snapshot}
+                    onAsk={askAboutTab}
+                    onAdd={() => openContextOverview("files", sidebarCopy().title)}
+                    webReader={webReader() === true}
+                    arrangeHint={{
+                      open: arrangeHintOpen(),
+                      onDismiss: () => {
+                        setArrangeHintOpen(false);
+                        dismissAssistantPanesHint();
+                      },
+                    }}
+                  />
+                </Suspense>
               </Show>
             </AppWorkspace.MainPane>
           </AppWorkspace.Main>
