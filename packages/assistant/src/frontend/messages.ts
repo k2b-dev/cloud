@@ -328,6 +328,10 @@ export const assistantMessages = i18n.define({
       appsDayMarks: "Runs today",
       appsDayNow: "now",
       appsDayFailed: "Today's runs could not be loaded.",
+      appsDayPartial: ({ count }: { count: number }) =>
+        count === 1
+          ? "Today's runs of 1 automation are missing; the numbers leave it out."
+          : `Today's runs of ${count} automations are missing; the numbers leave them out.`,
       appsLegendSucceeded: "succeeded",
       appsLegendFailed: "failed",
       appsLegendPlanned: "planned",
@@ -676,6 +680,10 @@ export const assistantMessages = i18n.define({
       appsDayMarks: "Läufe heute",
       appsDayNow: "jetzt",
       appsDayFailed: "Die Läufe von heute konnten nicht geladen werden.",
+      appsDayPartial: ({ count }) =>
+        count === 1
+          ? "Die Läufe von heute fehlen für 1 Automation; die Zahlen lassen sie aus."
+          : `Die Läufe von heute fehlen für ${count} Automationen; die Zahlen lassen sie aus.`,
       appsLegendSucceeded: "erfolgreich",
       appsLegendFailed: "fehlgeschlagen",
       appsLegendPlanned: "geplant",

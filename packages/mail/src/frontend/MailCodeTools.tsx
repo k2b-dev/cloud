@@ -379,18 +379,39 @@ export default function MailCodeCatchUp(props: { data: MailCodeCatchUpData }): J
       accept(result.data.data);
       return;
     }
+    if (result.error.status === 409 && !(await versionMoved())) {
+      // The same resume may be under way, or Core holds its key as uncertain: keep the receipt and check it.
+      setIssue({ kind: "busy" });
+      return;
+    }
     if (refusal.has(result.error.status)) {
       setPendingResume(null);
       setOperationId(request.operationId);
       setProgress(previous.status);
       remember();
-      if (result.error.status === 409 && (await versionMoved())) {
+      if (result.error.status === 409) {
         reloadAt({ pick: pick(), page: null, previewVersionId: null, operationId: request.operationId, next: next() });
         return;
       }
       setIssue({ kind: "refused", action: "resume", status: result.error.status });
       if (!previous.status) await refresh();
     }
+  };
+  /**
+   * "Check status" after an unclear start or resume: read the operation first. Only when Core does not know it at all
+   * has nothing started, and only then is the same receipt sent again under the same key; any other answer stays unclear.
+   */
+  const checkUnclear = async () => {
+    const id = pending()?.operationId ?? pendingResume()?.newOperationId ?? null;
+    if (!id) return;
+    const read = await invokeCore("code.event.catchup.read", "query", { operationId: id });
+    if (read.ok) {
+      setOperationVersion(version());
+      setSelection(null);
+      accept(read.data.data);
+      return;
+    }
+    if (read.error.status === 404) await (pending() ? start() : resume());
   };
   const stop = async () => {
     const id = operationId();
@@ -719,7 +740,7 @@ export default function MailCodeCatchUp(props: { data: MailCodeCatchUpData }): J
                 title={issue()?.kind === "busy" ? t().busyTitle : t().unclearStart}
                 detail={issue()?.kind === "busy" ? t().busyDetail : t().unclearStartDetail}
                 actions={
-                  <Button size="sm" disabled={busy()} loading={busy()} onClick={() => void run(pending() ? start : resume)}>
+                  <Button size="sm" disabled={busy()} loading={busy()} onClick={() => void run(checkUnclear)}>
                     {t().checkStatus}
                   </Button>
                 }

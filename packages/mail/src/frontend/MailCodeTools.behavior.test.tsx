@@ -62,8 +62,13 @@ else {
   const originalFetch = globalThis.fetch;
   const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
   let requests: { path: string; input: Record<string, unknown> }[];
-  /** How Core answers the next writing request: accepted, refused with a status, or lost on the way back. */
-  let startAnswer: "ok" | "lost" | 403 | 409 = "ok";
+  /**
+   * How Core answers the next writing request: accepted, refused with a status, lost before Core saw it, or accepted
+   * with the answer lost on the way back.
+   */
+  let startAnswer: "ok" | "lost" | "accepted-lost" | 403 | 409 = "ok";
+  /** Operations Core never registered: reading them answers 404. */
+  let unknown: Set<string>;
   let activeVersion = VERSION_4;
   const mount = (state: Fixture) => {
     dispose = render(
@@ -81,6 +86,7 @@ else {
     Object.defineProperty(globalThis, "sessionStorage", { configurable: true, value: dom.window.sessionStorage });
     delegateEvents(["click"]);
     requests = [];
+    unknown = new Set();
     startAnswer = "ok";
     activeVersion = VERSION_4;
     globalThis.fetch = Object.assign(
@@ -92,13 +98,19 @@ else {
         if (path.endsWith("/queries/mail/message.catchup"))
           return reply({ cutoffAt: time, items: [{ title: "Delivery notice", event }], nextCursor: null });
         if (path.endsWith("/queries/core/code.read")) return reply({ code: { state: "active", activeVersionId: activeVersion } });
-        if (path.endsWith("/queries/core/code.event.catchup.read")) return reply(status(body.input.operationId));
+        if (path.endsWith("/queries/core/code.event.catchup.read"))
+          return unknown.has(body.input.operationId)
+            ? Response.json({ code: "NOT_FOUND", message: "Not found" }, { status: 404 })
+            : reply(status(body.input.operationId));
         if (path.endsWith("/actions/core/code.event.catchup") || path.endsWith("/actions/core/code.event.catchup.resume")) {
           const answer = startAnswer;
+          const id = body.input.newOperationId ?? body.input.operationId;
           startAnswer = "ok";
-          if (answer === "lost") throw new Error("response lost");
+          if (answer === "lost" || typeof answer === "number") unknown.add(id);
+          else unknown.delete(id);
+          if (answer === "lost" || answer === "accepted-lost") throw new Error("response lost");
           if (answer !== "ok") return Response.json({ code: "REFUSED", message: "Refused" }, { status: answer });
-          return reply(status(body.input.newOperationId ?? body.input.operationId));
+          return reply(status(id));
         }
         if (path.endsWith("/actions/core/code.event.catchup.cancel"))
           return reply(status(body.input.operationId, { status: "canceled", total: 12, dispatched: 7 }));
@@ -166,8 +178,21 @@ else {
     expect(text()).not.toContain("Try again");
     await click("Check status");
     await waitFor(() => text().includes("0 of 1 messages handed over"));
+    // Core never saw it: the read says so, and only then the exact snapshot goes again under the same key.
     expect(starts()).toHaveLength(2);
     expect(starts()[0]!.input).toEqual(starts()[1]!.input);
+  });
+
+  test("an accepted start whose answer was lost is found by reading it, never started again", async () => {
+    mount("auswahl");
+    await preview();
+    startAnswer = "accepted-lost";
+    await click("Apply to 1 message");
+    await waitFor(() => text().includes("Outcome unclear"));
+    await click("Check status");
+    await waitFor(() => text().includes("0 of 1 messages handed over"));
+    expect(starts()).toHaveLength(1);
+    expect(requests.some((request) => request.path.endsWith("/queries/core/code.event.catchup.read"))).toBe(true);
   });
 
   test("a refusal says nothing changed and keeps the preview for another try", async () => {

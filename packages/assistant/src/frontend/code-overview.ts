@@ -130,6 +130,8 @@ export type DayMarkState = "succeeded" | "failed" | "planned" | "running" | "ski
 export type DayMark = { at: number; state: DayMarkState; count: number; codeId: string | null; runId: string | null };
 export type DayLine = {
   marks: DayMark[];
+  /** Listed Code whose day could not be read: the counts leave them out, and the line says so. */
+  missing: number;
   succeeded: number;
   failed: number;
   planned: number;
@@ -146,6 +148,8 @@ export type DayLine = {
 export const dayLine = (items: readonly CodeOverviewItem[]): DayLine | null => {
   const days = items.flatMap((item) => (item.extras?.activity ? [{ codeId: item.id, timeline: item.extras.activity.timeline }] : []));
   if (days.length === 0) return null;
+  // Extras that loaded without their day: a partial answer, never a complete-looking total.
+  const missing = items.filter((item) => item.extras && !item.extras.activity).length;
   const counts = { succeeded: 0, failed: 0, planned: 0, running: 0, grouped: 0 };
   const marks: DayMark[] = [];
   for (const { codeId, timeline } of days) {
@@ -166,7 +170,7 @@ export const dayLine = (items: readonly CodeOverviewItem[]): DayLine | null => {
     }
   }
   marks.sort((a, b) => a.at - b.at);
-  if (marks.length <= CODE_READ_MODEL_TIMELINE_LIMIT) return { marks, ...counts };
+  if (marks.length <= CODE_READ_MODEL_TIMELINE_LIMIT) return { marks, missing, ...counts };
   const buckets = new Map<number, number>();
   for (const mark of marks) {
     const bucket = Math.min(CODE_READ_MODEL_TIMELINE_LIMIT - 1, Math.floor(mark.at * CODE_READ_MODEL_TIMELINE_LIMIT));
@@ -180,6 +184,7 @@ export const dayLine = (items: readonly CodeOverviewItem[]): DayLine | null => {
       codeId: null,
       runId: null,
     })),
+    missing,
     ...counts,
   };
 };

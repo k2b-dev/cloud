@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { z } from "zod";
+import { aiLive } from "../../ai/live";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "../../capabilities/server";
 import type { CapabilityCaller } from "../../capabilities/server-invoke";
 import { type CloudResourceRef, cloudResourceRefAppId } from "../../contracts/capabilities";
@@ -791,6 +792,10 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     activatedNotice: /^\d{1,6}$/.test(url.searchParams.get("activated") ?? "") ? Number(url.searchParams.get("activated")) : null,
     cloudAdmin: Boolean(user?.roles.includes("admin")),
   } satisfies Omit<CodePageData, "state">;
+  // Before any read: the browser follows runs from here, so one that finishes during this render still arrives.
+  const liveCursor = await Promise.resolve()
+    .then(() => aiLive.cursor())
+    .catch(() => null);
   let code: z.infer<typeof CodeListSchema>["items"][number] | undefined;
   let attentionOwner: Parameters<typeof loadReady>[7];
   if ("ref" in options.owner) {
@@ -824,7 +829,11 @@ export const loadCodePage = async (c: Context, options: LoadCodePageOptions): Pr
     const viewer = { id: user?.id ?? null, directory: Boolean(user?.roles.includes("user")) };
     // Secrets and the code are for editors; anyone else following such a link lands on the overview.
     const shown = (tab === "secrets" || tab === "code") && code.permission !== "editor" ? "overview" : tab;
-    return { ...base, tab: shown, state: await loadReady(c, options, invoke, code, shown, url, viewer, attentionOwner) };
+    return {
+      ...base,
+      tab: shown,
+      state: { ...(await loadReady(c, options, invoke, code, shown, url, viewer, attentionOwner)), liveCursor },
+    };
   } catch {
     return { ...base, state: { kind: "error" } };
   }

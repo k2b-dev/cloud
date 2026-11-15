@@ -22,6 +22,7 @@ export type CodeLiveFeed = { run: (run: CodeLiveRun) => void; effect: (effect: C
 
 /** The page's live state: runs newest first, as Core lists them, and the latest effects. */
 export function createCodeLive(state: CodePageReady) {
+  const loaded = state.runs?.items.length ?? 0;
   const [runs, setRuns] = createSignal<CodeLiveRun[]>((state.runs?.items ?? []).map((run) => ({ ...run })));
   const [effects, setEffects] = createSignal<CodeLiveEffect[]>(state.words?.activity?.recent ?? []);
   const [fresh, setFresh] = createSignal<{ run: string | null; effect: string | null }>({ run: null, effect: null });
@@ -29,7 +30,8 @@ export function createCodeLive(state: CodePageReady) {
     run: (run) => {
       setRuns((current) => {
         const index = current.findIndex((item) => item.id === run.id);
-        if (index < 0) return [run, ...current];
+        // Bounded: a page left open keeps what it loaded plus the strip's length, never the whole history.
+        if (index < 0) return [run, ...current].slice(0, Math.max(loaded, CODE_STRIP_RUNS));
         // A run keeps the time it started; an update changes only its state and title.
         return current.map((item, at) => (at === index ? { ...item, ...run, createdAt: item.createdAt } : item));
       });

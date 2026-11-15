@@ -208,9 +208,12 @@ export function CodeVersions(props: { data: CodePageData; state: CodePageReady; 
                 </button>
               </Show>
             </Island>
-            <Quiet icon="ti ti-terminal-2">
-              {props.state.permission === "editor" ? t().pullHint : t().pullHintReader} <code>cld code pull</code>
-            </Quiet>
+            {/* Only editors may read the source (F30), so only they get the way to it. */}
+            <Show when={props.state.permission === "editor"}>
+              <Quiet icon="ti ti-terminal-2">
+                {t().pullHint} <code>cld code pull</code>
+              </Quiet>
+            </Show>
           </div>
           <div class="cloud-code__detail-col">
             <Show

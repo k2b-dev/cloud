@@ -180,6 +180,8 @@ const bigState = (state: CodePageReady, t: CodePageMessages): { tone: Tone; icon
  * Default live wiring: Core's run hints move the strip; a finished run reads the week's effects once, so a new one
  * slides in. One read per finished run and open page; the server checks access per subscription, never per event.
  */
+/** At most one read of the week's effects per page in this window. */
+const EFFECT_REFRESH_GAP_MS = 30_000;
 const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (() => void) => {
   const feed = live.feed;
   const timeZone = data.dates.timeZone ?? "UTC";
@@ -195,10 +197,35 @@ const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (
     const known = new Set(live.effects().map((effect) => `${effect.runId}:${effect.text}`));
     for (const effect of [...read.data.data.recent].reverse()) if (!known.has(`${effect.runId}:${effect.text}`)) feed.effect(effect);
   };
-  return followCodeRuns(state.code.id, (event) => {
-    feed.run({ id: event.runId, state: event.state, createdAt: event.at });
-    if (event.state === "succeeded" || event.state === "failed") void refreshEffects();
-  });
+  // Coalesced: the first finished run reads at once, every further one within the window joins one trailing read, so a
+  // busy automation costs one read per window and page, never one per run (DATA-13).
+  let last = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const effects = () => {
+    if (!state.words?.activity || timer) return;
+    timer = setTimeout(
+      () => {
+        timer = undefined;
+        last = Date.now();
+        void refreshEffects();
+      },
+      Math.max(0, last + EFFECT_REFRESH_GAP_MS - Date.now()),
+    );
+  };
+  const stop = followCodeRuns(
+    state.code.id,
+    (event) => {
+      feed.run({ id: event.runId, state: event.state, createdAt: event.at });
+      if (event.state === "succeeded" || event.state === "failed") effects();
+    },
+    // A gap in the live stream: the page loads its state again instead of guessing.
+    () => refreshCurrentPath(),
+    state.liveCursor ?? null,
+  );
+  return () => {
+    if (timer) clearTimeout(timer);
+    stop();
+  };
 };
 
 function ReadyPage(props: {
@@ -277,7 +304,8 @@ function ReadyPage(props: {
       ? [{ label: t().copyHandle, icon: "ti ti-id-badge-2", action: () => void copyHandle(props.state.code.serviceAccountHandle!, t()) }]
       : []),
     { label: t().copyLink, icon: "ti ti-link", action: () => void copyPageLink(props.data, t()) },
-    { label: t().pullSource, icon: "ti ti-terminal-2", action: () => openPull(props.data, t()) },
+    // Source is for editors only (F30); readers get no command that names it.
+    ...(editor() ? [{ label: t().pullSource, icon: "ti ti-terminal-2", action: () => openPull(props.data, t()) }] : []),
   ];
   const state = () => bigState(props.state, t());
   const meta = () => {

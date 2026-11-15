@@ -17,6 +17,8 @@ export function followCodeRuns(
   codeId: string,
   onRun: (event: { runId: string; state: "queued" | "running" | "succeeded" | "failed" | "skipped"; at: string }) => void,
   onResync?: () => void | Promise<void>,
+  /** The live position the page's snapshot belongs to; without it the page refreshes once after admission. */
+  cursor: string | null = null,
 ): () => void {
   let stopped = false;
   const recover = () => {
@@ -34,7 +36,7 @@ export function followCodeRuns(
     "code",
     { codeId },
     {
-      cursor: null,
+      cursor,
       parse: (data) => CodeRunEventSchema.parse(data),
       apply: async (events) => {
         for (const { data } of events) {
@@ -47,7 +49,7 @@ export function followCodeRuns(
         if (!caughtUp || admitted) return;
         admitted = true;
         // No SSR cursor: cover changes between the page snapshot and subscription admission once.
-        if (onResync) void refresh().catch(recover);
+        if (cursor === null && onResync) void refresh().catch(recover);
       },
       revoked: recover,
       unavailable: recover,

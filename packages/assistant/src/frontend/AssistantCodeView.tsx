@@ -269,6 +269,17 @@ function DayIsland(props: {
           </p>
         }
       >
+        <Show when={props.line?.missing}>
+          {(missing) => (
+            <p class="assistant-apps__today-failed" role="status">
+              <i class="ti ti-cloud-off" aria-hidden="true" />
+              <span>{t().appsDayPartial({ count: missing() })}</span>
+              <Button type="button" size="sm" variant="ghost" onClick={() => props.onRetry()}>
+                {t().codeViewRetry}
+              </Button>
+            </p>
+          )}
+        </Show>
         <div class="assistant-apps__day" aria-busy={props.line === undefined ? "true" : undefined}>
           <div
             class="assistant-apps__axis"

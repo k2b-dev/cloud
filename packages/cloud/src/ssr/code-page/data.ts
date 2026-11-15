@@ -374,6 +374,8 @@ export type CodePageWords = {
 };
 export type CodePageReady = {
   kind: "ready";
+  /** Core's live position read before this snapshot, so the browser replays runs that finished in between; null: unknown. */
+  liveCursor?: string | null;
   code: z.infer<typeof CodeSchema>;
   permission: "editor" | "reader";
   versions: CodePageVersion[];

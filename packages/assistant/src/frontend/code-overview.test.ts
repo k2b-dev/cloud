@@ -77,6 +77,14 @@ test("above 200 marks the line groups equal portions of the day and keeps the co
   expect(dayLine([item("c_aaaa")])).toBeNull();
 });
 
+test("a card whose day did not load leaves the totals marked as partial, never complete-looking", () => {
+  const ok = { runs: [], failure: null, activity: activity([{ at: DAY.from, state: "succeeded", count: 2 }]) };
+  const failed = { runs: [], failure: null, activity: null };
+  const line = dayLine([item("c_aaaa", { extras: ok }), item("c_bbbb", { extras: failed })]);
+  expect(line).toMatchObject({ succeeded: 2, missing: 1 });
+  expect(dayLine([item("c_aaaa", { extras: ok })])).toMatchObject({ missing: 0 });
+});
+
 test("a card says running, failed, missing access or paused before on", () => {
   expect(cardStatus(item("c_a", { state: "paused" }))).toBe("paused");
   expect(cardStatus(item("c_a", { extras: { runs: [run("queued")], activity: null, failure: null } }))).toBe("running");
