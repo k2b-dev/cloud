@@ -31,7 +31,7 @@ beforeAll(() => setSystemTime(new Date("2026-11-01T12:10:00.000Z")));
 afterAll(() => setSystemTime());
 
 type State = Parameters<typeof codeFixtureData>[0];
-const render = (query: Record<string, string>, state: State = "normal", locale = "de") =>
+const render = (query: Record<string, string>, state: State = "normal", locale = "de", counts?: { approvals: number; reports: number }) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -41,7 +41,10 @@ const render = (query: Record<string, string>, state: State = "normal", locale =
           locale,
           dateConfig: { locale: locale === "de" ? "de-DE" : "en-GB", timeZone: "Europe/Berlin" },
           query: parseCodeAreaQuery(query),
-          data: state === "noperm" ? null : codeFixtureData(state, query, locale),
+          data:
+            state === "noperm"
+              ? null
+              : { ...codeFixtureData(state, query, locale), ...(counts ? { summary: { ...data.fixtureSummary(), ...counts } } : {}) },
           noPermission: state === "noperm",
           retryHref: "/admin/code",
           appNames: { mail: "Mail", spaces: "Spaces", werkstatt: "Werkstattbuch" },
@@ -382,5 +385,18 @@ for (const locale of ["de", "en"]) {
     const label = locale === "de" ? "Version 3 freigeben" : "Approve version 3";
     expect(own).not.toContain(label);
     expect(sole).toContain(label);
+  });
+}
+
+for (const locale of ["de", "en"]) {
+  test(`sole author sees the approval/report breakdown in the initial HTML (${locale})`, () => {
+    const t = codeAdminMessages.resolve([locale]).t;
+    const html = render(review, "sole", locale, { approvals: 1, reports: 1 });
+    const text = renderedText(html, " ").replaceAll(/\s+/g, " ");
+    expect(text).toContain(`${t.approvals} 1`);
+    expect(text).toContain(`${t.reports} 1`);
+    expect(html).toContain(t.soleTitle);
+    const empty = renderedText(render({}, "empty", locale), " ").replaceAll(/\s+/g, " ");
+    expect(empty).toContain(`${t.reports} 0`);
   });
 }

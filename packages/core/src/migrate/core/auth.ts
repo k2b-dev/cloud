@@ -183,6 +183,8 @@ export const migrate = async (): Promise<void> => {
     ON auth.users(mail)
     WHERE mail IS NOT NULL
   `.simple();
+  // Only successful emergency-token sign-in marks this identity; never infer it from a directory UID.
+  await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS emergency_admin BOOLEAN NOT NULL DEFAULT false`.simple();
   await sql`ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS auth_epoch BIGINT NOT NULL DEFAULT 0`.simple();
   await sql`
     DO $$

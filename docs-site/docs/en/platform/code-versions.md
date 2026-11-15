@@ -213,10 +213,13 @@ your own version.” / “Du bist der einzige Admin und gibst deine eigene Versi
 frei.” and enables approval. When another reviewer exists, the author's
 “Another admin approves it” hint stays and approval remains unavailable.
 
-The Code sidebar badge and **Approvals** tab count the same open version
-requests, including your own submission; expired requests and page reports do
-not increase these approval counts. Page reports still reach admins through
-notifications and remain available on the Code's administration page.
+The Code sidebar badge counts open version requests plus open page reports.
+Administration → Code shows the breakdown as **Approvals** and **Reports**
+(**Freigaben** and **Meldungen**). Both numbers come from the same server
+snapshot. The admin bar's **Approvals** badge counts only approval requests,
+including your own pending submission; expired requests do not count. Page
+reports still notify admins. Select the affected Code in administration to
+resolve its report or pause the Code.
 
 When you can approve your own pending version, Gustav's submission handover
 and version card say “You can approve it yourself.” / “Du kannst sie selbst
@@ -227,7 +230,13 @@ than `who: "cloud_admin"`; the version preview carries `readiness.selfApproval`.
 This is an advisory next step: the decision checks eligibility again.
 
 Machine accounts, expired or locked administrators, disabled account categories,
-and the local emergency `admin` identity do not count as other reviewers.
+and the emergency identity do not count as other reviewers. The platform
+recognizes that identity by a stored marker set by successful emergency-token
+sign-in, independently of its username. An ordinary IPA account named `admin`
+remains a human reviewer after switching to local Login and receiving admin
+access. After upgrading, sign in through `/admin-login` once to establish the
+marker for an existing emergency account; until then it counts conservatively
+as an ordinary administrator.
 The emergency admin may approve its own version only when no active human
 admin exists, with the same recent sign-in requirement and audit evidence.
 An active ordinary account such as `dev-admin` counts as a human reviewer,

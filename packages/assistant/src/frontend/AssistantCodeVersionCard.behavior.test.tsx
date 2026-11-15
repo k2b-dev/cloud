@@ -1,5 +1,4 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
-import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
 import { AssistantLiveProvider, createAssistantLiveHub } from "./assistant-live";
@@ -43,6 +42,8 @@ const mount = async (routes: Record<string, (body: unknown) => Answer | Promise<
     if (!answer) return new Response("{}", { status: 503 });
     return new Response(JSON.stringify(answer.json ?? {}), { status: answer.status ?? 200 });
   }) as unknown as typeof fetch);
+  // Browser UI modules register delegated events while loading, so await them inside this DOM lifetime.
+  const { LocaleProvider } = await import("@k2b/ui");
   const { default: Card } = await import("./AssistantCodeVersionCard");
   const activated: number[] = [];
   const live = createAssistantLiveHub();

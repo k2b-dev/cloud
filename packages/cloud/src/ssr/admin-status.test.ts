@@ -1,8 +1,8 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import type { Context } from "hono";
 import { auth } from "../server/middleware/auth";
-import * as approvals from "../services/approvals/list";
 import { ADMIN_STATUS_BUDGET_MS, preloadAdminCodeApprovals } from "./admin-status";
+import * as codeCounts from "./code-admin-counts";
 
 const authority = { actor: { kind: "user" }, accessSubject: { type: "user", userId: "u1" }, credentialKind: "session", scopes: [] };
 const fakeContext = (path: string, roles: string[]) => {
@@ -15,21 +15,21 @@ afterEach(() => {
 });
 const spies: { mockRestore(): void }[] = [];
 
-test("admins on admin pages get only open Code-version approvals within the hint budget", async () => {
+test("admins get the approval/report sum and its shared snapshot within the hint budget", async () => {
   spies.push(spyOn(auth, "getAuthority").mockReturnValue(authority as never));
-  const count = spyOn(approvals, "countPending").mockResolvedValue({ total: 3, apps: { core: 3 } });
+  const count = spyOn(codeCounts, "readCodeAdminCounts").mockResolvedValue({ approvals: 1, reports: 1 });
   spies.push(count);
   const { c, values } = fakeContext("/admin/code", ["admin"]);
   await preloadAdminCodeApprovals(c);
-  expect(values.get("adminCodeApprovals")).toBe(3);
-  expect(count).toHaveBeenCalledWith(
-    expect.objectContaining({ approverUserId: "u1", kind: "code_version", timeoutMs: ADMIN_STATUS_BUDGET_MS }),
-  );
+  expect(values.get("adminCodeApprovals")).toBe(2);
+  expect(values.get("adminCodeCounts")).toEqual({ approvals: 1, reports: 1 });
+  expect(count).toHaveBeenCalledTimes(1);
+  expect(count).toHaveBeenCalledWith(expect.objectContaining({ approverUserId: "u1", timeoutMs: ADMIN_STATUS_BUDGET_MS }));
 });
 
 test("other people, other pages and failed or cancelled reads leave the count out", async () => {
   spies.push(spyOn(auth, "getAuthority").mockReturnValue(authority as never));
-  const count = spyOn(approvals, "countPending").mockRejectedValue(new Error("canceling statement due to statement timeout"));
+  const count = spyOn(codeCounts, "readCodeAdminCounts").mockRejectedValue(new Error("canceling statement due to statement timeout"));
   spies.push(count);
   for (const [path, roles] of [
     ["/admin/code", ["user"]],
@@ -39,12 +39,13 @@ test("other people, other pages and failed or cancelled reads leave the count ou
     const { c, values } = fakeContext(path, [...roles]);
     await preloadAdminCodeApprovals(c);
     expect(values.has("adminCodeApprovals")).toBe(false);
+    expect(values.has("adminCodeCounts")).toBe(false);
   }
   expect(count).toHaveBeenCalledTimes(1);
 });
 
 test("the hint never fails a page and reads nothing outside Administration", async () => {
-  const count = spyOn(approvals, "countPending").mockResolvedValue({ total: 1, apps: {} });
+  const count = spyOn(codeCounts, "readCodeAdminCounts").mockResolvedValue({ approvals: 1, reports: 0 });
   spies.push(count);
   const values = new Map<string, unknown>([["user", { id: "u1" }]]);
   const page = (path: string) =>
@@ -57,5 +58,6 @@ test("the hint never fails a page and reads nothing outside Administration", asy
   await preloadAdminCodeApprovals(page("/admin/code"));
   await preloadAdminCodeApprovals(page("/app/mail"));
   expect(values.has("adminCodeApprovals")).toBe(false);
+  expect(values.has("adminCodeCounts")).toBe(false);
   expect(count).not.toHaveBeenCalled();
 });

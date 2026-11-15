@@ -429,12 +429,13 @@ export const createAuthRoutes = (notificationSender: AuthNotificationSender) =>
         // admin), silently bypassing the intent of the emergency endpoint.
         await sql.begin(async (tx) => {
           const [created] = await tx<{ id: string; inserted: boolean }[]>`
-        INSERT INTO auth.users (uid, provider, profile, admin, given_name, sn, display_name)
-        VALUES ('admin', 'local', 'user', true, 'Admin', '', 'Admin')
+        INSERT INTO auth.users (uid, provider, profile, admin, emergency_admin, given_name, sn, display_name)
+        VALUES ('admin', 'local', 'user', true, true, 'Admin', '', 'Admin')
         ON CONFLICT (uid) DO UPDATE SET
           provider = 'local',
           profile = 'user',
-          admin = true
+          admin = true,
+          emergency_admin = true
         RETURNING id, (xmax = 0) AS inserted
       `;
           if (created?.inserted)

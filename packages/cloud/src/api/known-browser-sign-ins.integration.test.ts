@@ -281,8 +281,8 @@ suite("every successful web sign-in route remembers its browser", () => {
 
   test("admin-login: real emergency login remembers the browser only with the right token", async () => {
     const originalToken = process.env.ADMIN_LOGIN_TOKEN;
-    const [before] = await sql<{ id: string; provider: string; profile: string; admin: boolean }[]>`
-      SELECT id, provider, profile, admin FROM auth.users WHERE uid = 'admin'
+    const [before] = await sql<{ id: string; provider: string; profile: string; admin: boolean; emergency_admin: boolean }[]>`
+      SELECT id, provider, profile, admin, emergency_admin FROM auth.users WHERE uid = 'admin'
     `;
     const token = "known-browser-admin-fixture";
     process.env.ADMIN_LOGIN_TOKEN = token;
@@ -304,7 +304,8 @@ suite("every successful web sign-in route remembers its browser", () => {
       );
       const response = await waitsForHandoff(() => post("admin-login", { token }, cookie), "admin_token");
       if (!response.ok) throw new Error(`admin-login: ${response.status} ${await response.text()}`);
-      const [admin] = await sql<{ id: string }[]>`SELECT id FROM auth.users WHERE uid = 'admin'`;
+      const [admin] = await sql<{ id: string; emergency_admin: boolean }[]>`SELECT id, emergency_admin FROM auth.users WHERE uid = 'admin'`;
+      expect(admin?.emergency_admin).toBe(true);
       adminId = admin!.id;
       expect(create).toHaveBeenCalledTimes(1);
       expect(await browserRows(adminId, cookie)).toHaveLength(1);
@@ -314,7 +315,7 @@ suite("every successful web sign-in route remembers its browser", () => {
       if (originalToken === undefined) delete process.env.ADMIN_LOGIN_TOKEN;
       else process.env.ADMIN_LOGIN_TOKEN = originalToken;
       if (before) {
-        await sql`UPDATE auth.users SET provider = ${before.provider}, profile = ${before.profile}, admin = ${before.admin} WHERE id = ${before.id}::uuid`;
+        await sql`UPDATE auth.users SET provider = ${before.provider}, profile = ${before.profile}, admin = ${before.admin}, emergency_admin = ${before.emergency_admin} WHERE id = ${before.id}::uuid`;
         if (adminId) {
           if (countryBefore)
             await sql`UPDATE auth.sign_in_countries SET last_seen_at = ${countryBefore.last_seen_at} WHERE user_id = ${adminId}::uuid AND country = 'AT'`;

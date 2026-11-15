@@ -980,8 +980,13 @@ blocks new self-approvals; it does not revoke earlier decisions. See
 [Code-version approvals](/en/docs/identity/approvals#code-version-approvals)
 for eligibility and decision evidence.
 
-The local emergency `admin` identity never counts as another reviewer. It
-may self-approve only when no active human admin exists, with recent sign-in
+The emergency identity never counts as another reviewer. Successful
+`/admin-login` sign-in sets its stored identity marker; an ordinary IPA account
+named `admin` still counts after switching to local Login and receiving admin
+access. After upgrading, use emergency-token sign-in once to establish the
+marker for an existing emergency account. Until then, it counts conservatively
+as an ordinary admin. The emergency admin may self-approve only when no active
+human admin exists, with recent sign-in
 and the same visible self-approval audit and history. An active ordinary
 bootstrap account such as `dev-admin` counts even without a previous sign-in.
 Locked, expired, or category-disabled accounts and service accounts do not count.

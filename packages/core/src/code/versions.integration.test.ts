@@ -552,7 +552,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     });
     try {
       await sql`UPDATE auth.users SET admin=false WHERE id<>${reviewerId}::uuid`;
-      await sql`UPDATE auth.users SET uid='admin' WHERE id=${reviewerId}::uuid`;
+      await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${reviewerId}::uuid`;
       await outbox.reconcile();
       expect(sent.map((notice) => [notice.userId, notice.kind, notice.versionId])).toEqual([
         [reviewerId, "submitted", submitted.version.id],
@@ -577,7 +577,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
       await sql`UPDATE auth.users SET admin=false WHERE id=${reviewerId}::uuid`;
       expect(await readable({ id: code.id, principals }, appContext)).toEqual([]);
     } finally {
-      await sql`UPDATE auth.users SET uid=${reviewerId} WHERE id=${reviewerId}::uuid`;
+      await sql`UPDATE auth.users SET uid=${reviewerId},emergency_admin=false WHERE id=${reviewerId}::uuid`;
     }
   });
   test("notification effects commit with evidence, resolve active admins, and use each recipient's locale and current rights", async () => {
@@ -1184,7 +1184,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
   });
   for (const other of ["emergency", "locked_ipa", "disabled_category"] as const) {
     test(`Code self-approval ignores an ineligible second admin (${other})`, async () => {
-      if (other === "emergency") await sql`UPDATE auth.users SET uid='admin' WHERE id=${reviewerId}::uuid`;
+      if (other === "emergency") await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${reviewerId}::uuid`;
       else {
         await sql`UPDATE auth.users SET provider='ipa',admin=false WHERE id=${reviewerId}::uuid`;
         await sql`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${reviewerId}::uuid,'code-review-admins')`;
@@ -1216,13 +1216,13 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
         await sql`DELETE FROM auth.user_ipa_data WHERE user_id=${reviewerId}::uuid`;
         await sql`DELETE FROM auth.ipa_user_effective_groups WHERE user_id=${reviewerId}::uuid`;
         await sql`DELETE FROM settings.entries WHERE key IN ('freeipa.groups.admin','user.category.freeipa.enabled')`;
-        await sql`UPDATE auth.users SET uid=${reviewerId},provider='local' WHERE id=${reviewerId}::uuid`;
+        await sql`UPDATE auth.users SET uid=${reviewerId},provider='local',emergency_admin=false WHERE id=${reviewerId}::uuid`;
       }
     });
   }
   test("emergency author self-approves only without a human reviewer; active dev-admin counts", async () => {
-    await sql`UPDATE auth.users SET uid='admin' WHERE id=${authorId}::uuid`;
-    await sql`UPDATE auth.users SET uid='dev-admin' WHERE id=${reviewerId}::uuid`;
+    await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${authorId}::uuid`;
+    await sql`UPDATE auth.users SET uid='dev-admin',emergency_admin=false WHERE id=${reviewerId}::uuid`;
     try {
       const code = await newCode(),
         submission = await submitCodeVersion(input(code, "emergency"), author);
@@ -1259,7 +1259,7 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
         await sql`SELECT actor_user_id,reason,metadata FROM audit.events WHERE action='core.code.version.approved' AND target_id=${code.id}`;
       expect(event).toMatchObject({ actor_user_id: authorId, reason: "self_approved_sole_admin", metadata: { soleAdmin: true } });
     } finally {
-      await sql`UPDATE auth.users SET uid=id::text WHERE id IN (${authorId}::uuid,${reviewerId}::uuid)`;
+      await sql`UPDATE auth.users SET uid=id::text,emergency_admin=false WHERE id IN (${authorId}::uuid,${reviewerId}::uuid)`;
     }
   });
   test("sole-admin self-approval still requires C5's browser confirmation", async () => {

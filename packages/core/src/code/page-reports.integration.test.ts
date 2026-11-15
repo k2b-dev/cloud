@@ -323,12 +323,12 @@ databaseSuite()("Code page label card and page reports", () => {
   test("the only emergency admin receives page reports", async () => {
     notices.splice(0);
     try {
-      await sql`UPDATE auth.users SET uid='admin' WHERE id=${adminId}::uuid`;
+      await sql`UPDATE auth.users SET uid='admin',emergency_admin=true WHERE id=${adminId}::uuid`;
       // The preceding report is still open and its recipient page has not been expanded.
       await outbox.reconcile();
       expect(notices).toEqual([expect.objectContaining({ kind: "reported", userId: adminId, codeId })]);
     } finally {
-      await sql`UPDATE auth.users SET uid=${ben.uid} WHERE id=${adminId}::uuid`;
+      await sql`UPDATE auth.users SET uid=${ben.uid},emergency_admin=false WHERE id=${adminId}::uuid`;
     }
   });
 

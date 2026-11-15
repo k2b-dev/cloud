@@ -5,6 +5,7 @@ import { reviewFixture } from "../../_internal/capability-review.test-fixture";
 import { migrateCloudAi } from "../../ai/migrate";
 import { sql } from "../../runtime/clients";
 import type { RequestAuthority } from "../../server/middleware/auth";
+import { transitionIpaUserToLocal } from "../accounts/switching";
 import { get as getUser } from "../accounts/users";
 import { createTestBrowserSignIn } from "../session/session.test-fixture";
 import { encryptValue } from "../settings/crypto";
@@ -117,6 +118,30 @@ databaseSuite()("independent Code-version approvals", () => {
   const selfDecide = async (id: string, tx: SQL, authority: RequestAuthority) =>
     approvals.decide(id, { approved: true }, { userId: author, via: "web_session", authority }, tx);
 
+  test("an IPA admin UID switched to local remains a human reviewer; the marked emergency identity is separate", async () => {
+    const pending = await ask();
+    const signIn = await createTestBrowserSignIn(author);
+    await withSoleAdmin(async (tx) => {
+      const [existing] = await tx<{ id: string }[]>`SELECT id FROM auth.users WHERE uid='admin'`;
+      if (existing) await tx`UPDATE auth.users SET uid=${`saved-admin-${existing.id}`} WHERE id=${existing.id}::uuid`;
+      const [ordinary] = await tx<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile)
+        VALUES('admin','ipa','user') RETURNING id`;
+      if (!ordinary) throw new Error("Missing ordinary account");
+      await transitionIpaUserToLocal({ userId: ordinary.id, targetProfile: "user", accountExpires: null, db: tx });
+      await tx`UPDATE auth.users SET admin=true WHERE id=${ordinary.id}::uuid`;
+      expect(await tx`SELECT uid,provider,emergency_admin FROM auth.users WHERE id=${ordinary.id}::uuid`).toMatchObject([
+        { uid: "admin", provider: "local", emergency_admin: false },
+      ]);
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(true);
+      const authority = await signedAuthor(signIn.sid, tx);
+      expect(await selfDecide(pending.id, tx, authority)).toEqual({ ok: false, code: "SELF_APPROVAL" });
+      // Only the emergency sign-in path writes this marker in application code.
+      await tx`UPDATE auth.users SET emergency_admin=true WHERE id=${ordinary.id}::uuid`;
+      expect(await hasOtherApprovalAdmin(tx, author)).toBe(false);
+      expect(await listApprovalAdminRecipients(tx, { userId: ordinary.id })).toEqual([ordinary.id]);
+      expect(await selfDecide(pending.id, tx, authority)).toMatchObject({ ok: true });
+    });
+  });
   test("the sole human admin self-approves with durable decision evidence and an audit reason", async () => {
     const { id } = await ask();
     const signIn = await createTestBrowserSignIn(author);
