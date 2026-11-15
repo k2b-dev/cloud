@@ -51,11 +51,11 @@
   font-size: 0.8125rem;
 }
 
-/* The row has a fixed width, at most the row measure, so nothing in it depends on the changing words: the time stands
-   on the right in a fixed-width cell, close to the sentence, and the chevron ends the row. The hover surface reaches
-   4 px past the text edge. */
+/* The row is as wide as its words (v12): the time follows the sentence in a fixed-width cell, then the chevron, at most
+   the row measure. The hover surface reaches 4 px past the text edge. */
 .k2b-ui .ai-turn-work > .k2b-chat-activity__row {
-  width: min(calc(100% + 0.25rem), var(--k2b-row-measure, 40rem));
+  width: fit-content;
+  max-width: min(calc(100% + 0.25rem), var(--k2b-row-measure, 40rem));
   min-height: 1.75rem;
   margin-inline-start: -0.25rem;
   padding: 0.1875rem 0.5rem 0.1875rem 0.25rem;
@@ -129,11 +129,12 @@
   margin-inline-start: auto;
 }
 
+/* The time keeps a fixed cell after the sentence, so a ticking clock never moves the chevron. */
 .k2b-ui .ai-turn-work__meta {
   min-width: 3.25rem;
   font-size: 0.75rem;
   line-height: 1.25rem;
-  text-align: end;
+  text-align: start;
 }
 
 /* Only the sentence shimmers while Gustav works: a plum light runs over it every 2.2 s, on the sentence itself so its
@@ -2118,6 +2119,14 @@ dialog:has(.launchpad-panel)::backdrop {
 .k2b-ui .ai-source__title {
   min-width: 0;
   max-width: 20rem;
+}
+
+/* An answer reads in 15.5 px with 1.62 line height (Bauplan 4a, v12), the same size as the question above it; a status
+   and the notes at the steps stay quiet and small. */
+.k2b-ui .ai-turn__text:not(.ai-turn__text--status) > .assistant-markdown-block,
+.k2b-ui .ai-turn__text:not(.ai-turn__text--status) .ai-turn-clamp > .assistant-markdown-block {
+  font-size: 0.96875rem;
+  line-height: 1.62;
 }
 
 /* An answer's headings stand out by size and weight only: 18 px for the first three levels, the text's 14 px below. */

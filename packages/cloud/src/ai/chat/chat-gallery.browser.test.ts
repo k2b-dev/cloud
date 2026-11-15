@@ -94,6 +94,21 @@ for (const width of [1440, 390])
       const bubble = await box(page, ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble");
       expect(bubble.background).toBe(muted);
       expect(bubble.radius).toBe("16px 16px 5px");
+      // The question reads in the answer's size (v12 image 02), not in a smaller bubble type.
+      const sizes = await page.evaluate(() => {
+        const size = (selector: string) => {
+          const node = document.querySelector(selector);
+          return node ? [getComputedStyle(node).fontSize, getComputedStyle(node).lineHeight] : null;
+        };
+        return {
+          question: size(
+            ".k2b-chat-message[data-role=user] .k2b-chat-message__bubble p, .k2b-chat-message[data-role=user] .k2b-chat-message__bubble",
+          ),
+          answer: size(".ai-turn__text .assistant-markdown-block p"),
+        };
+      });
+      expect(sizes.question?.[0]).toBe("15.5px");
+      expect(sizes.answer?.[0]).toBe("15.5px");
       const own = page.locator(".k2b-chat-message[data-role=user] .k2b-chat-message__actions button");
       expect(await own.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")))).toEqual([
         "Kopieren",
@@ -246,10 +261,18 @@ for (const width of [1440, 390])
       const ends = await page.locator(line).evaluate((node) => {
         const chevron = node.querySelector(".k2b-chat-activity__chevron")!.getBoundingClientRect();
         const meta = node.querySelector(".ai-turn-work__meta")!.getBoundingClientRect();
-        return { chevronAfterTime: chevron.left >= meta.right, rowRight: node.getBoundingClientRect().right - chevron.right };
+        const words = node.querySelector(".ai-turn-work__text")!.getBoundingClientRect();
+        return {
+          chevronAfterTime: chevron.left >= meta.right,
+          rowRight: node.getBoundingClientRect().right - chevron.right,
+          timeAfterWords: meta.left - words.right,
+        };
       });
       expect(ends.chevronAfterTime).toBe(true);
       expect(ends.rowRight).toBeLessThan(12);
+      // The time follows the sentence (v12), not a column at the far end.
+      expect(ends.timeAfterWords).toBeGreaterThanOrEqual(0);
+      expect(ends.timeAfterWords).toBeLessThan(16);
 
       // Opened: the steps in words, each with its tile on one axis; a refused step says why and what followed.
       await page.locator(line).click();
@@ -284,14 +307,6 @@ test("the running work line has the finished line's height, shimmers in 2.2 s, a
   const finished = await open("antwort", 1440);
   const height = (await box(finished.page, ".ai-turn-work > *")).height;
   await finished.close();
-  // Before the first step the line cannot open yet, but its time stands where it stands once it can.
-  const timeEdge = async (scene: string) => {
-    const view = await open(scene, 1440);
-    const right = await view.page.locator(".ai-turn-work .ai-turn-work__meta").evaluate((node) => node.getBoundingClientRect().right);
-    await view.close();
-    return right;
-  };
-  expect(await timeEdge("denkt")).toBe(await timeEdge("arbeitet"));
   for (const motion of ["no-preference", "reduce"] as const) {
     const { page, close } = await open("arbeitet", 1440, "light", motion);
     try {
