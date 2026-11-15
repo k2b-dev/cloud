@@ -118,6 +118,9 @@ export const readWebPageForPerson = async (
       await check(url);
       // A fresh scrape makes this the content's time, rather than the click time of a cached page.
       const contentAt = new Date().toISOString();
+      // The fetch runs only through the hosted service; Cloud does not fetch other addresses itself. A self-hosted
+      // fetch service or a direct fetch from Cloud first needs an IP check of the resolved address, pinning that address
+      // for the connection, and the same check for every redirect.
       const output = await runCloudAiWebExtract({ url }, { maxAge: 0, signal });
       const finalUrl = publicUrl(output.url);
       await check(finalUrl);

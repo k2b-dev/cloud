@@ -161,14 +161,16 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
       if (shots) await page.screenshot({ path: `${shots}/plus-menue-light-1440.png` });
       expect(await add.getAttribute("aria-expanded")).toBe("true");
       expect(await menu.locator(".k2b-dropdown__heading").textContent()).toBe("Daneben öffnen");
-      // Only what Gustav has; without Code there is no "Automation".
+      // Four entries at most, all from Gustav; without Code there is no "Automation".
       expect(await menu.getByRole("menuitem").allTextContents()).toEqual([
         expect.stringContaining("Ergebnis aus diesem Chat"),
         expect.stringContaining("Dateien des Chats"),
+        expect.stringContaining("Webseite lesen"),
       ]);
       expect(await menu.getByRole("menuitem").evaluateAll((items) => items.map((item) => item.getAttribute("aria-keyshortcuts")))).toEqual([
         "E",
         "D",
+        "W",
       ]);
       expect(await page.evaluate(() => document.activeElement?.textContent ?? "")).toContain("Ergebnis aus diesem Chat");
       // Esc closes and gives the focus back to the + that opened it.
@@ -234,8 +236,8 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
     }
   }, 30_000);
 
-  test("entries follow the chat: no result disables “Ergebnis” with its reason, and its letter does nothing", async () => {
-    const { page } = await openPage(1440, "/?results=0");
+  test("entries follow the chat and the operator: no result disables “Ergebnis” with its reason, no reader leaves out “Webseite”", async () => {
+    const { page } = await openPage(1440, "/?web=0&results=0");
     try {
       await open(page, "report");
       await page.locator(".k2b-panes__add--tab").first().click();
@@ -244,6 +246,7 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
       const result = menu.getByRole("menuitem", { name: /Ergebnis aus diesem Chat/ });
       expect(await result.isDisabled()).toBe(true);
       expect(await result.textContent()).toContain("Noch kein Ergebnis in diesem Chat");
+      expect(await menu.getByRole("menuitem", { name: /Webseite lesen/ }).count()).toBe(0);
       // The letter of a disabled entry does nothing.
       await page.keyboard.press("e");
       expect(await menu.isVisible()).toBe(true);
@@ -292,7 +295,7 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
       await sheet.waitFor();
       await settled(page);
       if (shots) await page.screenshot({ path: `${shots}/plus-menue-light-390.png` });
-      expect(await sheet.getByRole("menuitem").count()).toBe(2);
+      expect(await sheet.getByRole("menuitem").count()).toBe(3);
       expect(
         await sheet.locator(".k2b-dropdown__key").evaluateAll((keys) => keys.filter((key) => key.getClientRects().length > 0).length),
       ).toBe(0);

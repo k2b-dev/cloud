@@ -673,9 +673,12 @@ dismissal the `assistant_panes_hint` cookie keeps. Every **+** beside the chat
 (at the end of each row of tabs, in the box's head, and on phones in the chat's
 head row) opens one menu, **Open beside**, with what Gustav has: **Result from
 this chat** (disabled with its reason while there is none; among several, a
-search in the menu's place) and **Files of the chat**. Ctrl/⌘ + Shift + 1 opens
-it beside the + that shows, also from the composer but not from another field;
-each + names that key in its tooltip. E and D choose directly while it is open; Esc gives the focus back to the + that
+search in the menu's place), **Files of the chat**, and **Read a web page**
+where the operator set up the reading service (an address field; the reading
+view asks before it fetches an address that is not from the chat). Ctrl/⌘ +
+Shift + 1 opens it beside the + that shows, also from the composer but not
+from another field; each + names that key in its tooltip. E, D, and W choose
+directly while it is open; Esc gives the focus back to the + that
 opened it; a phone gets a sheet without keys. A new tab joins the group of the
 + that opened it. The chat stays at the left,
 at least 360 px wide, and the workspace takes the rest behind a shadow edge.

@@ -1,7 +1,7 @@
 import type { AiProject } from "@k2b/cloud/ai";
 import { Dropdown, type DropdownAction, type DropdownItem, type DropdownSearch, formatFileViewSize, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
-import { appTab, contextTab, fileTab, presentationTab, type WorkspaceTab } from "../artifacts/workspace-state";
+import { appTab, contextTab, fileTab, presentationTab, type WorkspaceTab, webTab } from "../artifacts/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { addMenuMessages } from "./add-menu-messages";
 import { contextBoxResultRow } from "./chat-context-box";
@@ -10,17 +10,26 @@ import { chatSidebarMessages } from "./chat-sidebar-messages";
 /** Opens the menu beside `from`; a tab it opens joins the group of the Panes item `beside`, or the first pane. */
 export type AssistantAddMenuOpen = (from: HTMLElement, beside: string | null) => void;
 
-type Stage = "menu" | "results";
+type Stage = "menu" | "results" | "address";
+
+const isWebAddress = (value: string) => {
+  if (!URL.canParse(value)) return false;
+  const url = new URL(value);
+  return (url.protocol === "https:" || url.protocol === "http:") && url.hostname.length > 0;
+};
 
 /**
  * The menu behind every "+" beside a chat (Feinschliff v3, section 6): one menu for the + in the box's head and the +
- * at the end of each row of tabs. It offers only what Gustav has: a result of this chat and the chat's files. A result
- * among several opens in its place, as a search; Esc leads back to the menu. A letter chooses an entry while the menu is open; a phone gets it as a sheet.
+ * at the end of each row of tabs. It offers only what Gustav has: a result of this chat, the chat's files, and, where
+ * the operator set it up, a web page to read. A result among several and an address open in its place, as a search;
+ * Esc leads back to the menu. A letter chooses an entry while the menu is open; a phone gets it as a sheet.
  */
 export function AssistantAddMenu(props: {
   chatId: string | null;
   project?: AiProject | null;
   snapshot: () => AssistantChatContextSnapshot | null;
+  /** The operator set up reading web pages. */
+  webReader: boolean;
   openTab: (tab: WorkspaceTab, beside: string | null) => void;
   register: (open: AssistantAddMenuOpen) => void;
 }) {
@@ -95,16 +104,29 @@ export function AssistantAddMenu(props: {
         key: "D",
         action: () => open(contextTab(chatId, "files", chatSidebarMessages.resolve([locale()]).t.title, props.project)),
       },
+      ...(props.webReader ? [{ label: copy.website, icon: "ti ti-world", key: "W", action: () => show("address") }] : []),
     ];
   };
   const items = (): DropdownItem[] => {
     if (stage() === "results") return resultRows();
+    if (stage() === "address") return [{ label: t().addressNote, icon: "ti ti-info-circle", disabled: true, action: () => {} }];
     return menuEntries();
   };
   const search = (): DropdownSearch | undefined => {
     const copy = t();
     if (stage() === "results") return { label: copy.resultsSearch({ count: resultRows().length }) };
-    return undefined;
+    if (stage() !== "address") return undefined;
+    return {
+      label: copy.addressLabel,
+      placeholder: copy.addressPlaceholder,
+      filter: (query) => {
+        const address = query.trim();
+        const tab = props.chatId && isWebAddress(address) ? webTab(props.chatId, address) : null;
+        return tab
+          ? [{ label: `${copy.addressOpen}: ${new URL(address).host}`, description: address, icon: "ti ti-world", action: () => open(tab) }]
+          : [{ label: copy.addressInvalid, icon: "ti ti-alert-circle", disabled: true, action: () => {} }];
+      },
+    };
   };
 
   onMount(() => {
@@ -129,7 +151,7 @@ export function AssistantAddMenu(props: {
     <Dropdown
       items={items()}
       search={search()}
-      heading={stage() === "menu" ? t().open : t().resultsHeading}
+      heading={stage() === "menu" ? t().open : stage() === "results" ? t().resultsHeading : t().addressHeading}
       keyHint={stage() === "menu" ? [t().keysMove, t().keysLetter] : [t().keysMove, t().keysBack]}
       label={t().open}
       position="bottom-left"

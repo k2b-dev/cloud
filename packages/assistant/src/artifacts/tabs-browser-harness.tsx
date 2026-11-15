@@ -73,8 +73,9 @@ const snapshot = emptySidebarSnapshot({
   fileCount: 1,
 });
 const locale = new URL(location.href).searchParams.get("lang") ?? "de";
-// `?results=0`: the chat has no result yet.
+// `?web=0`: the operator has not set up reading web pages; `?results=0`: the chat has no result yet.
 const params = new URL(location.href).searchParams;
+const webReader = params.get("web") !== "0";
 const shown = params.get("results") === "0" ? { ...snapshot, results: [] } : snapshot;
 let openAdd: AssistantAddMenuOpen | undefined;
 bindAddMenuShortcut((from) => openAdd?.(from, null));
@@ -115,12 +116,13 @@ render(
                   onAsk={(title) => ((window as unknown as { asked?: string }).asked = title)}
                   onAdd={(target, from) => openAdd?.(from, target)}
                   arrangeHintSeen
-                  webReader
+                  webReader={webReader}
                   snapshot={() => shown}
                 />
                 <AssistantAddMenu
                   chatId={chatId}
                   snapshot={() => shown}
+                  webReader={webReader}
                   openTab={(tab, beside) => controller.open(tab, { beside })}
                   register={(open) => {
                     openAdd = open;

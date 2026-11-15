@@ -3035,6 +3035,7 @@ export default function AssistantWorkspace(props: Props) {
                               chatId={chat.activeConversationId()}
                               project={activeConversationProject()}
                               snapshot={contextState.snapshot}
+                              webReader={webReader() === true}
                               openTab={(tab, beside) => artifactWorkspace.open(tab, { beside })}
                               register={(open) => {
                                 openAddMenu = open;
