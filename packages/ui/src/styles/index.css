@@ -15372,19 +15372,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    colour without an edge, so no two accent grounds touch and the white is
    the button's shape. */
 .k2b-ui .k2b-chat-decision:not([data-mode="edit"]) .k2b-chat-decision__buttons .k2b-button:not([data-variant="ai"], [data-variant="text"]),
-.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions .k2b-button {
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions .k2b-button:not([data-variant="text"]) {
   border-color: transparent;
   background: var(--k2b-surface);
 }
 
-/* Quiet answers such as "Change" and "Discard" are text in the AI colour. */
-.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"] {
+/* Quiet answers such as "Change" and "Discard" are text in the AI colour, and
+   so is a text action under a decided outcome, such as "See everything". */
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"],
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions .k2b-button[data-variant="text"] {
   padding-inline: 0.5rem;
   color: var(--k2b-ai-accent);
   font-weight: 600;
 }
 
-.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
+.k2b-ui .k2b-chat-decision .k2b-button.k2b-chat-decision__answer[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover,
+.k2b-ui .k2b-chat-decision .k2b-chat-outcome__actions .k2b-button[data-variant="text"]:not(:disabled, [aria-disabled="true"]):hover {
   color: var(--k2b-ai-accent-hover);
   background: transparent;
 }
