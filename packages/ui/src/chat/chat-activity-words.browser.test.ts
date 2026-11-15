@@ -164,6 +164,7 @@ describe("Chat.Activity.Words in the browser", () => {
         const held = (await sample(page)).words[0]!.text;
         await hoverInPlace(page.locator(".k2b-chat-activity__row"));
         await page.clock.runFor(10_000);
+        // settled: the page clock is installed, so runFor has already run every timer and frame this read depends on.
         expect((await sample(page)).words.map((word) => word.text)).toEqual([held]);
         expect(await page.locator('[role="status"]').allTextContents()).toEqual(["Gustav denkt nach"]);
         expect(await page.locator(".k2b-chat-activity__words").getAttribute("aria-hidden")).toBe("true");
