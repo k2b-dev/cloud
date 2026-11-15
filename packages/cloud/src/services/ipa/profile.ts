@@ -104,7 +104,7 @@ export const updateUserIpaProfile = async (userId: string): Promise<void> => {
   const profile = await calculateIpaProfile(groups);
   await sql`
     UPDATE auth.users
-    SET ${sql(ordinaryAccountIdentity({ provider: "ipa", profile }))}
+    SET ${ordinaryAccountIdentity({ provider: "ipa", profile })}
     WHERE id = ${userId} AND provider = 'ipa'
   `;
 };

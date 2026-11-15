@@ -172,7 +172,7 @@ suite("FreeIPA guest reactivation through the real account services", () => {
       if (members.delete(uid)) members.add("admin");
     }
     expect(await promote()).toMatchObject({ ok: true, data: { id, uid: "admin", reactivated: true } });
-    expect(await sql`SELECT provider,uid,emergency_admin FROM auth.users WHERE id=${id}::uuid`).toMatchObject([
+    expect([...(await sql`SELECT provider,uid,emergency_admin FROM auth.users WHERE id=${id}::uuid`)]).toMatchObject([
       { provider: "ipa", uid: "admin", emergency_admin: false },
     ]);
     await settings.set("freeipa.groups.admin", ["cloud-users"]);
@@ -184,8 +184,11 @@ suite("FreeIPA guest reactivation through the real account services", () => {
     await sql`UPDATE auth.users SET uid='admin',profile='user',admin=true,emergency_admin=true WHERE id=${id}::uuid`;
     const authorId = crypto.randomUUID();
     expect(await hasOtherApprovalAdmin(sql, authorId)).toBe(false);
+    expect(await setProfile({ id, profile: "user", accountExpires: null })).toMatchObject({ ok: true });
+    expect([...(await sql`SELECT emergency_admin FROM auth.users WHERE id=${id}::uuid`)]).toMatchObject([{ emergency_admin: true }]);
+    expect(await hasOtherApprovalAdmin(sql, authorId)).toBe(false);
     expect(await setProfile({ id, profile: "guest", accountExpires: null })).toMatchObject({ ok: true });
-    expect(await sql`SELECT provider,profile,emergency_admin FROM auth.users WHERE id=${id}::uuid`).toMatchObject([
+    expect([...(await sql`SELECT provider,profile,emergency_admin FROM auth.users WHERE id=${id}::uuid`)]).toMatchObject([
       { provider: "local", profile: "guest", emergency_admin: false },
     ]);
     expect(await setProfile({ id, profile: "user", accountExpires: null })).toMatchObject({ ok: true });

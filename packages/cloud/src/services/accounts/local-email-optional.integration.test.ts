@@ -169,12 +169,15 @@ suite("local accounts without email", () => {
         headers: { "content-type": "application/json", "x-forwarded-for": `${prefix}-admin-login` },
         body: JSON.stringify({ token: process.env.ADMIN_LOGIN_TOKEN }),
       });
-    const [before] = await sql<{ mail: string | null }[]>`SELECT mail FROM auth.users WHERE uid = 'admin'`;
+    const [before] = await sql<
+      { mail: string | null; emergency_admin: boolean }[]
+    >`SELECT mail, emergency_admin FROM auth.users WHERE uid = 'admin'`;
     try {
       expect((await login()).status).toBe(200);
       const [row] = await sql<{ id: string; mail: string | null }[]>`SELECT id, mail FROM auth.users WHERE uid = 'admin'`;
       const id = row!.id;
-      await sql`UPDATE auth.users SET mail = NULL WHERE id = ${id}::uuid`;
+      // This fixture represents the marked emergency identity, including when the row predates the marker.
+      await sql`UPDATE auth.users SET mail = NULL, emergency_admin=true WHERE id = ${id}::uuid`;
       expect(await accountsAppService.user.update({ actor: admin, id, data: { displayName: "Admin" } })).toMatchObject({ ok: true });
       expect(await update(id, address("admin"))).toMatchObject({ ok: true });
       // No administrator-issued link or token reaches the shared break-glass identity, with or without an address.
@@ -190,8 +193,15 @@ suite("local accounts without email", () => {
         ok: false,
         error: { code: "FORBIDDEN", message: expect.stringContaining("admin login token") },
       });
+      // An unmarked reserved name is an ordinary identity; the same account rules apply.
+      await sql`UPDATE auth.users SET emergency_admin=false WHERE id=${id}::uuid`;
+      expect(await update(id, address("ordinary-admin"))).toMatchObject({ ok: true });
+      expect(await accountsAppService.user.createLoginToken({ actor: admin, id })).toMatchObject({ ok: true });
+      expect(await accountsAppService.user.sendLoginLink({ actor: admin, id, notificationSender: sender })).toMatchObject({ ok: true });
+      expect(loginLinks).toHaveLength(1);
+      expect(await update(id, null)).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
     } finally {
-      await sql`UPDATE auth.users SET mail = ${before?.mail ?? null} WHERE uid = 'admin'`;
+      await sql`UPDATE auth.users SET mail = ${before?.mail ?? null}, emergency_admin=${before?.emergency_admin ?? true} WHERE uid = 'admin'`;
       if (previousToken === undefined) delete process.env.ADMIN_LOGIN_TOKEN;
       else process.env.ADMIN_LOGIN_TOKEN = previousToken;
     }

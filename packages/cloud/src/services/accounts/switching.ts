@@ -81,7 +81,7 @@ export const transitionIpaUserToLocal = async (params: {
 
   await db`
     UPDATE auth.users
-    SET ${sql(ordinaryAccountIdentity({ provider: "local", profile: params.targetProfile }))},
+    SET ${ordinaryAccountIdentity({ provider: "local", profile: params.targetProfile })},
         admin = false,
         account_expires = ${params.accountExpires}
     WHERE id = ${params.userId}::uuid

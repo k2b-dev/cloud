@@ -4,14 +4,13 @@ import { sql } from "../../../runtime/clients";
 import { isAccountCategoryAllowed } from "../../account-category-policy";
 import { writeDeletedAccountAudit } from "../../account-lifecycle/audit";
 import { emailAlreadyUsed, findAccountsByEmail, lockAccountEmail, normalizeAccountEmail } from "../../accounts/email-write";
-import { ordinaryAccountIdentity } from "../../accounts/identity";
+import { type EmergencyIdentityRow, isEmergencyIdentity, ordinaryAccountIdentity } from "../../accounts/identity";
 import { resolveStoredAdminState } from "../../accounts/model";
 import { writeLocalAccount } from "../../accounts/posix";
 import type { AuditActor } from "../../audit";
 import { generateUniqueAbbreviation } from "../../ipa/users";
 import { isUniqueViolation } from "../../postgres";
 import * as settings from "../../settings";
-import { EMERGENCY_ADMIN_UID } from "./constants";
 
 export { EMERGENCY_ADMIN_UID } from "./constants";
 
@@ -30,8 +29,8 @@ export type LocalUserCreateData = {
  * `user.local_email_optional` is on. The setting guards writes only, so
  * existing accounts stay valid when it is turned off.
  */
-const missingEmailError = async (profile: UserProfile, uid?: string): Promise<MutationResult<never> | null> => {
-  if (uid === EMERGENCY_ADMIN_UID) return null;
+const missingEmailError = async (profile: UserProfile, identity?: EmergencyIdentityRow): Promise<MutationResult<never> | null> => {
+  if (identity && isEmergencyIdentity(identity)) return null;
   if (profile !== "user") return { ok: false, error: "Guest accounts need an email address.", status: 400 };
   if (await settings.get<boolean>("user.local_email_optional")) return null;
   return {
@@ -158,13 +157,13 @@ export const update = async (params: {
     const email = params.data.mail === undefined ? undefined : normalizeAccountEmail(params.data.mail ?? "");
     if (email) await lockAccountEmail(tx, email);
     else await tx`LOCK TABLE auth.users IN ROW EXCLUSIVE MODE`;
-    const [existing] = await tx<{ uid: string; profile: UserProfile; mail: string | null }[]>`
-      SELECT uid, profile, mail FROM auth.users WHERE id = ${params.id}::uuid AND provider = 'local' FOR UPDATE
+    const [existing] = await tx<(EmergencyIdentityRow & { profile: UserProfile; mail: string | null })[]>`
+      SELECT uid, provider, emergency_admin, profile, mail FROM auth.users WHERE id = ${params.id}::uuid AND provider = 'local' FOR UPDATE
     `;
     if (!existing) return { ok: false, error: "Local user not found", status: 404 };
     const changed = email !== undefined && email !== normalizeAccountEmail(existing.mail ?? "");
     if (changed && !email) {
-      const missing = await missingEmailError(existing.profile, existing.uid);
+      const missing = await missingEmailError(existing.profile, existing);
       if (missing) return missing;
     }
     if (changed && email && (await findAccountsByEmail(tx, email)).some((row) => row.id !== params.id)) return emailAlreadyUsed();
@@ -209,7 +208,7 @@ export const setProfile = async (params: {
 
     await tx`
     UPDATE auth.users
-    SET ${sql(ordinaryAccountIdentity({ provider: "local", profile: params.profile }))},
+    SET ${ordinaryAccountIdentity({ provider: "local", profile: params.profile })},
         admin = ${admin},
         account_expires = ${params.accountExpires}
     WHERE id = ${params.id}::uuid

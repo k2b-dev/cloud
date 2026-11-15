@@ -129,7 +129,7 @@ databaseSuite()("independent Code-version approvals", () => {
       if (!ordinary) throw new Error("Missing ordinary account");
       await transitionIpaUserToLocal({ userId: ordinary.id, targetProfile: "user", accountExpires: null, db: tx });
       await tx`UPDATE auth.users SET admin=true WHERE id=${ordinary.id}::uuid`;
-      expect(await tx`SELECT uid,provider,emergency_admin FROM auth.users WHERE id=${ordinary.id}::uuid`).toMatchObject([
+      expect([...(await tx`SELECT uid,provider,emergency_admin FROM auth.users WHERE id=${ordinary.id}::uuid`)]).toMatchObject([
         { uid: "admin", provider: "local", emergency_admin: false },
       ]);
       expect(await hasOtherApprovalAdmin(tx, author)).toBe(true);
@@ -151,7 +151,7 @@ databaseSuite()("independent Code-version approvals", () => {
         await tx`UPDATE auth.users SET uid=${`saved-admin-${admin}`} WHERE uid='admin'`;
         await tx`UPDATE auth.users SET uid='admin' WHERE id=${admin}::uuid`;
       }
-      await tx`UPDATE auth.users SET provider=${provider},admin=true,emergency_admin=true WHERE id=${admin}::uuid`;
+      await tx`UPDATE auth.users SET provider=${provider},admin=${provider === "local"},emergency_admin=true WHERE id=${admin}::uuid`;
       await tx`INSERT INTO auth.ipa_user_effective_groups(user_id,group_name) VALUES(${admin}::uuid,'code-review-admins')`;
       await tx`INSERT INTO settings.entries(key,value) VALUES('freeipa.groups.admin',${await encryptValue(["code-review-admins"])})
         ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`;
