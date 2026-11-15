@@ -14,8 +14,8 @@ import {
   loadCodeSummaries,
 } from "../code-summary";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
+import { automationTiming } from "./automation-timing";
 import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
-import { automationTiming } from "./code-overview";
 import { CodeStatusBadge, codeRunLine, codeStateLabel } from "./code-status";
 import { assistantMessages } from "./messages";
 

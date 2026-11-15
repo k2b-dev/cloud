@@ -16,9 +16,9 @@ import {
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { nextCodeRun } from "../code-summary";
+import { automationTiming } from "./automation-timing";
 import { browserCodeInvoke } from "./code-client";
 import {
-  automationTiming,
   type CodeCardRun,
   type CodeCardStatus,
   type CodeOverviewItem,

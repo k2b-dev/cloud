@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import type { CodeActivityReadModel } from "@k2b/cloud/contracts/code-read-model";
 import type { CodeQueryInvoke } from "../code-summary";
-import { automationTiming, type CodeOverviewItem, cardStatus, dayLine, loadCodeCardExtras, localDay } from "./code-overview";
+import { automationTiming } from "./automation-timing";
+import { type CodeOverviewItem, cardStatus, dayLine, loadCodeCardExtras, localDay } from "./code-overview";
 
 const DAY = { from: "2026-11-13T23:00:00.000Z", to: "2026-11-14T23:00:00.000Z" };
 const activity = (marks: CodeActivityReadModel["timeline"]["marks"]): CodeActivityReadModel => ({
