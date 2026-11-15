@@ -24,7 +24,7 @@ export async function migrate(db: SQL = sql): Promise<void> {
     BEGIN
       IF to_regprocedure('ai.enqueue_live_for_user(uuid,uuid,text,text,text[])') IS NULL THEN RETURN NEW; END IF;
       FOR person IN SELECT DISTINCT v.created_by FROM code.version_submissions s JOIN code.versions v ON v.id=s.version_id
-        WHERE s.code_id=NEW.id AND s.origin->>'kind'='ai_chat' AND v.created_by IS NOT NULL LIMIT 20 LOOP
+        WHERE s.code_id=NEW.id AND s.origin->>'kind'='ai_chat' AND v.created_by IS NOT NULL LOOP
         PERFORM ai.enqueue_live_for_user(gen_random_uuid(), person, NULL, NULL, ARRAY['code-versions']::text[]);
       END LOOP;
       RETURN NEW;

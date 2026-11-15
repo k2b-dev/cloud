@@ -72,12 +72,16 @@ databaseSuite()("Core lists the Code a chat submitted, for its owner only", () =
     return row!.id;
   };
   /** A submission from the chat, as the chat tool records it; with an approval, it waits for an admin. */
-  const submit = async (codeId: string, versionId: string, options: { approval?: string; conversationId?: string } = {}) => {
+  const submit = async (
+    codeId: string,
+    versionId: string,
+    options: { approval?: string; conversationId?: string; cardAnchor?: string } = {},
+  ) => {
     const origin = {
       kind: "ai_chat",
       conversationId: options.conversationId ?? chatId,
       automaticAfterReview: true,
-      cardAnchor: `tool-call-${versionId.slice(0, 8)}`,
+      cardAnchor: options.cardAnchor ?? `tool-call-${versionId.slice(0, 8)}`,
     };
     submitted++;
     await sql`INSERT INTO code.version_submissions(version_id,code_id,binding,origin,approval_id,created_at)
@@ -156,6 +160,14 @@ databaseSuite()("Core lists the Code a chat submitted, for its owner only", () =
     // Its approval ran out: the person can ask again.
     const lapsed = await mine("Abgelaufen");
     await submit(lapsed.id, await version(lapsed.id, ids.author), { approval: await approval("pending", -60) });
+    // Asked for again: a new version under the same card, which keeps its anchor.
+    const again = await mine("Erneut angefragt");
+    const asked1 = await version(again.id, ids.author);
+    await submit(again.id, asked1, { approval: await approval("expired", -60), cardAnchor: "tool-call-again" });
+    await submit(again.id, await version(again.id, ids.author, asked1), {
+      approval: await approval("pending"),
+      cardAnchor: "tool-call-again",
+    });
     // A newer version from another chat closed this one's request without a decision: nothing waits here any more.
     const replaced = await mine("Ersetzt");
     const older = await version(replaced.id, ids.author);
@@ -176,15 +188,17 @@ databaseSuite()("Core lists the Code a chat submitted, for its owner only", () =
     await submit(foreign.id, await version(foreign.id, ids.other));
 
     const list = await listChatCode({ conversationId: chatId }, ctx(ids.author));
-    expect(list.count).toBe(5);
+    expect(list.count).toBe(6);
     expect(list.items.map((item) => [item.title, item.state, item.attention])).toEqual([
-      ["Abgelaufen", "waiting", true],
+      ["Erneut angefragt", "waiting", false],
+      ["Abgelaufen", "expired", true],
       ["Rechnungen sortieren", "revising", false],
       ["Angebote nachfassen", "waiting", false],
       ["Wochenbericht", "paused", false],
       ["Lieferscheine ablegen", "ready", true],
     ]);
-    expect(list.items[2]).toMatchObject({ versionId: second, number: 2, anchor: `code-version-${second}` });
+    expect(list.items[0]).toMatchObject({ number: 2, anchor: `code-version-${asked1}` });
+    expect(list.items[3]).toMatchObject({ versionId: second, number: 2, anchor: `code-version-${second}` });
 
     // A reader without the right sees nothing: another person asking for this chat gets an empty list.
     expect(await listChatCode({ conversationId: chatId }, ctx(ids.other))).toEqual({ count: 0, items: [] });

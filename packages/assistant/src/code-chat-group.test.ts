@@ -3,7 +3,7 @@ import type { CapabilityInvocation } from "@k2b/cloud/capabilities";
 import type { z } from "zod";
 import { type CodeChatList, codeChatGroup, loadCodeChatGroup } from "./code-chat-group";
 import type { CodeQueryInvoke } from "./code-summary";
-import { codeVersionCardAnchor } from "./frontend/AssistantCodeVersionCard";
+import { codeVersionCardAnchor } from "./frontend/code-version-anchor";
 
 const item = (state: CodeChatList["items"][number]["state"], attention = false) => ({
   codeId: `c_${state.padEnd(8, "x")}`,
@@ -14,14 +14,15 @@ const item = (state: CodeChatList["items"][number]["state"], attention = false) 
 });
 
 test("every state of a chat's Code has its word from 3d and a colour, and a click jumps to its card", () => {
-  const states = ["on", "paused", "ready", "waiting", "changes", "revising", "rejected"] as const;
+  const states = ["on", "paused", "ready", "waiting", "expired", "changes", "revising", "rejected"] as const;
   const group = codeChatGroup({ count: states.length, items: states.map((state) => item(state, state === "ready")) }, "de")!;
-  expect(group).toMatchObject({ key: "automations", label: "Automationen", count: 7, allHref: "/app/assistant?code=1" });
+  expect(group).toMatchObject({ key: "automations", label: "Automationen", count: 8, allHref: "/app/assistant?code=1" });
   expect(group.rows.map((row) => [row.word, row.tone ?? null])).toEqual([
     ["Eingeschaltet", "ok"],
     ["Pausiert", "warn"],
     ["Bereit, noch aus", "ai"],
     ["Wartet auf Admin", "warn"],
+    ["Freigabe abgelaufen", "warn"],
     ["Änderungen angefordert", "warn"],
     ["Gustav überarbeitet", "ai"],
     ["Abgelehnt", null],

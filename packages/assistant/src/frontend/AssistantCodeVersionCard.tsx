@@ -20,6 +20,7 @@ import {
   withdrawCodeVersion,
 } from "./code-activation";
 import { browserCodeInvoke, formatCodeTime } from "./code-client";
+import { codeVersionCardAnchor } from "./code-version-anchor";
 import { codeVersionCardMessages } from "./code-version-card-messages";
 
 const POLLS = 90;
@@ -42,7 +43,7 @@ type Activation =
   | { kind: "failed"; reason: string | null };
 
 /** The anchor the event line at the end of the chat jumps to. */
-export const codeVersionCardAnchor = (versionId: string) => `code-version-${versionId}`;
+export { codeVersionCardAnchor };
 
 /** The code a refused version carries when a Cloud administrator rejected it, or revoked its approval. */
 const REJECTED = "code_approval_revoked";

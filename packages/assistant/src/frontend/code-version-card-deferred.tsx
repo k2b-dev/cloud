@@ -2,6 +2,7 @@ import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { Button, Skeleton, useLocale } from "@k2b/ui";
 import { type ComponentProps, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { codeVersionCardAnchor } from "./code-version-anchor";
 import { codeVersionCardMessages } from "./code-version-card-messages";
 
 type CardProps = ComponentProps<typeof import("./AssistantCodeVersionCard").default>;
@@ -32,7 +33,13 @@ export function AssistantCodeVersionCard(props: CardProps): JSX.Element {
     <Show
       when={card()}
       fallback={
-        <div class="assistant-code-version__placeholder" role="status" aria-busy={failed() ? undefined : "true"} aria-label={t().loading}>
+        <div
+          class="assistant-code-version__placeholder"
+          data-chat-anchor={codeVersionCardAnchor(props.versionId)}
+          role="status"
+          aria-busy={failed() ? undefined : "true"}
+          aria-label={t().loading}
+        >
           <Show
             when={failed()}
             fallback={

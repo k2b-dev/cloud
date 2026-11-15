@@ -10,9 +10,9 @@ export const CODE_CHAT_LIST_LIMIT = 20;
 /**
  * Where a version from the chat stands, as one stable code (concept gustav-ui-neu 3d). Apps word it themselves:
  * `on` runs, `paused` was switched on and is paused, `ready` may be switched on, `waiting` waits for an admin,
- * `changes` has requested changes, `revising` is being revised by the chat's assistant, `rejected` was declined.
+ * `expired` waited too long and may be asked for again, `changes` has requested changes, `revising` is being revised by the chat's assistant, `rejected` was declined.
  */
-export const CodeChatStateSchema = z.enum(["on", "paused", "ready", "waiting", "changes", "revising", "rejected"]);
+export const CodeChatStateSchema = z.enum(["on", "paused", "ready", "waiting", "expired", "changes", "revising", "rejected"]);
 export type CodeChatState = z.infer<typeof CodeChatStateSchema>;
 
 export const codeChatListContract = {
@@ -30,7 +30,7 @@ export const codeChatListContract = {
               state: CodeChatStateSchema,
               /** The person can act next: switch it on, read the requested changes, or ask again. */
               attention: z.boolean(),
-              /** The `data-chat-anchor` of the version's card in the chat. */
+              /** The `data-chat-anchor` of the version's card in the chat; a version asked for again keeps its card. */
               anchor: z.string().max(200),
               submittedAt: z.iso.datetime(),
             })
@@ -51,6 +51,8 @@ type Row = CodeRow & {
   outcome: "approved" | "changes_requested" | "rejected" | null;
   approval_id: string | null;
   expired: boolean | null;
+  closed: boolean | null;
+  card_version_id: string | null;
   work_state: string | null;
   active_number: number | null;
 };
@@ -61,7 +63,7 @@ const stateOf = (row: Row): CodeChatState => {
   if (row.outcome === "rejected") return "rejected";
   if (row.outcome === "changes_requested") return row.work_state === "queued" || row.work_state === "running" ? "revising" : "changes";
   if (row.outcome === "approved" || row.approval_id === null) return "ready";
-  return "waiting";
+  return row.expired ? "expired" : "waiting";
 };
 
 /**
@@ -72,8 +74,15 @@ export async function listChatCode(input: z.infer<typeof codeChatListContract.in
   const user = codePerson(context);
   const rows = await sql<Row[]>`SELECT * FROM (SELECT DISTINCT ON (c.id) c.*, NULL AS service_account_handle, NULL AS activated_by_name,
       v.id AS version_id, v.number, s.created_at AS submitted_at, s.approval_id, d.outcome, w.state AS work_state,
-      -- The same predicate as asking again (versions.ts expiredSubmission); a pruned request counts as expired.
-      (COALESCE(r.status,'expired')='expired' OR (r.status='pending' AND r.expires_at<=now())) AS expired,
+      -- The same predicate as asking again (versions.ts expiredSubmission), which needs the request.
+      (r.status='expired' OR (r.status='pending' AND r.expires_at<=now())) AS expired,
+      -- A request closed without a decision: a newer version replaced it, nothing waits here any more.
+      (s.approval_id IS NOT NULL AND d.outcome IS NULL AND r.status IS NOT NULL AND r.status NOT IN ('pending','expired')) AS closed,
+      -- Asking again makes a new version under the same card: the card is the chat's first version with that anchor.
+      (SELECT first.version_id FROM code.version_submissions first JOIN code.versions fv ON fv.id=first.version_id
+        WHERE first.code_id=c.id AND first.origin->>'kind'='ai_chat' AND first.origin->>'conversationId'=${input.conversationId}
+          AND first.origin->>'cardAnchor'=s.origin->>'cardAnchor'
+        ORDER BY fv.number LIMIT 1) AS card_version_id,
       (SELECT active.number FROM code.versions active WHERE active.id=c.active_version_id) AS active_number
     FROM code.version_submissions s
       JOIN ai.conversations chat ON chat.id=${input.conversationId}::uuid AND chat.created_by_user_id=${user.id}::uuid
@@ -82,9 +91,9 @@ export async function listChatCode(input: z.infer<typeof codeChatListContract.in
       LEFT JOIN code.review_chat_work w ON w.version_id=v.id
     WHERE s.origin->>'kind'='ai_chat' AND s.origin->>'conversationId'=${input.conversationId} AND c.state<>'deleting'
       AND NOT EXISTS(SELECT 1 FROM code.version_withdrawals withdrawn WHERE withdrawn.version_id=v.id)
-      -- A request closed without a decision (a newer version replaced it) no longer waits for anyone.
-      AND NOT (s.approval_id IS NOT NULL AND d.outcome IS NULL AND COALESCE(r.status,'expired') NOT IN ('pending','expired'))
     ORDER BY c.id, v.number DESC) newest
+    -- Replaced by a newer version from elsewhere: the Code is no longer this chat's to show in an older state.
+    WHERE NOT closed
     ORDER BY submitted_at DESC, id LIMIT ${CODE_CHAT_LIST_LIMIT * 2}`;
   const readable: Row[] = [];
   for (const row of rows) if (await codePermission(mapCode(row, user), context, sql, "read")) readable.push(row);
@@ -99,10 +108,10 @@ export async function listChatCode(input: z.infer<typeof codeChatListContract.in
         versionId: row.version_id,
         number: row.number,
         state,
-        attention: state === "ready" || state === "changes" || (state === "waiting" && row.expired === true),
+        attention: state === "ready" || state === "changes" || state === "expired",
         // The version card in the chat carries this anchor (Assistant's codeVersionCardAnchor); `origin.cardAnchor` names
         // the submitting tool call, which renders no element of its own once the card replaced it.
-        anchor: `code-version-${row.version_id}`,
+        anchor: `code-version-${row.card_version_id ?? row.version_id}`,
         submittedAt: row.submitted_at.toISOString(),
       };
     }),

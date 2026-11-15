@@ -1283,6 +1283,18 @@ export default function AssistantWorkspace(props: Props) {
    * Jumps to a question from "Waiting for you", or to a card the box names; one in another chat opens that chat as a new
    * history entry.
    */
+  /**
+   * Loads older pages of the open chat until the element with this `data-chat-anchor` shows, such as a card above the
+   * loaded history. False when the chat has no such element; bounded by the chat's own history.
+   */
+  const revealAnchor = async (anchor: string, current: () => boolean) => {
+    const shown = () => Boolean(timelineContent()?.querySelector(`[data-chat-anchor="${CSS.escape(anchor)}"]`));
+    while (!shown() && current()) {
+      if (!(await chat.loadOlderMessages().catch(() => false))) break;
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    }
+    return shown();
+  };
   const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor" | "href">) => {
     const jump = ++questionJump;
     // The question replaces any message the chat was opened at, also after a reload.
@@ -1307,6 +1319,7 @@ export default function AssistantWorkspace(props: Props) {
     const href = assistantQuestionHref(window.location.href, question.conversationId, question.anchor);
     if (here) {
       navigate(href, { replace: true, scroll: "manual", viewTransition: false });
+      await revealAnchor(question.anchor, current);
       return waitingFocus.focus(question.anchor, current);
     }
     setProjectView(null);
@@ -1316,6 +1329,7 @@ export default function AssistantWorkspace(props: Props) {
     // The page load shows the chat, or why it cannot.
     if (result === "failed") return navigateTo(href);
     navigate(href, { scroll: "manual", viewTransition: false });
+    await revealAnchor(question.anchor, current);
     await waitingFocus.focus(question.anchor, current);
   };
   /** Lands on the question the URL names, after a reload or Back, once its chat shows it. */
@@ -1332,6 +1346,9 @@ export default function AssistantWorkspace(props: Props) {
       chat.activeConversationId() === conversationId;
     // After the frame in which the composer takes the page's first focus.
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (!current()) return;
+    // A card above the history the chat opened with loads its pages first, also after a reload.
+    await revealAnchor(anchor, current);
     if (current()) await waitingFocus.focus(anchor, current);
   };
   const openProject = async (projectId: string) => {
@@ -1755,13 +1772,9 @@ export default function AssistantWorkspace(props: Props) {
   const jumpToCard = async (anchor: string) => {
     const conversationId = chat.activeConversationId();
     if (!conversationId) return;
-    const shown = () => Boolean(timelineContent()?.querySelector(`[data-chat-anchor="${CSS.escape(anchor)}"]`));
-    while (!shown() && conversationId === chat.activeConversationId()) {
-      if (!(await chat.loadOlderMessages().catch(() => false))) break;
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-    }
+    const shown = await revealAnchor(anchor, () => conversationId === chat.activeConversationId());
     if (conversationId !== chat.activeConversationId()) return;
-    if (!shown()) {
+    if (!shown) {
       chat.setError(assistantCommandMessages.resolve([locale()]).t.messageUnavailable);
       return;
     }
