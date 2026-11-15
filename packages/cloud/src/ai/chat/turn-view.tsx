@@ -614,7 +614,13 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
       detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : t().turnErrorKept}
       actions={
         <Show when={props.continuable && actions.onContinueTurn}>
-          <Button variant="secondary" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueAnswer()}>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={continuing()}
+            disabled={actions.actionDisabled?.()}
+            onClick={() => void continueAnswer()}
+          >
             <i class="ti ti-player-play" aria-hidden="true" />
             {t().continueAnswer}
           </Button>
@@ -653,7 +659,13 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) 
       detail={aiTurnErrorDescription(props.error, locale())}
       actions={
         <Show when={canContinue()}>
-          <Button variant="secondary" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueTurn()}>
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={continuing()}
+            disabled={actions.actionDisabled?.()}
+            onClick={() => void continueTurn()}
+          >
             <i class="ti ti-player-play" aria-hidden="true" />
             {t().continueTurn}
           </Button>

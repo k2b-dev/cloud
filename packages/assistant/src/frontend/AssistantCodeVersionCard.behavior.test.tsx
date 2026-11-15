@@ -665,13 +665,25 @@ test("a version submitted moments ago appears once; history stays still", async 
 });
 
 test("once approved, the approval mark is gone from the rows", async () => {
-  const approval = { count: 1, reason: "It stores files in a folder others see.", accessLabel: "storing files", withoutLabel: "Build without storing files" };
+  const approval = {
+    count: 1,
+    reason: "It stores files in a folder others see.",
+    accessLabel: "storing files",
+    withoutLabel: "Build without storing files",
+  };
   const rows = [...words().changes.rows.items];
-  rows[1] = { ...rows[1]!, requiresApproval: true, approvalReason: approval.reason, accessLabel: approval.accessLabel } as (typeof rows)[number];
+  rows[1] = {
+    ...rows[1]!,
+    requiresApproval: true,
+    approvalReason: approval.reason,
+    accessLabel: approval.accessLabel,
+  } as (typeof rows)[number];
   const { dom } = await mount({
     "activation/preview": () => ({ json: { data: preview() } }),
     review: () => ({ json: { data: review({ status: "approved", decidedBy: JANA, decidedAt: "2026-11-12T14:01:00.000Z" }) } }),
-    [WORDS]: () => ({ json: { data: words({ changes: { ...words().changes, approval, rows: { ...words().changes.rows, items: rows } } }) } }),
+    [WORDS]: () => ({
+      json: { data: words({ changes: { ...words().changes, approval, rows: { ...words().changes.rows, items: rows } } }) },
+    }),
   });
   expect(text(dom.root)).not.toContain("needs approval");
 });
