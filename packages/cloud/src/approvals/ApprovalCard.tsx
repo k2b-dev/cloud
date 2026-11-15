@@ -146,7 +146,11 @@ export function ApprovalCard(props: ApprovalCardProps): JSX.Element {
       unavailable={!editing() && unavailable() ? reason() : sending() ? reason() : undefined}
       waiting={props.waiting ? reason() : undefined}
       details={
-        props.card.view || props.card.contentRef || props.card.links.length > 0 || (props.card.consequences ?? []).length > 0
+        // Without anything to show there is no details island, not an empty one.
+        (props.card.view?.length ?? 0) > 0 ||
+        props.card.contentRef ||
+        props.card.links.length > 0 ||
+        (props.card.consequences ?? []).length > 0
           ? {
               label: t().detailsFrom({ app: props.card.app.name }),
               content: (

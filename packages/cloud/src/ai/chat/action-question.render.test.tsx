@@ -116,7 +116,11 @@ describe("ApprovalCard at the public rendering seam", () => {
   test("expiry uses a fixed clock", () => {
     const now = spyOn(Date, "now").mockReturnValue(Date.parse(FIXTURE_AT));
     try {
-      expect(words(render({ expiresAt: "2026-10-17T12:11:00.000Z" }))).toContain("Läuft ab in 9 Min");
+      expect(words(render({ expiresAt: "2026-10-17T12:11:00.000Z" }))).toContain("Läuft ab in 9 Min.");
+      // Longer waits read in the largest whole unit and never promise more time than is left.
+      expect(words(render({ expiresAt: "2026-10-18T11:01:00.000Z" }))).toContain("Läuft ab in 22 Std.");
+      expect(words(render({ expiresAt: "2026-10-18T12:02:00.000Z" }))).toContain("Läuft ab in 1 Tag");
+      expect(words(render({ expiresAt: "2026-10-18T12:02:00.000Z" }))).not.toContain("1.440");
     } finally {
       now.mockRestore();
     }
