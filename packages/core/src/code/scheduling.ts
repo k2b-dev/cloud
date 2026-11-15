@@ -507,12 +507,13 @@ export async function readCodeRunnerMetrics(
     AND (${page.cursor ?? null}::uuid IS NULL OR instance_id>${page.cursor ?? null}::uuid) ORDER BY instance_id LIMIT ${limit + 1}`;
   const shown = runners.slice(0, limit);
   // One grouped count for the page: the places a runner holds are its running runs and authoring jobs.
+  const ids = shown.map((r) => r.instance_id);
   const busy = shown.length
     ? await sql<{ instance_id: string; busy: number }[]>`SELECT instance_id,count(*)::int AS busy FROM (
         SELECT runner_instance_id AS instance_id FROM code.runs
-          WHERE state='running' AND runner_instance_id=ANY(${shown.map((r) => r.instance_id)}::uuid[])
+          WHERE state='running' AND runner_instance_id=ANY(${sql.array(ids, "uuid")})
         UNION ALL SELECT runner_instance_id FROM code.jobs
-          WHERE state='running' AND runner_instance_id=ANY(${shown.map((r) => r.instance_id)}::uuid[])) held GROUP BY instance_id`
+          WHERE state='running' AND runner_instance_id=ANY(${sql.array(ids, "uuid")})) held GROUP BY instance_id`
     : [];
   const busyOf = new Map(busy.map((row) => [row.instance_id, row.busy]));
   return {
