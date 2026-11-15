@@ -31,6 +31,7 @@ import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord,
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import type { AiStopNotice } from "./stop-notice";
+import { aiThinkingWordRound } from "./thinking-words";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, useAiToolDisclosure } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
@@ -193,6 +194,11 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const phase = segment().phase;
     return phase === "stopped" ? "stopped" : phase === "failed" && !segment().error ? "failed" : null;
   };
+  // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1).
+  const thinkingPhase = () =>
+    working() && stepPhrase(layout().current, t(), false) === t().stepThinking ? `${segment().id}:${currentStep() ?? "start"}` : null;
+  const thinkingWords = (phase: string) =>
+    aiThinkingWordRound(phase, { plain: t().thinkingWords, wink: t().thinkingWordsWink, moustache: t().thinkingWordsMoustache });
   const sentence = () => {
     if (reconnecting()) return t().reconnecting;
     if (working()) return liveStepLabel(layout().current, t(), stepMs());
@@ -245,7 +251,18 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
       class="ai-turn-work"
       label={
         <span class="ai-turn-work__text">
-          <span class="ai-turn-work__sentence k2b-truncate-fade">{sentence()}</span>
+          <span class="ai-turn-work__sentence k2b-truncate-fade">
+            <Show when={thinkingPhase()} keyed fallback={sentence()}>
+              {(phase) => (
+                <Chat.Activity.Words
+                  first={t().thinking}
+                  words={thinkingWords(phase)}
+                  elapsedMs={stepMs()}
+                  announce={t().thinkingAnnouncement({ assistant: t().assistant })}
+                />
+              )}
+            </Show>
+          </span>
           <Show when={stepParts()}>
             {(parts) => (
               <span class="ai-turn-work__steps" data-issues={parts().issues ? "" : undefined}>
@@ -271,7 +288,10 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
       busy={working()}
       trailing={
         <Show when={time()}>
-          <span class="ai-turn-work__meta">{time()}</span>
+          {/* While the turn runs the seconds stay silent; the line announces its activity once. */}
+          <span class="ai-turn-work__meta" aria-hidden={isLive(segment().phase) ? "true" : undefined}>
+            {time()}
+          </span>
         </Show>
       }
       bodyInset={false}

@@ -468,7 +468,8 @@ const activeItems = (
  * running, so a step that starts right after the pause is timed from the true work time.
  */
 const createActiveTurnClock = (source: AiChatTimelineSource, paused: Accessor<boolean>): Accessor<AiTurnDuration | null> => {
-  const [now, setNow] = createSignal(Date.now());
+  const rendered = source.renderedAt ? Date.parse(source.renderedAt) : Number.NaN;
+  const [now, setNow] = createSignal(Number.isFinite(rendered) ? rendered : Date.now());
   const running = createMemo(() => source.activeTurn() !== null);
   createEffect(() => {
     if (!running() || typeof window === "undefined") return;
@@ -527,6 +528,12 @@ export type AiChatTimelineSource = {
    * browser. Defaults to the browser's own zone, and to UTC outside a browser.
    */
   timeZone?: string;
+  /**
+   * When the server rendered the page, such as the island's `renderedAt`. The work clock starts there, so the server
+   * output and the first browser frame show the same time and the same thinking word; the browser counts on from its
+   * own clock after that frame.
+   */
+  renderedAt?: string;
 };
 
 /**
