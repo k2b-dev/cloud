@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # API surface
@@ -802,3 +802,11 @@ rename transaction. `resolveDisplayNames` and `CodeAccountDisplayContext` from
 `@k2b/cloud/server` present names inside locally authorized target lists.
 `codeAccountPresenter` supports adapters that already join account metadata in
 one query. See [Code account handles](/en/docs/identity/code-service-account-handles).
+
+The chat runtime also exports `appendAiBackgroundMessages` and
+`registerAiTurnAbortHandler` from `@k2b/cloud/ai/runtime` for host-owned durable
+[Code review activity](/en/docs/ai/chat-runtime-and-streaming#code-decision-activity).
+`AiOpenQuestionsSchema`, `AiOpenQuestionKind` and `AiOpenQuestionSource` from
+`@k2b/cloud/ai` describe the shared waiting snapshot.
+`listAccessRecipientUserIds` from `@k2b/cloud/server` supplies bounded
+[background manager candidates](/en/docs/platform/resource-types-and-discussions#resolve-managers-for-background-notices).

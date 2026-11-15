@@ -28,6 +28,16 @@ export const historyUpdates = (
   for (const item of buildAiMessageTimeline(state.messages)) {
     if (item.type === "summary") continue;
     if (options.turn ? item.type !== "assistant" || item.loopId !== options.turn : false) continue;
+    if (item.type === "code-decision" || item.type === "code-review-start") {
+      const message = item.entry.message;
+      if (message.role !== "user" && message.role !== "assistant") continue;
+      const said = message.content
+        .map((part) => (typeof part === "string" ? part : part.type === "text" ? part.text : ""))
+        .join("\n")
+        .trim();
+      if (said) updates.push({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `${text(said)}\n\n` } });
+      continue;
+    }
     if (item.type === "user") {
       const message = item.entry.message;
       if (message.role !== "user") continue;

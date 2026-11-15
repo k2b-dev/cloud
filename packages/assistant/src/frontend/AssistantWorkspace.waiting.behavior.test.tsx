@@ -3,7 +3,6 @@ import type { AiConversation, AiOpenQuestions, AiTurnSnapshot } from "@k2b/cloud
 import type { LiveSubscriptionHandlers } from "@k2b/cloud/browser/live";
 import { delegateEvents, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
-import { WAITING_NOW, waitingFixture, waitingStripSummary } from "./waiting-questions.fixture";
 
 // The live socket is the test's, so a question that opens or is decided elsewhere arrives as it does from Core.
 const subscriptions: LiveSubscriptionHandlers<unknown>[] = [];
@@ -16,6 +15,7 @@ mock.module("@k2b/cloud/browser/live", () => ({
   }),
 }));
 const bootstrap = createDomTestHarness();
+const { WAITING_NOW, waitingFixture, waitingStripSummary } = await import("./waiting-questions.fixture");
 const { LocaleProvider } = await import("@k2b/ui");
 const { default: Workspace } = await import("./AssistantWorkspace.island");
 bootstrap.cleanup();

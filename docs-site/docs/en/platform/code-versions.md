@@ -5,7 +5,7 @@ section: Platform services
 order: 962
 description: Submit checked Code, compare complete source versions and decide hash-bound Cloud-admin approvals.
 tags: [code, approvals, versions]
-updated: 2026-11-14
+updated: 2026-11-15
 ---
 
 # Code versions and approval
@@ -223,7 +223,8 @@ epoch prevents subsequent use of that approval.
 `POST /api/code/authoring/review` takes `{codeId,versionId,before?}` and returns
 one `review` object: `codeId`, `versionId`, `number`, `status`, `origin`,
 `approvalId`, `expiresAt`, `decidedBy`, `decidedAt`, `message`, `comments`,
-`nextBefore`, `commentCount`, `activeVersion` and `contentTrust:"untrusted_data"`.
+`nextBefore`, `commentCount`, `activeVersion`, `revision`, `changesRequestedEffect`
+and `contentTrust:"untrusted_data"`.
 The statuses are `not_required`, `pending`, `approved`, `changes_requested`,
 `rejected`, `withdrawn`, `superseded` and `expired`. `not_required` means no human
 approval was needed. `activeVersion` is `{id,number}` or null.
@@ -269,6 +270,37 @@ Code Type reader `code.resource.read` checks the current recipient's access for
 every delivery. It accepts person-bound authority, including a person mandate;
 Code accounts do not gain a management or source-reading surface.
 
+### Automatic revision after requested changes
+
+For a version submitted from a chat, requesting changes records one durable
+revision intent in the decision transaction. Core starts it in the author's
+original chat, using that person's AI quota. The person's active turn and queued
+messages go first. Approval or rejection never starts a revision.
+
+The Cloud task is fixed: revise the reviewed version and submit once. Review
+messages, comments, names and source files remain untrusted data. The turn
+receives only review, source, SDK, edit, check, test, simulate and submit tools
+for that Code. It cannot activate a version or use another app's tools. The
+new submission records `origin.automaticAfterReview:true`; requesting changes
+to it never starts another automatic turn.
+
+`revision` is null without chat work. Otherwise it contains `state`, `reason`,
+`turnId`, `submittedVersionId` and `submittedNumber`. States are `none`,
+`queued`, `running`, `submitted`, `completed`, `stopped` and `skipped`. Reasons
+explain a used automatic attempt, replacement, withdrawal, missing chat, lost
+access, quota, unavailable AI, a stop or the need for the person to continue.
+`changesRequestedEffect:{kind,text}` supplies the review dialog's localized
+explanation: `automatic_once`, `manual` or `cli`.
+
+`POST /api/code/authoring/reviewStop` accepts `{codeId,versionId}` from the
+original author with current editor rights and a write credential. Both this
+call and Composer cancellation take the same Code lock as submission. A timely
+stop returns `{status:"stopped",submittedVersionId:null,submittedNumber:null}`
+and prevents submission by that turn. If submission won, the result is
+`{status:"too_late",submittedVersionId,submittedNumber}`. The new version still
+needs its normal approval and activation. Pending intent and stop state survive
+Core restarts.
+
 ## Withdraw or request another review
 
 `POST /api/code/authoring/withdraw` takes `{codeId,versionId}`. Only a current
@@ -278,9 +310,17 @@ records who withdrew it and when, cancels the question and writes
 version even if the policy later stops requiring approval. Withdrawal and a
 newer version superseding a request remain distinct states.
 
-After expiry, use the existing authoring `resubmit` command with the same
-content. It creates a new version and approval reference. Each immutable
-version therefore has one review; no separate attempt identity is needed.
+After expiry, `POST /api/code/authoring/reviewRequestAgain` accepts
+`{codeId,versionId}` from a current editor with a write credential. Core reuses
+the immutable stored project, runs the current submission checks and policy,
+and returns the normal submission receipt with a new version number and
+approval reference. The old request is never extended. Concurrent retries obey
+the existing latest-version conflict guard. A decided or withdrawn version
+cannot be requested again this way. The CLI can also resubmit the same content.
+Each immutable version therefore has one review; no separate attempt identity
+is needed. An original chat author keeps their chat anchor and automatic-attempt
+marker when that chat still belongs to them; another editor's request has CLI
+origin.
 The active version keeps running. If none is active, the automation remains off.
 
 ## List, pause and resume

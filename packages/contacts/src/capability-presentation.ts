@@ -28,6 +28,16 @@ export const contactsCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       queries: {
+        "book.managers": {
+          title: "Verwaltende ermitteln",
+          description: "Eine begrenzte Seite von Personen mit aktuellen Verwaltungsrechten ermitteln.",
+          input: {
+            id: "Öffentliche ID des Eintrags.",
+            afterId: "Letzte Benutzer-UUID der vorherigen Seite.",
+            userId: "Nur die Verwaltungsrechte dieser Person prüfen.",
+            limit: "Höchstens so viele Verwaltende zurückgeben; Maximum 50.",
+          },
+        },
         "book.list": {
           title: "Adressbücher auflisten",
           description:

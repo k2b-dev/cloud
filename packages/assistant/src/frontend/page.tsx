@@ -21,7 +21,7 @@ import { catalogPerApp, loadCodePlace } from "../code-place";
 import { type CodePlace, type CodeQueryInvoke, hasPersonalCode, loadCodeAttention, loadCodeSummaries } from "../code-summary";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
-import { loadAssistantSidebarSnapshot, placeAppsFromCatalog } from "../sidebar";
+import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
 import type { CodeAttentionView } from "./AssistantCodeAttention";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";
@@ -98,7 +98,7 @@ export default ssr<AuthContext>(async (c) => {
     getLiveDictationStatus(c.get("accessSubject")),
     loadAssistantSidebarSnapshot(
       { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
-      { locale, timeZone },
+      { locale, timeZone, caller: openQuestionsCaller(c) },
       placeAppsFromCatalog(catalog),
     ),
     coreSettings.get<string>("app.url"),

@@ -3,7 +3,7 @@ import { type CapabilityActionCallReview, CapabilityActionCallReviewSchema } fro
 import { reviewShortText, toolActionCard, toolBlockReview } from "./chat/action-card";
 import { actionFixtures, FIXTURE_AT } from "./chat/action-question.fixtures";
 import { legacyOutcomeWords } from "./chat/tool-action-words";
-import { listAiOpenQuestions, openQuestionFromRow } from "./open-questions";
+import { countAiOpenQuestions, listAiOpenQuestions, openQuestionFromRow } from "./open-questions";
 import type { AiTurnBlock } from "./protocol";
 
 test("the server read and shared card wording load without a browser runtime", () => {
@@ -139,4 +139,48 @@ test("bounds conversation titles to 200 code points on every presentation path",
   const exact = `${"t".repeat(198)}🧭z`;
   expect(openQuestionFromRow({ ...row(null), conversationTitle: exact }, context).conversationTitle).toBe(exact);
   expect(openQuestionFromRow({ ...row(null), conversationTitle: null }, context).conversationTitle).toBeNull();
+});
+
+test("a separately deployed app reads the shared list and badge through Core with the person's credentials", async () => {
+  const previousOrigin = process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+  process.env.CLOUD_CORE_INTERNAL_ORIGIN = "http://questions.test";
+  const requests: Request[] = [];
+  const questions = {
+    count: 2,
+    items: [
+      { ...openQuestionFromRow(row(null), context), kind: "approval" as const },
+      {
+        ...openQuestionFromRow(row(null), context),
+        id: "version-2",
+        kind: "code_activate" as const,
+        href: "/app/assistant/code/c_test",
+      },
+    ],
+  };
+  const caller = {
+    authorization: "Bearer waiting-fixture",
+    requestId: "waiting-request",
+    locale: "de",
+    transport: async (request: Request) => {
+      requests.push(request);
+      return Response.json({ data: questions });
+    },
+  };
+  try {
+    const input = { ownerUserId: "11111111-1111-4111-8111-111111111111", locale: "de", timeZone: "Europe/Berlin", caller };
+    expect(await listAiOpenQuestions(input)).toEqual(questions);
+    expect(await countAiOpenQuestions(input.ownerUserId, { caller })).toBe(2);
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      expect(new URL(request.url).pathname).toBe("/api/capabilities/v1/queries/core/ai.open_questions");
+      expect(request.headers.get("authorization")).toBe("Bearer waiting-fixture");
+      expect(request.headers.get("x-request-id")).toBe("waiting-request");
+      expect(request.headers.get("x-cloud-locale")).toBe("de");
+      expect(request.method).toBe("POST");
+    }
+    expect(await requests[0]!.json()).toEqual({ input: { timeZone: "Europe/Berlin" } });
+  } finally {
+    if (previousOrigin === undefined) delete process.env.CLOUD_CORE_INTERNAL_ORIGIN;
+    else process.env.CLOUD_CORE_INTERNAL_ORIGIN = previousOrigin;
+  }
 });

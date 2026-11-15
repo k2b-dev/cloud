@@ -22,7 +22,7 @@ import { SaveChatWorkspaceSchema } from "../chat-workspace";
 import { loadAssistantChatWorkspace, saveAssistantChatWorkspace } from "../chat-workspace-service";
 import { catalogPerApp } from "../code-place";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
-import { loadAssistantSidebarSnapshot, placeAppsFromCatalog } from "../sidebar";
+import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
 import { loadAssistantSidebarPreview } from "../sidebar-preview";
 
 const actorUser = (c: Context<AuthContext>) => {
@@ -62,7 +62,7 @@ const app = new Hono<AuthContext>()
       ok(
         await loadAssistantSidebarSnapshot(
           { actor: c.get("actor"), accessSubject: c.get("accessSubject") },
-          { locale: getLocale(c), timeZone: getTimeZone(c) },
+          { locale: getLocale(c), timeZone: getTimeZone(c), caller: openQuestionsCaller(c) },
           placeAppsFromCatalog(catalogPerApp(getLocale(c), auth.getAuthority(c))),
         ),
       ),

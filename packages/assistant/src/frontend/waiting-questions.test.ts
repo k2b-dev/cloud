@@ -3,8 +3,8 @@ import type { AiOpenQuestion, AiTurnBlock } from "@k2b/cloud/ai";
 import { waitingQuestionsView } from "./waiting-questions";
 
 const question = (id: string, conversationId: string, createdAt: string, anchor = `tool-${id}`): AiOpenQuestion => ({
-  id,
   kind: "approval",
+  id,
   conversationId,
   conversationTitle: conversationId === "here01" ? "October maintenance" : "Team Ops planning",
   anchor,
@@ -87,6 +87,27 @@ describe("waitingQuestionsView", () => {
   test("questions beyond the bounded read are counted as more", () => {
     const view = waitingQuestionsView({ questions: { items: [routine], count: 23 }, conversationId: null, local: null });
     expect(view).toMatchObject({ more: 22, total: 23, onlyHere: null });
+  });
+
+  test("a completed submission tool does not resolve a Code next step or an operational source", () => {
+    const version: AiOpenQuestion = { ...mail, kind: "code_activate", short: "Version 5 einschalten" };
+    const attention: AiOpenQuestion = {
+      ...routine,
+      kind: "code_attention",
+      conversationId: "",
+      anchor: "",
+      href: "/app/assistant/code/c_fixture",
+    };
+    const view = waitingQuestionsView({
+      questions: { items: [version, attention], count: 2 },
+      conversationId: "here01",
+      local: [tool(mail.anchor, "completed")],
+    });
+    expect(view.entries).toEqual([version, attention]);
+    expect(view.total).toBe(2);
+    expect(
+      waitingQuestionsView({ questions: { items: [], count: 0 }, conversationId: "here01", local: [tool(mail.anchor, "completed")] }).total,
+    ).toBe(0);
   });
 
   test("no question, no strip", () => {
