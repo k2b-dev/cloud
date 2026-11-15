@@ -35,6 +35,7 @@ const messages = i18n.define({
         "The daily Code AI allowance is spent, reserved by running calls, or its usage is unknown. Try again after calls finish or the allowance resets.",
       ai_disabled: "AI is disabled. Ask an administrator to enable it before trying again.",
       ai_no_model: "No model is available for this chat. Check the AI model settings before trying again.",
+      chat_unavailable: "This chat is unavailable. Choose one of your active chats or restore the archived chat.",
       model_policy_mismatch: "The Code owner may not use this model. Choose a model their account may use.",
     },
     de: {
@@ -43,10 +44,14 @@ const messages = i18n.define({
         "Das KI-Tageskontingent des Codes ist verbraucht, durch laufende Aufrufe reserviert oder der Verbrauch ist unbekannt. Versuche es nach Abschluss der Aufrufe oder nach dem Zurücksetzen erneut.",
       ai_disabled: "KI ist deaktiviert. Bitte die Administration, sie vor einem weiteren Versuch zu aktivieren.",
       ai_no_model: "Für diesen Chat ist kein Modell verfügbar. Prüfe die KI-Modelleinstellungen vor einem weiteren Versuch.",
+      chat_unavailable: "Dieser Chat ist nicht verfügbar. Wähle einen eigenen aktiven Chat oder stelle den archivierten Chat wieder her.",
       model_policy_mismatch: "Der Code-Eigentümer darf dieses Modell nicht verwenden. Wähle ein für sein Konto freigegebenes Modell.",
     },
   },
 });
+
+const unavailableChat = (locale: string) =>
+  fail({ code: "chat_unavailable", status: 409 as const, message: messages.resolve([locale]).t.chat_unavailable });
 
 /** Logical admission key; public queue IDs are independently generated. */
 const sendKeyHash = (account: string, key: string) =>
@@ -79,9 +84,9 @@ export const aiChatSendAction = {
     if (!source.ok) return source;
     if (!context.user) return fail(err.forbidden("Chat writes require their owner"));
     const destination = await resolveCodeChatDestination(context, sql);
-    if (!destination.ok) return destination;
+    if (!destination.ok) return destination.error.code === "chat_unavailable" ? unavailableChat(context.locale) : destination;
     const chat = await ownedActiveChat(context.user.id, destination.data.chatId, sql);
-    if (!chat) return fail(err.notFound("Chat"));
+    if (!chat) return unavailableChat(context.locale);
     const de = context.locale.split("-")[0] === "de";
     return ok({
       locale: de ? "de" : "en",
@@ -132,10 +137,10 @@ export const aiChatSendAction = {
     const keyHash = sendKeyHash(owner, key.data);
     const id = crypto.randomUUID();
     const destination = await resolveCodeChatDestination(context, sql);
-    if (!destination.ok) return destination;
+    if (!destination.ok) return destination.error.code === "chat_unavailable" ? unavailableChat(context.locale) : destination;
     const hash = approvalArgsDigest({ chatId: destination.data.chatId, ...parsed.data });
     const chat = await ownedActiveChat(owner, destination.data.chatId, sql);
-    if (!chat) return fail(err.notFound("Chat"));
+    if (!chat) return unavailableChat(context.locale);
     const existing = async (db = sql) => {
       const [row] = await db<{ id: string; hash: string; conversation_id: string }[]>`
         SELECT id,submission->'runConfig'->'send'->>'requestHash' AS hash,conversation_id FROM ai.queued_messages
@@ -213,7 +218,7 @@ export const aiChatSendAction = {
           if (refused) return fail({ code: refused, message: t.budget, status: 429 as const });
         }
         const currentChat = await ownedActiveChat(owner, chat.short_id, db, { lock: true });
-        if (!currentChat) return fail(err.notFound("Chat"));
+        if (!currentChat) return unavailableChat(context.locale);
         if (currentChat.project_id !== chat.project_id)
           return fail({ code: "chat_changed", message: "The chat Project changed; read the chat again.", status: 409 as const });
         await enqueueChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);

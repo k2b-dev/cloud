@@ -26,7 +26,8 @@ Core resolves that ID inside Send's review and execution phases, requiring a
 current personal Code run and its owner. No binding returns `chat_unbound`;
 an archived, deleted or no longer owned chat returns `chat_unavailable` (409),
 before a message is queued. Other callers receive `FORBIDDEN`.
-Literal chat IDs keep their existing behavior. Normal declaration, mandate,
+Literal chat IDs are used directly. If their target is not an own active chat,
+Send returns the same `chat_unavailable` (409). Normal declaration, mandate,
 policy, approval, authority and chain checks still apply.
 
 ## One-off chat authority

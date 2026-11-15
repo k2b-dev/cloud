@@ -402,9 +402,28 @@ suiteFor(
     expect(await read(queued.id)).toMatchObject({ ok: true, data: { data: { message: { status: "failed" } } } });
   });
 
+  test.each(["archived", "deleted"])("an own %s literal target is unavailable before preparation", async (state) => {
+    const { prepare } = await setup();
+    if (state === "archived") await sql`UPDATE ai.conversations SET archived_at=clock_timestamp() WHERE id=${chat.id}::uuid`;
+    else await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+    expect(await invoke()).toMatchObject({ ok: false, error: { code: "chat_unavailable", status: 409 } });
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  test("a target archived during preparation is unavailable at the admission recheck", async () => {
+    const { prepare, prepareTurn } = await setup();
+    prepare.mockImplementation(async (input) => {
+      await sql`UPDATE ai.conversations SET archived_at=clock_timestamp() WHERE id=${chat.id}::uuid`;
+      return prepareTurn(input);
+    });
+    expect(await invoke()).toMatchObject({ ok: false, error: { code: "chat_unavailable", status: 409 } });
+    const rows = await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid`;
+    expect(rows).toHaveLength(0);
+  });
+
   test("stranger Code and a reader of shared personal Code cannot start an owner's turn", async () => {
     await setup();
-    expect(await invoke(foreign.shortId)).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+    expect(await invoke(foreign.shortId)).toMatchObject({ ok: false, error: { code: "chat_unavailable", status: 409 } });
     const otherUser = { ...user, id: other };
     const context = ctx();
     expect(

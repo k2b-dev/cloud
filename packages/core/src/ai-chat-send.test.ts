@@ -2,11 +2,13 @@ import { afterEach, expect, mock, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { aiConversations } from "@k2b/cloud/ai";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { CODE_BOUND_CHAT_ID } from "@k2b/cloud/code";
 import { CapabilityActionCallReviewSchema, type CapabilityExecutionContext, type User } from "@k2b/cloud/contracts";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
 import { aiChatSendAction, aiChatSendInput } from "./ai-chat-send";
 import * as chatAuthority from "./ai-code-chat";
 import { aiCapabilities } from "./capabilities";
+import * as chatBinding from "./code/chat-binding";
 
 const user: User = {
   id: "4f000000-0000-4000-8000-000000000001",
@@ -233,4 +235,59 @@ test.each(["en", "de"])("review shows the exact target, complete text and data i
   });
   if (!review.ok) throw new Error("Missing review");
   expect(CapabilityActionCallReviewSchema.safeParse(review.data).success).toBeTrue();
+});
+
+test.each(["en", "de"])("review and run report unavailable resolved targets consistently in %s", async (locale) => {
+  const source = spyOn(chatAuthority, "chatWriteAuthority").mockResolvedValue({
+    ok: true,
+    data: { origin: { kind: "person", id: user.id }, turnTrigger: { kind: "person", id: user.id }, code: null },
+  });
+  const resolve = spyOn(chatBinding, "resolveCodeChatDestination");
+  const lookup = spyOn(chatAuthority, "ownedActiveChat").mockResolvedValue(null);
+  for (const targetId of ["Literal433", CODE_BOUND_CHAT_ID]) {
+    resolve.mockResolvedValue({
+      ok: true,
+      data: { chatId: "Resolved433", binding: targetId === CODE_BOUND_CHAT_ID ? { codeId: "c_fixture", revision: 2 } : null },
+    });
+    const ctx = { ...context, locale, idempotencyKey: "unavailable", target: { type: "core.ai.chat", id: targetId } };
+    for (const phase of ["review", "run"] as const) {
+      lookup.mockClear();
+      expect(await aiChatSendAction[phase]({ text: "Review the facts" }, ctx)).toEqual({
+        ok: false,
+        error: {
+          code: "chat_unavailable",
+          status: 409,
+          message:
+            locale === "de"
+              ? "Dieser Chat ist nicht verfügbar. Wähle einen eigenen aktiven Chat oder stelle den archivierten Chat wieder her."
+              : "This chat is unavailable. Choose one of your active chats or restore the archived chat.",
+        },
+      });
+      expect(lookup).toHaveBeenCalledTimes(1);
+      expect(lookup).toHaveBeenCalledWith(user.id, "Resolved433", sql);
+    }
+  }
+  expect(source).toHaveBeenCalledTimes(4);
+  expect(resolve).toHaveBeenCalledTimes(4);
+  lookup.mockClear();
+  resolve.mockResolvedValue({ ok: false, error: { code: "chat_unavailable", status: 409, message: "Internal resolver message" } });
+  for (const phase of ["review", "run"] as const) {
+    expect(
+      await aiChatSendAction[phase](
+        { text: "Review the facts" },
+        { ...context, locale, idempotencyKey: "unavailable", target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID } },
+      ),
+    ).toEqual({
+      ok: false,
+      error: {
+        code: "chat_unavailable",
+        status: 409,
+        message:
+          locale === "de"
+            ? "Dieser Chat ist nicht verfügbar. Wähle einen eigenen aktiven Chat oder stelle den archivierten Chat wieder her."
+            : "This chat is unavailable. Choose one of your active chats or restore the archived chat.",
+      },
+    });
+  }
+  expect(lookup).not.toHaveBeenCalled();
 });
