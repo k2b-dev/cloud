@@ -267,6 +267,11 @@ a.cloud-code__row-main:focus-visible {
 .cloud-code__step-text a {
   color: var(--k2b-action);
 }
+/* In a result only the name is the link, underlined so it reads as one inside the sentence. */
+.cloud-code__feed-text a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .cloud-code__row-trail {
   display: flex;
   flex: none;
