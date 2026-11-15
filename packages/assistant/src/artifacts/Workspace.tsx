@@ -38,6 +38,7 @@ import { AssistantChatContextContent, type ContextView } from "../frontend/Assis
 import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
 import { AssistantTaskDetail } from "../frontend/AssistantTasksDialog";
 import { useAssistantLive } from "../frontend/assistant-live";
+import { dismissAssistantPanesHint } from "../frontend/chat-sidebar-layout";
 import { chatSidebarMessages } from "../frontend/chat-sidebar-messages";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { ChatPresentation } from "./ChatPresentation";
@@ -250,7 +251,8 @@ export function ArtifactWorkspace(props: {
   onAsk?: (title: string) => void;
   /** "Add pane": the chat's whole list. */
   onAdd?: () => void;
-  arrangeHint?: { open: boolean; onDismiss: () => void };
+  /** The one-time hint that tabs can be arranged was dismissed on this browser, as the server read it. */
+  arrangeHintSeen?: boolean;
   /** The operator set up reading web pages: web links of the chat open as reading-view tabs. */
   webReader?: boolean;
 }) {
@@ -259,6 +261,7 @@ export function ArtifactWorkspace(props: {
     w = () => workspaceMessages.resolve([locale()]).t;
   const state = props.controller.state;
   const live = useAssistantLive();
+  const [arrangeHintOpen, setArrangeHintOpen] = createSignal(props.arrangeHintSeen !== true);
   // The chat's whole list carries the name of the box it opens from.
   const title = (tab: WorkspaceTab) =>
     tab.kind === "context" ? (tab.category === "files" ? chatSidebarMessages.resolve([locale()]).t.title : t()[tab.category]) : tab.title;
@@ -601,7 +604,13 @@ export function ArtifactWorkspace(props: {
         onLayoutChange={props.controller.setLayout}
         onActivate={props.controller.activateItem}
         onAddItem={props.onAdd ? () => props.onAdd!() : undefined}
-        arrangeHint={props.arrangeHint}
+        arrangeHint={{
+          open: arrangeHintOpen(),
+          onDismiss: () => {
+            setArrangeHintOpen(false);
+            dismissAssistantPanesHint();
+          },
+        }}
       />
     </div>
   );

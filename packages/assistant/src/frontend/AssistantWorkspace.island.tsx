@@ -127,7 +127,7 @@ import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantSearchOptions } from "./assistant-search";
 import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
-import { dismissAssistantPanesHint, revealChatDelivery } from "./chat-sidebar-layout";
+import { revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
@@ -235,7 +235,6 @@ export default function AssistantWorkspace(props: Props) {
     store: { load: assistantApi.getChatTabs, save: assistantApi.saveChatTabs },
     onSaveError: () => toast.error(t().tabsNotSaved),
   });
-  const [arrangeHintOpen, setArrangeHintOpen] = createSignal(props.arrangeHintSeen !== true);
   // Web pages of the chat open as reading views only where the operator set up the reading service.
   const [webReader] = createResource(async () => (await assistantApi.getWebReader().catch(() => ({ available: false }))).available);
   const openWebPage = () => {
@@ -2981,13 +2980,7 @@ export default function AssistantWorkspace(props: Props) {
                     onAsk={askAboutTab}
                     onAdd={() => openContextOverview("files", sidebarCopy().title)}
                     webReader={webReader() === true}
-                    arrangeHint={{
-                      open: arrangeHintOpen(),
-                      onDismiss: () => {
-                        setArrangeHintOpen(false);
-                        dismissAssistantPanesHint();
-                      },
-                    }}
+                    arrangeHintSeen={props.arrangeHintSeen === true}
                   />
                 </Suspense>
               </Show>

@@ -102,7 +102,7 @@ render(
                   onJump={() => {}}
                   onAsk={(title) => ((window as unknown as { asked?: string }).asked = title)}
                   onAdd={() => controller.open(contextTab(chatId, "files", "In diesem Chat"))}
-                  arrangeHint={{ open: false, onDismiss: () => {} }}
+                  arrangeHintSeen
                   webReader
                   snapshot={() => snapshot}
                 />
