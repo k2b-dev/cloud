@@ -1,4 +1,5 @@
 import { afterEach, expect, mock, test } from "bun:test";
+import { assertDiscussionContainersPage } from "@k2b/cloud/capabilities/testing";
 import { type CapabilityExecutionContext, DiscussionContainersDataSchema, DiscussionContainersInputSchema } from "@k2b/cloud/contracts";
 
 import { testActor } from "../test/files-call";
@@ -64,6 +65,7 @@ test("container pagination preserves every row with changing limits, source page
     const result = await query.run(DiscussionContainersInputSchema.parse({ limit: pages % 2 ? 3 : 1, cursor }), context);
     if (!result.ok) throw new Error(result.error.message);
     expect(DiscussionContainersDataSchema.safeParse(result.data.data).success).toBe(true);
+    assertDiscussionContainersPage(result.data);
     ids.push(...result.data.data.items.map((item) => item.ref.id));
     cursor = result.data.data.next ?? undefined;
     if (++pages > 16) throw new Error("Pagination did not progress");
@@ -78,6 +80,7 @@ test("empty filtered pages retain continuation and changed query or invalid curs
   if (!result.ok) throw new Error(result.error.message);
   expect(result.data.data.items).toEqual([]);
   expect(result.data.data.next).not.toBeNull();
+  assertDiscussionContainersPage(result.data);
   for (const input of [{ cursor: "invalid" }, { cursor: result.data.data.next, query: "changed" }])
     expect((await query.run(DiscussionContainersInputSchema.parse(input), context)).ok).toBe(false);
 });

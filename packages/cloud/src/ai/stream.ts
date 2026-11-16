@@ -186,6 +186,7 @@ type AiStreamSnapshot = {
   activeTurnId: string | null;
 };
 
+/** `originViewer` is the reader: names of origins, and the apps of stored steps, follow it and its `locale`. */
 export const loadAiStreamState = async (
   conversation: AiConversation,
   viewerUserId?: string | null,

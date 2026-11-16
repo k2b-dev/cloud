@@ -31,7 +31,6 @@ import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord,
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import type { AiStopNotice } from "./stop-notice";
-import { aiThinkingMessages, aiThinkingWordRound, aiThinkingWords } from "./thinking-words";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, useAiToolDisclosure } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
@@ -157,6 +156,10 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   return withTarget(t.stepTool);
 };
 
+/** The thinking words, loaded once on the first thinking phase: most of a turn never shows them. */
+const [thinkingWordsModule, setThinkingWordsModule] = createSignal<typeof import("./thinking-words")>();
+const loadThinkingWords = () => void import("./thinking-words").then(setThinkingWordsModule);
+
 /**
  * The work line of a turn: ✦ and the tiles of the apps it worked in, then one sentence. While the turn runs the
  * sentence is the current step and shimmers, with the work time beside it; once it ends it says what the turn did and
@@ -194,10 +197,25 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const phase = segment().phase;
     return phase === "stopped" ? "stopped" : phase === "failed" && !segment().error ? "failed" : null;
   };
-  // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1).
-  const thinkingPhase = () =>
-    working() && stepPhrase(layout().current, t(), false) === t().stepThinking ? `${segment().id}:${currentStep() ?? "start"}` : null;
-  const thinkingWords = (phase: string) => aiThinkingWordRound(phase, aiThinkingWords(locale()));
+  // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1). A
+  // phase lasts as long as the line says "Thinking", across blocks: a thinking block, a finished call, and the next
+  // thinking block are one phase. It starts with the step the line turned to thinking at, on the work clock.
+  const thinking = createMemo(() => working() && stepPhrase(layout().current, t(), false) === t().stepThinking);
+  const thinkingStart = createMemo(
+    on(thinking, (now) => (now ? { id: `${segment().id}:${currentStep() ?? "start"}`, at: segment().duration()?.workedMs ?? 0 } : null)),
+  );
+  const thinkingPhase = () => thinkingStart()?.id ?? null;
+  const thinkingMs = () => {
+    const start = thinkingStart();
+    const workedMs = segment().duration()?.workedMs;
+    return start === null || workedMs === undefined ? 0 : workedMs - start.at;
+  };
+  // The words show only after 3 s of thinking, so they load when a phase begins; until then the first word stands.
+  createEffect(() => thinkingPhase() && loadThinkingWords());
+  const thinkingWords = (phase: string) => {
+    const words = thinkingWordsModule();
+    return words ? words.aiThinkingWordRound(phase, words.aiThinkingWords(locale())) : [];
+  };
   const sentence = () => {
     if (reconnecting()) return t().reconnecting;
     if (working()) return liveStepLabel(layout().current, t(), stepMs());
@@ -256,8 +274,8 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
                 <Chat.Activity.Words
                   first={t().thinking}
                   words={thinkingWords(phase)}
-                  elapsedMs={stepMs()}
-                  announce={aiThinkingMessages(locale()).announcement({ assistant: t().assistant })}
+                  elapsedMs={thinkingMs()}
+                  announce={t().thinkingAnnouncement}
                 />
               )}
             </Show>
@@ -924,6 +942,13 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
       .join("\n\n");
     return text.includes("](") ? answerSources(markdown.renderSync(text, { locale: locale() }), layout().work) : [];
   });
+  // A question that expired says itself why the turn ended and offers to ask again; a second notice for the same cause,
+  // with a second way out, would repeat it (Rundgang 7, N1).
+  const notice = () => {
+    const error = props.segment().error;
+    const expired = layout().actions.some((action) => action.state === "not_run" && action.block.approved === false);
+    return error?.code === "wait_expired" && expired ? null : error;
+  };
   /** Something of the turn stays above its failure notice. */
   const kept = () => layout().text.length > 0 || layout().results.length > 0 || layout().steps > 0;
   // Screen readers hear once that the turn they followed failed and why, as the notice says it; history read later is not
@@ -1026,7 +1051,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             }
           />
         </Show>
-        <Show when={props.segment().error}>
+        <Show when={notice()}>
           {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} kept={kept()} />}
         </Show>
         <Show when={props.segment().stopNotice}>

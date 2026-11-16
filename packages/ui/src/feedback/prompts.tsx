@@ -11,6 +11,7 @@ import { resolveSelectMessages } from "../inputs/select-messages";
 import { TagsInput } from "../inputs/TagsInput";
 import { TextInput } from "../inputs/TextInput";
 import { KeyedFor } from "../internal/keyed-for";
+import { optionDescription } from "../internal/option-description";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
 import { DialogHeader, type PromptContent, promptButtonVariant, promptTone, sharedPrompts } from "./prompt-confirm";
@@ -53,6 +54,11 @@ export type PromptSearchItem<T = unknown> = {
   id?: string;
   label: string;
   desc?: string;
+  /**
+   * Shown in place of `desc`, such as a colored `Tag`. A function, so each place gets its own element. It shows only
+   * with a `desc`, which stays the text that screen readers use.
+   */
+  descriptionVisual?: () => JSX.Element;
   icon?: string;
   previewUrl?: string;
   value?: T;
@@ -642,7 +648,7 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
                           </Show>
                           <span class="k2b-prompt-search__copy">
                             <strong>{item().label}</strong>
-                            <Show when={item().desc}>{(description) => <small>{description()}</small>}</Show>
+                            {optionDescription(() => ({ description: item().desc, descriptionVisual: item().descriptionVisual }))}
                           </span>
                         </button>
                       )}

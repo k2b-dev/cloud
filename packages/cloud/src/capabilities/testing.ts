@@ -17,6 +17,7 @@ import {
   CloudResourceReaderViewSchema,
   type CloudResourceRef,
 } from "../contracts/capabilities";
+import { discussionContainersPageIssues } from "../contracts/discussions";
 
 /** Compile and validate the public manifest an app would register at startup. */
 export const compileCapabilityManifest = (
@@ -36,6 +37,12 @@ export const assertResourceOpenLink = (result: Pick<CapabilityResult<unknown>, "
   const link = result.links?.find((link) => link.rel === "open");
   if (!link) throw new Error("Resource reader must return a top-level open link");
   return CapabilitySemanticLinkSchema.parse(link);
+};
+
+/** Assert that a discussion containers page carries a `page` that matches `data.next`, as the platform requires. */
+export const assertDiscussionContainersPage = (result: Pick<CapabilityResult<unknown>, "data" | "page">): void => {
+  const issues = discussionContainersPageIssues(result);
+  if (issues.length > 0) throw new Error(`Invalid discussion containers page: ${issues.join("; ")}`);
 };
 
 /** Assert the canonical reader presentation and, for contained types, its exact container. */

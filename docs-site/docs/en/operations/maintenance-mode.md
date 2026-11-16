@@ -3,7 +3,7 @@ title: Put Cloud into maintenance mode
 navTitle: Maintenance mode
 section: Operations
 order: 1151
-description: Switch maintenance mode on and off with cld, and know what browsers, API clients, sockets and probes see while it is on or while one app restarts.
+description: Switch maintenance mode on and off with cld, get past it as an administrator, and know what browsers, API clients, sockets and probes see while it is on or while one app restarts.
 tags: [maintenance, gateway, cli, operations]
 updated: 2026-11-16
 ---
@@ -26,6 +26,7 @@ You need the administrator role. Use your normal `cld login` profile.
 cld admin maintenance on --message "Wir spielen Version 2.4 ein." --until 14:30
 cld admin maintenance status
 cld admin maintenance until 15:00
+cld admin maintenance bypass
 cld admin maintenance off
 ```
 
@@ -48,7 +49,66 @@ While maintenance is on, the gateway passes only
 `/api/admin/maintenance` (and below) to Core and `POST /oauth/token` to the
 OAuth app, so `cld` can still renew its token and switch maintenance off. Core
 checks the administrator role on every call. Every change is in the audit log
-(`maintenance.start`, `maintenance.update`, `maintenance.end`).
+(`maintenance.start`, `maintenance.update`, `maintenance.end`), and so is every
+bypass link (`maintenance.bypass`).
+
+## Get in as an administrator
+
+```bash
+cld admin maintenance bypass
+```
+
+```text
+Link für dich, gilt bis zum Ende dieser Wartung, längstens bis 02:02 Uhr:
+https://cloud.example.org/?cloud-maintenance-bypass=…
+```
+
+Open the link in your browser. You then see the Cloud as usual while everyone
+else sees the maintenance page, so you can check your work before you switch
+maintenance off.
+
+- The link only lets your browser past the maintenance page. It is not a
+  sign-in: you sign in as usual, and every permission check stays the same.
+- It works on the Cloud address only. App domains show the maintenance page
+  to everyone.
+- It ends with this maintenance, and after 12 hours at the latest; the
+  command prints that latest time. For a longer maintenance, run the command
+  again. A new maintenance needs a new link.
+- Treat it like a password until it ends. Anyone who opens it gets past the
+  maintenance page in their own browser. The audit log records who asked for
+  a link and until when, never the link itself.
+- You cannot revoke one link on its own. To end every link at once, switch
+  maintenance off; a maintenance you start after that has a new key, so no
+  older link works for it.
+- The link carries its secret in the query string. A reverse proxy or load
+  balancer in front of the gateway may write it to its access log: do not log
+  the `cloud-maintenance-bypass` parameter there, or keep such logs as
+  private as the link itself. The gateway logs one line when it sets the
+  cookie (who, from which address, until when), never the link.
+- Outside maintenance the command prints one sentence and exits with code
+  `1`.
+
+When the browser opens the link, the gateway checks it, stores it in a
+host-only cookie (`__Host-cloud_maintenance_bypass`, `HttpOnly`, `Secure`,
+`SameSite=Lax`, until the link expires; in development
+`cloud_maintenance_bypass` without `Secure`, like Core's own cookies) and
+redirects to the same address
+without the link. Pages, API calls and WebSockets from that browser then pass.
+The gateway checks the cookie on every request from memory, with a key that
+belongs to this maintenance alone, and removes the cookie and the link
+parameter from every request before it reaches an app, also outside
+maintenance. A request with the link parameter and a method other than `GET`
+or `HEAD` gets `400` on every host and never reaches an app. Open sockets are
+closed when maintenance starts, also when a new maintenance replaces the
+running one; a bypassed socket that opened later stays open until it closes
+by itself or the next maintenance starts.
+
+Every page you open this way shows the notice "Wartungsmodus aktiv. Nur du
+siehst die Cloud." (see [Open pages](#open-pages)). For administrators it
+also has **Wartung beenden**, which switches maintenance off for everyone.
+Someone else who opens the link sees the same notice without it. The gateway tells the app with
+the request header `X-Cloud-Maintenance-Bypass: 1`; it removes that header
+from every incoming request, so no browser can set it itself.
 
 ## What people and programs see
 
@@ -68,10 +128,19 @@ Branch on `code`, never on `title`:
 ```
 
 ```json
-{ "type": "about:blank", "title": "App is unavailable", "status": 503, "code": "app_unavailable", "appId": "mail" }
+{ "type": "about:blank", "title": "App is unavailable", "status": 503, "code": "app_unavailable", "appId": "mail", "appName": "E-Mail", "reason": "updating" }
 ```
 
-`until` is present only when a planned end is set. Every answer has
+`until` is present only when a planned end is set. `reason` is `updating`
+when the app deregistered cleanly and `unavailable` otherwise (see
+[When one app restarts](#when-one-app-restarts)). `appName` is the app's name
+in the request's language (from `Accept-Language`, else the Cloud's
+language); it is missing when the gateway does not know the app.
+
+Every problem answer also has the header `X-Cloud-Unavailable`, with
+`maintenance` or `app_unavailable; app=mail; reason=updating`. It says the
+same as the body and is there for answers without a body, such as `HEAD`.
+The HTML page does not have it. Every answer has
 `Cache-Control: no-store`. The HTML page has a strict content security policy
 with a new nonce per response.
 
@@ -81,6 +150,71 @@ with a new nonce per response.
 
 App domains show the same maintenance page as the Cloud host. The page never
 shows the name of the person who switched maintenance on.
+
+## Open pages
+
+A page that is already open when maintenance starts, or when an app restarts,
+stays where it is. Nothing on it is discarded, and text in a field stays in
+the field. With its first request that gets a `503` with code `maintenance`
+or `app_unavailable`, the page shows one persistent notice in the usual
+place for notices: at the bottom on a computer, at the top on a phone. It
+floats, so nothing on the page moves.
+
+| Situation | Notice | When it is over |
+| --- | --- | --- |
+| Whole Cloud in maintenance | "Wartungsmodus aktiv" | "Wartung beendet" |
+| App deregistered cleanly | "Mail wird gerade aktualisiert" | "Aktualisierung abgeschlossen" |
+| App gone otherwise | "Mail ist gerade nicht erreichbar" | "Mail ist verfügbar" |
+| Bypass link (administrator) | "Wartungsmodus aktiv. Nur du siehst die Cloud." | "Wartung beendet" |
+
+- **Reads** (`GET` and `HEAD`) wait quietly and are sent again once it is
+  over. The page shows no error for them. Reads of the same address wait as
+  one: a query that polls sends nothing more while it waits, and at the end
+  one request answers all of them. At most 64 different addresses wait per
+  page; a further read gets its `503` with the reason at once, like an
+  action, and the notice stays.
+- **Actions** (every other method, such as sending, booking or deleting) are
+  never held and never repeated. They return the gateway's `503` with a
+  `message` that names the reason, for example "Wartungsmodus aktiv. Das geht
+  wieder, sobald die Wartung beendet ist." The person presses again once it
+  is over.
+- From the first `503` on, the page polls the
+  [status endpoint](#status-endpoint) on the same schedule as the
+  maintenance page, and at once when the tab becomes visible or the device is
+  online again. A hidden tab does not poll. Once it is over, the notice says
+  so; the page does **not** reload, so the person keeps their place and
+  their input.
+- The notice shows one situation at a time. Reads that wait for a second app
+  are sent again after each status check, so they go through as soon as that
+  app is back, even while the first one is still away.
+- When the page does not know the app's name, the notice uses the name from
+  the problem answer, else "Diese App"; never the app's id.
+- A link clicked during maintenance loads the maintenance page, which reloads
+  the address after the end.
+- With a bypass link, nothing is blocked. Administrators see **Wartung
+  beenden** in the notice; it calls `POST /api/admin/maintenance/off`.
+
+Every page built with the Cloud `Layout` gets this, built-in and third-party
+apps alike. See
+[Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations#maintenance-and-app-restarts)
+for what this means for application code.
+
+## The waiting game
+
+Below the status line a small robot waits on a pale road, with "Leertaste:
+losfahren" ("Space: start") or, on touch screens, "Tippen: losfahren" below
+it. A round never starts on its own: Space, a tap on the road, or a click on
+the maintenance symbol starts one. Arrow keys or swipes dodge, jump and slide.
+Escape or "Spiel beenden", shown only during a round, returns to the waiting
+robot; the focus stays on the game, so Space starts the next round. The game
+makes no sound and loads nothing: it is part of the page, under the same
+content security policy. The record stays in this browser only. With "reduce
+motion" the game runs slower and dims the screen instead of shaking it.
+
+If maintenance ends during a round, the page shows "Wartung beendet" with
+"Weiter" and reloads only after the round or that click. When nobody plays, it
+reloads as before. An app page shows the game only once the restart takes
+longer than usual.
 
 ## When one app restarts
 
@@ -100,7 +234,10 @@ works on the Cloud host and on app domains:
 { "maintenance": { "active": true, "until": "2026-11-16T13:30:00.000Z" } }
 ```
 
-`{"maintenance": null}` means off. With `?app=<id>` the answer also has
+`{"maintenance": null}` means off. On the Cloud address, a browser that
+carries a valid bypass link also gets `"bypass": true` in the `maintenance`
+object, so an open page can say that only this person sees the Cloud. With
+`?app=<id>` the answer also has
 `"app": { "available": true }` while that app is registered and its last
 proxied request did not fail in the past 15 seconds; an unknown id is `false`.
 The page polls this endpoint. It reports no other details.
