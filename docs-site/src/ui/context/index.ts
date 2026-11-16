@@ -17,6 +17,7 @@ import cloudAssistantChat from "./cloud/assistant-chat.md" with { type: "text" }
 import cloudDashboardWidgets from "./cloud/dashboard-widgets.md" with { type: "text" };
 import cloudFileChooser from "./cloud/file-chooser.md" with { type: "text" };
 import cloudResourcePicker from "./cloud/resource-picker.md" with { type: "text" };
+import contentActivityList from "./content/activity-list.md" with { type: "text" };
 import contentCharts from "./content/charts.md" with { type: "text" };
 import contentCode from "./content/code.md" with { type: "text" };
 import contentDocs from "./content/docs.md" with { type: "text" };
@@ -232,6 +233,7 @@ const catalogContextSources = {
   "content/logs": { file: "content/logs.md", content: contentLogs },
   "content/virtual-feed": { file: "content/virtual-feed.md", content: contentVirtualFeed },
   "content/load-more": { file: "content/load-more.md", content: contentLoadMore },
+  "content/activity-list": { file: "content/activity-list.md", content: contentActivityList },
   "content/reaction-bar": { file: "content/reaction-bar.md", content: contentReactionBar },
   "content/message-rows": { file: "content/message-rows.md", content: contentMessageRows },
   "content/structured-data": { file: "content/structured-data.md", content: contentStructuredData },

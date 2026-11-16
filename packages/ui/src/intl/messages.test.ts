@@ -47,6 +47,7 @@ const catalogs = {
   Prompt: (await import("../feedback/prompt-messages")).checkPromptMessages,
   Calendar: (await import("../content/calendar-messages")).checkCalendarMessages,
   Timeline: (await import("../content/timeline-messages")).checkTimelineMessages,
+  Activity: (await import("../content/activity-messages")).checkActivityMessages,
   Viewport: (await import("../content/viewport-messages")).checkViewportMessages,
   Select: (await import("../inputs/select-messages")).checkSelectMessages,
   RichSelect: (await import("../inputs/rich-select-messages")).checkRichSelectMessages,
