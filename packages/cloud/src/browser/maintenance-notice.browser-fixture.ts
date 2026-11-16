@@ -10,10 +10,13 @@ import { createComponent } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
 import type { CloudRuntime } from "../contracts/app";
 import {
+  formatUnavailableHeader,
   GATEWAY_STATUS_PATH,
   type GatewayStatus,
   MAINTENANCE_ADMIN_API_PATH,
   MAINTENANCE_BYPASS_HEADER,
+  UNAVAILABLE_HEADER,
+  type UnavailableSignal,
 } from "../contracts/maintenance-signals";
 import type { User } from "../contracts/shared";
 
@@ -68,13 +71,22 @@ const runtime: CloudRuntime = {
 };
 
 /** The gateway's `503` problems, as `packages/gateway/src/unavailable-answer.ts` writes them. */
-const problem = (body: Record<string, unknown>, retryAfter: number): Response =>
+const problem = (body: Record<string, unknown>, signal: UnavailableSignal, retryAfter: number): Response =>
   new Response(JSON.stringify({ type: "about:blank", status: 503, ...body }), {
     status: 503,
-    headers: { "Content-Type": "application/problem+json", "Retry-After": String(retryAfter) },
+    headers: {
+      "Content-Type": "application/problem+json",
+      "Retry-After": String(retryAfter),
+      [UNAVAILABLE_HEADER]: formatUnavailableHeader(signal),
+    },
   });
-const maintenanceProblem = () => problem({ title: "Cloud is in maintenance", code: "maintenance" }, 30);
-const updatingProblem = () => problem({ title: "App is unavailable", code: "app_unavailable", appId: "mail", reason: "updating" }, 5);
+const maintenanceProblem = () => problem({ title: "Cloud is in maintenance", code: "maintenance" }, { code: "maintenance" }, 30);
+const updatingProblem = () =>
+  problem(
+    { title: "App is unavailable", code: "app_unavailable", appId: "mail", appName: "Mail", reason: "updating" },
+    { code: "app_unavailable", appId: "mail", reason: "updating" },
+    5,
+  );
 
 export async function maintenanceNoticeBrowserFixture() {
   const root = mkdtempSync(join(tmpdir(), "cloud-maintenance-notice-browser-"));

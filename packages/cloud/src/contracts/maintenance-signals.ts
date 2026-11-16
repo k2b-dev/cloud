@@ -17,6 +17,28 @@ export type MaintenanceProblemCode = (typeof MAINTENANCE_PROBLEM_CODES)[number];
 export type AppUnavailableReason = "updating" | "unavailable";
 
 /**
+ * Response header on every gateway `503` problem answer (never on its HTML page), so a client also knows why when
+ * there is no body, such as for `HEAD`: `maintenance`, or `app_unavailable; app=<id>; reason=<reason>`.
+ */
+export const UNAVAILABLE_HEADER = "X-Cloud-Unavailable";
+
+export type UnavailableSignal = { code: "maintenance" } | { code: "app_unavailable"; appId: string; reason: AppUnavailableReason };
+
+export const formatUnavailableHeader = (signal: UnavailableSignal): string =>
+  signal.code === "maintenance" ? "maintenance" : `app_unavailable; app=${signal.appId}; reason=${signal.reason}`;
+
+/** The signal in an `X-Cloud-Unavailable` value; null for anything else. */
+export const parseUnavailableHeader = (value: string | null): UnavailableSignal | null => {
+  const [code, ...parts] = (value ?? "").split(";").map((part) => part.trim());
+  if (code === "maintenance") return { code };
+  if (code !== "app_unavailable") return null;
+  const params = new Map(parts.map((part) => [part.slice(0, part.indexOf("=")), part.slice(part.indexOf("=") + 1)]));
+  const appId = params.get("app");
+  if (!appId) return null;
+  return { code, appId, reason: params.get("reason") === "updating" ? "updating" : "unavailable" };
+};
+
+/**
  * Request header the gateway sets to `1` on a request it lets past the maintenance wall with a valid admin bypass
  * cookie. The gateway removes it from every incoming request, so only the gateway can set it; apps read it to show
  * that only this person sees the Cloud.

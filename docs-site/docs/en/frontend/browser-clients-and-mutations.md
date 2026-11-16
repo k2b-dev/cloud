@@ -64,8 +64,11 @@ the typed client and raw `fetch()` alike; there is nothing to opt into. While
 the Cloud is in maintenance or the app restarts:
 
 - `GET` and `HEAD` requests stay pending and are sent again once it is over,
-  so queries show their loading state, not an error. Pass an `AbortSignal` as
-  usual; aborting ends the wait with the signal's reason.
+  so queries show their loading state, not an error. Requests with the same
+  method and address wait as one: a polling query sends nothing more while it
+  waits, and every caller gets its own copy of the one answer. At most 64
+  addresses wait per page; a further read gets the `503` an action gets. Pass
+  an `AbortSignal` as usual; aborting ends the wait with the signal's reason.
 - Every other request is an action. It is sent once and never repeated. It
   answers `503` with the gateway's problem fields and a `message` in the
   person's language that names the reason. Show it as for any failed action,
@@ -74,8 +77,9 @@ the Cloud is in maintenance or the app restarts:
 - A persistent notice on the page says why, and says when it is over. The
   page does not reload.
 
-Code that reads its own `503` answers sees `code` in the body. Branch on it,
-never on `title` or `message`. See
+Code that reads its own `503` answers sees `code` in the body, and in the
+`X-Cloud-Unavailable` header also without a body. Branch on it, never on
+`title` or `message`. See
 [Open pages](/en/docs/operations/maintenance-mode#open-pages) for what people
 see.
 

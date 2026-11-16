@@ -12,6 +12,7 @@ import { MAINTENANCE_PROBLEM_CODES } from "./maintenance-signals";
 
 export {
   type AppUnavailableReason,
+  formatUnavailableHeader,
   GATEWAY_STATUS_PATH,
   type GatewayStatus,
   MAINTENANCE_ADMIN_API_PATH,
@@ -21,6 +22,9 @@ export {
   type MaintenancePollKind,
   type MaintenanceProblemCode,
   maintenancePollDelay,
+  parseUnavailableHeader,
+  UNAVAILABLE_HEADER,
+  type UnavailableSignal,
 } from "./maintenance-signals";
 
 export const MAINTENANCE_MESSAGE_MAX_LENGTH = 500;
@@ -66,6 +70,8 @@ export const MaintenanceProblemSchema = z.object({
   code: z.enum(MAINTENANCE_PROBLEM_CODES),
   until: z.iso.datetime().optional(),
   appId: z.string().optional(),
+  /** `app_unavailable` only: the app's name in the request's language, when the gateway knows it. */
+  appName: z.string().optional(),
   /** `app_unavailable` only: "updating" after a clean deregistration, "unavailable" for anything else. */
   reason: z.enum(["updating", "unavailable"]).optional(),
 });

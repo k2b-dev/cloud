@@ -8,8 +8,8 @@ import {
   maintenanceNoticeBrowserFixture,
 } from "./maintenance-notice.browser-fixture";
 
-// The notice is a floating @k2b/ui toast inside the real shell: only a real engine shows that it covers nothing the
-// person is typing, moves nothing, and fits a phone.
+// The notice is a floating @k2b/ui toast inside the real shell: only a real engine shows that it keeps the reply the
+// person is typing, moves nothing on the page, and fits a phone without sideways scrolling.
 let browser: Browser;
 let fixture: Awaited<ReturnType<typeof maintenanceNoticeBrowserFixture>>;
 beforeAll(async () => {

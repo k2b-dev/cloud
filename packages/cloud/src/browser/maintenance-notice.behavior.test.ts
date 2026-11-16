@@ -3,7 +3,7 @@ import { isServer } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../ui/test/dom";
 import { maintenanceNoticeMessages } from "./maintenance-notice-messages";
 
-type Answer = () => Response;
+type Answer = () => Response | Promise<Response>;
 const problem = (body: Record<string, unknown>): Response =>
   new Response(JSON.stringify({ type: "about:blank", status: 503, ...body }), {
     status: 503,
@@ -13,6 +13,14 @@ const maintenance = () => problem({ title: "Cloud is in maintenance", code: "mai
 const restarting = (reason: "updating" | "unavailable") => () =>
   problem({ title: "App is unavailable", code: "app_unavailable", appId: "mail", reason });
 const ok = () => Response.json({ items: ["Hallenbelegung im Dezember"] });
+/** An answer the test hands out later. */
+const later = () => {
+  let answer: (response: Response) => void = () => {};
+  const response = new Promise<Response>((resolve) => {
+    answer = resolve;
+  });
+  return { send: () => response, answer };
+};
 
 test("the notice speaks every language of its catalog", () => expect(maintenanceNoticeMessages.check()).toEqual([]));
 
@@ -36,14 +44,14 @@ else {
    * A page whose requests get the next answer of their path (`METHOD /path`), and whose status checks get `status`.
    * Checks never run on a timer here: the test asks for one with an `online` event, as when the device is back.
    */
-  const page = (answers: Record<string, Answer[]>, options: { bypass?: boolean; canEnd?: boolean } = {}) => {
+  const page = (answers: Record<string, Answer[]>, options: Partial<Parameters<typeof installMaintenanceNotice>[0]> = {}) => {
     dom = createDomTestHarness();
     const calls: string[] = [];
     const state = { status: { maintenance: { active: true, until: null } } as Record<string, unknown> };
     const transport = window.fetch;
     window.fetch = Object.assign(async (input: Parameters<typeof window.fetch>[0], init?: Parameters<typeof window.fetch>[1]) => {
       const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
-      const key = `${(init?.method ?? "GET").toUpperCase()} ${url.pathname}`;
+      const key = `${(init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()} ${url.pathname}`;
       calls.push(`${key}${url.search}`);
       if (url.pathname === "/_cloud/gateway/status") return Response.json(state.status);
       const answer = answers[key]?.shift();
@@ -209,6 +217,138 @@ else {
     state.status = { maintenance: null };
     await check();
     expect(notices()[0]).toContain("Wartung beendet");
+  });
+
+  test("a thousand identical polls during maintenance send one request while waiting and one at the end", async () => {
+    const { calls, state, check } = page({ "GET /api/mail/threads": [maintenance, ok] });
+    const first = window.fetch("/api/mail/threads");
+    await Bun.sleep(5);
+    const polls = Array.from({ length: 999 }, () => window.fetch("/api/mail/threads"));
+    await Bun.sleep(5);
+    expect(calls).toEqual(["GET /api/mail/threads"]);
+
+    state.status = { maintenance: null };
+    await check();
+    const answers = await Promise.all([first, ...polls].map(async (read) => (await read).json()));
+    expect(answers).toHaveLength(1_000);
+    expect(new Set(answers.map((answer) => JSON.stringify(answer)))).toEqual(new Set(['{"items":["Hallenbelegung im Dezember"]}']));
+    expect(calls).toEqual(["GET /api/mail/threads", "GET /_cloud/gateway/status", "GET /api/mail/threads"]);
+  });
+
+  test("at most MAX_WAITING_READS addresses wait; a further read is answered like an action", async () => {
+    const { MAX_WAITING_READS } = await import("./maintenance-notice");
+    const paths = Array.from({ length: MAX_WAITING_READS + 1 }, (_, index) => `/api/mail/threads/t${index}`);
+    const { calls, state, check } = page(Object.fromEntries(paths.map((path) => [`GET ${path}`, [maintenance, ok]])));
+    const reads = paths.slice(0, MAX_WAITING_READS).map((path) => window.fetch(path));
+    await Bun.sleep(5);
+    const over = await window.fetch(paths.at(-1) ?? "");
+    expect(over.status).toBe(503);
+    expect(await over.json()).toMatchObject({
+      code: "maintenance",
+      message: "Wartungsmodus aktiv. Das geht wieder, sobald die Wartung beendet ist.",
+    });
+    expect(notices()).toHaveLength(1);
+
+    state.status = { maintenance: null };
+    await check();
+    expect((await Promise.all(reads)).map((response) => response.status)).toEqual(paths.slice(0, MAX_WAITING_READS).map(() => 200));
+    expect(calls.filter((call) => call.startsWith("GET /api/"))).toHaveLength(2 * MAX_WAITING_READS + 1);
+  });
+
+  test("a HEAD answer without a body still names its reason in the header, and the read waits", async () => {
+    const bodiless = () =>
+      new Response(null, {
+        status: 503,
+        headers: { "Content-Type": "application/problem+json", "X-Cloud-Unavailable": "app_unavailable; app=mail; reason=updating" },
+      });
+    const { state, check } = page({ "HEAD /api/mail/threads": [bodiless, () => new Response(null, { status: 200 })] });
+    let settled = false;
+    const read = window.fetch("/api/mail/threads", { method: "HEAD" }).then((response) => {
+      settled = true;
+      return response;
+    });
+    await Bun.sleep(5);
+    expect(settled).toBe(false);
+    expect(notices()[0]).toContain("Mail wird gerade aktualisiert");
+    state.status = { maintenance: null, app: { available: true } };
+    await check();
+    expect((await read).status).toBe(200);
+  });
+
+  test("an app the shell cannot name gets the gateway's name, or else is called this app, never its id", async () => {
+    const away = (body: Record<string, unknown>) => () =>
+      problem({ title: "App is unavailable", code: "app_unavailable", appId: "venue", reason: "unavailable", ...body });
+    page({ "POST /api/venue/bookings": [away({ appName: "Räume" }), away({})] });
+    const named = await window.fetch("/api/venue/bookings", { method: "POST" });
+    expect((await named.json()).message).toBe("Räume ist gerade nicht erreichbar. Das geht wieder, sobald Räume verfügbar ist.");
+    expect(notices()[0]).toContain("Räume ist gerade nicht erreichbar");
+    const unnamed = await window.fetch("/api/venue/bookings", { method: "POST" });
+    expect((await unnamed.json()).message).toBe("Diese App ist gerade nicht erreichbar. Das geht wieder, sobald diese App verfügbar ist.");
+    expect(notices().join(" ")).not.toContain("venue");
+  });
+
+  test("a read for a second app is sent again after each status check, so it ends while the first app stays away", async () => {
+    const files = () => problem({ title: "App is unavailable", code: "app_unavailable", appId: "files", reason: "updating" });
+    const { calls, state, check } = page({
+      "GET /api/mail/threads": [restarting("updating")],
+      "GET /api/files/list": [files, ok],
+    });
+    void window.fetch("/api/mail/threads");
+    await Bun.sleep(5);
+    const other = window.fetch("/api/files/list");
+    await Bun.sleep(5);
+    expect(notices()[0]).toContain("Mail wird gerade aktualisiert");
+
+    // Mail stays away; Files is back.
+    state.status = { maintenance: null, app: { available: false } };
+    await check();
+    expect((await other).status).toBe(200);
+    expect(calls).toEqual(["GET /api/mail/threads", "GET /api/files/list", "GET /_cloud/gateway/status?app=mail", "GET /api/files/list"]);
+    expect(notices()[0]).toContain("Mail wird gerade aktualisiert");
+  });
+
+  test("a 503 for a request sent before the end is old news: no second notice, and the read goes once more", async () => {
+    const slow = later();
+    const { state, check } = page({ "GET /api/mail/threads": [maintenance, ok], "GET /api/mail/labels": [slow.send, ok] });
+    void window.fetch("/api/mail/threads");
+    await Bun.sleep(5);
+    const labels = window.fetch("/api/mail/labels");
+    state.status = { maintenance: null };
+    await check();
+    expect(notices()[0]).toContain("Wartung beendet");
+
+    slow.answer(maintenance());
+    expect((await labels).status).toBe(200);
+    await Bun.sleep(5);
+    expect(notices()).toHaveLength(1);
+    expect(notices()[0]).toContain("Wartung beendet");
+  });
+
+  test("dispose while it holds answers every waiting read with its 503 and sends nothing again", async () => {
+    const { calls } = page({ "GET /api/mail/threads": [maintenance] });
+    const read = window.fetch("/api/mail/threads");
+    await Bun.sleep(5);
+    dispose?.();
+    dispose = undefined;
+    const response = await read;
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ type: "about:blank", status: 503, title: "Cloud is in maintenance", code: "maintenance" });
+    expect(calls).toEqual(["GET /api/mail/threads"]);
+  });
+
+  test("a hidden tab does not poll; becoming visible checks at once", async () => {
+    let hidden = true;
+    const { calls, state } = page({ "GET /api/mail/threads": [maintenance, ok] }, { delay: () => 5 });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
+    const read = window.fetch("/api/mail/threads");
+    await Bun.sleep(40);
+    expect(calls).toEqual(["GET /api/mail/threads"]);
+
+    state.status = { maintenance: null };
+    hidden = false;
+    document.dispatchEvent(new window.Event("visibilitychange"));
+    expect((await read).status).toBe(200);
+    expect(calls).toEqual(["GET /api/mail/threads", "GET /_cloud/gateway/status", "GET /api/mail/threads"]);
   });
 
   test("dispose gives the page its own fetch back", () => {

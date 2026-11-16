@@ -93,8 +93,9 @@ maintenance. Open sockets are closed when maintenance starts; a bypassed socket
 that opened later stays open until it closes by itself.
 
 Every page you open this way shows the notice "Wartungsmodus aktiv. Nur du
-siehst die Cloud." with **Wartung beenden**, which switches maintenance off
-for everyone (see [Open pages](#open-pages)). The gateway tells the app with
+siehst die Cloud." (see [Open pages](#open-pages)). For administrators it
+also has **Wartung beenden**, which switches maintenance off for everyone.
+Someone else who opens the link sees the same notice without it. The gateway tells the app with
 the request header `X-Cloud-Maintenance-Bypass: 1`; it removes that header
 from every incoming request, so no browser can set it itself.
 
@@ -116,12 +117,19 @@ Branch on `code`, never on `title`:
 ```
 
 ```json
-{ "type": "about:blank", "title": "App is unavailable", "status": 503, "code": "app_unavailable", "appId": "mail", "reason": "updating" }
+{ "type": "about:blank", "title": "App is unavailable", "status": 503, "code": "app_unavailable", "appId": "mail", "appName": "E-Mail", "reason": "updating" }
 ```
 
 `until` is present only when a planned end is set. `reason` is `updating`
 when the app deregistered cleanly and `unavailable` otherwise (see
-[When one app restarts](#when-one-app-restarts)). Every answer has
+[When one app restarts](#when-one-app-restarts)). `appName` is the app's name
+in the request's language (from `Accept-Language`, else the Cloud's
+language); it is missing when the gateway does not know the app.
+
+Every problem answer also has the header `X-Cloud-Unavailable`, with
+`maintenance` or `app_unavailable; app=mail; reason=updating`. It says the
+same as the body and is there for answers without a body, such as `HEAD`.
+The HTML page does not have it. Every answer has
 `Cache-Control: no-store`. The HTML page has a strict content security policy
 with a new nonce per response.
 
@@ -149,7 +157,10 @@ floats, so nothing on the page moves.
 | Bypass link (administrator) | "Wartungsmodus aktiv. Nur du siehst die Cloud." | "Wartung beendet" |
 
 - **Reads** (`GET` and `HEAD`) wait quietly and are sent again once it is
-  over. The page shows no error for them.
+  over. The page shows no error for them. Reads of the same address wait as
+  one: a query that polls sends nothing more while it waits, and at the end
+  one request answers all of them. At most 64 different addresses wait per
+  page; a further read is answered like an action.
 - **Actions** (every other method, such as sending, booking or deleting) are
   never held and never repeated. They return the gateway's `503` with a
   `message` that names the reason, for example "Wartungsmodus aktiv. Das geht
@@ -158,8 +169,14 @@ floats, so nothing on the page moves.
 - From the first `503` on, the page polls the
   [status endpoint](#status-endpoint) on the same schedule as the
   maintenance page, and at once when the tab becomes visible or the device is
-  online again. Once it is over, the notice says so; the page does **not**
-  reload, so the person keeps their place and their input.
+  online again. A hidden tab does not poll. Once it is over, the notice says
+  so; the page does **not** reload, so the person keeps their place and
+  their input.
+- The notice shows one situation at a time. Reads that wait for a second app
+  are sent again after each status check, so they go through as soon as that
+  app is back, even while the first one is still away.
+- When the page does not know the app's name, the notice uses the name from
+  the problem answer, else "Diese App"; never the app's id.
 - A link clicked during maintenance loads the maintenance page, which reloads
   the address after the end.
 - With a bypass link, nothing is blocked. Administrators see **Wartung

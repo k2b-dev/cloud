@@ -5,6 +5,8 @@ import {
   MAINTENANCE_ADMIN_API_PATH,
   type MaintenancePollKind,
   maintenancePollDelay,
+  parseUnavailableHeader,
+  UNAVAILABLE_HEADER,
 } from "../contracts/maintenance-signals";
 import { type MaintenanceNoticeMessages, maintenanceNoticeMessages } from "./maintenance-notice-messages";
 
@@ -13,19 +15,27 @@ import { type MaintenanceNoticeMessages, maintenanceNoticeMessages } from "./mai
  * with a `503` problem (`maintenance` or `app_unavailable`); from the first one on, the page shows one persistent
  * toast that says why, and polls the gateway status until it is over. Nothing on the page is discarded:
  *
- * - reads (`GET`, `HEAD`) wait quietly and are sent again once it is over, so no raw error appears;
+ * - reads (`GET`, `HEAD`) wait quietly and are sent again once it is over, so no raw error appears. Reads of the same
+ *   method and address wait as one: a polling query adds no request while it waits, and all of them get the one
+ *   answer at the end. At most `MAX_WAITING_READS` addresses wait per page; a further one is answered like an action;
  * - every other request is an action with an effect: it is never held or repeated. It returns the gateway's `503`
  *   with a `message` that names the reason, as apps show it for any failed action; the person presses again later.
+ *
+ * The notice shows one condition at a time. Reads that wait for another one (a second app) are sent again after
+ * every status check, so they meet their own condition once the shown one is over. A hidden tab does not poll.
  *
  * A page rendered past the maintenance wall with an admin bypass link says that only this person sees the Cloud,
  * blocks nothing, and offers administrators to end the maintenance.
  */
 
-type Condition = { kind: "cloud" } | { kind: "app"; appId: string; reason: AppUnavailableReason } | { kind: "bypass"; canEnd: boolean };
+type Condition =
+  | { kind: "cloud" }
+  | { kind: "app"; appId: string; reason: AppUnavailableReason; appName?: string }
+  | { kind: "bypass"; canEnd: boolean };
 
 export type MaintenanceNoticeOptions = {
   locale: () => string;
-  /** The name of an app as the person sees it; falls back to its id. */
+  /** The name of an app as the person sees it; else the gateway's name for it, else "this app", never its id. */
   appName?: (appId: string) => string | undefined;
   /** The gateway let this page past the maintenance wall with an admin bypass link. */
   bypass?: boolean;
@@ -36,16 +46,20 @@ export type MaintenanceNoticeOptions = {
 };
 
 const BARRIER = "ti-barrier-block";
+/**
+ * Distinct addresses that may wait at once per page. A page loads a few dozen reads at most; more means a loop, and
+ * at the end each page sends the gateway at most this many requests at once.
+ */
+export const MAX_WAITING_READS = 64;
 /** A status check that hangs counts as a failed one; the next check follows the schedule. */
 const STATUS_TIMEOUT_MS = 10_000;
 
 type FetchInput = Parameters<typeof window.fetch>[0];
 type FetchInit = Parameters<typeof window.fetch>[1];
+type Problem = { condition: Condition; problem: Record<string, unknown>; headers: Headers };
 
-const isRead = (input: FetchInput, init: FetchInit): boolean => {
-  const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-  return method === "GET" || method === "HEAD";
-};
+const methodOf = (input: FetchInput, init: FetchInit): string =>
+  (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
 
 const sameOriginUrl = (input: FetchInput): URL | null => {
   try {
@@ -56,19 +70,36 @@ const sameOriginUrl = (input: FetchInput): URL | null => {
   }
 };
 
-/** The condition a gateway `503` problem describes, with the problem itself; null for every other answer. */
-const readProblem = async (response: Response): Promise<{ condition: Condition; problem: object } | null> => {
+/**
+ * The condition a gateway `503` problem describes, from its `X-Cloud-Unavailable` header (also without a body, as for
+ * `HEAD`) or else from its body, with the problem fields; null for every other answer, the gateway's page included.
+ */
+const readProblem = async (response: Response): Promise<Problem | null> => {
   if (response.status !== 503) return null;
   if (!(response.headers.get("Content-Type") ?? "").toLowerCase().startsWith("application/problem+json")) return null;
-  const problem: unknown = await response
-    .clone()
-    .json()
-    .catch(() => null);
-  if (!problem || typeof problem !== "object" || !("code" in problem)) return null;
-  if (problem.code === "maintenance") return { condition: { kind: "cloud" }, problem };
-  if (problem.code !== "app_unavailable" || !("appId" in problem) || typeof problem.appId !== "string") return null;
-  const reason = "reason" in problem && problem.reason === "updating" ? "updating" : "unavailable";
-  return { condition: { kind: "app", appId: problem.appId, reason }, problem };
+  const body: unknown = response.body
+    ? await response
+        .clone()
+        .json()
+        .catch(() => null)
+    : null;
+  const problem: Record<string, unknown> = body && typeof body === "object" ? { ...body } : {};
+  const signal = parseUnavailableHeader(response.headers.get(UNAVAILABLE_HEADER));
+  const code = signal?.code ?? problem.code;
+  const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  headers.delete("Content-Encoding");
+  if (code === "maintenance") return { condition: { kind: "cloud" }, problem: { status: 503, ...problem, code }, headers };
+  if (code !== "app_unavailable") return null;
+  const appId = signal?.code === "app_unavailable" ? signal.appId : problem.appId;
+  if (typeof appId !== "string" || !appId) return null;
+  const reason = (signal?.code === "app_unavailable" ? signal.reason : problem.reason) === "updating" ? "updating" : "unavailable";
+  const appName = typeof problem.appName === "string" && problem.appName ? { appName: problem.appName } : {};
+  return {
+    condition: { kind: "app", appId, reason, ...appName },
+    problem: { status: 503, ...problem, code, appId, reason },
+    headers,
+  };
 };
 
 /** `maintenance`: off, on for everyone, or on but passed by this browser's bypass link. `app`: absent when not asked. */
@@ -84,32 +115,45 @@ const readStatus = (body: unknown): { maintenance: "off" | "on" | "bypass"; app?
 const same = (a: Condition, b: Condition): boolean =>
   a.kind === b.kind && (a.kind !== "app" || (b.kind === "app" && a.appId === b.appId && a.reason === b.reason));
 
+/** One read waiting for its condition to end: one request for every caller of the same method and address. */
+type Waiting = {
+  args: Parameters<typeof window.fetch>;
+  condition: Condition;
+  /** The `503` this read met last, as the app would have seen it without the notice. */
+  met: Problem;
+  callers: Set<{ resolve: (response: Response) => void; reject: (reason: unknown) => void }>;
+  sending?: AbortController;
+};
+
 export const installMaintenanceNotice = (options: MaintenanceNoticeOptions): (() => void) => {
   const original = window.fetch;
   const delay = options.delay ?? ((kind, elapsedMs) => maintenancePollDelay(kind, elapsedMs, Math.random()));
   const t = (): MaintenanceNoticeMessages => maintenanceNoticeMessages.resolve([options.locale()]).t;
-  const name = (appId: string): string => options.appName?.(appId) || appId;
+  const name = (condition: Condition & { kind: "app" }): { name?: string } => {
+    const known = options.appName?.(condition.appId) || condition.appName;
+    return known ? { name: known } : {};
+  };
   let current: Condition | null = null;
   let since = 0;
+  /** Counts the ends of conditions: a `503` for a request sent before the last end is old news. */
+  let ends = 0;
   let notice: ToastHandle | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let checking = false;
   let ending = false;
   let active = true;
-  /** Reads waiting for the end; they run again only while nothing blocks. */
-  const waiters = new Set<() => void>();
-
-  const release = () => {
-    for (const resume of [...waiters]) resume();
-  };
+  /** Waiting reads by method and address. */
+  const waiting = new Map<string, Waiting>();
 
   const blockedMessage = (condition: Condition): string => {
     const text = t();
     if (condition.kind !== "app") return text.maintenanceBlocked;
-    return condition.reason === "updating"
-      ? text.appUpdatingBlocked({ name: name(condition.appId) })
-      : text.appDownBlocked({ name: name(condition.appId) });
+    return condition.reason === "updating" ? text.appUpdatingBlocked(name(condition)) : text.appDownBlocked(name(condition));
   };
+
+  /** The `503` an action gets: the gateway's problem with a `message` in the person's language. */
+  const blocked = (met: Problem): Response =>
+    new Response(JSON.stringify({ ...met.problem, message: blockedMessage(met.condition) }), { status: 503, headers: met.headers });
 
   const view = (condition: Condition): { description: string; options: ToastOptions } => {
     const text = t();
@@ -127,11 +171,11 @@ export const installMaintenanceNotice = (options: MaintenanceNoticeOptions): (()
           action: condition.canEnd ? { label: text.end, onClick: () => void endMaintenance() } : null,
         },
       };
-    const app = name(condition.appId);
+    const app = name(condition);
     const restarting = { ...still, variant: "default", progress: "indeterminate" } satisfies ToastOptions;
     return condition.reason === "updating"
-      ? { description: text.appUpdatingKeeps, options: { ...restarting, title: text.appUpdating({ name: app }) } }
-      : { description: text.appDownKeeps({ name: app }), options: { ...restarting, title: text.appDown({ name: app }) } };
+      ? { description: text.appUpdatingKeeps, options: { ...restarting, title: text.appUpdating(app) } }
+      : { description: text.appDownKeeps(app), options: { ...restarting, title: text.appDown(app) } };
   };
 
   /** Changes the toast in place. A toast the person closed stays closed for this condition; a new one shows again. */
@@ -140,10 +184,52 @@ export const installMaintenanceNotice = (options: MaintenanceNoticeOptions): (()
     notice = fresh ? toast(description, toastOptions) : undefined;
   };
 
+  /** A hidden tab does not poll; becoming visible checks at once. */
   const schedule = () => {
     clearTimeout(timer);
-    if (!current || !active) return;
+    if (!current || !active || document.visibilityState === "hidden") return;
     timer = setTimeout(() => void check(), delay(current.kind === "app" ? "app" : "cloud", Date.now() - since));
+  };
+
+  /** Hands one answer to every caller of a waiting read. */
+  const deliver = (key: string, entry: Waiting, response: Response) => {
+    waiting.delete(key);
+    const [first, ...rest] = [...entry.callers];
+    const copies = rest.map((caller) => ({ caller, response: response.clone() }));
+    first?.resolve(response);
+    for (const copy of copies) copy.caller.resolve(copy.response);
+  };
+
+  /** Sends one waiting read again. Another `503` keeps it waiting for that condition. */
+  const resend = async (key: string, entry: Waiting): Promise<void> => {
+    const controller = new AbortController();
+    entry.sending = controller;
+    const sentAfter = ends;
+    const [input, init] = entry.args;
+    let response: Response;
+    try {
+      response = await original.call(window, input, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (waiting.get(key) === entry) waiting.delete(key);
+      for (const caller of entry.callers) caller.reject(error);
+      return;
+    } finally {
+      entry.sending = undefined;
+    }
+    if (waiting.get(key) !== entry) return void response.body?.cancel().catch(() => undefined);
+    const found = active ? await readProblem(response) : null;
+    if (!found) return deliver(key, entry, response);
+    void response.body?.cancel().catch(() => undefined);
+    // Sent before the last end: it is over now, so send it once more.
+    if (sentAfter !== ends && !(current && same(current, found.condition))) return resend(key, entry);
+    entry.condition = found.condition;
+    entry.met = found;
+    begin(found.condition);
+  };
+
+  /** Sends again every waiting read that does not wait for the condition shown now. */
+  const release = () => {
+    for (const [key, entry] of waiting) if (!entry.sending && !(current && same(current, entry.condition))) void resend(key, entry);
   };
 
   const enter = (condition: Condition) => {
@@ -157,13 +243,14 @@ export const installMaintenanceNotice = (options: MaintenanceNoticeOptions): (()
 
   const finish = (condition: Condition) => {
     current = null;
+    ends += 1;
     clearTimeout(timer);
     const text = t();
     const title =
       condition.kind === "app"
         ? condition.reason === "updating"
           ? text.appUpdated
-          : text.appBack({ name: name(condition.appId) })
+          : text.appBack(name(condition))
         : text.maintenanceEnded;
     const description = condition.kind === "bypass" ? text.bypassEnded : text.continue;
     // Omitted duration: the success toast closes after its reading time.
@@ -180,10 +267,25 @@ export const installMaintenanceNotice = (options: MaintenanceNoticeOptions): (()
     enter(condition);
   };
 
+  /** Applies a status answer to the condition it was asked for. */
+  const settle = (watched: Condition, status: NonNullable<ReturnType<typeof readStatus>>) => {
+    const bypass: Condition = { kind: "bypass", canEnd: options.canEnd === true };
+    if (status.maintenance === "on") return watched.kind === "cloud" ? schedule() : enter({ kind: "cloud" });
+    // An app restarting under a bypassed maintenance ends with the app; the bypass notice then comes back.
+    if (watched.kind === "app") {
+      if (status.app !== true) return schedule();
+      finish(watched);
+      if (status.maintenance === "bypass") enter(bypass);
+      return;
+    }
+    if (status.maintenance === "bypass") return watched.kind === "bypass" ? schedule() : enter(bypass);
+    finish(watched);
+  };
+
   const check = async () => {
     clearTimeout(timer);
     const watched = current;
-    if (!watched || checking || !active) return;
+    if (!watched || checking || !active || document.visibilityState === "hidden") return;
     checking = true;
     let status: ReturnType<typeof readStatus> = null;
     const controller = new AbortController();
@@ -198,18 +300,11 @@ export const installMaintenanceNotice = (options: MaintenanceNoticeOptions): (()
       clearTimeout(hang);
       checking = false;
     }
-    if (!active || current !== watched || !status) return schedule();
-    const bypass: Condition = { kind: "bypass", canEnd: options.canEnd === true };
-    if (status.maintenance === "on") return watched.kind === "cloud" ? schedule() : enter({ kind: "cloud" });
-    // An app restarting under a bypassed maintenance ends with the app; the bypass notice then comes back.
-    if (watched.kind === "app") {
-      if (status.app !== true) return schedule();
-      finish(watched);
-      if (status.maintenance === "bypass") enter(bypass);
-      return;
-    }
-    if (status.maintenance === "bypass") return watched.kind === "bypass" ? schedule() : enter(bypass);
-    finish(watched);
+    if (!active) return;
+    if (current !== watched || !status) schedule();
+    else settle(watched, status);
+    // Reads that wait for another condition repeat at most once per check, so they meet their own.
+    release();
   };
 
   const endMaintenance = async () => {
@@ -236,47 +331,65 @@ export const installMaintenanceNotice = (options: MaintenanceNoticeOptions): (()
     present(text.endFailed, again.options, true);
   };
 
-  /** Resolves once nothing blocks any more; rejects with the request's own abort reason. */
-  const waitForEnd = (signal: AbortSignal | null | undefined): Promise<void> =>
-    new Promise((resolve, reject) => {
+  /**
+   * Joins the waiting read of this method and address, which ends with one answer for all its callers; rejects with
+   * the caller's own abort reason. Null when `MAX_WAITING_READS` other addresses wait already.
+   */
+  const wait = (key: string, args: Parameters<typeof window.fetch>, met: Problem | null): Promise<Response> | null => {
+    let entry = waiting.get(key);
+    if (!entry) {
+      if (!met || waiting.size >= MAX_WAITING_READS) return null;
+      entry = { args, condition: met.condition, met, callers: new Set() };
+      waiting.set(key, entry);
+    }
+    const joined = entry;
+    const [input, init] = args;
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+    return new Promise((resolve, reject) => {
       if (signal?.aborted) return reject(signal.reason);
-      const resume = () => {
-        waiters.delete(resume);
-        signal?.removeEventListener("abort", abort);
-        resolve();
+      const caller = {
+        resolve: (response: Response) => {
+          signal?.removeEventListener("abort", abort);
+          resolve(response);
+        },
+        reject: (reason: unknown) => {
+          signal?.removeEventListener("abort", abort);
+          reject(reason);
+        },
       };
       const abort = () => {
-        waiters.delete(resume);
+        joined.callers.delete(caller);
         reject(signal?.reason);
+        if (joined.callers.size > 0) return;
+        if (waiting.get(key) === joined) waiting.delete(key);
+        joined.sending?.abort();
       };
-      waiters.add(resume);
+      joined.callers.add(caller);
       signal?.addEventListener("abort", abort, { once: true });
     });
+  };
 
   const wrapped: typeof window.fetch = Object.assign(async (...args: Parameters<typeof window.fetch>): Promise<Response> => {
     const [input, init] = args;
     const url = sameOriginUrl(input);
-    if (!url || url.pathname === GATEWAY_STATUS_PATH) return original.apply(window, args);
-    const read = isRead(input, init);
-    // Each round waits for a status check that says it is over, so a read repeats at most at the poll schedule.
-    for (;;) {
+    if (!url || url.pathname === GATEWAY_STATUS_PATH || !active) return original.apply(window, args);
+    const method = methodOf(input, init);
+    const read = method === "GET" || method === "HEAD";
+    const key = `${method} ${url.href}`;
+    // A read whose address already waits sends nothing: it gets the answer the waiting one gets.
+    if (read && waiting.has(key)) return wait(key, args, null) ?? original.apply(window, args);
+    for (let late = 0; ; late++) {
+      const sentAfter = ends;
       const response = await original.apply(window, args);
       const found = active ? await readProblem(response) : null;
       if (!found) return response;
-      begin(found.condition);
-      if (!read) {
-        const headers = new Headers(response.headers);
-        headers.delete("Content-Length");
-        headers.delete("Content-Encoding");
-        void response.body?.cancel().catch(() => undefined);
-        return new Response(JSON.stringify({ ...found.problem, message: blockedMessage(found.condition) }), {
-          status: 503,
-          statusText: response.statusText,
-          headers,
-        });
-      }
+      // Sent before the last end: old news, never a second notice. A read goes once more, an action keeps its answer.
+      const old = sentAfter !== ends && !(current && same(current, found.condition));
       void response.body?.cancel().catch(() => undefined);
-      await waitForEnd(init?.signal ?? (input instanceof Request ? input.signal : undefined));
+      if (old && read && late === 0) continue;
+      if (!old) begin(found.condition);
+      if (!read || old) return blocked(found);
+      return wait(key, args, found) ?? blocked(found);
     }
   }, original);
   window.fetch = wrapped;
@@ -296,6 +409,13 @@ export const installMaintenanceNotice = (options: MaintenanceNoticeOptions): (()
     window.removeEventListener("online", now);
     if (window.fetch === wrapped) window.fetch = original;
     notice?.dismiss();
-    release();
+    // Never send anything again from here: every waiting read gets the `503` it met, as without the notice. A read
+    // on its way gets its own answer.
+    for (const [key, entry] of waiting) {
+      if (entry.sending) continue;
+      waiting.delete(key);
+      const body = methodOf(...entry.args) === "HEAD" ? null : JSON.stringify(entry.met.problem);
+      for (const caller of entry.callers) caller.resolve(new Response(body, { status: 503, headers: entry.met.headers }));
+    }
   };
 };
