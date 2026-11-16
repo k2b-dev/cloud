@@ -1,7 +1,8 @@
 import { dates } from "@k2b/stdlib";
-import { IconButton, isStructuredDataValue, Lightbox, StructuredDataPreview, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, type JSX, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { createMemo, type JSX, Show } from "solid-js";
 import { type BlockChoiceState, BlockTree } from "../../blocks/BlockTree";
+import { BlockFrameProvider } from "../../blocks/block-actions";
 import { blockWords } from "../../blocks/messages";
 import { cardToolBlocks, chartToolBlocks } from "../gustav-view-blocks";
 import type { AiTurnBlock } from "../protocol";
@@ -63,16 +64,13 @@ export function ViewFrame(props: {
   title: string;
   /** When the view was made, read as day and minute in the reader's time zone. */
   at?: string;
-  /** What "Open large" shows in the Lightbox: the same view from the data the chat already holds. */
-  large: () => JSX.Element;
-  /** What "Data" shows instead of the view. */
+  /** The data behind the view: "Raw data" in the Lightbox. */
   data: unknown;
   children: JSX.Element;
 }): JSX.Element {
   const locale = useLocale();
   const timeZone = useReaderTimeZone();
   const words = () => blockWords(locale());
-  const [data, setData] = createSignal(false);
   // The same on the server and in the browser.
   const asOf = () => {
     const at = props.at ? new Date(props.at) : undefined;
@@ -86,49 +84,32 @@ export function ViewFrame(props: {
     }).format(at);
     return words().asOf({ time });
   };
-  // The Lightbox opens inside this view, not in a root of its own: the large view keeps the chat's context (its files,
-  // the reader's time zone) and draws from the data the chat already holds, so nothing loads a second time.
-  const [large, setLarge] = createSignal(false);
+  // No origin line above the view (Feinschliff v3, section 5): each block carries Copy and Maximize itself, and the
+  // Lightbox names who made it, its kind and when.
   return (
     <section class="cloud-capability-view" aria-label={props.title}>
-      <div class="cloud-capability-view__head">
-        <span class="cloud-capability-view__app k2b-icon-tile" style={props.origin.accent ? { color: props.origin.accent } : undefined}>
-          <i class={props.origin.icon} aria-hidden="true" />
-        </span>
-        <strong>{props.origin.name ?? props.title}</strong>
-        <Show when={props.origin.name}>
-          <span class="cloud-capability-view__title">
-            · {props.title}
-            <Show when={asOf()}>{(stand) => <> · {stand()}</>}</Show>
-          </span>
-        </Show>
-        <span class="cloud-capability-view__tools">
-          <IconButton label={words().openLarge} size="sm" variant="ghost" onClick={() => setLarge(true)}>
-            <i class="ti ti-arrows-diagonal" aria-hidden="true" />
-          </IconButton>
-          <IconButton label={words().showData} size="sm" variant="ghost" aria-pressed={data()} onClick={() => setData(!data())}>
-            <i class="ti ti-braces" aria-hidden="true" />
-          </IconButton>
-        </span>
-      </div>
-      <Show when={data() && isStructuredDataValue(props.data) ? props.data : undefined} fallback={props.children}>
-        {(value) => <StructuredDataPreview data={value()} />}
-      </Show>
-      <Show when={large()}>
-        <Lightbox
-          items={[{ name: props.title, meta: props.origin.name, content: props.large }]}
-          index={0}
-          onIndexChange={() => undefined}
-          onClose={() => setLarge(false)}
-        />
-      </Show>
+      <BlockFrameProvider
+        value={{
+          get origin() {
+            return props.origin.name ?? props.title;
+          },
+          get asOf() {
+            return asOf();
+          },
+          get data() {
+            return props.data;
+          },
+        }}
+      >
+        {props.children}
+      </BlockFrameProvider>
     </section>
   );
 }
 
 /**
- * A capability result as the person sees it: Cloud's origin line "App · Title" and the app's blocks in the flow of the
- * conversation, without a hull. "Open large" shows the same blocks in a panel; the data toggle shows what Gustav read.
+ * A capability result as the person sees it: the app's blocks in the flow of the conversation, without a hull. Its
+ * frame tells each block who made it, when and on which data, for Copy, Maximize and the Lightbox.
  */
 export function CapabilityViewBlock(props: {
   block: ToolBlock;
@@ -167,7 +148,6 @@ export function CapabilityViewBlock(props: {
           origin={{ name: app()?.appName, icon: app()?.appIcon ?? "ti ti-apps", accent: app()?.appAccent }}
           title={title()}
           at={props.block.at}
-          large={() => <BlockTree blocks={view().blocks} host="result" locale={locale()} timeZone={timeZone} />}
           data={props.data ?? props.block.result}
         >
           <BlockTree blocks={view().blocks} host="result" locale={locale()} timeZone={timeZone} choice={choice()} />

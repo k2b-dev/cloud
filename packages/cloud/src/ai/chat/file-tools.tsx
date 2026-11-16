@@ -69,7 +69,6 @@ export function PresentToolBlock(props: { block: ToolBlock }) {
             origin={{ name: "Gustav", icon: "ti ti-moustache", accent: "var(--k2b-ai-accent)" }}
             title={aiChatMessages(locale()).viewKind({ view: view.summary.view })}
             at={props.block.at}
-            large={() => <CloudViewBlock path={view.path} summary={view.summary} file={file} />}
             data={props.block.result}
           >
             {/* A chart, table, group or explorer is an island, as in an app's view; the island is the table's frame, so the

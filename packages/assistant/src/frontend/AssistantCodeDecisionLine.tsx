@@ -104,7 +104,8 @@ export default function AssistantCodeDecisionLine(props: {
     props.settled || props.automatic
       ? null
       : props.decision.outcome === "approved"
-        ? t().eventSwitchOn
+        ? // The card switches on; the line only leads there, so the same action never stands twice (v12 §9).
+          t().eventToCard
         : props.decision.outcome === "changes_requested"
           ? t().eventSee
           : props.decision.outcome === "rejected"

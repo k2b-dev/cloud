@@ -56,7 +56,7 @@ render(
             <i class="ti ti-circle-check" aria-hidden="true" />
             <p style="margin:0">Jana Probe hat Version {entry.meta?.codeDecision?.number} freigegeben</p>
             <Button type="button" size="sm" variant="secondary">
-              Einschalten …
+              Zur Karte
             </Button>
           </div>
         ),
