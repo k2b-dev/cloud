@@ -2321,8 +2321,16 @@ export const aiConversations: AiConversationService = {
             WHERE conversation_id = ai.conversations.id
               AND status IN ('queued', 'running', 'waiting_for_action')
           )
-          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND status IN ('pending','failed'))
         RETURNING id
+      ), expired_queue AS (
+        -- Archiving lets the chat's waiting messages lapse; a running or waiting turn still keeps the chat (#108).
+        -- Like a cancel, a lapsed entry keeps no content or files.
+        UPDATE ai.queued_messages SET status = 'cancelled', error = 'chat_archived', send_requested_at = NULL,
+          submission = '{}'::jsonb, content = '[]'::jsonb
+        WHERE conversation_id IN (SELECT id FROM archived) AND status IN ('pending','failed')
+        RETURNING id
+      ), expired_files AS (
+        DELETE FROM ai.queued_message_files WHERE message_id IN (SELECT id FROM expired_queue)
       ), considered_turns AS (
         UPDATE ai.turns
         SET memory_learned_at = completed_at,
@@ -3047,7 +3055,8 @@ export const aiConversations: AiConversationService = {
       );
       // Queue acceptance already recorded the user's interaction time. A person's own message resumes a queue that their
       // Stop held; a message written for an automation or another chat leaves the hold.
-      const person = !input.runConfig.writerOrigin && input.runConfig.actor?.kind !== "service_account";
+      const writer = input.runConfig.writerOrigin?.kind ?? (input.runConfig.actor?.kind === "service_account" ? "automation" : "person");
+      const person = writer === "person";
       if (!input.queuedMessageId)
         await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now(),
           queue_held_at = CASE WHEN ${person} THEN NULL ELSE queue_held_at END WHERE id = ${input.conversationId}::uuid`;

@@ -74,7 +74,6 @@ integration(
       const first = await enqueue("First");
       const second = await enqueue("Second");
       expect((await listQueuedMessages(chat.id)).map((item) => item.id)).toEqual([first, second]);
-      expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: user!.id })).toBe(false);
       expect(await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: user!.id, done: true })).toEqual({
         ok: false,
         reason: "active_turn",

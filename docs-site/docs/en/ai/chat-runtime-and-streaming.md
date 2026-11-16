@@ -36,6 +36,14 @@ the next queued message to start; a dispatch failure keeps the failed entry at t
 head until the user retries or removes it. Approval waits keep the current turn
 active and do not advance the queue.
 
+A person's **Stop** holds the queue: afterwards nothing starts by itself, and
+every entry, including those of automations, stays queued. Send now starts only
+its own entry. A new message of the person, sent or queued, resumes the queue in
+its order; a message of an automation or another chat does not. While the queue
+is held, messages from other chats wait as they do for a busy chat. The hold is
+kept on the chat on the server, so the API, the CLI and the web chat behave
+alike.
+
 With **Automations as Code**, automation messages will use a separate queue:
 up to **32 entries per chat**, with at most **one waiting entry per source**
 (Code or source chat). These entries will have their own capacity, preserving
@@ -57,7 +65,10 @@ The owner-authorized queue API provides:
 All paths above use the `/api/ai` prefix. Editing or deleting races safely with
 promotion: once an entry becomes a turn, the queue endpoint returns not found.
 Normal submissions cannot overtake the queue. Chats with pending entries cannot
-be archived or marked done and do not become done through inactivity.
+be marked done and do not become done through inactivity. Archiving such a chat
+lets its entries lapse (`cancelled` with error `chat_archived`). A turn that
+runs or waits for a decision still keeps a chat from being archived; the
+conflict says which of the two it is.
 
 ### Send a queued message now
 
