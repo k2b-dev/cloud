@@ -14,6 +14,23 @@ const PATH = "/admin/settings/maintenance";
 /** The clock the browser test sets: 14:10 in Berlin, so the mockup's 14:02 and 14:30 read as today. */
 export const MAINTENANCE_FIXTURE_NOW = new Date("2026-11-16T13:10:00.000Z");
 
+/** A page init script that pins only `Date` to `at`; timers keep running, so the page polls and animates as usual. */
+export const pinPageClock = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "lea.muster",
