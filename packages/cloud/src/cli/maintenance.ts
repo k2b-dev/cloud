@@ -77,11 +77,19 @@ export const maintenanceUntilSentence = (status: MaintenanceStatus, { locale, no
 export const maintenanceOffSentence = ({ locale }: Words = {}): string =>
   de(locale) ? "Wartungsmodus beendet. Offene Seiten laden jetzt neu." : "Maintenance mode off. Open pages reload now.";
 
-/** The sentence, then the link alone on its own line, so it can be copied or piped as it is. */
-export const maintenanceBypassLines = (link: MaintenanceBypassLink, { locale }: Words = {}): string[] => [
-  de(locale) ? "Link für dich, gilt bis zum Ende dieser Wartung:" : "Your link, valid until this maintenance ends:",
-  link.url,
-];
+/**
+ * The sentence with the link's latest expiry (Core caps it, a longer maintenance needs a new link), then the link
+ * alone on its own line, so it can be copied or piped as it is.
+ */
+export const maintenanceBypassLines = (link: MaintenanceBypassLink, { locale, now }: Words = {}): string[] => {
+  const expires = formatMaintenanceTime(link.expiresAt, locale, now);
+  return [
+    de(locale)
+      ? `Link für dich, gilt bis zum Ende dieser Wartung, längstens bis ${expires} Uhr:`
+      : `Your link, valid until this maintenance ends, at the latest until ${expires}:`,
+    link.url,
+  ];
+};
 
 export const maintenanceBypassOffSentence = ({ locale }: Words = {}): string =>
   de(locale) ? "Kein Link nötig: Der Wartungsmodus ist aus." : "No link needed: maintenance mode is off.";

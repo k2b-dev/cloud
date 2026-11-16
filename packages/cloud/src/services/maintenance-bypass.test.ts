@@ -73,3 +73,24 @@ test("oversized, garbage and malformed claims are refused, even with a valid sig
     expect(verifyMaintenanceBypassToken(value, scope, NOW)).toBeNull();
   expect(verifyMaintenanceBypassToken(forge({ v: 1, m: scope.id, s: subject, exp }), scope, NOW)).toEqual({ subject, expiresAt });
 });
+
+test("only the canonical spelling of a signature verifies", () => {
+  const token = issueMaintenanceBypassToken(scope, subject, expiresAt);
+  const [payload, signature] = token.split(".") as [string, string];
+  // 32 bytes leave two unused bits in the last character: its neighbour decodes to the same bytes.
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const variant = `${signature.slice(0, -1)}${alphabet[alphabet.indexOf(signature.at(-1) ?? "") ^ 1]}`;
+  expect(variant).not.toBe(signature);
+  expect(Buffer.from(variant, "base64url")).toEqual(Buffer.from(signature, "base64url"));
+  expect(verifyMaintenanceBypassToken(`${payload}.${variant}`, scope, NOW)).toBeNull();
+  expect(verifyMaintenanceBypassToken(token, scope, NOW)).toEqual({ subject, expiresAt });
+});
+
+test("an expiry may exceed the maximum lifetime by five minutes of clock skew, not more", () => {
+  const latest = NOW / 1000 + MAINTENANCE_BYPASS_TTL_MS / 1000 + 5 * 60;
+  expect(verifyMaintenanceBypassToken(forge({ v: 1, m: scope.id, s: subject, exp: latest }), scope, NOW)).toEqual({
+    subject,
+    expiresAt: latest * 1000,
+  });
+  expect(verifyMaintenanceBypassToken(forge({ v: 1, m: scope.id, s: subject, exp: latest + 1 }), scope, NOW)).toBeNull();
+});
