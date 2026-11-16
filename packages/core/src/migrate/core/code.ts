@@ -80,8 +80,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       PRIMARY KEY (run_id,digest)
     )`.simple();
     // The published inter-chat writer changes contract. Drain it on the old release before switching.
+    // Only the cutover itself checks: once the legacy tables are gone, later starts never block.
     await tx`DO $$ BEGIN
-      IF to_regclass('ai.inter_chat_messages') IS NOT NULL THEN
+      IF to_regclass('ai.inter_chat_messages') IS NOT NULL
+        AND (to_regclass('code.chat_runs') IS NOT NULL OR to_regclass('code.chat_deliveries') IS NOT NULL) THEN
         IF EXISTS (SELECT 1 FROM ai.inter_chat_messages WHERE status='pending') THEN
           RAISE EXCEPTION 'Deliver pending inter-chat messages on the previous release before upgrading to ai.chat.send';
         END IF;
