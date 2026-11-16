@@ -228,17 +228,19 @@ export const quiesceWorker = async (
  * writable members, so callers and tests can replace or spy on them (`spyOn` cannot see through a Proxy).
  */
 const overriding = <T extends object>(target: T, members: Partial<T>): T => {
+  // The members of the original are forwarded by name below; `object` keeps them untyped there.
+  const original: object = target;
   const result = { ...members } as T;
-  for (let source: object | null = target; source && source !== Object.prototype; source = Object.getPrototypeOf(source)) {
+  for (let source: object | null = original; source && source !== Object.prototype; source = Object.getPrototypeOf(source)) {
     for (const key of Reflect.ownKeys(source)) {
       if (key === "constructor" || Object.hasOwn(result, key)) continue;
       const descriptor = Object.getOwnPropertyDescriptor(source, key);
       if (typeof descriptor?.value === "function") {
         // Read at call time, so a member replaced on the original later is the one that runs.
-        const forward = (...args: unknown[]): unknown => Reflect.apply(Reflect.get(target, key, target) as (...args: unknown[]) => unknown, target, args);
+        const forward = (...args: unknown[]): unknown => Reflect.apply(Reflect.get(original, key, original), original, args);
         Object.defineProperty(result, key, { value: forward, writable: true, enumerable: true, configurable: true });
       } else {
-        Object.defineProperty(result, key, { get: () => Reflect.get(target, key, target), enumerable: true, configurable: true });
+        Object.defineProperty(result, key, { get: () => Reflect.get(original, key, original), enumerable: true, configurable: true });
       }
     }
   }
