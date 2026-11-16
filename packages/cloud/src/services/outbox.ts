@@ -2,7 +2,7 @@ import { notifyPgOutbox, pgOutboxKey, subscribeWorkWake } from "../_internal/wor
 import { sql } from "../runtime/clients";
 
 import { logger } from "./logging";
-import { createRuntimeTaskTracker } from "./runtime-lifecycle";
+import { processQuiesce, type QuiesceParticipant } from "./runtime-quiesce";
 
 /**
  * PostgreSQL transactional-outbox dispatcher.
@@ -21,6 +21,11 @@ import { createRuntimeTaskTracker } from "./runtime-lifecycle";
  * table's statistics say, with an index on the `where` columns and `sequence`,
  * and one on the `where` columns and `orderBy` limited to
  * `claimed_until IS NOT NULL OR attempts > 0`.
+ *
+ * While the process is quiesced (maintenance stage „Ruhe“) no pass starts and
+ * a pass in flight ends after its batch; rows wait in the table. A started
+ * outbox runs one pass on resume. Otherwise quiesce changes nothing: `notify()`
+ * and `reconcile()` work before `start()` and after `stop()`.
  *
  * Required columns: `id uuid`, `attempts int`, `next_attempt_at timestamptz`,
  * `claimed_until timestamptz`, `last_error text`, and the `orderBy` and
@@ -102,8 +107,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
 
   let running = false;
   let timer: ReturnType<typeof setInterval> | null = null;
-  // Publishing passes go through a tracker, so maintenance quiesce stops them; rows wait in the table.
-  const tasks = createRuntimeTaskTracker();
+  let unregisterQuiesce: (() => void) | undefined;
   let dueTimer: ReturnType<typeof setTimeout> | undefined;
   let dueDeadline = Infinity;
   let unsubscribe: (() => void) | undefined;
@@ -262,7 +266,8 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
         rows = await claim();
         await dispatchBatch(rows, claimEnds);
         processed += rows.length;
-      } while (reconcileRequested || rows.length > 0);
+        // Maintenance quiesce ends the pass after its batch; the rest waits in the table until resume.
+      } while (!processQuiesce.quiesced && (reconcileRequested || rows.length > 0));
       return processed;
     })().finally(() => {
       activeReconcile = null;
@@ -270,12 +275,38 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     return activeReconcile;
   };
 
+  /** A pass from a hint, a deadline or the safety scan; none starts while the process is quiesced. */
   const run = async () => {
-    await tasks.run(() =>
-      reconcile().catch((error) => {
-        log.warn("Outbox reconcile failed", { error: error instanceof Error ? error.message : String(error) });
-      }),
-    );
+    if (processQuiesce.quiesced) return;
+    await reconcile().catch((error) => {
+      log.warn("Outbox reconcile failed", { error: error instanceof Error ? error.message : String(error) });
+    });
+  };
+
+  // While started, maintenance quiesce waits for the pass in flight and resume runs the passes it skipped once.
+  const participant: QuiesceParticipant = {
+    quiesce: async (timeoutMs) => {
+      const pass = activeReconcile;
+      if (!pass) return;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          pass.then(
+            () => undefined,
+            () => undefined,
+          ),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => reject(new Error(`Outbox ${config.name} did not drain within ${timeoutMs}ms`)), timeoutMs);
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
+    },
+    resume: async () => {
+      if (running) void run();
+    },
+    inFlight: () => (activeReconcile ? 1 : 0),
   };
 
   const notify: PgOutbox<Row>["notify"] = async () => {
@@ -287,7 +318,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   const start: PgOutbox<Row>["start"] = () => {
     if (running) return;
     running = true;
-    tasks.open();
+    unregisterQuiesce = processQuiesce.register(participant);
     try {
       unsubscribe = subscribeWorkWake(claimLock, () => {
         if (running) void run();
@@ -295,7 +326,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     } catch (error) {
       log.warn("Outbox wake subscription failed; safety scan will recover", { error: String(error) });
     }
-    // runtime-timer: run() goes through the task tracker, which quiesce gates; the next tick after resume publishes.
+    // runtime-timer: run() starts no pass while quiesced; resume runs one.
     timer = setInterval(() => {
       if (running) void run();
     }, config.reconcileIntervalMs);
@@ -305,7 +336,8 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
 
   const stop: PgOutbox<Row>["stop"] = async () => {
     running = false;
-    tasks.close();
+    unregisterQuiesce?.();
+    unregisterQuiesce = undefined;
     if (timer) clearInterval(timer);
     timer = null;
     clearTimeout(dueTimer);

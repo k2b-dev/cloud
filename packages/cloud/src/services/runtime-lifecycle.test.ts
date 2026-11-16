@@ -629,4 +629,33 @@ describe("maintenance quiesce", () => {
     expect(await reported.promise).toBe("scan failed");
     await interval.stop();
   });
+
+  test("a runtime interval reports a pass that fails while it stops, but not the abort that stop() causes", async () => {
+    const controller = createQuiesceController();
+    const reported: string[] = [];
+    const onError = (error: unknown) => reported.push(error instanceof Error ? error.message : String(error));
+
+    // A pass that ignores the signal and fails during stop is a real failure, as with a plain timer.
+    const failing = Promise.withResolvers<void>();
+    const failed = startRuntimeInterval({ run: () => failing.promise, intervalMs: 3_600_000, onError, controller });
+    await Promise.resolve();
+    const stopping = failed.stop();
+    failing.reject(new Error("recovery failed"));
+    await stopping;
+
+    // A pass that ends with the abort of stop() is expected.
+    const aborted = startRuntimeInterval({
+      run: (signal) =>
+        new Promise<void>((_, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }),
+      intervalMs: 3_600_000,
+      onError,
+      controller,
+    });
+    await Promise.resolve();
+    await aborted.stop();
+
+    expect(reported).toEqual(["recovery failed"]);
+  });
 });

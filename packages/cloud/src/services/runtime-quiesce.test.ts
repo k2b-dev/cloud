@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import type { Sync, Worker } from "@k2b/sync";
 import { createQuiesceController, quiesceWorker, withQuiesce } from "./runtime-quiesce";
 
@@ -232,4 +232,36 @@ test("withQuiesce keeps every other member of each primitive working: getters, t
     expect(original.reads).toBe(1);
     expect(primitive.process).not.toBe(original.process);
   }
+});
+
+test("withQuiesce keeps the process Sync and its primitives observable: a spy on a member sees the calls", async () => {
+  const controller = createQuiesceController();
+  const { start } = starter();
+  let drains = 0;
+  let submits = 0;
+  const handle = {
+    process: (..._args: unknown[]) => start(),
+    submit: async () => {
+      submits += 1;
+    },
+  };
+  const sync = {
+    job: () => handle,
+    drain: async () => {
+      drains += 1;
+    },
+  } as unknown as Sync;
+  const wrapped = withQuiesce(sync, controller);
+
+  // Tests and callers spy on the bound process Sync, as on main before quiesce wrapped it.
+  const drainSpy = spyOn(wrapped, "drain");
+  await wrapped.drain();
+  expect(drainSpy).toHaveBeenCalledTimes(1);
+  expect(drains).toBe(1);
+
+  const job = wrapped.job<{ id: string }>({ id: "example-job" });
+  const submitSpy = spyOn(job, "submit");
+  await job.submit({ input: { id: "1" } } as never);
+  expect(submitSpy).toHaveBeenCalledTimes(1);
+  expect(submits).toBe(1);
 });

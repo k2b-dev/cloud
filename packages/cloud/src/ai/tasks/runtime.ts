@@ -328,9 +328,10 @@ export const stopWorkflowAiRuntime = async (): Promise<void> => {
   const worker = activeWorker;
   worker?.stop();
   shutdown?.abort(new Error("Workflow AI runtime stopped"));
+  // The timer ends now; its recovery in flight settles after the worker drained, as before the interval helper.
   const interval = recoveryInterval;
   recoveryInterval = null;
-  await interval?.stop();
+  const intervalStopped = interval?.stop();
 
   // Sync's existing drain budget bounds settlement; do not exit before DB requeue.
   try {
@@ -338,6 +339,7 @@ export const stopWorkflowAiRuntime = async (): Promise<void> => {
   } finally {
     // The recovery timer already reports its failure. Always allow a later start,
     // including when drain rejects, while preserving the drain error for callers.
+    await intervalStopped;
     await recovery?.catch(() => {});
     activeWorker = null;
     activeJob = null;

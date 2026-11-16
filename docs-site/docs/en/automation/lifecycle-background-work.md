@@ -53,7 +53,9 @@ await app.start({
 Return from `start` after creating the runtime. In `stop`, prevent new work and
 await the current operation. `startRuntimeInterval()` runs once at start
 (`runNow: false` skips that), then every `intervalMs`. `stop()` clears the
-timer, aborts `signal`, and waits for the run in flight.
+timer, aborts `signal`, and waits for the run in flight. A run that fails
+goes to `onError`, also while `stop()` waits for it; only a run that ends
+with the abort of `stop()` is not reported.
 
 ## Prevent overlapping work
 

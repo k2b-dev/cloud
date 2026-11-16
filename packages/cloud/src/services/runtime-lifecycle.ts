@@ -126,11 +126,15 @@ const withDeadline = async (work: Promise<void>, timeoutMs: number, message: str
   }
 };
 
+const isAbort = (error: unknown, signal: AbortSignal): boolean =>
+  error === signal.reason || (error instanceof Error && error.name === "AbortError");
+
 /**
  * Run `run` now and every `intervalMs`, one run at a time. While the process
  * is quiesced, ticks are skipped and the run in flight drains; on resume the
  * missed ticks run once, like a scheduler with misfire "latest". `stop()`
- * ends the timer, aborts `signal`, and waits for the run in flight.
+ * ends the timer, aborts `signal`, and waits for the run in flight. A failed
+ * run goes to `onError`, unless it failed with the abort of `stop()`.
  */
 export const startRuntimeInterval = ({
   run,
@@ -163,7 +167,8 @@ export const startRuntimeInterval = ({
       try {
         await run(abort.signal);
       } catch (error) {
-        if (!abort.signal.aborted) onError(error);
+        // Only the abort that stop() caused is expected; any other failure is reported, also during stop.
+        if (!abort.signal.aborted || !isAbort(error, abort.signal)) onError(error);
       }
     });
     void active?.finally(() => {

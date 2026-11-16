@@ -223,17 +223,27 @@ export const quiesceWorker = async (
 };
 
 /**
- * The same object with some members replaced. Every other member is read from the original, so getters, `this` and
- * private state keep working in later Sync versions; functions are bound to the original.
+ * The same object with some members replaced. Every other member forwards to the original, so getters, `this` and
+ * private state keep working in later Sync versions. The result is a plain object, not a Proxy: its functions are own
+ * writable members, so callers and tests can replace or spy on them (`spyOn` cannot see through a Proxy).
  */
-const overriding = <T extends object>(target: T, members: Partial<T>): T =>
-  new Proxy(target, {
-    get: (object, property) => {
-      if (Object.hasOwn(members, property)) return members[property as keyof T];
-      const value: unknown = Reflect.get(object, property, object);
-      return typeof value === "function" ? value.bind(object) : value;
-    },
-  });
+const overriding = <T extends object>(target: T, members: Partial<T>): T => {
+  const result = { ...members } as T;
+  for (let source: object | null = target; source && source !== Object.prototype; source = Object.getPrototypeOf(source)) {
+    for (const key of Reflect.ownKeys(source)) {
+      if (key === "constructor" || Object.hasOwn(result, key)) continue;
+      const descriptor = Object.getOwnPropertyDescriptor(source, key);
+      if (typeof descriptor?.value === "function") {
+        // Read at call time, so a member replaced on the original later is the one that runs.
+        const forward = (...args: unknown[]): unknown => Reflect.apply(Reflect.get(target, key, target) as (...args: unknown[]) => unknown, target, args);
+        Object.defineProperty(result, key, { value: forward, writable: true, enumerable: true, configurable: true });
+      } else {
+        Object.defineProperty(result, key, { get: () => Reflect.get(target, key, target), enumerable: true, configurable: true });
+      }
+    }
+  }
+  return result;
+};
 
 /**
  * The process Sync whose workers follow `controller`. Only `process()` of every primitive that has one is wrapped;
