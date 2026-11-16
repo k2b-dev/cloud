@@ -1,5 +1,5 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { Chat, EmojiPicker, IconButtonLink, PageTitle, Placeholder, useLocale } from "@k2b/ui";
+import { Chat, EmojiPicker, IconButtonLink, PageTitle, Placeholder, Skeleton, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, Show } from "solid-js";
 import { chatMessages } from "../messages";
 
@@ -10,6 +10,8 @@ import { chatMessages } from "../messages";
 export default function ResourceChatStart(props: {
   title: string;
   canWrite: boolean;
+  /** The panel is still finding the discussion: the same frame and way back, a placeholder title and nothing else. */
+  loading?: boolean;
   listHref: string;
   onBack: (navigation: LinkNavigateEvent) => void | Promise<void>;
   /** Starts the discussion with this message; false keeps the text in the composer. */
@@ -23,22 +25,30 @@ export default function ResourceChatStart(props: {
   // The same controls as an existing chat's composer, in the same places, so the first message moves nothing.
   const [emojiTarget, setEmojiTarget] = createSignal<{ anchor: HTMLElement; insert: (text: string) => void }>();
   return (
-    <section class="chat-conversation chat-resource-start" aria-label={about()}>
+    <section
+      class="chat-conversation chat-resource-start"
+      aria-busy={props.loading ? "true" : undefined}
+      aria-label={props.loading ? undefined : about()}
+    >
       <header class="chat-conversation__header">
         <span class="chat-conversation__back">
           <IconButtonLink href={props.listHref} navigation="enhanced" onNavigate={props.onBack} label={t().panelAllChats}>
             <i class="ti ti-list" aria-hidden="true" />
           </IconButtonLink>
         </span>
-        <PageTitle trail={{ title: about(), ancestors: [] }} />
+        <Show when={!props.loading} fallback={<Skeleton class="chat-resource-loading__title" />}>
+          <PageTitle trail={{ title: about(), ancestors: [] }} />
+        </Show>
       </header>
       <div class="chat-conversation__feed chat-resource-start__feed">
-        <Placeholder
-          variant="panel"
-          class="flex-1"
-          icon="ti ti-message-circle"
-          description={props.canWrite ? t().resourceChatEmpty : t().resourceChatReadOnly}
-        />
+        <Show when={!props.loading}>
+          <Placeholder
+            variant="panel"
+            class="flex-1"
+            icon="ti ti-message-circle"
+            description={props.canWrite ? t().resourceChatEmpty : t().resourceChatReadOnly}
+          />
+        </Show>
       </div>
       <Show when={props.canWrite}>
         <div class="chat-conversation__composer" data-k2b-shell-bottom>

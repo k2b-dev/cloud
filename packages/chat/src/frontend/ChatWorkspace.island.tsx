@@ -24,7 +24,6 @@ import {
   Placeholder,
   prompts,
   ScrollArea,
-  Skeleton,
   TextInput,
   toast,
   useLocale,
@@ -3158,27 +3157,19 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                 </Match>
                 <Match when={followPending()}>
                   {/* A place shared after the panel loaded (such as after "Allow"): its discussion loading, in the
-                      frame it opens in, instead of the list the panel is about to leave. */}
-                  <section class="chat-conversation chat-resource-start" aria-busy="true" aria-label={t().loadingResourceChat}>
-                    <header class="chat-conversation__header">
-                      {/* The way back the discussion has, in its place; leaving ends the wait, and following then
-                          finds that the reader moved. */}
-                      <span class="chat-conversation__back">
-                        <IconButtonLink
-                          href={listHref(basePath)}
-                          navigation="enhanced"
-                          onNavigate={(navigation) => {
-                            setFollowPending(false);
-                            return backToList(navigation);
-                          }}
-                          label={t().panelAllChats}
-                        >
-                          <i class="ti ti-list" aria-hidden="true" />
-                        </IconButtonLink>
-                      </span>
-                      <Skeleton class="chat-resource-loading__title" />
-                    </header>
-                  </section>
+                      frame it opens in, instead of the list the panel is about to leave. Leaving ends the wait, and
+                      following then finds that the reader moved. */}
+                  <ResourceChatStart
+                    loading
+                    title=""
+                    canWrite={false}
+                    listHref={listHref(basePath)}
+                    onBack={(navigation) => {
+                      setFollowPending(false);
+                      return backToList(navigation);
+                    }}
+                    onStart={startResourceChat}
+                  />
                 </Match>
                 <Match when={true}>
                   <nav class="chat-list-page" aria-label={t().chats}>
