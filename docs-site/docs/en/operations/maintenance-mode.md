@@ -92,6 +92,12 @@ parameter from every request before it reaches an app, also outside
 maintenance. Open sockets are closed when maintenance starts; a bypassed socket
 that opened later stays open until it closes by itself.
 
+Every page you open this way shows the notice "Wartungsmodus aktiv. Nur du
+siehst die Cloud." with **Wartung beenden**, which switches maintenance off
+for everyone (see [Open pages](#open-pages)). The gateway tells the app with
+the request header `X-Cloud-Maintenance-Bypass: 1`; it removes that header
+from every incoming request, so no browser can set it itself.
+
 ## What people and programs see
 
 | Client | Whole Cloud in maintenance | One app restarting or unreachable |
@@ -110,10 +116,12 @@ Branch on `code`, never on `title`:
 ```
 
 ```json
-{ "type": "about:blank", "title": "App is unavailable", "status": 503, "code": "app_unavailable", "appId": "mail" }
+{ "type": "about:blank", "title": "App is unavailable", "status": 503, "code": "app_unavailable", "appId": "mail", "reason": "updating" }
 ```
 
-`until` is present only when a planned end is set. Every answer has
+`until` is present only when a planned end is set. `reason` is `updating`
+when the app deregistered cleanly and `unavailable` otherwise (see
+[When one app restarts](#when-one-app-restarts)). Every answer has
 `Cache-Control: no-store`. The HTML page has a strict content security policy
 with a new nonce per response.
 
@@ -123,6 +131,44 @@ with a new nonce per response.
 
 App domains show the same maintenance page as the Cloud host. The page never
 shows the name of the person who switched maintenance on.
+
+## Open pages
+
+A page that is already open when maintenance starts, or when an app restarts,
+stays where it is. Nothing on it is discarded, and text in a field stays in
+the field. With its first request that gets a `503` with code `maintenance`
+or `app_unavailable`, the page shows one persistent notice in the usual
+place for notices: at the bottom on a computer, at the top on a phone. It
+floats, so nothing on the page moves.
+
+| Situation | Notice | When it is over |
+| --- | --- | --- |
+| Whole Cloud in maintenance | "Wartungsmodus aktiv" | "Wartung beendet" |
+| App deregistered cleanly | "Mail wird gerade aktualisiert" | "Aktualisierung abgeschlossen" |
+| App gone otherwise | "Mail ist gerade nicht erreichbar" | "Mail ist verfügbar" |
+| Bypass link (administrator) | "Wartungsmodus aktiv. Nur du siehst die Cloud." | "Wartung beendet" |
+
+- **Reads** (`GET` and `HEAD`) wait quietly and are sent again once it is
+  over. The page shows no error for them.
+- **Actions** (every other method, such as sending, booking or deleting) are
+  never held and never repeated. They return the gateway's `503` with a
+  `message` that names the reason, for example "Wartungsmodus aktiv. Das geht
+  wieder, sobald die Wartung beendet ist." The person presses again once it
+  is over.
+- From the first `503` on, the page polls the
+  [status endpoint](#status-endpoint) on the same schedule as the
+  maintenance page, and at once when the tab becomes visible or the device is
+  online again. Once it is over, the notice says so; the page does **not**
+  reload, so the person keeps their place and their input.
+- A link clicked during maintenance loads the maintenance page, which reloads
+  the address after the end.
+- With a bypass link, nothing is blocked. Administrators see **Wartung
+  beenden** in the notice; it calls `POST /api/admin/maintenance/off`.
+
+Every page built with the Cloud `Layout` gets this, built-in and third-party
+apps alike. See
+[Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations#maintenance-and-app-restarts)
+for what this means for application code.
 
 ## When one app restarts
 

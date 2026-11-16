@@ -5,7 +5,7 @@ section: Frontend
 order: 850
 description: Call typed application APIs and handle user-initiated writes consistently.
 tags: [browser, api, mutations]
-updated: 2026-10-14
+updated: 2026-11-16
 ---
 
 # Browser clients and mutations
@@ -55,6 +55,29 @@ including a session renewal and retry. GET reads do not. See
 
 Do not use raw `fetch()` for an application JSON API when its typed route is
 available.
+
+## Maintenance and app restarts
+
+Every page built with the Cloud `Layout` watches its same-origin requests for
+the gateway's `503` with code `maintenance` or `app_unavailable`. This covers
+the typed client and raw `fetch()` alike; there is nothing to opt into. While
+the Cloud is in maintenance or the app restarts:
+
+- `GET` and `HEAD` requests stay pending and are sent again once it is over,
+  so queries show their loading state, not an error. Pass an `AbortSignal` as
+  usual; aborting ends the wait with the signal's reason.
+- Every other request is an action. It is sent once and never repeated. It
+  answers `503` with the gateway's problem fields and a `message` in the
+  person's language that names the reason. Show it as for any failed action,
+  such as `prompts.error(error.message)` from your mutation's `onError`. Keep
+  the person's input; they press again later.
+- A persistent notice on the page says why, and says when it is over. The
+  page does not reload.
+
+Code that reads its own `503` answers sees `code` in the body. Branch on it,
+never on `title` or `message`. See
+[Open pages](/en/docs/operations/maintenance-mode#open-pages) for what people
+see.
 
 ## Run a mutation
 
