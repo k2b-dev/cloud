@@ -13,16 +13,33 @@ const textOf = (node: ts.Expression): string | undefined =>
       ? [node.head.text, ...node.templateSpans.map((span) => ` X ${span.literal.text}`)].join("")
       : undefined;
 
+/** The literal messages an argument can end up as: itself, both branches of `?:` and the fallback of `??`. */
+const literalsOf = (node: ts.Expression): ts.Expression[] => {
+  if (ts.isParenthesizedExpression(node)) return literalsOf(node.expression);
+  if (ts.isConditionalExpression(node)) return [...literalsOf(node.whenTrue), ...literalsOf(node.whenFalse)];
+  if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) return literalsOf(node.right);
+  return textOf(node) === undefined ? [] : [node];
+};
+
 /**
  * A sentence says what happened or what to do: it has a finite verb ("Passkey already exists", "Task changed; read it
  * and retry") or starts a clause with a request ("Complete all blocking tasks first", "…; configure one explicitly").
- * A subject alone, such as "API key", "Running turn" or "Tag with that name", has neither.
+ * A subject alone, such as "API key", "Running turn" or "Tag with that name", has neither. Words that are also nouns
+ * count only in their -s and -ed forms ("holds", not "Preservation hold"); requests that are also nouns count only
+ * before an object ("Review the request", not "Review request").
  */
 const FINITE =
-  /\b(?:is|are|was|were|isn't|aren't|wasn't|has|have|had|hasn't|haven't|can|cannot|can't|could|must|may|might|should|will|won't|would|does|do|did|doesn't|don't|didn't|exists?|needs?|belongs?|conflicts|overlaps?|holds?|differs?|matches|blocks|uses|reached|changed|moved|deleted|removed|expired|revoked|started|stopped|finished|ended|failed|fails|claims?|claimed|requires?|lacks?|contains?|refers?|points?|owns?|waits?|runs|ran|exceeds?|redirects?|went|became|lost|sent)\b/i;
-const REQUEST =
-  /(?:^|[;:.]\s*)(?:add|apply|approve|archive|ask|assign|cancel|change|check|choose|clear|close|complete|configure|confirm|connect|contact|create|delete|disable|disconnect|edit|enable|end|finish|fix|give|join|keep|leave|load|merge|move|open|pause|pick|publish|read|reconnect|refresh|release|reload|remove|rename|reopen|replace|reset|resolve|restore|resume|retry|review|revoke|run|save|select|send|set|sign|split|start|stop|switch|try|turn|undo|unlock|update|upgrade|use|wait)\b/i;
-export const isSentence = (text: string): boolean => FINITE.test(text) || REQUEST.test(text.trim());
+  /\b(?:is|are|was|were|isn't|aren't|wasn't|has|have|had|hasn't|haven't|can|cannot|can't|could|must|may|might|should|will|won't|would|does|do|did|doesn't|don't|didn't|exists?|belongs?|needs|needed|conflicts|overlaps|overlapped|holds|held|differs?|matches|blocks|uses|reached|changed|moved|deleted|removed|expired|revoked|started|stopped|finished|ended|failed|fails|claims|claimed|requires|lacks|contains|refers|points|pointed|owns|waits|waited|runs|ran|exceeds|redirects|went|became|lost|sent)\b/i;
+const CLAUSE = String.raw`(?:^|[;:.]\s*)`;
+const REQUEST = new RegExp(
+  `${CLAUSE}(?:add|apply|approve|ask|assign|cancel|choose|clear|close|complete|configure|confirm|connect|create|delete|disable|disconnect|enable|finish|give|join|keep|leave|publish|read|reconnect|refresh|reload|remove|rename|reopen|replace|resolve|restore|resume|retry|revoke|save|select|send|unlock|upgrade)\\b`,
+  "i",
+);
+const NOUN_REQUEST = new RegExp(
+  `${CLAUSE}(?:archive|change|check|contact|edit|end|fix|load|merge|move|open|pause|pick|release|reset|review|run|set|sign|split|start|stop|switch|try|turn|undo|update|use|wait)\\s+(?:the|a|an|it|this|that|these|those|them|one|all|your|its|their|again|first|for)\\b`,
+  "i",
+);
+export const isSentence = (text: string): boolean => FINITE.test(text) || REQUEST.test(text.trim()) || NOUN_REQUEST.test(text.trim());
 
 export const checkSource = (file: string, source: string): Finding[] => {
   if (!source.includes("conflict(")) return [];
@@ -43,8 +60,8 @@ export const checkSource = (file: string, source: string): Finding[] => {
       node.expression.expression.text === "err"
     ) {
       const [message] = node.arguments;
-      const text = message ? textOf(message) : "";
-      if (text !== undefined && !isSentence(text))
+      const texts = message ? literalsOf(message).map((literal) => textOf(literal) ?? "") : [""];
+      if (texts.some((text) => !isSentence(text)))
         findings.push({
           file,
           line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
