@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { assertResourceOpenLink } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, assertResourceView } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CapabilityActionReviewSchema,
@@ -7,6 +7,8 @@ import {
   type CapabilityInvocationResult,
   type CapabilityResult,
   capabilityResultSchema,
+  DiscussionContainersDataSchema,
+  discussionsIssues,
   FILE_PROVIDER_NAME_CONFLICT,
   FileProviderListDataSchema,
   FileProviderSaveDataSchema,
@@ -156,6 +158,50 @@ mock.module("./service", () => ({
       downloads.push({ actor, input });
       if (downloadFailure) throw downloadFailure;
       return lease;
+    },
+    resourceEntry: async (_call: unknown, id: string, folder = false) => {
+      if (serviceFailure) throw serviceFailure;
+      const ref = ids.get(id);
+      if (!ref || removed.has(ref.path)) throw new MockFilesError("not_found", 404);
+      const file = ref.path
+        ? { ...currentEntry(ref.path), ...(readName ? { name: readName } : {}) }
+        : { ...entry(""), name: base.name, directory: true };
+      if (folder && !file.directory) throw new MockFilesError("not_directory", 400);
+      const parent = ref.path.split("/").slice(0, -1).join("/");
+      return {
+        base: { ...base, id: ref.baseId },
+        entry: file,
+        view: {
+          title: file.name,
+          permission: "write",
+          ...(folder
+            ? {}
+            : {
+                container: {
+                  ref: { type: "filesv2.folder", id: await persistedEntryRefId(ref.baseId, parent) },
+                  title: parent.split("/").at(-1) || base.name,
+                },
+              }),
+        },
+      };
+    },
+    discussionFolderPage: async (_call: unknown, input: { baseId: string; after?: string }) => {
+      if (serviceFailure) throw serviceFailure;
+      folderCalls.push(input);
+      return {
+        items: [
+          ...(input.after ? [] : [{ ref: { type: "filesv2.folder", id: await persistedEntryRefId(input.baseId, "") }, title: base.name }]),
+          ...(await Promise.all(
+            items
+              .filter((item) => item.directory)
+              .map(async (item) => ({
+                ref: { type: "filesv2.folder", id: await persistedEntryRefId(input.baseId, item.path) },
+                title: item.name,
+              })),
+          )),
+        ],
+        next,
+      };
     },
     entryById: async (_actor: unknown, id: string) => {
       if (serviceFailure) throw serviceFailure;
@@ -1191,6 +1237,10 @@ test("every declared Type has a reader open-link case or an explicit reason", as
   const id = await persistedEntryRefId("base", "report.csv");
   const cases: Record<string, { reader: string; read: () => Promise<CapabilityInvocationResult<unknown>> }> = {
     entry: { reader: "entry.read", read: async () => filesCapabilities.queries["entry.read"].run({ id }, context) },
+    folder: {
+      reader: "folder.read",
+      read: async () => filesCapabilities.queries["folder.read"].run({ id: await persistedEntryRefId("base", "") }, context),
+    },
   };
   expect(Object.keys(cases).sort()).toEqual(Object.keys(filesCapabilities.types).sort());
   for (const [typeId, type] of Object.entries(filesCapabilities.types)) {
@@ -1236,4 +1286,84 @@ test("every Query people see says in English and German what it did once it fini
     return english && german ? [] : [id];
   });
   expect(missing).toEqual([]);
+});
+
+describe("Files discussions contract", () => {
+  test("the catalog declares a compatible role without recursive types or activity", async () => {
+    const { compileCapabilityManifest } = await import("@k2b/cloud/capabilities/testing");
+    const manifest = compileCapabilityManifest("filesv2", filesCapabilities);
+    expect(manifest.discussions).toEqual({ item: "entry", containers: "folder.containers" });
+    expect(discussionsIssues(manifest)).toEqual([]);
+    expect(manifest.resourceTypes).toEqual(
+      expect.arrayContaining([
+        { type: "entry", container: "folder", view: true },
+        { type: "folder", view: true },
+      ]),
+    );
+  });
+
+  test("file readers report their current folder and folders authorize their own view", async () => {
+    const folder = { ...entry("Docs"), name: "Docs", directory: true, resourceId: "folder-id" };
+    items = [folder, entry("Docs/report.csv")];
+    ids.set("file-id", { baseId: "base", path: "Docs/report.csv" });
+    const result = await filesCapabilities.queries["entry.read"].run({ id: "file-id" }, context);
+    if (!result.ok) throw new Error("expected file");
+    assertResourceView(result.data, { type: "filesv2.folder", id: await persistedEntryRefId("base", "Docs") });
+    const root = await filesCapabilities.queries["folder.read"].run({ id: await persistedEntryRefId("base", "") }, context);
+    if (!root.ok) throw new Error("expected root");
+    assertResourceView(root.data);
+    assertResourceOpenLink(root.data);
+    expect((await filesCapabilities.queries["folder.read"].run({ id: "file-id" }, context)).ok).toBe(false);
+  });
+
+  test("container output limits may change within a fixed source page and across bases", async () => {
+    baseItems = [
+      { ...base, id: "a" },
+      { ...base, id: "b" },
+    ];
+    items = Array.from({ length: 4 }, (_, i) => ({ ...entry(`folder${i}`), name: `Folder ${i}`, directory: true }));
+    const query = filesCapabilities.queries["folder.containers"];
+    const first = await query.run(query.input.parse({ limit: 2 }), context);
+    if (!first.ok) throw new Error("expected page");
+    expect(first.data.data.items).toHaveLength(2);
+    expect(DiscussionContainersDataSchema.safeParse(first.data.data).success).toBe(true);
+    const second = await query.run(query.input.parse({ limit: 3, cursor: first.data.data.next }), context);
+    if (!second.ok) throw new Error("expected continuation");
+    expect(second.data.data.items.map((item) => item.title)).toEqual(["Folder 1", "Folder 2", "Folder 3"]);
+    const third = await query.run(query.input.parse({ limit: 10, cursor: second.data.data.next }), context);
+    if (!third.ok) throw new Error("expected next base");
+    expect(third.data.data.items).toHaveLength(5);
+    expect(third.data.data.next).toBeNull();
+    expect(new Set([...first.data.data.items, ...second.data.data.items, ...third.data.data.items].map((item) => item.ref.id)).size).toBe(
+      10,
+    );
+  });
+
+  test("empty filtered source pages continue and stale or malformed cursors fail", async () => {
+    baseItems = [
+      { ...base, id: "a" },
+      { ...base, id: "b" },
+    ];
+    const query = filesCapabilities.queries["folder.containers"];
+    const first = await query.run(query.input.parse({ query: "absent" }), context);
+    if (!first.ok) throw new Error("expected filtered page");
+    expect(first.data.data.items).toEqual([]);
+    expect(first.data.data.next).not.toBeNull();
+    for (const cursor of ["invalid", Buffer.from(JSON.stringify({ v: 1, base: "a", offset: -1 })).toString("base64url")]) {
+      expect((await query.run(query.input.parse({ cursor }), context)).ok).toBe(false);
+    }
+    expect((await query.run(query.input.parse({ cursor: first.data.data.next, query: "changed" }), context)).ok).toBe(false);
+    baseItems = [];
+    expect((await query.run(query.input.parse({ cursor: first.data.data.next, query: "absent" }), context)).ok).toBe(false);
+  });
+
+  test("listing propagates access failures and storage outages with localized Files errors", async () => {
+    serviceFailure = new FilegateError(503, "internal", "private upstream details");
+    const query = filesCapabilities.queries["folder.containers"];
+    await expect(query.run(query.input.parse({}), { ...context, locale: "de" })).rejects.toMatchObject({
+      code: "unavailable",
+      status: 503,
+      message: errorMessage("unavailable", "de"),
+    });
+  });
 });
