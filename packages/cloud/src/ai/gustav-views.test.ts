@@ -69,7 +69,15 @@ test("plain stat charts become one flat row of key figures; a stat with its own 
     ],
   });
   expect(signed?.blocks[0]).toMatchObject({
-    children: [{ kind: "Stats", items: [{ label: "Offen", icon: "ti ti-list-check" }, { label: "Fällig", icon: "ti ti-hash" }] }],
+    children: [
+      {
+        kind: "Stats",
+        items: [
+          { label: "Offen", icon: "ti ti-list-check" },
+          { label: "Fällig", icon: "ti ti-hash" },
+        ],
+      },
+    ],
   });
   expect(chartToolView({ kind: "stat", title: "Umsatz", value: 12, icon: "wallet" })?.blocks).toEqual([
     { kind: "Stats", items: [{ label: "Umsatz", value: 12, icon: "ti ti-wallet" }] },
