@@ -1,4 +1,4 @@
-import type { MaintenanceStatus } from "../contracts/maintenance";
+import type { MaintenanceBypassLink, MaintenanceStatus } from "../contracts/maintenance";
 import { cloudCliLanguage } from "./locale";
 
 /**
@@ -76,6 +76,23 @@ export const maintenanceUntilSentence = (status: MaintenanceStatus, { locale, no
 
 export const maintenanceOffSentence = ({ locale }: Words = {}): string =>
   de(locale) ? "Wartungsmodus beendet. Offene Seiten laden jetzt neu." : "Maintenance mode off. Open pages reload now.";
+
+/**
+ * The sentence with the link's latest expiry (Core caps it, a longer maintenance needs a new link), then the link
+ * alone on its own line, so it can be copied or piped as it is.
+ */
+export const maintenanceBypassLines = (link: MaintenanceBypassLink, { locale, now }: Words = {}): string[] => {
+  const expires = formatMaintenanceTime(link.expiresAt, locale, now);
+  return [
+    de(locale)
+      ? `Link für dich, gilt bis zum Ende dieser Wartung, längstens bis ${expires} Uhr:`
+      : `Your link, valid until this maintenance ends, at the latest until ${expires}:`,
+    link.url,
+  ];
+};
+
+export const maintenanceBypassOffSentence = ({ locale }: Words = {}): string =>
+  de(locale) ? "Kein Link nötig: Der Wartungsmodus ist aus." : "No link needed: maintenance mode is off.";
 
 export const maintenanceStatusLines = (status: MaintenanceStatus, { locale, now }: Words = {}): string[] => {
   const german = de(locale);

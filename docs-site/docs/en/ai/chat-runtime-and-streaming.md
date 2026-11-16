@@ -381,6 +381,11 @@ during a reconnect. Tool progress and approval matching use canonical capability
 IDs such as `spaces.task.create`. Persisted provider tool names stay unchanged;
 hashed names that cannot be decoded retain their stored name.
 
+A turn stores each capability step's app name as it was then. History, the
+stream state, and finished turns name the app as the catalog does now, by its
+app ID and in the reader's language; an app the registry does not know keeps
+its stored name.
+
 Assistant renders capability table presentation metadata in both web chat and
 text-mode CLI output. The CLI shows up to 100 returned rows, shortens long cells,
 and prints supplied result links. Additional rows or pages are marked; displaying

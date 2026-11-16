@@ -31,7 +31,7 @@ const apps: CloudRuntime["apps"] = [
     appearance: { accent: "#16a34a" },
     nav: { href: "/app/spaces", section: "primary" },
   },
-  { id: "core", name: "Core", icon: "ti ti-cloud", description: "Core", routes: ["/help"] },
+  { id: "core", name: "Cloud", icon: "ti ti-cloud", description: "Core", routes: ["/help"] },
 ];
 const probe = defineApp({
   id: "help-browser",
