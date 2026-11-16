@@ -122,7 +122,10 @@ const state = (page: Page) =>
       note: document.getElementById("note") !== null,
       focused: focused?.id,
       selection: focused && "selectionStart" in focused ? [focused.selectionStart, focused.selectionEnd] : null,
-      heard: { ...document.documentElement.dataset, mounted: undefined },
+      heard: Object.fromEntries(Object.entries(document.documentElement.dataset).filter(([key]) => key !== "mounted")) as Record<
+        string,
+        string | undefined
+      >,
     };
   });
 
@@ -152,7 +155,6 @@ test("typed text reaches the same field of the new markup once, with focus, sele
       focused: "message",
       selection: [0, 5],
       heard: {
-        mounted: undefined,
         // The focused field hears one input and no change; the others also hear change, as after leaving them.
         message: "Hallo Gustav",
         messageInput: "1",
@@ -241,7 +243,7 @@ test("a disabled counterpart and a value the browser set by itself take nothing"
 test("islands rendered over untouched fields hear no input", async () => {
   const page = await open();
   try {
-    expect((await state(page)).heard).toEqual({ mounted: undefined });
+    expect((await state(page)).heard).toEqual({});
   } finally {
     await page.close();
   }

@@ -80,7 +80,6 @@ import type { ChatWorkspaceSnapshot } from "../chat-workspace";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
-import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import AssistantApprovalsView from "./AssistantApprovalsView";
 import {
   AssistantChatContextContent,
@@ -99,6 +98,7 @@ import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./Assistan
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
+import { openTaskRun } from "./activities-dialog";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -2941,7 +2941,7 @@ export default function AssistantWorkspace(props: Props) {
                                       });
                                     },
                                     onOpenScheduledTaskRun: (taskId, occurrenceId) =>
-                                      void openAssistantTaskRun(taskId, occurrenceId, liveHub),
+                                      void openTaskRun(taskId, occurrenceId, liveHub, locale()),
                                     onOpenFile: (path) => void openFiles(path),
                                     onOpenWebLink: (href, title) => {
                                       const open = openWebPage();
