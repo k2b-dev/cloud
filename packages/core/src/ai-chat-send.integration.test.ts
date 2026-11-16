@@ -138,7 +138,11 @@ suiteFor(
 
   const setup = async () => {
     // Business keys span runs and callers within an account; each case owns a fresh key space.
+    await sql`UPDATE code.codes SET state='active' WHERE id=${codeId}`;
     await sql`DELETE FROM ai.queued_messages`;
+    // One open Code turn across chats is the rule under test; earlier cases leave none behind.
+    await sql`UPDATE ai.turns SET status='aborted',completed_at=clock_timestamp()
+      WHERE status IN ('queued','running','waiting_for_action') AND run_config#>>'{codeOrigin,codeId}'=${codeId}`;
     runId = `4f000000-0000-4000-8000-${String(++ordinal).padStart(12, "0")}`;
     await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
       VALUES(${runId}::uuid,${codeId},${versionId}::uuid,'schedule','morning','running',32768,10)`;
@@ -341,27 +345,30 @@ suiteFor(
     expect(await read(sent.id)).toMatchObject({ ok: true, data: { data: { message: { id: sent.id, origin: sent.origin } } } });
   });
 
-  test("cutover refuses pending legacy messages and then removes delivery storage without losing text", async () => {
+  test("cutover fails pending legacy messages visibly and removes delivery storage without losing text", async () => {
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     if (!turn) throw new Error("Missing fixture turn");
     const target = await aiConversations.createConversation({ ownerUserId: owner });
+    const legacy = async (shortId: string, key: string) =>
+      sql`INSERT INTO ai.inter_chat_messages(short_id,source_conversation_id,source_turn_id,source_call_id,target_conversation_id,actor_user_id,text,idempotency_key)
+        VALUES(${shortId},${chat.id}::uuid,${turn.id}::uuid,${key},${target.id}::uuid,${owner}::uuid,'Already accepted',${key})`;
+    const statuses = async () =>
+      sql<{ key: string; status: string; reason: string | null }[]>`SELECT idempotency_key AS key,status,error AS reason
+        FROM ai.inter_chat_messages WHERE idempotency_key LIKE 'legacy-%' ORDER BY idempotency_key`;
+    // Upgrading straight from main: no feat/code delivery tables, a pending message from ai.chat.message.
+    await legacy("OldMain", "legacy-main");
+    await migrateCode();
+    expect(await statuses()).toEqual([{ key: "legacy-main", status: "failed", reason: expect.stringContaining("Send it again") }]);
+    // Upgrading from an earlier integration build that still has its delivery tables.
     await sql`CREATE TABLE code.chat_deliveries(id uuid)`;
     await sql`CREATE TABLE code.chat_runs(id uuid)`;
     await sql`UPDATE ai.messages SET meta=meta || '{"codeDelivery":{"runId":"legacy"}}'::jsonb WHERE loop_id=${turn.id}`;
-    await sql`INSERT INTO ai.inter_chat_messages(short_id,source_conversation_id,source_turn_id,source_call_id,target_conversation_id,actor_user_id,text,idempotency_key)
-      VALUES('OldMsg',${chat.id}::uuid,${turn.id}::uuid,'legacy-call',${target.id}::uuid,${owner}::uuid,'Already accepted','legacy-cutover')`;
-    await expect(migrateCode()).rejects.toThrow("Deliver pending inter-chat messages");
-    expect(await sql<{ relation: string | null }[]>`SELECT to_regclass('code.chat_deliveries')::text AS relation`).toEqual([
-      { relation: "code.chat_deliveries" },
-    ]);
-    await sql`UPDATE ai.inter_chat_messages SET status='delivered' WHERE idempotency_key='legacy-cutover'`;
+    await legacy("OldCut", "legacy-cutover");
     await migrateCode();
-    // After the cutover, a late legacy row never blocks a later start.
-    await sql`INSERT INTO ai.inter_chat_messages(short_id,source_conversation_id,source_turn_id,source_call_id,target_conversation_id,actor_user_id,text,idempotency_key)
-      VALUES('LateMsg',${chat.id}::uuid,${turn.id}::uuid,'late-call',${target.id}::uuid,${owner}::uuid,'Late','legacy-late')`;
     await migrateCode();
+    expect((await statuses()).map((row) => row.status)).toEqual(["failed", "failed"]);
     expect(
       await sql<
         { delivery: string | null; runs: string | null }[]
@@ -710,7 +717,8 @@ suiteFor(
     } finally {
       await finishAiCall(call.id, { input: 10_000, output: 10_000 }, "ok");
     }
-    // Settlement retains the actual 0.02, releasing the other 0.18.
+    // Settlement retains the actual 0.02, releasing the other 0.18. The earlier turn has ended.
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${turn!.id}::uuid`;
     expect(await invoke(chat.shortId, ctx("settled"))).toMatchObject({ ok: true });
   });
 
@@ -853,6 +861,11 @@ suiteFor(
     for (let i = 0; i < 32; i++) results.push(await invoke(chat.shortId, ctx(`burst-${i}`)));
     expect(results.filter((result) => result.ok)).toHaveLength(1);
     expect(results.filter((result) => !result.ok && result.error.code === "chat_busy")).toHaveLength(31);
+    // The same Code cannot spread across chats either.
+    const chats = await Promise.all(Array.from({ length: 40 }, () => aiConversations.createConversation({ ownerUserId: owner })));
+    const spread = [];
+    for (const [i, other] of chats.entries()) spread.push(await invoke(other.shortId, ctx(`spread-${i}`)));
+    expect(spread.filter((result) => result.ok)).toHaveLength(0);
     const [queued] = await sql<{ id: string }[]>`SELECT id FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid`;
     // The day is spent while the message waits: it must not start a turn.
     await sql`INSERT INTO ai.inference_calls(id,user_id,model_profile_id,kind,task,provider_model,code_id,pricing,cost,finished_at,lease_expires_at)
@@ -860,15 +873,63 @@ suiteFor(
         '{"inputPerMillion":1,"outputPerMillion":1}',1,clock_timestamp(),clock_timestamp())`;
     await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
-    expect(
-      await sql<{ status: string; error: string | null }[]>`SELECT status,error FROM ai.queued_messages WHERE id=${queued!.id}::uuid`,
-    ).toEqual([{ status: "failed", error: "code_ai_owner_daily_budget_limit" }]);
+    // A message waiting for its allowance reads as queued with the reason, never as failed.
+    expect(await read(queued!.id)).toMatchObject({
+      ok: true,
+      data: { data: { message: { status: "queued", reason: "code_ai_owner_daily_budget_limit" } } },
+    });
+    // The person's own message passes the waiting Code message.
+    const person = await invoke(chat.shortId, personContext(), "My own question");
+    expect(person.ok).toBeTrue();
+    await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
+    const passed = await aiConversations.getLatestTurn({ conversationId: chat.id });
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: passed!.id })).toMatchObject({
+      writerOrigin: { kind: "person", id: owner },
+    });
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${passed!.id}::uuid`;
     // Without a host check, a Code-started message waits instead of starting unchecked.
     await sql`DELETE FROM ai.inference_calls WHERE code_id=${codeId}`;
     await drainQueuedMessages(async () => {}, chat.id);
+    expect((await aiConversations.getLatestTurn({ conversationId: chat.id }))?.id).toBe(passed!.id);
+    await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
+    expect((await aiConversations.getLatestTurn({ conversationId: chat.id }))?.id).not.toBe(passed!.id);
+  });
+  test("a paused Code's waiting message is cancelled with its reason and blocks nothing", async () => {
+    await setup();
+    const sent = await invoke();
+    if (!sent.ok) throw new Error(sent.error.message);
+    const id = dataSchema.parse(sent.data.data).id;
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
+    await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
+    expect(await read(id)).toMatchObject({ ok: true, data: { data: { message: { status: "cancelled", reason: "code_inactive" } } } });
+    expect((await invoke(chat.shortId, personContext(), "Still mine")).ok).toBeTrue();
     await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).not.toBeNull();
+  });
+  test("two Codes of one person keep separate idempotency keys", async () => {
+    await setup();
+    const secondCode = "c_chatrun4g";
+    const secondVersion = "4f000000-0000-4000-8000-0000000002b4";
+    const secondRun = `4f000000-0000-4000-8000-${String(++ordinal).padStart(12, "0")}`;
+    await sql`INSERT INTO code.codes(id,owner_kind,owner_user_id,title) VALUES(${secondCode},'person',${owner}::uuid,'Evening review')`;
+    await sql`INSERT INTO code.versions(id,code_id,number,source_files,bundle,source_hash,bundle_hash,source_bytes,bundle_bytes)
+      VALUES(${secondVersion}::uuid,${secondCode},1,'{}','fixture',${"c".repeat(64)},${"d".repeat(64)},0,7)`;
+    await sql`UPDATE code.codes SET state='active', active_version_id=${secondVersion}::uuid WHERE id=${secondCode}`;
+    await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
+      VALUES(${secondRun}::uuid,${secondCode},${secondVersion}::uuid,'schedule','evening','running',32768,10)`;
+    const other = await aiConversations.createConversation({ ownerUserId: owner });
+    const first = await invoke(chat.shortId, ctx("shared-key"));
+    const base = ctx("shared-key");
+    const delegation = base.actor.kind === "user" ? base.actor.delegation : undefined;
+    if (!delegation) throw new Error("Missing fixture delegation");
+    const second = await invoke(other.shortId, {
+      ...base,
+      actor: { kind: "user", user, delegation: { ...delegation, workloadId: secondVersion, workloadRun: secondRun } },
+    });
+    expect(first.ok && second.ok).toBeTrue();
+    if (!first.ok || !second.ok) return;
+    expect(dataSchema.parse(second.data.data).id).not.toBe(dataSchema.parse(first.data.data).id);
   });
   test("a chat turn cannot send into its own chat, and an unreadable lease asks to retry", async () => {
     await setup();
