@@ -173,11 +173,56 @@ test("withQuiesce wraps process() of every working primitive and nothing else", 
   } as unknown as Sync;
   const wrapped = withQuiesce(sync, controller);
   const job = wrapped.job<{ id: string }>({ id: "example-job" });
-  expect(Object.is(job.submit, submit)).toBe(true);
+  expect(await job.submit({ input: { id: "1" } } as never)).toEqual({ messageId: "m-1" });
   await job.process({}, async () => {});
   await wrapped.scheduler({ id: "example-scheduler" }).process();
   expect(created).toHaveLength(2);
   await controller.quiesce();
   await controller.resume();
   expect(created).toHaveLength(4);
+});
+
+test("withQuiesce keeps every other member of each primitive working: getters, this and private state", async () => {
+  const controller = createQuiesceController();
+  const { start } = starter();
+  /** A future Sync primitive written as a class, with a getter and private state. */
+  class Primitive {
+    #reads = 0;
+    readonly id = "example";
+    get reads(): number {
+      return this.#reads;
+    }
+    read(): number {
+      this.#reads += 1;
+      return this.#reads;
+    }
+    process(..._args: unknown[]) {
+      return start();
+    }
+  }
+  const kinds = ["job", "queue", "topic", "scheduler", "pump"] as const;
+  const originals = new Map<string, Primitive>();
+  const sync = Object.fromEntries(
+    kinds.map((kind) => [
+      kind,
+      () => {
+        const primitive = new Primitive();
+        originals.set(kind, primitive);
+        return primitive;
+      },
+    ]),
+  ) as unknown as Sync;
+  const wrapped = withQuiesce(sync, controller) as unknown as Record<(typeof kinds)[number], (config: unknown) => Primitive>;
+  for (const kind of kinds) {
+    const primitive = wrapped[kind]({ id: `example-${kind}` });
+    const original = originals.get(kind)!;
+    for (const key of [...Object.keys(original), ...Object.getOwnPropertyNames(Primitive.prototype)]) {
+      expect(key in primitive).toBe(true);
+    }
+    expect(primitive.id).toBe("example");
+    expect(primitive.read()).toBe(1);
+    expect(primitive.reads).toBe(1);
+    expect(original.reads).toBe(1);
+    expect(primitive.process).not.toBe(original.process);
+  }
 });

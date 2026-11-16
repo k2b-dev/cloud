@@ -223,33 +223,45 @@ export const quiesceWorker = async (
 };
 
 /**
- * The process Sync whose workers follow `controller`. Every primitive with
- * `process()` is wrapped; declarations, submissions and reads stay Sync's own.
+ * The same object with some members replaced. Every other member is read from the original, so getters, `this` and
+ * private state keep working in later Sync versions; functions are bound to the original.
+ */
+const overriding = <T extends object>(target: T, members: Partial<T>): T =>
+  new Proxy(target, {
+    get: (object, property) => {
+      if (Object.hasOwn(members, property)) return members[property as keyof T];
+      const value: unknown = Reflect.get(object, property, object);
+      return typeof value === "function" ? value.bind(object) : value;
+    },
+  });
+
+/**
+ * The process Sync whose workers follow `controller`. Only `process()` of every primitive that has one is wrapped;
+ * declarations, submissions, reads and every other member stay Sync's own.
  */
 export const withQuiesce = (sync: Sync, controller: QuiesceController = processQuiesce): Sync => {
   const follow = (start: () => Promise<Worker>, options: ProcessOptions | undefined) =>
     quiesceWorker(start, { controller, signal: options?.signal });
-  return {
-    ...sync,
+  return overriding<Sync>(sync, {
     job: <Input>(config: JobConfig): Job<Input> => {
       const job = sync.job<Input>(config);
-      return { ...job, process: (options, handler) => follow(() => job.process(options, handler), options) };
+      return overriding(job, { process: (options, handler) => follow(() => job.process(options, handler), options) });
     },
     queue: <T>(config: QueueConfig): Queue<T> => {
       const queue = sync.queue<T>(config);
-      return { ...queue, process: (options, handler) => follow(() => queue.process(options, handler), options) };
+      return overriding(queue, { process: (options, handler) => follow(() => queue.process(options, handler), options) });
     },
     topic: <T>(config: TopicConfig): Topic<T> => {
       const topic = sync.topic<T>(config);
-      return { ...topic, process: (options, handler) => follow(() => topic.process(options, handler), options) };
+      return overriding(topic, { process: (options, handler) => follow(() => topic.process(options, handler), options) });
     },
     scheduler: (config: SchedulerConfig): Scheduler => {
       const scheduler = sync.scheduler(config);
-      return { ...scheduler, process: (options) => follow(() => scheduler.process(options), options) };
+      return overriding(scheduler, { process: (options) => follow(() => scheduler.process(options), options) });
     },
     pump: <Input, Cursor, Item extends PumpItem>(config: PumpConfig<Input, Cursor, Item>): Pump<Input, Cursor> => {
       const pump = sync.pump<Input, Cursor, Item>(config);
-      return { ...pump, process: (options) => follow(() => pump.process(options), options) };
+      return overriding(pump, { process: (options) => follow(() => pump.process(options), options) });
     },
-  };
+  });
 };
