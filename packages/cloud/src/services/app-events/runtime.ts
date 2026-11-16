@@ -1,4 +1,5 @@
 import { createRuntimeTaskTracker } from "../runtime-lifecycle";
+import { backgroundWork } from "../runtime-quiesce";
 
 /** Core delivery passes coalesce hints, including hints received during a pass. */
 export const startEventDispatcher = (
@@ -31,7 +32,8 @@ export const startEventDispatcher = (
               await broker.checkGap();
               await broker.retain();
             }
-          } while (!stopping && requested);
+            // A pass in flight finishes its batch; quiesce stops the loop before the next one.
+          } while (!stopping && requested && !backgroundWork.paused());
         } catch (error) {
           report(error);
         } finally {
