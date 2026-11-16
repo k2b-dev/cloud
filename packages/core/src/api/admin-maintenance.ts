@@ -1,8 +1,7 @@
-import { MaintenanceOnInputSchema, MaintenanceStatusSchema, MaintenanceUntilInputSchema } from "@k2b/cloud/contracts/maintenance";
-import { type AuthContext, auth, jsonResponse, middleware, requiresAdmin, respond, v } from "@k2b/cloud/server";
+import { MaintenanceOnInputSchema, MaintenanceUntilInputSchema } from "@k2b/cloud/contracts/maintenance";
+import { type AuthContext, auth, middleware, respond, v } from "@k2b/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { describeRoute } from "hono-openapi";
 import { createMaintenanceService, type MaintenanceService } from "../maintenance";
 
 /**
@@ -23,21 +22,14 @@ export const createAdminMaintenanceRoutes = (
     .use("*", async (c, next) => (c.req.method === "GET" ? next() : auth.requireOAuthScope("write", "admin")(c, next)))
     .get(
       "/",
-      describeRoute({
-        tags: ["Maintenance"],
-        summary: "Read the maintenance mode state and how many apps are registered",
-        ...requiresAdmin,
-        responses: { 200: jsonResponse(MaintenanceStatusSchema, "Maintenance state") },
-      }),
+      middleware.openapi({ tags: ["Maintenance"], summary: "Read the maintenance mode state and how many apps are registered" }),
       (c) => respond(c, () => service.status(c.get("user"))),
     )
     .post(
       "/on",
-      describeRoute({
+      middleware.openapi({
         tags: ["Maintenance"],
         summary: "Switch maintenance mode on, or change its message and planned end while it is on",
-        ...requiresAdmin,
-        responses: { 200: jsonResponse(MaintenanceStatusSchema, "Maintenance state") },
       }),
       bodyLimit({ maxSize: 8 * 1024 }),
       v("json", MaintenanceOnInputSchema),
@@ -45,23 +37,13 @@ export const createAdminMaintenanceRoutes = (
     )
     .post(
       "/until",
-      describeRoute({
-        tags: ["Maintenance"],
-        summary: "Change the planned end of the running maintenance",
-        ...requiresAdmin,
-        responses: { 200: jsonResponse(MaintenanceStatusSchema, "Maintenance state"), 409: { description: "Maintenance is not active" } },
-      }),
+      middleware.openapi({ tags: ["Maintenance"], summary: "Change the planned end of the running maintenance" }),
       bodyLimit({ maxSize: 1024 }),
       v("json", MaintenanceUntilInputSchema),
       (c) => respond(c, () => service.setUntil(c.get("user"), c.req.valid("json").until)),
     )
     .post(
       "/off",
-      describeRoute({
-        tags: ["Maintenance"],
-        summary: "Switch maintenance mode off; open maintenance pages reload",
-        ...requiresAdmin,
-        responses: { 200: jsonResponse(MaintenanceStatusSchema, "Maintenance state") },
-      }),
+      middleware.openapi({ tags: ["Maintenance"], summary: "Switch maintenance mode off; open maintenance pages reload" }),
       (c) => respond(c, () => service.off(c.get("user"))),
     );

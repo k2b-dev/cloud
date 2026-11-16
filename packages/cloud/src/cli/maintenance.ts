@@ -1,4 +1,4 @@
-import { MaintenanceProblemSchema, type MaintenanceStatus } from "../contracts/maintenance";
+import type { MaintenanceStatus } from "../contracts/maintenance";
 import { cloudCliLanguage } from "./locale";
 
 /**
@@ -12,9 +12,12 @@ export const MAINTENANCE_EXIT_CODE = 75;
 const ORANGE = "\u001b[38;5;208m";
 const RESET = "\u001b[39m";
 
-/** Colour only for a terminal that wants it; the words carry the meaning without colour. */
-export const cliColorEnabled = (stream: { isTTY?: boolean } = process.stdout): boolean =>
-  !process.env.NO_COLOR && (!!process.env.FORCE_COLOR || (!!stream.isTTY && process.env.TERM !== "dumb"));
+/**
+ * Colour only for a terminal that wants it (`NO_COLOR`, `FORCE_COLOR`, `TERM=dumb`); the words carry the meaning
+ * without colour. The host passes its environment, so this module reads no process state itself.
+ */
+export const cliColorEnabled = (stream: { isTTY?: boolean }, env: { NO_COLOR?: string; FORCE_COLOR?: string; TERM?: string }): boolean =>
+  !env.NO_COLOR && (!!env.FORCE_COLOR || (!!stream.isTTY && env.TERM !== "dumb"));
 
 /** „Wartungsmodus“ / "Maintenance mode" in orange, the mode's sign where a terminal cannot show its icon. */
 export const markMaintenanceWord = (text: string, color: boolean): string =>
@@ -131,14 +134,18 @@ export const maintenanceProblemSentence = async (
   { now }: { now?: Date } = {},
 ): Promise<{ code: "maintenance" | "app_unavailable"; en: string; de: string } | null> => {
   if (response.status !== 503 || !(response.headers.get("Content-Type") ?? "").startsWith("application/problem+json")) return null;
-  let problem: ReturnType<typeof MaintenanceProblemSchema.safeParse>;
+  // A plain check instead of the zod schema: every cld command runs this, and host commands load no contract module.
+  let body: unknown;
   try {
-    problem = MaintenanceProblemSchema.safeParse(await response.clone().json());
+    body = await response.clone().json();
   } catch {
     return null;
   }
-  if (!problem.success) return null;
-  const { code, until, appId } = problem.data;
+  if (!body || typeof body !== "object") return null;
+  const { code, until: rawUntil, appId: rawAppId } = body as Record<string, unknown>;
+  if (code !== "maintenance" && code !== "app_unavailable") return null;
+  const until = typeof rawUntil === "string" && Number.isFinite(Date.parse(rawUntil)) ? rawUntil : undefined;
+  const appId = typeof rawAppId === "string" && /^[a-z0-9][a-z0-9-]{0,62}$/.test(rawAppId) ? rawAppId : undefined;
   if (code === "maintenance") {
     const time = (language: string) => (until ? formatMaintenanceTime(until, language, now) : null);
     return {

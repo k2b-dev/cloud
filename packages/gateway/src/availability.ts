@@ -73,6 +73,7 @@ export const appIconKey = (app: AppRegistryEntry): string => String(app.runtime?
 
 export const createAvailability = ({ now = Date.now }: { now?: () => number } = {}) => {
   let maintenance: ObservedMaintenance | null = null;
+  const startedListeners = new Set<() => void>();
   let branding: CloudBranding = { name: "Cloud", timeZone: "UTC", locale: "en" };
   let live = new Map<string, AppRegistryEntry>();
   const icons = new Map<string, { key: string; src?: string; at: number }>();
@@ -102,11 +103,15 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
   return {
     maintenance: (): MaintenanceState | null => maintenance?.state ?? null,
     observedMaintenance: (): ObservedMaintenance | null => maintenance,
-    /** Returns true when maintenance just started, so open sockets can be closed once. */
+    /** Returns true when maintenance just started; the started listeners (closing open sockets) run once then. */
     setMaintenance: (next: ObservedMaintenance | null): boolean => {
       const started = !maintenance && !!next;
       maintenance = next;
+      if (started) for (const listener of startedListeners) listener();
       return started;
+    },
+    onMaintenanceStarted: (listener: () => void): void => {
+      startedListeners.add(listener);
     },
 
     branding: (): CloudBranding => branding,

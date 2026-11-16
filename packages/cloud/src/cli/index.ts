@@ -34,6 +34,8 @@ export type CloudCliContext = {
   fetch: (path: string, init?: RequestInit) => Promise<Response>;
   readJson: <T>(response: Pick<Response, "json" | "text" | "ok" | "status" | "statusText">) => Promise<T>;
   print: (value?: string) => void;
+  /** Whether `print` may carry ANSI colour. Absent means plain text. */
+  color?: boolean;
   /** Write a stdout chunk without adding a newline. */
   /** Resolves once the value is flushed; await it when writing large output. */
   write: (value: string) => Promise<void>;
