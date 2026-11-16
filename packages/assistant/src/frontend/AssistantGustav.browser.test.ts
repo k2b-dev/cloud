@@ -761,7 +761,7 @@ describe("Gustav", () => {
       {
         name: "bereit",
         scenario: { cardPreview: cardPreview() },
-        word: null,
+        word: "Bereit, noch aus",
         sentence: "Version 5 von Code von info@ einschalten?",
         main: "Version 5 einschalten",
       },
@@ -771,7 +771,7 @@ describe("Gustav", () => {
           cardPreview: cardPreview(),
           cardWords: { examples: { state: "none", passed: 0, total: 0, summary: "", explanation: "", items: [] } },
         },
-        word: null,
+        word: "Bereit, noch aus",
         sentence: "Version 5 von Code von info@ einschalten?",
         main: "Trotzdem einschalten",
       },

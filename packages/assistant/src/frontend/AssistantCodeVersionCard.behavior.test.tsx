@@ -156,8 +156,9 @@ test("ready: one approval form with the question, what changes against the runni
   expect(text(card)).toContain("Cloud checks access and triggers, not behavior.");
   expect(text(card)).toContain("3 of 3 examples successful");
   expect(text(card)).toContain("Until then version 4 stays switched on");
-  // An open question has no state word; the difference button is gone, the version opens on the Code page.
-  expect(status(dom.root)).toBeNull();
+  // The open card says where the version stands (v12 version states, Rundgang 6 Fable 10); the difference button is
+  // gone, the version opens on the Code page.
+  expect(status(dom.root)).toBe("Ready, still off");
   expect(button(dom.root, "Difference")).toBeUndefined();
   expect(button(dom.root, "See everything")?.getAttribute("href")).toBe(`/app/mail/m_info/code?tab=versions&version=${versionId}`);
   expect(button(dom.root, "Switch on version 5")?.getAttribute("data-variant")).toBe("ai");
@@ -482,7 +483,7 @@ test("the card loads with a placeholder and the word Loading", async () => {
   expect(dom.root.querySelector('[aria-busy="true"]')).not.toBeNull();
   release();
   await tick();
-  expect(status(dom.root)).toBeNull();
+  expect(status(dom.root)).toBe("Ready, still off");
 });
 
 test("the card follows decisions and switch-ons from elsewhere on the live channel, without polling", async () => {

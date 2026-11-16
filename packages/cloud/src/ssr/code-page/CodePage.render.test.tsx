@@ -1326,9 +1326,7 @@ test("?tab=code renders the code tab on the server", () => {
 
 // Rundgang 6, Fable 8: a new week without counted effects says so where the two numbers stand, above the latest results.
 test("a week without counted effects says so in place of the numbers", () => {
-  const data = codePageFixture("overview");
-  if (data.state.kind !== "ready" || !data.state.words?.activity) throw new Error("Expected activity in the overview fixture");
-  data.state.words.activity.counters = { ...data.state.words.activity.counters, items: [] };
+  const data = codePageFixture("week-start");
   const page = renderedText(
     renderMarkup(() =>
       createComponent(LocaleProvider, {

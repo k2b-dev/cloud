@@ -455,6 +455,7 @@ a.cloud-code__row-main:focus-visible {
 }
 /* A week without counted effects says so where the numbers stand, at their height, above the latest results. */
 .cloud-code__did-counts-none {
+  grid-column: 1 / -1;
   margin: 0;
   color: var(--k2b-text-subtle);
   font-size: 13px;
