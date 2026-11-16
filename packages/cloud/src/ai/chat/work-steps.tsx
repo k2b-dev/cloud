@@ -176,7 +176,6 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
     if (kind)
       return [failureReason(props.block, t()), work.followed(props.block.id) ? t().stepConsequence({ consequence: t().stepWentOn }) : ""];
     return [
-      sentence() ? "" : target(props.block),
       props.block.status === "running" ? (props.block.progress ?? "") : "",
       props.block.status === "completed" ? resultSummary(props.block) : "",
     ];
@@ -218,6 +217,8 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
         icon={aiToolIcon(props.block.name, props.block.presentation?.appIcon)}
         accent={props.block.presentation?.appAccent}
         label={label()}
+        // A call without a sentence of its own names what it acts on after its name; the row stays one line.
+        description={sentence() ? undefined : target(props.block) || undefined}
         meta={outcome()?.word}
         metaTone={outcome()?.tone}
         duration={duration()}

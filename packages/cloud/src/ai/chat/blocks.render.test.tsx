@@ -730,7 +730,9 @@ describe("capability tool presentation", () => {
 
     const folded = renderSegment(blocks, { workedMs: 2_000 });
     expect(hasOpenDetails(folded)).toBe(false);
-    expect(folded).not.toContain('data-tone="danger"');
+    // The work line names the failure in its meta, in red; no row turns into a warning.
+    expect(folded).toContain('<span data-tone="danger">1 failed</span>');
+    expect(folded).not.toContain('class="k2b-chat-activity ai-work-step" data-tone="danger"');
     expect(folded).not.toContain("Mailbox is required");
     expect(folded).toContain("I could not finish that.");
 
@@ -738,11 +740,11 @@ describe("capability tool presentation", () => {
     disclosureState.set("work:ai-turn:turn-1:0", true);
     disclosureState.set("failed-tool", true);
     const expanded = renderSegment(blocks, { disclosureState });
-    // Opened, the failed step says in words that it did not work and that the turn went on; the app's code and message
+    // Opened, the failed step says "Failed" in its meta and offers its details behind its ⓘ; the app's code and message
     // stay in the data.
     expect(expanded).toContain("Unknown tool");
-    expect(expanded).toContain("This did not work. Went on without this result.");
-    expect(expanded).not.toContain('data-tone="danger"');
+    expect(expanded).toMatch(/class="k2b-chat-activity__meta" data-tone="danger"><span[^>]*>Failed</);
+    expect(expanded).toContain('aria-label="Details: Unknown tool"');
     expect(expanded).not.toContain("Mailbox is required");
     expect(expanded).not.toContain("VALIDATION_FAILED");
   });
@@ -1934,7 +1936,7 @@ describe("Studio check steps", () => {
     expect(english).toContain("App check");
     expect(english).toContain("3 findings · 1 warning");
     expect(english).toContain("passed · 2 warnings");
-    expect(english).toContain("<strong>App check</strong><small>passed</small>");
+    expect(english).toContain('<strong title="App check">App check</strong><small>passed</small>');
     expect(english).toContain("ti-alert-triangle");
     expect(english).toContain("ti-circle-check");
     expect(english).not.toContain('data-tone="danger"');

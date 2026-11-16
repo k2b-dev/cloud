@@ -68,7 +68,8 @@ const measure = (page: Awaited<ReturnType<typeof open>>) =>
     const right = (node: Element | null) => (node ? edge - node.getBoundingClientRect().right : null);
     return [...list.querySelectorAll<HTMLElement>(".k2b-chat-activity__row")].map((row) => {
       const box = row.getBoundingClientRect();
-      const glyph = row.querySelector(".k2b-chat-activity__chevron, .k2b-chat-activity__info > i");
+      // The chevron and the ⓘ button share the last column and its optical overhang; their glyphs differ in width.
+      const glyph = row.querySelector(":scope > .k2b-chat-activity__chevron, :scope > .k2b-chat-activity__info");
       return {
         meta: right(row.querySelector(".k2b-chat-activity__meta")),
         duration: right(row.querySelector(".k2b-chat-activity__duration")),

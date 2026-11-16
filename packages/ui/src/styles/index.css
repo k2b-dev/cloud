@@ -15052,8 +15052,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   position: relative;
   display: inline-grid;
   width: 1.5rem;
+  min-width: 0;
   max-width: none;
   height: 1.5rem;
+  min-height: 0;
   grid-column: 5;
   justify-self: end;
   place-items: center;

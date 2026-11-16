@@ -1,8 +1,20 @@
-import { expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { AiTurnBlock } from "../protocol";
+
+// The opened work loads its code on demand in the browser. Load it once before the tests, with time for a cold
+// transpile, so a toggle shows its rows at once.
+beforeAll(async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  try {
+    await (await import("#chat-work-list")).preloadAiWorkSteps();
+  } finally {
+    dom.cleanup();
+  }
+}, 30_000);
 
 const domTest = isServer ? test.skip : test;
 
@@ -19,8 +31,6 @@ const tool = (id: string, name = "read_file"): AiTurnBlock => ({
 const mount = async (blocks: () => AiTurnBlock[], phase: () => "running" | "completed" = () => "running") => {
   const dom = createDomTestHarness();
   const { AiTurnView } = await import("./turn-view");
-  // The opened work loads its code on demand in the browser; load it first, so a toggle shows its rows at once.
-  await (await import("#chat-work-list")).preloadAiWorkSteps();
   const { layoutAiTurn } = await import("./turn-layout");
   const { createAiToolDisclosureState } = await import("./tool-disclosure");
   const disclosureState = createAiToolDisclosureState();
@@ -165,6 +175,8 @@ domTest("rows a reader sees in the open work list stay when later reasoning or a
     // Thinking is a step in words; its reasoning stands in the card behind its ⓘ, and the row itself never opens.
     expect(thought.textContent).toContain("Thinking");
     expect(thought.querySelector("details")).toBeNull();
+    // The ⓘ card's code loads on demand; bounded by the test's timeout.
+    while (!thought.querySelector(".k2b-hover-card")) await new Promise((resolve) => setTimeout(resolve, 10));
     expect(thought.querySelector(".k2b-hover-card")?.textContent).toContain("Which reference?");
     setBlocks([...work, { id: "t", kind: "thinking", text: "Which reference?" }, tool("c", "load_skill")]);
     expect(view.steps()[2]).toBe(group);

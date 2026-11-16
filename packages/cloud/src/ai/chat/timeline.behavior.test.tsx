@@ -1,4 +1,4 @@
-import { expect, jest, setSystemTime, test } from "bun:test";
+import { beforeAll, expect, jest, setSystemTime, test } from "bun:test";
 import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
@@ -7,6 +7,18 @@ import { emptyProjection, mergeActiveTurn, reduceProjection, visibleMessages } f
 import { type AiStreamEvent, type AiTurnBlock, type AiWireEvent, steerAppliedBlockId, steerMessageBlockId } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { aiTurnErrorText } from "./turn-error";
+
+// The opened work loads its code on demand in the browser. Load it once before the tests, with time for a cold
+// transpile, so a toggle shows its rows at once.
+beforeAll(async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  try {
+    await (await import("#chat-work-list")).preloadAiWorkSteps();
+  } finally {
+    dom.cleanup();
+  }
+}, 30_000);
 
 /** The text a reader sees: without the screen-reader announcement and the resting word that only reduced motion shows. */
 const visibleText = (node: Element | null | undefined) => {
@@ -20,8 +32,6 @@ const visibleText = (node: Element | null | undefined) => {
   const dom = createDomTestHarness();
   // The expanded work line shows every folded text; the newest stays below it.
   window.sessionStorage.setItem("cloud.ai.tool-disclosure:work:ai-turn:turn:start", "open");
-  // The opened work loads its code on demand in the browser; load it first, so a toggle shows its rows at once.
-  await (await import("#chat-work-list")).preloadAiWorkSteps();
   const { Chat } = await import("@k2b/ui");
   const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
   const [state, setState] = createStore(emptyProjection());
