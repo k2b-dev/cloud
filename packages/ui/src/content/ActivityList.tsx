@@ -8,7 +8,15 @@ import { useDateConfigLocale } from "../intl/locale";
 import { Section } from "../surfaces/Section";
 import { Skeleton } from "../surfaces/Skeleton";
 import { resolveActivityMessages, useActivityMessages } from "./activity-messages";
-import { type ActivityGroup, type ActivityRow, activityAgo, activityDayLabel, activityInstant, activityRows, activityWhen } from "./activity-timeline";
+import {
+  type ActivityGroup,
+  type ActivityRow,
+  activityAgo,
+  activityDayLabel,
+  activityInstant,
+  activityRows,
+  activityWhen,
+} from "./activity-timeline";
 
 /** Only the icon carries a tone: grey by default, green for a completion, amber for a notice, red only while an action is needed. */
 export type ActivityTone = "neutral" | "success" | "warning" | "danger";
@@ -455,6 +463,8 @@ export type ActivityDialogInput = ActivityTimeProps & {
   entries: () => readonly ActivityEntry[];
   /** Defaults to "History". */
   title?: string;
+  /** Icon class beside the title, such as `ti ti-activity`; none by default. */
+  icon?: string;
   /** Second line, such as the object the history belongs to. */
   subtitle?: string;
   kinds?: readonly ActivityKind[];
@@ -579,6 +589,7 @@ export function ActivityCard(props: ActivityCardProps): JSX.Element {
 export const openActivityDialog = (input: ActivityDialogInput): Promise<void | undefined> =>
   prompts.dialog<void>(() => <ActivityDialogContent {...input} />, {
     title: input.title ?? resolveActivityMessages(input.dateConfig?.locale).activityTitle,
+    icon: input.icon,
     size: "large",
   });
 

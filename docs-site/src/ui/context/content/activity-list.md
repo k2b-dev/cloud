@@ -131,7 +131,8 @@ JSX, and the card and the dialog each need nodes of their own.
 ```
 
 `openActivityDialog({ entries: () => entries(), title, subtitle, kinds, now })`
-opens the same dialog from anywhere, such as a menu entry "Show activity".
+opens the same dialog from anywhere, such as a menu entry "Show activity";
+`icon` puts the menu entry's icon beside its title.
 
 ## Accessibility
 
