@@ -87,18 +87,34 @@ suiteFor(
     await send(ben, chat, { replyTo: second.id });
     await send(ben, chat, { replyTo: second.id, quotes: [{ message: first.id, text: "First passage" }] });
     const meter = await meterSql();
+    // A send wakes notification and event work after its commit; it runs on other connections and would land in
+    // whichever window is open. Wait until the process is quiet, then compare the send's own transaction.
+    const quiet = async () => {
+      for (let round = 0; round < 50; round++) if ((await meter.during(() => Bun.sleep(300))).length === 0) return; // real clock: background work settles
+      throw new Error("Background statements did not settle");
+    };
+    const transaction = (statements: string[]) => {
+      const start = statements.findIndex((statement) => /^BEGIN/i.test(statement));
+      const end = statements.findIndex((statement, index) => index > start && /^COMMIT/i.test(statement));
+      return start < 0 || end < 0 ? statements : statements.slice(start, end + 1);
+    };
     try {
-      const reply = await meter.during(() => send(ben, chat, { replyTo: second.id }));
-      const quoted = await meter.during(() =>
-        send(ben, chat, {
-          replyTo: second.id,
-          quotes: [
-            { message: first.id, text: "First passage" },
-            { message: second.id, text: "Second passage" },
-          ],
-        }),
+      await quiet();
+      const reply = transaction(await meter.during(() => send(ben, chat, { replyTo: second.id })));
+      await quiet();
+      const quoted = transaction(
+        await meter.during(() =>
+          send(ben, chat, {
+            replyTo: second.id,
+            quotes: [
+              { message: first.id, text: "First passage" },
+              { message: second.id, text: "Second passage" },
+            ],
+          }),
+        ),
       );
-      expect(quoted.length).toBe(reply.length);
+      // The same statements in the same order: the sources come with the answered message, nothing more.
+      expect(quoted).toEqual(reply);
     } finally {
       await meter.close();
     }

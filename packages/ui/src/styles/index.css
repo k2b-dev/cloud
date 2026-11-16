@@ -16707,10 +16707,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
 }
 
-.k2b-ui :is(.k2b-chat-composer__reply > .k2b-message-row__quote, .k2b-chat-composer__quote > .k2b-message-quote) {
+.k2b-ui .k2b-chat-composer__reply > .k2b-message-row__quote {
   max-width: none;
   flex: 1 1 0;
   margin: 0;
+}
+
+.k2b-ui .k2b-chat-composer__quote > .k2b-message-quote {
+  max-width: none;
+  flex: 1 1 0;
 }
 
 .k2b-ui :is(.k2b-chat-composer__reply-cancel, .k2b-chat-composer__quote-remove) {
