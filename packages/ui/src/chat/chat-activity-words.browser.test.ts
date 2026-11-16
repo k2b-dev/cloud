@@ -184,11 +184,13 @@ describe("Chat.Activity.Words in the browser", () => {
     async () => {
       const page = await open(390, "no-preference", true);
       try {
-        // The finger that just sent the message lands on the row; touch screens keep that spot as hovered.
-        await page.locator(".k2b-chat-activity__row").tap();
+        // The finger that just sent the message lands on the row; touch screens keep that spot as hovered. A tap at the
+        // row's place, since an actionability wait needs frames, which stand while the page clock is paused (WebKit).
+        const row = (await page.locator(".k2b-chat-activity__row").boundingBox())!;
+        await page.touchscreen.tap(row.x + row.width / 2, row.y + row.height / 2);
         await page.clock.runFor(3_500);
         // settled: the page clock is installed, so runFor has already run every timer and frame this read depends on.
-        expect((await sample(page)).words.map((word) => word.text)).toEqual([WORDS[0]]);
+        expect((await sample(page)).words.map((word) => word.text)).toEqual([WORDS[0]!]);
       } finally {
         await page.close();
       }
@@ -204,7 +206,7 @@ describe("Chat.Activity.Words in the browser", () => {
       try {
         await page.clock.runFor(3_500);
         // settled: the page clock is installed, so runFor has already run every timer and frame this read depends on.
-        expect((await sample(page)).words.map((word) => word.text)).toEqual([WORDS[0]]);
+        expect((await sample(page)).words.map((word) => word.text)).toEqual([WORDS[0]!]);
       } finally {
         await page.close();
       }
