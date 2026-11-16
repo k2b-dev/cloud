@@ -12,14 +12,18 @@ export type ChartTimeAxis = {
 export type ChartTimeUnit = "minute" | "hour" | "day" | "week" | "month" | "year";
 export type ChartTimeStep = { unit: ChartTimeUnit; size: number };
 
-const STEPS: readonly ChartTimeStep[] = [
-  ...[1, 2, 5, 10, 15, 30].map((size) => ({ unit: "minute" as const, size })),
-  ...[1, 2, 3, 6, 12].map((size) => ({ unit: "hour" as const, size })),
-  ...[1, 2].map((size) => ({ unit: "day" as const, size })),
-  { unit: "week", size: 1 },
-  ...[1, 3, 6].map((size) => ({ unit: "month" as const, size })),
-  { unit: "year", size: 1 },
-];
+// Three days and two weeks keep a span of one or two weeks, or of one or two months, at four or five dates instead of
+// falling to two at the next coarser step. One table, as the artifact prelude carries this file.
+const STEPS: readonly ChartTimeStep[] = (
+  [
+    ["minute", [1, 2, 5, 10, 15, 30]],
+    ["hour", [1, 2, 3, 6, 12]],
+    ["day", [1, 2, 3]],
+    ["week", [1, 2]],
+    ["month", [1, 3, 6]],
+    ["year", [1]],
+  ] as const
+).flatMap(([unit, sizes]) => sizes.map((size) => ({ unit, size })));
 const UNIT_MS: Record<ChartTimeUnit, number> = {
   minute: 60_000,
   hour: 3_600_000,
@@ -56,6 +60,14 @@ const nextWall = (wall: number, step: ChartTimeStep): number => {
   if (step.unit === "year") return Date.UTC(date.getUTCFullYear() + step.size, 0, 1);
   return wall + step.size * UNIT_MS[step.unit];
 };
+
+/**
+ * How many dates fit along a drawing of this width when the caller names no tick count: one date takes about 56 px
+ * (a label such as "12. Nov." and the gap to the next), the Y labels take the first 60 px, and never fewer than five.
+ * A box narrower than the drawing then hides every second date (`chart-tick-room.ts`).
+ */
+export const chartTimeTickBudget = (drawWidth: number, ticks?: number): number =>
+  ticks !== undefined ? ticks + 2 : Math.max(5, Math.floor((drawWidth - 60) / 56));
 
 /** The round step for a time span: the finest one that keeps at most `maxTicks` ticks. */
 export const chartTimeStep = (span: number, maxTicks: number): ChartTimeStep =>

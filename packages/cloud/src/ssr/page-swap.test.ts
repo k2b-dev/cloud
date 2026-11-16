@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { getPageSwapBuild, type PageSwapParts, pageSwapSignature, registerPageSwap } from "./page-swap";
+import { assertPageSwapPaths, getPageSwap, matchPageSwapScope, type PageSwapParts, pageSwapSignature, registerPageSwap } from "./page-swap";
 
 const shell = {
   themePreference: "system",
@@ -53,6 +53,38 @@ test("column presentation and context do not change the signature", () => {
 test("registration belongs only to the opted-in request context", () => {
   const enabled = {};
   registerPageSwap(enabled, "build");
-  expect(getPageSwapBuild(enabled)).toBe("build");
-  expect(getPageSwapBuild({})).toBeUndefined();
+  expect(getPageSwap(enabled)).toEqual({ build: "build" });
+  expect(getPageSwap({})).toBeUndefined();
+  const scoped = {};
+  registerPageSwap(scoped, "build", "/admin/code");
+  expect(getPageSwap(scoped)).toEqual({ build: "build", scope: "/admin/code" });
+});
+
+test("an opted-in path covers its pages with the concrete prefix as scope", () => {
+  const paths = ["/admin/code", "/app/mail/:mailboxId/code", "/app/assistant/code"];
+  expect(matchPageSwapScope(paths, "/admin/code")).toBe("/admin/code");
+  expect(matchPageSwapScope(paths, "/admin/code/")).toBe("/admin/code");
+  expect(matchPageSwapScope(paths, "/app/mail/VyhBnz/code")).toBe("/app/mail/VyhBnz/code");
+  expect(matchPageSwapScope(paths, "/app/mail/VyhBnz/code/catch-up")).toBe("/app/mail/VyhBnz/code");
+  expect(matchPageSwapScope(paths, "/app/assistant/code/c_1")).toBe("/app/assistant/code");
+  // Only those paths: the rest of the app keeps document loads.
+  for (const path of [
+    "/admin",
+    "/admin/ai",
+    "/admin/codes",
+    "/app/mail",
+    "/app/mail/VyhBnz",
+    "/app/mail/VyhBnz/coder",
+    "/app/mail//code",
+    "/app/assistant",
+  ])
+    expect(matchPageSwapScope(paths, path)).toBeUndefined();
+  // The most specific path wins, so a nested area keeps its own scope.
+  expect(matchPageSwapScope(["/admin", "/admin/code"], "/admin/code/x")).toBe("/admin/code");
+});
+
+test("pageSwap paths that could never match exactly fail at startup", () => {
+  expect(() => assertPageSwapPaths(["/admin/code", "/app/mail/:id/code"])).not.toThrow();
+  for (const paths of [[], ["admin"], ["/admin/"], ["/"], ["/app/*/code"], ["/app/:/code"], ["/app/mail?x"]])
+    expect(() => assertPageSwapPaths(paths)).toThrow();
 });

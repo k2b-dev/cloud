@@ -10,6 +10,7 @@ import { projectPublicWorkspaceState } from "../_components/workspace/workspace-
 import { loadGridsWorkspaceState } from "../_components/workspace/workspace-state";
 import { serializeWorkspaceState } from "../_components/workspace/workspace-state-serialization";
 import { resolveGridsMessages } from "../messages";
+import { gridsPageScope } from "../page-context";
 
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
@@ -78,7 +79,12 @@ export default ssr<AuthContext>(async (c) => {
   state.initialNavigationExpansion = parseNavigationExpansion(c.req.header("Cookie"), state.base.id);
 
   return () => (
-    <Layout c={c} fullWidth title={state.title}>
+    <Layout
+      c={c}
+      fullWidth
+      title={state.title}
+      context={{ scope: gridsPageScope(state.base.id, state.route.kind === "records" ? state.route.initialSelectedRecord : null) }}
+    >
       <GridsWorkspace userId={user.id} state={state} />
     </Layout>
   );

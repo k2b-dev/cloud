@@ -77,7 +77,9 @@ Unlike `disabled`, `readOnly` keeps focus while blocking new picks, for example 
 See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldProps`, `ValueFieldProps<T>` and `MaybeAccessor<T>`.
 
 ```ts
-type ComboboxOption = { id: string; label: string; description?: string; icon?: string };
+type ComboboxOption = {
+  id: string; label: string; description?: string; descriptionVisual?: () => JSX.Element; icon?: string; disabled?: boolean;
+};
 
 type ComboboxProps = FieldProps & {
   readOnly?: boolean;

@@ -16,6 +16,7 @@ import { Dynamic } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { KeyedFor } from "../internal/keyed-for";
+import { optionDescription } from "../internal/option-description";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
@@ -48,6 +49,11 @@ export type DropdownActionBase = {
    */
   ariaLabel?: string;
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
+   */
+  descriptionVisual?: () => JSX.Element;
   /** Quiet trailing information, such as a count. */
   trailing?: JSX.Element;
   /** `danger` for destructive entries; `accent` for the entry most people want, such as creating a blank item. */
@@ -218,6 +224,11 @@ export type DropdownItemProps = {
   icon?: string;
   image?: string;
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
+   */
+  descriptionVisual?: () => JSX.Element;
   /** Quiet trailing information, such as a count. */
   trailing?: JSX.Element;
   disabled?: boolean;
@@ -294,6 +305,7 @@ export const dropdownPosition = (
 
 const itemContent = (props: {
   description?: string;
+  descriptionVisual?: () => JSX.Element;
   icon?: string;
   image?: string;
   trailing?: JSX.Element;
@@ -305,7 +317,7 @@ const itemContent = (props: {
     </Show>
     <span class="k2b-dropdown__copy">
       <span>{props.children}</span>
-      <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
+      {optionDescription(props)}
     </span>
     {props.trailing}
   </>
@@ -461,7 +473,7 @@ function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
       </Show>
       <span class="k2b-dropdown__copy">
         <span>{props.label}</span>
-        <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
+        {optionDescription(props)}
       </span>
       {props.trailing}
       {/* Always present for radios, so selecting the widest entry cannot widen a content-sized menu. */}
@@ -490,6 +502,7 @@ export function DropdownItems(props: {
         icon={action().icon}
         image={action().image}
         description={action().description}
+        descriptionVisual={action().descriptionVisual}
         trailing={action().trailing}
         variant={action().variant}
         disabled={action().disabled}

@@ -2460,13 +2460,16 @@ export const spacesCapabilities = defineCapabilities({
         });
         const containers = await spacesPublicResources.projectSpaces(page.items);
         const nextOffset = offset + containers.length;
+        const next =
+          nextOffset < page.total ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url") : null;
         return ok({
+          page: capabilityPage(next),
           data: {
             items: containers.map((container) => ({
               ref: { type: "spaces.space", id: container.id },
               title: container.name.slice(0, 500),
             })),
-            next: nextOffset < page.total ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url") : null,
+            next,
           },
         });
       },

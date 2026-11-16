@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to resource providers.
-updated: 2026-11-15
+updated: 2026-11-16
 ---
 
 # Chat system conversations
@@ -17,12 +17,28 @@ under **Discussions**. Item directories and message links work in the full
 page and below `/app/chat/panel`. Providers can also offer an activity feed.
 Existing comments stay in their owning application.
 
-Contacts offers address books as containers and contacts as items alongside
-Spaces and Notebooks. On an address-book page, the Chat panel follows the
-book; selecting a contact opens its item thread. Closing the contact returns
-the panel to the book. Contacts checks current book grants and credential
-limits for each reader and container list. It provides no activity feed or
-resource reader checks for push notifications in this release.
+Built-in providers include Spaces (Space and item), Notebooks (notebook and
+note), Contacts (address book and contact), Grids (base and record), and Files
+(folder and file). After deploying the updated apps, their containers appear
+through catalog discovery without Chat configuration.
+
+Contacts offers address books as containers and contacts as items. On an
+address-book page, the Chat panel follows the book; selecting a contact opens
+its item thread. Closing the contact returns the panel to the book. Contacts
+checks current book grants and credential limits for each reader and container
+list. It provides no activity feed or resource reader checks for push
+notifications in this release.
+
+The panel beside a Grids base page follows the base's discussion; opening a
+live record detail selects that record's thread. Closing the detail returns to
+the base scope. Read and write access follow current base permissions,
+credential scopes, and resource bindings. Grids provides no activity feed or
+account reader checks for discussion push in this release.
+
+Files containers are storage roots and folders, with files discussed in their
+current parent folder. Files does not yet offer discussion activity or reader
+checks for push notifications. Its interactive readers and container list use
+the same current storage permissions as Files.
 
 The [item discussion capabilities](/en/docs/platform/chat-discussions) expose
 only provider-backed item threads. Keep the item and container types' declared
@@ -75,6 +91,9 @@ Responses contain `{ items, cursors, skipped }`. Items include `ref`, `name`,
 returned cursors unchanged for the next page. An empty cursor means that
 provider is exhausted; position objects also preserve work for skipped providers.
 `skipped` identifies providers with unavailable lists, container readers or item summaries.
+A provider whose containers page returns no `page` matching its `next` cursor
+is skipped too: the platform answers that call as an invalid app response.
+Update such a third-party provider to return `page: capabilityPage(next)`.
 Each unfinished position is an object with an optional provider `cursor` (at
 most 2,048 characters) and an optional container-page `offset` (0–100). For
 example, `{ "inventory.collection": { "cursor": "next-page" } }` resumes a

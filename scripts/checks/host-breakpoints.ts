@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 export type HostBreakpointFinding = { file: string; line: number; key: string; message: string };
@@ -62,7 +62,8 @@ export const checkHostBreakpointSource = (file: string, source: string): HostBre
     }
     return findings;
   }
-  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const { sourceFile: parsed, findings: unparsed } = parseSource(file, source);
+  for (const { line = 1, message } of unparsed) findings.push({ file, line, key: `${file} | parse | ${message}`, message });
   const visit = (node: ts.Node): void => {
     if (
       ts.isCallExpression(node) &&

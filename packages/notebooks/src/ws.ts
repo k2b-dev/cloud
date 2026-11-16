@@ -174,6 +174,7 @@ const startPresenceHeartbeat = (ctx: WsContext) => {
   stopPresenceHeartbeat(ctx);
   if (ctx.phase !== "joined" || !ctx.docId || !ctx.user) return;
 
+  // runtime-timer: serves open live connections (request side); quiesce stops background work only.
   ctx.presenceHeartbeatInterval = setInterval(() => {
     const noteId = ctx.docId;
     const user = ctx.user;

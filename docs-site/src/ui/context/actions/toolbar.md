@@ -9,7 +9,7 @@ Use it for editor commands, table actions, and compact page controls. Use `Toolb
 ## Import
 
 ```tsx
-import { Button, IconButton, Toolbar } from "@k2b/ui";
+import { Button, IconButton, SelectionAction, SelectionToolbar, Toolbar } from "@k2b/ui";
 ```
 
 ## Layout
@@ -108,6 +108,45 @@ container clips it.
   <Toolbar.Separator />
   <Button size="sm" variant="ghost" onClick={comment}><i class="ti ti-message-plus" /> Comment</Button>
 </SelectionToolbar>
+```
+
+## Selection action
+
+Use `SelectionAction` when selected text offers one action, such as Quote in
+a chat history. It is a small pill with an icon and a label, built on
+`SelectionToolbar`, and it watches the document's selection itself:
+
+- It appears once the pointer lets go of a selection inside `root`, and at
+  once for a selection made with the keyboard. It lies in the top layer, so
+  showing it never moves the page.
+- `within` names the part one selection may lie in, such as the text of one
+  message. A selection that starts and ends in different parts, or outside
+  every part, offers nothing. A triple click, which ends at the start of the
+  next block, counts as a selection of its part.
+- `onAction` receives the selected text, with each run of whitespace as one
+  space, and the part's element. The selection is cleared afterwards.
+- Tab right after the selection moves the focus to the pill, Enter runs it,
+  and Tab or Escape returns the focus. Escape also closes the pill for that
+  selection; a new selection shows it again. Both keys belong to the pill only
+  while the focus is on the page, in `root` or in the pill, so a dialog or a
+  field elsewhere keeps them.
+- Text around the content that is no part of it, such as a code block's bar
+  or an "edited" mark, should not be selectable (`user-select: none`), so a
+  selection never carries it into the action.
+- On touch screens it sits below the selection, clear of the system's own
+  menu and the handles. Where a long press opens a menu instead of a
+  selection, offer the action in that menu too.
+- It listens only while it is mounted. Load it with the first selection, as
+  Chat does, to keep its code out of the first page.
+
+```tsx
+<SelectionAction
+  root={history}
+  within={(node) => (node instanceof Element ? node : node.parentElement)?.closest(".k2b-message-row__text")}
+  label="Quote"
+  icon="ti ti-quote"
+  onAction={({ text, element }) => addQuote(element, text)}
+/>
 ```
 
 ## Toolbar.Action
