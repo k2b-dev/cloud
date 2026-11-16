@@ -19,7 +19,12 @@ const render = (model: MaintenancePageModel, now = NOW) => {
   return renderMaintenancePage(model, { nonce: "n0nce" });
 };
 /** The visible document without the client script and its templates. */
-const visible = (html: string) => html.replace(/<script[\s\S]*?<\/script>/g, "");
+// The page has exactly one script element; cut it out by position, not by a pattern (no sanitizing regex here).
+const visible = (html: string) => {
+  const start = html.indexOf("<script");
+  const end = html.indexOf("</script>", start);
+  return start < 0 || end < 0 ? html : html.slice(0, start) + html.slice(end + "</script>".length);
+};
 const script = (html: string) => html.match(/<script nonce="[^"]*">([\s\S]*?)<\/script>/)?.[1] ?? "";
 const config = (html: string) =>
   JSON.parse(script(html).match(/\)\((\{[\s\S]*\})\)$/)?.[1] ?? "{}") as {

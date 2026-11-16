@@ -27,7 +27,6 @@ import { gatewayRouter } from "./config";
 import { type AppRouteWarning, buildAppRoutesDetailed } from "./routes";
 import { getRouteTable, setRouteTable, stats } from "./stats";
 import { buildRouteTable } from "./trie";
-import { closeProxiedSockets } from "./ws-proxy";
 
 const log = logger("gateway");
 // Keep the configured development entry address usable alongside saved app.url overrides.
@@ -280,10 +279,8 @@ const startMaintenanceWatchers = (signal: AbortSignal): void => {
         signal,
         onChange: (observed) => {
           const before = availability.maintenance();
-          if (availability.setMaintenance(observed)) {
-            const closed = closeProxiedSockets(1012, "maintenance");
-            log.info("Maintenance mode started", { closedSockets: closed });
-          } else if (before && !observed) log.info("Maintenance mode ended");
+          if (availability.setMaintenance(observed)) log.info("Maintenance mode started");
+          else if (before && !observed) log.info("Maintenance mode ended");
           renewMaintenance();
         },
       }),

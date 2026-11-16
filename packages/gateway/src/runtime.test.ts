@@ -55,6 +55,14 @@ if (process.env.GATEWAY_RUNTIME_TEST_CHILD !== "1") {
       startProcessSync: async () => ({ stop: async () => void writes.push("sync stopped") }),
       watchAppRegistry: ({ signal }: { signal: AbortSignal }) =>
         new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
+      watchAppRegistryRemovals: ({ signal }: { signal: AbortSignal }) =>
+        new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
+    }));
+    mock.module("@k2b/cloud/services/maintenance-state", () => ({
+      maintenanceNeedsRenewal: () => false,
+      renewMaintenanceState: async () => false,
+      watchMaintenanceState: ({ signal }: { signal: AbortSignal }) =>
+        new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
     }));
     const contract = await import("@k2b/cloud/contracts/app-domains");
     mock.module("@k2b/cloud/contracts/app-domains", () => ({
