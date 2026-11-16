@@ -15,6 +15,7 @@ import { connections } from "../runtime/connections";
 import { DEPENDENCY_STARTUP_BUDGET_MS } from "../runtime/startup-budget";
 import { logger } from "../services/logging";
 import { flushSyncTraceEvents, observeSyncEvent } from "../services/logging/trace";
+import { withQuiesce } from "../services/runtime-quiesce";
 import { connectNats } from "./nats-connection";
 import { withSyncBudgets } from "./sync-budget";
 
@@ -136,15 +137,18 @@ const connectReadySync = async (application: string): Promise<{ sync: Sync; conn
   const connection = await connectNats({ name: `${application}@${hostname()}` });
   let sync: Sync | undefined;
   try {
-    sync = withSyncBudgets(
-      createSync({
-        connection,
-        namespace: connections().nats.namespace,
-        application,
-        defaults: { replicas: connections().nats.replicas },
-        observe: (event) => observeSyncEvent(event, application),
-      }),
-      { connection, namespace: connections().nats.namespace },
+    // Workers follow maintenance quiesce (`services/runtime-quiesce.ts`) without the application opting in.
+    sync = withQuiesce(
+      withSyncBudgets(
+        createSync({
+          connection,
+          namespace: connections().nats.namespace,
+          application,
+          defaults: { replicas: connections().nats.replicas },
+          observe: (event) => observeSyncEvent(event, application),
+        }),
+        { connection, namespace: connections().nats.namespace },
+      ),
     );
     processNats = connection;
     bindProcessSync(sync);

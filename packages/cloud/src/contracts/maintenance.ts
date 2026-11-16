@@ -71,6 +71,26 @@ export type GatewayStatus = {
   app?: { available: boolean };
 };
 
+/**
+ * What one app instance reports while maintenance stage „Ruhe“ (quiesce) is
+ * on: the background work it still runs. 0 means quiet.
+ */
+export const QuietReportSchema = z.object({
+  appId: z.string().min(1).max(200),
+  instanceId: z.string().min(1).max(64),
+  inFlight: z.number().int().min(0).max(1_000_000),
+});
+export type QuietReport = z.infer<typeof QuietReportSchema>;
+
+/** One running app that is not quiet yet: work still running, or instances that have not reported. */
+export const MaintenanceBusyAppSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  inFlight: z.number().int(),
+  unreported: z.number().int(),
+});
+export type MaintenanceBusyApp = z.infer<typeof MaintenanceBusyAppSchema>;
+
 /** What Core's admin API reports. Person names appear only here, never on the public page. */
 export const MaintenanceStatusSchema = z.object({
   active: z.boolean(),
@@ -78,6 +98,10 @@ export const MaintenanceStatusSchema = z.object({
   startedBy: z.object({ id: z.string(), label: z.string() }).optional(),
   message: z.string().optional(),
   until: z.iso.datetime().optional(),
+  /** Stage „Ruhe“: background work stops while maintenance is on. Present while active. */
+  quiesce: z.boolean().optional(),
+  /** Running apps whose every instance reports no work in flight, against all running apps. Present while quiesced. */
+  quiet: z.object({ quiet: z.number().int(), total: z.number().int(), busy: z.array(MaintenanceBusyAppSchema) }).optional(),
   /** Known apps (Core's catalogue, not removed) against the apps registered right now. */
   apps: z.object({ ready: z.number().int(), total: z.number().int(), starting: z.array(z.string()) }),
 });
@@ -90,6 +114,8 @@ export const MaintenanceOnInputSchema = z
       .max(MAINTENANCE_MESSAGE_MAX_LENGTH * 2)
       .optional(),
     until: z.iso.datetime({ offset: true }).optional(),
+    /** Stage „Ruhe“ on or off; omitted keeps the running value (off for a new maintenance). */
+    quiesce: z.boolean().optional(),
   })
   .strict();
 export type MaintenanceOnInput = z.infer<typeof MaintenanceOnInputSchema>;

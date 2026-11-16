@@ -1,0 +1,242 @@
+import type {
+  Job,
+  JobConfig,
+  ProcessOptions,
+  Pump,
+  PumpConfig,
+  PumpItem,
+  Queue,
+  QueueConfig,
+  Scheduler,
+  SchedulerConfig,
+  Sync,
+  Topic,
+  TopicConfig,
+  Worker,
+} from "@k2b/sync";
+
+/**
+ * Quiesce: background work of one process goes quiet without the process
+ * exiting, and resumes later. Maintenance stage „Ruhe“ drives it
+ * (`maintenance-quiesce.ts`); request handling is never affected.
+ *
+ * Everything the platform starts for background work takes part by itself,
+ * so an application gets quiesce without opting in:
+ *
+ * - every `process()` worker of the process Sync (jobs, queues, topics,
+ *   schedulers, pumps) stops pulling, drains, and is created again with the
+ *   same arguments on resume (`withQuiesce`);
+ * - `createRuntimeTaskTracker()` accepts no tasks while quiet and its tasks
+ *   drain;
+ * - a started `createRuntimeLifecycle()` is stopped and started again;
+ * - `startRuntimeInterval()` skips ticks while quiet and runs once on resume.
+ *
+ * Own loops that fit none of these read `backgroundWork`.
+ */
+
+/** Same budget as `stopRuntimeJobs()`. */
+export const QUIESCE_DRAIN_TIMEOUT_MS = 30_000;
+
+export type QuiesceParticipant = {
+  /** Stop taking new work and wait for work in flight, at most `timeoutMs`. */
+  quiesce(timeoutMs: number): Promise<void>;
+  /** Take new work again. A rejection means the participant could not resume. */
+  resume(): Promise<void>;
+  /** Units of work still running: handlers, tracked tasks, a lifecycle that is stopping. */
+  inFlight(): number;
+};
+
+export type QuiesceController = ReturnType<typeof createQuiesceController>;
+
+export const createQuiesceController = ({ timeoutMs = QUIESCE_DRAIN_TIMEOUT_MS }: { timeoutMs?: number } = {}) => {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError("Quiesce drain timeout must be positive and finite");
+  const participants = new Set<QuiesceParticipant>();
+  const listeners = new Set<(quiesced: boolean) => void>();
+  let quiesced = false;
+  let draining: Promise<unknown[]> = Promise.resolve([]);
+
+  const notify = () => {
+    for (const listener of listeners) {
+      try {
+        listener(quiesced);
+      } catch {
+        // A listener never stops the transition.
+      }
+    }
+  };
+
+  const failures = (results: PromiseSettledResult<unknown>[]): unknown[] =>
+    results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+
+  return {
+    get quiesced(): boolean {
+      return quiesced;
+    },
+    /** Participants consult `quiesced` when they start; this only adds them to later transitions. */
+    register: (participant: QuiesceParticipant): (() => void) => {
+      participants.add(participant);
+      return () => participants.delete(participant);
+    },
+    /**
+     * Stop new background work and drain what runs. Idempotent: a second call
+     * returns the running drain. Resolves with the drain errors (a timed-out
+     * drain included); it never rejects, the process stays quiet either way.
+     */
+    quiesce: (): Promise<unknown[]> => {
+      if (quiesced) return draining;
+      quiesced = true;
+      notify();
+      draining = Promise.allSettled([...participants].map((participant) => participant.quiesce(timeoutMs))).then(failures);
+      return draining;
+    },
+    /**
+     * Take background work again. Idempotent. Resolves with the participants
+     * that failed to resume; the caller decides (an app process restarts).
+     */
+    resume: async (): Promise<unknown[]> => {
+      if (!quiesced) return [];
+      quiesced = false;
+      notify();
+      return failures(await Promise.allSettled([...participants].map((participant) => participant.resume())));
+    },
+    /** Work still running in this process; 0 while quiesced means quiet. */
+    inFlight: (): number => {
+      let total = 0;
+      for (const participant of participants) total += participant.inFlight();
+      return total;
+    },
+    onChange: (listener: (quiesced: boolean) => void): (() => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+};
+
+/** The controller of this process. Only the maintenance watcher of `app.start()` switches it. */
+export const processQuiesce = createQuiesceController();
+
+/**
+ * The platform signal for background loops that the platform does not run
+ * (a long-lived connection, an own polling loop). Prefer the tracker,
+ * `startRuntimeInterval()`, or a runtime lifecycle; they follow it by themselves.
+ */
+export const backgroundWork = {
+  /** True while the Cloud is in maintenance stage „Ruhe“: start no new background work. */
+  paused: (): boolean => processQuiesce.quiesced,
+  /** Called with `true` when background work must stop and `false` when it may resume. */
+  onChange: (listener: (paused: boolean) => void): (() => void) => processQuiesce.onChange(listener),
+};
+
+/**
+ * A worker that stops and drains on quiesce and is created again with
+ * `start` on resume. The handle the caller holds stays the same; `stop()` and
+ * `drain()` end it for good. Created while quiesced, it starts on resume.
+ */
+export const quiesceWorker = async (
+  start: () => Promise<Worker>,
+  { controller = processQuiesce, signal }: { controller?: QuiesceController; signal?: AbortSignal } = {},
+): Promise<Worker> => {
+  let current: Worker | undefined;
+  let retiring: Worker | undefined;
+  let retired: Promise<void> = Promise.resolve();
+  let starting: Promise<void> | undefined;
+  let closed = false;
+
+  const ended = () => closed || signal?.aborted === true;
+
+  const retire = (worker: Worker, timeoutMs: number): Promise<void> => {
+    retiring = worker;
+    worker.stop();
+    const drained = worker.drain({ timeoutMs }).finally(() => {
+      if (retiring === worker) retiring = undefined;
+    });
+    retired = drained.catch(() => undefined);
+    return drained;
+  };
+
+  const participant: QuiesceParticipant = {
+    quiesce: async (timeoutMs) => {
+      await starting;
+      const worker = current;
+      current = undefined;
+      if (worker) await retire(worker, timeoutMs);
+    },
+    resume: async () => {
+      // The previous drain is bounded by its timeout; never run two generations at once.
+      await retired;
+      if (ended() || controller.quiesced || current || starting) return;
+      starting = (async () => {
+        const worker = await start();
+        if (ended() || controller.quiesced) await retire(worker, QUIESCE_DRAIN_TIMEOUT_MS);
+        else current = worker;
+      })().finally(() => {
+        starting = undefined;
+      });
+      await starting;
+    },
+    inFlight: () => (current?.active ?? 0) + (retiring?.active ?? 0),
+  };
+
+  if (!controller.quiesced) current = await start();
+  const unregister = controller.register(participant);
+
+  const end = () => {
+    closed = true;
+    unregister();
+  };
+
+  return {
+    get active() {
+      return participant.inFlight();
+    },
+    get capacity() {
+      return current?.capacity ?? 0;
+    },
+    stop: () => {
+      end();
+      current?.stop();
+    },
+    drain: async (options) => {
+      end();
+      await starting?.catch(() => undefined);
+      await Promise.all([current?.drain(options), retired]);
+    },
+    [Symbol.asyncDispose]: async () => {
+      end();
+      await starting?.catch(() => undefined);
+      await Promise.all([current?.drain(), retired]);
+    },
+  };
+};
+
+/**
+ * The process Sync whose workers follow `controller`. Every primitive with
+ * `process()` is wrapped; declarations, submissions and reads stay Sync's own.
+ */
+export const withQuiesce = (sync: Sync, controller: QuiesceController = processQuiesce): Sync => {
+  const follow = (start: () => Promise<Worker>, options: ProcessOptions | undefined) =>
+    quiesceWorker(start, { controller, signal: options?.signal });
+  return {
+    ...sync,
+    job: <Input>(config: JobConfig): Job<Input> => {
+      const job = sync.job<Input>(config);
+      return { ...job, process: (options, handler) => follow(() => job.process(options, handler), options) };
+    },
+    queue: <T>(config: QueueConfig): Queue<T> => {
+      const queue = sync.queue<T>(config);
+      return { ...queue, process: (options, handler) => follow(() => queue.process(options, handler), options) };
+    },
+    topic: <T>(config: TopicConfig): Topic<T> => {
+      const topic = sync.topic<T>(config);
+      return { ...topic, process: (options, handler) => follow(() => topic.process(options, handler), options) };
+    },
+    scheduler: (config: SchedulerConfig): Scheduler => {
+      const scheduler = sync.scheduler(config);
+      return { ...scheduler, process: (options) => follow(() => scheduler.process(options), options) };
+    },
+    pump: <Input, Cursor, Item extends PumpItem>(config: PumpConfig<Input, Cursor, Item>): Pump<Input, Cursor> => {
+      const pump = sync.pump<Input, Cursor, Item>(config);
+      return { ...pump, process: (options) => follow(() => pump.process(options), options) };
+    },
+  };
+};
