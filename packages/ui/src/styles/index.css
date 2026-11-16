@@ -6704,16 +6704,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    trackpad reveals them on hover, focus, the current row, or an open menu.
    Before input, any-hover supplies the default. Boxes stay reserved. */
 /* Section actions hide one by one, so an action marked `data-visibility="always"` (SidebarSectionAction) stays shown in
-   its reserved box while the others wait for hover or focus. */
+   its reserved box while the others wait for hover or focus. The header reveals them through custom properties on the
+   named actions box, so its `:has()` never restyles every element below it. */
 @media (any-hover: hover) {
   :where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-app-workspace__sidebar-section-actions > :not([data-visibility="always"]) {
-    opacity: 0;
-    pointer-events: none;
+    opacity: var(--k2b-sidebar-section-actions-opacity, 0);
+    pointer-events: var(--k2b-sidebar-section-actions-events, none);
   }
 }
 :where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-app-workspace__sidebar-section-actions > :not([data-visibility="always"]) {
-  opacity: 0;
-  pointer-events: none;
+  opacity: var(--k2b-sidebar-section-actions-opacity, 0);
+  pointer-events: var(--k2b-sidebar-section-actions-events, none);
 }
 
 /* Hidden metadata keeps its box, so revealing it never narrows the label
@@ -6756,10 +6757,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui
   .k2b-app-workspace__sidebar-section-header:is(:hover, :focus-within, :has(.k2b-dropdown__trigger[aria-expanded="true"]))
-  > .k2b-app-workspace__sidebar-section-actions
-  > * {
-  opacity: 1;
-  pointer-events: auto;
+  > .k2b-app-workspace__sidebar-section-actions {
+  --k2b-sidebar-section-actions-opacity: 1;
+  --k2b-sidebar-section-actions-events: auto;
 }
 .k2b-ui .k2b-app-workspace__sidebar-section-action {
   display: inline-flex;
