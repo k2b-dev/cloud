@@ -12,6 +12,7 @@ const ui = resolve(import.meta.dir, "../..");
 const css = readFileSync(resolve(ui, "dist/styles.css"), "utf8");
 const entry = resolve(import.meta.dir, "option-description.fixture.ts");
 const fixture = `
+import { createSignal } from "solid-js";
 import { createComponent, render } from "solid-js/web";
 import { AutocompleteSelect, ChoiceList, Combobox, Dropdown, MultiSelectInput, RichSelect, Select, Tag, prompts } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 
@@ -22,6 +23,10 @@ const rows = [
   { value: "b", label: "Anna Berger (B)", description: "eBay" },
   { value: "c", label: "Carla Weiss (C)", description: "Shop" },
 ];
+// The host rebuilds equal entries with fresh closures, as an editor does while its table actions come and go.
+const menuItems = () => rows.map((row) => ({ label: row.label, description: row.description, descriptionVisual: row.descriptionVisual && (() => ebay()), action: () => globalThis.chosen.push("menu:" + row.value) }));
+const [menu, setMenu] = createSignal(menuItems());
+globalThis.rebuildMenu = () => setMenu(menuItems());
 const matching = (query) => rows.filter((row) => (row.label + " " + row.description).toLowerCase().includes(query.toLowerCase()));
 
 globalThis.openSearch = () =>
@@ -39,7 +44,9 @@ render(
       label: "Customer menu",
       phone: "sheet",
       search: { label: "Filter customers" },
-      items: rows.map((row) => ({ label: row.label, description: row.description, descriptionVisual: row.descriptionVisual, action: () => globalThis.chosen.push("menu:" + row.value) })),
+      get items() {
+        return menu();
+      },
       get children() {
         return createComponent(Dropdown.Trigger, { variant: "secondary", children: "Customer menu" });
       },
@@ -56,6 +63,7 @@ declare global {
   interface Window {
     chosen: string[];
     openSearch: () => void;
+    rebuildMenu: () => void;
   }
 }
 
@@ -195,6 +203,26 @@ describe("@k2b/ui option lists with a visual in place of the description", () =>
       expect(await page.getByRole("option").count()).toBe(2);
       await page.keyboard.press("Enter");
       expect(await page.evaluate(() => window.chosen)).toEqual(["menu:a"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("Dropdown keeps each second line in place while its host rebuilds equal entries", async () => {
+    const { page, errors } = await open("light");
+    try {
+      const { a } = await lists.Dropdown!(page);
+      await a.waitFor();
+      const lines = page.locator(".k2b-dropdown__copy > small");
+      const count = await lines.count();
+      expect(count).toBe(3);
+      await lines.evaluateAll((elements) => elements.forEach((element) => element.setAttribute("data-before", "")));
+      await page.evaluate(() => window.rebuildMenu());
+      await settled(page);
+      // The same elements remain: nothing outside the changed text is replaced.
+      expect(await page.locator(".k2b-dropdown__copy > small[data-before]").count()).toBe(count);
+      expect(await a.locator(".k2b-option-visual .k2b-tag").isVisible()).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await page.close();

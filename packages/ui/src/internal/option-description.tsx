@@ -1,4 +1,6 @@
-import type { JSX } from "solid-js";
+import { type JSX, Show } from "solid-js";
+
+type OptionLine = { description?: string; descriptionVisual?: () => JSX.Element };
 
 /**
  * The second line of an option row, as a `<small>`, or nothing without text
@@ -8,30 +10,33 @@ import type { JSX } from "solid-js";
  * reads do not change. The visual keeps the line's height. A `reason`, why the
  * option is unavailable, always shows as text in place of both.
  *
- * A plain function that takes the option, not a component with one prop per
- * field: every option list calls it, and each call stays small in the islands
- * that ship several lists.
+ * Every option list calls this one function, so each call stays small in the
+ * islands that ship several lists. It reads the option only inside its own
+ * `Show`: a host that rebuilds equal options, such as a menu whose entries
+ * come and go while someone types, keeps the line's element and only its text
+ * follows.
  */
 export const optionDescription = (
-  option: { description?: string; descriptionVisual?: () => JSX.Element },
+  option: OptionLine | (() => OptionLine),
   className?: string,
-  id?: string,
-  reason?: string,
+  id?: () => string,
+  reason?: () => string | undefined,
 ): JSX.Element => {
-  const text = reason || option.description;
-  const visual = !reason && option.descriptionVisual;
+  const line = () => (typeof option === "function" ? option() : option);
+  const text = () => reason?.() || line().description;
+  const visual = () => !reason?.() && line().descriptionVisual;
   return (
-    (text || visual) && (
-      <small class={className} id={id} data-reason={reason ? "true" : undefined}>
-        {visual
-          ? [
-              <span class="k2b-option-visual" aria-hidden="true">
-                {visual()}
-              </span>,
-              <span class="k2b-sr-only">{text}</span>,
-            ]
-          : text}
+    <Show when={text() || visual()}>
+      <small class={className} id={id?.()} data-reason={reason?.() ? "true" : undefined}>
+        <Show when={visual()} fallback={text()}>
+          {(shown) => [
+            <span class="k2b-option-visual" aria-hidden="true">
+              {shown()()}
+            </span>,
+            <span class="k2b-sr-only">{text()}</span>,
+          ]}
+        </Show>
       </small>
-    )
+    </Show>
   );
 };

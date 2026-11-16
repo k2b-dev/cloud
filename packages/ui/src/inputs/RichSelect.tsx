@@ -138,7 +138,12 @@ function RichSelectRowText(props: { item: RichSelectItem; labelId: string; lineI
       <span id={props.labelId} class="k2b-rich-select__label">
         {props.item.label}
       </span>
-      {optionDescription(props.item, "k2b-rich-select__line", props.lineId, props.item.disabledReason)}
+      {optionDescription(
+        () => props.item,
+        "k2b-rich-select__line",
+        () => props.lineId,
+        () => props.item.disabledReason,
+      )}
     </span>
   );
 }
