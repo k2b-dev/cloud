@@ -18,6 +18,8 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: LayoutHeader } = await import("./LayoutHeader");
 const { ShellDataProvider } = await import("./shell-data");
+const { AllAppsLabel } = await import("./MobileNavigation");
+const { SegmentedControl } = await import("@k2b/ui");
 
 let browser: Browser;
 let css: string;
@@ -124,6 +126,76 @@ test("phone header actions keep every visible pixel and Home is finger-sized whe
     taken: {},
     homeReach: finger,
   });
+}, 30_000);
+
+/** The sheet's two tabs as MobileNavigation renders them on a page with an app menu. */
+const sheetTabs = () =>
+  renderToString(() =>
+    createComponent(SegmentedControl, {
+      class: "cloud-mobile-menu__switch",
+      size: "md" as const,
+      ariaLabel: "Navigation",
+      value: () => "app",
+      onValueChange: () => {},
+      options: [
+        { value: "app", label: "Logistics handbook" },
+        { value: "apps", label: createComponent(AllAppsLabel, { news: false }) },
+      ],
+    }),
+  );
+
+test("the news dot sits on the app menu's corner and on the All apps tab and moves nothing, in light and dark", async () => {
+  for (const theme of ["light", "dark"] as const) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 664 }, isMobile: true, hasTouch: true, colorScheme: theme });
+    try {
+      await page.setContent(
+        `<!doctype html><html class="${theme}" data-theme="${theme}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+          `<style>${css}</style></head>` +
+          `<body class="k2b-ui">${inCanvas(true)}<div style="width:19rem;padding:1rem">${sheetTabs()}</div></body></html>`,
+      );
+      await settled(page);
+      const result = await page.evaluate(() => {
+        const owners = [
+          document.querySelector<HTMLElement>(".layout-header .cloud-launchpad-news")!,
+          document.querySelector<HTMLElement>(".cloud-mobile-menu__apps")!,
+        ];
+        const boxes = () =>
+          Array.from(document.querySelectorAll("body *:not(.cloud-launchpad-dot)")).map((element) => {
+            const box = element.getBoundingClientRect();
+            return `${element.className} ${box.x},${box.y},${box.width},${box.height}`;
+          });
+        const hidden = owners.map((owner) => getComputedStyle(owner.querySelector(".cloud-launchpad-dot")!).display);
+        const before = boxes();
+        // What the components set once a count arrives.
+        for (const owner of owners) owner.setAttribute("data-news", "");
+        const after = boxes();
+        const dots = owners.map((owner) => {
+          const dot = owner.querySelector<HTMLElement>(".cloud-launchpad-dot")!;
+          const box = dot.getBoundingClientRect();
+          const frame = owner.getBoundingClientRect();
+          const clipped: string[] = [];
+          for (let parent = dot.parentElement; parent; parent = parent.parentElement) {
+            const style = getComputedStyle(parent);
+            if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+            const edge = parent.getBoundingClientRect();
+            if (box.left < edge.left || box.right > edge.right || box.top < edge.top || box.bottom > edge.bottom)
+              clipped.push(parent.className);
+          }
+          return {
+            size: [box.width, box.height],
+            inside: box.left >= frame.left && box.right <= frame.right && box.top >= frame.top && box.bottom <= frame.bottom,
+            clipped,
+            painted: getComputedStyle(dot).backgroundColor !== "rgba(0, 0, 0, 0)",
+          };
+        });
+        return { hidden, moved: before.filter((entry, index) => entry !== after[index]), dots };
+      });
+      const dot = { size: [8, 8], inside: true, clipped: [], painted: true };
+      expect(result, theme).toEqual({ hidden: ["none", "none"], moved: [], dots: [dot, dot] });
+    } finally {
+      await page.close();
+    }
+  }
 }, 30_000);
 
 test("the signed-out header is the same card with the same controls at every width; only the labels shorten (#2921)", async () => {

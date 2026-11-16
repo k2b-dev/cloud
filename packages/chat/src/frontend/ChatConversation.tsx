@@ -9,10 +9,10 @@ import {
   Chat,
   type ChatAttachment,
   type ChatComposerPeople,
+  type ChatComposerQuote,
   type ChatComposerReply,
   type ChatMention,
   type DictationSource,
-  EmojiPicker,
   FileDropTarget,
   IconButtonLink,
   MessageEventGroup,
@@ -41,9 +41,11 @@ import {
   type Mention,
   withinMessageMutationWindow,
 } from "../service/contracts";
+import { messagePlainText } from "../system-messages";
 import { lightboxItem, rowAttachments } from "./attachment-views";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { createMessageDates } from "./chat-message-dates";
+import { EmojiPopover } from "./emoji-popover";
 import { followVisualViewport } from "./follow-viewport";
 import ThreadMetadata from "./ThreadMetadata";
 import type { Thread } from "./threads";
@@ -81,6 +83,8 @@ export type ChatFeedItem = {
   thread?: string | null;
   /** The message it answers. */
   quote?: MessageRowQuote;
+  /** Passages of other messages it quotes. */
+  quotes?: readonly MessageRowQuote[];
   /** The Cloud elements it shares, shown as cards. */
   refs?: readonly CloudResourceRef[];
   /** Its images and documents. */
@@ -121,6 +125,10 @@ export type ChatConversationProps = {
   target?: string;
   /** The message the draft answers, above the field. */
   reply?: ChatComposerReply;
+  /** Passages the draft quotes, above the field. */
+  quotes?: readonly ChatComposerQuote[];
+  /** "Quote" at text selected in a message; without it, selections offer nothing. */
+  onQuote?: (item: ChatFeedItem, text: string) => void;
   /** "Reply" in a message's menu, with `r` and a swipe to the right; without it, messages offer no reply. */
   onReply?: (item: ChatFeedItem) => void;
   /**
@@ -142,6 +150,8 @@ export type ChatConversationProps = {
   onLoadNewest: () => Promise<unknown>;
   /** Key of the message a deep link names; the history scrolls to it and highlights it once. */
   focusKey: string | null;
+  /** A passage of the `focusKey` message, such as a quoted part, that is tinted instead of the whole message. */
+  focusText?: string;
   canWrite: boolean;
   /** One quiet line above the field, such as why the reader cannot write. */
   hint?: JSX.Element;
@@ -192,6 +202,11 @@ export type ChatConversationProps = {
  * The Lightbox and its renderers load when a reader opens an attachment, as Chat's other heavy parts do; a failed
  * load offers a reload instead of opening nothing silently.
  */
+const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./chat-quote-selection"))) ?? { default: () => null });
+// A draft has quotes only after the module that adds them loaded, so its rows are always there to show them.
+const ComposerQuotes = lazy(async () => ({
+  default: (await importOnDemand(() => import("./chat-quote-selection")))?.ChatComposerQuotes ?? (() => null),
+}));
 const Lightbox = lazy(async () => (await importOnDemand(() => import("./chat-lightbox"))) ?? { default: () => null });
 const ROW_ESTIMATE = 60;
 const SYSTEM_ESTIMATE = 36;
@@ -357,6 +372,30 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
 
   onMount(() => onCleanup(followVisualViewport(frame)));
 
+  // "Quote" loads with the first selection in this conversation and then follows every selection itself.
+  const [quoting, setQuoting] = createSignal(false);
+  // A new quote moves the focus to the field, where the answer to it is written.
+  const [quoted, setQuoted] = createSignal<number>();
+  const addQuote = (item: ChatFeedItem, text: string) => {
+    props.onQuote?.(item, text);
+    setQuoted((count) => (count ?? 0) + 1);
+  };
+  // The whole message as a reader sees it, without the code bar or the "edited" mark around its text.
+  const quoteMessage = (item: ChatFeedItem) => {
+    const text = messagePlainText(item.body);
+    if (text) addQuote(item, text);
+  };
+  onMount(() => {
+    const select = () => {
+      const selection = document.getSelection();
+      if (!props.onQuote || !selection || selection.isCollapsed || !frame.contains(selection.anchorNode)) return;
+      document.removeEventListener("selectionchange", select);
+      setQuoting(true);
+    };
+    document.addEventListener("selectionchange", select);
+    onCleanup(() => document.removeEventListener("selectionchange", select));
+  });
+
   // A deep link highlights its message once the history holds it; a later page or a live message does not repeat it.
   // An address without a message ends that link, so returning to it in the same chat highlights the message again.
   let focused: string | null = null;
@@ -365,7 +404,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     const controller = feed();
     if (!key) focused = null;
     if (!key || key === focused || !controller || !props.items.some((item) => item.key === key)) return;
-    if (controller.scrollToKey(key, { highlight: true })) focused = key;
+    if (controller.scrollToKey(key, { highlight: true, highlightText: untrack(() => props.focusText) })) focused = key;
   });
 
   // Where "New messages" is while it is out of view, so its button points there. Without a marker or with the marker
@@ -627,6 +666,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               groupStart={startsGroup(item, props.items[index() - 1])}
               status={item.status}
               quote={item.quote}
+              quotes={item.quotes}
               origin={item.origin}
               card={item.refs?.length ? <ChatResourceCards refs={item.refs} cards={props.cards} /> : undefined}
               attachments={
@@ -677,6 +717,10 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
                               onSelect: () => props.onReply?.(item),
                             },
                           ]
+                        : []),
+                      // The whole message, where no text can be selected: on touch screens and from the keyboard.
+                      ...(props.onQuote && !item.deleted && item.body
+                        ? [{ id: "quote", label: t().quoteSelection, icon: "ti ti-quote", onSelect: () => quoteMessage(item) }]
                         : []),
                       ...(props.onReact
                         ? [
@@ -740,8 +784,18 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
           )
         }
       </VirtualFeed>
+      <Show when={quoting() && props.onQuote}>
+        <QuoteSelection
+          root={frame}
+          label={t().quoteSelection}
+          onQuote={(key, text) => {
+            const item = props.items.find((entry) => entry.key === key);
+            if (item) addQuote(item, text);
+          }}
+        />
+      </Show>
       {/* Readers react too, so this picker does not belong to the composer. */}
-      <EmojiPicker.Popover
+      <EmojiPopover
         anchor={reactionTarget()?.anchor}
         recent={recent()}
         onPick={(emoji) => {
@@ -809,6 +863,8 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             }
             draftKey={props.draftKey ?? props.chatId}
             reply={props.reply}
+            accessory={props.quotes?.length ? <ComposerQuotes quotes={props.quotes} /> : undefined}
+            focusToken={quoted()}
             formatting
             emoji={{ onOpen: setEmojiTarget, onPick: remember }}
             placeholder={props.placeholder ?? t().composerPlaceholder({ title: props.title })}
@@ -840,7 +896,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
               />
             )}
           </Show>
-          <EmojiPicker.Popover
+          <EmojiPopover
             anchor={emojiTarget()?.anchor}
             recent={recent()}
             onPick={(emoji) => {

@@ -33,6 +33,8 @@ export type { RemoveButtonProps } from "./RemoveButton";
 export { RemoveButton } from "./RemoveButton";
 export type { SegmentedControlProps, SegmentOption } from "./SegmentedControl";
 export { SegmentedControl } from "./SegmentedControl";
+export type { SelectionActionProps, SelectionActionSelection } from "./SelectionAction";
+export { SelectionAction } from "./SelectionAction";
 export type { SelectionToolbarProps } from "./SelectionToolbar";
 export { SelectionToolbar } from "./SelectionToolbar";
 export type { SortableListProps } from "./SortableList";

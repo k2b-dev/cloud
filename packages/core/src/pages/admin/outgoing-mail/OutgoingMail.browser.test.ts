@@ -67,7 +67,7 @@ const state: OutgoingMailState = {
   apps: {
     defaultProfile: "noreply",
     items: [
-      { appId: "core", name: "Core", registered: true, declared: true, mode: "default", profiles: [], readDeclared: false, logApps: [] },
+      { appId: "core", name: "Cloud", registered: true, declared: true, mode: "default", profiles: [], readDeclared: false, logApps: [] },
       {
         appId: "invoices",
         name: "Invoices",

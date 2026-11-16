@@ -128,7 +128,7 @@ describe("visiblePwaParts", () => {
 
 describe("runtime route matching", () => {
   const routeApps = [
-    { id: "core", name: "Core", icon: "ti ti-cloud", description: "Core", routes: ["/", "/admin"] },
+    { id: "core", name: "Cloud", icon: "ti ti-cloud", description: "Core", routes: ["/", "/admin"] },
     {
       id: "gateway-ops",
       name: "Gateway",
