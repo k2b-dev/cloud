@@ -1,4 +1,6 @@
-import { Button, Chat, type ChatActivityMetaTone, HoverCard, useLocale } from "@k2b/ui";
+import { Button, Chat, type ChatActivityMetaTone, useLocale } from "@k2b/ui";
+// From its own entry: this module loads on demand, and the main entry would keep the card in the island's first code.
+import { HoverCard } from "@k2b/ui/hover-card";
 import { children, createContext, createMemo, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
