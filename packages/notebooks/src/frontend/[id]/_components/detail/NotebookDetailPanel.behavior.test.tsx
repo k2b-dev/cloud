@@ -386,9 +386,9 @@ describe("Notebook detail panel recovery and pagination", () => {
       const alert = dom.root.querySelector('[role="alert"]')!;
       expect(alert.textContent).toContain("Neue Einträge laden nicht.");
       // The failure stands where "Load older" was: after the loaded rows.
-      expect(dom.root.querySelector(".notebook-activity .k2b-activity")!.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      );
+      expect(
+        dom.root.querySelector(".notebook-activity .k2b-activity")!.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
       expect(button("Ältere laden")).toBeUndefined();
       button("Neu laden")!.click();
       await until(() => authors().length === 6);
