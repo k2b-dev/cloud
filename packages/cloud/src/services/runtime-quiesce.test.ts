@@ -160,7 +160,8 @@ describe("quiesce controller", () => {
 test("withQuiesce wraps process() of every working primitive and nothing else", async () => {
   const controller = createQuiesceController();
   const { created, start } = starter();
-  const submit = async () => ({ messageId: "m-1" });
+  const receipt = { messageId: "m-1", streamSequence: 1, duplicate: false, jobId: "job-1" };
+  const submit = async () => receipt;
   const handle = { process: (..._args: unknown[]) => start(), submit };
   // Only the members withQuiesce touches; a full Sync is not needed for this seam.
   const sync = {
@@ -173,7 +174,7 @@ test("withQuiesce wraps process() of every working primitive and nothing else", 
   } as unknown as Sync;
   const wrapped = withQuiesce(sync, controller);
   const job = wrapped.job<{ id: string }>({ id: "example-job" });
-  expect(await job.submit({ input: { id: "1" } } as never)).toEqual({ messageId: "m-1" });
+  expect(await job.submit({ input: { id: "1" } } as never)).toEqual(receipt);
   await job.process({}, async () => {});
   await wrapped.scheduler({ id: "example-scheduler" }).process();
   expect(created).toHaveLength(2);

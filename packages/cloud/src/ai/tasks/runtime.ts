@@ -328,9 +328,9 @@ export const stopWorkflowAiRuntime = async (): Promise<void> => {
   const worker = activeWorker;
   worker?.stop();
   shutdown?.abort(new Error("Workflow AI runtime stopped"));
-  const recovery = recoveryInterval;
+  const interval = recoveryInterval;
   recoveryInterval = null;
-  await recovery?.stop();
+  await interval?.stop();
 
   // Sync's existing drain budget bounds settlement; do not exit before DB requeue.
   try {
