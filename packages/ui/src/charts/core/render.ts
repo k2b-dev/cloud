@@ -4,6 +4,7 @@ import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport } from "../../content/chart-
 import { renderStateTimelineSvg, type StateTimelineChartOptions, type StateTimelineDomain } from "../../content/chart-state-timeline";
 import { responsiveChartSvg, responsiveMapSvg } from "../../content/chart-svg";
 import { type ChartTimeAxis, timeAxisSvg } from "../../content/chart-time-axis";
+import { chartTimeTickBudget } from "../../content/chart-time-calendar";
 import { type AreaOptions, renderAreaSvg } from "./area";
 import { renderBarChartSvg } from "./bar-render";
 import { calendarLayout } from "./calendar-layout";
@@ -140,7 +141,7 @@ export const renderChartSvg = (
     svg = lineGapsSvg(svg, props.maxGap, props);
   }
   if (timeAxis && timeDomain && props.kind === "line")
-    svg = timeAxisSvg(svg, timeDomain, timeAxis, (props.xAxis?.ticks ?? 3) + 2, props.xAxis?.format);
+    svg = timeAxisSvg(svg, timeDomain, timeAxis, chartTimeTickBudget(width, props.xAxis?.ticks), props.xAxis?.format);
   if (props.kind === "map") return responsiveMapSvg(svg, width, height, normalizeMapViewport(mapViewport ?? props.viewport));
   return preservesAspectRatio(kind) ? svg : responsiveChartSvg(svg);
 };
