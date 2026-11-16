@@ -261,7 +261,8 @@ export function AvatarStack(props: AvatarStackProps): JSX.Element {
       )
       .finally(() => {
         sheetOpen = false;
-        setOpen(false);
+        // The popover that opened in place of a sheet reports its own state.
+        if (!popover.matches(":popover-open")) setOpen(false);
       });
   };
 

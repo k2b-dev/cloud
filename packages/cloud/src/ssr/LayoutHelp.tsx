@@ -881,9 +881,10 @@ const CANVAS_PROPERTIES = [
 /**
  * Open Core's Help provider in the panel slot, or fall back to the current app's dialog when no slot accepts it
  * (anonymous pages, `Layout panel={false}`, an app on an older @k2b/cloud). On a phone the fallback is the shared
- * bottom sheet at full height, like the panel's phone sheet.
+ * bottom sheet at full height, like the panel's phone sheet. While a phone loads that sheet's code, it returns a promise
+ * that settles once Help shows, not when it closes, so its trigger stays busy until then.
  */
-export function openLayoutHelpDialog() {
+export function openLayoutHelpDialog(): Promise<void> | undefined {
   if (openPanel("core")) return;
   const session = createSession();
   const accent = readShellData()?.accent;
@@ -894,15 +895,16 @@ export function openLayoutHelpDialog() {
   );
   const asDialog = () => void prompts.dialog<void>((close) => shell(close), { surface: "bare", header: false, size: "wide" });
   if (window.matchMedia("(max-width: 47.999rem)").matches) {
-    void import("./layout-help-sheet").then(
-      ({ openHelpSheet }) => openHelpSheet(shell, helpMessages.resolve([document.documentElement.lang || "en"]).t.help),
+    return import("./layout-help-sheet").then(
+      ({ openHelpSheet }) => {
+        void openHelpSheet(shell, helpMessages.resolve([document.documentElement.lang || "en"]).t.help);
+      },
       (error: unknown) => {
         // The sheet's code did not load: the help still opens, as the dialog it is on wider screens.
         globalThis.reportError(error);
         asDialog();
       },
     );
-    return;
   }
   asDialog();
 }

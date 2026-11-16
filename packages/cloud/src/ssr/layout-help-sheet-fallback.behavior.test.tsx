@@ -1,6 +1,6 @@
 import { expect, mock, spyOn, test } from "bun:test";
 import { isServer } from "solid-js/web";
-import { openPhoneHelp, until } from "./layout-help-phone.fixture";
+import { openPhoneHelp, until } from "./layout-help-phone.test-fixture";
 
 // The sheet's code arrives as its own chunk; here it fails to load, as after a deploy or offline.
 mock.module("./layout-help-sheet", () => Promise.reject(new Error("the help sheet's chunk did not load")));
