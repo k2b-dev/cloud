@@ -58,13 +58,35 @@ test("starting comes back to this page through the bypass link and shows the run
   try {
     fixture.control.requests.length = 0;
     await page.getByLabel("Hinweis für alle").fill("Wir spielen Version 2.4 ein.");
-    await page.getByLabel("Voraussichtlich fertig um").fill("14:30");
     await page.getByRole("button", { name: "Wartung starten", exact: true }).click();
     await page.waitForURL((url) => url.pathname === "/admin/settings/maintenance" && !url.search.includes("state="));
     await page.locator('[data-maintenance-admin="active"]').waitFor();
     const calls = fixture.control.requests.map((request) => `${request.method} ${request.path}`);
     expect(calls.slice(0, 2)).toEqual(["POST /api/admin/maintenance/on", "POST /api/admin/maintenance/bypass"]);
-    expect(await page.locator("[data-maintenance-admin]").innerText()).toContain("14:30 Uhr");
+    // The suggested end, one hour ahead and rounded up to the quarter hour.
+    expect(await page.locator("[data-maintenance-admin]").innerText()).toContain("15:15 Uhr");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("the end moves past midnight with the date-time picker, which names the time zone", async () => {
+  const { page, errors } = await open(views[0], "state=aktiv&locale=de");
+  try {
+    fixture.control.requests.length = 0;
+    await page.getByRole("button", { name: "Ende verschieben", exact: true }).click();
+    const dialog = page.locator("[data-move-end-dialog]");
+    await dialog.locator(".k2b-date-trigger").click();
+    await page.locator(".k2b-date-popover__timezone", { hasText: "Europe/Berlin" }).waitFor();
+    await page.locator('[data-date-day="2026-11-17"]').click();
+    await page.locator(".k2b-date-time__control input").fill("01:30");
+    await page.getByRole("button", { name: "Übernehmen", exact: true }).click();
+    await dialog.getByRole("button", { name: "Speichern", exact: true }).click();
+    await dialog.waitFor({ state: "detached" });
+    const saved = fixture.control.requests.find((request) => request.path === "/api/admin/maintenance/until");
+    expect(JSON.parse(saved?.body ?? "{}")).toEqual({ until: "2026-11-17T00:30:00.000Z" });
+    expect(await page.locator("[data-maintenance-admin]").innerText()).toMatch(/17\.\s?Nov\.?\s2026,\s01:30 Uhr/);
     expect(errors).toEqual([]);
   } finally {
     await page.close();

@@ -9,6 +9,7 @@ import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
+import { defaultEnd } from "./time";
 
 const PATH = "/admin/settings/maintenance";
 /** The clock the browser test sets: 14:10 in Berlin, so the mockup's 14:02 and 14:30 read as today. */
@@ -183,7 +184,14 @@ export async function maintenanceBrowserFixture() {
     c.set("settings", { app: { name: "Musterverein Cloud", locale } });
     const title = maintenanceAdminMessages.resolve([locale]).t.title;
     c.set("page", { title, theme });
-    const props = { initial: state, appNames, dateConfig: { timeZone: "Europe/Berlin", locale, firstDayOfWeek: 1 as const }, path: PATH };
+    const props = {
+      initial: state,
+      appNames,
+      dateConfig: { timeZone: "Europe/Berlin", locale, firstDayOfWeek: 1 as const },
+      path: PATH,
+      // 15:15 in Berlin at the pinned 14:10.
+      suggestedEnd: defaultEnd(MAINTENANCE_FIXTURE_NOW.getTime()),
+    };
     const body = renderToString(() =>
       createComponent(AdminLayout, {
         c,

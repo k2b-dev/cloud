@@ -1,19 +1,18 @@
 import { MAINTENANCE_MESSAGE_MAX_LENGTH, type MaintenanceStatus } from "@k2b/cloud/contracts/maintenance";
 import type { DateContext } from "@k2b/stdlib";
-import { Button, DescriptionList, NoticeCard, prompts, Section, StatusBadge, TextInput, useLocale } from "@k2b/ui";
+import { Button, DateTimePicker, DescriptionList, NoticeCard, prompts, Section, StatusBadge, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { bypassHref, maintenanceApi, waitForGatewayMaintenance } from "./client";
-import { type MaintenanceAdminMessages, maintenanceAdminMessages } from "./messages";
+import { maintenanceAdminMessages } from "./messages";
+import { openMoveEndDialog } from "./move-end-dialog";
 import { activeRows } from "./rows";
-import { parseEndTime } from "./time";
+import { isFutureEnd, todayKey } from "./time";
 
 /** While maintenance runs, the apps line follows the apps as they come back. */
 const REFRESH_MS = 10_000;
 
-type Busy = "start" | "until" | "stop" | null;
+type Busy = "start" | "stop" | null;
 type Failure = { message: string; retry?: () => void };
-
-const timeError = (reason: "format" | "past", t: MaintenanceAdminMessages) => (reason === "past" ? t.timePassed : t.timeInvalid);
 
 export default function Maintenance(props: {
   initial: MaintenanceStatus;
@@ -22,13 +21,18 @@ export default function Maintenance(props: {
   dateConfig: DateContext;
   /** This page's path; the bypass link brings the browser back here. */
   path: string;
+  /** The planned end the start form suggests, chosen by the server so both renders show the same field. */
+  suggestedEnd: string;
 }) {
   const locale = useLocale();
   const t = () => maintenanceAdminMessages.resolve([locale()]).t;
   const timeZone = () => props.dateConfig.timeZone ?? "UTC";
+  /** The pickers commit instants in the viewer's zone and name it; without a zone they would commit wall times. */
+  const pickerConfig = () => ({ ...props.dateConfig, timeZone: timeZone(), locale: locale() });
   const [status, setStatus] = createSignal(props.initial);
   const [message, setMessage] = createSignal("");
-  const [until, setUntil] = createSignal("");
+  // A planned end is suggested; clearing the field means none.
+  const [until, setUntil] = createSignal<string | null>(props.suggestedEnd);
   const [untilError, setUntilError] = createSignal<string>();
   const [busy, setBusy] = createSignal<Busy>(null);
   const [failure, setFailure] = createSignal<Failure | null>(null);
@@ -64,14 +68,10 @@ export default function Maintenance(props: {
   };
 
   const start = async () => {
-    let end: string | undefined;
-    if (until().trim()) {
-      const parsed = parseEndTime(until(), timeZone());
-      if (!parsed.ok) {
-        setUntilError(timeError(parsed.reason, t()));
-        return;
-      }
-      end = parsed.iso;
+    const end = until() ?? undefined;
+    if (end && !isFutureEnd(end)) {
+      setUntilError(t().timePassed);
+      return;
     }
     setUntilError(undefined);
     setFailure(null);
@@ -88,34 +88,9 @@ export default function Maintenance(props: {
   };
 
   const moveEnd = async () => {
-    const values = await prompts.form({
-      title: t().moveEndTitle,
-      icon: "ti ti-clock",
-      confirmText: t().moveEndSave,
-      fields: {
-        until: {
-          type: "text",
-          label: t().newEnd,
-          placeholder: t().timePlaceholder,
-          validate: (value) => {
-            const parsed = parseEndTime(value ?? "", timeZone());
-            return parsed.ok ? null : timeError(parsed.reason, t());
-          },
-        },
-      },
-    });
-    if (!values) return;
-    const parsed = parseEndTime(values.until, timeZone());
-    if (!parsed.ok) return;
     setFailure(null);
-    setBusy("until");
-    try {
-      setStatus(await maintenanceApi.until(parsed.iso));
-    } catch {
-      setFailure({ message: t().moveEndFailed, retry: () => void moveEnd() });
-    } finally {
-      setBusy(null);
-    }
+    const next = await openMoveEndDialog(status().until, pickerConfig());
+    if (next) setStatus(next);
   };
 
   const stop = async () => {
@@ -191,7 +166,6 @@ export default function Maintenance(props: {
             variant="secondary"
             class="ms-auto"
             disabled={busy() !== null}
-            loading={busy() === "until"}
             onClick={() => void moveEnd()}
           >
             {t().moveEnd}
@@ -199,7 +173,7 @@ export default function Maintenance(props: {
           <Button
             type="button"
             variant="primary"
-            disabled={busy() !== null && busy() !== "stop"}
+            disabled={busy() === "start"}
             loading={busy() === "stop" || busy() === "start"}
             loadingLabel={t().stopping}
             onClick={() => void stop()}
@@ -224,19 +198,20 @@ export default function Maintenance(props: {
                 disabled={busy() !== null}
                 onValueChange={setMessage}
               />
-              <TextInput
-                class="sm:max-w-xs"
+              <DateTimePicker
+                class="sm:max-w-sm"
                 label={t().until}
                 description={t().untilHint}
-                placeholder={t().timePlaceholder}
-                inputMode="numeric"
-                autocomplete="off"
+                placeholder={t().endPlaceholder}
                 value={until}
+                dateConfig={pickerConfig()}
+                min={todayKey(timeZone())}
+                clearable
                 error={untilError}
                 disabled={busy() !== null}
                 onValueChange={(value) => {
                   setUntil(value);
-                  setUntilError(undefined);
+                  setUntilError(value && !isFutureEnd(value) ? t().timePassed : undefined);
                 }}
               />
             </>

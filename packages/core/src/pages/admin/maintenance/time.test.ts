@@ -1,26 +1,34 @@
 import { expect, test } from "bun:test";
-import { formatClock, parseEndTime } from "./time";
+import { defaultEnd, formatClock, isFutureEnd, todayKey } from "./time";
 
 // 14:10 in Berlin (CET, UTC+1).
 const NOW = Date.parse("2026-11-16T13:10:00.000Z");
 
-test("a clock time means today in the viewer's zone, in several spellings", () => {
-  for (const value of ["14:30", "1430", "14.30", " 14:30 "])
-    expect(parseEndTime(value, "Europe/Berlin", NOW)).toEqual({ ok: true, iso: "2026-11-16T13:30:00.000Z" });
-  expect(parseEndTime("15", "Europe/Berlin", NOW)).toEqual({ ok: true, iso: "2026-11-16T14:00:00.000Z" });
-  expect(parseEndTime("14:30", "UTC", NOW)).toEqual({ ok: true, iso: "2026-11-16T14:30:00.000Z" });
+test("the suggested end is one hour ahead, rounded up to the next quarter hour", () => {
+  expect(defaultEnd(NOW)).toBe("2026-11-16T14:15:00.000Z");
+  expect(defaultEnd(Date.parse("2026-11-16T13:00:00.000Z"))).toBe("2026-11-16T14:00:00.000Z");
+  expect(defaultEnd(Date.parse("2026-11-16T13:00:00.001Z"))).toBe("2026-11-16T14:15:00.000Z");
+  // Late in the evening the suggestion crosses midnight.
+  expect(defaultEnd(Date.parse("2026-11-16T22:50:00.000Z"))).toBe("2026-11-17T00:00:00.000Z");
 });
 
-test("a passed time is rejected, never moved to tomorrow, and nonsense is a format error", () => {
-  expect(parseEndTime("09:00", "Europe/Berlin", NOW)).toEqual({ ok: false, reason: "past" });
-  expect(parseEndTime("14:10", "Europe/Berlin", NOW)).toEqual({ ok: false, reason: "past" });
-  for (const value of ["", "24:00", "12:60", "abc", "1:2", "2026-11-16T15:00"])
-    expect(parseEndTime(value, "Europe/Berlin", NOW)).toEqual({ ok: false, reason: "format" });
+test("only an end after now counts, also on a later day", () => {
+  expect(isFutureEnd("2026-11-16T13:10:00.001Z", NOW)).toBe(true);
+  expect(isFutureEnd("2026-11-17T00:30:00.000Z", NOW)).toBe(true);
+  expect(isFutureEnd("2026-11-16T13:10:00.000Z", NOW)).toBe(false);
+  expect(isFutureEnd("2026-11-16T08:00:00.000Z", NOW)).toBe(false);
+  expect(isFutureEnd("not a date", NOW)).toBe(false);
+});
+
+test("today is the viewer's day, which can differ from UTC", () => {
+  expect(todayKey("Europe/Berlin", NOW)).toBe("2026-11-16");
+  expect(todayKey("Europe/Berlin", Date.parse("2026-11-16T23:30:00.000Z"))).toBe("2026-11-17");
+  expect(todayKey("America/Los_Angeles", Date.parse("2026-11-16T05:00:00.000Z"))).toBe("2026-11-15");
 });
 
 test("times today show the clock alone, other days add the date", () => {
   const context = { timeZone: "Europe/Berlin", locale: "de" };
   expect(formatClock("2026-11-16T13:02:00.000Z", context, NOW)).toBe("14:02");
-  expect(formatClock("2026-11-15T21:00:00.000Z", context, NOW)).toContain("22:00");
-  expect(formatClock("2026-11-15T21:00:00.000Z", context, NOW)).not.toBe("22:00");
+  expect(formatClock("2026-11-17T00:30:00.000Z", context, NOW)).toContain("01:30");
+  expect(formatClock("2026-11-17T00:30:00.000Z", context, NOW)).not.toBe("01:30");
 });

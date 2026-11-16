@@ -7,6 +7,8 @@ import { createDomTestHarness, type DomTestHarness } from "../../../../../ui/tes
 // 14:10 in Berlin; every time below is read in that zone.
 const NOW = new Date("2026-11-16T13:10:00.000Z");
 const PATH = "/admin/settings/maintenance";
+/** What the server suggests at 14:10: 15:15 in Berlin. */
+const SUGGESTED = "2026-11-16T14:15:00.000Z";
 
 const off: MaintenanceStatus = { active: false, apps: { ready: 11, total: 11, starting: [] } };
 const active: MaintenanceStatus = {
@@ -53,7 +55,7 @@ const load = async () => {
 };
 const modules = isServer ? undefined : await load();
 
-const mount = (dom: DomTestHarness, initial: MaintenanceStatus) => {
+const mount = (dom: DomTestHarness, initial: MaintenanceStatus, suggestedEnd = SUGGESTED) => {
   const { ui, Maintenance } = modules!;
   delegateEvents(["input", "click"]);
   return render(
@@ -66,6 +68,7 @@ const mount = (dom: DomTestHarness, initial: MaintenanceStatus) => {
             appNames: { files: "Files", mail: "Mail" },
             dateConfig: { timeZone: "Europe/Berlin", locale: "en" },
             path: PATH,
+            suggestedEnd,
           });
         },
       }),
@@ -100,7 +103,6 @@ else {
     const dispose = mount(dom, off);
     try {
       type(dom.root.querySelector("textarea"), "Wir spielen Version 2.4 ein.");
-      type(dom.root.querySelector<HTMLInputElement>('input[placeholder="14:30"]'), "14:30");
       button(dom, "Start maintenance")!.click();
       await waitFor(() => navigate.mock.calls.length > 0, "navigation");
       expect(apiCalls(fetch.calls)).toEqual([
@@ -108,7 +110,7 @@ else {
         "POST /api/admin/maintenance/bypass",
         "GET /_cloud/gateway/status",
       ]);
-      expect(fetch.calls[0]!.body).toEqual({ message: "Wir spielen Version 2.4 ein.", until: "2026-11-16T13:30:00.000Z" });
+      expect(fetch.calls[0]!.body).toEqual({ message: "Wir spielen Version 2.4 ein.", until: SUGGESTED });
       expect(String(navigate.mock.calls[0]![0])).toBe(`https://cloud.test${PATH}?cloud-maintenance-bypass=token`);
       // Until the browser leaves, the page shows the running maintenance and keeps its action busy.
       expect(dom.root.textContent).toContain("Everyone except you sees the maintenance page right now.");
@@ -120,12 +122,12 @@ else {
     }
   });
 
-  test("a time that has passed stays in the form with a reason and starts nothing", async () => {
+  test("an end that has passed meanwhile stays in the form with a reason and starts nothing", async () => {
     const dom = createDomTestHarness();
     const fetch = mockFetch(() => undefined);
-    const dispose = mount(dom, off);
+    // The page stayed open: its suggestion now lies in the past.
+    const dispose = mount(dom, off, "2026-11-16T12:00:00.000Z");
     try {
-      type(dom.root.querySelector<HTMLInputElement>('input[placeholder="14:30"]'), "09:00");
       button(dom, "Start maintenance")!.click();
       await waitFor(() => (dom.root.textContent ?? "").includes("This time has already passed."), "time error");
       expect(fetch.calls).toEqual([]);
@@ -146,13 +148,30 @@ else {
       await waitFor(() => Boolean(dom.root.querySelector('[role="alert"]')), "error");
       expect(dom.root.querySelector('[role="alert"]')!.textContent).toContain("Maintenance did not start.");
       expect(apiCalls(fetch.calls)).toEqual(["POST /api/admin/maintenance/on"]);
-      expect(fetch.calls[0]!.body).toEqual({});
+      expect(fetch.calls[0]!.body).toEqual({ until: SUGGESTED });
       expect(navigate).not.toHaveBeenCalled();
       expect(button(dom, "Start maintenance")!.disabled).toBe(false);
     } finally {
       dispose();
       fetch.restore();
       navigate.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("a cleared end starts maintenance without a planned end", async () => {
+    const dom = createDomTestHarness();
+    const fetch = mockFetch(() => Response.json({ code: "INTERNAL" }, { status: 500 }));
+    const dispose = mount(dom, off);
+    try {
+      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Clear date"]')!.click();
+      await waitFor(() => !dom.root.querySelector('button[aria-label="Clear date"]'), "end cleared");
+      button(dom, "Start maintenance")!.click();
+      await waitFor(() => fetch.calls.length > 0, "start request");
+      expect(fetch.calls[0]!.body).toEqual({});
+    } finally {
+      dispose();
+      fetch.restore();
       dom.cleanup();
     }
   });
@@ -190,23 +209,47 @@ else {
     }
   });
 
-  test("moving the end sends the new time and shows it", async () => {
+  test("moving the end starts from the current end, saves it and shows the answer", async () => {
     const dom = createDomTestHarness();
     const fetch = mockFetch((method, path) =>
       method === "POST" && path === "/api/admin/maintenance/until"
-        ? Response.json({ ...active, until: "2026-11-16T14:00:00.000Z" })
+        ? Response.json({ ...active, until: "2026-11-17T00:30:00.000Z" })
         : undefined,
     );
     const dispose = mount(dom, active);
     try {
       expect(dom.root.textContent).toContain("14:30");
       button(dom, "Move end")!.click();
-      await waitFor(() => Boolean(dom.document.querySelector("dialog input")), "end prompt");
-      type(dom.document.querySelector<HTMLInputElement>("dialog input"), "15:00");
+      await waitFor(() => Boolean(button(dom, "Save", "dialog")), "end dialog");
+      // The dialog names the viewer's time zone through its date-time field.
       button(dom, "Save", "dialog")!.click();
-      await waitFor(() => (dom.root.textContent ?? "").includes("15:00"), "new end");
+      await waitFor(() => (dom.root.textContent ?? "").includes("01:30"), "new end after midnight");
       expect(apiCalls(fetch.calls)).toEqual(["POST /api/admin/maintenance/until"]);
-      expect(fetch.calls[0]!.body).toEqual({ until: "2026-11-16T14:00:00.000Z" });
+      expect(fetch.calls[0]!.body).toEqual({ until: "2026-11-16T13:30:00.000Z" });
+      expect(dom.document.querySelector("[data-move-end-dialog]")).toBeNull();
+    } finally {
+      modules!.ui.dialogCore.close();
+      dispose();
+      fetch.restore();
+      dom.cleanup();
+    }
+  });
+
+  test("without a future end the dialog suggests one; a failed save stays in the dialog and keeps the old end", async () => {
+    const dom = createDomTestHarness();
+    const fetch = mockFetch(() => Response.json({ code: "INTERNAL" }, { status: 500 }));
+    const noEnd: MaintenanceStatus = { active: true, startedAt: active.startedAt, startedBy: active.startedBy, apps: active.apps };
+    const dispose = mount(dom, noEnd);
+    try {
+      button(dom, "Move end")!.click();
+      await waitFor(() => Boolean(button(dom, "Save", "dialog")), "end dialog");
+      button(dom, "Save", "dialog")!.click();
+      await waitFor(() => Boolean(dom.document.querySelector('[data-move-end-dialog] [role="alert"]')), "error in dialog");
+      expect(dom.document.querySelector("[data-move-end-dialog]")!.textContent).toContain("The end was not moved.");
+      expect(fetch.calls[0]!.body).toEqual({ until: "2026-11-16T14:15:00.000Z" });
+      button(dom, "Cancel", "dialog")!.click();
+      await waitFor(() => !dom.document.querySelector("[data-move-end-dialog]"), "dialog closed");
+      expect(dom.root.textContent).not.toContain("Planned until");
     } finally {
       modules!.ui.dialogCore.close();
       dispose();

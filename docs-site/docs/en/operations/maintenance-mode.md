@@ -59,16 +59,18 @@ mode** (`/admin/settings/maintenance`). The page shows the same state as
 `cld admin maintenance status`. `cld` stays the safer way, because it also
 works while Core restarts.
 
-- While maintenance is off, you can write a note for everyone and the
-  expected end time, then choose **Start maintenance**. Maintenance starts
+- While maintenance is off, you can write a note for everyone and pick the
+  expected end, then choose **Start maintenance**. Maintenance starts
   at once. The page then gets a bypass link for your browser and opens it, so
   you stay in the Cloud while everyone else sees the maintenance page.
 - While maintenance is on, the page shows since when and who started it, the
   planned end, the note and how many apps are ready. The apps line updates
   every 10 seconds. **Move end** sets a new end time. **End maintenance** asks
   once and switches maintenance off.
-- The end time is a time today in your time zone. A time that has already
-  passed is rejected.
+- The end is a date and a time in your time zone, which the picker names, so
+  it can lie after midnight. The page suggests one hour from now, rounded up
+  to the next quarter hour; clear the field for no planned end. A time that
+  has already passed is rejected.
 - If starting works but the bypass link fails, the page says so and offers to
   try again. You can also run `cld admin maintenance bypass` or
   `cld admin maintenance off`.

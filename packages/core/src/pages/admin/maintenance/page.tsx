@@ -5,6 +5,7 @@ import { ssr } from "../../../config";
 import { loadMaintenanceAdmin, MAINTENANCE_ADMIN_PATH } from "./load";
 import Maintenance from "./Maintenance.island";
 import { maintenanceAdminMessages } from "./messages";
+import { defaultEnd } from "./time";
 
 export default ssr<AuthContext>(async (c) => {
   const t = maintenanceAdminMessages.resolve([getLocale(c)]).t;
@@ -19,6 +20,7 @@ export default ssr<AuthContext>(async (c) => {
             appNames={loaded.data.appNames}
             dateConfig={getDateConfig(c)}
             path={MAINTENANCE_ADMIN_PATH}
+            suggestedEnd={defaultEnd()}
           />
         ) : (
           <NoticeCard tone="danger" icon="ti ti-alert-circle" role="alert">

@@ -27,6 +27,7 @@ const html = (initial: MaintenanceStatus, locale = "de") =>
           appNames: { files: "Dateien", mail: "Mail" },
           dateConfig: { timeZone: "Europe/Berlin", locale },
           path: "/admin/settings/maintenance",
+          suggestedEnd: "2026-11-16T14:15:00.000Z",
         });
       },
     }),
@@ -34,8 +35,10 @@ const html = (initial: MaintenanceStatus, locale = "de") =>
 
 const text = (markup: string) => markup.replace(/<!--[^>]*-->/g, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
-test("off: the switch with its note, end time and the cld way out, and no start-time choice", () => {
+test("off: the switch with its note, a suggested end with its date and the cld way out, and no start-time choice", () => {
   const page = text(html({ active: false, apps: { ready: 11, total: 11, starting: [] } }));
+  // The suggested end is a full date and time (15:15 in Berlin), so a maintenance can run past midnight.
+  expect(page).toMatch(/16\.\s?Nov\.?\s2026,\s15:15/);
   for (const words of [
     "Wartungsmodus",
     "Aus",
