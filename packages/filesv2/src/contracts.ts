@@ -72,6 +72,8 @@ export type EditorInfo = { documentFormat: DocumentFormat };
 /** `issues` lists failures of enabled areas the account can use; a disabled area or one without storage for this provider is omitted entirely. */
 export type BasesResult = { items: BaseSummary[]; issues: { area: Area; code: string }[]; editor: EditorInfo | null };
 export type DirectoryResult = {
+  /** Canonical folder identity, including persisted refs for long paths. */
+  resourceId?: string;
   readme?: FileEntry | null;
   base: BaseSummary;
   path: string;

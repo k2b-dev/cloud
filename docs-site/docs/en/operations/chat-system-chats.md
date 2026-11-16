@@ -18,9 +18,9 @@ page and below `/app/chat/panel`. Providers can also offer an activity feed.
 Existing comments stay in their owning application.
 
 Built-in providers include Spaces (Space and item), Notebooks (notebook and
-note), Contacts (address book and contact), and Grids (base and record).
-After deploying the updated apps, their containers appear through catalog
-discovery without Chat configuration.
+note), Contacts (address book and contact), Grids (base and record), and Files
+(folder and file). After deploying the updated apps, their containers appear
+through catalog discovery without Chat configuration.
 
 Contacts offers address books as containers and contacts as items. On an
 address-book page, the Chat panel follows the book; selecting a contact opens
@@ -34,6 +34,11 @@ live record detail selects that record's thread. Closing the detail returns to
 the base scope. Read and write access follow current base permissions,
 credential scopes, and resource bindings. Grids provides no activity feed or
 account reader checks for discussion push in this release.
+
+Files containers are storage roots and folders, with files discussed in their
+current parent folder. Files does not yet offer discussion activity or reader
+checks for push notifications. Its interactive readers and container list use
+the same current storage permissions as Files.
 
 The [item discussion capabilities](/en/docs/platform/chat-discussions) expose
 only provider-backed item threads. Keep the item and container types' declared

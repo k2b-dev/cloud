@@ -11,7 +11,7 @@ import { startLiveOutbox } from "../events/live";
 import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
-import { registerPageSwap } from "../ssr/page-swap";
+import { assertPageSwapPaths, matchPageSwapScope, registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
 import { bindResourceAppAccess, RESOURCE_ACCESS_PATH } from "./app-access-resources";
@@ -193,8 +193,12 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   appearance?: AppAppearance;
   /** URL prefix for SSR asset isolation. Omit for the global `/_ssr/` path (core). */
   basePath?: string;
-  /** Swap Layout content within this app while keeping the rail, tab bar and panel document. Default: false; focusMode pages still load a document. */
-  pageSwap?: boolean;
+  /**
+   * Swap Layout content while keeping the rail, tab bar and panel document. `true` swaps within the app's route prefix.
+   * A list of paths swaps only on pages under one of them, and only between pages under the same matched path; `:name`
+   * stands for one path segment (`"/app/mail/:mailboxId/code"`). Default: off; focusMode pages still load a document.
+   */
+  pageSwap?: true | readonly string[];
   /** Base URL as seen by other containers (e.g. "http://app-notebooks:3000"). */
   baseUrl: string;
   adminHref?: string;
@@ -534,6 +538,8 @@ export const defineApp = <
   const installable = opts.installable === undefined ? undefined : validateInstallable(opts.id, opts.routes, opts.installable);
   if (installable === null)
     throw new Error(`App "${opts.id}" declares invalid installable; use a canonical own /app/<id>/<surface>/ path covered by routes`);
+  const swapPaths = typeof opts.pageSwap === "object" ? opts.pageSwap : undefined;
+  if (swapPaths) assertPageSwapPaths(swapPaths);
   const requestInstallable = (path: string) => (installable && installableContains(installable.path, path) ? installable : undefined);
   validateAppNavBadge(opts);
   const panel = validateAppPanel(opts);
@@ -671,8 +677,9 @@ export const defineApp = <
   const ssr = Object.assign(
     createStatusPreservingSsrHandler<ResolvedPageOptions>(html, async (c) => {
       c.get("page").installable = requestInstallable(c.req.path);
-      if (opts.pageSwap && !c.get("page").installable)
-        registerPageSwap(c, isDevelopment ? String(developmentStamp) : `${buildMetadata.version}:${buildMetadata.release}`);
+      const swapScope = swapPaths ? matchPageSwapScope(swapPaths, new URL(c.req.url).pathname) : undefined;
+      if (opts.pageSwap && !c.get("page").installable && (!swapPaths || swapScope))
+        registerPageSwap(c, isDevelopment ? String(developmentStamp) : `${buildMetadata.version}:${buildMetadata.release}`, swapScope);
       c.get("page").lang = getLocale(c);
       c.get("page").themePreference = readThemePreferenceFromCookieHeader(c.req.header("Cookie"));
       const user = c.get("user");
