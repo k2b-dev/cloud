@@ -1,6 +1,6 @@
 import type { MaintenanceStatus } from "@k2b/cloud/contracts/maintenance";
 import type { User } from "@k2b/cloud/contracts/shared";
-import { ok, type Result } from "@k2b/cloud/server";
+import { fail, ok, type Result } from "@k2b/cloud/server";
 import { type KnownApp, listKnownApps } from "../../../known-apps";
 import { createMaintenanceService, type MaintenanceService } from "../../../maintenance";
 
@@ -17,9 +17,14 @@ export const loadMaintenanceAdmin = async (
     knownApps = listKnownApps,
   }: { service?: MaintenanceService; knownApps?: () => Promise<KnownApp[]> } = {},
 ): Promise<Result<{ status: MaintenanceStatus; appNames: Record<string, string> }>> => {
-  const status = await service.status(user);
-  if (!status.ok) return status;
-  // Apps that are still starting are not registered, so their names come from Core's catalogue of known apps.
-  const appNames = Object.fromEntries((await knownApps()).map((app) => [app.id, app.name]));
-  return ok({ status: status.data, appNames });
+  try {
+    const status = await service.status(user);
+    if (!status.ok) return status;
+    // Apps that are still starting are not registered, so their names come from Core's catalogue of known apps.
+    const appNames = Object.fromEntries((await knownApps()).map((app) => [app.id, app.name]));
+    return ok({ status: status.data, appNames });
+  } catch {
+    // NATS or the database is away: the page says so instead of the generic error page.
+    return fail({ code: "UNAVAILABLE", status: 503, message: "Maintenance state unavailable" });
+  }
 };

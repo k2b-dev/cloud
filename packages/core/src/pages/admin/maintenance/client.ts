@@ -31,25 +31,31 @@ export const maintenanceApi = {
   bypass: async () => MaintenanceBypassSchema.parse(await call("/bypass", { method: "POST" })),
 };
 
-const GATEWAY_WAIT_ATTEMPTS = 15;
-const GATEWAY_WAIT_MS = 200;
+const BYPASS_ATTEMPTS = 15;
+const BYPASS_WAIT_MS = 200;
 
-/**
- * Waits, at most about three seconds, until the gateway reports the maintenance that Core just stored. The gateway
- * learns it through a watch; a bypass link it opens before then sets no cookie and would leave this browser outside.
- */
-export const waitForGatewayMaintenance = async (): Promise<void> => {
-  for (let attempt = 0; attempt < GATEWAY_WAIT_ATTEMPTS; attempt += 1) {
-    const response = await fetch(GATEWAY_STATUS_PATH, { credentials: "same-origin", cache: "no-store" }).catch(() => null);
-    const body: unknown = response?.ok ? await response.json().catch(() => null) : null;
-    if (body && typeof body === "object" && "maintenance" in body && body.maintenance) return;
-    await new Promise((resolve) => setTimeout(resolve, GATEWAY_WAIT_MS));
-  }
+const gatewayBypassConfirmed = async (): Promise<boolean> => {
+  const response = await fetch(GATEWAY_STATUS_PATH, { credentials: "same-origin", cache: "no-store" }).catch(() => null);
+  const body: unknown = response?.ok ? await response.json().catch(() => null) : null;
+  if (!body || typeof body !== "object" || !("maintenance" in body)) return false;
+  const maintenance = body.maintenance;
+  return !!maintenance && typeof maintenance === "object" && "bypass" in maintenance && maintenance.bypass === true;
 };
 
-/** The bypass link, pointed back at the page the admin is on; the gateway sets its cookie and redirects there. */
-export const bypassHref = (linkUrl: string, currentPath: string): string => {
-  const url = new URL(linkUrl);
-  url.pathname = currentPath;
-  return url.href;
+/**
+ * Lets this browser past the maintenance it just started, and proves it. The gateway learns the maintenance through
+ * a watch and turns the link into a cookie only once it knows it, so the link is followed (on this origin, without
+ * navigating) until the gateway's status confirms the bypass for this browser — at most about three seconds. Throws
+ * when it never does, so the page can say so instead of letting the next request meet the wall.
+ */
+export const enterThroughBypass = async (linkUrl: string, currentPath: string): Promise<void> => {
+  // Same origin as the page: the cookie is host-only, and a different `app.url` host would set it elsewhere.
+  const link = new URL(currentPath, window.location.origin);
+  link.search = new URL(linkUrl).search;
+  for (let attempt = 0; attempt < BYPASS_ATTEMPTS; attempt += 1) {
+    await fetch(link.href, { credentials: "same-origin", cache: "no-store", redirect: "manual" }).catch(() => null);
+    if (await gatewayBypassConfirmed()) return;
+    await new Promise((resolve) => setTimeout(resolve, BYPASS_WAIT_MS));
+  }
+  throw new Error("the gateway did not confirm the bypass");
 };

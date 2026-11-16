@@ -2,7 +2,7 @@ import { MAINTENANCE_MESSAGE_MAX_LENGTH, type MaintenanceStatus } from "@k2b/clo
 import type { DateContext } from "@k2b/stdlib";
 import { Button, DateTimePicker, DescriptionList, NoticeCard, prompts, Section, StatusBadge, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import { bypassHref, maintenanceApi, waitForGatewayMaintenance } from "./client";
+import { enterThroughBypass, maintenanceApi } from "./client";
 import { maintenanceAdminMessages } from "./messages";
 import { openMoveEndDialog } from "./move-end-dialog";
 import { activeRows } from "./rows";
@@ -38,12 +38,21 @@ export default function Maintenance(props: {
   const [failure, setFailure] = createSignal<Failure | null>(null);
   const [now, setNow] = createSignal(Date.now());
 
+  // Every write bumps the generation, so a refresh that left before it never overwrites what the write returned.
+  let generation = 0;
+  const write = (next: MaintenanceStatus) => {
+    generation += 1;
+    setStatus(next);
+  };
+
   onMount(() => {
     const timer = setInterval(() => {
       setNow(Date.now());
       if (!status().active || busy() !== null || document.visibilityState === "hidden") return;
+      const asked = generation;
       maintenanceApi.status().then(
         (next) => {
+          if (asked !== generation) return;
           setStatus(next);
           setFailure((current) => (current?.message === t().refreshFailed ? null : current));
         },
@@ -59,8 +68,9 @@ export default function Maintenance(props: {
     setFailure(null);
     try {
       const link = await maintenanceApi.bypass();
-      await waitForGatewayMaintenance();
-      window.location.assign(bypassHref(link.url, props.path));
+      await enterThroughBypass(link.url, props.path);
+      // The gateway now lets this browser through; the reload shows the running maintenance from the server.
+      window.location.reload();
     } catch {
       setFailure({ message: t().startedNoLink, retry: () => void enter() });
       setBusy(null);
@@ -77,7 +87,7 @@ export default function Maintenance(props: {
     setFailure(null);
     setBusy("start");
     try {
-      setStatus(await maintenanceApi.on({ ...(message().trim() ? { message: message() } : {}), ...(end ? { until: end } : {}) }));
+      write(await maintenanceApi.on({ ...(message().trim() ? { message: message() } : {}), ...(end ? { until: end } : {}) }));
     } catch {
       setFailure({ message: t().startFailed });
       setBusy(null);
@@ -90,7 +100,7 @@ export default function Maintenance(props: {
   const moveEnd = async () => {
     setFailure(null);
     const next = await openMoveEndDialog(status().until, pickerConfig());
-    if (next) setStatus(next);
+    if (next) write(next);
   };
 
   const stop = async () => {
@@ -144,7 +154,9 @@ export default function Maintenance(props: {
           labels={[t().active, t().off]}
         />
       }
-      description={status().active ? t().activeDescription : t().offDescription}
+      description={
+        status().active ? (failure()?.message === t().startedNoLink ? t().activeLockedOut : t().activeDescription) : t().offDescription
+      }
       footer={
         <Show
           when={status().active}
@@ -168,7 +180,7 @@ export default function Maintenance(props: {
             type="button"
             variant="primary"
             disabled={busy() === "start"}
-            loading={busy() === "stop" || busy() === "start"}
+            loading={busy() === "stop"}
             loadingLabel={t().stopping}
             onClick={() => void stop()}
           >
