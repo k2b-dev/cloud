@@ -1,6 +1,6 @@
 import { IconButton, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
-import { assistantMessages } from "./messages";
+import { queueMessages } from "./queue-messages";
 
 /** Who wrote a queued message, as the server projects it for the viewer; `href` only where the viewer may open it. */
 export type AssistantQueueOrigin =
@@ -50,7 +50,7 @@ const ORIGIN_ICON: Record<AssistantQueueOrigin["kind"] | "own", string> = {
  */
 export default function AssistantQueue(props: AssistantQueueProps) {
   const locale = useLocale();
-  const t = () => assistantMessages.resolve([locale()]).t;
+  const t = () => queueMessages.resolve([locale()]).t;
   const [open, setOpen] = createSignal(false);
   let root: HTMLDivElement | undefined;
   let toggle: HTMLButtonElement | undefined;
@@ -67,9 +67,9 @@ export default function AssistantQueue(props: AssistantQueueProps) {
     if (entry.authorIsViewer) return null;
     const source = entry.origin;
     return source.kind === "automation"
-      ? t().queueFromAutomation({ name: source.name })
+      ? t().fromAutomation({ name: source.name })
       : source.kind === "chat"
-        ? t().queueFromChat({ name: source.name })
+        ? t().fromChat({ name: source.name })
         : source.name;
   };
   const icon = (entry: AssistantQueueEntry) => (entry.authorIsViewer ? "own" : entry.origin.kind);
@@ -119,7 +119,7 @@ export default function AssistantQueue(props: AssistantQueueProps) {
     const ids = new Set(props.entries.map((entry) => entry.id));
     if (known) {
       const added = props.entries.filter((entry) => !known!.has(entry.id)).at(-1);
-      if (added) setAnnouncement(t().queueAnnounce({ text: added.text }));
+      if (added) setAnnouncement(t().announce({ text: added.text }));
     }
     known = ids;
   });
@@ -149,7 +149,7 @@ export default function AssistantQueue(props: AssistantQueueProps) {
         <Show when={stateOf(stateProps.entry) === "failed"}>
           <i class="ti ti-alert-circle" aria-hidden="true" />
         </Show>
-        {stateOf(stateProps.entry) === "failed" ? t().queueNotSent : t().sending}
+        {stateOf(stateProps.entry) === "failed" ? t().notSent : t().sending}
       </span>
     </Show>
   );
@@ -161,8 +161,8 @@ export default function AssistantQueue(props: AssistantQueueProps) {
       class={props.layout === "chip" ? "assistant-queue__chip" : "assistant-queue__all"}
       aria-expanded={open() ? "true" : "false"}
       aria-controls={listId}
-      aria-label={props.layout === "line" ? t().queueShowAll({ count: props.entries.length }) : undefined}
-      title={props.layout === "line" ? t().queueShowAllShort : undefined}
+      aria-label={props.layout === "line" ? t().showAll({ count: props.entries.length }) : undefined}
+      title={props.layout === "line" ? t().showAllShort : undefined}
       onClick={() => setOpen((value) => !value)}
     >
       <Show
@@ -204,7 +204,7 @@ export default function AssistantQueue(props: AssistantQueueProps) {
           <span>
             {t().queued} · <span class="assistant-queue__count">{props.entries.length}</span>
           </span>
-          <span class="assistant-queue__hint">{t().queueOrder}</span>
+          <span class="assistant-queue__hint">{t().order}</span>
         </div>
         <ol class="assistant-queue__rows">
           <For each={props.entries}>
@@ -236,7 +236,7 @@ export default function AssistantQueue(props: AssistantQueueProps) {
                       <i class="ti ti-send" aria-hidden="true" />
                     </IconButton>
                   </Show>
-                  <IconButton size="sm" label={t().queueRemove} disabled={locked()} onClick={() => props.onRemove(entry)}>
+                  <IconButton size="sm" label={t().remove} disabled={locked()} onClick={() => props.onRemove(entry)}>
                     <i class="ti ti-x" aria-hidden="true" />
                   </IconButton>
                 </span>
