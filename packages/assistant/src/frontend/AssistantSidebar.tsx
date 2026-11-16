@@ -1,5 +1,4 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
-import type { AssistantArchiveBlocker } from "./archive-blocker";
 import { ApprovalsNavStatus, approvalNavCount } from "@k2b/cloud/approvals/ui";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
@@ -28,6 +27,7 @@ import { openAssistantActivities } from "./AssistantActivitiesDialog";
 import { openAssistantAllChatsDialog } from "./AssistantAllChatsDialog";
 import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { openAssistantPrefsModal } from "./AssistantPrefsModals";
+import type { AssistantArchiveBlocker } from "./archive-blocker";
 import type { AssistantLiveHub } from "./assistant-live";
 import { assistantConversationHref, assistantProjectHref } from "./assistant-navigation";
 import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistantSearchOptions } from "./assistant-search";

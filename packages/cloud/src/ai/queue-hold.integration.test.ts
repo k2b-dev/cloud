@@ -1,7 +1,13 @@
 import { expect } from "bun:test";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
-import { drainQueuedMessages, enqueueChatMessage, listQueuedMessages, migrateAiMessageQueue, requestQueuedMessageSendNow } from "./message-queue";
+import {
+  drainQueuedMessages,
+  enqueueChatMessage,
+  listQueuedMessages,
+  migrateAiMessageQueue,
+  requestQueuedMessageSendNow,
+} from "./message-queue";
 import type { AiStoredMessageOrigin } from "./queue-contracts";
 import { aiConversations } from "./store";
 import type { AiConversationService } from "./types";
@@ -19,7 +25,13 @@ const fixture = async () => {
     conversationId: chat.id,
     modelId: "fixture",
     userMessage: { role: "user", content: [{ type: "text", text }] },
-    runConfig: { kind: "chat", input: text, accessSubject: { type: "user", userId: user!.id }, writerOrigin: origin, toolSource: { kind: "none" } },
+    runConfig: {
+      kind: "chat",
+      input: text,
+      accessSubject: { type: "user", userId: user!.id },
+      writerOrigin: origin,
+      toolSource: { kind: "none" },
+    },
   });
   const add = async (text: string, origin: AiStoredMessageOrigin = { kind: "person", id: user!.id }) => {
     const id = crypto.randomUUID();
@@ -41,8 +53,11 @@ const fixture = async () => {
       jobs.push(job);
     }, chat.id);
   const started = async () =>
-    (await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM ai.turns WHERE conversation_id=${chat.id}::uuid AND id <> ${turn!.id}::uuid`)[0]!
-      .count;
+    (
+      await sql<
+        { count: number }[]
+      >`SELECT count(*)::int AS count FROM ai.turns WHERE conversation_id=${chat.id}::uuid AND id <> ${turn!.id}::uuid`
+    )[0]!.count;
   return {
     chat,
     userId: user!.id,

@@ -101,6 +101,7 @@ import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./Assistan
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
+import { assistantArchiveBlocker } from "./archive-blocker";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -157,7 +158,6 @@ import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
-import { assistantArchiveBlocker } from "./archive-blocker";
 import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
 import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
