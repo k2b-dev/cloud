@@ -118,9 +118,9 @@ export const aiChatSendAction = {
     });
   },
   async run(input: z.infer<typeof aiChatSendInput>, context: CapabilityExecutionContext) {
-    // Replay may outlive the original Code run or its enabled state; source restrictions still apply.
-    const replayAuthority = await chatWriteAuthority(context, sql, { receiptReplay: true });
-    if (!replayAuthority.ok) return replayAuthority;
+    // Unattended Code calls are reviewed with this same authority first, so a replay never outlives it.
+    const source = await chatWriteAuthority(context, sql);
+    if (!source.ok) return source;
     if (!context.user) return fail(err.forbidden("Chat writes require their owner"));
     const key = CapabilityIdempotencyKeySchema.safeParse(context.idempotencyKey);
     const parsed = aiChatSendInput.safeParse(input);
@@ -139,8 +139,6 @@ export const aiChatSendAction = {
     };
     const previous = await existing();
     if (previous) return previous;
-    const source = await chatWriteAuthority(context, sql);
-    if (!source.ok) return source;
     const id = crypto.randomUUID();
     const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
     if (!chat) return fail(err.notFound("Chat"));

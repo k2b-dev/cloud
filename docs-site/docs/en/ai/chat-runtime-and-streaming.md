@@ -67,7 +67,8 @@ queue ID. Turn state is read from the associated turns; retries retain the send
 ID. Queue payload cleanup and conversation deletion do not remove the receipt.
 Account deletion removes that account's receipts.
 Replay reads it before resolving today's destination or checking allowances,
-so it never redirects an accepted message. Read current state with
+so it never redirects an accepted message. The caller's current authority is
+checked first: paused Code or an ended run gets no receipt back. Read current state with
 `ai.chat.read({ id: originalChatId, message: sendId })`.
 
 The owner-authorized queue API provides:

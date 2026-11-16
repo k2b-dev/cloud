@@ -5,7 +5,8 @@ export { createCodeCapabilityRoutes } from "../../packages/cloud/src/ai/code-cap
 export { codeCapabilityOperation } from "../../packages/cloud/src/ai/code-capability-transport";
 export { AiTurnExecutor } from "../../packages/cloud/src/ai/executor";
 export { beginAiCall, finishAiCall } from "../../packages/cloud/src/ai/inference-calls";
-export { drainQueuedMessages } from "../../packages/cloud/src/ai/message-queue";
+export { drainQueuedMessages, updateQueuedMessage } from "../../packages/cloud/src/ai/message-queue";
+export { aiModelCatalog } from "../../packages/cloud/src/ai/model-catalog";
 export { aiAssignmentFixture, aiModelFixture, aiSettingsFixture } from "../../packages/cloud/src/ai/model-fixture";
 export { aiQuotas } from "../../packages/cloud/src/ai/quotas";
 export * as aiModelSettings from "../../packages/cloud/src/ai/settings";

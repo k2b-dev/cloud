@@ -14,6 +14,7 @@ import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import {
   AiTurnExecutor,
   aiAssignmentFixture,
+  aiModelCatalog,
   aiModelFixture,
   aiModelSettings,
   aiQuotas,
@@ -25,6 +26,7 @@ import {
   drainQueuedMessages,
   finishAiCall,
   invokeCompiledCapability,
+  updateQueuedMessage,
 } from "../../../scripts/fixtures/code-platform";
 import { meterSql } from "../../../scripts/fixtures/sql-meter";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
@@ -881,17 +883,15 @@ suiteFor(
     await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
     expect(await aiConversations.listMessages({ conversationId: chat.id })).toHaveLength(1);
   });
-  test("one pending entry per source; cancellation frees its slot and replay ignores a changed target and disabled Code", async () => {
+  test("one pending entry per source; cancellation frees its slot and replay ignores a changed target", async () => {
     await setup();
     const first = await invoke();
     if (!first.ok) throw new Error(first.error.message);
     const sent = dataSchema.parse(first.data.data);
     expect(await invoke(chat.shortId, ctx("another-key"))).toMatchObject({ ok: false, error: { code: "chat_busy" } });
-    const { updateQueuedMessage } = await import("../../cloud/src/ai/message-queue");
     expect(await updateQueuedMessage(chat.id, sent.id, "cancel")).toBeTrue();
     expect(await invoke(chat.shortId, ctx("another-key"))).toMatchObject({ ok: true });
     const changed = await aiConversations.createConversation({ ownerUserId: owner });
-    await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
     expect(await invoke(changed.shortId)).toMatchObject({
       ok: true,
       data: { data: { id: sent.id, chatId: chat.shortId, status: "cancelled" } },
@@ -902,6 +902,12 @@ suiteFor(
       ok: true,
       data: { data: { id: sent.id, chatId: chat.shortId, status: "cancelled" } },
     });
+    // Unattended calls are reviewed with the run's current authority first; paused Code reaches no receipt.
+    await sql`UPDATE code.codes SET state='paused' WHERE id=${codeId}`;
+    expect(await invoke(changed.shortId)).toMatchObject({ ok: false, error: { status: 404 } });
+    expect(await sql`SELECT count(*)::int AS count FROM ai.queued_messages WHERE conversation_id=${changed.id}::uuid`).toEqual([
+      { count: 0 },
+    ]);
   });
 
   test("disabled Code fails permanently, frees FIFO, and does not revive when enabled", async () => {
@@ -936,7 +942,6 @@ suiteFor(
       validateQueuedChatStart,
     );
     expect(jobs).toHaveLength(1);
-    const { updateQueuedMessage } = await import("../../cloud/src/ai/message-queue");
     expect(await updateQueuedMessage(chat.id, sent.id, "retry")).toBeFalse();
   });
 
@@ -954,9 +959,12 @@ suiteFor(
   });
   test("dequeue uses one real catalog snapshot and current model grants under its transaction", async () => {
     const { readSettings, selectModel } = await setup();
-    const { aiModelCatalog } = await import("../../cloud/src/ai/model-catalog");
     await aiModelCatalog.createProvider({ id: "queue-provider", type: "ollama", label: "Queue fixture", dataBoundary: "private" }, owner);
-    await aiModelCatalog.createModels("queue-provider", [{ id: "fixture", label: "Queue fixture", providerModel: "fixture" }], owner);
+    await aiModelCatalog.createModels(
+      "queue-provider",
+      [{ id: "fixture", label: "Queue fixture", providerModel: "fixture", capabilities: ["tools"] }],
+      owner,
+    );
     const accepted = await invoke();
     expect(accepted.ok).toBeTrue();
     readSettings.mockRestore();
