@@ -36,7 +36,7 @@ text.
 `quotes` lists up to 10 passages `{ message, text }` of earlier messages in the
 same item discussion, together at most 20,000 Unicode code points. The words of
 `text` must occur in the message as `message.read` shows it, whitespace aside;
-Chat stores that passage with the message's own spacing. A passage that does not
+Chat stores that passage in whole words with the message's own spacing. A passage that does not
 occur returns 400; a message that is missing, deleted or in another discussion
 is refused. These are the same checks as a person's quote in the Chat app. The
 approval review shows each passage as a `> ` line above the text. Quotes are
@@ -44,8 +44,9 @@ part of the request, so a retry with other quotes under the same idempotency
 key returns `IDEMPOTENCY_CONFLICT`.
 
 Every message read and listed carries `quotes`: `{ id, author, text }` as it
-was when quoted, or `{ deleted: true }` once that message was deleted. Editing
-the quoted message keeps the quote. The provider owns item identity: the same ref addresses one discussion. If a
+was when quoted, or `{ deleted: true }` once that message was deleted or
+changed so that the quoted words are gone. Such a change gives the quoting
+message a new revision, so readers that follow changes drop the old words. The provider owns item identity: the same ref addresses one discussion. If a
 provider returns a series ref, all occurrences share that discussion. Include
 an occurrence date in the text when relevant.
 
