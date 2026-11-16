@@ -34,6 +34,7 @@ export type {
   AppWorkspaceSidebarItemStatusProps,
   AppWorkspaceSidebarItemTone,
   AppWorkspaceSidebarProps,
+  AppWorkspaceSidebarSectionActionProps,
   AppWorkspaceSidebarSectionProps,
   AppWorkspaceSidebarToggleProps,
   AppWorkspaceSidebarVisibility,
