@@ -151,12 +151,18 @@ type AiStreamSnapshot = {
   activeTurnId: string | null;
 };
 
+/** `locale` is the reader's: stored steps name their app as the catalog does now, in that language. */
 export const loadAiStreamState = async (
   conversation: AiConversation,
   viewerUserId?: string | null,
-): Promise<Extract<AiStreamEvent, { type: "state" }>> => (await loadStreamSnapshot(conversation, viewerUserId)).state;
+  locale?: string,
+): Promise<Extract<AiStreamEvent, { type: "state" }>> => (await loadStreamSnapshot(conversation, viewerUserId, locale)).state;
 
-const loadStreamSnapshot = async (conversation: AiConversation, viewerUserId?: string | null): Promise<AiStreamSnapshot> => {
+const loadStreamSnapshot = async (
+  conversation: AiConversation,
+  viewerUserId?: string | null,
+  locale?: string,
+): Promise<AiStreamSnapshot> => {
   const [page, active] = await Promise.all([
     aiConversations.listMessagesPage({ conversationId: conversation.id, limit: AI_STREAM_INITIAL_MESSAGE_LIMIT }),
     aiConversations.getActiveTurn({ conversationId: conversation.id }),
@@ -187,7 +193,7 @@ const loadStreamSnapshot = async (conversation: AiConversation, viewerUserId?: s
     state: {
       type: "state",
       conversation: { ...conversation, id: conversation.shortId },
-      messages: await publicAiStoredMessages(page.messages, conversation, viewerUserId),
+      messages: await publicAiStoredMessages(page.messages, conversation, viewerUserId, locale),
       hasMoreMessages: page.hasMore,
       activeTurn: snapshot,
     },
@@ -260,6 +266,7 @@ const loadStreamSnapshotWith = async (
   event: AiLiveTopicEvent,
   signal: AbortSignal,
   viewerUserId?: string | null,
+  locale?: string,
 ): Promise<AiStreamSnapshot | null> => {
   for (let read = 1; read < AI_STREAM_CATCH_UP_READS && !signal.aborted; read++) {
     const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
@@ -268,7 +275,7 @@ const loadStreamSnapshotWith = async (
   }
   const current = await aiConversations.getConversation({ conversationId: conversation.id });
   if (!current) return null;
-  const snapshot = await loadStreamSnapshot(current, viewerUserId);
+  const snapshot = await loadStreamSnapshot(current, viewerUserId, locale);
   if (!signal.aborted && !holdsEvent(positionOf(snapshot), event)) {
     // Readers miss this turn's events up to the event until it ends.
     log.warn("AI conversation stream continues without an event the saved state does not hold", {
@@ -300,6 +307,7 @@ const loadStreamSnapshotWith = async (
 export async function* streamAiConversationEvents(input: {
   conversation: AiConversation;
   viewerUserId?: string | null;
+  locale?: string;
   signal: AbortSignal;
 }): AsyncGenerator<AiStreamEvent> {
   let current: StreamPosition | null = null;
@@ -307,7 +315,7 @@ export async function* streamAiConversationEvents(input: {
   const reloadedTurns = new Set<string>();
   for await (const item of streamSnapshotThenTail({
     captureCursor: () => latestTopicCursor({ topic: aiStreamTopic(), resourceId: "cloud-ai-stream", tenantId: input.conversation.id }),
-    loadSnapshot: () => loadStreamSnapshot(input.conversation, input.viewerUserId),
+    loadSnapshot: () => loadStreamSnapshot(input.conversation, input.viewerUserId, input.locale),
     tail: (after) => aiStreamTopic().hub({ tenantId: input.conversation.id }).subscribe({ after, signal: input.signal }),
   })) {
     if (item.kind === "snapshot") {
@@ -319,7 +327,7 @@ export async function* streamAiConversationEvents(input: {
     const event = item.value.data;
     if (needsSavedState(event, current, reloadedTurns)) {
       reloadedTurns.add(event.turnId);
-      const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal, input.viewerUserId);
+      const snapshot = await loadStreamSnapshotWith(input.conversation, event, input.signal, input.viewerUserId, input.locale);
       // A conversation that was archived or deleted ends the stream; the reader's reconnect gets the route's answer.
       if (input.signal.aborted || !snapshot) return;
       yield snapshot.state;
@@ -363,7 +371,7 @@ export async function* streamAiConversationEvents(input: {
         ...event,
         conversationId: input.conversation.shortId,
         turnId: publicTurnId,
-        messages: await publicAiStoredMessages(messages, input.conversation, input.viewerUserId),
+        messages: await publicAiStoredMessages(messages, input.conversation, input.viewerUserId, input.locale),
       };
       continue;
     }
@@ -383,6 +391,8 @@ export const __aiStreamTest = { needsSavedState, streamSnapshotThenTail };
 export const createAiConversationStreamResponse = (input: {
   conversation: AiConversation;
   viewerUserId?: string | null;
+  /** The reader's locale, for the app names of stored steps. */
+  locale?: string;
   signal?: AbortSignal;
   heartbeatMs?: number;
   /** Checked at admission and on access events, never by the heartbeat. */
@@ -487,6 +497,7 @@ export const createAiConversationStreamResponse = (input: {
           for await (const event of streamAiConversationEvents({
             conversation: input.conversation,
             viewerUserId: input.viewerUserId,
+            locale: input.locale,
             signal: liveAbort.signal,
           })) {
             if (!(await accessCurrent()) || !enqueue(encodeSseEvent(event))) return;
