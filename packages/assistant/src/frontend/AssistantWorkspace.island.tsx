@@ -94,7 +94,6 @@ import type { ChatSidebarJump } from "./AssistantChatSidebar";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
-import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
@@ -2811,7 +2810,8 @@ export default function AssistantWorkspace(props: Props) {
           creatingConversation={() => newConversation.loading() || composerPicking() > 0}
           onNewConversation={() => void createAndFocusConversation()}
           onCreateProject={async () => {
-            const project = await openAssistantCreateProjectDialog();
+            // Loaded when someone creates a project: the form stays out of the workspace bundle.
+            const project = await import("./AssistantProjectsDialog").then((module) => module.openAssistantCreateProjectDialog());
             if (project) navigateTo(assistantProjectHref(basePath, project.id));
           }}
           onOpenProject={openProject}
