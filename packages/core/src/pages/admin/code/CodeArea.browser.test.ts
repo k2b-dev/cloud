@@ -71,6 +71,7 @@ test("an approval keeps its version in one line next to a long title, on a wide 
     { width: 390, height: 780 },
   ]) {
     await goto("sec=approvals&state=long", viewport);
+    await settled(page);
     const versions = await page.locator(".core-code-approvals__version").evaluateAll((elements) =>
       elements.map((element) => {
         const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
@@ -78,17 +79,23 @@ test("an approval keeps its version in one line next to a long title, on a wide 
       }),
     );
     expect(versions.length).toBeGreaterThan(0);
-    for (const version of versions) expect({ ...version, viewport: viewport.width }).toEqual({ ...version, lines: 1, viewport: viewport.width });
+    for (const version of versions)
+      expect({ ...version, viewport: viewport.width }).toEqual({ ...version, lines: 1, viewport: viewport.width });
   }
 });
 
 test("the area without a section shows the approvals next to the area column, and only the area on a phone", async () => {
   await goto("");
-  await expect(page.getByRole("heading", { name: "Freigaben" }).first().isVisible()).resolves.toBe(true);
-  await expect(page.locator(".core-code-approvals__row").first().isVisible()).resolves.toBe(true);
+  expect(await page.getByRole("heading", { name: "Freigaben" }).first().isVisible()).toBe(true);
+  expect(await page.locator(".core-code-approvals__row").first().isVisible()).toBe(true);
   await goto("", { width: 390, height: 780 });
-  await expect(page.locator(".core-code-approvals__row").first().isVisible()).resolves.toBe(false);
-  await expect(page.getByRole("link", { name: /Freigaben/ }).first().isVisible()).resolves.toBe(true);
+  expect(await page.locator(".core-code-approvals__row").first().isVisible()).toBe(false);
+  expect(
+    await page
+      .getByRole("link", { name: /Freigaben/ })
+      .first()
+      .isVisible(),
+  ).toBe(true);
 });
 
 test("a review opens at its head with one row of tabs, and the approval with three decisions in view", async () => {
