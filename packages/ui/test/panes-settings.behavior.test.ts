@@ -673,9 +673,10 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
     setLayout({ version: 2, root: null });
     await Promise.resolve();
     const emptyAdd = dom.root.querySelector<HTMLButtonElement>(".k2b-panes__empty .k2b-panes__add");
-    const emptyAddClick = (emptyAdd as (HTMLButtonElement & { $$click?: (event: { currentTarget: Element }) => void }) | null)?.$$click;
+    if (!emptyAdd) throw new Error(dom.root.innerHTML);
+    const emptyAddClick = (emptyAdd as HTMLButtonElement & { $$click?: (event: { currentTarget: Element }) => void }).$$click;
     expect(typeof emptyAddClick).toBe("function");
-    if (emptyAdd) emptyAddClick?.({ currentTarget: emptyAdd });
+    emptyAddClick?.({ currentTarget: emptyAdd });
     expect(targets).toEqual(["source", null]);
     expect(froms).toEqual([groupAdd, emptyAdd]);
     dispose();
