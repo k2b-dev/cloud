@@ -42,6 +42,7 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Al
 :::reference
 - **Beenden:** Beendet die laufende Antwort von Gustav im geöffneten Chat.
 - **Erneut versuchen:** Führt eine Benutzernachricht erneut aus und ersetzt spätere Nachrichten dieses Chat-Zweigs.
+- **Zitieren:** Markiere Wörter in einer fertigen Antwort von Gustav oder in einer deiner Nachrichten. Daneben erscheint **Zitieren**. Wähle es, und die Wörter stehen über dem Eingabefeld. Schreib deine Nachricht und sende sie. Das Zitat steht über deinem Text, und Gustav liest es als Hinweis, worauf du dich beziehst. Schritte und Zwischenstände kannst du nicht zitieren. Ein Zitat umfasst höchstens 2.000 Zeichen, eine Nachricht höchstens 10 Zitate. Mit **Zitat entfernen** nimmst du eines wieder heraus.
 - **Weiterarbeiten:** Wenn eine Antwort wegen eines fehlgeschlagenen Schritts oder eines Fehlers beim KI-Dienst endet, zeigt der Chat den Grund. **Weiterarbeiten** lässt Gustav dort fortfahren, wo er aufgehört hat; die bisherigen Ergebnisse bleiben erhalten.
 - **In neuem Chat fortsetzen:** Erstellt einen neuen Chat, der bis einschließlich der ausgewählten Antwort kopiert wird.
 - **Details zur Antwort:** Zeigt Modell, Zeit und Token-Verbrauch einer Antwort.

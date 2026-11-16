@@ -42,6 +42,7 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 :::reference
 - **Stop:** Stop aborts the running Gustav turn for the open chat.
 - **Retry:** Retry reruns a user message and replaces later messages in that chat branch.
+- **Quote:** Select words in a finished answer from Gustav or in one of your messages. **Quote** appears beside them. Choose it, and the words stand above the message field. Write your message and send it. The quote stands above your text, and Gustav reads it as a pointer to what you refer to. You cannot quote steps or interim statuses. A quote holds at most 2,000 characters, a message at most 10 quotes. **Remove quote** takes one out again.
 - **Continue:** When an answer stops because a step or the model service failed, the chat says why. **Continue** asks Gustav to resume where it stopped; the results so far are kept.
 - **Continue in a new chat:** Creates a new chat copied through the selected answer.
 - **Response details:** Shows the model, time, and token usage of one answer.
