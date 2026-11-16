@@ -533,7 +533,6 @@ export function ActivityCard(props: ActivityCardProps): JSX.Element {
     <Section
       size="md"
       level={props.level ?? 2}
-      class="k2b-activity-card"
       title={props.title ?? t().activityTitle}
       icon="ti ti-history"
       id={props.id}
