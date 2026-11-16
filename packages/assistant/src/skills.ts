@@ -42,7 +42,6 @@ import codeAuthoringTemplateFormApp from "./skills/code-authoring/templates/form
 import codeAuthoringTemplateGeneratedFile from "./skills/code-authoring/templates/generated-file.md" with { type: "text" };
 import codeAuthoringTemplateMailAutomation from "./skills/code-authoring/templates/mail-automation.md" with { type: "text" };
 import codeAuthoringTemplateMailInvoices from "./skills/code-authoring/templates/mail-invoices.md" with { type: "text" };
-import codeAuthoringTemplateReminder from "./skills/code-authoring/templates/reminder.md" with { type: "text" };
 import codeAuthoringTemplateSurvey from "./skills/code-authoring/templates/survey.md" with { type: "text" };
 import codeAuthoringTemplateTaskDueTomorrow from "./skills/code-authoring/templates/task-due-tomorrow.md" with { type: "text" };
 import codeAuthoringTemplateWeeklyReport from "./skills/code-authoring/templates/weekly-report.md" with { type: "text" };
@@ -66,7 +65,6 @@ export const SKILLS = [
       "references/testing.md": codeAuthoringTesting,
       "references/troubleshooting.md": codeAuthoringTroubleshooting,
       "references/template-briefing.md": codeAuthoringTemplateBriefing,
-      "references/template-reminder.md": codeAuthoringTemplateReminder,
       "references/template-database.md": codeAuthoringTemplateDatabase,
       "references/template-dashboard-page.md": codeAuthoringTemplateDashboardPage,
       "references/template-event-to-chat.md": codeAuthoringTemplateEventToChat,

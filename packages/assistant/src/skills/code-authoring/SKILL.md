@@ -218,7 +218,6 @@ the real checker. Adapt names, IDs and texts; keep the structure.
 | [Form app](references/template-form-app.md) | personal | Form with validation that creates a Space task, confirmation page |
 | [Survey](references/template-survey.md) | personal | Public form without the Cloud layout that files each answer as a Space task |
 | [Mail automation](references/template-mail-automation.md) | mailbox | Categorise with AI, tag, assign, set status, summarise, draft a reply |
-| [Reminder](references/template-reminder.md) | personal | A supplied number and timestamp, confirmed in one sentence |
 | [Morning briefing](references/template-briefing.md) | personal | One Send lets Gustav read authorized sources and prepare a short briefing |
 | [Weekly report](references/template-weekly-report.md) | personal | Weekly local schedule, AI summary, delivery to a Gustav chat |
 | [Task due tomorrow](references/template-task-due-tomorrow.md) | personal | Spaces events and a daily schedule assign tomorrow’s tasks and notify a team chat |
