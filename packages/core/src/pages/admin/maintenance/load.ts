@@ -25,6 +25,6 @@ export const loadMaintenanceAdmin = async (
     return ok({ status: status.data, appNames });
   } catch {
     // NATS or the database is away: the page says so instead of the generic error page.
-    return fail({ code: "UNAVAILABLE", status: 503, message: "Maintenance state unavailable" });
+    return fail({ code: "UNAVAILABLE", status: 500, message: "Maintenance state unavailable" });
   }
 };
