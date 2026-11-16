@@ -139,7 +139,11 @@ afterAll(async () => {
 });
 
 test("the first browser render shows the server's rows, times, and dividers in a device of another time zone", async () => {
-  const context = await browser!.newContext({ viewport: { width: 720, height: 900 }, reducedMotion: "reduce", timezoneId: "America/Los_Angeles" });
+  const context = await browser!.newContext({
+    viewport: { width: 720, height: 900 },
+    reducedMotion: "reduce",
+    timezoneId: "America/Los_Angeles",
+  });
   // Only Date stands at the server's "now"; timers stay real.
   await context.addInitScript((now: number) => {
     const Real = Date;
@@ -153,7 +157,8 @@ test("the first browser render shows the server's rows, times, and dividers in a
   const hydrationMessages: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("console", (message) => {
-    if ((message.type() === "error" || message.type() === "warning") && /hydrat/i.test(message.text())) hydrationMessages.push(message.text());
+    if ((message.type() === "error" || message.type() === "warning") && /hydrat/i.test(message.text()))
+      hydrationMessages.push(message.text());
   });
   // Elements with their attributes and the text, without hydration keys and markers: what a person and a screen reader get.
   const markup = () =>

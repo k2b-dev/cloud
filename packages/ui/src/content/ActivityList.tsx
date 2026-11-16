@@ -8,7 +8,15 @@ import { useDateConfigLocale } from "../intl/locale";
 import { Section } from "../surfaces/Section";
 import { Skeleton } from "../surfaces/Skeleton";
 import { resolveActivityMessages, useActivityMessages } from "./activity-messages";
-import { type ActivityGroup, type ActivityRow, activityAgo, activityDayLabel, activityInstant, activityRows, activityWhen } from "./activity-timeline";
+import {
+  type ActivityGroup,
+  type ActivityRow,
+  activityAgo,
+  activityDayLabel,
+  activityInstant,
+  activityRows,
+  activityWhen,
+} from "./activity-timeline";
 
 /** Only the icon carries a tone: grey by default, green for a completion, amber for a notice, red only while an action is needed. */
 export type ActivityTone = "neutral" | "success" | "warning" | "danger";
