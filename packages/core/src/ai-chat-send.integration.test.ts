@@ -6,6 +6,7 @@ import * as runtime from "@k2b/cloud/ai/runtime";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { coreSettings } from "@k2b/cloud/services";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
+import { signInvocationToken, verifyInvocationToken } from "@k2b/cloud/services/identity/invocation-token";
 import { Hono } from "hono";
 import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
@@ -18,15 +19,14 @@ import {
   aiQuotas,
   aiSettingsFixture,
   beginAiCall,
+  codeCapabilityOperation,
   compileCapabilities,
+  createCodeCapabilityRoutes,
   drainQueuedMessages,
   finishAiCall,
   invokeCompiledCapability,
 } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
-import { createCodeCapabilityRoutes } from "../../cloud/src/ai/code-capability-routes";
-import { codeCapabilityOperation } from "../../cloud/src/ai/code-capability-transport";
-import { signInvocationToken, verifyInvocationToken } from "../../cloud/src/services/identity/invocation-token";
 import { aiChatSendAction } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
