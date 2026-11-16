@@ -33,9 +33,13 @@ row is 32 px high, 44 px on a phone, and its hover area reaches 6 px past its
 icon and text. Put a status word or count in `meta` ("2 steps", "Failed"),
 with `metaTone` for an outcome that needs attention; a part of the meta, such
 as "1 failed" in "6 steps · 1 failed", can carry its own `data-tone`. Pass the
-step's `duration` already formatted and `durationTitle` spelled out. A single
+step's `duration` already formatted and `durationTitle` spelled out; a `busy`
+row's duration is hidden from screen readers, so a ticking clock stays silent. A single
 step with details passes `info`: an ⓘ in the last column opens them in a
-`HoverCard` (end-aligned, 24 rem), and the row itself never opens. `info` with
+`HoverCard` (end-aligned, 24 rem), and the row itself never opens. The card's
+code loads on demand, so the server and the first frame show a plain ⓘ button
+in the same place. An open row's tone, shimmer, and turned chevron belong to
+its own row only; the rows in its body keep theirs. `info` with
 `actions` turns the card into a dialog that opens only with a press or Enter.
 A row with a body keeps its chevron and ignores `info`.
 Activity labels use the normal font weight, and their description has the same
