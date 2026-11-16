@@ -739,6 +739,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
             setProgress(0);
             for (let i = 0; i < entries.length; i++) {
+              if (left) return;
               setProgress((i + 0.5) / entries.length);
               const entry = entries[i]!;
               const blob = await buildImagePipeline(entry, mw() ?? undefined, mh() ?? undefined).then(imageTools.toBlob(fmt(), qual()));
@@ -944,7 +945,10 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     }
   };
 
+  /** Set when the view leaves the page, for example through a page swap, so a running export stops downloading. */
+  let left = false;
   onCleanup(() => {
+    left = true;
     loadMutation.abort();
     disposeHeifDecoder();
   });

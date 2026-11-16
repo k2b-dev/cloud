@@ -19,7 +19,7 @@ import type { ServerWebSocket } from "bun";
 import type { PublicTarget } from "./app-domains";
 import type { ClientAddress } from "./client-address";
 import { derivePathTemplate } from "./path-template";
-import { transportErrorFields } from "./proxy";
+import { type ProxyAvailability, transportErrorFields } from "./proxy";
 import { stripCloudCookies } from "./public-protections";
 import { isDomainCheckPath, isInternalPath, upstreamUrl } from "./request-boundary";
 import { matchRoute, type RouteTable } from "./trie";
@@ -54,6 +54,9 @@ const frameBytes = (frame: string | ArrayBufferLike | ArrayBufferView): number =
   return frame.byteLength;
 };
 
+/** Every proxied socket that is still open, so maintenance can close them all at once. */
+const openProxies = new Set<ProxyState>();
+
 const clearPending = (state: ProxyState) => {
   state.pending = [];
   state.pendingBytes = 0;
@@ -62,6 +65,7 @@ const clearPending = (state: ProxyState) => {
 const closeProxy = (state: ProxyState, code: number, reason: string) => {
   if (state.closed) return;
   state.closed = true;
+  openProxies.delete(state);
   clearPending(state);
   // Receive-only codes cannot be sent. Keep transport loss reconnectable.
   if (code === 1005) code = 1000;
@@ -96,6 +100,13 @@ const sendUpstream = (state: ProxyState, frame: string | ArrayBufferLike | Array
   }
 };
 
+/** Close every open proxied socket, for example with 1012 when whole-Cloud maintenance starts. */
+export const closeProxiedSockets = (code: number, reason: string): number => {
+  const states = [...openProxies];
+  for (const state of states) closeProxy(state, code, reason);
+  return states.length;
+};
+
 /**
  * Called from the gateway's fetch handler when an Upgrade: websocket request
  * arrives. Looks up the route, derives the upstream ws:// URL, opens the
@@ -112,11 +123,15 @@ export const tryUpgradeWebSocket = (
   logFn: (msg: string, meta?: Record<string, unknown>) => void,
   client: ClientAddress | null = null,
   publicTarget?: PublicTarget,
+  availability?: ProxyAvailability,
 ): Response | undefined => {
   const url = new URL(req.url);
   if (isInternalPath(url.pathname, !!publicTarget) && !(publicTarget && isDomainCheckPath(url.pathname)))
     return new Response("Not found", { status: 404 });
   const match = publicTarget ? { ...publicTarget, matchedPrefix: "/" } : matchRoute(table, url.pathname);
+  // A path a recently vanished app owned answers as that app, not as a fallback route.
+  const vanished = publicTarget ? null : availability?.vanishedOwner(url.pathname, match?.matchedPrefix ?? null);
+  if (vanished && availability) return availability.answer(req, vanished.appId, vanished.reason);
   if (!match) {
     return new Response("WebSocket: no app registered for this path", { status: 502 });
   }
@@ -231,6 +246,7 @@ export const tryUpgradeWebSocket = (
     closeProxy(state, 1011, "upgrade failed");
     return new Response("WebSocket: upgrade failed", { status: 500 });
   }
+  if (!state.closed) openProxies.add(state);
   return undefined;
 };
 

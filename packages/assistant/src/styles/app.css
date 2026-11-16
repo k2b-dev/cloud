@@ -1055,18 +1055,6 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
 }
-.assistant-code-decision__tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0 0.375rem;
-  border-radius: 999px;
-  background: var(--k2b-ai-surface);
-  color: var(--k2b-ai-accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.25rem;
-}
 .assistant-code-decision__missing {
   grid-column: 2 / -1;
   margin: 0;

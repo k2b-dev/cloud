@@ -112,6 +112,9 @@ const files: Record<string, Classification> = {
   editorContent: base(),
   editorSave: mutation(),
   entry: base(),
+  // The discussion reader and folder page resolve entries like `entry`.
+  resourceEntry: base(),
+  discussionFolderPage: base(),
   entryById: base(),
   recent: base(),
   favorites: base(),

@@ -121,6 +121,16 @@ describe("built-in Capability presentation", () => {
     for (const path of schemaFieldPaths(query?.inputSchema)) expect(copy?.input?.[path]).toBeTruthy();
   });
 
+  // Files discussions (#3487) put `filesv2.entry` inside `filesv2.folder`. Its upload events keep the entry as their place,
+  // so Code checks that place itself (#3539): the derived reader is generated again, and its input names no container.
+  test("filesv2 derives an event-place reader for its contained entry place without a container input (#3539)", () => {
+    const compiled = compileCapabilities("filesv2", filesCapabilities);
+    const query = compiled.manifest.queries.find((entry) => entry.localId === "entry.readable");
+    expect(query?.appOnly).toBe(true);
+    expect(compiled.manifest.resourceTypes).toContainEqual(expect.objectContaining({ type: "entry", container: "folder", readable: true }));
+    expect(Object.keys((query?.inputSchema.properties ?? {}) as object).sort()).toEqual(["id", "principals"]);
+  });
+
   test("resolves declared German contact field descriptions through language ancestors", () => {
     const compiled = compileCapabilities("contacts", contactsCapabilities);
     const localized = resolveCapabilityManifestPresentation(compiled.manifest, compiled.presentation, "de-CH");
