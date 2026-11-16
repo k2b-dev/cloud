@@ -906,6 +906,7 @@ throw. Disposal aborts work; refresh after disposal does not load.
 | `renderDetails` | Optional row renderer replacing the DescriptionList inside the selection Paper. `false` hides the whole local detail area, for a parent-owned shared Paper. |
 | `description`, `class` | Optional JSX below the heading and extra root class. |
 | `actions` | Optional owner actions in the header before Copy data, such as a button that shows the query behind the chart. Keep them icon-sized. The actions move below the title only when the title itself does not fit beside them; a long description wraps in the space the title leaves, so explorers side by side keep one header layout. |
+| `headerControls` | `"explorer"` (default) or `"owner"`. With `"owner"` the owner's `actions` are the header's only controls: the explorer leaves out its Copy data and view switcher, as a chart in a chat answer whose copy, large view and data come from its frame. |
 | `headingLevel` | Level of the title heading, `2`–`6`; default `3`. Use one level below the surrounding heading, for example `4` for charts under a group's `h3`. |
 | `cursor` | Optional shared `ChartCursor` for a line snapshot. Same matching and lifecycle as `Chart.cursor`; table mode does not participate. |
 | `height` | CSS viewport height; default `"18rem"`, or content height for a calendar snapshot, shared by chart and scrollable table. |
