@@ -171,6 +171,7 @@ export const processWorkflowAiTask = async (
   ctx.signal.addEventListener("abort", abortForShutdown, { once: true });
   if (ctx.signal.aborted) abortForShutdown();
 
+  // runtime-timer: cancellation monitor of one workflow AI task in flight.
   const monitor = setInterval(() => {
     if (checking || controller.signal.aborted) return;
     checking = true;

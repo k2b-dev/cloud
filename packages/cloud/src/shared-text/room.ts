@@ -303,6 +303,7 @@ export function createSharedTextRoom<
 
   const startSnapshotScheduler = (ctx: Context) => {
     if (state(ctx).snapshotInterval) return;
+    // runtime-timer: serves open live connections (request side); quiesce stops background work only.
     state(ctx).snapshotInterval = setInterval(() => {
       void queueSnapshotIfNeeded(ctx, "periodic");
     }, SNAPSHOT_INTERVAL_MS);

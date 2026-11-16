@@ -78,6 +78,7 @@ export const processAiDictation = async (
       checking = false;
     }
   };
+  // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
   const timer = setInterval(() => void heartbeat(), 3_000);
   try {
     const [conversation] = await sql<

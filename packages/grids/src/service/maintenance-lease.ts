@@ -26,6 +26,7 @@ export const withMaintenanceLease = async <T>(mutex: Mutex, resource: string, tt
     clearInterval(timer);
     log.warn("Maintenance lease was lost before the work finished", { resource });
   };
+  // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
   const timer = setInterval(() => void extend(), Math.floor(ttlMs / 3));
   timer.unref?.();
   try {

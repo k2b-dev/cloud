@@ -58,6 +58,7 @@ export const createWorkflowWorker = (options: {
         },
       });
       // Repair missed hints, due deadlines and expired leases; execution wakes immediately.
+      // runtime-timer: runs only while its runtime lifecycle is started; quiesce stops that lifecycle.
       timer = setInterval(wake, 30_000);
       wake();
     },

@@ -391,6 +391,7 @@ export function createArtifactAgentRuntime(
       leaseUntil = Date.now() + 120000;
     const heartbeat =
       execution === "chat-tool"
+        // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
         ? setInterval(async () => {
             if (renewing || abort.signal.aborted) return;
             renewing = true;
@@ -416,6 +417,7 @@ export function createArtifactAgentRuntime(
       result = await Promise.race([
         execute(input, conversationId, callId, turnId, signal),
         new Promise((_, reject) => {
+          // runtime-timer: watchdog of one agent action in flight.
           timer = setInterval(() => {
             const entry = runs.get(["run", "action"].includes(input.operation) ? callId : "runId" in input ? input.runId : "");
             // Waiting for a human is not execution time. Keep the watchdog for

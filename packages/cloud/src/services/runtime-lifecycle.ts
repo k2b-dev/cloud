@@ -171,6 +171,7 @@ export const startRuntimeInterval = ({
     });
   };
 
+  // runtime-timer: the platform interval itself; skips ticks while quiesced.
   const timer = setInterval(tick, intervalMs);
   if (typeof timer === "object" && "unref" in timer) timer.unref();
   const offChange = controller.onChange((quiesced) => {

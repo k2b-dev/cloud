@@ -156,12 +156,3 @@ export const startWorkflowEventRetention = (): (() => void) => {
     void interval.stop();
   };
 };
-  void expire();
-  retentionTimer = setInterval(() => void expire(), RETENTION_INTERVAL_MS);
-  retentionTimer.unref?.();
-  return () => {
-    abort.abort();
-    if (retentionTimer) clearInterval(retentionTimer);
-    retentionTimer = null;
-  };
-};
