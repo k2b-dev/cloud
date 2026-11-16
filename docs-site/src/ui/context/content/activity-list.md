@@ -49,14 +49,23 @@ const entry: ActivityEntry = {
 - **Rarely below:** one `detail` line (a result, the reason of a failure, a
   quote, or "before → now" with `ActivityList.Change`) and at most one
   `action`. An action with `href` is a link, otherwise a button.
-- **Click:** `onOpen` opens the entry, such as its dialog; `details(all)`
-  folds out more below it. A click anywhere on the row acts like the
-  sentence, but not on links and buttons inside the row.
+- **Click:** `href` makes the sentence a link to the entry's object; a
+  click anywhere on the row follows it, and a middle click or a click with
+  Ctrl, Cmd, or Shift opens it in a new tab. `onOpen` opens the entry
+  in place, such as its dialog; `details(all)` folds out more below it. A
+  click anywhere on the row acts like the sentence, but not on links,
+  buttons, or fields inside the row, not inside folded-out details, and not
+  when it ends a text selection. Use `href` rather than a link inside
+  `text`, so the whole row stays the target.
 - **Bundles:** entries with the same `bundle.key` and the same text `actor`
   right after each other on the same day become one row;
   `bundle.text(count, all)` says it with the count ("Draft changed 4 times").
   A bundle keeps the detail line only when it is the same text for all its
   entries.
+- **Key:** `id`, such as the record's id, keeps a row with its folded-out
+  details and focus when the entries are built anew, such as after a
+  refresh. Without it the entry object is the key. Keep it unique in the
+  list.
 - **Focus:** every row is a focus target with `tabindex="-1"`, outside the
   tab order. Put a `data-*` attribute on it with `attrs`, and move focus there
   after a reload, such as after "Send again".
@@ -72,13 +81,18 @@ const entry: ActivityEntry = {
 `limit` shows only the newest rows; the rail then fades out below them. Pass
 `more` when further pages follow, for example above a `LoadMore`.
 
+The rail pauses behind each icon instead of being covered, so the list looks
+the same on any surface: a page, a card, a dialog, or a sheet. Only the wide
+list measures its own width, so a compact list also fits a container sized
+by its content, such as a popover.
+
 ## Time
 
 Days count in the application's time zone: pass `dateConfig` or `timeZone`
 (UTC without them). Pass `now` from the server, so the server and the first
 browser render show the same text; the browser then moves the clock on every
-minute. Only times and dividers change on that tick; folded-out details and
-focus stay.
+minute. Only times and dividers change on that tick; bundle sentences,
+folded-out details, and focus keep their nodes.
 
 ## States
 
@@ -93,7 +107,9 @@ timeline and replaces the empty text.
 
 ## The card and the dialog
 
-`ActivityCard` shows 6 rows. "All N" counts rows, bundles as one. The dialog
+`ActivityCard` shows 6 rows. Its title is a second-level heading; pass
+`level={3}` when the card stands under a section heading of the page. "All
+N" counts rows, bundles as one. The dialog
 shows the list in the wide density, `subtitle` under its title, and a filter
 by `kinds`. The filter counts entries, not rows, shows only kinds with
 entries, and appears only from three choices on ("All" and two kinds).
@@ -115,14 +131,16 @@ JSX, and the card and the dialog each need nodes of their own.
 ```
 
 `openActivityDialog({ entries: () => entries(), title, subtitle, kinds, now })`
-opens the same dialog from anywhere, such as a menu entry "Show activity".
+opens the same dialog from anywhere, such as a menu entry "Show activity";
+`icon` puts the menu entry's icon beside its title.
 
 ## Accessibility
 
 The list is an ordered list named "History" (`label` changes it). Dividers
 are hidden from screen readers; each row's `<time>` carries the full instant
 as its tooltip. An icon with a meaning the sentence does not say takes
-`iconLabel`. A clickable row renders its sentence as a button, with
+`iconLabel`, such as "failed" on a red icon. A row with `href` renders its
+sentence as a link; a row with `onOpen` or `details` as a button, with
 `aria-expanded` for `details`. The loading state is a `role="status"`, the
 error a `role="alert"`.
 
