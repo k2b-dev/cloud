@@ -1093,6 +1093,12 @@ artifact service suite disposable PostgreSQL and rsql containers and runs
 every other Assistant integration file, such as the Code Mode PDF test against
 Gotenberg, against the `CLOUD_TEST_*` targets.
 
+A package whose script also accepts one of its files can add a
+`test:integration:list` script that prints the files without starting
+infrastructure. The root runner then runs each listed file as a suite of its
+own, `bun run test:integration <file>`, so CI shards balance the package by
+measured file times instead of carrying it as one block.
+
 Mail's entry point reuses the root runner's infrastructure-gate discovery,
 including gated files without an `.integration` suffix. It also retains the
 explicitly opted-in large-mailbox performance and IMAP connector suites. All
@@ -1100,7 +1106,9 @@ selected files run with `--isolate`, so the Mail preload gives each file its own
 database clone and Sync runtime;
 unit and browser files run through the normal test jobs instead. Inspect the
 selection without starting infrastructure with
-`bun run --cwd packages/mail test:integration --list`.
+`bun run --cwd packages/mail test:integration:list`; run one file with
+`bun run --cwd packages/mail test:integration src/service/sent-projection.integration.test.ts`.
+The root runner runs Mail this way, one file per suite.
 
 ### Sync namespaces on the test broker
 
