@@ -178,12 +178,20 @@ export async function settleCodeAiBudget(
 /** Use the inference ledger's settled cost and live reservations, without booking it twice.
  * Code attribution is captured on the call, so deleting the chat or Code cannot refill a day.
  */
-async function codeChatDailyUsage(db: SQL, day: string, timeZone: string, kind: "code" | "owner", key: string, ownerUserId: string | null) {
+export async function codeChatDailyUsage(
+  db: SQL,
+  day: string,
+  timeZone: string,
+  kind: "code" | "owner",
+  key: string,
+  ownerUserId: string | null,
+) {
   const [usage] = await db<{ cost: string; unknown: number }[]>`
     SELECT (COALESCE(sum(cost),0)+COALESCE(sum(reserved) FILTER(WHERE finished_at IS NULL AND lease_expires_at>now()),0))::text AS cost,
       count(*) FILTER(WHERE (COALESCE((pricing->>'inputPerMillion')::numeric,0)>0 OR COALESCE((pricing->>'outputPerMillion')::numeric,0)>0)
         AND cost IS NULL AND (finished_at IS NOT NULL OR lease_expires_at<=now()))::int AS unknown
-    FROM ai.inference_calls WHERE kind='chat' AND code_id IS NOT NULL
+    FROM ai.inference_calls calls WHERE (kind='chat' OR (kind='background' AND task='chat-compaction')) AND code_id IS NOT NULL
+      AND NOT EXISTS(SELECT 1 FROM code.chat_turn_budgets budget WHERE budget.turn_id=calls.turn_id)
       AND started_at>=(${day}::date::timestamp AT TIME ZONE ${timeZone})
       AND started_at<(((${day}::date+1)::timestamp) AT TIME ZONE ${timeZone})
       AND CASE WHEN ${kind}='code' THEN code_id=${key}
@@ -191,8 +199,8 @@ async function codeChatDailyUsage(db: SQL, day: string, timeZone: string, kind: 
   return usage!;
 }
 
-/** Async turns use normal owner quota admission and actual inference accounting.
- * Only check the existing Code daily USD limits here; never allocate an attempt's full allowance.
+/** Queue acceptance checks existing Code daily USD limits. Execution reserves the
+ * whole turn only once the worker resolves its actual model.
  * The caller holds the Code/run locks and commits the receipt with the turn.
  */
 export async function checkCodeChatRunBudget(

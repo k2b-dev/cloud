@@ -302,3 +302,11 @@ for (const kind of ["invalid-arguments", "unknown-tool"] as const)
     expect(JSON.stringify(issues.map(aiIssueDiagnostic))).not.toContain(marker);
     expect(issues.map(aiIssueDiagnostic)).toContainEqual({ code: "tool_execution_error", message: "AI tool execution failed." });
   });
+
+test("Code cost admission is distinct from the person's chat quota and gives a recovery path", () => {
+  expect(aiTurnErrorCanContinue({ code: "code_ai_turn_exceeds_daily_budget" })).toBeFalse();
+  expect(aiTurnErrorText({ code: "code_ai_turn_exceeds_daily_budget" }, "en")).toContain("less expensive model");
+  expect(aiTurnErrorText({ code: "code_ai_turn_exceeds_daily_budget" }, "de")).toContain("günstigeres Modell");
+  expect(aiTurnErrorText({ code: "code_ai_owner_daily_budget_limit" }, "de")).toContain("Tagesbudget des Codes");
+  expect(aiTurnErrorText({ code: "code_ai_budget_unknown" }, "en")).toContain("known context and output limits");
+});

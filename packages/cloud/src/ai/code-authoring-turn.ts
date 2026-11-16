@@ -1,4 +1,5 @@
 import { type CompactFn, estimateTokens, type Message, type Provider, type ProviderRequest, type Tool } from "@k2b/nessi";
+import { AiTurnInferenceLimit } from "./turn-failure";
 import type { AiTurnPolicyToolCall } from "./turn-policy";
 import type { AiAutomationTurnStop, AiCodeAuthoringStop } from "./types";
 
@@ -128,6 +129,8 @@ export function createCodeAuthoringTurnBudget(input: {
   selected: boolean;
   /** Missing or non-person triggers are bounded from the first provider attempt. */
   nonPerson?: boolean;
+  /** Priced Code uses the model window for attempts with unknown input usage. */
+  inputTokenCeiling?: number;
   onStop?: (reason: "model_calls" | "input_tokens" | "repeated_error") => void;
 }) {
   let authoring = input.selected;
@@ -276,9 +279,17 @@ export function createCodeAuthoringTurnBudget(input: {
             if (event.type === "usage" && Number.isSafeInteger(event.usage.input) && event.usage.input >= 0) reported = event.usage.input;
             yield event;
           }
+        } catch (error) {
+          if (!(error instanceof AiTurnInferenceLimit) || !input.nonPerson) throw error;
+          if (purpose === "compaction") return;
+          if (authoring) stopped = { reason: error.reason, ...progress() };
+          else automationStop = { reason: error.reason };
+          input.onStop?.(error.reason);
+          yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
+          yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text: "" } };
         } finally {
           // Snapshots replace rather than add. Keep the estimate as a floor for missing/zero usage.
-          inputTokens += Math.max(estimated, reported ?? estimated) - estimated;
+          inputTokens += Math.max(estimated, reported && reported > 0 ? reported : (input.inputTokenCeiling ?? estimated)) - estimated;
         }
       },
     }),

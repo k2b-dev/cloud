@@ -1599,10 +1599,13 @@ At start, Core rechecks ownership, source authority, enabled Code, model access
 and allowances under the chat lock. A failed automation entry is final, frees
 its place and does not block the next entry.
 
-Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.
-Chat reads are `read`; send retains the `ai` version-approval rule until the
-reserved per-turn budget policy is available. The Action's ordinary policy is
-`silent: "you"`.
+Code classifies `ai.generate` and `ai.decide` as `ai`, `ai.chat.send` as
+`ai_chat_you`, and chat reads as `read`. The executed model needs a positive
+reference price for automatic `ai_chat_you`. A missing/zero price still needs
+ordinary `ai` authority and approval coverage. The Action's ordinary policy is
+`silent: "you"`. A priced Code turn reserves its whole maximum against Code
+and owner daily budgets before execution; compaction shares this reservation.
+See [Code policy](/en/docs/platform/code-policy#ai-in-a-personal-chat).
 
 Turn admission uses the owner's normal interactive Assistant budget. Each
 provider call reserves only affordable input/output and settles to its actual
@@ -1614,24 +1617,18 @@ Assistant budgets or unpriced models have no owner cost ceiling. There is no new
 or flat charge. Normal per-turn loop and step limits bound each invocation.
 
 The existing `core.code.ai_daily_budget_usd` and
-`core.code.ai_owner_daily_budget_usd` limits also include the actual costs of
-Code-started chat calls, alongside text AI usage, per installation calendar day
-in `app.timezone`. Live inference reservations count until they settle; unknown
-priced chat costs block new turn admission. They do not create an extra unknown-usage
-block for text AI calls; those retain the normal owner quota rules. Unknown
-Code chat costs block new turns until the next installation calendar day; an
-Assistant allowance reset does not reset the Code daily check. These limits
-default to 1 each and return
-`code_ai_daily_budget_limit` or `code_ai_owner_daily_budget_limit` when exhausted.
-For example, three turns costing 0.02 each use 0.06 of the daily allowance,
-leaving 0.94 for further turns or `core.ai.generate` / `core.ai.decide`.
-The Code daily checks refuse new invocations once that allowance is spent;
-an already admitted turn can exceed the remaining Code allowance. Its owner
-quota still applies at each provider call. Compaction retains normal background
-accounting and is excluded from these chat costs.
-Turns never allocate the full `core.code.ai_budget_usd` attempt allowance:
-that setting continues to bound the separate text AI calls. A receipt retry
-starts no inference and adds no cost. Model admission can also return
+`core.code.ai_owner_daily_budget_usd` limits include Code-started chat turns,
+including their background compaction, alongside text AI. Days follow
+`app.timezone`. At start, a priced turn reserves its 512,000-input allocation,
+one extra model context window for the last estimate's possible error, and
+sixteen maximum completions. The reservation is atomic across owner and Code;
+parallel starts cannot reuse it. Known context and output limits are required.
+The output ceiling is forwarded explicitly to ordinary and compaction requests.
+Missing or estimated usage keeps the maximum spent. Worker suspension and
+resumption reuse it; finalization releases the known unused remainder on its
+original day. A receipt retry starts no inference and adds no cost.
+The per-attempt `core.code.ai_budget_usd` continues to bound separate
+`core.ai.generate` and `core.ai.decide` calls. Model admission can also return
 `ai_disabled`, `ai_no_model` or `model_policy_mismatch` before starting a turn.
 
 Accepted queue entries survive a failed wake-up and retain their initiator when

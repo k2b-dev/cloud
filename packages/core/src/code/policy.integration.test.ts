@@ -217,6 +217,16 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
       "changed",
     );
   });
+  test("bounded personal-chat row participates in pause preview and enforcement", async () => {
+    await active(94, ["ai_chat_you"]);
+    const old = await readCodePolicySnapshot();
+    const definition = change("ai_chat_you", "admin");
+    const preview = await previewCodePolicy({ revision: old.revision, definition, limit: 20 }, admin);
+    expect(preview.items.find((item) => item.codeId === codeId(94))?.rows).toEqual(["ai_chat_you"]);
+    await updateCodePolicy({ revision: old.revision, definition }, admin);
+    await codePolicyPauseOutbox.reconcile();
+    expect((await readCode(codeId(94), ctx(ownerId))).code).toMatchObject({ state: "paused", pauseRows: ["ai_chat_you"] });
+  });
   test("preview is read-only and counts only stricter used rows without approval; worker exposes the same pauses", async () => {
     await active(1, ["read"]);
     await active(2, ["read"], ["read"]);
