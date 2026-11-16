@@ -1191,7 +1191,9 @@ describe("Contacts discussion provider", () => {
     spyOn(contacts, "findBookId").mockResolvedValue(targetBookId);
     spyOn(books, "get").mockResolvedValue({ ...book, id: targetBookId });
     const check = spyOn(access, "getActorBookPermission").mockResolvedValue("none");
-    const result = await contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, context);
+    // A reader call by ref names no book; a target naming the old book is refused before any permission check.
+    const { target: _oldBook, ...byRef } = context;
+    const result = await contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, byRef);
     expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
     expect(check).toHaveBeenCalledTimes(1);
     expect(check).toHaveBeenCalledWith({ bookId: targetBookId, actor: context.actor, accessSubject: context.accessSubject });
