@@ -3,6 +3,7 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
+import type { AiTurnError } from "../types";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const domTest = isServer ? test.skip : test;
@@ -21,7 +22,8 @@ const mountTurn = async (
   initial: AiTurnBlock[],
   options: {
     locale?: string;
-    phase?: "running" | "waiting" | "stopped" | "completed";
+    phase?: "running" | "waiting" | "stopped" | "completed" | "failed";
+    error?: AiTurnError;
     approve?: (input: unknown) => Promise<void>;
     check?: () => Promise<AiActionCheck>;
   } = {},
@@ -34,7 +36,7 @@ const mountTurn = async (
   const { layoutAiTurn } = await import("./turn-layout");
   const { createAiToolDisclosureState } = await import("./tool-disclosure");
   const [blocks, setBlocks] = createSignal(initial);
-  const [phase, setPhase] = createSignal<"running" | "waiting" | "stopped" | "completed">(options.phase ?? "waiting");
+  const [phase, setPhase] = createSignal<"running" | "waiting" | "stopped" | "completed" | "failed">(options.phase ?? "waiting");
   const decisions: unknown[] = [];
   const continued: string[] = [];
   const dispose = render(
@@ -58,6 +60,7 @@ const mountTurn = async (
               layout: layoutAiTurn(blocks(), { phase: phase() }),
               earlier: false,
               duration: () => null,
+              ...(options.error ? { error: options.error, continuable: true } : {}),
             })}
             disclosureState={createAiToolDisclosureState()}
           />
@@ -195,11 +198,11 @@ domTest("a declined question and one a stop left open read as outcome lines in t
     await settle();
     expect(view.decisions).toEqual([{ approved: false }]);
     const outcome = view.outcome()!;
-    expect(view.line()).toBe("Abgelehnt: Code ausführen Du hast abgelehnt.");
+    expect(view.line()).toBe("Abgelehnt: Code ausführen. Du hast abgelehnt.");
     view.setBlocks([{ ...runCode, status: "rejected", approval: undefined }]);
     await settle();
     expect(view.outcome()).toBe(outcome);
-    expect(view.line()).toBe("Abgelehnt: Code ausführen Du hast abgelehnt.");
+    expect(view.line()).toBe("Abgelehnt: Code ausführen. Du hast abgelehnt.");
   } finally {
     view.cleanup();
   }
@@ -209,7 +212,7 @@ domTest("a declined question and one a stop left open read as outcome lines in t
     phase: "stopped",
   });
   try {
-    expect(stopped.line()).toBe("Nicht ausgeführt: Code ausführen Die Antwort wurde angehalten.");
+    expect(stopped.line()).toBe("Nicht ausgeführt: Code ausführen. Die Antwort wurde angehalten.");
     expect(stopped.place().querySelector(".ti-circle-off")).not.toBeNull();
   } finally {
     stopped.cleanup();
@@ -227,7 +230,7 @@ domTest("a question decided in another window says so where it stood", async () 
       { ...runCode, status: "completed", approved: true, approval: undefined, result: { status: "ok" }, at: "2026-10-17T12:02:00.000Z" },
     ]);
     await settle();
-    expect(view.line()).toContain("Ran code You approved in another window.");
+    expect(view.line()).toContain("Ran code. You approved in another window.");
     // Nobody answered here, so the focus did not move.
     expect(document.activeElement).not.toBe(view.outcome());
   } finally {
@@ -235,10 +238,35 @@ domTest("a question decided in another window says so where it stood", async () 
   }
 });
 
+domTest("a turn that ended because its question expired says so once, on the question, with one way out", async () => {
+  const expired = await mountTurn([{ ...runCode, status: "running", approved: false, approval: undefined }], {
+    locale: "de",
+    phase: "failed",
+    error: { code: "wait_expired" },
+  });
+  try {
+    expect(expired.line()).toContain("Die Frage ist abgelaufen.");
+    expect(expired.button("Noch einmal fragen")).toBeDefined();
+    expect(expired.dom.root.querySelector(".ai-turn__notice")).toBeNull();
+    expect(expired.button("Weiterarbeiten")).toBeUndefined();
+  } finally {
+    expired.cleanup();
+  }
+  // Without such a question in the turn, the notice still says why it broke off.
+  const unanswered = await mountTurn([], { locale: "de", phase: "failed", error: { code: "wait_expired" } });
+  try {
+    expect(unanswered.dom.root.querySelector(".ai-turn__notice")?.textContent).toContain(
+      "Die Freigabe oder Antwort kam nicht rechtzeitig.",
+    );
+  } finally {
+    unanswered.cleanup();
+  }
+});
+
 domTest("an expired question offers to ask again through a visible message", async () => {
   const view = await mountTurn([{ ...runCode, status: "running", approved: false, approval: undefined }], { phase: "completed" });
   try {
-    expect(view.line()).toContain("Not run: Run code The question expired.");
+    expect(view.line()).toContain("Not run: Run code. The question expired.");
     expect(view.place().querySelector(".ti-clock-x")).not.toBeNull();
     view.button("Ask again").click();
     await settle();
@@ -504,7 +532,7 @@ domTest("an app Action's catalog sentences name the question and every outcome l
     expect(german.place().textContent).not.toContain("Warum");
     german.button("Nicht ausführen").click();
     await settle();
-    expect(german.line()).toBe("E-Mail an jana@example.com nicht gesendet Du hast abgelehnt.");
+    expect(german.line()).toBe("E-Mail an jana@example.com nicht gesendet. Du hast abgelehnt.");
   } finally {
     german.cleanup();
   }
@@ -512,7 +540,7 @@ domTest("an app Action's catalog sentences name the question and every outcome l
   // A stop before the decision leaves the app's not-run sentence; a result without the data a sentence needs keeps the app's summary.
   const stopped = await mountTurn([{ ...sendMail("de"), status: "running", approval: undefined }], { locale: "de", phase: "stopped" });
   try {
-    expect(stopped.line()).toBe("E-Mail an jana@example.com nicht gesendet Die Antwort wurde angehalten.");
+    expect(stopped.line()).toBe("E-Mail an jana@example.com nicht gesendet. Die Antwort wurde angehalten.");
   } finally {
     stopped.cleanup();
   }
@@ -555,7 +583,7 @@ domTest("a value shaped like a date that is no real day never breaks the questio
     expect(view.question()?.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Send email at 0000-00-00?");
     view.button("Don't run").click();
     await settle();
-    expect(view.line()).toBe("Did not send email at 0000-00-00 You declined.");
+    expect(view.line()).toBe("Did not send email at 0000-00-00. You declined.");
   } finally {
     view.cleanup();
   }

@@ -44,7 +44,7 @@ const authenticate: MiddlewareHandler<AuthContext> = async (c, next) => {
 const pass: MiddlewareHandler<AuthContext> = async (_c, next) => next();
 const core: AppRegistryEntry = {
   id: "core",
-  name: "Core",
+  name: "Cloud",
   description: "Platform services",
   icon: "ti ti-cloud",
   routes: ["/api/ai/skills"],

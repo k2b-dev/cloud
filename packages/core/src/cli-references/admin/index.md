@@ -240,10 +240,11 @@ cld admin maintenance status --json
 cld admin maintenance until 15:00
 cld admin maintenance on --quiesce
 cld admin maintenance on --no-quiesce
+cld admin maintenance bypass
 cld admin maintenance off
 ```
 
-While maintenance is on, the gateway shows a maintenance page and answers every other request with `503` problem JSON (code `maintenance`). These four commands still reach Core. Maintenance never ends by itself. Any other `cld` command prints one sentence and exits with code `75` while maintenance is on, so scripts can wait and retry. `--quiesce` adds stage „Ruhe“: every app stops taking background work and drains it; `status` then reports `quiet: { quiet, total, busy }`. Wait until `quiet` equals `total` before work that needs a still Cloud. `--no-quiesce` or `off` resumes the work; missed schedule ticks run once. Details: [Maintenance mode](/en/docs/operations/maintenance-mode).
+While maintenance is on, the gateway shows a maintenance page and answers every other request with `503` problem JSON (code `maintenance`). These commands still reach Core. `bypass` prints a personal link and its latest expiry: the browser that opens it sees the Cloud address as usual (sign-in still required) until the maintenance ends, for at most 12 hours. Only `off` ends a link early, and it ends all of them. Treat the link like a password; outside maintenance the command prints one sentence and exits with code `1`. Maintenance never ends by itself. Any other `cld` command prints one sentence and exits with code `75` while maintenance is on, so scripts can wait and retry. `--quiesce` adds stage „Ruhe“: every app stops taking background work and drains it; `status` then reports `quiet: { quiet, total, busy }`. Wait until `quiet` equals `total` before work that needs a still Cloud. `--no-quiesce` or `off` resumes the work; missed schedule ticks run once. Details: [Maintenance mode](/en/docs/operations/maintenance-mode).
 
 ## Complete command catalogue
 
@@ -254,7 +255,7 @@ Run `cld admin <command> --help` for flags, filters, pagination, and confirmatio
 | Instance | `status`, `diagnose` |
 | App registry | `apps list`, `apps get`, `apps remove` |
 | Routes | `routes list` (windowed via `--range`) |
-| Maintenance mode | `maintenance on`, `maintenance until`, `maintenance off`, `maintenance status` |
+| Maintenance mode | `maintenance on`, `maintenance until`, `maintenance off`, `maintenance status`, `maintenance bypass` |
 | Logs | `logs list`, `logs summary`, `logs stats`, `logs errors`, `logs problems`, `logs show`, `logs explain`, `logs tail`, `logs sources`, `logs cleanup` |
 | Telemetry | `telemetry routes`, `telemetry overview`, `telemetry timeseries`, `telemetry explain`, `telemetry summary`, `telemetry events`, `telemetry apps` |
 | Background jobs | `jobs list`, `jobs stats`, `jobs runs`, `jobs show` |
