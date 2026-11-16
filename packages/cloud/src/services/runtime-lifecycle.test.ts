@@ -529,7 +529,7 @@ describe("maintenance quiesce", () => {
     expect(events).toEqual(["start", "stop"]);
   });
 
-  test("a lifecycle whose stop failed during quiesce cleans up and starts on resume", async () => {
+  test("a lifecycle whose stop failed during quiesce starts on resume without stopping again", async () => {
     const controller = createQuiesceController();
     const events: string[] = [];
     let failStop = false;
@@ -546,13 +546,13 @@ describe("maintenance quiesce", () => {
     await lifecycle.start();
     failStop = true;
     expect((await controller.quiesce()).map((error) => (error as Error).message)).toEqual(["drain timed out"]);
-    failStop = false;
+    // A second stop would time out the same way and fail the resume.
     expect(await controller.resume()).toEqual([]);
-    expect(events).toEqual(["start", "stop", "stop", "start"]);
+    expect(events).toEqual(["start", "stop", "start"]);
   });
 
-  test("a lifecycle that cannot start again is reported by resume", async () => {
-    const controller = createQuiesceController();
+  test("a lifecycle that cannot start again is reported by resume after its retries", async () => {
+    const controller = createQuiesceController({ retryMs: 1 });
     let starts = 0;
     const lifecycle = createRuntimeLifecycle(
       {
@@ -567,6 +567,7 @@ describe("maintenance quiesce", () => {
     await lifecycle.start();
     await controller.quiesce();
     expect((await controller.resume()).map((error) => (error as Error).message)).toEqual(["database unavailable"]);
+    expect(starts).toBe(1 + 5);
   });
 
   test("a runtime interval skips ticks while quiet and runs missed ticks once on resume", async () => {
@@ -613,6 +614,52 @@ describe("maintenance quiesce", () => {
     await quiet.stop();
     expect(runs).toBe(2);
     await interval.stop();
+  });
+
+  test("a runtime interval started while quiet without runNow does not run at once on resume", async () => {
+    const controller = createQuiesceController();
+    let runs = 0;
+    await controller.quiesce();
+    const interval = startRuntimeInterval({
+      run: async () => {
+        runs += 1;
+      },
+      intervalMs: 3_600_000,
+      runNow: false,
+      onError: () => {},
+      controller,
+    });
+    await controller.resume();
+    await interval.stop();
+    expect(runs).toBe(0);
+  });
+
+  test("a runtime interval whose error report throws leaves no unhandled rejection", async () => {
+    const controller = createQuiesceController();
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", record);
+    try {
+      const reported = Promise.withResolvers<void>();
+      const interval = startRuntimeInterval({
+        run: async () => {
+          throw new Error("scan failed");
+        },
+        intervalMs: 3_600_000,
+        onError: () => {
+          reported.resolve();
+          throw new Error("logger failed");
+        },
+        controller,
+      });
+      await reported.promise;
+      await interval.stop();
+      // Unhandled rejections surface after the microtask queue drains.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", record);
+    }
   });
 
   test("a runtime interval reports a failed pass", async () => {

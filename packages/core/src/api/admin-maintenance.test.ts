@@ -140,6 +140,12 @@ test("stage Ruhe switches on with maintenance or later, stays until switched off
   expect(writes[2]!.id).toBe(writes[0]!.id);
   expect(resumed.quiet).toBeUndefined();
   expect((await call("/on", { quiesce: "yes" })).status).toBe(400);
+
+  // Each switch-on is a new stage Ruhe; a message change keeps the running one.
+  expect(writes.map((state) => state.quiesceEpoch)).toEqual([1, 1, 1]);
+  await call("/on", { quiesce: true });
+  await call("/on", { message: "Fast fertig." });
+  expect(writes.slice(3).map((state) => state.quiesceEpoch)).toEqual([2, 2]);
 });
 
 test("an app is quiet only when every running instance reports nothing in flight", () => {
@@ -149,15 +155,20 @@ test("an app is quiet only when every running instance reports nothing in flight
     { id: "core", name: "Core", instances: [{ instanceId: "c1" }] },
     { id: "legacy", name: "Legacy" },
   ];
+  const generation = "maintenance-1:2";
   expect(
-    summarizeQuiet(apps, [
-      { appId: "mail", instanceId: "m1", inFlight: 2 },
-      { appId: "mail", instanceId: "m2", inFlight: 0 },
-      { appId: "core", instanceId: "c1", inFlight: 0 },
-      { appId: "legacy", instanceId: "l1", inFlight: 0 },
-      // A report under another app's instance id never counts.
-      { appId: "mail", instanceId: "f1", inFlight: 0 },
-    ]),
+    summarizeQuiet(
+      apps,
+      [
+        { appId: "mail", instanceId: "m1", generation, inFlight: 2 },
+        { appId: "mail", instanceId: "m2", generation, inFlight: 0 },
+        { appId: "core", instanceId: "c1", generation, inFlight: 0 },
+        { appId: "legacy", instanceId: "l1", generation, inFlight: 0 },
+        // A report under another app's instance id never counts.
+        { appId: "mail", instanceId: "f1", generation, inFlight: 0 },
+      ],
+      generation,
+    ),
   ).toEqual({
     quiet: 2,
     total: 4,
@@ -166,9 +177,20 @@ test("an app is quiet only when every running instance reports nothing in flight
       { id: "mail", name: "Mail", inFlight: 2, unreported: 0 },
     ],
   });
-  expect(summarizeQuiet([{ id: "legacy", name: "Legacy" }], [])).toEqual({
+  expect(summarizeQuiet([{ id: "legacy", name: "Legacy" }], [], generation)).toEqual({
     quiet: 0,
     total: 1,
     busy: [{ id: "legacy", name: "Legacy", inFlight: 0, unreported: 1 }],
+  });
+});
+
+test("a quiet report of an earlier stage Ruhe does not count after quiesce went off and on again", () => {
+  const apps = [{ id: "mail", name: "Mail", instances: [{ instanceId: "m1" }] }];
+  const stale = [{ appId: "mail", instanceId: "m1", generation: "maintenance-1:1", inFlight: 0 }];
+  expect(summarizeQuiet(apps, stale, "maintenance-1:1")).toEqual({ quiet: 1, total: 1, busy: [] });
+  expect(summarizeQuiet(apps, stale, "maintenance-1:2")).toEqual({
+    quiet: 0,
+    total: 1,
+    busy: [{ id: "mail", name: "Mail", inFlight: 0, unreported: 1 }],
   });
 });

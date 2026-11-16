@@ -38,9 +38,18 @@ export const MaintenanceStateSchema = z.object({
   message: z.string().min(1).max(MAINTENANCE_MESSAGE_MAX_LENGTH).optional(),
   until: epochMs.optional(),
   quiesce: z.boolean(),
+  /** Counts the times stage „Ruhe“ was switched on in this maintenance; absent before the first. */
+  quiesceEpoch: z.number().int().min(1).max(1_000_000).optional(),
   bypassKey: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
 });
 export type MaintenanceState = z.infer<typeof MaintenanceStateSchema>;
+
+/**
+ * Which stage „Ruhe“ a quiet report answers: the maintenance and how often
+ * quiesce was switched on in it. A report of an earlier one never counts, so
+ * a stale „quiet“ cannot survive an off and on.
+ */
+export const quietGeneration = (state: Pick<MaintenanceState, "id" | "quiesceEpoch">): string => `${state.id}:${state.quiesceEpoch ?? 0}`;
 
 /** A record from the store, or `null` for anything that is not a valid state. Never throws. */
 export const parseMaintenanceState = (value: unknown): MaintenanceState | null => {
@@ -78,11 +87,13 @@ export type GatewayStatus = {
 export const QuietReportSchema = z.object({
   appId: z.string().min(1).max(200),
   instanceId: z.string().min(1).max(64),
+  /** `quietGeneration()` of the state the instance applied. */
+  generation: z.string().min(1).max(160),
   inFlight: z.number().int().min(0).max(1_000_000),
 });
 export type QuietReport = z.infer<typeof QuietReportSchema>;
 
-/** One running app that is not quiet yet: work still running, or instances that have not reported. */
+/** One running app that is not quiet yet: work still running, or instances without a report for this stage „Ruhe“. */
 export const MaintenanceBusyAppSchema = z.object({
   id: z.string(),
   name: z.string(),

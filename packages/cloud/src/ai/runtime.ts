@@ -625,6 +625,7 @@ export const startAiRuntime = (
     if (errors.length) throw new AggregateError(errors, `${errors.length} AI approval requested listener(s) failed`);
   };
 
+  // runtime-timer: supervises the Sync worker, which follows quiesce and retries its resume without a limit.
   void superviseRuntimeTask({
     name: "AI turn worker",
     signal: controller.signal,

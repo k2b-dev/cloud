@@ -5,13 +5,14 @@ import type { ObservedMaintenance } from "./maintenance-state";
 import { createRuntimeLifecycle } from "./runtime-lifecycle";
 import { createQuiesceController } from "./runtime-quiesce";
 
-const state = (quiesce: boolean): ObservedMaintenance => ({
+const state = (quiesce: boolean, quiesceEpoch?: number): ObservedMaintenance => ({
   updatedAt: Date.UTC(2026, 10, 16, 13, 0),
   state: {
     id: "maintenance-1",
     startedAt: Date.UTC(2026, 10, 16, 13, 0),
     startedBy: { id: "0b6f2e3c-6f0e-4d8e-9a77-3f1c2b9d4e51", label: "Lea Muster" },
     quiesce,
+    ...(quiesceEpoch ? { quiesceEpoch } : {}),
     bypassKey: "a".repeat(43),
   } satisfies MaintenanceState,
 });
@@ -42,8 +43,10 @@ const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 const start = (controller: ReturnType<typeof createQuiesceController>, dependencies: ReturnType<typeof harness>["dependencies"]) => {
   const resumeFailures: unknown[][] = [];
+  const resumeRetries: number[] = [];
   return {
     resumeFailures,
+    resumeRetries,
     started: startMaintenanceQuiesce({
       appId: "mail",
       instanceId: "instance-a",
@@ -51,6 +54,7 @@ const start = (controller: ReturnType<typeof createQuiesceController>, dependenc
       dependencies,
       onDrainErrors: () => {},
       onResumeFailed: (errors) => resumeFailures.push(errors),
+      onResumeRetry: ({ attempt }) => resumeRetries.push(attempt),
       onReportError: () => {},
       // An hour: periodic reports never fire during the test.
       checkIntervalMs: 3_600_000,
@@ -60,14 +64,29 @@ const start = (controller: ReturnType<typeof createQuiesceController>, dependenc
 
 test("an instance that starts during stage Ruhe is quiet before its workers start and reports it", async () => {
   const controller = createQuiesceController();
-  const maintenance = harness(state(true));
+  const maintenance = harness(state(true, 1));
   const { started } = start(controller, maintenance.dependencies);
   const quiesce = await started;
   expect(controller.quiesced).toBe(true);
   await settle();
-  expect(maintenance.reports.at(-1)).toEqual({ appId: "mail", instanceId: "instance-a", inFlight: 0 });
+  expect(maintenance.reports.at(-1)).toEqual({ appId: "mail", instanceId: "instance-a", generation: "maintenance-1:1", inFlight: 0 });
   await quiesce.stop();
   expect(maintenance.cleared).toEqual(["instance-a"]);
+  // Nothing stays quiet behind a watcher that stopped.
+  expect(controller.quiesced).toBe(false);
+});
+
+test("a stage Ruhe switched off and on again that the instance saw only as on is answered under the new generation", async () => {
+  const controller = createQuiesceController();
+  const maintenance = harness(state(true, 1));
+  const { started } = start(controller, maintenance.dependencies);
+  const quiesce = await started;
+  await settle();
+  maintenance.change(state(true, 2));
+  await settle();
+  expect(maintenance.reports.at(-1)?.generation).toBe("maintenance-1:2");
+  expect(controller.quiesced).toBe(true);
+  await quiesce.stop();
 });
 
 test("quiesce on, off and maintenance end follow the record; off clears the report", async () => {
@@ -99,8 +118,8 @@ test("quiesce on, off and maintenance end follow the record; off clears the repo
   await runtime.stop();
 });
 
-test("a resume that fails is handed to the app, which restarts the process", async () => {
-  const controller = createQuiesceController();
+test("a resume that still fails after its retries is handed to the app, which restarts the process", async () => {
+  const controller = createQuiesceController({ retryMs: 1 });
   let starts = 0;
   const runtime = createRuntimeLifecycle(
     {
@@ -113,14 +132,15 @@ test("a resume that fails is handed to the app, which restarts the process", asy
     { controller },
   );
   const maintenance = harness(state(false));
-  const { started, resumeFailures } = start(controller, maintenance.dependencies);
+  const { started, resumeFailures, resumeRetries } = start(controller, maintenance.dependencies);
   const quiesce = await started;
   await runtime.start();
   await settle();
   maintenance.change(state(true));
   await settle();
   maintenance.change(state(false));
-  await settle();
+  while (resumeFailures.length === 0) await Bun.sleep(1);
+  expect(resumeRetries).toEqual([1, 2, 3, 4]);
   expect(resumeFailures.flat().map((error) => (error instanceof Error ? error.message : String(error)))).toEqual(["database unavailable"]);
   await quiesce.stop();
 });

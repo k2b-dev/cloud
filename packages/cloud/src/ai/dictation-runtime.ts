@@ -139,6 +139,7 @@ export const sweepAiDictations = async (): Promise<void> => {
 
 export const startAiDictationRuntime = (): (() => void) => {
   const controller = new AbortController();
+  // runtime-timer: supervises the Sync worker, which follows quiesce and retries its resume without a limit.
   void superviseRuntimeTask({
     name: "AI dictation worker",
     signal: controller.signal,

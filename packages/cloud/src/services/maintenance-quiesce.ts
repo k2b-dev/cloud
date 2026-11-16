@@ -1,4 +1,4 @@
-import type { QuietReport } from "../contracts/maintenance";
+import { type QuietReport, quietGeneration } from "../contracts/maintenance";
 import {
   clearQuietReport,
   type ObservedMaintenance,
@@ -8,7 +8,7 @@ import {
   watchMaintenanceState,
 } from "./maintenance-state";
 import { superviseRuntimeTask } from "./runtime-lifecycle";
-import { processQuiesce, type QuiesceController } from "./runtime-quiesce";
+import { processQuiesce, type QuiesceController, type ResumeRetry } from "./runtime-quiesce";
 
 /** How often a quiesced instance checks whether its in-flight count changed. */
 const QUIET_CHECK_MS = 2_000;
@@ -35,8 +35,13 @@ const defaults: Dependencies = {
  *
  * Reads the current state before it returns, so workers that start after
  * this already start quiet. When NATS is unreachable the last known state
- * stays; at start, an unreadable state counts as off until the watch reads it. A resume that fails calls `onResumeFailed`; `app.start()` then
- * restarts the process like a failed start.
+ * stays; at start, an unreadable state counts as off until the watch reads it.
+ * Resume retries what fails to start (`onResumeRetry` hears each retry); what
+ * still fails goes to `onResumeFailed`, and `app.start()` then restarts the
+ * process like a failed start. Each report names the stage „Ruhe“ it answers
+ * (`quietGeneration`), so Core never counts a report of an earlier one.
+ * `stop()` leaves the controller not quiet: nothing stays quiet behind a
+ * watcher that no longer follows the record.
  */
 export const startMaintenanceQuiesce = async ({
   appId,
@@ -45,6 +50,7 @@ export const startMaintenanceQuiesce = async ({
   dependencies = defaults,
   onDrainErrors,
   onResumeFailed,
+  onResumeRetry,
   onReportError,
   reportIntervalMs = QUIET_REPORT_INTERVAL_MS,
   checkIntervalMs = QUIET_CHECK_MS,
@@ -55,6 +61,7 @@ export const startMaintenanceQuiesce = async ({
   dependencies?: Dependencies;
   onDrainErrors(errors: unknown[]): void;
   onResumeFailed(errors: unknown[]): void;
+  onResumeRetry?(retry: ResumeRetry): void;
   onReportError(error: unknown): void;
   reportIntervalMs?: number;
   checkIntervalMs?: number;
@@ -63,14 +70,18 @@ export const startMaintenanceQuiesce = async ({
   let reporter: ReturnType<typeof setInterval> | undefined;
   let lastReport: { inFlight: number; at: number } | undefined;
   let reporting: Promise<void> = Promise.resolve();
+  /** The stage „Ruhe“ this instance follows, while it does. */
+  let generation: string | undefined;
 
   const report = (force = false) => {
+    if (!generation) return;
     const inFlight = controller.inFlight();
     const now = Date.now();
     if (!force && lastReport && lastReport.inFlight === inFlight && now - lastReport.at < reportIntervalMs) return;
     lastReport = { inFlight, at: now };
+    const current = { appId, instanceId, generation, inFlight };
     reporting = reporting
-      .then(() => dependencies.publish({ appId, instanceId, inFlight }))
+      .then(() => dependencies.publish(current))
       .catch((error: unknown) => {
         lastReport = undefined;
         onReportError(error);
@@ -84,9 +95,20 @@ export const startMaintenanceQuiesce = async ({
   };
 
   const apply = (observed: ObservedMaintenance | null) => {
+    if (watching.signal.aborted) return;
     const wanted = observed?.state.quiesce === true;
+    if (wanted && observed && controller.quiesced) {
+      // Still quiet, but switched off and on again meanwhile: answer the new stage at once.
+      const next = quietGeneration(observed.state);
+      if (next !== generation) {
+        generation = next;
+        report(true);
+      }
+      return;
+    }
     if (wanted === controller.quiesced) return;
-    if (wanted) {
+    if (wanted && observed) {
+      generation = quietGeneration(observed.state);
       void controller.quiesce().then((errors) => {
         if (errors.length) onDrainErrors(errors);
         if (controller.quiesced) report(true);
@@ -98,8 +120,9 @@ export const startMaintenanceQuiesce = async ({
       return;
     }
     stopReporting();
+    generation = undefined;
     reporting = reporting.then(() => dependencies.clear(instanceId)).catch(onReportError);
-    void controller.resume().then((failures) => {
+    void controller.resume({ onRetry: onResumeRetry }).then((failures) => {
       if (failures.length) onResumeFailed(failures);
     });
   };
@@ -111,6 +134,7 @@ export const startMaintenanceQuiesce = async ({
       return null;
     }),
   );
+  // runtime-timer: the maintenance watcher that switches quiesce itself.
   void superviseRuntimeTask({
     name: "Maintenance quiesce watcher",
     signal: watching.signal,
@@ -123,6 +147,8 @@ export const startMaintenanceQuiesce = async ({
       watching.abort();
       const wasQuiet = controller.quiesced;
       stopReporting();
+      generation = undefined;
+      controller.release();
       await reporting;
       if (wasQuiet) await dependencies.clear(instanceId).catch(onReportError);
     },

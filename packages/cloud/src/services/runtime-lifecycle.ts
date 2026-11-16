@@ -1,5 +1,5 @@
 import type { Worker } from "@k2b/sync";
-import { processQuiesce, type QuiesceController, type QuiesceParticipant } from "./runtime-quiesce";
+import { processQuiesce, type QuiesceController, type QuiesceParticipant, runSupervised } from "./runtime-quiesce";
 
 export type RuntimeTaskTracker = ReturnType<typeof createRuntimeTaskTracker>;
 
@@ -33,7 +33,11 @@ const waitForRetry = (delayMs: number, signal: AbortSignal): Promise<void> =>
     if (signal.aborted) finish();
   });
 
-/** Restart a long-lived task after unexpected failure or completion. */
+/**
+ * Restart a long-lived task after unexpected failure or completion. A Sync
+ * worker that `run` creates is supervised the same way across maintenance
+ * quiesce: its resume retries without a limit instead of failing.
+ */
 export const superviseRuntimeTask = async (options: RuntimeTaskSupervisorOptions): Promise<void> => {
   const minRetryMs = options.minRetryMs ?? 250;
   const maxRetryMs = options.maxRetryMs ?? 5_000;
@@ -50,7 +54,7 @@ export const superviseRuntimeTask = async (options: RuntimeTaskSupervisorOptions
     const startedAt = Date.now();
     let error: unknown;
     try {
-      await options.run(options.signal);
+      await runSupervised(() => options.run(options.signal));
       if (options.signal.aborted) return;
       error = new Error(`${options.name ?? "Runtime task"} stopped unexpectedly`);
     } catch (caught) {
@@ -85,6 +89,7 @@ export const createRuntimeTaskTracker = ({ controller = processQuiesce }: { cont
   };
 
   const participant: QuiesceParticipant = {
+    layer: "work",
     quiesce: (timeoutMs) => withDeadline(drain(), timeoutMs, `Runtime tasks did not drain within ${timeoutMs}ms`),
     resume: async () => {},
     inFlight: () => tasks.size,
@@ -95,6 +100,7 @@ export const createRuntimeTaskTracker = ({ controller = processQuiesce }: { cont
       accepting = true;
       unregister ??= controller.register(participant);
     },
+    /** Accepts nothing more. Tasks still running stay counted by maintenance quiesce until they end. */
     close: (): void => {
       accepting = false;
       unregister?.();
@@ -168,7 +174,13 @@ export const startRuntimeInterval = ({
         await run(abort.signal);
       } catch (error) {
         // Only the abort that stop() caused is expected; any other failure is reported, also during stop.
-        if (!abort.signal.aborted || !isAbort(error, abort.signal)) onError(error);
+        if (!abort.signal.aborted || !isAbort(error, abort.signal)) {
+          try {
+            onError(error);
+          } catch {
+            // A failing report never becomes an unhandled rejection of the timer.
+          }
+        }
       }
     });
     void active?.finally(() => {
@@ -184,8 +196,8 @@ export const startRuntimeInterval = ({
     missed = false;
     tick();
   });
+  // Without runNow, the first run is the first tick, also when the interval starts while quiet.
   if (runNow) tick();
-  else missed = controller.quiesced;
 
   return {
     stop: async () => {
@@ -289,17 +301,26 @@ export const createRuntimeLifecycle = (
   };
 
   const participant: QuiesceParticipant = {
+    layer: "runtime",
     quiesce: () =>
       serialize(async () => {
         if (state !== "started") return;
         held = true;
-        await runStop();
+        try {
+          await runStop();
+        } catch (error) {
+          // The stop ran; what it left running (a timed-out drain) stays counted by its tracker or
+          // workers. Resume starts again without a second stop that could fail the same way.
+          state = "stopped";
+          throw error;
+        }
       }),
     resume: () =>
       serialize(async () => {
         if (!held || controller.quiesced) return;
-        held = false;
+        // Held until the start succeeds, so a retry of resume starts it again.
         await runStart();
+        held = false;
       }),
     inFlight: () => stopping,
   };

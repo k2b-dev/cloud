@@ -7,6 +7,7 @@ import {
   type MaintenanceStatus,
   normalizeMaintenanceMessage,
   type QuietReport,
+  quietGeneration,
 } from "@k2b/cloud/contracts/maintenance";
 import { hasRole, type User } from "@k2b/cloud/contracts/shared";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
@@ -45,10 +46,16 @@ type QuietApp = { id: string; name: string; instances?: { instanceId: string }[]
 
 /**
  * Stage „Ruhe“ per running app: quiet when every live instance reports no
- * work in flight. An instance without a report (not yet applied, or its
- * report expired) keeps its app from counting as quiet.
+ * work in flight for `generation`. An instance without such a report (not
+ * yet applied, its report expired, or a report of an earlier stage „Ruhe“)
+ * keeps its app from counting as quiet.
  */
-export const summarizeQuiet = (apps: readonly QuietApp[], reports: readonly QuietReport[]): NonNullable<MaintenanceStatus["quiet"]> => {
+export const summarizeQuiet = (
+  apps: readonly QuietApp[],
+  allReports: readonly QuietReport[],
+  generation: string,
+): NonNullable<MaintenanceStatus["quiet"]> => {
+  const reports = allReports.filter((report) => report.generation === generation);
   const byInstance = new Map(reports.map((report) => [report.instanceId, report]));
   const busy: MaintenanceBusyApp[] = [];
   let quiet = 0;
@@ -69,9 +76,9 @@ export const summarizeQuiet = (apps: readonly QuietApp[], reports: readonly Quie
 };
 
 /** Read without Postgres: the registry and one snapshot of the quiesce reports. */
-export const readQuiet = async (): Promise<NonNullable<MaintenanceStatus["quiet"]>> => {
+export const readQuiet = async (state: MaintenanceState): Promise<NonNullable<MaintenanceStatus["quiet"]>> => {
   const [apps, reports] = await Promise.all([listAppsDetailed(), readQuietReports()]);
-  return summarizeQuiet(apps, reports);
+  return summarizeQuiet(apps, reports, quietGeneration(state));
 };
 
 const randomKey = (bytes: number): string => Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString("base64url");
@@ -105,7 +112,7 @@ export const createMaintenanceService = ({
 }: {
   store?: Store;
   appsReady?: () => Promise<MaintenanceStatus["apps"]>;
-  quietReady?: () => Promise<NonNullable<MaintenanceStatus["quiet"]>>;
+  quietReady?: (state: MaintenanceState) => Promise<NonNullable<MaintenanceStatus["quiet"]>>;
   record?: typeof audit.record;
   now?: () => number;
 } = {}) => {
@@ -122,7 +129,7 @@ export const createMaintenanceService = ({
     if (!requireAdmin(actor)) return fail(err.forbidden("Administrator access required"));
     const [observed, apps] = await Promise.all([store.read(), appsReady()]);
     const state = observed?.state ?? null;
-    return ok(view(state, apps, state?.quiesce ? await quietReady() : undefined));
+    return ok(view(state, apps, state?.quiesce ? await quietReady(state) : undefined));
   };
 
   return {
@@ -144,13 +151,17 @@ export const createMaintenanceService = ({
       // Omitted fields keep the running values; an empty message removes it.
       const nextMessage = input.message === undefined ? current?.message : message;
       const nextUntil = input.until === undefined ? current?.until : until;
+      const quiesce = input.quiesce ?? current?.quiesce ?? false;
+      // Every switch-on starts a new stage „Ruhe“, so reports of an earlier one stop counting.
+      const quiesceEpoch = quiesce && !current?.quiesce ? (current?.quiesceEpoch ?? 0) + 1 : current?.quiesceEpoch;
       const state: MaintenanceState = {
         id: current?.id ?? crypto.randomUUID(),
         startedAt: current?.startedAt ?? now(),
         startedBy: current?.startedBy ?? { id: actor.id, label: (actor.displayName || actor.uid).slice(0, 200) },
         ...(nextMessage ? { message: nextMessage } : {}),
         ...(nextUntil ? { until: nextUntil } : {}),
-        quiesce: input.quiesce ?? current?.quiesce ?? false,
+        quiesce,
+        ...(quiesceEpoch ? { quiesceEpoch } : {}),
         bypassKey: current?.bypassKey ?? randomKey(32),
       };
       await store.write(state);

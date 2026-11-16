@@ -51,6 +51,44 @@ test("a raw timer, a marker without a reason, and a second Sync are reported", (
   ]);
 });
 
+test("a global timer, a supervised task and a self-scheduling timeout loop are reported unless marked", () => {
+  const source = [
+    "const timer = globalThis.setInterval(scan, 1_000);",
+    'void superviseRuntimeTask({ name: "reader", signal, run });',
+    "const poll = () => {",
+    "  void check().finally(() => {",
+    "    timer = setTimeout(poll, 5_000);",
+    "  });",
+    "};",
+    "function tick() {",
+    "  setTimeout(() => void tick(), 25);",
+    "}",
+    "// runtime-timer: watches one request in flight.",
+    "const watch = () => { timer = setTimeout(watch, 200); };",
+  ].join("\n");
+  expect(backgroundWorkFindings(source)).toEqual([
+    { line: 1, kind: "timer" },
+    { line: 2, kind: "timer" },
+    { line: 5, kind: "timer" },
+    { line: 9, kind: "timer" },
+  ]);
+});
+
+test("a one-shot timeout, a deadline and a callback declared elsewhere are not loops", () => {
+  const source = [
+    "const expire = () => process.exit(1);",
+    "let deadline = setTimeout(expire, 240_000);",
+    "const finish = () => {",
+    "  clearTimeout(timer);",
+    "};",
+    "const timer = setTimeout(finish, 1_000);",
+    "const run = async () => {",
+    "  await Promise.race([work, new Promise((resolve) => setTimeout(resolve, 50))]);",
+    "};",
+  ].join("\n");
+  expect(backgroundWorkFindings(source)).toEqual([]);
+});
+
 test("only server code of quiescing packages is in scope", async () => {
   const timer = "setInterval(() => void scan(), 1_000);\n";
   expect(

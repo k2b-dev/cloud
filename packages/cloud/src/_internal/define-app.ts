@@ -1288,6 +1288,13 @@ export const defineApp = <
           });
           void shutdown().finally(() => process.exit(1));
         },
+        onResumeRetry: ({ error, attempt, retryInMs }) =>
+          log.warn("Background work could not resume after maintenance quiesce; retrying", {
+            appId: meta.id,
+            attempt,
+            retryInMs,
+            error: error instanceof Error ? error.message : String(error),
+          }),
         onReportError: (error) =>
           log.warn("Maintenance quiesce status unavailable", {
             appId: meta.id,

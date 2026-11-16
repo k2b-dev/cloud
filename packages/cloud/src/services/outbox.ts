@@ -285,6 +285,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
 
   // While started, maintenance quiesce waits for the pass in flight and resume runs the passes it skipped once.
   const participant: QuiesceParticipant = {
+    layer: "work",
     quiesce: async (timeoutMs) => {
       const pass = activeReconcile;
       if (!pass) return;

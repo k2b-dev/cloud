@@ -72,40 +72,54 @@ In every app instance (Core included, the gateway excluded), then:
 
 - every Sync worker (jobs, queues, topic consumers, schedulers, pumps) stops
   taking new work and finishes the work in flight. After 30 seconds, work
-  that is still running is cancelled and returns to NATS for later;
+  that is still running is cancelled and returns to NATS for later. Work that
+  ignores the cancel still counts as running until it ends;
 - outbox publishers, recovery scans, retention sweeps, outgoing mail, mail
   fetching including IMAP push, notifications, automations and workflows
-  start nothing new;
-- requests keep working, the processes keep running, and their registry
-  entries stay.
+  start nothing new. They stop after the workers have finished, one after
+  another, so no running job meets a runtime that has already stopped;
+- the processes keep running and their registry entries stay. Requests are
+  still answered, but a request that waits for background work waits until
+  the stage ends: an AI chat turn, a file preview, or saving a shared text.
 
 New work that arrives while quiet waits in NATS or Postgres. A job whose
 stream reaches its retention limit rejects further submissions, so keep the
 stage as short as the work needs.
 
-When you run `--no-quiesce` or `off`, each instance starts its workers again.
-A schedule that missed ticks runs once, not once per missed tick. Periodic
-sweeps also run once. An instance that cannot start its background work again
-restarts itself.
+When you run `--no-quiesce` or `off`, each instance starts its runtimes
+again in their original order and then its workers. A worker whose old work
+still runs starts again only after that work ended, so the same work never
+runs twice in one instance. A schedule that missed ticks runs once, not once
+per missed tick. Periodic sweeps also run once.
+
+An instance that cannot start part of its background work again tries five
+times within about a minute and logs each retry. If it still fails, the
+instance restarts itself. The AI chat and dictation workers keep trying
+without a restart.
 
 `status` adds one line while the stage is on:
 
 ```text
-Ruhe: 8 von 9 Apps ruhig, Mail: 2 Jobs laufen noch
-Quiet: 8 of 9 apps quiet, Mail: 2 jobs still running
+Ruhe: 8 von 9 Apps ruhig, Mail: 2 Aufgaben laufen noch und 1 Instanz ohne Rückmeldung
+Quiet: 8 of 9 apps quiet, Mail: 2 tasks still running and 1 instance has not reported
 ```
 
 An app counts as quiet when every running instance reports no work in
-flight. `noch keine Rückmeldung` / `no report yet` means an instance has not
-reported yet. It may have just started, or it cannot reach NATS. At most three
-apps are named; the rest are counted. `--json` returns `quiesce` and
+flight. Tasks count running jobs, other background tasks, and runtimes that
+are still stopping. An instance without a report may have just started, or it
+cannot reach NATS. At most three apps are named; the rest are counted.
+`--json` returns `quiesce` and
 `quiet: { quiet, total, busy: [{ id, name, inFlight, unreported }] }`.
 
 Each instance reports to the Sync ephemeral `cloud-quiesce` (owner `cloud`,
 one key per instance, at most 1024, each kept for 45 seconds and renewed
-every 15 seconds while quiet). Core reads one snapshot of it for `status`
-and no database. Turning the stage on or off is in the audit log as
-`maintenance.start` or `maintenance.update` with `quiesce` in its metadata.
+every 15 seconds while quiet). A report names the maintenance and how often
+the stage was switched on in it, so after `--no-quiesce` and `--quiesce` an
+old report never counts as quiet. The quiet line reads the app registry and
+one snapshot of these reports, not the database. The `Apps bereit` line
+reads Core's app catalogue from Postgres. Turning the stage on or off is in
+the audit log as `maintenance.start` or `maintenance.update` with `quiesce`
+in its metadata.
 
 ## What people and programs see
 

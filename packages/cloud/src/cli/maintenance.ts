@@ -80,19 +80,30 @@ export const maintenanceResumeSentence = ({ locale }: Words = {}): string =>
 /** At most this many busy apps are named; the rest are counted. */
 const QUIET_NAMED_APPS = 3;
 
-/** „Ruhe: 8 von 9 Apps ruhig, Mail: 2 Jobs laufen noch“ / "Quiet: 8 of 9 apps quiet, Mail: 2 jobs still running". */
+/**
+ * „Ruhe: 8 von 9 Apps ruhig, Mail: 2 Aufgaben laufen noch“ / "Quiet: 8 of 9 apps quiet, Mail: 2 tasks still running".
+ * The count adds jobs, tracked tasks and runtimes still stopping, so it says tasks. Instances that have not
+ * reported for this stage „Ruhe“ are named beside running work.
+ */
 export const maintenanceQuietLine = (quiet: NonNullable<MaintenanceStatus["quiet"]>, { locale }: Words = {}): string => {
   const german = de(locale);
   const parts = [german ? `Ruhe: ${quiet.quiet} von ${quiet.total} Apps ruhig` : `Quiet: ${quiet.quiet} of ${quiet.total} apps quiet`];
   for (const app of quiet.busy.slice(0, QUIET_NAMED_APPS)) {
-    const jobs = app.inFlight;
-    if (jobs > 0)
-      parts.push(
+    const { inFlight: tasks, unreported } = app;
+    const states: string[] = [];
+    if (tasks > 0)
+      states.push(
         german
-          ? `${app.name}: ${jobs} ${jobs === 1 ? "Job läuft" : "Jobs laufen"} noch`
-          : `${app.name}: ${jobs} ${jobs === 1 ? "job" : "jobs"} still running`,
+          ? `${tasks} ${tasks === 1 ? "Aufgabe läuft" : "Aufgaben laufen"} noch`
+          : `${tasks} ${tasks === 1 ? "task" : "tasks"} still running`,
       );
-    else parts.push(german ? `${app.name}: noch keine Rückmeldung` : `${app.name}: no report yet`);
+    if (unreported > 0)
+      states.push(
+        german
+          ? `${unreported} ${unreported === 1 ? "Instanz" : "Instanzen"} ohne Rückmeldung`
+          : `${unreported} ${unreported === 1 ? "instance has" : "instances have"} not reported`,
+      );
+    parts.push(`${app.name}: ${states.join(german ? " und " : " and ")}`);
   }
   const more = quiet.busy.length - QUIET_NAMED_APPS;
   if (more > 0) parts.push(german ? `${more} weitere` : `${more} more`);

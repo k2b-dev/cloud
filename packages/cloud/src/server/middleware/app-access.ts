@@ -175,6 +175,7 @@ export const watchCredentialExpiry = (expiresAt: number, expired: () => void): (
       expired();
       return;
     }
+    // runtime-timer: enforces the expiry of a credential an open request or socket holds.
     timer = setTimeout(arm, Math.min(remaining, 2_147_483_647));
     timer.unref?.();
   };

@@ -63,6 +63,8 @@ export const watchMaintenanceState = async ({
 }): Promise<void> => {
   while (!signal.aborted) {
     const snapshot = await store().snapshot({ prefix: MAINTENANCE_STATE_KEY });
+    // A watcher stopped while it read hears nothing more.
+    if (signal.aborted) return;
     const entry = snapshot.entries.find((candidate) => candidate.key === MAINTENANCE_STATE_KEY);
     const state = entry ? parseMaintenanceState(entry.value) : null;
     onChange(entry && state ? { state, updatedAt: entry.updatedAt.getTime() } : null);
