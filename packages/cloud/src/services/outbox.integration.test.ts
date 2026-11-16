@@ -383,10 +383,14 @@ suiteFor("database")("Postgres outbox on an application table", () => {
 
   test("maintenance quiesce waits for the pass in flight, publishes nothing while quiet, and resume publishes once", async () => {
     const blocked = gate();
+    const entered = gate();
     const resumed = gate();
     const published: number[] = [];
     const outbox = reports(async (row) => {
-      if (row.delta === 20) await blocked.opened;
+      if (row.delta === 20) {
+        entered.open();
+        await blocked.opened;
+      }
       published.push(row.delta);
       if (row.delta === 21) resumed.open();
     });
@@ -394,6 +398,8 @@ suiteFor("database")("Postgres outbox on an application table", () => {
       outbox.start();
       await report(sql, itemB, 20);
       const inFlight = outbox.notify();
+      // Quiesce once the pass holds row 20; a quiesce before the pass reads its batch would rightly publish nothing.
+      await entered.opened;
       const quiescing = processQuiesce.quiesce();
       // The pass that holds row 20 counts as work in flight until it ends.
       expect(processQuiesce.inFlight()).toBe(1);

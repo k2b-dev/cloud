@@ -4,6 +4,9 @@ import { workspacePackages } from "../workspace";
 import { isTestFile, listFiles } from "./files";
 import type { Finding, Rule } from "./rule";
 
+/** Every regular-expression metacharacter escaped, so a function name matches only itself. */
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
  * Background work in Cloud server code starts through platform mechanisms,
  * so maintenance stage „Ruhe“ (quiesce) reaches it without the application
@@ -216,7 +219,7 @@ export const backgroundWorkFindings = (source: string, { allowCreateSync = false
     const args = callArguments(code, at + match[0].length - 1);
     const loops = spans.some(
       ({ name, start, end }) =>
-        start < at && at < end && new RegExp(`(?:(?<![\\w$.])|(?<=\\bthis\\.))${name.replace(/\$/g, "\\$")}(?![\\w$])`).test(args),
+        start < at && at < end && new RegExp(`(?:(?<![\\w$.])|(?<=\\bthis\\.))${escapeRegExp(name)}(?![\\w$])`).test(args),
     );
     if (loops) add(at, "timer");
   }
