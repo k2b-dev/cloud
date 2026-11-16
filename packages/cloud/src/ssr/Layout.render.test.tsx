@@ -704,6 +704,67 @@ test("page swap replaces only the content column and its page data", async () =>
   }
 });
 
+const scopedApp = defineApp({
+  id: "scoped",
+  name: "Scoped",
+  icon: "ti ti-box",
+  description: "Page swap paths render fixture",
+  baseUrl: "http://scoped:3000",
+  routes: ["/app/scoped"],
+  pageSwap: ["/app/scoped/:itemId/code"],
+});
+const scopedServer = new Hono<{ Variables: { runtime: RuntimeContext; user: import("../contracts/shared").User | undefined } }>()
+  .use(async (c, next) => {
+    c.set("runtime", {
+      apps: [
+        {
+          id: "scoped",
+          name: "Scoped",
+          icon: "ti ti-box",
+          description: "Scoped",
+          routes: ["/app/scoped"],
+          nav: { href: "/app/scoped", section: "primary" },
+        },
+      ],
+    });
+    c.set("user", person);
+    await next();
+  })
+  .get(
+    "/app/scoped/*",
+    ...scopedApp.ssr((c) => () => createComponent(Layout, { c, title: "Scoped page", fullPage: true, children: "Content" })),
+  );
+
+test("an app that names its swap paths swaps only there, within the matched path", async () => {
+  const { createDomTestHarness } = await import("../../../ui/test/dom");
+  const spies = [
+    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
+  ];
+  const dom = createDomTestHarness();
+  const window = dom.window;
+  try {
+    for (const path of ["/app/scoped/A1/code", "/app/scoped/A1/code?tab=runs", "/app/scoped/A1/code/catch-up"]) {
+      window.document.body.innerHTML = await (await scopedServer.request(path)).text();
+      const canvas = window.document.querySelector(".cloud-app-canvas")!;
+      expect(canvas.getAttribute("data-nav-shell")).toMatch(/^[a-f0-9]{32}$/);
+      // Links to the item itself or another item's Code leave the scope and load a document.
+      expect(canvas.getAttribute("data-nav-scope")).toBe("/app/scoped/A1/code");
+      expect(canvas.querySelectorAll("[data-nav-root]")).toHaveLength(1);
+    }
+    for (const path of ["/app/scoped/A1", "/app/scoped/A1/settings", "/app/scoped/A1/coder"]) {
+      window.document.body.innerHTML = await (await scopedServer.request(path)).text();
+      expect(window.document.querySelector("[data-nav-shell],[data-nav-root],[data-nav-scope]")).toBeNull();
+      // Without a swap, a full page keeps its window-bound canvas.
+      expect(window.document.querySelector(".cloud-app-canvas")?.getAttribute("class")).toContain("h-dvh overflow-hidden");
+    }
+  } finally {
+    dom.cleanup();
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
 // The launcher consumes precisely this shell catalog, including Core's virtual Admin destination.
 test("launcher catalog follows live app navigation, roles and request locale in SSR", async () => {
   const probes = [
