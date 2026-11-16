@@ -3,7 +3,7 @@ import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
 import type { z } from "zod";
 import { wakeChatEvents } from "../app-events";
-import { quoteOccursIn } from "../system-messages";
+import { quoteExcerpt } from "../system-messages";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
 import {
   CHANGES_PAGE_SIZE,
@@ -92,6 +92,10 @@ const send = async (input: Input & { input: unknown; replayHash?: string }): Pro
     if (quoted.some(({ row }) => !row || row.deleted_at || row.kind !== "text"))
       return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
     const sourceThreads = new Set([...(data.replyTo ? [threadId] : []), ...quoted.map(({ row }) => row!.thread_id)]);
+    // A message in a thread the sender cannot read looks like a missing one, and says nothing about its thread.
+    for (const thread of sourceThreads)
+      if (!(await canReadThread(db, input, thread)))
+        return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
     if (sourceThreads.size > 1) return fail(err.badInput(catalog(input).invalidInput));
     if (quoted.length) threadId = quoted[0]!.row!.thread_id;
     if (data.thread) {
@@ -100,10 +104,11 @@ const send = async (input: Input & { input: unknown; replayHash?: string }): Pro
       if (sourceThreads.size && thread.id !== threadId) return fail(err.badInput(catalog(input).invalidInput));
       threadId = thread.id;
     }
-    if (!(await canReadThread(db, input, threadId))) return threadNotFound(input);
-    // Only a reader of the thread learns whether a passage occurs in its message.
-    if (quoted.some(({ quote, row }) => !quoteOccursIn(row!.body_md ?? "", quote.text)))
-      return fail(err.badInput(catalog(input).quoteNotFound));
+    if (!sourceThreads.size && !(await canReadThread(db, input, threadId))) return threadNotFound(input);
+    // Only a reader of the thread learns whether a passage occurs in its message. The stored passage is the
+    // message's own text, so its words and spaces are the author's, not the sender's.
+    const excerpts = quoted.map(({ quote, row }) => quoteExcerpt(row!.body_md ?? "", quote.text));
+    if (excerpts.includes(null)) return fail(err.badInput(catalog(input).quoteNotFound));
     if (threadId) {
       const [thread] = await db<
         { archived_at: Date | null }[]
@@ -131,10 +136,10 @@ const send = async (input: Input & { input: unknown; replayHash?: string }): Pro
       attachments: data.attachments,
       threadId: threadId ?? undefined,
       replyToSeq,
-      quotes: quoted.map(({ quote, row }) => ({
+      quotes: quoted.map(({ row }, index) => ({
         id: row!.short_id,
         author: { type: row!.author_type, id: row!.author_id, name: row!.author_name },
-        text: quote.text,
+        text: excerpts[index]!,
       })),
     });
     return ok({ message: (await messageViews(db, [row], input.conversationId, input.accessSubject, input.locale))[0]!, created: true });

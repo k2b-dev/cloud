@@ -424,19 +424,21 @@ messages. No configuration is required.
 
 `POST /api/chat/conversations/:conversation/messages` accepts optional
 `quotes`: up to 10 entries `{ message, text }`, where `message` is a message ID
-in the same chat. Chat turns each run of whitespace in `text` into one space and
-trims it; together the texts hold at most 20,000 Unicode code points. Each
-quoted message must exist and not be deleted (404 otherwise). The quoted
-messages and a `replyTo` must share one thread, and the new message goes to
-that thread; a different `thread` or quotes from several threads return 400.
-The text must occur in its message, ignoring whitespace and Markdown marks;
-an invented passage returns 400. Chat checks this only after it has confirmed
-that the sender may read the thread.
+in the same chat. Together the texts hold at most 20,000 Unicode code points;
+the same passage of the same message counts once. A quoted message that is
+missing, deleted, not a text message, or in a thread the sender cannot read
+returns 404. The quoted messages and a `replyTo` must share one thread, and the
+new message goes to that thread; a different `thread` or quotes from several
+threads return 400. The words of `text` must occur in the message as a reader
+sees it (its plain text without Markdown marks), whitespace aside; otherwise
+the request returns 400. Chat stores that passage of the message with the
+message's own spacing, not the sent `text`.
 
 Message responses and live message events include `quotes`: each entry is
 `{ id, author, text }`, a snapshot taken when the message was sent. Editing the
 quoted message keeps the snapshot. Deleting it turns its entries into
-`{ deleted: true }` in the same transaction. A deleted message has no quotes.
+`{ deleted: true }` in the same transaction. Deleting a quoting message removes
+its quotes with its text.
 Messages from before the upgrade return an empty list.
 
 ## Chat message attachments after the upgrade

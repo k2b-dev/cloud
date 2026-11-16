@@ -675,12 +675,20 @@ export const SendMessageSchema = z
           // PostgreSQL jsonb cannot store NUL or unpaired UTF-16 surrogates.
           text: z
             .string()
+            // UTF-16 units; the sum below counts code points.
+            .max(MESSAGE_MAX_CODE_POINTS * 2)
             .transform(quoteText)
             .refine((text) => text !== "" && !/[\u0000\uD800-\uDFFF]/u.test(text)),
         }),
       )
       .max(MAX_MESSAGE_REFS)
       .refine((quotes) => quotes.reduce((sum, quote) => sum + [...quote.text].length, 0) <= MESSAGE_MAX_CODE_POINTS)
+      // The same passage of the same message once, in the order first given.
+      .transform((quotes) =>
+        quotes.filter(
+          (quote, index) => quotes.findIndex((other) => other.message === quote.message && other.text === quote.text) === index,
+        ),
+      )
       .optional(),
   })
   .refine((message) => message.body !== "" || (message.refs?.length ?? 0) > 0 || (message.attachments?.length ?? 0) > 0)

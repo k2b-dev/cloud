@@ -373,4 +373,13 @@ test("a send quotes at most ten passages of together at most one message's lengt
   ).toBe(false);
   for (const text of ["", "   ", "a\u0000b", "\uD800"]) expect(send([{ message: "AbCdEf1234", text }]).success).toBe(false);
   expect(send([{ message: "not-an-id", text: "ok" }]).success).toBe(false);
+  const twice = send([
+    { message: "AbCdEf1234", text: "ok" },
+    { message: "AbCdEf1234", text: " ok " },
+    { message: "AbCdEf1234", text: "fine" },
+  ]);
+  expect(twice.success && twice.data.quotes).toEqual([
+    { message: "AbCdEf1234", text: "ok" },
+    { message: "AbCdEf1234", text: "fine" },
+  ]);
 });

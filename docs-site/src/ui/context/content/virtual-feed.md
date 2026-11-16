@@ -95,7 +95,9 @@ mounted:
   `"start"`; `highlight` tints the item briefly. The item stays in place
   afterwards. With `highlight` and `highlightText`, only that passage of the
   item's text is tinted, such as a quoted part of a message. Whitespace does
-  not count when the feed looks for it. Where the browser has no CSS Custom
+  not count when the feed looks for it. Where the item marks its text with
+  `data-k2b-passage`, as `MessageRow` does, only that text is searched, not
+  names, times or quotes around it. Where the browser has no CSS Custom
   Highlight API or the item does not hold the passage, the whole item is tinted
   as before. The search loads with the first passage, so a feed that never
   jumps to one carries none of its code.

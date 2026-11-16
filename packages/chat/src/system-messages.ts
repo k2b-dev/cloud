@@ -94,14 +94,25 @@ export const messagePlainText = (body: string): string => {
   return text.replace(/\s+/gu, " ").trim();
 };
 
-const withoutSpace = (text: string) => text.normalize("NFC").replace(/\s+/gu, "");
 /**
- * Whether a quoted passage occurs in a message: in the words a reader sees or in its Markdown source. Whitespace does
- * not count, because a selection across paragraphs, list items or table cells joins them differently than Markdown.
+ * The passage of a message that a quote names, as the reader sees it: the words of its plain text with the message's
+ * own spaces, or nothing when the words do not occur there. Whitespace in `text` does not count, because a selection
+ * across paragraphs, list items or table cells joins them differently than the plain text; the sender never decides
+ * where words begin or end.
  */
-export const quoteOccursIn = (body: string, text: string): boolean => {
-  const needle = withoutSpace(text);
-  return needle !== "" && (withoutSpace(messagePlainText(body)).includes(needle) || withoutSpace(body).includes(needle));
+export const quoteExcerpt = (body: string, text: string): string | null => {
+  const plain = messagePlainText(body).normalize("NFC");
+  const needle = text.normalize("NFC").replace(/\s+/gu, "");
+  if (!needle) return null;
+  const places: number[] = [];
+  let compact = "";
+  for (let index = 0; index < plain.length; index++) {
+    if (/\s/u.test(plain[index]!)) continue;
+    compact += plain[index];
+    places.push(index);
+  }
+  const at = compact.indexOf(needle);
+  return at < 0 ? null : plain.slice(places[at], places[at + needle.length - 1]! + 1);
 };
 
 export const messagePreview = (

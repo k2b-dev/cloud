@@ -1645,9 +1645,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     else navigate(href, options);
   };
   /** A quote's original: in the loaded history it is highlighted in place, otherwise the chat opens around it. */
+  // The quoted passage of a message the chat opens around, tinted once the history holds it.
+  const [jumpPassage, setJumpPassage] = createSignal<{ message: string; text: string }>();
   const jumpTo = async (id: string, message: string, passage?: string) => {
     const key = sendKeys.get(message) ?? message;
     if (openChat()?.id === id && feed?.scrollToKey(key, { highlight: true, highlightText: passage })) return;
+    setJumpPassage(passage ? { message, text: passage } : undefined);
     // A quote lies in the reply's own thread, so the open view holds it once the history around it is loaded.
     await openView(id, openChat()?.view ?? "all", undefined, message);
   };
@@ -2659,6 +2662,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
               onLoadNewer={() => store?.loadNewer() ?? Promise.resolve(false)}
               onLoadNewest={() => store?.loadLatest() ?? Promise.resolve()}
               focusKey={focusKey()}
+              focusText={jumpPassage()?.message === route().messageId ? jumpPassage()?.text : undefined}
               canWrite={
                 composerReady() &&
                 !busy() &&

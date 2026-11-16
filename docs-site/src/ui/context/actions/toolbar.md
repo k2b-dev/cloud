@@ -126,7 +126,12 @@ a chat history. It is a small pill with an icon and a label, built on
   space, and the part's element. The selection is cleared afterwards.
 - Tab right after the selection moves the focus to the pill, Enter runs it,
   and Tab or Escape returns the focus. Escape also closes the pill for that
-  selection; a new selection shows it again.
+  selection; a new selection shows it again. Both keys belong to the pill only
+  while the focus is on the page, in `root` or in the pill, so a dialog or a
+  field elsewhere keeps them.
+- Text around the content that is no part of it, such as a code block's bar
+  or an "edited" mark, should not be selectable (`user-select: none`), so a
+  selection never carries it into the action.
 - On touch screens it sits below the selection, clear of the system's own
   menu and the handles. Where a long press opens a menu instead of a
   selection, offer the action in that menu too.

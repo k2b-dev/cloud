@@ -3,13 +3,15 @@
  * selection across lines, paragraphs or list items still finds its words. Returns nothing when it does not occur.
  */
 export const findTextRange = (root: Node, text: string): Range | null => {
-  const needle = text.replace(/\s+/gu, "");
+  const needle = text.normalize("NFC").replace(/\s+/gu, "");
   if (!needle) return null;
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const chars: string[] = [];
   const places: [Text, number][] = [];
   for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
-    const value = node.data;
+    const value = node.data.normalize("NFC");
+    // Composed and decomposed text map to the same places only when normalizing keeps its length.
+    if (value.length !== node.data.length) continue;
     for (let offset = 0; offset < value.length; offset++) {
       if (/\s/u.test(value[offset]!)) continue;
       chars.push(value[offset]!);
@@ -32,7 +34,9 @@ export const findTextRange = (root: Node, text: string): Range | null => {
  */
 export const highlightTextPassage = (root: Node, text: string, name: string): (() => void) | null => {
   if (typeof CSS === "undefined" || !("highlights" in CSS) || typeof Highlight === "undefined") return null;
-  const range = findTextRange(root, text);
+  // Names, times and quotes around the text are no passage when the item marks its text.
+  const scopes = root instanceof Element ? [...root.querySelectorAll("[data-k2b-passage]")] : [];
+  const range = scopes.length ? (scopes.map((scope) => findTextRange(scope, text)).find(Boolean) ?? null) : findTextRange(root, text);
   if (!range) return null;
   const highlight = new Highlight(range);
   CSS.highlights.set(name, highlight);

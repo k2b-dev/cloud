@@ -131,6 +131,10 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
     const key = (event: KeyboardEvent) => {
       if (event.isComposing || !open()) return;
       const inside = !!pill && pill.contains(document.activeElement);
+      // Keys belong to the pill only while the focus is on the page, in the root or in the pill: a dialog or a
+      // field elsewhere keeps its own Tab and Escape.
+      const active = document.activeElement;
+      if (!inside && active && active !== document.body && !props.root.contains(active)) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -144,9 +148,12 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
       } else if (!event.shiftKey) {
         const button = pill?.querySelector<HTMLButtonElement>("button");
         if (!button) return;
-        event.preventDefault();
-        returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         button.focus({ preventScroll: true });
+        // Only a pill that took the focus takes the key; an inert page leaves Tab to the browser.
+        if (document.activeElement !== button) return;
+        event.preventDefault();
+        returnFocus = before;
       }
     };
     document.addEventListener("selectionchange", changed);

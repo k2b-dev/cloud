@@ -13528,7 +13528,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-surface);
 }
 
+/* The bar and the "edited" mark are no part of the text: a selection, a copy or a quote skips them. */
 .k2b-ui .k2b-message-row__code-bar {
+  -webkit-user-select: none;
+  user-select: none;
   display: flex;
   height: 1.75rem;
   align-items: center;
@@ -13997,6 +14000,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 /* "edited" ends the last paragraph of the text. */
 .k2b-ui .k2b-message-row__edited {
+  -webkit-user-select: none;
+  user-select: none;
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
   white-space: nowrap;

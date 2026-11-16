@@ -209,6 +209,28 @@ test("on a phone, where a held finger opens the menu instead of a selection, Quo
   }
 }, 30_000);
 
+test("Quote in the menu takes the message's text without its code bar", async () => {
+  const chat = seed();
+  harness.receive(chat, ben, "Run this first:\n\n```sh\nbun install\n```");
+  const { page, errors } = await load(desktop, chat);
+  try {
+    const row = page.locator(".k2b-message-row", { hasText: "Run this first" });
+    await row.hover();
+    await row.getByRole("button", { name: "Message actions", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Quote", exact: true }).click();
+    const draft = page.locator(".k2b-chat-composer__quote");
+    await draft.waitFor();
+    expect(await draft.locator(".k2b-message-quote__text").innerText()).toBe("Run this first: bun install");
+    await page.keyboard.type("Done.");
+    await page.keyboard.press("Enter");
+    await page.locator(".k2b-message-row[data-status='sent']", { hasText: "Done." }).waitFor();
+    expect(harness.posted.at(-1)?.quotes?.[0]?.text).toBe("Run this first: bun install");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
 test("quotes in the dark theme", async () => {
   const chat = seed();
   harness.receive(chat, ben, "One more detail about the numbers.");

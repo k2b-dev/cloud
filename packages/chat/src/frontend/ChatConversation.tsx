@@ -41,6 +41,7 @@ import {
   type Mention,
   withinMessageMutationWindow,
 } from "../service/contracts";
+import { messagePlainText } from "../system-messages";
 import { lightboxItem, rowAttachments } from "./attachment-views";
 import ChatResourceCards, { type ResourceCards } from "./ChatResourceCards";
 import { createMessageDates } from "./chat-message-dates";
@@ -149,6 +150,8 @@ export type ChatConversationProps = {
   onLoadNewest: () => Promise<unknown>;
   /** Key of the message a deep link names; the history scrolls to it and highlights it once. */
   focusKey: string | null;
+  /** A passage of the `focusKey` message, such as a quoted part, that is tinted instead of the whole message. */
+  focusText?: string;
   canWrite: boolean;
   /** One quiet line above the field, such as why the reader cannot write. */
   hint?: JSX.Element;
@@ -373,9 +376,10 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     props.onQuote?.(item, text);
     setQuoted((count) => (count ?? 0) + 1);
   };
+  // The whole message as a reader sees it, without the code bar or the "edited" mark around its text.
   const quoteMessage = (item: ChatFeedItem) => {
-    const text = frame.querySelector<HTMLElement>(`[data-key="${CSS.escape(item.key)}"] .k2b-message-row__text`)?.innerText;
-    if (text?.trim()) addQuote(item, text.replace(/\s+/gu, " ").trim());
+    const text = messagePlainText(item.body);
+    if (text) addQuote(item, text);
   };
   onMount(() => {
     const select = () => {
@@ -396,7 +400,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     const controller = feed();
     if (!key) focused = null;
     if (!key || key === focused || !controller || !props.items.some((item) => item.key === key)) return;
-    if (controller.scrollToKey(key, { highlight: true })) focused = key;
+    if (controller.scrollToKey(key, { highlight: true, highlightText: untrack(() => props.focusText) })) focused = key;
   });
 
   // Where "New messages" is while it is out of view, so its button points there. Without a marker or with the marker

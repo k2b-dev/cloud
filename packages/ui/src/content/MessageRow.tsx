@@ -752,6 +752,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
                   ref={text}
                   id={textId}
                   class="k2b-content-markdown k2b-message-row__text"
+                  data-k2b-passage
                   data-heading-scale="compact"
                   data-collapsed={collapsed() ? "" : undefined}
                   onClick={copyCode}
