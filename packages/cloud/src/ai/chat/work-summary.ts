@@ -122,31 +122,39 @@ const automationPhrases = (calls: ToolBlock[], t: ReturnType<typeof aiChatMessag
   const drafts = new Map<string, AutomationWork>();
   let current: AutomationWork | undefined;
   for (const tool of calls) {
-    if (!["code_init", "code_pull", "code_read", "code_write", "code_check", "code_test", "code_submit"].includes(tool.name)) continue;
+    if (!["code_init", "code_pull", "code_read", "code_write", "code_check", "code_test", "code_simulate", "code_submit"].includes(tool.name))
+      continue;
     const args = isRecord(tool.args) ? tool.args : {};
     const result = isRecord(tool.result) ? tool.result : {};
     const config = isRecord(result.config) ? result.config : {};
     const draft = isRecord(result.draft) ? result.draft : {};
     const codeId = [args.codeId, config.codeId, draft.codeId].find((id): id is string => typeof id === "string");
     // Without an identity, don't join separate calls into a claim about the same draft.
-    const state = (codeId === undefined ? undefined : drafts.get(codeId)) ?? emptyAutomationWork();
-    if (tool.name === "code_test") state.examples = null;
+    const known = codeId === undefined ? undefined : drafts.get(codeId);
+    const state = known ?? emptyAutomationWork();
     const failed = isFailedTool(tool);
-    // A test with failed examples is evidence too. A transport/tool error with no usable result is not.
+    // A test with failed examples is evidence too. A transport/tool error with no usable result is not, and leaves the
+    // earlier count of the unchanged draft standing.
     const testResult = tool.name === "code_test" && !tool.isError && !result.error;
     if (tool.status !== "completed" || (failed && !testResult)) continue;
+    // A simulation only says something here when it replaced a part of a draft this turn already worked on.
+    if (tool.name === "code_simulate" && !known) continue;
     if (codeId !== undefined) drafts.set(codeId, state);
-    current = state;
+    if (tool.name !== "code_simulate") current = state;
     if (["code_init", "code_pull", "code_read"].includes(tool.name)) {
       Object.assign(state, emptyAutomationWork());
-      state.prepared = tool.name === "code_init";
-      state.changed = state.prepared;
+      state.prepared = tool.name === "code_init" || (config.baseVersionId === null && tool.name !== "code_read");
+      // Reading an automation never counts as changing it, even when nothing of it is saved yet.
+      state.changed = tool.name === "code_init";
     }
     const replaced = ["files", "tests", "entry"].some(
       (part) => args[part] !== undefined && !sameDraftPart(args[part], state.testedInput?.[part]),
     );
     if (tool.name === "code_write" || replaced) {
       if (state.submitted) state.prepared = false;
+      // A draft without a saved version underneath is a new automation; one with a base changes an existing one.
+      const base = draft.baseVersionId ?? config.baseVersionId;
+      if (base !== undefined) state.prepared = base === null;
       state.changed = true;
       state.checked = false;
       state.permissions = false;
@@ -203,7 +211,8 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
       readFiles = true;
       if (tool.name === "read_file") readFile = true;
     } else if (tool.name === "code_run") {
-      if (isRecord(tool.result) && tool.result.status === "running") continue;
+      // Only a run that ended is a calculation; one still running, stopped or lost is not.
+      if (isRecord(tool.result) && ["running", "cancelled", "error", "lost"].includes(String(tool.result.status))) continue;
       calculated = true;
       analyzedFile ||= readFile;
     } else if (FILE_WRITE_TOOLS.has(tool.name)) {
@@ -227,10 +236,8 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
     web ? t.workSearchedWeb : "",
     readFiles && !calculated ? t.workReadFiles : "",
   ].filter(Boolean);
-  const sentence = phrases
-    .slice(0, 2)
-    .map((phrase, index) => (index ? phrase.charAt(0).toLocaleLowerCase(locale) + phrase.slice(1) : phrase))
-    .join(", ");
+  // The catalog words its parts as they read inside a sentence; only the sentence's first letter becomes capital.
+  const sentence = phrases.slice(0, 2).join(", ");
   return sentence ? sentence.charAt(0).toLocaleUpperCase(locale) + sentence.slice(1) : "";
 };
 

@@ -64,8 +64,8 @@ test("the rendered summary uses evidence, never result wording or the forbidden 
     [tool("code_test", testResult)],
     [tool("code_check", { words: { mayDo: [] } })],
     [tool("code_submit")],
-    [tool("code_run", { status: "ok" })],
-    [tool("read_file"), tool("code_run", { status: "ok" })],
+    [tool("code_run", { status: "completed" })],
+    [tool("read_file"), tool("code_run", { status: "completed" })],
     [tool("write_file", { path: "/reports/fictional.csv", mediaType: "text/csv" })],
   ];
   for (const blocks of scenarios) {

@@ -521,7 +521,7 @@ After a turn ends, its work sentence names at most two confirmed outcomes.
 Reading an automation does not count as changing it. Example counts come from
 the last test of the current draft, including failed examples; a later change
 replaces that count with "No examples yet". A calculation after reading a file
-reads "Analyzed file". Stored files count once per returned path; presenting
+reads "Analyzed a file". Stored files count once per returned path; presenting
 an existing file does not add one. Step counts, failures and duration stay
 outside the sentence.
 

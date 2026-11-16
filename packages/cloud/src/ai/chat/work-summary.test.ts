@@ -41,13 +41,13 @@ const check = () => tool("code_check", { words: { mayDo: [{ text: "Aufträge les
 describe("work summary from confirmed outcomes", () => {
   test("only reading an automation does not claim it was prepared", () => {
     expect(workSummary([tool("code_pull")], "de")).toBe("Automation gelesen");
-    expect(workSummary([tool("code_read")], "en")).toBe("Read automation");
+    expect(workSummary([tool("code_read")], "en")).toBe("Opened the automation");
   });
 
   test("a new automation and an existing edit name their untried examples", () => {
     expect(workSummary([init(), write()], "de")).toBe("Automation vorbereitet, noch ohne Beispiele");
     expect(workSummary([tool("code_pull"), write()], "de")).toBe("Automation geändert, noch ohne Beispiele");
-    expect(workSummary([write()], "en")).toBe("Changed automation, no examples yet");
+    expect(workSummary([write()], "en")).toBe("Changed the automation, no examples yet");
   });
 
   for (const passed of [3, 2, 0]) {
@@ -131,28 +131,62 @@ describe("work summary from confirmed outcomes", () => {
     }
   });
 
-  test("a later test without results cannot leave the earlier success count", () => {
+  test("a later test without example results cannot leave the earlier success count", () => {
     expect(workSummary([write(), tool("code_test", examples(3, 3)), tool("code_test", { ok: false })], "de")).toBe(
       "Automation geändert, noch ohne Beispiele",
     );
+  });
+
+  test("a test call that never returned keeps the count of the unchanged draft", () => {
     expect(
       workSummary(
         [write(), tool("code_test", examples(3, 3)), tool("code_test", "Connection lost", undefined, { status: "failed" })],
         "de",
       ),
-    ).toBe("Automation geändert, noch ohne Beispiele");
+    ).toBe("Automation geändert, 3 von 3 Beispielen erfolgreich");
+  });
+
+  test("a draft without a saved version is a new automation, even when it was started in an earlier answer", () => {
+    const draft = (baseVersionId: string | null) => tool("code_write", { draft: { codeId: "automation-a", baseVersionId } });
+    expect(workSummary([draft(null)], "de")).toBe("Automation vorbereitet, noch ohne Beispiele");
+    expect(workSummary([draft("11111111-1111-4111-8111-111111111111")], "de")).toBe("Automation geändert, noch ohne Beispiele");
+    const pulled = tool("code_pull", { config: { codeId: "automation-a", baseVersionId: null } });
+    expect(workSummary([pulled], "de")).toBe("Automation gelesen");
+    expect(workSummary([pulled, write()], "de")).toBe("Automation vorbereitet, noch ohne Beispiele");
+  });
+
+  test("a simulation that replaces the tested files makes the count stale; one with the same files keeps it", () => {
+    const tested = { codeId: "automation-a", files: { "a.ts": "a" } };
+    const blocks = [write(), tool("code_test", examples(3, 3), tested)];
+    expect(workSummary([...blocks, tool("code_simulate", {}, { ...tested, files: { "a.ts": "b" } })], "de")).toBe(
+      "Automation geändert, noch ohne Beispiele",
+    );
+    expect(workSummary([...blocks, tool("code_simulate", {}, tested)], "de")).toBe("Automation geändert, 3 von 3 Beispielen erfolgreich");
+    expect(workSummary([tool("code_simulate")], "de")).toBe("");
   });
 
   test("calculation without a read is only calculation", () => {
-    expect(workSummary([tool("code_run", { status: "ok", output: 42 })], "de")).toBe("Gerechnet");
-    expect(workSummary([tool("code_run", { status: "ok", output: 42 })], "en")).toBe("Calculated");
+    expect(workSummary([tool("code_run", { status: "completed", output: 42 })], "de")).toBe("Gerechnet");
+    expect(workSummary([tool("code_run", { status: "completed", output: 42 })], "en")).toBe("Calculated");
+  });
+
+  test("a run that was stopped or lost is no calculation", () => {
+    for (const status of ["running", "cancelled", "error", "lost"]) expect(workSummary([tool("code_run", { status })], "de")).toBe("");
+  });
+
+  test("the second part keeps its own capitals: nouns stay nouns", () => {
+    expect(workSummary([tool("code_pull"), tool("read_file"), tool("code_run", { status: "completed" })], "de")).toBe(
+      "Automation gelesen, Datei ausgewertet",
+    );
+    expect(workSummary([tool("code_run", { status: "completed" }), tool("write_file")], "de")).toBe("Gerechnet, Dateien abgelegt");
+    expect(workSummary([tool("code_run", { status: "completed" }), tool("write_file")], "en")).toBe("Calculated, stored files");
   });
 
   test("file analysis requires a successful preceding file read", () => {
-    expect(workSummary([tool("read_file"), tool("code_run", { status: "ok" })], "de")).toBe("Datei ausgewertet");
-    expect(workSummary([tool("list_files"), tool("code_run", { status: "ok" })], "de")).toBe("Gerechnet");
-    expect(workSummary([tool("code_run", { status: "ok" }), tool("read_file")], "de")).toBe("Gerechnet");
-    expect(workSummary([tool("read_file", "denied", {}, { isError: true }), tool("code_run", { status: "ok" })], "de")).toBe("Gerechnet");
+    expect(workSummary([tool("read_file"), tool("code_run", { status: "completed" })], "de")).toBe("Datei ausgewertet");
+    expect(workSummary([tool("list_files"), tool("code_run", { status: "completed" })], "de")).toBe("Gerechnet");
+    expect(workSummary([tool("code_run", { status: "completed" }), tool("read_file")], "de")).toBe("Gerechnet");
+    expect(workSummary([tool("read_file", "denied", {}, { isError: true }), tool("code_run", { status: "completed" })], "de")).toBe("Gerechnet");
   });
 
   test("unique stored paths count files; append and present do not add files", () => {
