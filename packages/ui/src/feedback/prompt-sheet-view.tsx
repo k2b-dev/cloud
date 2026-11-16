@@ -1,7 +1,8 @@
 import { type JSX, onCleanup, onMount } from "solid-js";
 import { suppressTextSelection } from "../internal/text-selection";
 import { resolveUiMessages } from "../intl/messages";
-import { attachSheetMotion, type SheetMotion, sheetInitialFocus } from "../layout/sheet-motion";
+import { sheetInitialFocus } from "../layout/bottom-sheet-options";
+import { attachSheetMotion, type SheetMotion } from "../layout/sheet-motion";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
 
 // The phone presentation of prompts: loaded only when a prompt opens on a phone, so a page that never shows one as a

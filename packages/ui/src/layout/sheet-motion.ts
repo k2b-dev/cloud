@@ -27,19 +27,6 @@ export type SheetMotion = {
   dispose: () => void;
 };
 
-/** Initial focus goes to the first input of the top sheet, otherwise to the
- * dialog element itself. Native `showModal()` focuses the first focusable
- * descendant, which is the drag handle; iOS shows a ring for that programmatic
- * focus, so the sheet moves it to the ring-less dialog before the next paint. */
-export const sheetInitialFocus = (dialog: HTMLDialogElement): HTMLElement => {
-  const input = dialog.lastElementChild?.querySelector<HTMLElement>(
-    "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])",
-  );
-  if (input) return input;
-  dialog.tabIndex = -1;
-  return dialog;
-};
-
 /** Opening and moving between detents, and closing, as in the approved prototype. */
 const MOVE_MS = 280;
 const CLOSE_MS = 220;
