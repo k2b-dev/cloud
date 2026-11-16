@@ -75,6 +75,7 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
           },
           initialActivityError,
           dateConfig: { locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+          now: "2026-08-20T12:00:00.000Z",
         });
       },
     }),
@@ -109,7 +110,10 @@ describe("Spaces overview", () => {
     expect(html).not.toContain("k2b-app-workspace__switcher");
     expect(html).not.toContain("k2b-paper");
     expect(html).toContain("spaces-overview-work-row");
-    expect(html).toContain("spaces-overview-activity-row");
+    // Activity is the shared timeline: the sentence links to the item, the person stands in the meta line.
+    expect(html).toContain('class="k2b-activity"');
+    expect(html).toContain('href="/app/spaces/Space1?item=Item01"');
+    expect(html.replace(/<[^>]+>/g, "")).toContain("12:00 · 2 hr. ago · Sofie");
     expect(html).not.toContain("spaces-overview-space-list");
     expect(html).toContain("Ship overview");
     expect(html).not.toContain("k2b-stat-grid");
@@ -117,11 +121,11 @@ describe("Spaces overview", () => {
     expect(html).toMatch(/<aside[^>]*id="k2b-workspace-detail-spaces-overview-activity"(?![^>]*hidden)/);
   });
 
-  test("keeps activity errors distinct from an empty feed", () => {
+  test("keeps activity errors distinct from an empty feed, above the entries that are still there", () => {
     const html = render("Activity unavailable");
-    expect(html).toContain("Could not load activity");
     expect(html).toContain("Activity unavailable");
-    expect(html).toContain("Retry");
-    expect(html).not.toContain("No activity yet");
+    expect(html).toContain("Reload");
+    expect(html).not.toContain("Space and item changes will appear here.");
+    expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf('class="k2b-activity"'));
   });
 });

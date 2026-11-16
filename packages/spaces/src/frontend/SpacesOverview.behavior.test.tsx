@@ -68,6 +68,7 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
         initialActivity: { items: [initialEntry], nextCursor: null },
         initialActivityError: null,
         dateConfig: { locale: "en", timeZone: "UTC" },
+        now: "2026-08-20T12:00:00.000Z",
       }),
     dom.root,
   );
@@ -85,7 +86,7 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
     expect(requests.map(({ url }) => url.pathname).sort()).toEqual(["/api/spaces/overview/activity", "/api/spaces/overview/work"]);
     expect(covered).toBe(false);
     expect(dom.root.querySelector(".spaces-overview-work-list")?.textContent).toContain("mine task");
-    expect(dom.root.querySelector(".spaces-overview-activity-list")?.textContent).toContain("Created “mine task” in Example");
+    expect(dom.root.querySelector(".k2b-activity")?.textContent).toContain("Created “mine task” in Example");
     expect(dom.root.textContent).not.toContain("Loading work");
     expect(dom.root.textContent).not.toContain("No activity yet");
 
@@ -110,7 +111,7 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
       );
     await refresh;
     expect(covered).toBe(true);
-    expect(dom.root.querySelector(".spaces-overview-activity-list")?.textContent).toContain("Created “Created task” in Example");
+    expect(dom.root.querySelector(".k2b-activity")?.textContent).toContain("Created “Created task” in Example");
   } finally {
     dispose();
     globalThis.fetch = originalFetch;
@@ -147,6 +148,7 @@ test.skipIf(isServer)("overview keeps SSR work and ignores superseded tab reques
         initialActivity: { items: [], nextCursor: null },
         initialActivityError: null,
         dateConfig: { locale: "en", timeZone: "UTC" },
+        now: "2026-08-20T12:00:00.000Z",
       }),
     dom.root,
   );
