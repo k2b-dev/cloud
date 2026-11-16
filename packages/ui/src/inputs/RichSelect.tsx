@@ -15,8 +15,9 @@ import {
 import { Button } from "../actions/Button";
 import { dialogCore } from "../feedback/dialog-core";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { optionDescription } from "../internal/option-description";
 import { LocaleProvider, useLocale } from "../intl/locale";
-import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
+import { withBottomSheet } from "../layout/bottom-sheet-load";
 import { createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
@@ -30,6 +31,11 @@ export type RichSelectItem = {
   label: string;
   /** At most one short line that says what the choice changes. */
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
+   */
+  descriptionVisual?: () => JSX.Element;
   /** Icon class shown before the name. */
   icon?: string;
   /** Color dot shown before the name, such as a space color. Replaces `icon`. */
@@ -132,13 +138,12 @@ function RichSelectRowText(props: { item: RichSelectItem; labelId: string; lineI
       <span id={props.labelId} class="k2b-rich-select__label">
         {props.item.label}
       </span>
-      <Show when={props.item.disabledReason ?? props.item.description}>
-        {(line) => (
-          <span id={props.lineId} class="k2b-rich-select__line" data-reason={props.item.disabledReason ? "true" : undefined}>
-            {line()}
-          </span>
-        )}
-      </Show>
+      {/* The reason of an unavailable row takes the place of its description and visual. */}
+      {optionDescription(
+        () => (props.item.disabledReason ? { description: props.item.disabledReason } : props.item),
+        "k2b-rich-select__line",
+        props.lineId,
+      )}
     </span>
   );
 }
@@ -494,8 +499,11 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
     closeSheet = () => lifetime.abort();
     let after: (() => void) | undefined;
     setSheetOpen(true);
-    void dialogCore
-      .open<void>(
+    let loaded = false;
+    // The sheet's code loads on a phone in the background; a wide screen never needs it.
+    void withBottomSheet(({ default: BottomSheet, bottomSheetOptions }) => {
+      loaded = true;
+      return dialogCore.open<void>(
         (closeDialog, context) => {
           context.dialog.id ||= `${meta.controlId}-sheet`;
           setSheetId(context.dialog.id);
@@ -503,6 +511,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
             <LocaleProvider locale={current}>
               <BottomSheet onDismiss={context.requestDismiss}>
                 <RichSelectSheet
+                  BottomSheet={BottomSheet}
                   props={props}
                   title={title()}
                   value={value}
@@ -527,10 +536,21 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
             return dialog;
           },
         },
+      );
+    })
+      .then(
+        () => {
+          if (!lifetime.signal.aborted) after?.();
+        },
+        (error: unknown) => {
+          if (loaded) throw error;
+          globalThis.reportError(error);
+          // The sheet's code did not load: the same list opens as the popover beside the field, and the next tap tries
+          // the sheet again.
+          setSheetOpen(false);
+          if (!lifetime.signal.aborted && !props.disabled) openPopover();
+        },
       )
-      .then(() => {
-        if (!lifetime.signal.aborted) after?.();
-      })
       .finally(() => {
         closeSheet = undefined;
         setSheetOpen(false);
@@ -784,6 +804,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
  * a second level with Back and Choose.
  */
 function RichSelectSheet(sheet: {
+  BottomSheet: typeof import("../layout/BottomSheet")["default"];
   props: RichSelectProps;
   title: string;
   value: () => string | null;
@@ -793,6 +814,7 @@ function RichSelectSheet(sheet: {
 }): JSX.Element {
   const messages = useRichSelectMessages();
   const props = sheet.props;
+  const BottomSheet = sheet.BottomSheet;
   const uid = createUniqueId();
   const [query, setQuery] = createSignal("");
   const [detailValue, setDetailValue] = createSignal<string>();

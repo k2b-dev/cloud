@@ -1,5 +1,6 @@
 import { Index, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldDescribedBy } from "../internal/field";
+import { optionDescription } from "../internal/option-description";
 import { radioKeyTarget } from "../internal/radio-keys";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
@@ -9,6 +10,11 @@ export type ChoiceListOption<T extends string = string> = {
   label: string;
   /** One sentence on what the choice means. */
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
+   */
+  descriptionVisual?: () => JSX.Element;
   /** A quiet tag after the label, such as "Default" for the choice that applies without one. */
   marker?: string;
   /** A Tabler icon class before the text, such as `ti ti-truck`, when a picture helps tell the choices apart. */
@@ -118,11 +124,7 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
                         </Show>
                       </span>
                     </span>
-                    <Show when={option().description}>
-                      <span class="k2b-choice-list__description" id={descriptionId}>
-                        {option().description}
-                      </span>
-                    </Show>
+                    {optionDescription(option, "k2b-choice-list__description", descriptionId)}
                   </span>
                 </button>
                 <Show when={checked() && props.details}>

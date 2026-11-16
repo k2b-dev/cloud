@@ -25,6 +25,23 @@ test("integer powers retain all integer digits and bound extreme results", () =>
   expect(integerPowerDecimal(new FormulaDecimal(0), -1)).toEqual(formulaError("NON_NUMERIC"));
 });
 
+test("negative integer powers round at the normalized base scale", () => {
+  for (const [base, exponent, expected] of [
+    ["5.769230769230769", -2, "0.0300444444444444"],
+    ["5.76923076923076900000", -2, "0.0300444444444444"],
+    ["-5.769230769230769", -2, "0.0300444444444444"],
+    ["-5.769230769230769", -3, "-0.0052077037037037"],
+    ["2", -17, "0.0000076293945313"],
+    ["-2", -17, "-0.0000076293945313"],
+    ["5.76923076923076923076923076923077", -2, "0.03004444444444444444444444444444"],
+    [`1.${"0".repeat(999)}1`, -2, `0.${"9".repeat(999)}8`],
+  ] as const) {
+    const value = integerPowerDecimal(new FormulaDecimal(base), exponent);
+    if (isFormulaError(value)) throw new Error(value.code);
+    expect(value.toFixed()).toBe(expected);
+  }
+});
+
 test("general powers bound overflow, underflow and invalid domains", () => {
   expect(powerDecimal(new FormulaDecimal(10), new FormulaDecimal("1000000.5"))).toEqual(formulaError("VALUE_TOO_LARGE"));
   expect(powerDecimal(new FormulaDecimal(-2), new FormulaDecimal("0.5"))).toEqual(formulaError("NON_NUMERIC"));

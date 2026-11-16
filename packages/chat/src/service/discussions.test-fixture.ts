@@ -59,7 +59,7 @@ export const providerApp = (appId: string, container = "collection", item = "ite
           openWorld: false,
           input: DiscussionContainersInputSchema,
           data: DiscussionContainersDataSchema,
-          run: async () => ({ ok: true, data: { data: { items: [], next: null } } }),
+          run: async () => ({ ok: true, data: { data: { items: [], next: null }, page: { hasMore: false as const } } }),
         },
         [`${container}.activity`]: {
           title: "Read activity",

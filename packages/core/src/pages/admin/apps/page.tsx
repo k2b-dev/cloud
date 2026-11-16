@@ -155,7 +155,7 @@ export default ssr<AuthContext>(async (c) => {
       return {
         byApp: new Map(),
         otherApps: [],
-        failures: [{ provider: { appId: "core", name: "Core" }, reason: "unavailable" as const }],
+        failures: [{ provider: { appId: "core", name: "Cloud" }, reason: "unavailable" as const }],
         truncated: [],
       };
     });
