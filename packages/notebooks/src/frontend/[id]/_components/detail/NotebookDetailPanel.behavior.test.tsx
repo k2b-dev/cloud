@@ -92,6 +92,7 @@ describe("Notebook detail panel recovery and pagination", () => {
               currentUserId: "me",
               initialCommentsPage: { items: [], page: 1, perPage: 30, total: 0, hasNext: false },
               dateConfig: { locale: "de", timeZone: "UTC" },
+              now: "2026-10-16T19:30:00.000Z",
             });
           },
         }),
@@ -100,7 +101,11 @@ describe("Notebook detail panel recovery and pagination", () => {
   };
   const button = (label: string) =>
     [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === label);
-  const authors = () => [...dom.root.querySelectorAll(".notebook-activity-name")].map((item) => item.textContent);
+  // The person of each logged row stands last in its meta line; the note's own creation row has no log id.
+  const authors = () =>
+    [...dom.root.querySelectorAll(".notebook-activity [data-activity-id] .k2b-activity__meta")].map((meta) =>
+      meta.textContent?.split(" · ").at(-1),
+    );
 
   test("shared reopen and editor toolbar keep one persisted visibility state", async () => {
     const states: boolean[] = [];
@@ -277,7 +282,7 @@ describe("Notebook detail panel recovery and pagination", () => {
       expect(authors()).toEqual(["Bob Example"]);
       failing = false;
       editor = { name: "Cleo Example", at: "2026-10-16T19:28:00.000Z" };
-      button("Erneut versuchen")!.click();
+      button("Neu laden")!.click();
       await until(() => header().includes("Cleo Example"));
       expect(dom.root.querySelector('[role="alert"]')).toBeNull();
       expect(requests.every((url) => !url.searchParams.has("cursor"))).toBe(true);
@@ -372,7 +377,7 @@ describe("Notebook detail panel recovery and pagination", () => {
       expect(authors()).toEqual(["Author 0", "Author 1", "Author 2", "Author 3", "Author 4"]);
       expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain("Neue Einträge laden nicht.");
       expect(button("Ältere laden")).toBeUndefined();
-      button("Erneut versuchen")!.click();
+      button("Neu laden")!.click();
       await until(() => authors().length === 6);
       expect(requests.map((url) => url.searchParams.get("cursor"))).toEqual([null, "older", "older"]);
       expect(authors()).toEqual(["Author 0", "Author 1", "Author 2", "Author 3", "Author 4", "Author 5"]);

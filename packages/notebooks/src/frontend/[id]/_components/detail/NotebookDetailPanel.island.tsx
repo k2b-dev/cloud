@@ -9,6 +9,8 @@ import { type DateContext, dates, type Paginated } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
+  type ActivityEntry,
+  ActivityList,
   AppWorkspace,
   Button,
   DetailAccess,
@@ -38,7 +40,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, Index, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookCommandMessages } from "../../../../commands";
@@ -46,7 +48,7 @@ import type { NoteAuthors, NotebookActivityActor } from "../../../../lib/activit
 import type { PresentationMode } from "../../../../lib/presentation-mode";
 import type { Backlink } from "../../../../service/links";
 import type { NoteDetailRelations } from "../../../../service/route-state";
-import { describeNoteActivity } from "../../../activity-messages";
+import { describeNoteActivity, describeNoteActivityEntry, notebookActivityIcon } from "../../../activity-messages";
 import { attachmentPreviewKind, openAttachment } from "../../../lib/attachment-preview";
 import { buildAttachmentContentUrl } from "../../../lib/editor/attachment-url";
 import { buildGraphUrl, buildNoteUrl, buildTagPageUrl, buildVersionsUrl } from "../../../params";
@@ -132,6 +134,8 @@ type Props = {
   initialCommentsPage?: Paginated<PublicNoteComment>;
   dateConfig: DateContext;
   namedBlocks: NamedBlockSummary[];
+  /** The server's time, so the server and the first browser render show the same activity times. */
+  now: string;
 };
 
 type SoftNavigatedDetail = {
@@ -944,30 +948,30 @@ export default function NotebookDetailPanel(props: Props) {
     );
   };
 
-  const ActivityRow = (rowProps: { item: NoteActivityItem }): JSX.Element => {
-    const item = rowProps.item;
-    const title = (
-      <>
-        <strong class="notebook-activity-name">{actorName(item.actor)}</strong>{" "}
-        {describeNoteActivity(item.action, { self: isSelf(item.actor), locale: locale() })}
-        <Show when={item.occurrenceCount > 1}> {t().times({ count: item.occurrenceCount })}</Show>
-      </>
-    );
-    const shared = {
-      leading: <ActorAvatar actor={item.actor} />,
-      title,
-      wrap: true,
-      trailing: <Time value={item.lastOccurredAt} />,
-    };
-    const href = activityHref(item);
-    return (
-      <Tooltip.Anchor content={exact(item.lastOccurredAt)} class="notebook-activity-row">
-        <Show when={href} fallback={<DetailPanel.Action type="button" onClick={() => revealComment(item)} {...shared} />}>
-          {(link) => <DetailPanel.Action href={link()} {...shared} />}
-        </Show>
-      </Tooltip.Anchor>
-    );
-  };
+  /**
+   * The note's timeline: the newest entries, then its creation as the start of the rail. A change links to the
+   * versions; a comment reveals itself in the comments.
+   */
+  const activityEntries = (): ActivityEntry[] => [
+    ...visibleActivity().map((item): ActivityEntry => {
+      const href = activityHref(item);
+      const sentence = `${describeNoteActivityEntry(item.action, locale())}${item.occurrenceCount > 1 ? ` ${t().times({ count: item.occurrenceCount })}` : ""}`;
+      return {
+        at: item.lastOccurredAt,
+        icon: notebookActivityIcon(item.action),
+        text: href ? <a href={href}>{sentence}</a> : sentence,
+        onOpen: href ? undefined : () => revealComment(item),
+        actor: item.actor.kind === "system" ? null : actorName(item.actor),
+        attrs: { "data-activity-id": item.id },
+      };
+    }),
+    {
+      at: createdAt(),
+      icon: notebookActivityIcon("note.created"),
+      text: <a href={buildVersionsUrl(props.notebookId, noteId())}>{t().createdNote}</a>,
+      actor: authors().createdBy ? actorName(authors().createdBy) : null,
+    },
+  ];
 
   return (
     <AppWorkspace.Detail
@@ -1254,43 +1258,19 @@ export default function NotebookDetailPanel(props: Props) {
             />
             <Section title={t().activity} icon="ti ti-activity" class="notebook-activity" collapsible summary={activitySummary()}>
               <div class="notebook-panel-rows" aria-busy={noteActivity.loading() ? "true" : undefined}>
-                <Show when={noteActivity.loading() && activityItems().length === 0 && !noteActivity.error()}>
-                  <For each={[0, 1, 2, 3]}>
-                    {(index) => (
-                      <div class="notebook-activity-skeleton" aria-hidden="true" data-index={index}>
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    )}
-                  </For>
-                  <span class="sr-only" role="status">
-                    {t().loadingActivity}
-                  </span>
-                </Show>
-                <Show when={noteActivity.error() && activityItems().length === 0}>
-                  <div class="notebook-activity-error" role="alert">
-                    <i class="ti ti-alert-circle" aria-hidden="true" />
-                    <span>{t().activityLoadShort}</span>
-                    <Button variant="text" size="xs" onClick={() => void noteActivity.refresh()}>
-                      {t().retry}
-                    </Button>
+                <Show when={noteActivity.error()}>
+                  <div class="notebook-activity-alert">
+                    <ActivityList.Error
+                      text={t().activityLoadShort}
+                      onReload={() => void (activityRead === "older" ? noteActivity.loadMore() : noteActivity.refresh())}
+                    />
                   </div>
                 </Show>
-                <For each={visibleActivity()}>{(item) => <ActivityRow item={item} />}</For>
-                {/* An older page that failed keeps the loaded rows and says so where "Load older" was. */}
-                <Show when={noteActivity.error() && activityItems().length > 0}>
-                  <div class="notebook-activity-error" role="alert">
-                    <i class="ti ti-alert-circle" aria-hidden="true" />
-                    <span>{t().activityLoadShort}</span>
-                    <Button
-                      variant="text"
-                      size="xs"
-                      onClick={() => void (activityRead === "older" ? noteActivity.loadMore() : noteActivity.refresh())}
-                    >
-                      {t().retry}
-                    </Button>
-                  </div>
+                <Show
+                  when={!noteActivity.loading() || activityItems().length > 0 || noteActivity.error()}
+                  fallback={<ActivityList.Loading label={t().loadingActivity} />}
+                >
+                  <ActivityList entries={activityEntries()} now={props.now} dateConfig={props.dateConfig} label={t().activity} />
                 </Show>
                 {/* Older pages stay reachable even when the loaded rows all fit, for example after a sparse page. */}
                 <Show when={!noteActivity.error() && noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0)}>
@@ -1316,29 +1296,6 @@ export default function NotebookDetailPanel(props: Props) {
                     onClick={() => setActivityExpanded(!activityExpanded())}
                   />
                 </Show>
-                {/* Always last, from the note itself, so a note from before the log still shows when it began. */}
-                <Tooltip.Anchor content={exact(createdAt())} class="notebook-activity-row">
-                  <DetailPanel.Action
-                    href={buildVersionsUrl(props.notebookId, noteId())}
-                    leading={
-                      <Show when={authors().createdBy} fallback={<i class="ti ti-file-plus" aria-hidden="true" />}>
-                        {(creator) => <ActorAvatar actor={creator()} />}
-                      </Show>
-                    }
-                    wrap
-                    title={
-                      <Show when={authors().createdBy} fallback={t().createdNote}>
-                        {(creator) => (
-                          <>
-                            <strong class="notebook-activity-name">{actorName(creator())}</strong>{" "}
-                            {describeNoteActivity("note.created", { self: isSelf(creator()), locale: locale() })}
-                          </>
-                        )}
-                      </Show>
-                    }
-                    trailing={<Time value={createdAt()} />}
-                  />
-                </Tooltip.Anchor>
               </div>
             </Section>
           </DetailPanel.Group>

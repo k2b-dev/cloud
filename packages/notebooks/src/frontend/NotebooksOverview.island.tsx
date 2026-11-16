@@ -1,9 +1,10 @@
-import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
 import {
+  type ActivityEntry,
+  ActivityList,
   AppWorkspace,
   Avatar,
   Button,
@@ -11,6 +12,7 @@ import {
   Dropdown,
   dialogCore,
   IconButton,
+  LoadMore,
   PanelDialog,
   PanelHeader,
   Paper,
@@ -22,9 +24,8 @@ import {
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import { isNotebookActivityAction, type NotebookActivityAction } from "../lib/activity-actions";
 import { setPinnedNotebookIds as writePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
-import { describeOverviewActivity } from "./activity-messages";
+import { describeOverviewActivity, notebookActivityIcon } from "./activity-messages";
 import { createNotebookCreation } from "./create-notebook-dialog";
 import { notebooksPageMessages } from "./messages";
 import { createNoteCommands } from "./note-commands";
@@ -72,6 +73,8 @@ type Props = {
   initialActivityError: string | null;
   initialPinnedNotebookIds: string[];
   dateConfig: DateContext;
+  /** The server's time, so the server and the first browser render show the same activity times. */
+  now: string;
 };
 type CreatedNotebook = { id: string };
 
@@ -97,18 +100,6 @@ const activityDescription = (item: ActivityItem, locale: string): string =>
 
 const activityHref = (item: ActivityItem): string =>
   item.note ? `/app/notebooks/${item.notebook.id}/notes/${item.note.id}` : `/app/notebooks/${item.notebook.id}`;
-
-const activityIcons = {
-  "notebook.created": "ti ti-notebook",
-  "note.created": "ti ti-plus",
-  "note.edited": "ti ti-pencil",
-  "note.restored": "ti ti-history",
-  "annotation.create": "ti ti-message-plus",
-  "comment.created": "ti ti-message-plus",
-  "comment.updated": "ti ti-message-pencil",
-  "comment.deleted": "ti ti-message-x",
-} satisfies Record<NotebookActivityAction, string>;
-const activityEventIcon = (action: string): string => (isNotebookActivityAction(action) ? activityIcons[action] : "ti ti-activity");
 
 export default function NotebooksOverview(props: Props) {
   createNoteCommands();
@@ -213,79 +204,55 @@ export default function NotebooksOverview(props: Props) {
     },
   ];
 
+  // The sentence links to the note or notebook; the person stands in the meta line, "automatic" for the system.
+  const activityEntries = (): ActivityEntry[] =>
+    activityItems().map((item) => ({
+      at: item.lastOccurredAt,
+      icon: notebookActivityIcon(item.action),
+      text: <a href={activityHref(item)}>{activityDescription(item, locale())}</a>,
+      actor: item.actor.kind === "system" ? null : item.actor.displayName,
+    }));
+  const reloadActivity = () => {
+    setInitialActivityError(null);
+    void activityResults.refresh();
+  };
   const activityFeed = () => (
     <Show
-      when={!activityError()}
+      when={activityItems().length > 0}
       fallback={
-        <Placeholder
-          state="error"
-          title={t().couldNotLoadActivity}
-          description={activityError() ?? undefined}
-          action={
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => {
-                setInitialActivityError(null);
-                void activityResults.refresh();
-              }}
-            >
-              <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
-            </Button>
+        <Show
+          when={activityError()}
+          fallback={
+            <Show when={activityResults.loading()} fallback={<ActivityList.Empty text={t().activityEmptyDescription} />}>
+              <ActivityList.Loading label={t().loadingActivity} />
+            </Show>
           }
-        />
+        >
+          {(message) => <ActivityList.Error text={message()} onReload={reloadActivity} />}
+        </Show>
       }
     >
-      <Show
-        when={activityItems().length > 0}
-        fallback={
-          <Placeholder
-            state={activityResults.loading() ? "loading" : "empty"}
-            title={activityResults.loading() ? t().loadingActivity : t().noActivity}
-            description={activityResults.loading() ? undefined : t().activityEmptyDescription}
-            icon="ti ti-history"
-          />
-        }
-      >
-        <ol class="notebooks-overview-activity-list" aria-label={t().recentActivity}>
-          <For each={activityItems()}>
-            {(item) => (
-              <li class="notebooks-overview-activity-item">
-                <CloudAvatar
-                  username={item.actor.displayName}
-                  userId={item.actor.id}
-                  avatarHash={item.actor.avatarHash}
-                  kind={item.actor.kind}
-                  size="sm"
-                />
-                <Paper as="a" href={activityHref(item)} interactive class="notebooks-overview-activity-paper">
-                  <i class={`${activityEventIcon(item.action)} notebooks-overview-activity-icon app-accent-text`} aria-hidden="true" />
-                  <span class="notebooks-overview-activity-meta">
-                    <strong>{item.actor.displayName}</strong>
-                    <span aria-hidden="true">·</span>
-                    <time datetime={item.lastOccurredAt} title={dates.formatDateTime(item.lastOccurredAt, props.dateConfig)}>
-                      {dates.formatDateTimeRelative(item.lastOccurredAt, props.dateConfig)}
-                    </time>
-                  </span>
-                  <span class="notebooks-overview-activity-description">{activityDescription(item, locale())}</span>
-                </Paper>
-              </li>
-            )}
-          </For>
-        </ol>
-        <Show when={activityResults.hasMore()}>
-          <Button
-            size="sm"
-            variant="secondary"
-            class="mx-auto mt-2"
-            loading={activityResults.loadingMore()}
-            loadingLabel={t().loadingMoreActivity}
-            onClick={() => void activityResults.loadMore()}
-          >
-            {t().loadMore}
-          </Button>
-        </Show>
+      <Show when={activityError()}>
+        {(message) => (
+          <div class="notebooks-overview-activity-alert">
+            <ActivityList.Error text={message()} onReload={reloadActivity} />
+          </div>
+        )}
       </Show>
+      <ActivityList
+        entries={activityEntries()}
+        now={props.now}
+        dateConfig={props.dateConfig}
+        label={t().recentActivity}
+        more={activityResults.hasMore()}
+      />
+      <LoadMore
+        hasMore={activityResults.hasMore()}
+        onLoadMore={() => activityResults.loadMore()}
+        loading={activityResults.loadingMore()}
+        label={t().loadMore}
+        loadingLabel={t().loadingMoreActivity}
+      />
     </Show>
   );
 
