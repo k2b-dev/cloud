@@ -2072,5 +2072,3 @@ dialog:has(.launchpad-panel)::backdrop {
 .k2b-ui .ai-turn__stopped > .k2b-chat-activity__row {
   grid-template-columns: 1.125rem minmax(0, max-content) auto 1fr;
 }
-
-
