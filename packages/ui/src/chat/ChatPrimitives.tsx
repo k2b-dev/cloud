@@ -8,7 +8,6 @@ import {
   For,
   type JSX,
   onCleanup,
-  onMount,
   Show,
   useContext,
 } from "solid-js";
@@ -47,23 +46,6 @@ export type ChatMessageProps = {
   class?: string;
 };
 
-/** The details of one step, in a card behind the ⓘ at the end of its row. */
-export type ChatActivityInfo = {
-  /** Name of the ⓘ button, such as "Details: Read file 'Sales.csv'". */
-  label: string;
-  /** The card's bold first line, usually the step's whole sentence. */
-  title?: JSX.Element;
-  /** A quiet line under the title, such as the outcome and the duration. */
-  detail?: JSX.Element;
-  /** The details themselves: a result, a reason, a note. A long text scrolls inside the card. */
-  content: JSX.Element;
-  /**
-   * Buttons of the card, such as "Check status". A card with actions opens only with a press or Enter, takes the focus,
-   * and gives it back to the ⓘ on Escape; a resting pointer opens nothing.
-   */
-  actions?: JSX.Element;
-};
-
 /** Colour of an activity's `meta` for an outcome that needs attention. */
 export type ChatActivityMetaTone = "danger" | "warning" | "ai";
 
@@ -91,8 +73,11 @@ export type ChatActivityProps = {
   duration?: string;
   /** The duration spelled out, shown as its title. */
   durationTitle?: string;
-  /** Details of a row without a body: an ⓘ in the last column opens them in a card, and the row itself never opens. */
-  info?: ChatActivityInfo;
+  /**
+   * The last column of a row without a body, such as an ⓘ that opens the step's details: a `HoverCard.Trigger` with
+   * `triggerClass="k2b-chat-activity__info"`. A row with a body keeps its chevron there.
+   */
+  end?: JSX.Element;
   /** Controls at the end of the text, in the meta column, such as a button. */
   trailing?: JSX.Element;
   /** Controlled disclosure state. Omit to keep native details behavior. */
@@ -391,79 +376,28 @@ const ActivityContent = (props: ChatActivityProps & { label: JSX.Element; disclo
         {props.leading}
       </Show>
     </span>
-    <span class={props.wrap ? "k2b-chat-activity__copy" : "k2b-chat-activity__copy k2b-truncate-fade"}>
+    <span class="k2b-chat-activity__copy k2b-truncate-fade">
       <strong title={typeof props.label === "string" ? props.label : undefined}>{props.label}</strong>
       <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
     </span>
-    <Show when={props.meta || props.trailing}>
-      <span class="k2b-chat-activity__meta" data-tone={props.metaTone}>
-        <Show when={props.meta}>
-          <span class="k2b-chat-activity__meta-text k2b-truncate-fade">{props.meta}</span>
-        </Show>
-        <Show when={props.trailing}>
-          <span class="k2b-chat-activity__trailing">{props.trailing}</span>
-        </Show>
+    {(props.meta || props.trailing) && (
+      <span class="k2b-chat-activity__meta k2b-truncate-fade" data-tone={props.metaTone}>
+        {props.meta}
+        {props.trailing && <span class="k2b-chat-activity__trailing">{props.trailing}</span>}
       </span>
-    </Show>
-    <Show when={props.duration}>
-      {/* A running row's clock ticks silently; the row says once what it does. */}
+    )}
+    {props.duration && (
+      // A running row's clock ticks silently; the row says once what it does.
       <span class="k2b-chat-activity__duration" title={props.durationTitle} aria-hidden={props.busy ? "true" : undefined}>
         {props.duration}
       </span>
-    </Show>
+    )}
     <Show when={props.disclosure}>
       <i class="ti ti-chevron-right k2b-chat-activity__chevron" aria-hidden="true" />
     </Show>
-    <Show when={!props.expandable && props.info}>{(info) => <ActivityInfo info={info()} />}</Show>
+    {!props.expandable && props.end}
   </>
 );
-
-type InfoCardModule = typeof import("./ChatActivityInfoCard");
-const [infoCard, setInfoCard] = createSignal<InfoCardModule>();
-let infoCardLoading = false;
-/** Loads the ⓘ card once, in the browser only; the server and the first frame render the plain ⓘ. */
-const loadInfoCard = () => {
-  if (infoCardLoading) return;
-  infoCardLoading = true;
-  void import("./ChatActivityInfoCard").then(
-    (module) => {
-      setInfoCard(() => module);
-    },
-    () => {
-      infoCardLoading = false;
-    },
-  );
-};
-
-/**
- * The ⓘ of a row without a body. It renders as a plain button with the trigger's look on the server and in the first
- * frame, and becomes the `HoverCard` trigger as soon as that code has loaded, in the same place and with the focus.
- */
-function ActivityInfo(props: { info: ChatActivityInfo }): JSX.Element {
-  let plain: HTMLButtonElement | undefined;
-  onMount(loadInfoCard);
-  return (
-    <Show
-      when={infoCard()}
-      fallback={
-        <button
-          ref={plain}
-          type="button"
-          class="k2b-hover-card-trigger k2b-chat-activity__info"
-          aria-label={props.info.label}
-          aria-haspopup={props.info.actions ? "dialog" : undefined}
-        >
-          <i class="ti ti-info-circle" aria-hidden="true" />
-        </button>
-      }
-    >
-      {(module) => {
-        const Card = module().ChatActivityInfoCard;
-        return <Card info={props.info} focus={plain !== undefined && document.activeElement === plain} />;
-      }}
-    </Show>
-  );
-}
 
 type ActivityDisclosure = {
   /** Whether the activity has a body this toggle can open. */

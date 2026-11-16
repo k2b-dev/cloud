@@ -44,7 +44,6 @@ export type {
   ChatPreviewTitleProps,
 } from "./ChatDecision";
 export type {
-  ChatActivityInfo,
   ChatActivityMetaTone,
   ChatActivityProps,
   ChatActivityToggleProps,

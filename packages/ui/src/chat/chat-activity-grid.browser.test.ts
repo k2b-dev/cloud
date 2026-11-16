@@ -17,12 +17,19 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { Chat } = await import("../index");
+const { Chat, HoverCard } = await import("../index");
 
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 
 const rows = (long: boolean): ChatActivityProps[] => [
-  { label: "Read the November sales", icon: "ti ti-file", duration: long ? "12 Min." : "1 s", info: info("Read") },
+  {
+    label: "Read the November sales",
+    icon: "ti ti-file",
+    duration: long ? "12 Min." : "1 s",
+    get end() {
+      return info("Read");
+    },
+  },
   { label: "Loaded tools and knowledge", icon: "ti ti-stack-2", meta: "2 steps", duration: "1 s", children: "Two steps" },
   {
     label: "Added up the numbers from the file, with a long sentence that does not fit the row",
@@ -30,14 +37,24 @@ const rows = (long: boolean): ChatActivityProps[] => [
     meta: "Failed",
     metaTone: "danger",
     duration: long ? "1 Std." : "2 s",
-    info: info("Added up"),
+    get end() {
+      return info("Added up");
+    },
   },
   { label: "Thought it over", icon: "ti ti-bulb", duration: "4 s" },
   { label: "Sent mail", icon: "ti ti-mail", meta: "Outcome unclear", metaTone: "warning" },
 ];
 
-function info(name: string) {
-  return { label: `Details: ${name}`, title: name, detail: "3 s", content: "37 bookings found" as JSX.Element };
+/** The ⓘ a host puts in the last column of a step without a body. */
+function info(name: string): JSX.Element {
+  return createComponent(HoverCard.Trigger, {
+    triggerClass: "k2b-chat-activity__info",
+    "aria-label": `Details: ${name}`,
+    title: name,
+    detail: "3 s",
+    content: "37 bookings found",
+    children: "i",
+  });
 }
 
 const html = (long: boolean) =>

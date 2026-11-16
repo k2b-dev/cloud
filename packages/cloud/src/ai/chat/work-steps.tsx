@@ -1,4 +1,4 @@
-import { Button, Chat, type ChatActivityInfo, type ChatActivityMetaTone, useLocale } from "@k2b/ui";
+import { Button, Chat, type ChatActivityMetaTone, HoverCard, useLocale } from "@k2b/ui";
 import { children, createContext, createMemo, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
@@ -36,6 +36,30 @@ const failureReason = (block: ToolBlock, t: Messages): string => {
         ? t.stepTimedOut
         : t.stepDidNotWork;
 };
+
+/** The details of one step, for the card behind the ⓘ at the end of its row. */
+type StepCard = { label: string; title: string; detail?: string; content: JSX.Element; actions?: JSX.Element };
+
+/**
+ * The ⓘ at the end of a step's row and the card with its details. A card with an action is a dialog that opens only on
+ * a press or Enter; one without opens on pointing and focus. It lives with the opened work, so it loads with it.
+ */
+function StepInfo(props: { card: StepCard }): JSX.Element {
+  return (
+    <HoverCard.Trigger
+      triggerClass="k2b-chat-activity__info"
+      aria-label={props.card.label}
+      align="end"
+      width="24rem"
+      title={props.card.title}
+      detail={props.card.detail}
+      content={props.card.content}
+      actions={props.card.actions}
+    >
+      <i class="ti ti-info-circle" aria-hidden="true" />
+    </HoverCard.Trigger>
+  );
+}
 
 /** What the opened work knows about its turn, for each of its steps. */
 export type AiWorkContextValue = {
@@ -205,7 +229,7 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
       </Show>
     </>
   );
-  const info = createMemo((): ChatActivityInfo | undefined =>
+  const info = createMemo((): StepCard | undefined =>
     shown().length > 0 || checkable() || showable()
       ? {
           label: t().stepDetails({ step: label() }),
@@ -230,7 +254,7 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
         meta={outcome()?.word}
         metaTone={outcome()?.tone}
         duration={duration()}
-        info={info()}
+        end={<Show when={info()}>{(card) => <StepInfo card={card()} />}</Show>}
         busy={props.busy && working()}
       />
       <Show when={websiteReceipts(props.block).length > 0}>
@@ -255,10 +279,10 @@ export function AiNoteStep(props: { label: string; busy: boolean; icon?: string;
       icon={props.icon ?? "ti ti-bulb"}
       label={props.label}
       duration={props.busy ? work.liveDuration() : undefined}
-      info={
-        details.toArray().length > 0
-          ? { label: aiChatMessages(locale()).stepDetails({ step: props.label }), title: props.label, content }
-          : undefined
+      end={
+        <Show when={details.toArray().length > 0}>
+          <StepInfo card={{ label: aiChatMessages(locale()).stepDetails({ step: props.label }), title: props.label, content }} />
+        </Show>
       }
       busy={props.busy}
     />

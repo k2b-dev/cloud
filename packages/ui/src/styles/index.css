@@ -14927,7 +14927,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   min-height: 1.25rem;
 }
 
+/* A wrapping line shows its whole sentence: the fade every other row has stays off. */
 .k2b-ui .k2b-chat-activity[data-wrap="true"] > .k2b-chat-activity__row > .k2b-chat-activity__copy {
+  overflow: visible;
+  white-space: normal;
+  mask-image: none;
   flex-direction: column;
   align-items: flex-start;
   gap: 0.125rem;
@@ -14971,14 +14975,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-ai-accent);
 }
 
-.k2b-ui .k2b-chat-activity__meta-text {
-  flex: 0 1 auto;
-}
-
 .k2b-ui .k2b-chat-activity__trailing {
   display: inline-flex;
   flex: none;
   align-items: center;
+}
+
+/* Controls in the meta column keep their focus ring and their whole box; only words fade. */
+.k2b-ui .k2b-chat-activity__meta:has(> .k2b-chat-activity__trailing) {
+  overflow: visible;
+  mask-image: none;
 }
 
 .k2b-ui .k2b-chat-activity__duration {

@@ -35,13 +35,14 @@ with `metaTone` for an outcome that needs attention; a part of the meta, such
 as "1 failed" in "6 steps · 1 failed", can carry its own `data-tone`. Pass the
 step's `duration` already formatted and `durationTitle` spelled out; a `busy`
 row's duration is hidden from screen readers, so a ticking clock stays silent. A single
-step with details passes `info`: an ⓘ in the last column opens them in a
-`HoverCard` (end-aligned, 24 rem), and the row itself never opens. The card's
-code loads on demand, so the server and the first frame show a plain ⓘ button
-in the same place. An open row's tone, shimmer, and turned chevron belong to
-its own row only; the rows in its body keep theirs. `info` with
-`actions` turns the card into a dialog that opens only with a press or Enter.
-A row with a body keeps its chevron and ignores `info`.
+step with details puts an ⓘ in `end`, the last column: a
+`HoverCard.Trigger` with `triggerClass="k2b-chat-activity__info"`, end-aligned
+and 24 rem wide, and the row itself never opens. A card with `actions` is a
+dialog that opens only with a press or Enter. The host owns that card, so an
+island that shows activities without details carries no hover card code. A row
+with a body keeps its chevron and ignores `end`. An open row's tone, shimmer,
+and turned chevron belong to its own row only; the rows in its body keep
+theirs.
 Activity labels use the normal font weight, and their description has the same
 size; hierarchy comes from color and indent. Use `ariaLabel` only for the
 whole-row summary form when its visible text abbreviates, for example "Worked
@@ -660,13 +661,12 @@ type ChatMessageProps = {
   onActionError?: (error: unknown) => void; class?: string;
 };
 
-type ChatActivityInfo = { label: string; title?: JSX.Element; detail?: JSX.Element; content: JSX.Element; actions?: JSX.Element };
 type ChatActivityMetaTone = "danger" | "warning" | "ai";
 
 type ChatActivityProps = {
   label: JSX.Element; ariaLabel?: string; description?: string; icon?: string; leading?: JSX.Element; accent?: string;
   tone?: ChatActivityTone; busy?: boolean; wrap?: boolean; meta?: JSX.Element; metaTone?: ChatActivityMetaTone;
-  duration?: string; durationTitle?: string; info?: ChatActivityInfo; trailing?: JSX.Element; open?: boolean;
+  duration?: string; durationTitle?: string; end?: JSX.Element; trailing?: JSX.Element; open?: boolean;
   onOpenChange?: (open: boolean) => void; defaultOpen?: boolean; bodyInset?: boolean;
   anchorId?: string | number; children?: JSX.Element; renderBody?: () => JSX.Element; class?: string;
 };

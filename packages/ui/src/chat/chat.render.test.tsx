@@ -1033,7 +1033,8 @@ test("activity toggle SSR is stable, named, and controls only its body", () => {
   expect(plain).not.toContain("<button");
 });
 
-test("activity rows put meta, duration, and the ⓘ in their own columns; a row with a body keeps its chevron", () => {
+test("activity rows put meta, duration, and an ⓘ in their own columns; a row with a body keeps its chevron", () => {
+  const { HoverCard } = publicUi;
   const step = renderToString(() =>
     createComponent(Chat.Activity, {
       label: "Read the file “Sales.csv”",
@@ -1042,15 +1043,20 @@ test("activity rows put meta, duration, and the ⓘ in their own columns; a row 
       metaTone: "danger",
       duration: "2 s",
       durationTitle: "2 seconds",
-      info: { label: "Details: Read the file “Sales.csv”", title: "Read the file", content: "37 rows" },
+      get end() {
+        return createComponent(HoverCard.Trigger, {
+          triggerClass: "k2b-chat-activity__info",
+          "aria-label": "Details: Read the file “Sales.csv”",
+          content: "37 rows",
+          children: "i",
+        });
+      },
     }),
   );
-  expect(step).toMatch(
-    /class="k2b-chat-activity__meta" data-tone="danger"[^>]*><span class="k2b-chat-activity__meta-text k2b-truncate-fade"[^>]*>Failed</,
-  );
+  expect(step).toMatch(/class="k2b-chat-activity__meta k2b-truncate-fade" data-tone="danger"[^>]*>Failed</);
   expect(step).toMatch(/class="k2b-chat-activity__duration" title="2 seconds"[^>]*>2 s</);
   expect(step).toContain('aria-label="Details: Read the file “Sales.csv”"');
-  expect(step).toContain("ti-info-circle");
+  expect(step).toContain("k2b-chat-activity__info");
   // A single step is no disclosure: only its ⓘ is a button, and the full sentence is the label's title.
   expect(step).not.toMatch(/<(details|summary)\b/);
   expect(step).not.toContain("k2b-chat-activity__chevron");
@@ -1059,12 +1065,13 @@ test("activity rows put meta, duration, and the ⓘ in their own columns; a row 
     createComponent(Chat.Activity, {
       label: "Loaded tools",
       meta: "2 steps",
-      info: { label: "Details: Loaded tools", content: "ignored" },
+      end: "ignored",
       children: "Steps",
     }),
   );
   expect(group).toContain("k2b-chat-activity__chevron");
-  expect(group).not.toContain("ti-info-circle");
+  // A row with a body keeps its chevron in the last column; `end` stays out.
+  expect(group).not.toContain("ignored");
   // A row without meta or duration renders no empty cells; the grid keeps their columns.
   const plain = renderToString(() => createComponent(Chat.Activity, { label: "Thought it over" }));
   expect(plain).not.toContain("k2b-chat-activity__meta");

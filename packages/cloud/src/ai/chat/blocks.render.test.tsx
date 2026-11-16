@@ -743,7 +743,7 @@ describe("capability tool presentation", () => {
     // Opened, the failed step says "Failed" in its meta and offers its details behind its ⓘ; the app's code and message
     // stay in the data.
     expect(expanded).toContain("Unknown tool");
-    expect(expanded).toMatch(/class="k2b-chat-activity__meta" data-tone="danger"><span[^>]*>Failed</);
+    expect(expanded).toMatch(/class="k2b-chat-activity__meta k2b-truncate-fade" data-tone="danger"[^>]*>Failed</);
     expect(expanded).toContain('aria-label="Details: Unknown tool"');
     expect(expanded).not.toContain("Mailbox is required");
     expect(expanded).not.toContain("VALIDATION_FAILED");
