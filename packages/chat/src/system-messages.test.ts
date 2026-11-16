@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
+import { decodeHTML } from "entities";
 import type { SystemMessage } from "./service/contracts";
-import { messagePlainText, messagePreview, renderSystemMessage } from "./system-messages";
+import { messagePlainText, messagePreview, quoteExcerpt, renderSystemMessage } from "./system-messages";
 
 const member = { id: "12345678-1234-4234-8234-123456789012", name: "Lea" };
 const cases: [SystemMessage, string, string][] = [
@@ -82,6 +83,28 @@ test("previews show the text a reader sees, never Markdown marks", () => {
   ];
   for (const [body, preview] of cases) expect(messagePreview(body)).toBe(preview);
   expect(messagePlainText("**fett**\n\nund *mehr*")).toBe("fett und mehr");
+});
+
+test("a quote is the passage of the message as a reader sees it, in whole words with the message's own spaces", () => {
+  const body = "Der **Bericht** ist [fertig](https://example.test/).\n\n- Lea prüft\n- Ben liest\n\n`code  hier` und therapist";
+  const excerpt = (text: string, source = body) => quoteExcerpt(source, text, decodeHTML);
+  expect(excerpt("Bericht ist fertig")).toBe("Bericht ist fertig");
+  expect(excerpt("fertig.\n\nLea prüft\nBen")).toBe("fertig. Lea prüft Ben");
+  expect(excerpt("code hier")).toBe("code hier");
+  // The sender's spaces never split or join the author's words, and a part of a word quotes the whole word.
+  expect(excerpt("the rapist")).toBe("therapist");
+  expect(excerpt("Leaprüft")).toBe("Lea prüft");
+  expect(excerpt("rapists", "I love therapists")).toBe("therapists");
+  expect(excerpt("ich", "Bericht")).toBe("Bericht");
+  for (const passage of ["Bericht ist nicht fertig", "Ben prüft", "**Bericht**", "example.test", "", "  "])
+    expect(excerpt(passage)).toBeNull();
+  // Composed and decomposed umlauts are the same passage.
+  expect(excerpt("Lea pru\u0308ft", "Lea prüft")).toBe("Lea prüft");
+  // Text turns every character reference into its character; code and raw HTML show theirs as written.
+  expect(excerpt("© 2026", "&copy; 2026 Lea")).toBe("© 2026");
+  expect(excerpt("a &amp; b", "Run `a &amp; b` now")).toBe("a &amp; b");
+  expect(excerpt("a & b", "Run `a &amp; b` now")).toBeNull();
+  expect(excerpt("Tom & Jerry", "Tom &amp; Jerry")).toBe("Tom & Jerry");
 });
 
 for (const [names, en, de] of [

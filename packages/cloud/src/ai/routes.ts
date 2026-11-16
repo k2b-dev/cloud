@@ -281,9 +281,9 @@ const rememberLastUsedModel = (actor: RequestActor, model: import("../shared/ai-
   void aiUserPrefs.update(userId, { selection: model }).catch(() => undefined);
 };
 
-const conversationDetail = async (conversation: AiConversation, subject: AiResourceContext) => {
+const conversationDetail = async (conversation: AiConversation, subject: AiResourceContext, locale: string) => {
   const [state, timeline, publicView] = await Promise.all([
-    loadAiStreamState(conversation, subject.actor?.kind === "user" ? subject.actor.user.id : null),
+    loadAiStreamState(conversation, subject.actor?.kind === "user" ? subject.actor.user.id : null, locale),
     aiConversations.listConversationTimeline({ conversationId: conversation.id }),
     publicConversationFor(conversation, subject),
   ]);
@@ -764,7 +764,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        return respond(c, ok(await conversationDetail(conversation, resourceContext(c))));
+        return respond(c, ok(await conversationDetail(conversation, resourceContext(c), getLocale(c))));
       })
       .get(
         "/conversations/:conversationId/submission/:draftRevision",
@@ -799,7 +799,12 @@ export const aiRoutes = (() => {
           c,
           ok({
             ...page,
-            messages: await publicAiStoredMessages(page.messages, conversation, ctx.actor.kind === "user" ? ctx.actor.user.id : null),
+            messages: await publicAiStoredMessages(
+              page.messages,
+              conversation,
+              ctx.actor.kind === "user" ? ctx.actor.user.id : null,
+              getLocale(c),
+            ),
           }),
         );
       })
@@ -815,7 +820,7 @@ export const aiRoutes = (() => {
           beforeSeq: query.before,
           limit: query.limit ?? 50,
         });
-        return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation) }));
+        return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation, null, getLocale(c)) }));
       })
       .delete("/conversations/:conversationId/messages/:messageId/suggested-next-message", async (c) => {
         const ctx = await resolveContext(c);
@@ -1043,7 +1048,9 @@ export const aiRoutes = (() => {
           if (ctx instanceof Response) return ctx;
           const conversation = await loadConversation(c, ctx);
           if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
-          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text))
+          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text, {
+            signedInSession: ctx.signedInSession,
+          }))
             ? respond(c, ok({ ok: true }))
             : notFound(c);
         },
@@ -1186,6 +1193,7 @@ export const aiRoutes = (() => {
           turnId: turn.id,
           clientRequestId: body.clientRequestId,
           text: body.message,
+          signedInSession: ctx.signedInSession,
         });
         if (!result.ok) {
           if (result.reason === "not_found") return respond(c, fail(err.notFound("Turn")));
@@ -1233,10 +1241,11 @@ export const aiRoutes = (() => {
           }
           const result = await submitAiChatTurn({
             assistantChat: true,
+            // Editing makes the message the person's own; retrying keeps its writer. Either way the
+            // person's retry runs on their own allowance, without the Code's budget attribution.
             writerOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.writerOrigin : undefined,
             turnTrigger: originalRunConfig?.kind !== "compact" ? originalRunConfig?.turnTrigger : undefined,
             send: originalRunConfig?.kind !== "compact" ? originalRunConfig?.send : undefined,
-            codeOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.codeOrigin : undefined,
             ...(!ctx.signedInSession || (originalRunConfig?.kind !== "compact" && originalRunConfig?.sourceRestricted)
               ? { sourceRestricted: true as const }
               : {}),
@@ -1258,6 +1267,7 @@ export const aiRoutes = (() => {
             truncateFromSeq: target.seq,
             fileSnapshot: originalRunConfig?.kind !== "compact" ? originalRunConfig?.files : undefined,
             retrySourceTurnId: target.loopId ?? undefined,
+            ...(body.content?.length ? { retryEdited: true as const } : {}),
             // Local context and tools belong to the retrying client, not the original workspace.
             clientToolIds:
               body.clientToolIds ??
@@ -1314,7 +1324,7 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
           title: body.title ?? conversation.title,
         });
-        return respond(c, ok(await conversationDetail(forked, resourceContext(c))));
+        return respond(c, ok(await conversationDetail(forked, resourceContext(c), getLocale(c))));
       })
       .get("/conversations/:conversationId/enrichment", async (c) => {
         const ctx = await resolveContext(c);
@@ -1569,6 +1579,7 @@ export const aiRoutes = (() => {
         c.set("appAccessGuard", { eventOnly: true });
         return createAiConversationStreamResponse({
           viewerUserId: ctx.actor.kind === "user" ? ctx.actor.user.id : null,
+          locale: getLocale(c),
           conversation,
           signal: c.req.raw.signal,
           ...(expiresAt !== undefined ? { expiresAt } : {}),

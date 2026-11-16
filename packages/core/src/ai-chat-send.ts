@@ -9,6 +9,7 @@ import {
   personalAiModelPolicy,
 } from "@k2b/cloud/ai";
 import { AiMessageQueueConflict, enqueueAutomationChatMessage, prepareAiChatTurn, wakeAiMessageQueue } from "@k2b/cloud/ai/runtime";
+import { CAPABILITY_CLAIM_RETENTION_HOURS } from "@k2b/cloud/capabilities/store";
 import { type CapabilityExecutionContext, CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { accounts, coreSettings } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
@@ -72,12 +73,14 @@ const result = async (conversationId: string, chatId: string, id: string) => {
  * Codes, keeps them exact. Callers hold the chat lock first, then this owner lock, then budget rows. */
 export const lockOwnerCodeChats = (owner: string, db: SQL) =>
   db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.owner:${owner}`},0))`;
-/** A refused automation entry is final and does not count. */
-export const openOwnerCodeChatWork = async (owner: string, db: SQL, exceptMessageId?: string) => {
+/** A refused automation entry is final and does not count. At start, only messages queued before
+ * this one count, so two waiting messages never block each other. */
+export const openOwnerCodeChatWork = async (owner: string, db: SQL, startingMessageId?: string) => {
   const [open] = await db`SELECT 1 FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
       WHERE c.created_by_user_id=${owner}::uuid AND c.archived_at IS NULL
         AND q.status='pending' AND q.submission->'runConfig' ? 'codeOrigin'
-        AND (${exceptMessageId ?? null}::uuid IS NULL OR q.id<>${exceptMessageId ?? null}::uuid)
+        AND (${startingMessageId ?? null}::uuid IS NULL
+          OR q.position < (SELECT position FROM ai.queued_messages WHERE id=${startingMessageId ?? null}::uuid))
     UNION ALL SELECT 1 FROM ai.turns t JOIN ai.conversations c ON c.id=t.conversation_id
       WHERE c.created_by_user_id=${owner}::uuid AND t.status IN ('queued','running','waiting_for_action')
         AND NOT COALESCE(t.run_config ? 'background',false) AND t.run_config ? 'codeOrigin'
@@ -152,10 +155,13 @@ export const aiChatSendAction = {
     if (!key.success || !parsed.success) return fail(err.badInput("Supply text and a valid idempotency key"));
     const owner = context.user.id;
     const keyHash = sendKeyHash(owner, key.data);
+    // A key holds for the dispatcher's claim retention, per person; afterwards it starts a new message.
     const existing = async (db = sql) => {
       const [row] = await db<{ id: string; input_hash: string; conversation_id: string; chat_id: string }[]>`
         SELECT id,input_hash,conversation_id,chat_id FROM ai.chat_send_receipts
-        WHERE account_id=${owner}::uuid AND operation='ai.chat.send' AND key_hash=${keyHash}`;
+        WHERE account_id=${owner}::uuid AND operation='ai.chat.send' AND key_hash=${keyHash}
+          AND created_at > clock_timestamp() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})
+        ORDER BY created_at DESC LIMIT 1`;
       if (!row) return null;
       // Hash against the originally resolved destination, before looking at today's binding or limits.
       return row.input_hash === approvalArgsDigest({ chatId: row.chat_id, ...parsed.data })
@@ -242,6 +248,10 @@ export const aiChatSendAction = {
           const refused = await checkCodeChatRunBudget(code.runId, db, limits);
           if (refused) return fail({ code: refused, message: refused === "code_run_gone" ? t.run_gone : t.budget, status: 409 as const });
         }
+        // An expired use of this key keeps its message, receipt and status but releases the key.
+        await db`UPDATE ai.queued_messages SET submission=submission #- '{runConfig,send,keyHash}'
+          WHERE submission#>>'{runConfig,send,accountId}'=${owner} AND submission#>>'{runConfig,send,keyHash}'=${keyHash}
+            AND created_at <= clock_timestamp() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})`;
         await enqueueAutomationChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
         await db`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
           VALUES(${id}::uuid,${owner}::uuid,'ai.chat.send',${keyHash},${hash},${chat.id}::uuid,${chat.short_id},

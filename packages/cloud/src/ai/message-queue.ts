@@ -71,8 +71,10 @@ export const migrateAiMessageQueue = async () => {
     id uuid PRIMARY KEY, account_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE, operation text NOT NULL CHECK(operation='ai.chat.send'),
     key_hash text NOT NULL, input_hash text NOT NULL, conversation_id uuid NOT NULL, chat_id text NOT NULL,
     origin jsonb NOT NULL, turn_trigger jsonb NOT NULL, queued_message_id uuid NOT NULL UNIQUE,
-    created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(account_id,operation,key_hash)
+    created_at timestamptz NOT NULL DEFAULT now()
   )`.simple();
+  // A key holds per person for the dispatcher's claim retention; the per-key lock keeps it single within that window.
+  await sql`CREATE INDEX IF NOT EXISTS ai_chat_send_receipts_key ON ai.chat_send_receipts(account_id,operation,key_hash,created_at DESC)`.simple();
   await sql`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
     SELECT q.id,(q.submission#>>'{runConfig,send,accountId}')::uuid,'ai.chat.send',
       q.submission#>>'{runConfig,send,keyHash}',q.submission#>>'{runConfig,send,requestHash}',q.conversation_id,c.short_id,
@@ -192,7 +194,8 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
   });
 
 /** Edit only queued text; immutable attachments and the independent composer draft stay intact. */
-export const editQueuedMessage = async (conversationId: string, id: string, text: string) =>
+/** Text from a source without a signed-in session restricts the queued turn; editing stays possible. */
+export const editQueuedMessage = async (conversationId: string, id: string, text: string, source: { signedInSession: boolean }) =>
   sql.begin(async (tx) => {
     await tx`SELECT id FROM ai.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
     const [row] = await tx<{ submission: Submission; content: AiDraftContentPart[] }[]>`SELECT submission, content FROM ai.queued_messages
@@ -217,6 +220,7 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
       userMessage,
       runConfig: {
         ...row.submission.runConfig,
+        ...(source.signedInSession ? {} : { sourceRestricted: true as const }),
         input: userMessage.content,
         selectedSkillIds: [
           ...new Set(content.flatMap((part) => (part.type === "resource" && part.ref.type === "core.ai.skill" ? [part.ref.id] : []))),

@@ -4,7 +4,12 @@
  *
  * The server renders every state the page can reach. The first one is the markup, the others travel as templates
  * the client swaps in place, so the first paint and every later state come from the same code.
+ *
+ * The page carries the waiting game „Lauf“ from the platform: its robot waits on a pale road below the status line
+ * (on app pages only once the restart takes longer than usual). A round never starts on its own; Space, a tap on the
+ * road or a click on the maintenance symbol starts one.
  */
+import { LAUF_CSS, LAUF_SCRIPT, maintenanceGameMessages } from "@k2b/cloud/maintenance-game";
 
 export type MaintenancePageImage = { src: string /* data: URI */ };
 export type MaintenancePageModel = {
@@ -107,6 +112,8 @@ const TEXT = {
     appUpdated: "Aktualisierung abgeschlossen",
     appBack: (n: string) => `${n} ist verfügbar`,
     home: "Zur Startseite",
+    next: "Weiter",
+    nextLine: "Die Seite lädt neu, sobald du weitermachst.",
   },
   en: {
     maint: "Maintenance in progress",
@@ -136,6 +143,8 @@ const TEXT = {
     appUpdated: "Update finished",
     appBack: (n: string) => `${n} is available`,
     home: "Go to home page",
+    next: "Continue",
+    nextLine: "The page reloads once you continue.",
   },
 } as const;
 
@@ -164,7 +173,9 @@ type View = {
   message?: { by?: string; text: string }; // text
   live: Live;
   status: string; // text
+  strong?: boolean; // the status is the news, as in „Maintenance finished“
   home?: { href: string; label: string };
+  next?: string; // label of the button that leaves a round after the end
   foot?: string; // html
 };
 
@@ -172,7 +183,7 @@ const CSS = `:root{color-scheme:light dark;--surface:#fff;--muted:#f4f4f5;--text
 @media (prefers-color-scheme:dark){:root{--surface:#18181b;--muted:#222226;--text:#fafafa;--text2:#e4e4e7;--text3:#c4c4cc;--subtle:#9a9aa5;--edge:#3f3f46;--action:#3b82f6;--focus:#60a5fa;--ok:#10b981;--warn:#f59e0b;--warn-bg:#2b1d05;--warn-text:#fcd34d;--tint:20%}}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
 body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--surface);color:var(--text);font-size:15px;line-height:1.5}
-.mp{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:22px 28px}
+.mp{position:relative;z-index:2;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding:22px 28px}
 #v{display:contents}
 .brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:14px;color:var(--text2)}
 .logo{width:28px;height:28px;border-radius:8px;background:var(--ca);color:var(--cf);display:grid;place-items:center;font-weight:700;font-size:14px;flex:none;overflow:hidden}
@@ -180,6 +191,9 @@ body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFo
 .mid{margin:auto 0;width:100%;max-width:31rem;align-self:center}
 .tile{position:relative;width:44px;height:44px;border-radius:12px;display:grid;place-items:center;margin-bottom:18px}
 .tile svg,.tile img{width:24px;height:24px}
+button.tile{border:0;padding:0;cursor:pointer;font:inherit}button.tile:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+@keyframes wiggle{25%{transform:rotate(-7deg)}75%{transform:rotate(7deg)}}
+@media (prefers-reduced-motion:no-preference){button.tile:hover svg{animation:wiggle .45s ease-in-out}}
 .maint{background:var(--warn-bg);color:var(--warn)}
 .app{background:color-mix(in srgb,var(--aa) var(--tint),var(--surface));color:var(--aa);font-size:18px;font-weight:650}
 .badge{position:absolute;right:-9px;bottom:-9px;width:26px;height:26px;border-radius:50%;background:var(--warn-bg);color:var(--warn);box-shadow:0 0 0 2px var(--surface);display:grid;place-items:center}
@@ -200,17 +214,30 @@ h1{font-size:26px;line-height:1.2;letter-spacing:-.02em;font-weight:650;margin:0
 @keyframes spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.ring{animation:none}}
 .btn{font:inherit;font-size:14px;font-weight:550;height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--edge);background:var(--surface);color:var(--text);white-space:nowrap;display:inline-flex;align-items:center;text-decoration:none}
-.btn:hover{background:var(--muted)}.btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.btn:hover{background:var(--muted)}.btn.primary{background:var(--action);border-color:var(--action);color:#fff}.btn.primary:hover{background:var(--action)}
+.t b{color:var(--text);font-weight:600}
+.more{display:grid;grid-template-rows:1fr;transition:grid-template-rows .35s ease,opacity .25s ease}.more>div{min-height:0;overflow:hidden}
+.mid,h1{transition:margin .35s ease,font-size .35s ease}
+[data-lauf] .mp{pointer-events:none}[data-lauf] .brand,[data-lauf] .mid,[data-lauf] .foot{pointer-events:auto}
+body>.lauf{position:fixed;z-index:1}[data-lauf] .mid{margin:6vh 0 auto;padding:0 16px}[data-lauf] .tile{margin-bottom:16px}[data-lauf] .msg{margin-top:18px}[data-lauf] .live{margin-top:22px;min-height:44px}[data-lauf] .ring,[data-lauf] .check{align-self:center;margin-top:0}
+[data-lauf=run] .mid{margin-top:8px}[data-lauf=run] h1{font-size:18px}[data-lauf=run] .more{grid-template-rows:0fr;opacity:0}
+@media (prefers-reduced-motion:reduce){.more,.mid,h1{transition:none}}.btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .foot{font-size:13px;color:var(--subtle);margin:0}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-@media (max-width:640px){.mp{padding:16px 22px 22px}h1{font-size:23px}.live{flex-wrap:wrap;align-content:flex-start}.t{flex:1 1 calc(100% - 30px)}.btn{margin-left:30px}}`;
+@media (max-width:640px){.mp{padding:16px 22px 22px}h1{font-size:23px}.live{flex-wrap:wrap;align-content:flex-start}.t{flex:1 1 calc(100% - 30px)}.btn{margin-left:30px}[data-lauf] .mid{padding:0}[data-lauf=wait] .mid{margin-top:22px}}
+${LAUF_CSS}`;
 
 /**
  * The client, as plain source so no bundler rewrites it. It polls the status, swaps prepared states into `#v`,
- * announces each new state once, and reloads after the end with up to 3 s of spread.
+ * announces each new state once, and reloads after the end with up to 3 s of spread. When the end arrives during a
+ * round of the game (`LAUF`), it shows „Maintenance finished · Continue“ and reloads only after the round or a click.
  */
 const CLIENT = `(c)=>{const v=document.getElementById("v"),a=document.getElementById("a"),t0=Date.now(),skew=c.now-t0;
-let until=c.until,cur=c.state,shown=c.time,ok=true,long=false,last=t0,busy=false,done=false,timer=0,lateTimer=0;
+let until=c.until,cur=c.state,shown=c.time,ok=true,long=false,last=t0,busy=false,done=false,timer=0,lateTimer=0,game=null,left=false;
+const leave=()=>{if(left)return;left=true;show("done","");location.reload()},
+play=()=>{if(!game){game=LAUF({host:document.body,anchor:()=>v.querySelector(".mid"),t:c.game,dark:()=>matchMedia("(prefers-color-scheme: dark)").matches,onFinish:leave});game.open()}return game};
+document.addEventListener("click",e=>{const el=e.target&&e.target.closest&&e.target.closest("[data-play],[data-next]");if(!el)return;
+if(el.hasAttribute("data-next"))return leave();play().start()});
 const now=()=>Date.now()+skew,esc=s=>s.replace(/[&<>"']/g,ch=>"&#"+ch.charCodeAt(0)+";"),
 part=(o,ms)=>new Intl.DateTimeFormat(c.locale,Object.assign({timeZone:c.zone},o)).format(ms),
 fmt=ms=>part(c.options,ms)+c.suffix+(part(c.dayKey,ms)===part(c.dayKey,now())?"":c.day.prefix+part(c.day.options,ms)),
@@ -225,16 +252,19 @@ lateTimer=setTimeout(render,Math.min(until-now()+50,2147483647));show(until===c.
 poll=()=>{clearTimeout(timer);if(busy||done)return;busy=true;const ctl=new AbortController(),kill=setTimeout(()=>ctl.abort(),10000);
 fetch(c.url,{cache:"no-store",signal:ctl.signal}).then(r=>{if(!r.ok)throw new Error(String(r.status));return r.json()}).then(j=>{
 ok=true;last=Date.now();const m=j&&j.maintenance,on=!!(m&&m.active);
-if(c.kind==="cloud"?!on:!on&&!!j.app&&j.app.available===true){clearTimeout(lateTimer);done=true;show("done","");setTimeout(()=>location.reload(),Math.random()*3000);return}
+if(c.kind==="cloud"?!on:!on&&!!j.app&&j.app.available===true){clearTimeout(lateTimer);done=true;if(game&&game.end())return show("ended","");show("done","");setTimeout(()=>location.reload(),Math.random()*3000);return}
 if(c.kind==="cloud"){const u=m.until?Date.parse(m.until):NaN;until=Number.isNaN(u)?null:u}render()})
 .catch(()=>{ok=false;render()}).finally(()=>{clearTimeout(kill);busy=false;if(!done)timer=setTimeout(poll,delay(Date.now()-t0))})};
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")poll()});
 addEventListener("online",poll);addEventListener("offline",()=>{ok=false;render()});
-if(c.kind==="app")setTimeout(()=>{long=true;render()},c.long);
-render();timer=setTimeout(poll,delay(0))}`;
+if(c.kind==="app")setTimeout(()=>{long=true;render();if(!done)play()},c.long);
+render();if(c.kind==="cloud")play();timer=setTimeout(poll,delay(0))}`;
 
 const ring = (live: Live): string =>
   live === "check" ? `<span class="check">${CHECK}</span>` : `<span class="ring${live === "pause" ? " pause" : ""}"></span>`;
+
+/** Folds away while a round runs, so the road gets the room; only heading and status line stay. */
+const more = (html: string): string => (html ? `<div class="more"><div>${html}</div></div>` : "");
 
 const fragment = (view: View): string => {
   const lines = view.lines.map((line) => `<p class="when">${line}</p>`).join("");
@@ -242,14 +272,19 @@ const fragment = (view: View): string => {
     ? `<div class="msg">${view.message.by ? `<p class="by">${esc(view.message.by)}</p>` : ""}<p>${esc(view.message.text)}</p></div>`
     : "";
   const home = view.home ? `<a class="btn" href="${esc(view.home.href)}">${esc(view.home.label)}</a>` : "";
+  const next = view.next ? `<button type="button" class="btn primary" data-next>${esc(view.next)}</button>` : "";
+  const status = view.strong ? `<b>${esc(view.status)}</b>` : esc(view.status);
   const foot = view.foot ? `<p class="foot">${view.foot}</p>` : "";
-  return `<div class="mid">${view.tile}<h1>${esc(view.heading)}</h1>${lines}${message}<div class="live">${ring(view.live)}<span class="t">${esc(view.status)}</span>${home}</div></div>${foot}`;
+  return `<div class="mid">${more(view.tile)}<h1>${esc(view.heading)}</h1>${more(lines + message)}<div class="live">${ring(view.live)}<span class="t">${status}</span>${home}${next}</div></div>${foot}`;
 };
 
-type CloudState = "plain" | "active" | "late" | "moved" | "offline" | "done";
-type AppState = "base" | "long" | "offline" | "done";
+/** „ended“: the end arrived during a round; the page waits for the round or for „Continue“ before it reloads. */
+type CloudState = "plain" | "active" | "late" | "moved" | "offline" | "ended" | "done";
+type AppState = "base" | "long" | "offline" | "ended" | "done";
+type Texts = (typeof TEXT)[keyof typeof TEXT];
+type GameTexts = { start: string };
 
-const offlineView = (tx: (typeof TEXT)[keyof typeof TEXT], t: string): View => ({
+const offlineView = (tx: Texts, t: string): View => ({
   tile: "",
   heading: tx.offline,
   lines: [tx.offlineLine],
@@ -259,11 +294,13 @@ const offlineView = (tx: (typeof TEXT)[keyof typeof TEXT], t: string): View => (
   foot: tx.lastReached(t),
 });
 
-const cloudViews = (tx: (typeof TEXT)[keyof typeof TEXT], message: string | undefined, t: string): Record<CloudState, View> => {
+const cloudViews = (tx: Texts, game: GameTexts, message: string | undefined, t: string): Record<CloudState, View> => {
   const tile = `<div class="tile maint">${BARRIER}</div>`;
+  // The maintenance symbol starts a round right away, as a small surprise for whoever tries it.
+  const egg = `<button type="button" class="tile maint" data-play="start" aria-label="${esc(game.start)}">${BARRIER}</button>`;
   const note = message ? { by: tx.by, text: message } : undefined;
   const active = (line: string | null, status: string): View => ({
-    tile,
+    tile: egg,
     heading: tx.maint,
     lines: line ? [tx.updating, line] : [tx.updating],
     ...(note ? { message: note } : {}),
@@ -276,15 +313,12 @@ const cloudViews = (tx: (typeof TEXT)[keyof typeof TEXT], message: string | unde
     late: active(tx.late(t), tx.keepsChecking),
     moved: active(tx.moved(t), tx.keepsChecking),
     offline: offlineView(tx, t),
+    ended: { tile, heading: tx.maint, lines: [], live: "check", status: tx.done, strong: true, next: tx.next },
     done: { tile, heading: tx.done, lines: [], live: "check", status: tx.loading },
   };
 };
 
-const appViews = (
-  tx: (typeof TEXT)[keyof typeof TEXT],
-  model: Extract<MaintenancePageModel, { kind: "app" }>,
-  t: string,
-): Record<AppState, View> => {
+const appViews = (tx: Texts, model: Extract<MaintenancePageModel, { kind: "app" }>, t: string): Record<AppState, View> => {
   const name = model.app.name;
   const icon = image(model.app.icon);
   const glyph = icon ? `<img src="${esc(icon)}" alt="">` : `<span aria-hidden="true">${initial(name)}</span>`;
@@ -312,6 +346,14 @@ const appViews = (
       ...home,
     },
     offline: offlineView(tx, t),
+    ended: {
+      tile: tile(false),
+      heading: updating ? tx.appUpdated : tx.appBack(name),
+      lines: [],
+      live: "check",
+      status: tx.nextLine,
+      next: tx.next,
+    },
     done: {
       tile: tile(false),
       heading: updating ? tx.appUpdated : tx.appBack(name),
@@ -337,6 +379,7 @@ const EMPTY_T = "<span data-t></span>";
 export const renderMaintenancePage = (model: MaintenancePageModel, options: { nonce: string }): string => {
   const now = Date.now();
   const tx = TEXT[model.locale];
+  const game = maintenanceGameMessages.resolve([model.locale]).t;
   const zone = validZone(model.timeZone);
   const format = timeFormat(model.locale);
   const part = (options: Intl.DateTimeFormatOptions, ms: number) =>
@@ -359,8 +402,8 @@ export const renderMaintenancePage = (model: MaintenancePageModel, options: { no
     time = until === null ? "" : fmt(until);
     const cloudState: CloudState = until === null ? "plain" : now >= until ? "late" : "active";
     state = cloudState;
-    first = cloudViews(tx, message, T(time))[cloudState];
-    templates = cloudViews(tx, message, EMPTY_T);
+    first = cloudViews(tx, game, message, T(time))[cloudState];
+    templates = cloudViews(tx, game, message, EMPTY_T);
   } else {
     state = "base";
     first = appViews(tx, model, "").base;
@@ -391,6 +434,7 @@ export const renderMaintenancePage = (model: MaintenancePageModel, options: { no
     time,
     steps: POLL_STEPS[model.kind],
     long: APP_LONG_AFTER_MS,
+    game,
     views: Object.fromEntries(
       Object.entries(templates).map(([key, view]) => [key, { html: fragment(view), say: `${view.heading}. ${view.status}` }]),
     ),
@@ -398,5 +442,5 @@ export const renderMaintenancePage = (model: MaintenancePageModel, options: { no
   const json = JSON.stringify(config).replace(/</g, "\\u003c");
   const title = model.kind === "cloud" ? tx.maint : first.heading;
 
-  return `<!doctype html><html lang="${model.locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)} · ${esc(model.cloud.name)}</title><style nonce="${nonce}">${CSS}${vars}</style></head><body><main class="mp">${brand}<div id="v">${fragment(first)}</div></main><p class="sr" id="a" role="status"></p><script nonce="${nonce}">(${CLIENT})(${json})</script></body></html>`;
+  return `<!doctype html><html lang="${model.locale}"${model.kind === "cloud" ? ' data-lauf="wait"' : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${esc(title)} · ${esc(model.cloud.name)}</title><style nonce="${nonce}">${CSS}${vars}</style></head><body><main class="mp">${brand}<div id="v">${fragment(first)}</div></main><p class="sr" id="a" role="status"></p><script nonce="${nonce}">const LAUF=${LAUF_SCRIPT};(${CLIENT})(${json})</script></body></html>`;
 };

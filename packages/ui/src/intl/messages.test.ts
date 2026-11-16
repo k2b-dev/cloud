@@ -34,6 +34,7 @@ const catalogs = {
   MarkdownToolbar: (await import("../inputs/markdown/toolbar-messages")).checkMarkdownToolbarMessages,
   MarkdownEditor: (await import("../inputs/markdown/editor-messages")).checkMarkdownEditorMessages,
   MarkdownSelectionToolbar: (await import("../inputs/markdown/MarkdownSelectionToolbar")).checkSelectionMessages,
+  Quote: (await import("../content/quote-messages")).checkQuoteMessages,
   Settings: (await import("../layout/settings-messages")).checkSettingsMessages,
   Panes: (await import("../layout/panes-messages")).checkPanesMessages,
   FloatingWindow: (await import("../layout/floating-window-messages")).checkFloatingWindowMessages,

@@ -28,8 +28,10 @@ export type MaintenanceProblemCode = (typeof MAINTENANCE_PROBLEM_CODES)[number];
 const epochMs = z.number().int().positive().max(8.64e15);
 
 /**
- * The stored record. `bypassKey` belongs to the gateway alone (admin bypass link, a later step);
- * no API, page, log or status answer ever exposes it.
+ * The stored record. `bypassKey` signs the admin bypass links of this maintenance. Core and the gateway use it,
+ * but every process with the shared NATS credentials can read the record: the same trust as the app registry and
+ * the shared `APP_SECRET`. The key grants nothing beyond the maintenance wall (no sign-in, no permission). No API,
+ * page, log, audit entry or status answer ever exposes it.
  */
 export const MaintenanceStateSchema = z.object({
   id: z.string().min(1).max(64),
@@ -65,9 +67,12 @@ export const MaintenanceProblemSchema = z.object({
 });
 export type MaintenanceProblem = z.infer<typeof MaintenanceProblemSchema>;
 
-/** `GET /_cloud/gateway/status[?app=<id>]`. */
+/**
+ * `GET /_cloud/gateway/status[?app=<id>]`. `bypass` is present only on the Cloud host for a browser whose admin
+ * bypass link is valid for the running maintenance: it sees the Cloud while everyone else sees the page.
+ */
 export type GatewayStatus = {
-  maintenance: { active: true; until: string | null } | null;
+  maintenance: { active: true; until: string | null; bypass?: true } | null;
   app?: { available: boolean };
 };
 
@@ -82,6 +87,10 @@ export const MaintenanceStatusSchema = z.object({
   apps: z.object({ ready: z.number().int(), total: z.number().int(), starting: z.array(z.string()) }),
 });
 export type MaintenanceStatus = z.infer<typeof MaintenanceStatusSchema>;
+
+/** `POST /api/admin/maintenance/bypass`: a personal link that passes the maintenance wall until `expiresAt`. */
+export const MaintenanceBypassSchema = z.object({ url: z.url(), expiresAt: z.iso.datetime() });
+export type MaintenanceBypassLink = z.infer<typeof MaintenanceBypassSchema>;
 
 export const MaintenanceOnInputSchema = z
   .object({

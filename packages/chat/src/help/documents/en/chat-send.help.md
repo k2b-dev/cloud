@@ -2,7 +2,7 @@
 id: chat-send
 title: Send a message
 icon: ti ti-send
-description: Open a chat, send a message, attach files, share Cloud elements, and retry or discard a message that was not sent.
+description: Open a chat, send a message, quote part of a message, attach files, share Cloud elements, and retry or discard a message that was not sent.
 order: 110
 ---
 
@@ -69,6 +69,24 @@ You can send messages in a chat you belong to with **Write** or **Manage** acces
 :::
 
 The list shows the chat's members and the people who wrote in it. In a resource discussion it shows the people who wrote there. The mentioned person finds the message under **For you**, as long as they may read it.
+
+## Quote part of a message {icon="quote"}
+
+:::steps
+1. Select words in a message. **Quote** shows next to them.
+2. Choose **Quote**. The words show above the field with the name of the person who wrote them.
+3. Write your answer and send it. The quote shows above your text.
+:::
+
+:::reference
+- To quote a whole message, open its menu and choose **Quote**. On a phone, hold the message to open its menu. A quote holds at most 2,000 characters. Of a longer message, only its beginning is quoted.
+- With the keyboard, press **Tab** after you select the words, then **Enter**. **Escape** closes **Quote**.
+- You can quote more than one passage in one answer. Choose **Remove quote** to take one out.
+- Choose a quote to jump to its message. The quoted words are highlighted there for a moment.
+- Quotes must come from one thread. Your answer goes to that thread. If you quote from a different thread, the earlier quotes are removed.
+- A quote keeps the words as they were. If someone deletes the message or changes it so that the words are gone, the quote shows **Passage no longer available**.
+- If the quoted message changes before your answer is sent, Chat does not send it. When the field is empty, your text and quotes come back into it. Otherwise the answer shows **Not sent** with **Discard**.
+:::
 
 ## Share a Cloud element {icon="share"}
 

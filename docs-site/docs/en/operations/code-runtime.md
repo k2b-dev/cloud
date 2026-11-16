@@ -228,6 +228,12 @@ To deliver them instead, let the previous release finish them first:
 SELECT count(*) AS pending FROM ai.inter_chat_messages WHERE status = 'pending';
 ```
 
+Idempotency keys change scope. `ai.chat.run` matched a key within one Code run;
+`ai.chat.send` matches it per person for 24 hours, like every Action key. A Code
+that reused one key in every run, such as `daily-briefing`, now replays the
+first message for 24 hours instead of starting a new one. Include the
+occurrence in the key, for example the scheduled time.
+
 Back up the
 database before upgrading. The migration
 removes `code.chat_deliveries`, its recovery path, `code.chat_runs` and old

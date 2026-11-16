@@ -153,6 +153,8 @@ export type SubmitAiChatTurnInput = {
   expectedFiles?: ReadonlyArray<{ path: string; version: number }>;
   fileSnapshot?: AiConversationFileSnapshot;
   retrySourceTurnId?: string;
+  /** The person changed the retried text: the new message is the person's own. */
+  retryEdited?: true;
 };
 
 export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
@@ -256,6 +258,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     expectedProjectId: input.expectedProjectId,
     resources: input.resources,
     retrySourceTurnId: input.retrySourceTurnId,
+    ...(input.retryEdited ? { retryEdited: true as const } : {}),
   };
 };
 
@@ -476,6 +479,7 @@ export const submitAiTurnAction = async (input: {
 
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
+      signedInSession: input.signedInSession === true,
       event: { type: "approval_response", callId: input.callId, approved: input.action.approved },
     });
     if (!resolved) {
@@ -488,6 +492,7 @@ export const submitAiTurnAction = async (input: {
     if (pending.kind !== "client_tool") return { ok: false, status: 400, message: "Approval requests require an approval response." };
     const resolved = await aiConversations.resolvePendingTurnAction({
       ...input,
+      signedInSession: input.signedInSession === true,
       event: { type: "tool_result", callId: input.callId, result: input.action.result },
     });
     if (!resolved) {

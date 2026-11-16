@@ -536,6 +536,7 @@ suite("AI executor integration", () => {
       } else {
         await approvals.decide(first.approvalId, { approved: mode !== "rejected_empty" }, { userId, via: "web_session" });
         await aiConversations.resolvePendingTurnAction({
+          signedInSession: true,
           conversationId: conversation.id,
           turnId: turn.id,
           callId: first.callId,
@@ -2697,6 +2698,7 @@ suite("AI executor integration", () => {
         requests.push(body);
         if (index !== 0) return;
         const result = await aiConversations.enqueueTurnSteer({
+          signedInSession: true,
           conversationId: conversation.id,
           turnId: turn.id,
           clientRequestId: "late-steer",
@@ -3362,6 +3364,7 @@ suite("AI executor integration", () => {
         requests.push(body as (typeof requests)[number]);
         if (requests.length !== 4) return;
         const steered = await aiConversations.enqueueTurnSteer({
+          signedInSession: true,
           conversationId: conversation.id,
           turnId: turn.id,
           clientRequestId: "loop-steer",
@@ -3928,6 +3931,7 @@ suite("local client in-lease results", () => {
       const resolve = async (callId: string, output: unknown) => {
         expect(
           await aiConversations.resolvePendingTurnAction({
+            signedInSession: true,
             conversationId: conversation.id,
             turnId,
             callId,

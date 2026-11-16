@@ -350,12 +350,16 @@ suite("global AI conversation boundaries", () => {
         },
       }),
     );
-    const provenance = {
+    // A person's retry keeps writer, initiator, receipt and restriction, but runs on the person's allowance.
+    const retained = {
       writerOrigin: { kind: "person" as const, id: userId },
       turnTrigger: { kind: "automation" as const, id: "c_report" },
       send: { id: "11111111-1111-4111-8111-111111111112", accountId: userId, keyHash: "a".repeat(64), requestHash: "b".repeat(64) },
-      codeOrigin: { codeId: "c_report", runId: "run", title: "Report", requestId: "request", label: "Started by Code Report" },
       sourceRestricted: true as const,
+    };
+    const provenance = {
+      ...retained,
+      codeOrigin: { codeId: "c_report", runId: "run", title: "Report", requestId: "request", label: "Started by Code Report" },
     };
     const selectedSkills = [{ name: "invoice", directory: "/original/.agents/skills/invoice", instructions: "Original selection." }];
     const client = { kind: "cli" as const, cwd: "/current", os: "Linux", shell: "bash", localTools: "ask" as const };
@@ -386,13 +390,15 @@ suite("global AI conversation boundaries", () => {
       });
       expect(response.status).toBe(201);
       expect(submit).toHaveBeenCalledTimes(1);
-      expect(submit.mock.calls[0]?.[0]).toMatchObject(provenance);
+      expect(submit.mock.calls[0]?.[0]).toMatchObject(retained);
+      expect(submit.mock.calls[0]?.[0].codeOrigin).toBeUndefined();
       const active = await aiConversations.getActiveTurn({ conversationId: chat.id });
       expect(active).not.toBeNull();
       if (!active) throw new Error("Missing retry turn");
       const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: active.turn.id });
       if (!config || config.kind !== "chat") throw new Error("Missing retry run config");
-      expect(config).toMatchObject(provenance);
+      expect(config).toMatchObject(retained);
+      expect(config.codeOrigin).toBeUndefined();
       expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : []);
       expect(config.client).toEqual(local ? client : undefined);
       expect(config.localContext).toEqual(local ? { ...localContext, selectedSkills } : undefined);

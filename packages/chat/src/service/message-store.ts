@@ -7,7 +7,7 @@ import { publishMessagePosted } from "../app-events";
 import { messagePreview, renderSystemMessage } from "../system-messages";
 import { type ChatContext, type ConversationRow, messages, subjectPrincipal } from "./access";
 import { messageAttachments } from "./attachment-store";
-import { type Mention, type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
+import { type Mention, type MessageQuote, type MessageSchema, type SystemMessage, SystemMessageSchema } from "./contracts";
 import { deletedPeople } from "./former-accounts";
 import { chatLive } from "./live";
 import { chatLiveUpdates, publishNotificationPreferences } from "./live-updates";
@@ -37,6 +37,7 @@ export type MessageRow = {
   via?: "assistant" | "mcp" | null;
   thread_id: string | null;
   reply_to_seq: bigint | string | null;
+  quotes?: MessageQuote[];
 };
 export const projectMessage = (
   row: MessageRow,
@@ -58,6 +59,7 @@ export const projectMessage = (
   author: { type: row.author_type, id: row.author_id, name: row.author_name },
   body: row.deleted_at ? null : row.body_md,
   refs: row.refs,
+  quotes: row.deleted_at ? [] : (row.quotes ?? []).map((quote) => ("deleted" in quote ? quote : { ...quote, author: { ...quote.author } })),
   system: row.kind === "system" ? SystemMessageSchema.parse({ code: row.system_code, params: row.system_params }) : null,
   createdAt: row.created_at.toISOString(),
   editedAt: row.edited_at?.toISOString() ?? null,
@@ -125,6 +127,7 @@ export const messageViews = async (
         db,
         all.flatMap((message) => [
           ...(message.author.type === type ? [message.author.id] : []),
+          ...(message.quotes ?? []).flatMap((quote) => ("author" in quote && quote.author.type === type ? [quote.author.id] : [])),
           ...systemPeople(message.system)
             .filter((person) => (person.type ?? "user") === type)
             .map((person) => person.id),
@@ -137,6 +140,7 @@ export const messageViews = async (
   const former = messages({ locale }).formerAccount;
   for (const message of all) {
     if (deleted.has(message.author.id)) message.author.name = former;
+    for (const quote of message.quotes ?? []) if ("author" in quote && deleted.has(quote.author.id)) quote.author.name = former;
     for (const person of systemPeople(message.system)) if (deleted.has(person.id)) person.name = former;
   }
   return projected.map((message, index) => {
@@ -188,6 +192,7 @@ type NewMessage =
       attachments?: string[];
       threadId?: string;
       replyToSeq?: string | bigint;
+      quotes?: MessageQuote[];
     }
   | { kind: "system"; system: SystemMessage; threadId?: string };
 // The caller holds the conversation lock until commit, so numbers cannot become visible out of order.
@@ -220,7 +225,7 @@ export const appendMessage = async (
   let row: MessageRow | undefined;
   for (let attempt = 0; attempt < 10 && !row; attempt++) {
     [row] = await db<MessageRow[]>`INSERT INTO chat.messages
-      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params, created_at, thread_id, reply_to_seq, refs, links, via, client_input_hash, reply_root_id)
+      (short_id, conversation_id, seq, rev, kind, author_type, author_id, author_name, client_id, body_md, system_code, system_params, created_at, thread_id, reply_to_seq, refs, links, via, client_input_hash, reply_root_id, quotes)
       VALUES (${crypto.common.readableId(10)}, ${conversation.id}::uuid, ${head.seq_head}, ${head.rev}, ${message.kind},
         ${author.type}, ${author.id}::uuid, ${snapshot.name}, ${message.kind === "text" ? message.clientId : null},
         ${message.kind === "text" ? message.body : null}, ${message.kind === "system" ? message.system.code : null},
@@ -228,7 +233,8 @@ export const appendMessage = async (
         ${message.kind === "text" ? db`(SELECT last_activity_at FROM chat.conversations WHERE id = ${conversation.id}::uuid)` : db`clock_timestamp()`},
         ${message.threadId ?? null}::uuid, ${message.kind === "text" ? (message.replyToSeq ?? null) : null},
         ${JSON.stringify(refs)}::text::jsonb, ${toPgTextArray(links)}::text[], ${message.kind === "text" ? (context.via ?? null) : null},
-        ${message.kind === "text" ? (message.replayHash ?? null) : null}, ${root?.short_id ?? null})
+        ${message.kind === "text" ? (message.replayHash ?? null) : null}, ${root?.short_id ?? null},
+        ${JSON.stringify(message.kind === "text" ? (message.quotes ?? []) : [])}::text::jsonb)
       ON CONFLICT (short_id) DO NOTHING RETURNING *`;
   }
   if (!row) throw new Error("Chat message ID could not be allocated");

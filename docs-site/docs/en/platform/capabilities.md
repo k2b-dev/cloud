@@ -1600,8 +1600,12 @@ Code, model access and allowances under the chat lock. A failed automation entry
 is final with its reason (for example `code_inactive`, `code_run_gone` or a
 daily limit), frees its place and does not block the next entry or the person.
 A person's Codes have at most one waiting or running message across all chats;
-another send returns `chat_busy` until it finishes. A turn never sends into its
-own chat.
+another send returns `chat_busy` until it finishes. At start, only older Code
+messages of the person count. A turn never sends into its own chat. A send whose invocation source cannot be checked right
+now returns `409 source_unavailable`; repeat the same call later. A key holds
+for 24 hours per person, like every Action key; after that, the same key queues
+a new message. When the person retries a sent message, the retry runs on the
+person's allowance; the initiator stays for the chain rule.
 
 Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.
 Chat reads are `read`; send retains the `ai` version-approval rule until the

@@ -390,7 +390,11 @@ draws real `@k2b/ui` surfaces once, so a fresh engine's one-time costs, such as
 WebKit's shader compile in a new Playwright container
 ([#2149](https://github.com/k2b-dev/cloud/issues/2149)), do not fall inside the
 first test's 5 s. It starts its own browser, shares only on-disk caches with the
-suites, and has its own bounded budget. When it fails, no suite runs.
+suites, and has its own bounded budget. When it fails, no suite runs. It also
+fails when even its fastest scene after the first takes half of a test's 5 s,
+against about 1 s on a normal runner: such a runner makes the tests fail one by
+one at their limit, and they read as hangs in the code they cover
+([#3526](https://github.com/k2b-dev/cloud/issues/3526)).
 
 Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,

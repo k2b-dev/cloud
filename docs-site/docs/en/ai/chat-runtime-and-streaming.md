@@ -84,6 +84,13 @@ promotion: once an entry becomes a turn, the queue endpoint returns not found.
 Normal submissions cannot overtake the queue. Chats with pending entries cannot
 be archived or marked done and do not become done through inactivity.
 
+Text from a source without a signed-in session restricts the turn it enters:
+a queued message, a queue edit, a steer or a tool result sent with `cld`, an API
+key or another delegated credential. The text is still accepted and the turn
+keeps running, but it loses rights that need a person's session, such as
+writing to another chat with `ai.chat.send`. An approval without text does not
+restrict the turn.
+
 ## List place chats
 
 A place chat belongs to the person who sent its first message. Opening a place
@@ -415,6 +422,11 @@ separators. `turn_finished` carries the complete text, also when the turn ended
 during a reconnect. Tool progress and approval matching use canonical capability
 IDs such as `spaces.task.create`. Persisted provider tool names stay unchanged;
 hashed names that cannot be decoded retain their stored name.
+
+A turn stores each capability step's app name as it was then. History, the
+stream state, and finished turns name the app as the catalog does now, by its
+app ID and in the reader's language; an app the registry does not know keeps
+its stored name.
 
 Assistant renders capability table presentation metadata in both web chat and
 text-mode CLI output. The CLI shows up to 100 returned rows, shortens long cells,
