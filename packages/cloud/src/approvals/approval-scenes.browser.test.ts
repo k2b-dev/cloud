@@ -445,7 +445,7 @@ describe("Approval scenes", () => {
       const title = head.getByRole("heading", { name: "PayPal-Buchungen im November" });
       const before = { head: await head.boundingBox(), frame: await frame.boundingBox() };
       expect(await frame.getByRole("searchbox").isVisible()).toBe(false);
-      const sign = frame.getByRole("button", { name: "PayPal-Buchungen im November durchsuchen" });
+      const sign = frame.getByRole("button", { name: "Tabelle durchsuchen" });
       await sign.click();
       const search = frame.getByRole("searchbox");
       await search.waitFor();
