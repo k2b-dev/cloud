@@ -37,6 +37,8 @@ export type AiSendQueuedMessageResult = {
   id: string;
   state: "sending" | "submitted" | "failed";
   turnId: string | null;
+  /** Only with state failed: why it was not sent (e.g. interruption_unconfirmed, cancelled); null when Send now was never requested. */
+  error?: string | null;
 };
 
 /**

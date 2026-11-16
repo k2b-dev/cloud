@@ -14,6 +14,8 @@ import { toPgTextArray } from "../services/postgres";
 import type { AiMessageOrigin, AiStoredMessageOrigin } from "./queue-contracts";
 import { addCloudResourceHrefs } from "./resource-refs";
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export type AiOriginViewer = { userId?: string | null; authority?: RequestAuthority | null; locale?: string };
 
 /** Origins of a message snapshot, projected for one viewer. */
@@ -31,19 +33,28 @@ export const loadAiMessageOrigins = async (
   viewer: AiOriginViewer,
   turns?: { conversationId: string; turnIds: readonly string[] },
 ): Promise<{ origins: AiMessageOrigin[]; turnShortIds: Map<string, string> }> => {
-  const ids = [...new Set(origins.map((origin) => origin.id))];
-  const turnIds = [...new Set(turns?.turnIds.filter(Boolean) ?? [])];
-  if (!ids.length && !turnIds.length) return { origins: [], turnShortIds: new Map() };
-  const rows = await sql<{ id: string; name: string; kind: "person" | "automation" | "chat" | "turn"; href: string | null }[]>`
-    SELECT id::text, display_name AS name, 'person' AS kind, NULL::text AS href FROM auth.users WHERE id::text = ANY(${toPgTextArray(ids)}::text[])
+  // Typed key lookups keep each branch on its primary or unique index.
+  const idsOf = (kind: AiStoredMessageOrigin["kind"], uuidOnly: boolean) => [
+    ...new Set(origins.flatMap((origin) => (origin.kind === kind && (!uuidOnly || UUID.test(origin.id)) ? [origin.id] : []))),
+  ];
+  const people = idsOf("person", true);
+  const automations = idsOf("automation", true);
+  const chats = idsOf("chat", false);
+  const turnIds = [...new Set(turns?.turnIds.filter((id) => UUID.test(id)) ?? [])];
+  type NameRow = { id: string; name: string; kind: "person" | "automation" | "chat" | "turn"; href: string | null };
+  const rows: NameRow[] =
+    !people.length && !automations.length && !chats.length && !turnIds.length
+      ? []
+      : await sql<NameRow[]>`
+    SELECT id::text, display_name AS name, 'person' AS kind, NULL::text AS href FROM auth.users WHERE id = ANY(${toPgTextArray(people)}::uuid[])
     UNION ALL
-    SELECT id::text, name, 'automation', NULL::text FROM auth.service_accounts WHERE id::text = ANY(${toPgTextArray(ids)}::text[])
+    SELECT id::text, name, 'automation', NULL::text FROM auth.service_accounts WHERE id = ANY(${toPgTextArray(automations)}::uuid[])
     UNION ALL
     SELECT short_id, title, 'chat', CASE WHEN created_by_user_id=${viewer.userId ?? null}::uuid AND archived_at IS NULL
-      THEN '/app/assistant?conversation=' || short_id ELSE NULL END FROM ai.conversations WHERE short_id=ANY(${toPgTextArray(ids)}::text[])
+      THEN '/app/assistant?conversation=' || short_id ELSE NULL END FROM ai.conversations WHERE short_id=ANY(${toPgTextArray(chats)}::text[])
     UNION ALL
     SELECT id::text, short_id, 'turn', NULL::text FROM ai.turns
-    WHERE conversation_id = ${turns?.conversationId ?? null}::uuid AND id::text = ANY(${toPgTextArray(turnIds)}::text[])
+    WHERE conversation_id = ${turns?.conversationId ?? null}::uuid AND id = ANY(${toPgTextArray(turnIds)}::uuid[])
   `;
   const turnShortIds = new Map(rows.flatMap((row) => (row.kind === "turn" ? [[row.id, row.name] as const] : [])));
   const known = new Map(rows.map((row) => [`${row.kind}:${row.id}`, row]));

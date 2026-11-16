@@ -365,3 +365,74 @@ integration("the start barrier does not wait on a concurrent audit insert that r
     await f.close();
   }
 });
+
+integration("Stop during a Send now that waits on a client step ends the turn now and sends the entry afterwards", async () => {
+  const f = await fixture();
+  try {
+    const { turn } = await aiConversations.submitChatTurn(f.input("Run local tool"));
+    await aiConversations.claimTurn({
+      conversationId: f.chat.id,
+      turnId: turn.id,
+      leaseOwner: "client-worker",
+      leaseMs: 30_000,
+      from: "queue",
+      maxAttempts: 5,
+      runBudgetMs: 60_000,
+    });
+    await aiConversations.savePendingTurnAction({
+      conversationId: f.chat.id,
+      turnId: turn.id,
+      callId: "local-call",
+      kind: "client_tool",
+      status: "pending",
+      name: "local_bash",
+      args: { command: "effect" },
+      approvalScope: "local",
+      allowAlways: false,
+      frontendMode: "client",
+      resolvedEvent: null,
+    });
+    await aiConversations.suspendTurn({
+      conversationId: f.chat.id,
+      turnId: turn.id,
+      leaseOwner: "client-worker",
+      blocks: [],
+      seq: 1,
+      waitingBudgetMs: 24 * 60 * 60_000,
+    });
+    const id = await f.add("Urgent");
+    expect((await requestQueuedMessageSendNow(f.chat.id, id))?.interrupt?.waitingForClient).toBe(true);
+    await aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: turn.id, reason: "user" });
+    expect(await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id })).toMatchObject({ cancellationReason: "user" });
+    expect(await aiConversations.completeTurn({ conversationId: f.chat.id, turnId: turn.id, status: "aborted" })).toBe("completed");
+    const jobs: unknown[] = [];
+    await drainQueuedMessages(async (job) => {
+      jobs.push(job);
+    }, f.chat.id);
+    expect(jobs).toHaveLength(1);
+    expect(await queuedMessageReceipt(f.chat.id, id)).toMatchObject({ state: "submitted" });
+  } finally {
+    await f.close();
+  }
+});
+
+integration("the turn sweep leaves an interrupted server effect without a durable result to the queue reconciler", async () => {
+  const f = await fixture();
+  try {
+    const { turn } = await aiConversations.submitChatTurn(f.input("Old work"));
+    await sql`UPDATE ai.turns SET status='running' WHERE id=${turn.id}::uuid`;
+    await sql`INSERT INTO ai.tool_calls(turn_id,conversation_id,call_id,tool_name,status,started_at)
+      VALUES(${turn.id}::uuid,${f.chat.id}::uuid,'server-effect','write_file','running',now())`;
+    const id = await f.add("Urgent");
+    await requestQueuedMessageSendNow(f.chat.id, id);
+    await aiConversations.sweepTurns();
+    expect(await aiConversations.getTurn({ conversationId: f.chat.id, turnId: turn.id })).toMatchObject({
+      status: "running",
+      cancellationReason: "queue_interrupt",
+    });
+    await reconcileQueuedInterruptions(f.chat.id);
+    expect(await queuedMessageReceipt(f.chat.id, id)).toMatchObject({ state: "failed", error: "interruption_unconfirmed" });
+  } finally {
+    await f.close();
+  }
+});

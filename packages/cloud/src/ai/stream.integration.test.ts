@@ -136,7 +136,7 @@ suite("AI conversation stream repair", () => {
     const meter = await meterSql();
     try {
       const statements = await meter.during(async () => {
-        await publishAiTurnInterrupt({ conversationId: chat.id, turnId: turn.id });
+        await publishAiTurnInterrupt({ conversationId: chat.id, turnId: turn.id, requestId: crypto.randomUUID() });
         await delivered.promise;
         for (let seq = 1; seq <= 3; seq++) {
           await publishAiWireEvent(event(seq, { type: "block_delta", blockId: "text", blockKind: "text", delta: "x" }));

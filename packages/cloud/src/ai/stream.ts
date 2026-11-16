@@ -140,12 +140,13 @@ export const publishAiTurnAbort = async (input: { conversationId: string; turnId
   });
 };
 
-export const publishAiTurnInterrupt = async (input: { conversationId: string; turnId: string }): Promise<void> => {
+export const publishAiTurnInterrupt = async (input: { conversationId: string; turnId: string; requestId: string }): Promise<void> => {
   await aiTurnControlsTopic().publish({
     tenantId: input.conversationId,
     orderingKey: input.turnId,
-    data: { type: "interrupt", ...input },
-    idempotencyKey: `turn-interrupt:${input.turnId}`,
+    data: { type: "interrupt", conversationId: input.conversationId, turnId: input.turnId },
+    // One signal per Send now request; a retry after "not sent" targets the same turn again.
+    idempotencyKey: `turn-interrupt:${input.turnId}:${input.requestId}`,
   });
 };
 

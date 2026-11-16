@@ -61,6 +61,9 @@ export const migrateAiMessageQueue = async () => {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_queued_messages_one_send_now ON ai.queued_messages(conversation_id)
     WHERE send_requested_at IS NOT NULL AND status IN ('pending','failed')`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_pending ON ai.queued_messages(conversation_id, position) WHERE status IN ('pending','failed')`.simple();
+  // Turn deletes (ON DELETE SET NULL), completion and the sweep look entries up by turn.
+  await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_interrupted_turn ON ai.queued_messages(interrupted_turn_id) WHERE interrupted_turn_id IS NOT NULL`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_submitted_turn ON ai.queued_messages(submitted_turn_id) WHERE submitted_turn_id IS NOT NULL`.simple();
   await sql`CREATE TABLE IF NOT EXISTS ai.queued_message_files (
     message_id uuid NOT NULL REFERENCES ai.queued_messages(id) ON DELETE CASCADE,
     path text NOT NULL, bytes bytea NOT NULL, media_type text NOT NULL, size bigint NOT NULL,
@@ -114,12 +117,18 @@ export const listQueuedMessages = async (
 
 /** Durable receipt survives promotion and cancellation; absence from the queue is never proof of failure. */
 export const queuedMessageReceipt = async (conversationId: string, id: string): Promise<AiSendQueuedMessageResult | null> => {
-  const [row] = await sql<{ status: string; send_requested_at: Date | null; turn_id: string | null }[]>`
-    SELECT q.status, q.send_requested_at, t.short_id AS turn_id FROM ai.queued_messages q
+  const [row] = await sql<{ status: string; send_requested_at: Date | null; turn_id: string | null; error: string | null }[]>`
+    SELECT q.status, q.send_requested_at, q.error, t.short_id AS turn_id FROM ai.queued_messages q
     LEFT JOIN ai.turns t ON t.id=q.submitted_turn_id WHERE q.id=${id}::uuid AND q.conversation_id=${conversationId}::uuid`;
-  return row
-    ? { id, state: row.status === "submitted" ? "submitted" : row.send_requested_at ? "sending" : "failed", turnId: row.turn_id }
-    : null;
+  if (!row) return null;
+  const state = row.status === "submitted" ? "submitted" : row.send_requested_at ? "sending" : "failed";
+  // A failed send names its cause; a request that never arrived has none, so a client can tell the two apart.
+  return {
+    id,
+    state,
+    turnId: row.turn_id,
+    ...(state === "failed" ? { error: row.error ?? (row.status === "cancelled" ? "cancelled" : null) } : {}),
+  };
 };
 
 /** One serialized request. An entry keeps its FIFO position even when explicitly sent ahead. */

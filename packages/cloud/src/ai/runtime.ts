@@ -266,7 +266,8 @@ export const sendQueuedAiChatMessageNow = async (conversationId: string, id: str
     // The reconciler proves idle/waiting turns safe to stop. An orphaned effect
     // without a durable result instead leaves this entry visibly not sent.
     await reconcileQueuedInterruptions(conversationId);
-    if ((await queuedMessageReceipt(conversationId, id))?.state === "sending") await publishAiTurnInterrupt(target).catch(() => undefined);
+    if ((await queuedMessageReceipt(conversationId, id))?.state === "sending")
+      await publishAiTurnInterrupt({ ...target, requestId: crypto.randomUUID() }).catch(() => undefined);
   }
   wakeAiMessageQueue(conversationId);
   return queuedMessageReceipt(conversationId, id);

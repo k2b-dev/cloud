@@ -2156,6 +2156,8 @@ export class AiTurnExecutor {
     });
 
     if (!saved) {
+      // The durable Send now barrier refused this step; stop starting further ones as well.
+      input.interruption.request();
       if (approvalId) await approvals.cancel([approvalId]);
       loop.push(
         event.kind === "client_tool"

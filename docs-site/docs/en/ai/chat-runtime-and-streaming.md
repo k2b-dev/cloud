@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-11-15
+updated: 2026-11-16
 ---
 
 # Chat runtime and streaming
@@ -68,7 +68,9 @@ with `meta.queueInterrupted: true` and an `aborted` status. The chat displays
 “Stopped” without a resume action. Other queue entries retain their order.
 
 The response is `{ id, state, turnId }`, where `state` is `sending`, `submitted`,
-or `failed`. The entry ID is the idempotency key. After a lost response, read
+or `failed`. A `failed` receipt also carries `error`: the cause, such as
+`interruption_unconfirmed` or `cancelled`, or `null` when Send now was never
+requested for that entry. The entry ID is the idempotency key. After a lost response, read
 `GET /conversations/:id/queue/:messageId/send-now` before replaying that same
 POST. A submitted receipt survives promotion; an absent list entry alone does
 not prove failure. Never allocate another ID to retry an uncertain send.
@@ -81,7 +83,9 @@ normal result and timeout handling. It does not terminate the client effect.
 The same “Not sent” state applies if a lost server worker has no durable
 outcome for a started effect. The runtime never treats a lost lease alone as
 confirmation of a successful interruption. All queue mutations remain locked
-while a send-now request is in progress.
+while a send-now request is in progress. Stop still works during that time: it
+ends the turn through the normal stop path without waiting for the client
+result, and the prioritized entry is sent next.
 
 The next turn receives the interrupted history, a system instruction with the
 last finished step and the interrupted step's outcome, the current `todo_write`

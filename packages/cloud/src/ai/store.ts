@@ -3350,6 +3350,8 @@ export const aiConversations: AiConversationService = {
       SET cancel_requested_at = COALESCE(cancel_requested_at, now()),
           cancellation_reason = CASE WHEN ${reason} = 'routine_deleted' THEN ${reason}
             WHEN ${reason} = 'routine_paused' AND cancellation_reason IS DISTINCT FROM 'routine_deleted' THEN ${reason}
+            -- A person's Stop ends the turn now instead of waiting on Send now's drain.
+            WHEN ${reason} = 'user' AND cancellation_reason = 'queue_interrupt' THEN ${reason}
             ELSE COALESCE(cancellation_reason, ${reason}) END
       WHERE id = ${input.turnId}
         AND conversation_id = ${input.conversationId}
@@ -3611,8 +3613,9 @@ export const aiConversations: AiConversationService = {
         WHERE status IN ('queued', 'running', 'waiting_for_action')
           AND (
             (cancel_requested_at IS NOT NULL AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now())
-              AND NOT EXISTS (SELECT 1 FROM ai.queued_messages q WHERE q.interrupted_turn_id=ai.turns.id
-                AND q.status='pending' AND q.send_requested_at IS NOT NULL AND q.interruption_deadline IS NOT NULL))
+              -- Send now's reconciler alone may end its turn: it requires a durable outcome first.
+              AND NOT (cancellation_reason = 'queue_interrupt' AND EXISTS (SELECT 1 FROM ai.queued_messages q
+                WHERE q.interrupted_turn_id=ai.turns.id AND q.status='pending' AND q.send_requested_at IS NOT NULL)))
             OR (status = 'waiting_for_action' AND deadline IS NOT NULL AND deadline < now())
           )
         LIMIT ${limit}
@@ -3970,7 +3973,7 @@ export const aiConversations: AiConversationService = {
 
   takePendingTurnSteers: async (input) =>
     sql.begin(async (tx) => {
-      const owner = await tx<{ id: string }[]>`
+      const ownerSql = (lock: boolean) => tx<{ id: string }[]>`
         SELECT id
         FROM ai.turns
         WHERE id = ${input.turnId}
@@ -3979,22 +3982,24 @@ export const aiConversations: AiConversationService = {
           AND lease_owner = ${input.leaseOwner}
           AND cancel_requested_at IS NULL
           AND lease_expires_at > now()
-        FOR UPDATE
+        ${lock ? tx`FOR UPDATE` : tx``}
       `;
-      if (!owner[0]) throw new Error("AI turn lost its lease while taking steering.");
-
-      const pending = await tx<TurnSteerRow[]>`
+      const pendingSql = (lock: boolean) => tx<TurnSteerRow[]>`
         SELECT *
         FROM ai.turn_steers
         WHERE conversation_id = ${input.conversationId}
           AND turn_id = ${input.turnId}
           AND status = 'pending'
         ORDER BY seq ASC
-        FOR UPDATE
+        ${lock ? tx`FOR UPDATE` : tx``}
       `;
-      if (pending.length === 0) return [];
+      if (!(await ownerSql(false))[0]) throw new Error("AI turn lost its lease while taking steering.");
+      if ((await pendingSql(false)).length === 0) return [];
 
+      // Conversation before turn, like Send now and turn completion, so the two never deadlock.
       await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+      if (!(await ownerSql(true))[0]) throw new Error("AI turn lost its lease while taking steering.");
+      const pending = await pendingSql(true);
       const consumed: AiTurnSteer[] = [];
       for (const steer of pending) {
         const message = await insertMessageLocked(
