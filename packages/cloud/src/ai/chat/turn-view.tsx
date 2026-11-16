@@ -942,6 +942,13 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
       .join("\n\n");
     return text.includes("](") ? answerSources(markdown.renderSync(text, { locale: locale() }), layout().work) : [];
   });
+  // A question that expired says itself why the turn ended and offers to ask again; a second notice for the same cause,
+  // with a second way out, would repeat it (Rundgang 7, N1).
+  const notice = () => {
+    const error = props.segment().error;
+    const expired = layout().actions.some((action) => action.state === "not_run" && action.block.approved === false);
+    return error?.code === "wait_expired" && expired ? null : error;
+  };
   /** Something of the turn stays above its failure notice. */
   const kept = () => layout().text.length > 0 || layout().results.length > 0 || layout().steps > 0;
   // Screen readers hear once that the turn they followed failed and why, as the notice says it; history read later is not
@@ -1044,7 +1051,7 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             }
           />
         </Show>
-        <Show when={props.segment().error}>
+        <Show when={notice()}>
           {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} kept={kept()} />}
         </Show>
         <Show when={props.segment().stopNotice}>

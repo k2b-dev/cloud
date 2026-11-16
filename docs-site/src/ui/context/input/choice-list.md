@@ -16,7 +16,7 @@ import { ChoiceList, type ChoiceListOption } from "@k2b/ui";
 
 ## Options, markers, and details
 
-`options` contain `value`, `label`, and optionally `description`, `marker`, `icon`, and `disabled`. The controlled `value` is one option's value or `null`, which selects no row.
+`options` contain `value`, `label`, and optionally `description`, `descriptionVisual`, `marker`, `icon`, and `disabled`. `descriptionVisual` shows in place of the description text, as in [Select](select#show-a-visual-in-place-of-the-description). The controlled `value` is one option's value or `null`, which selects no row.
 
 - `description` is one sentence under the label. Keep it to what changes for the person.
 - `marker` is a quiet tag after the label, such as "Default" on the choice that applies when the person has not chosen. It moves with the default, not with the selection.
@@ -56,7 +56,7 @@ const [level, setLevel] = createSignal<string | null>("all");
 
 ```ts
 type ChoiceListOption<T extends string = string> = {
-  value: T; label: string; description?: string; marker?: string; icon?: string; disabled?: boolean;
+  value: T; label: string; description?: string; descriptionVisual?: () => JSX.Element; marker?: string; icon?: string; disabled?: boolean;
 };
 
 type ChoiceListProps<T extends string = string> = Omit<ValueFieldProps<T | null>, "onValueChange" | "onValueCommit"> & {

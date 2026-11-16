@@ -24,6 +24,9 @@ so a preview helps. A sharing level needs one line per level; omit the preview.
 - Text wraps; it never truncates. A short line is a writing constraint, not a
   CSS line clamp.
 - An unavailable option uses `disabledReason` in place of `description`.
+- `descriptionVisual`, such as a colored `Tag`, shows in place of the
+  description text, also in the phone sheet; see
+  [Show a visual in place of the description](select#show-a-visual-in-place-of-the-description).
   Keep the reason specific, such as **No write access**.
 - Use one visual: `visual` takes precedence over `color`, which replaces `icon`.
   Supply a render function, for example `visual: () => <Avatar name="Anna" />`,
@@ -114,6 +117,7 @@ type RichSelectItem = {
   value: string;
   label: string;
   description?: string;
+  descriptionVisual?: () => JSX.Element;
   icon?: string;
   color?: string;
   visual?: () => JSX.Element;

@@ -3,6 +3,7 @@ import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
+import type { AiTurnError } from "../types";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 const domTest = isServer ? test.skip : test;
@@ -21,7 +22,8 @@ const mountTurn = async (
   initial: AiTurnBlock[],
   options: {
     locale?: string;
-    phase?: "running" | "waiting" | "stopped" | "completed";
+    phase?: "running" | "waiting" | "stopped" | "completed" | "failed";
+    error?: AiTurnError;
     approve?: (input: unknown) => Promise<void>;
     check?: () => Promise<AiActionCheck>;
   } = {},
@@ -34,7 +36,7 @@ const mountTurn = async (
   const { layoutAiTurn } = await import("./turn-layout");
   const { createAiToolDisclosureState } = await import("./tool-disclosure");
   const [blocks, setBlocks] = createSignal(initial);
-  const [phase, setPhase] = createSignal<"running" | "waiting" | "stopped" | "completed">(options.phase ?? "waiting");
+  const [phase, setPhase] = createSignal<"running" | "waiting" | "stopped" | "completed" | "failed">(options.phase ?? "waiting");
   const decisions: unknown[] = [];
   const continued: string[] = [];
   const dispose = render(
@@ -58,6 +60,7 @@ const mountTurn = async (
               layout: layoutAiTurn(blocks(), { phase: phase() }),
               earlier: false,
               duration: () => null,
+              ...(options.error ? { error: options.error, continuable: true } : {}),
             })}
             disclosureState={createAiToolDisclosureState()}
           />
@@ -232,6 +235,31 @@ domTest("a question decided in another window says so where it stood", async () 
     expect(document.activeElement).not.toBe(view.outcome());
   } finally {
     view.cleanup();
+  }
+});
+
+domTest("a turn that ended because its question expired says so once, on the question, with one way out", async () => {
+  const expired = await mountTurn([{ ...runCode, status: "running", approved: false, approval: undefined }], {
+    locale: "de",
+    phase: "failed",
+    error: { code: "wait_expired" },
+  });
+  try {
+    expect(expired.line()).toContain("Die Frage ist abgelaufen.");
+    expect(expired.button("Noch einmal fragen")).toBeDefined();
+    expect(expired.dom.root.querySelector(".ai-turn__notice")).toBeNull();
+    expect(expired.button("Weiterarbeiten")).toBeUndefined();
+  } finally {
+    expired.cleanup();
+  }
+  // Without such a question in the turn, the notice still says why it broke off.
+  const unanswered = await mountTurn([], { locale: "de", phase: "failed", error: { code: "wait_expired" } });
+  try {
+    expect(unanswered.dom.root.querySelector(".ai-turn__notice")?.textContent).toContain(
+      "Die Freigabe oder Antwort kam nicht rechtzeitig.",
+    );
+  } finally {
+    unanswered.cleanup();
   }
 });
 
