@@ -62,6 +62,7 @@ import { coreSettings } from "../services/settings/api";
 
 import { lastingAccessApiMessages } from "./lasting-access-messages";
 import { createMeFileChooserRoutes } from "./me-file-chooser";
+import { createMePageSwapRoutes } from "./me-page-swap";
 import { createMePanelConsentRoutes } from "./me-panel-consent";
 import { createMeRailRoutes } from "./me-rail";
 import { createMeScreenRoutes } from "./me-screen";
@@ -279,6 +280,7 @@ const app = new Hono<AuthContext>()
   .route("/", createMeFileChooserRoutes())
   .route("/", createMePanelConsentRoutes())
   .route("/", createMeWebVitalsRoutes())
+  .route("/", createMePageSwapRoutes())
 
   .get(
     "/activity",

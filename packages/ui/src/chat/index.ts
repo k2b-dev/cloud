@@ -5,12 +5,14 @@ import { ChatTaskList, ChatTasks } from "./ChatTasks";
 
 export type { ChatTask, ChatTaskListProps, ChatTasksProps } from "./ChatTasks";
 
+import { ChatActivityWords } from "./ChatActivityWords";
 import { ChatComposer } from "./ChatComposer";
 import { ChatDecision, ChatOutcome } from "./ChatDecision";
 import { ChatActivity, ChatActivityToggle, ChatContextUsage, ChatMessage } from "./ChatPrimitives";
 import { ChatRoot } from "./ChatRoot";
 import { ChatTimeline } from "./ChatTimeline";
 
+export type { ChatActivityWordsProps } from "./ChatActivityWords";
 export type {
   ChatCommand,
   ChatCommandContext,
@@ -67,7 +69,7 @@ export const Chat = Object.assign(ChatRoot, {
   TaskList: ChatTaskList,
   Timeline: ChatTimeline,
   Message: ChatMessage,
-  Activity: Object.assign(ChatActivity, { Toggle: ChatActivityToggle }),
+  Activity: Object.assign(ChatActivity, { Toggle: ChatActivityToggle, Words: ChatActivityWords }),
   Composer: ChatComposer,
   ContextUsage: ChatContextUsage,
   ContextPopup: ChatContextPopup,

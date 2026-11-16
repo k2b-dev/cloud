@@ -288,13 +288,15 @@
 /* The pins sit in the sidebar, whose own track already takes its inset; an empty second track would narrow the pinned
    rows beside the other rows. The list scrolls only past fifteen pins, when a new pin changes it anyway. */
 .k2b-ui .k2b-scroll-area.chat-list-pins[data-orientation] { overflow-y: auto; }
-.chat-list-filters { display: flex; gap: .25rem; padding: .25rem; }
-.chat-list-search { padding: .25rem; }
-.chat-list-error, .chat-list-status { padding: .5rem; font-size: .875rem; }
+/* The search fills the row; the filter beside it shows its chosen view like Mail's filter. */
+.chat-list-search { display: flex; align-items: center; gap: .25rem; padding: .25rem; }
+.chat-list-search > :first-child { flex: 1; min-width: 0; }
+.k2b-ui .chat-list-filter[data-active="true"] { color: var(--ui-app-accent-text); background: var(--ui-app-selected); }
+.chat-list-error { padding: .5rem; font-size: .875rem; }
 .chat-list-error { color: var(--k2b-danger-text); }
 
-/* Keep progress in one persistent slot; long recovery messages may grow instead of clipping. */
-.chat-list-feedback { display: grid; min-height: 2.25rem; }
+/* Progress is for screen readers only; a failure takes this slot and may grow instead of clipping. */
+.chat-list-feedback { display: grid; }
 .chat-list-feedback > * { grid-area: 1 / 1; }
 /* Where the reader cannot write, a quiet line takes the composer's place in the same reading column. */
 .chat-conversation__notice {
@@ -1000,9 +1002,6 @@
   margin-inline-start: auto;
   text-align: end;
 }
-.k2b-ui .chat-system-chats .k2b-app-workspace__sidebar-section-toggle > i {
-  margin-inline-start: 0;
-}
 .k2b-ui .chat-system-chats--read .k2b-app-workspace__sidebar-section-count {
   visibility: hidden;
 }
@@ -1013,15 +1012,9 @@
   min-width: 1.75rem;
   font-variant-numeric: tabular-nums;
 }
-.chat-system-chats__loading,
 .chat-system-directory__results {
   min-height: 3rem;
 }
-.chat-system-chats__skeleton {
-  height: 3.25rem;
-  margin: 0.25rem 0.5rem;
-}
-.chat-system-chats__empty,
 .chat-search__empty,
 .chat-system-chats__membership {
   padding: 0.5rem 0.75rem;
@@ -1194,3 +1187,8 @@
 .chat-deferred-dialog > * { min-height: 0; flex: 1; }
 .chat-deferred-dialog .chat-dialog__body { flex: 1; }
 .chat-deferred-dialog > .chat-deferred-feedback { height: 100%; }
+
+/* The panel's ready discussion about a resource before anyone wrote: the quiet line fills the feed's place. */
+.chat-resource-start__feed {
+  display: flex;
+}
