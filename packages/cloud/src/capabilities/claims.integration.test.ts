@@ -8,6 +8,7 @@ import { compileCapabilities } from "../_internal/capabilities";
 import { dispatchCapability } from "../api/capabilities";
 import { defineCapabilities } from "../contracts/capabilities";
 import type { CapabilityRegistryEntry } from "../contracts/registry";
+import type { User } from "../contracts/shared";
 import { sql } from "../runtime/clients";
 import type { RequestAuthority } from "../server";
 import type { withActiveIdentitySigner } from "../services/identity/key-ring";
@@ -115,6 +116,7 @@ const invoke = async (options: {
   input?: unknown;
   fetch: UpstreamFetch;
   actionTimeoutMs?: number;
+  authority?: RequestAuthority;
 }): Promise<{ status: number; body: unknown }> => {
   const response = await dispatchCapability({
     request: new Request("http://cloud.test/capabilities/v1/actions/demo/add", {
@@ -128,7 +130,7 @@ const invoke = async (options: {
     input: options.input ?? { name: "first" },
     target: options.target,
     refs: options.refs,
-    authority,
+    authority: options.authority ?? authority,
     dependencies: {
       getCapability: async () => options.entry ?? registryEntry,
       fetch: options.fetch,
@@ -208,6 +210,54 @@ suite("platform capability idempotency claims", () => {
     expect(conflict.body).toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
   });
 
+  test("personal Codes of one owner share the documented Action key scope", async () => {
+    const owner = crypto.randomUUID();
+    const user: User = {
+      id: owner,
+      uid: `claims-${owner}`,
+      roles: ["user"],
+      provider: "local",
+      profile: "user",
+      givenname: "Code",
+      sn: "Owner",
+      displayName: "Code Owner",
+      mail: null,
+      avatarHash: null,
+      ipa: null,
+      accountExpires: null,
+      lastLoginLocal: null,
+      memberofGroup: [],
+      memberofGroupIds: [],
+      manages: [],
+      managesGroupIds: [],
+    };
+    const codeCaller = (workloadId: string): RequestAuthority => ({
+      actor: {
+        kind: "user",
+        user,
+        delegation: {
+          kind: "invocation",
+          credentialKind: "mandate",
+          callingAppId: "core",
+          invocationId: crypto.randomUUID(),
+          workloadType: "code.version",
+          workloadId,
+          workloadRun: crypto.randomUUID(),
+        },
+      },
+      accessSubject: { type: "user", userId: owner },
+      credentialKind: "session",
+      scopes: [],
+    });
+    await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${owner}::uuid,${user.uid},'local','user')`;
+    const key = `owner-scope-${crypto.randomUUID()}`;
+    const first = await invoke({ key, fetch: succeeds, authority: codeCaller(crypto.randomUUID()) });
+    expect(first.status).toBe(200);
+    // A second Code of the same person reuses the person's key space: a different body conflicts.
+    const other = await invoke({ key, input: { name: "second" }, fetch: succeeds, authority: codeCaller(crypto.randomUUID()) });
+    expect(other).toMatchObject({ status: 409, body: { code: "IDEMPOTENCY_CONFLICT" } });
+    await sql`DELETE FROM auth.users WHERE id=${owner}::uuid`;
+  });
   test("the same key cannot replay an effect at another target or additional ref", async () => {
     const entry = {
       ...registryEntry,

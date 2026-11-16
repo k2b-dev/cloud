@@ -2,7 +2,7 @@ import { aiProjects, isAiSettingsError, personalAiModelPolicy, selectAssistantAi
 import { AiQueuedChatStartError, type ValidateQueuedChatStart } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
-import { openCodeChatWork } from "./ai-chat-send";
+import { lockOwnerCodeChats, openOwnerCodeChatWork } from "./ai-chat-send";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
 import { codeSettings } from "./code/settings";
 
@@ -55,15 +55,17 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
   }
   if (origin.kind === "automation") {
     if (!origin.runId) throw new AiQueuedChatStartError("source_restricted");
+    const [run] = await db`SELECT 1 FROM code.runs WHERE id=${origin.runId}::uuid AND code_id=${origin.id}`;
+    if (!run) throw new AiQueuedChatStartError("code_run_gone");
     const [code] = await db`SELECT c.id FROM code.codes c JOIN code.runs r ON r.code_id=c.id
       WHERE c.id=${origin.id} AND r.id=${origin.runId ?? null}::uuid
         AND c.owner_kind='person' AND c.owner_user_id=${owner}::uuid AND c.state='active'
         AND c.active_version_id=r.version_id FOR SHARE OF c`;
     if (!code || config.codeOrigin?.codeId !== origin.id || config.codeOrigin.runId !== origin.runId)
       throw new AiQueuedChatStartError("code_inactive");
-    // Until the whole-turn reservation lands, one open message or turn per Code across chats.
-    await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.code:${origin.id}`},0))`;
-    if (await openCodeChatWork(origin.id, db, messageId)) throw new AiQueuedChatStartError("code_busy");
+    // Until the whole-turn reservation lands, one open Code message or turn per owner across chats.
+    await lockOwnerCodeChats(owner, db);
+    if (await openOwnerCodeChatWork(owner, db, messageId)) throw new AiQueuedChatStartError("code_busy");
     const refused = await checkCodeChatRunBudget(origin.runId, db, {
       code: await codeSettings.get("core.code.ai_daily_budget_usd", db),
       owner: await codeSettings.get("core.code.ai_owner_daily_budget_usd", db),

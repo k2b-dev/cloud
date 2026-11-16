@@ -28,6 +28,7 @@ import { aiTurnErrorText } from "./chat/turn-error";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
+import { queuedMessageHoldsChat } from "./queue-waits";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
 import {
   compactCapabilityReview,
@@ -2458,7 +2459,7 @@ export const aiConversations: AiConversationService = {
             AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1
         `;
         const [pending] =
-          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL)) LIMIT 1`;
+          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND ${queuedMessageHoldsChat(tx)} LIMIT 1`;
         if (active || pending) return { ok: false as const, reason: "active_turn" as const };
       }
       await tx`UPDATE ai.conversations
@@ -2488,7 +2489,7 @@ export const aiConversations: AiConversationService = {
             WHERE conversation_id = ai.conversations.id
               AND status IN ('queued', 'running', 'waiting_for_action')
           )
-          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND (status='pending' OR (status='failed' AND automation_source IS NULL)))
+          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND ${queuedMessageHoldsChat(sql)})
         RETURNING id
       ), considered_turns AS (
         UPDATE ai.turns
@@ -3201,7 +3202,7 @@ export const aiConversations: AiConversationService = {
         const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
           AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1`;
         const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
-          AND (status='pending' OR (status='failed' AND automation_source IS NULL)) LIMIT 1`;
+          AND ${queuedMessageHoldsChat(tx)} LIMIT 1`;
         if (busy || queued) throw new AiChoiceConflict("choice_busy");
         const rows = await choiceMessageRows(tx, input.conversationId);
         choice = resolveAiChoice(rows.map(rowToMessage), input.choice, input.runConfig.locale ?? "en", new Date().toISOString());
@@ -3222,7 +3223,7 @@ export const aiConversations: AiConversationService = {
         const [head] = await tx<
           { id: string; status: string; revision: string; submission: Parameters<AiConversationService["submitChatTurn"]>[0] }[]
         >`SELECT id,status,revision::text,submission FROM ai.queued_messages WHERE conversation_id=${input.conversationId}::uuid
-          AND (status='pending' OR (status='failed' AND automation_source IS NULL)) ORDER BY position LIMIT 1 FOR UPDATE`;
+          AND ${queuedMessageHoldsChat(tx)} ORDER BY position LIMIT 1 FOR UPDATE`;
         const [busy] =
           await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
         if (
@@ -3238,8 +3239,9 @@ export const aiConversations: AiConversationService = {
         assertInteractiveChatTurn(input.runConfig);
       }
       if (!input.queuedMessageId) {
-        const [queued] =
-          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL)) LIMIT 1`;
+        const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
+            AND ${queuedMessageHoldsChat(tx)}
+            LIMIT 1`;
         if (queued) throw new Error("Queued messages must be sent first.");
       }
       if (input.expectedDraftRevision !== undefined && Number(conversation.draft_revision) !== input.expectedDraftRevision) {

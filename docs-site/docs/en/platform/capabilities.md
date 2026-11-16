@@ -1595,12 +1595,13 @@ resolved destination, including after a chat-binding change or removal from the
 queue. Automation entries have 32 separate places per chat and one per source
 Code or chat; they never spend a person's composer places. A full queue
 returns `chat_busy`; a Project change during preparation returns `chat_changed`.
-At start, Core rechecks ownership, source authority, enabled Code, model access
-and allowances under the chat lock. A failed automation entry is final, frees
-its place and does not block the next entry.
-One Code has at most one waiting or running message across all chats; another
-send returns `chat_busy` until it finishes. A turn never sends into its own
-chat.
+At start, Core rechecks ownership, source authority, the Code run and enabled
+Code, model access and allowances under the chat lock. A failed automation entry
+is final with its reason (for example `code_inactive`, `code_run_gone` or a
+daily limit), frees its place and does not block the next entry or the person.
+A person's Codes have at most one waiting or running message across all chats;
+another send returns `chat_busy` until it finishes. A turn never sends into its
+own chat.
 
 Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.
 Chat reads are `read`; send retains the `ai` version-approval rule until the
