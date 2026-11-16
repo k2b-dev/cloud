@@ -925,15 +925,17 @@ export const aiRoutes = (() => {
         const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
         if (active) {
           // Say what holds the chat: a turn that waits for a decision needs an answer, not a stop of a running response.
+          // `err.conflict` words "<what> already exists"; a sentence needs its own 409.
           return respond(
             c,
-            fail(
-              err.conflict(
+            fail({
+              code: "CONFLICT" as const,
+              message:
                 active.turn.status === "waiting_for_action"
                   ? "This chat waits for a decision. Answer or stop it, then archive the chat."
                   : "Stop the current response before archiving this chat.",
-              ),
-            ),
+              status: 409 as const,
+            }),
           );
         }
         const archived = await aiConversations.archiveConversation({
