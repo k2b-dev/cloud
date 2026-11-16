@@ -269,7 +269,8 @@ for (const width of [1440, 390])
           }),
         );
       const before = await rows();
-      await denied.getByRole("button", { name: /^Details: / }).focus();
+      // A resting pointer opens the card of a step without actions.
+      await denied.getByRole("button", { name: /^Details: / }).hover();
       const card = page.locator(".k2b-hover-card:popover-open");
       await card.waitFor();
       expect((await card.innerText()).replace(/\s+/g, " ")).toContain("Kein Zugriff. Folge: Ohne dieses Ergebnis weitergearbeitet.");

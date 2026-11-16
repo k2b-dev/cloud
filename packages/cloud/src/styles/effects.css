@@ -2072,7 +2072,7 @@ dialog:has(.launchpad-panel)::backdrop {
 
 /* "Answer again" follows the sentence, as one quiet line (v12 g-antwort/gestoppt), instead of standing at the far edge. */
 .k2b-ui .ai-turn__stopped > .k2b-chat-activity__row {
-  grid-template-columns: 1.125rem minmax(0, max-content) auto;
+  grid-template-columns: 1.125rem minmax(0, max-content) auto 1fr;
 }
 
 

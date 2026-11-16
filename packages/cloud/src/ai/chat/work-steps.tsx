@@ -208,7 +208,8 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
           title: label(),
           detail: [outcome()?.word, duration()].filter(Boolean).join(" · ") || undefined,
           content,
-          actions,
+          // Only a card with an action is a dialog; one without opens on hover and focus like any hint.
+          actions: checkable() || showable() ? actions : undefined,
         }
       : undefined,
   );

@@ -1841,7 +1841,8 @@ test("each text in the expanded work is a step of its own whose card holds the w
         }),
       );
     const before = await rows();
-    await note.getByRole("button", { name: "Details: Thought it over" }).focus();
+    // A resting pointer opens the card of a step without actions.
+    await note.getByRole("button", { name: "Details: Thought it over" }).hover();
     const card = page.locator(".k2b-hover-card:popover-open");
     await card.waitFor();
     // The whole text, also its last sentence; the card's body scrolls a long one.
