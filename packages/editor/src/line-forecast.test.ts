@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { renderChartSvg } from "@k2b/ui/charts/core";
 import { liquidityForecastSpec } from "../../../docs-site/src/ui/demo-sections/charts/liquidity-forecast";
 import { chartKinds, chartRenderOptions, chartSchema, chartTable, chartTooltip, drawChart } from "./charts";
 import { renderNotebookChartFigure } from "./markdown/lib/chart-blocks";
@@ -122,7 +123,7 @@ test("the Liquidity dashboard balance is a real dated forecast through the share
   expect(drawChart(options)).toContain("k2b-line-marker");
 });
 
-test("only detailed portable date lines select calendar ticks without a rounded numeric domain", () => {
+test("every portable date line selects calendar ticks inside its span, never a date before its first value", () => {
   const series = [
     { data: Array.from({ length: 31 }, (_, index) => ({ x: `2026-10-${String(index + 1).padStart(2, "0")}`, y: 15_000 + index * 200 })) },
   ];
@@ -131,7 +132,14 @@ test("only detailed portable date lines select calendar ticks without a rounded 
   const base = chartRenderOptions(ordinary, "en");
   const mapped = chartRenderOptions(detailed, "en");
   if (base.kind !== "line" || mapped.kind !== "line") throw new Error("Expected line");
-  expect(base.timeAxis).toBeUndefined();
+  expect(base.timeAxis).toEqual({ timeZone: "UTC", locale: "en" });
+  expect(base.xAxis?.domain).toBeUndefined();
+  // Drawn as the chat and pages draw it: the axis spans the plotted days, so its first date is not before Oct 1.
+  const ordinaryTicks = [
+    ...renderChartSvg(base, 480, 260).matchAll(/<text class="stdlib-chart-tick-label" x="[^"]*" y="242"[^>]*>([^<]*)<\/text>/g),
+  ].map((tick) => tick[1]);
+  expect(ordinaryTicks[0]).toBe("Oct 5");
+  expect(ordinaryTicks).not.toContain("Sep 28");
   expect(mapped.timeAxis).toEqual({ timeZone: "UTC", locale: "en" });
   expect(mapped.xAxis?.domain).toBeUndefined();
   expect(

@@ -24,7 +24,11 @@ describe("@k2b/ui stylesheet hygiene", () => {
     ]);
     const restPrefix = (selector: string) => (overlaid.has(selector) ? "" : fallback);
     for (const [selector, property, value] of [
-      [".k2b-ui .k2b-app-workspace__sidebar-section-actions", "opacity", "0"],
+      [
+        '.k2b-ui .k2b-app-workspace__sidebar-section-actions > :not([data-visibility="always"])',
+        "opacity",
+        "var(--k2b-sidebar-section-actions-opacity, 0)",
+      ],
       ['.k2b-ui .k2b-app-workspace__sidebar-item-meta[data-visibility="hover"]', "visibility", "hidden"],
       ['.k2b-ui .k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]', "visibility", "hidden"],
       ['.k2b-ui .k2b-app-workspace__sidebar-item > .k2b-app-workspace__sidebar-item-action[data-visibility="hover"]', "opacity", "0"],

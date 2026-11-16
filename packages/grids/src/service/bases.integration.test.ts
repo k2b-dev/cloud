@@ -14,6 +14,57 @@ beforeAll(async () => {
 });
 
 describe("base visibility integration", () => {
+  postgresTest("excludes legacy public grants from every base discovery subject", async () => {
+    const marker = `public-discovery-${uuid()}`;
+    const userId = uuid();
+    const [account] = await sql<{ id: string }[]>`
+      INSERT INTO auth.service_accounts (name, kind)
+      VALUES (${marker}, 'standalone') RETURNING id::text AS id
+    `;
+    if (!account) throw new Error("Failed to create service account fixture");
+    const baseIds: string[] = [];
+    const accessIds: string[] = [];
+    try {
+      await sql`INSERT INTO auth.users (id, uid, provider, profile, display_name)
+        VALUES (${userId}::uuid, ${marker}, 'local', 'user', 'Discovery user')`;
+      for (const permission of ["read", "write", "admin"] as const) {
+        const baseId = uuid();
+        baseIds.push(baseId);
+        await sql`INSERT INTO grids.bases (id, short_id, name)
+          VALUES (${baseId}::uuid, ${testShortId()}, ${`${marker}-${permission}`})`;
+        // Exercise stored grants outside the supported base principal tiers.
+        const [access] = await sql<{ id: string }[]>`
+          INSERT INTO auth.access (permission) VALUES (${permission}::auth.permission_level) RETURNING id::text AS id
+        `;
+        if (!access) throw new Error("Failed to create public grant fixture");
+        accessIds.push(access.id);
+        await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${baseId}::uuid, ${access.id}::uuid)`;
+      }
+      for (const viewer of [
+        { userId: null, userGroups: [] },
+        { userId, userGroups: [] },
+        { userId: null, userGroups: [], serviceAccountId: account.id },
+      ]) {
+        expect(await listVisible({ ...viewer, query: marker, limit: 1 })).toEqual({ items: [], total: 0 });
+      }
+      const [authenticated] = await sql<{ id: string }[]>`
+        INSERT INTO auth.access (authenticated_only, permission) VALUES (true, 'read') RETURNING id::text AS id
+      `;
+      if (!authenticated) throw new Error("Failed to create authenticated grant fixture");
+      accessIds.push(authenticated.id);
+      await sql`INSERT INTO grids.base_access (base_id, access_id) VALUES (${baseIds[0]}::uuid, ${authenticated.id}::uuid)`;
+      const readable = await listVisible({ userId, userGroups: [], query: marker, limit: 1 });
+      expect(readable.items.map((base) => base.id)).toEqual([baseIds[0]!]);
+      expect(readable.total).toBe(1);
+      expect(await listVisible({ userId: null, userGroups: [], query: marker })).toEqual({ items: [], total: 0 });
+    } finally {
+      for (const baseId of baseIds) await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+      for (const accessId of accessIds) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.service_accounts WHERE id = ${account.id}::uuid`;
+    }
+  });
+
   postgresTest("filters resource-bound listings before totals and pagination", async () => {
     const baseAId = uuid();
     const baseBId = uuid();

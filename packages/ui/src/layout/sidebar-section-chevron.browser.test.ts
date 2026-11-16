@@ -32,6 +32,13 @@ render(
                       section({ title: "Plain" }),
                       section({ title: "With count", count: 12 }),
                       section({ title: "Closed", defaultOpen: false }),
+                      section({
+                        title: "Discover",
+                        actions: createComponent(AppWorkspace.SidebarSectionAction, {
+                          visibility: "always",
+                          get children() { return createComponent(IconButton, { label: "Find more", variant: "ghost", size: "sm", children: "?" }); },
+                        }),
+                      }),
                     ];
                   },
                 });
@@ -80,12 +87,25 @@ describe(`@k2b/ui sidebar section chevrons (${browserName})`, () => {
           };
         }),
       );
-      expect(edges).toHaveLength(4);
+      expect(edges).toHaveLength(5);
       expect(new Set(edges.map((edge) => edge.right)).size).toBe(1);
       for (const edge of edges) {
         expect(edge.last).toBe("k2b-app-workspace__sidebar-section-chevron");
         expect(edge.header - edge.right).toBeLessThanOrEqual(1);
       }
+      // With a mouse, header actions wait for hover or focus in their reserved box; an "always" action stays shown.
+      await page.mouse.move(1300, 780);
+      await settled(page);
+      const opacity = (name: string) =>
+        page
+          .getByRole("button", { name, exact: true })
+          .evaluate((button) => getComputedStyle(button.closest(".k2b-app-workspace__sidebar-section-actions > *")!).opacity);
+      expect(await opacity("Section actions")).toBe("0");
+      expect(await opacity("Find more")).toBe("1");
+      // Hovering the header reveals its hidden actions.
+      await page.locator(".k2b-app-workspace__sidebar-section-header").first().hover();
+      await settled(page);
+      expect(await opacity("Section actions")).toBe("1");
       // A pointer on the chevron toggles like the heading; the heading stays the keyboard control.
       const closed = page.locator(".k2b-app-workspace__sidebar-section").nth(3);
       await closed.locator(".k2b-app-workspace__sidebar-section-chevron").click();
