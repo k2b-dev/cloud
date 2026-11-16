@@ -87,6 +87,7 @@ import { createItemEventsApi } from "./item-events-api";
 import type { ChosenMember } from "./MemberPicker";
 
 import { createNotificationCleanup } from "./notification-cleanup";
+import ResourceChatLoading from "./ResourceChatLoading";
 import ResourceChatStart from "./ResourceChatStart";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
@@ -261,6 +262,8 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     panel: props.panel,
   });
   const [resourceChat, setResourceChat] = createSignal(props.resourceChat ?? null);
+  // The panel is about to follow the host page's place from its start; it shows that discussion loading meanwhile.
+  const [followPending, setFollowPending] = createSignal(false);
   /** The panel shows the resource's discussion: its container's chat, an item's thread, or the ready start. */
   const atResource = () => {
     const target = resourceChat();
@@ -2208,6 +2211,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           resourceChat,
           setResourceChat,
           atResource,
+          setFollowPending,
           atStart: () => {
             const current = route();
             return (
@@ -3151,6 +3155,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       onStart={startResourceChat}
                     />
                   )}
+                </Match>
+                <Match when={followPending()}>
+                  <ResourceChatLoading />
                 </Match>
                 <Match when={true}>
                   <nav class="chat-list-page" aria-label={t().chats}>

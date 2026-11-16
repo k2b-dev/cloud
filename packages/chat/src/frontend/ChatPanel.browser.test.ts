@@ -299,6 +299,15 @@ test("Chat opens the discussion of a place shared only after the panel loaded, a
   const context = await newContext({ reducedMotion: "reduce" });
   const page = await context.newPage();
   page.setDefaultTimeout(8_000);
+  // The panel locates the shared place; holding that read keeps the moment between the place and its discussion.
+  let release!: () => void;
+  const located = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/chat/system-chats/for-resource?**", async (route) => {
+    await located;
+    await route.continue();
+  });
   try {
     // Without consent yet, the panel loads without a place and shows its start.
     await page.goto(fixture.url + "app/fixture/board/Shelf-7");
@@ -319,12 +328,18 @@ test("Chat opens the discussion of a place shared only after the panel loaded, a
         location.origin,
       );
     });
+    // Until the discussion is found, the panel shows it loading, not the chat list it is about to leave.
+    await panel.locator('.chat-resource-start[aria-busy="true"]').waitFor();
+    expect(await panel.locator(".chat-list-page").count()).toBe(0);
+    release();
     await shows(panel.locator(".chat-conversation__header"), "Lager Ost").waitFor();
     await page.waitForFunction(
       (path) => document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentWindow?.location.pathname === path,
       `/app/chat/panel/c/${shelf}`,
     );
+    expect(await panel.locator('[aria-busy="true"].chat-resource-start').count()).toBe(0);
   } finally {
+    release();
     await context.close();
   }
 }, 30_000);
