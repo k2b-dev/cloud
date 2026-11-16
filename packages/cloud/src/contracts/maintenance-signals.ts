@@ -54,6 +54,7 @@ export const MAINTENANCE_POLL_STEPS: Record<MaintenancePollKind, readonly (reado
 
 /** Delay before the next status check, `elapsedMs` after waiting began; `random` in [0, 1). */
 export const maintenancePollDelay = (kind: MaintenancePollKind, elapsedMs: number, random: number): number => {
-  const step = MAINTENANCE_POLL_STEPS[kind].filter(([from]) => elapsedMs >= from).at(-1) ?? MAINTENANCE_POLL_STEPS[kind][0];
-  return step[1] * (0.8 + 0.4 * random);
+  let delay = 0;
+  for (const [from, ms] of MAINTENANCE_POLL_STEPS[kind]) if (elapsedMs >= from || delay === 0) delay = ms;
+  return delay * (0.8 + 0.4 * random);
 };

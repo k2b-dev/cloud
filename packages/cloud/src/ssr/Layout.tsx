@@ -353,7 +353,7 @@ export default function Layout(props: LayoutProps) {
             panel={panel ? true : undefined}
             privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
             browserSession={signedInBrowser}
-            maintenance={maintenance}
+            {...(maintenance ? { maintenance } : {})}
           />
           {/* Without an app bar, the privacy screen's countdown floats at the bottom start corner. */}
           {user && (
@@ -442,7 +442,7 @@ export default function Layout(props: LayoutProps) {
           banners={user && (swap || announcements?.banners.length) ? true : undefined}
           privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
           browserSession={signedInBrowser}
-          maintenance={maintenance}
+          {...(maintenance ? { maintenance } : {})}
         />
         <ShellDataProvider data={shellData} skipScript={swap}>
           {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} name={appName} />}
