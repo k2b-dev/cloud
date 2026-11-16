@@ -27,7 +27,7 @@ import {
   invokeCompiledCapability,
 } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
-import { aiChatSendAction } from "./ai-chat-send";
+import { admitQueuedCodeSend, aiChatSendAction } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
 import { codeSettings } from "./code/settings";
@@ -110,7 +110,7 @@ const start = async (context = ctx()) => {
   expect(response.ok).toBeTrue();
   if (!response.ok) throw new Error(response.error.message);
   const data = dataSchema.parse(response.data.data);
-  await drainQueuedMessages(async () => {}, chat.id);
+  await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
   return data;
 };
 
@@ -358,6 +358,9 @@ suiteFor(
     ]);
     await sql`UPDATE ai.inter_chat_messages SET status='delivered' WHERE idempotency_key='legacy-cutover'`;
     await migrateCode();
+    // After the cutover, a late legacy row never blocks a later start.
+    await sql`INSERT INTO ai.inter_chat_messages(short_id,source_conversation_id,source_turn_id,source_call_id,target_conversation_id,actor_user_id,text,idempotency_key)
+      VALUES('LateMsg',${chat.id}::uuid,${turn.id}::uuid,'late-call',${target.id}::uuid,${owner}::uuid,'Late','legacy-late')`;
     await migrateCode();
     expect(
       await sql<
@@ -387,7 +390,7 @@ suiteFor(
       },
     });
     expect(results[1]).toEqual(results[0]);
-    await drainQueuedMessages(async () => {}, chat.id);
+    await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
     const messages = await aiConversations.listMessages({ conversationId: chat.id });
     expect(messages).toHaveLength(1);
     expect(messages[0]?.meta?.codeOrigin).toMatchObject({ codeId, runId, label: "Started by Code Morning review" });
@@ -844,6 +847,67 @@ suiteFor(
     }
   }, 30_000);
 
+  test("queued code sends count against the daily budget", async () => {
+    await setup();
+    const results = [];
+    for (let i = 0; i < 32; i++) results.push(await invoke(chat.shortId, ctx(`burst-${i}`)));
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    expect(results.filter((result) => !result.ok && result.error.code === "chat_busy")).toHaveLength(31);
+    const [queued] = await sql<{ id: string }[]>`SELECT id FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid`;
+    // The day is spent while the message waits: it must not start a turn.
+    await sql`INSERT INTO ai.inference_calls(id,user_id,model_profile_id,kind,task,provider_model,code_id,pricing,cost,finished_at,lease_expires_at)
+      VALUES(${crypto.randomUUID()}::uuid,${owner}::uuid,'fixture','chat','chat','fixture',${codeId},
+        '{"inputPerMillion":1,"outputPerMillion":1}',1,clock_timestamp(),clock_timestamp())`;
+    await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
+    expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
+    expect(
+      await sql<{ status: string; error: string | null }[]>`SELECT status,error FROM ai.queued_messages WHERE id=${queued!.id}::uuid`,
+    ).toEqual([{ status: "failed", error: "code_ai_owner_daily_budget_limit" }]);
+    // Without a host check, a Code-started message waits instead of starting unchecked.
+    await sql`DELETE FROM ai.inference_calls WHERE code_id=${codeId}`;
+    await drainQueuedMessages(async () => {}, chat.id);
+    expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
+    await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
+    expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).not.toBeNull();
+  });
+  test("a chat turn cannot send into its own chat, and an unreadable lease asks to retry", async () => {
+    await setup();
+    const source = await aiConversations.createConversation({ ownerUserId: owner });
+    const submitted = await aiConversations.submitChatTurn({
+      conversationId: source.id,
+      modelId: "fixture",
+      userMessage: { role: "user", content: [{ type: "text", text: "Delegate" }] },
+      runConfig: {
+        kind: "chat",
+        input: "Delegate",
+        writerOrigin: { kind: "person", id: owner },
+        turnTrigger: { kind: "person", id: owner },
+        actor: { kind: "user", user },
+      },
+    });
+    await sql`UPDATE ai.turns SET status='running' WHERE id=${submitted.turn.id}::uuid`;
+    const lease = spyOn(nestedInvocationLeases, "read").mockResolvedValue({
+      appId: "core",
+      origin: "assistant",
+      deadline: 9999999999999,
+      assistantTurn: { conversationId: source.id, turnId: submitted.turn.id },
+    });
+    const context: CapabilityExecutionContext = {
+      ...personContext(),
+      origin: "assistant",
+      actor: {
+        kind: "user",
+        user,
+        delegation: { kind: "invocation", credentialKind: "session", callingAppId: "core", invocationId: "source" },
+      },
+    };
+    expect(await invoke(source.shortId, context)).toMatchObject({ ok: false, error: { status: 400 } });
+    lease.mockResolvedValue(null);
+    expect(await invoke(chat.shortId, context)).toMatchObject({ ok: false, error: { code: "source_unavailable", status: 503 } });
+    expect(
+      await sql<{ id: string }[]>`SELECT id FROM ai.queued_messages WHERE conversation_id IN (${source.id}::uuid,${chat.id}::uuid)`,
+    ).toHaveLength(0);
+  });
   test("an unavailable wake-up leaves durable queued work and the draft untouched", async () => {
     await setup();
     await sql`UPDATE ai.conversations SET draft_content='[{"type":"text","text":"Unsent draft"}]'::jsonb WHERE id=${chat.id}::uuid`;
@@ -852,7 +916,7 @@ suiteFor(
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
     const current = await aiConversations.getConversation({ conversationId: chat.id });
     expect(current?.draft.content).toEqual([{ type: "text", text: "Unsent draft" }]);
-    await drainQueuedMessages(async () => {}, chat.id);
+    await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
     expect(await aiConversations.listMessages({ conversationId: chat.id })).toHaveLength(1);
   });
 });
