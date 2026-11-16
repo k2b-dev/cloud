@@ -25,7 +25,7 @@ export const persistDocumentData = async (
     RETURNING id::text, short_id, sha256
   `,
   );
-  if (!row || row.sha256 !== canonical.sha256) return fail(err.conflict("Document capture idempotency conflict."));
+  if (!row || row.sha256 !== canonical.sha256) return fail(err.conflict("This document capture key was already used for a different document."));
   return ok({
     shortId: row.short_id,
     reference: WorkflowDocumentDataReferenceSchema.parse({

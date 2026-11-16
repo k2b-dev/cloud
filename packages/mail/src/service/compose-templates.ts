@@ -354,7 +354,7 @@ export const updateComposeTemplate = async (params: {
         (parsed.data.body === undefined || parsed.data.body === current.body_template)
       )
         return ok(withFormattingWarnings(mapTemplate(current, params.mailboxId)));
-      if (Number(current.revision) !== parsed.data.expectedRevision) return fail(err.conflict("Compose template"));
+      if (Number(current.revision) !== parsed.data.expectedRevision) return fail(err.conflict("Compose template changed; reload it and retry"));
       if (parsed.data.shortcut && parsed.data.shortcut !== current.shortcut) {
         const [duplicate] = await tx<{ exists: boolean }[]>`
           SELECT true AS exists
@@ -383,7 +383,7 @@ export const updateComposeTemplate = async (params: {
         WHERE template.id = ${current.id}::uuid AND template.revision = ${parsed.data.expectedRevision}
         RETURNING ${templateColumns()}
       `;
-      if (!row) return fail(err.conflict("Compose template"));
+      if (!row) return fail(err.conflict("Compose template changed; reload it and retry"));
       await writeAudit(
         params.context,
         "mail.compose_template.update",
@@ -428,7 +428,7 @@ export const archiveComposeTemplate = async (params: {
       if (!current || current.archived_at) return fail(err.notFound("Compose template"));
       const writable = templateWriteAccess(params.context, current, permission.data);
       if (!writable.ok) return writable;
-      if (Number(current.revision) !== parsed.data.expectedRevision) return fail(err.conflict("Compose template"));
+      if (Number(current.revision) !== parsed.data.expectedRevision) return fail(err.conflict("Compose template changed; reload it and retry"));
       const removedDefaults = await tx<{ template_id: string }[]>`
         DELETE FROM mail.compose_signature_defaults
         WHERE template_id = ${current.id}::uuid
@@ -440,7 +440,7 @@ export const archiveComposeTemplate = async (params: {
         WHERE id = ${current.id}::uuid AND revision = ${parsed.data.expectedRevision}
         RETURNING id
       `;
-      if (!row) return fail(err.conflict("Compose template"));
+      if (!row) return fail(err.conflict("Compose template changed; reload it and retry"));
       await writeAudit(
         params.context,
         "mail.compose_template.archive",
@@ -549,7 +549,7 @@ export const setComposeSignatureDefault = async (params: {
         (parsed.data.expectedRevision === null || parsed.data.expectedRevision <= Number(current.revision))
       )
         return ok(mapDefault(current, { mailboxId: params.mailboxId, senderIdentityId: params.senderIdentityId, templateId: template.id }));
-      if (currentRevision !== parsed.data.expectedRevision) return fail(err.conflict("Signature default"));
+      if (currentRevision !== parsed.data.expectedRevision) return fail(err.conflict("Signature default changed; reload it and retry"));
       if (!parsed.data.templateId) {
         if (current) {
           await tx`
@@ -668,7 +668,7 @@ export const updateMailboxComposeStyle = async (params: {
       if (!current) return fail(err.notFound("Mailbox email style"));
       if (parsed.data.expectedRevision <= Number(current.revision) && current.custom_css === css.data)
         return ok(mapStyle(current, params.mailboxId));
-      if (Number(current.revision) !== parsed.data.expectedRevision) return fail(err.conflict("Mailbox email style"));
+      if (Number(current.revision) !== parsed.data.expectedRevision) return fail(err.conflict("Mailbox email style changed; reload it and retry"));
       const [row] = await tx<DbStyle[]>`
         UPDATE mail.compose_styles
         SET
@@ -680,7 +680,7 @@ export const updateMailboxComposeStyle = async (params: {
         WHERE mailbox_id = ${params.mailboxId}::uuid AND revision = ${parsed.data.expectedRevision}
         RETURNING mailbox_id, custom_css, revision, updated_at
       `;
-      if (!row) return fail(err.conflict("Mailbox email style"));
+      if (!row) return fail(err.conflict("Mailbox email style changed; reload it and retry"));
       await writeAudit(
         params.context,
         "mail.compose_style.update",

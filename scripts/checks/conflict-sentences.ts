@@ -5,25 +5,34 @@ import { workspacePackages } from "../workspace";
 import { isTestFile, listFiles, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
-/** The words of a literal message, without its `${…}` parts. */
-const wordsOf = (node: ts.Expression): number | undefined => {
-  const text = ts.isStringLiteralLike(node)
+/** The text of a literal message, with each `${…}` part as one word. */
+const textOf = (node: ts.Expression): string | undefined =>
+  ts.isStringLiteralLike(node)
     ? node.text
     : ts.isTemplateExpression(node)
-      ? [node.head.text, ...node.templateSpans.map((span) => span.literal.text)].join(" ")
+      ? [node.head.text, ...node.templateSpans.map((span) => ` X ${span.literal.text}`)].join("")
       : undefined;
-  return text === undefined ? undefined : text.split(/\s+/).filter((word) => /\p{L}/u.test(word)).length;
-};
 
 /**
- * `err.conflict(message)` from `@k2b/stdlib` takes the whole sentence a person or agent reads, as given; since 0.33.0
- * it appends nothing. A literal of fewer than two words, such as `err.conflict("Passkey")`, is a subject that used to
- * become "Passkey already exists" and would now read as just "Passkey" (#1326). Messages from a catalog or a
- * variable are sentences by construction and are not read here.
+ * A sentence says what happened or what to do: it has a finite verb ("Passkey already exists", "Task changed; read it
+ * and retry") or starts a clause with a request ("Complete all blocking tasks first", "…; configure one explicitly").
+ * A subject alone, such as "API key", "Running turn" or "Tag with that name", has neither.
  */
+const FINITE =
+  /\b(?:is|are|was|were|isn't|aren't|wasn't|has|have|had|hasn't|haven't|can|cannot|can't|could|must|may|might|should|will|won't|would|does|do|did|doesn't|don't|didn't|exists?|needs?|belongs?|conflicts|overlaps?|holds?|differs?|matches|blocks|uses|reached|changed|moved|deleted|removed|expired|revoked|started|stopped|finished|ended|failed|fails|claims?|claimed|requires?|lacks?|contains?|refers?|points?|owns?|waits?|runs|ran|exceeds?|redirects?|went|became|lost|sent)\b/i;
+const REQUEST =
+  /(?:^|[;:.]\s*)(?:add|apply|approve|archive|ask|assign|cancel|change|check|choose|clear|close|complete|configure|confirm|connect|contact|create|delete|disable|disconnect|edit|enable|end|finish|fix|give|join|keep|leave|load|merge|move|open|pause|pick|publish|read|reconnect|refresh|release|reload|remove|rename|reopen|replace|reset|resolve|restore|resume|retry|review|revoke|run|save|select|send|set|sign|split|start|stop|switch|try|turn|undo|unlock|update|upgrade|use|wait)\b/i;
+export const isSentence = (text: string): boolean => FINITE.test(text) || REQUEST.test(text.trim());
+
 export const checkSource = (file: string, source: string): Finding[] => {
   if (!source.includes("conflict(")) return [];
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const sourceFile = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
   const findings: Finding[] = [];
   const visit = (node: ts.Node): void => {
     if (
@@ -34,8 +43,8 @@ export const checkSource = (file: string, source: string): Finding[] => {
       node.expression.expression.text === "err"
     ) {
       const [message] = node.arguments;
-      const words = message ? wordsOf(message) : 0;
-      if (words !== undefined && words < 2)
+      const text = message ? textOf(message) : "";
+      if (text !== undefined && !isSentence(text))
         findings.push({
           file,
           line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
@@ -51,7 +60,7 @@ export const checkSource = (file: string, source: string): Finding[] => {
 
 export const rule: Rule = {
   name: "conflict-sentences",
-  description: "err.conflict gets a whole sentence, not a subject",
+  description: "err.conflict gets a whole sentence with a verb, not a subject",
   run: async ({ workspaceRoot }) =>
     [...workspacePackages(workspaceRoot), "scripts"]
       .flatMap((root) => listFiles(join(workspaceRoot, root), sourceFilePattern))

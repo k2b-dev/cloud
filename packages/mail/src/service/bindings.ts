@@ -1265,7 +1265,7 @@ export const attachProviderBinding = async (params: {
     if ((error as { code?: unknown } | null)?.code === "MAIL_PROVIDER_OPERATION_LEASE_LOST") {
       return fail(err.conflict("Provider state changed during binding verification; retry the operation"));
     }
-    if (isUniqueViolation(error)) return fail(err.conflict("Provider binding"));
+    if (isUniqueViolation(error)) return fail(err.conflict("Provider binding already exists"));
     logDatabaseFailure(log.error, "attach", "provider binding", error);
     return fail(err.internal("Failed to attach provider binding"));
   }
