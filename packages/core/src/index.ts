@@ -23,6 +23,7 @@ import { websocket } from "hono/bun";
 import { aiChatTaskExportRoutes } from "./ai-chat-task-export-routes";
 import { createAiNotificationService } from "./ai-notifications";
 import { createAdminAppListingRoutes } from "./api/admin-app-listing";
+import { createAdminMaintenanceRoutes } from "./api/admin-maintenance";
 import { managesAiPrincipalSearchTarget } from "./api/ai-principal-search-target";
 import { createCodeActivationRoutes } from "./api/code-activation";
 import { createCodeAdminRoutes } from "./api/code-admin";
@@ -71,6 +72,7 @@ const coreApi = new Hono()
   .route("/code/authoring", createCodeAuthoringRoutes())
   .route("/admin/apps", createAdminAppListingRoutes())
   .route("/admin/apps", createAdminAppStatusRoutes())
+  .route("/admin/maintenance", createAdminMaintenanceRoutes())
   .route("/ai/openai/v1", createAiOpenAiRoutes())
   .route("/ai/skills", aiSkillsRoutes)
   .route("/ai/dictation", aiDictationRoutes)

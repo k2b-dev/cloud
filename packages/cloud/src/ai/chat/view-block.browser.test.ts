@@ -1633,6 +1633,8 @@ for (const locale of ["en", "de"])
           cloudAiNumberFormatters({ style: "percent", decimals: 1 }, locale).value(0.461),
         );
         expect(await boxes(page)).toEqual(loading);
+        // A key figure that names no icon has the neutral sign before its name (v12 §9), and it moves nothing.
+        expect(await page.locator(".k2b-stat-cell__head > .k2b-stat-cell__icon .ti-hash").count()).toBe(1);
         if (process.env.VIEW_SHOTS && locale === "en")
           await page.screenshot({ path: `${process.env.VIEW_SHOTS}/stats-light-${width}.png`, fullPage: true });
       } finally {
@@ -2244,3 +2246,72 @@ test("a table names a reference by its title and shows one it cannot name as not
     await context.close();
   }
 });
+
+// A line over dates starts its axis at its first value, and its dates follow the room: a wide chart shows a date every
+// two or three days, a phone fewer, and no two dates ever meet.
+const returns = {
+  view: "chart",
+  kind: "line",
+  title: "Rückläufer pro Tag",
+  subtitle: "November 2026",
+  area: true,
+  series: [
+    {
+      label: "Rückläufer",
+      data: [0, 0, 0, 4, 0, 0, 0, 6, 1, 0, 0, 0, 3, 0, 2].map((y, index) => ({ x: `2026-11-${String(index + 1).padStart(2, "0")}`, y })),
+    },
+  ],
+};
+files["/views/returns-per-day-4d5e6f7a.view.json"] = returns;
+for (const width of [1440, 390])
+  test(`a line over 15 dates labels no date before its first value and shows as many as fit (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 700 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=de`);
+      await page.evaluate(
+        (value) => window.show(value),
+        [
+          present("/views/returns-per-day-4d5e6f7a.view.json", {
+            view: "chart",
+            kind: "line",
+            title: returns.title,
+            subtitle: returns.subtitle,
+          }),
+        ],
+      );
+      await page.waitForFunction(() => document.querySelector("[data-view-path] .k2b-chart[data-chart-kind] svg path"));
+      await settled(page);
+      const look = await page.evaluate(() => {
+        const svg = document.querySelector<SVGSVGElement>("[data-view-path] .k2b-chart svg")!;
+        const dates = Array.from(
+          svg.querySelectorAll<SVGTextElement>("text.stdlib-chart-tick-label[text-anchor='middle'], text.k2b-line-time-tick"),
+        )
+          .filter((label) => Number(getComputedStyle(label).opacity) > 0.5)
+          .map((label) => {
+            const box = label.getBoundingClientRect();
+            return { text: label.textContent, left: box.left, right: box.right, center: box.left + box.width / 2 };
+          })
+          .sort((a, b) => a.left - b.left);
+        const line = svg.querySelector<SVGPathElement>("path.stdlib-chart-line")!.getBoundingClientRect();
+        return { dates, firstValue: line.left };
+      });
+      if (width === 1440) expect(look.dates.length).toBeGreaterThanOrEqual(5);
+      else expect(look.dates.length).toBeGreaterThanOrEqual(2);
+      expect(look.dates.every((date) => date.text?.endsWith("Nov."))).toBe(true);
+      // The first date's mark is not before the first value.
+      expect(look.dates[0]!.center).toBeGreaterThanOrEqual(look.firstValue - 0.5);
+      for (const [index, date] of look.dates.entries()) {
+        const next = look.dates[index + 1];
+        if (next) expect(next.left - date.right).toBeGreaterThanOrEqual(2);
+      }
+      if (width === 390) {
+        const wide = await page.evaluate(() => document.querySelectorAll("[data-view-path] .k2b-chart svg [data-time-tick]").length);
+        expect(look.dates.length).toBeLessThan(wide);
+      }
+      if (process.env.VIEW_SHOTS)
+        await page.screenshot({ path: `${process.env.VIEW_SHOTS}/79-zeitachse-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  });

@@ -1,4 +1,5 @@
 import type { BoundBlockView } from "../blocks/schema";
+import { figureSign } from "./figure-sign";
 import { parseCloudAiChartToolView } from "./view-block";
 
 /**
@@ -15,10 +16,7 @@ import { parseCloudAiChartToolView } from "./view-block";
 export const gustavLine = <T extends { kind: string; smooth?: boolean; points?: boolean }>(description: T): T =>
   description.kind === "line" ? { ...description, smooth: description.smooth ?? false, points: description.points ?? true } : description;
 
-type StatItem = { label: string; value: number; icon?: string; note?: string; trend?: number[] };
-/** A Tabler icon name as the card and chart tools take it; anything else is left out. */
-const tablerIcon = (name: unknown): string | undefined =>
-  typeof name === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) ? `ti ti-${name}` : undefined;
+type StatItem = { label: string; value: number; icon: string; note?: string; trend?: number[] };
 /**
  * A `stat` chart is a key figure: it stands as one in the flat row of key figures, not as a chart island. Only a plain
  * figure translates (title, value, subtitle, recent values); one with a unit, format, change or tooltip stays a chart,
@@ -31,8 +29,7 @@ const statItem = (description: Record<string, unknown>, sign: unknown): StatItem
   if (!label) return null;
   const note = cut(description.subtitle);
   const trend = Array.isArray(description.sparkline) ? description.sparkline.filter(Number.isFinite).slice(-60) : [];
-  const icon = tablerIcon(sign);
-  return { label, value: description.value, ...(icon ? { icon } : {}), ...(note ? { note } : {}), ...(trend.length > 1 ? { trend } : {}) };
+  return { label, value: description.value, icon: figureSign(sign), ...(note ? { note } : {}), ...(trend.length > 1 ? { trend } : {}) };
 };
 
 export const chartToolBlocks = (args: unknown): BoundBlockView | null => {
@@ -89,8 +86,8 @@ const cut = (value: unknown, limit = 80): string | undefined => {
 
 /**
  * One card call as one flat key figure: its title is the label, its value the figure, and the change or scope the one
- * quiet line under it. Its icon is the small sign before the label, as every key figure has one; a name that is no
- * Tabler icon is left out. Consecutive cards stand together in one row (`chat/turn-layout.ts`). The emoji has no place
+ * quiet line under it. Its icon is the small sign before the label, as every key figure has one; without a Tabler icon
+ * name it takes the neutral sign (`figure-sign.ts`). Consecutive cards stand together in one row (`chat/turn-layout.ts`). The emoji has no place
  * in a key figure; the colour tone of the old card is left to the shared tiles.
  */
 export const cardToolBlocks = (args: unknown): BoundBlockView | null => {
@@ -101,6 +98,5 @@ export const cardToolBlocks = (args: unknown): BoundBlockView | null => {
   if (!label || !value) return null;
   const trend = [cut(card.trendValue, 40), cut(card.trendLabel, 40)].filter(Boolean).join(" ");
   const note = cut([trend, cut(card.caption)].filter(Boolean).join(" · "));
-  const icon = tablerIcon(card.icon);
-  return { version: 1, blocks: [{ kind: "Stats", items: [{ label, value, ...(icon ? { icon } : {}), ...(note ? { note } : {}) }] }] };
+  return { version: 1, blocks: [{ kind: "Stats", items: [{ label, value, icon: figureSign(card.icon), ...(note ? { note } : {}) }] }] };
 };

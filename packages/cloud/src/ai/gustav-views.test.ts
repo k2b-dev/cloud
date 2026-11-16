@@ -48,18 +48,19 @@ test("plain stat charts become one flat row of key figures; a stat with its own 
         {
           kind: "Stats",
           items: [
-            { label: "Offene Aufgaben", value: 1366, note: "Momentaufnahme" },
-            { label: "Diese Woche fällig", value: 3 },
+            // A figure without its own sign takes the neutral one: every key figure has a small sign (v12 §9).
+            { label: "Offene Aufgaben", value: 1366, icon: "ti ti-hash", note: "Momentaufnahme" },
+            { label: "Diese Woche fällig", value: 3, icon: "ti ti-hash" },
           ],
         },
       ],
     },
   ]);
   expect(chartToolView({ kind: "stat", title: "Umsatz", value: 12, sparkline: [1, 2, 3] })?.blocks).toEqual([
-    { kind: "Stats", items: [{ label: "Umsatz", value: 12, trend: [1, 2, 3] }] },
+    { kind: "Stats", items: [{ label: "Umsatz", value: 12, icon: "ti ti-hash", trend: [1, 2, 3] }] },
   ]);
   expect(chartToolView({ kind: "stat", title: "Umsatz", value: 12, delta: 2 })?.blocks[0]).toMatchObject({ kind: "Chart" });
-  // A stat's icon is its sign before the name, as a card's is; a name that is no Tabler icon name is left out.
+  // A stat's icon is its sign before the name, as a card's is; a name that is no Tabler icon name gives the neutral sign.
   const signed = chartToolView({
     title: "Logistik",
     charts: [
@@ -68,9 +69,16 @@ test("plain stat charts become one flat row of key figures; a stat with its own 
     ],
   });
   expect(signed?.blocks[0]).toMatchObject({
-    children: [{ kind: "Stats", items: [{ label: "Offen", icon: "ti ti-list-check" }, { label: "Fällig" }] }],
+    children: [
+      {
+        kind: "Stats",
+        items: [
+          { label: "Offen", icon: "ti ti-list-check" },
+          { label: "Fällig", icon: "ti ti-hash" },
+        ],
+      },
+    ],
   });
-  expect((signed?.blocks[0] as { children: { items: Record<string, unknown>[] }[] }).children[0]!.items[1]).not.toHaveProperty("icon");
   expect(chartToolView({ kind: "stat", title: "Umsatz", value: 12, icon: "wallet" })?.blocks).toEqual([
     { kind: "Stats", items: [{ label: "Umsatz", value: 12, icon: "ti ti-wallet" }] },
   ]);
@@ -109,18 +117,20 @@ test("the stored result binds as a view for people while the model reads only th
 
 test("a card becomes one flat key figure with its change or scope as the quiet line", () => {
   const view = cardToolView({ title: "Girokonto", value: "2.481,20 €", trendValue: "+312,00 €", trendLabel: "seit 01.11.", emoji: "💶" });
-  expect(view?.blocks).toEqual([{ kind: "Stats", items: [{ label: "Girokonto", value: "2.481,20 €", note: "+312,00 € seit 01.11." }] }]);
+  expect(view?.blocks).toEqual([
+    { kind: "Stats", items: [{ label: "Girokonto", value: "2.481,20 €", icon: "ti ti-hash", note: "+312,00 € seit 01.11." }] },
+  ]);
   expect(cardToolView({ title: "Tagesgeld", value: "12.050,00 €", caption: "2,1 % Zins" })?.blocks[0]).toMatchObject({
     items: [{ note: "2,1 % Zins" }],
   });
-  // The icon is the small sign before the label; a name that is no Tabler icon is left out, the figure stays.
+  // The icon is the small sign before the label; a name that is no Tabler icon gives the neutral sign, the figure stays.
   expect(cardToolView({ title: "Girokonto", value: "2.481,20 €", icon: "building-bank" })?.blocks[0]).toEqual({
     kind: "Stats",
     items: [{ label: "Girokonto", value: "2.481,20 €", icon: "ti ti-building-bank" }],
   });
   expect(cardToolView({ title: "Girokonto", value: "1", icon: 'ti ti-x" bad' })?.blocks[0]).toEqual({
     kind: "Stats",
-    items: [{ label: "Girokonto", value: "1" }],
+    items: [{ label: "Girokonto", value: "1", icon: "ti ti-hash" }],
   });
   expect(cardToolView({ title: "", value: "1" })).toBeNull();
   expect(modelCapabilityResult(cardToolResult({ title: "A", value: "1" }))).toMatchObject({ displayed: true });
