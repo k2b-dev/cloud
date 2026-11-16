@@ -140,7 +140,7 @@ test("Core Help marks only its owning app, including third-party apps", () => {
     const owner = { ...app(id, id), appId: id };
     for (const path of [`/help/apps/${id}`, `/help/apps/${id}/start/`]) {
       expect(railLinkActive(owner, path)).toBe(true);
-      expect(railLinkActive({ ...app("core", "Core"), match: "/help", appId: "core" }, path)).toBe(false);
+      expect(railLinkActive({ ...app("core", "Cloud"), match: "/help", appId: "core" }, path)).toBe(false);
       expect(railLinkActive({ ...app("mail", "Mail"), appId: "mail" }, path)).toBe(false);
       expect(railLinkActive({ ...owner, appId: undefined, match: path, exact: true }, path)).toBe(true);
     }
