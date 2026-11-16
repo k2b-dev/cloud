@@ -1456,6 +1456,12 @@ const conversationPlaceFilter = (place: import("./types").AiConversationPlaceFil
   return sql`conversation.place_type = ${place.slice(0, separator)} AND conversation.place_id = ${place.slice(separator + 1)}`;
 };
 
+/** Model rule: any text from a source without a signed-in session restricts the turn. It keeps running,
+ * but loses rights that need a person's session, such as writing to another chat. */
+const restrictTurnSource = (tx: SQL, input: { conversationId: string; turnId: string }) =>
+  tx`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{sourceRestricted}','true'::jsonb)
+    WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid AND run_config->>'kind'='chat'`;
+
 export const aiConversations: AiConversationService = {
   getDraftSubmission: async ({ conversationId, ownerUserId, revision }) => {
     const [row] = await sql<{ message_id: string; turn_id: string | null }[]>`
@@ -4100,20 +4106,23 @@ export const aiConversations: AiConversationService = {
     return rows.map(rowToPendingActionRecord);
   },
 
-  resolvePendingTurnAction: async (input) => {
-    const rows = await sql<PendingActionRow[]>`
-      UPDATE ai.pending_actions
-      SET status = 'resolved',
-          resolved_event = ${JSON.stringify(input.event)}::text::jsonb,
-          resolved_at = now()
-      WHERE conversation_id = ${input.conversationId}
-        AND turn_id = ${input.turnId}
-        AND call_id = ${input.callId}
-        AND status = 'pending'
-      RETURNING *
-    `;
-    return rows[0] ? rowToPendingActionRecord(rows[0]) : null;
-  },
+  resolvePendingTurnAction: async (input) =>
+    sql.begin(async (tx) => {
+      const rows = await tx<PendingActionRow[]>`
+        UPDATE ai.pending_actions
+        SET status = 'resolved',
+            resolved_event = ${JSON.stringify(input.event)}::text::jsonb,
+            resolved_at = now()
+        WHERE conversation_id = ${input.conversationId}
+          AND turn_id = ${input.turnId}
+          AND call_id = ${input.callId}
+          AND status = 'pending'
+        RETURNING *
+      `;
+      // A tool result is text the turn reads; from a source without a signed-in session it restricts the turn.
+      if (rows[0] && input.event.type === "tool_result" && !input.signedInSession) await restrictTurnSource(tx, input);
+      return rows[0] ? rowToPendingActionRecord(rows[0]) : null;
+    }),
 
   markPendingTurnActionConsumedInline: async (input) => {
     await sql`
@@ -4166,6 +4175,8 @@ export const aiConversations: AiConversationService = {
       `;
       if (existing[0]) return { ok: true, steer: rowToTurnSteer(existing[0]) };
 
+      // Steering text from a source without a signed-in session restricts the turn it joins.
+      if (!input.signedInSession) await restrictTurnSource(tx, input);
       const rows = await tx<TurnSteerRow[]>`
         INSERT INTO ai.turn_steers (conversation_id, turn_id, seq, client_request_id, text)
         VALUES (

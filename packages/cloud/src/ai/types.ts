@@ -1147,6 +1147,8 @@ export type AiConversationService = {
     turnId: string;
     callId: string;
     event: InboundEvent;
+    /** Whether the answer comes from a person's signed-in session; otherwise a tool result restricts the turn. */
+    signedInSession: boolean;
   }): Promise<AiPendingTurnActionRecord | null>;
   markPendingTurnActionConsumedInline(input: { conversationId: string; turnId: string; callId: string }): Promise<void>;
   clearPendingTurnActions(input: { conversationId: string; turnId: string }): Promise<void>;
@@ -1155,6 +1157,8 @@ export type AiConversationService = {
     turnId: string;
     clientRequestId: string;
     text: string;
+    /** Whether the text comes from a person's signed-in session; otherwise it restricts the turn. */
+    signedInSession: boolean;
   }): Promise<AiTurnSteerEnqueueResult>;
   listTurnSteers(input: { conversationId: string; turnId: string }): Promise<AiTurnSteer[]>;
   /** Atomically make pending steers visible to the model and return them in order. */

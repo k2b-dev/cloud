@@ -49,6 +49,13 @@ promotion: once an entry becomes a turn, the queue endpoint returns not found.
 Normal submissions cannot overtake the queue. Chats with pending entries cannot
 be archived or marked done and do not become done through inactivity.
 
+Text from a source without a signed-in session restricts the turn it enters:
+a queued message, a queue edit, a steer or a tool result sent with `cld`, an API
+key or another delegated credential. The text is still accepted and the turn
+keeps running, but it loses rights that need a person's session, such as
+writing to another chat with `ai.chat.send`. An approval without text does not
+restrict the turn.
+
 ## List place chats
 
 A place chat belongs to the person who sent its first message. Opening a place

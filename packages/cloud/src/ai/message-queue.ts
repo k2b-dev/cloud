@@ -134,7 +134,8 @@ export const updateQueuedMessage = async (conversationId: string, id: string, ac
   });
 
 /** Edit only queued text; immutable attachments and the independent composer draft stay intact. */
-export const editQueuedMessage = async (conversationId: string, id: string, text: string) =>
+/** Text from a source without a signed-in session restricts the queued turn; editing stays possible. */
+export const editQueuedMessage = async (conversationId: string, id: string, text: string, source: { signedInSession: boolean }) =>
   sql.begin(async (tx) => {
     await tx`SELECT id FROM ai.conversations WHERE id = ${conversationId}::uuid FOR UPDATE`;
     const [row] = await tx<{ submission: Submission; content: AiDraftContentPart[] }[]>`SELECT submission, content FROM ai.queued_messages
@@ -159,6 +160,7 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
       userMessage,
       runConfig: {
         ...row.submission.runConfig,
+        ...(source.signedInSession ? {} : { sourceRestricted: true as const }),
         input: userMessage.content,
         selectedSkillIds: [
           ...new Set(content.flatMap((part) => (part.type === "resource" && part.ref.type === "core.ai.skill" ? [part.ref.id] : []))),

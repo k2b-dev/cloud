@@ -1043,7 +1043,9 @@ export const aiRoutes = (() => {
           if (ctx instanceof Response) return ctx;
           const conversation = await loadConversation(c, ctx);
           if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
-          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text))
+          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text, {
+            signedInSession: ctx.signedInSession,
+          }))
             ? respond(c, ok({ ok: true }))
             : notFound(c);
         },
@@ -1186,6 +1188,7 @@ export const aiRoutes = (() => {
           turnId: turn.id,
           clientRequestId: body.clientRequestId,
           text: body.message,
+          signedInSession: ctx.signedInSession,
         });
         if (!result.ok) {
           if (result.reason === "not_found") return respond(c, fail(err.notFound("Turn")));
