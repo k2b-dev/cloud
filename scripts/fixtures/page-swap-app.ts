@@ -14,7 +14,7 @@
  * `pageSwapContract()` at the top level of the test file.
  */
 import { expect, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Hono } from "hono";
@@ -62,6 +62,8 @@ export type PageSwapApp = {
   fallbacks: unknown[];
   /** Resolves with the next reported fallback. */
   nextFallback: () => Promise<unknown>;
+  /** Whether the harness built the island entry with this id. */
+  built: (id: string) => boolean;
   close: () => Promise<void>;
 };
 
@@ -172,7 +174,8 @@ export async function startPageSwapApp(options: PageSwapAppOptions): Promise<Pag
       },
     });
     browser = await launchBrowser();
-    return { origin: `http://127.0.0.1:${served.port}`, browser, fallbacks, nextFallback, close };
+    const built = (id: string) => existsSync(join(output, `${id}.js`));
+    return { origin: `http://127.0.0.1:${served.port}`, browser, fallbacks, nextFallback, built, close };
   } catch (error) {
     await close();
     throw error;
@@ -383,6 +386,19 @@ export function pageSwapContract(name: string, app: () => PageSwapApp, contract:
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto(`${app().origin}${path}`);
     await contract.ready(page, path);
+    // Pages compiled by another test file's SSR transform carry other island ids; in one shared process such a file
+    // loads the page modules first, and their islands never mount. Name that instead of timing out.
+    const ids = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll("[data-nav-root] solid-island, [data-nav-root] solid-client"),
+        (wrapper) => wrapper.getAttribute("data-id") ?? "",
+      ),
+    );
+    const foreign = ids.filter((id) => !app().built(id));
+    if (foreign.length)
+      throw new Error(
+        `Island ids ${foreign.join(", ")} were not built by the harness: another test file in this process loaded the page modules with its own SSR transform first. Run the package's tests with bun test --isolate.`,
+      );
     await columnMounted(page);
     await page.waitForFunction(() => document.querySelector("[data-nav-announcer]") !== null);
     // A document load replaces window: the mark survives only swaps.
