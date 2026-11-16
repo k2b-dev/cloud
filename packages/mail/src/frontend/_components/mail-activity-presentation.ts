@@ -74,7 +74,8 @@ export const mailActivityLabel = (event: MailActivityEvent, locale = "en"): stri
     "message.delivery_receipt_received": t.activityDeliveryReceipt,
     "message.read_receipt_received": t.activityReadReceipt,
   };
-  if (labels[event.action]) return labels[event.action];
+  const label = labels[event.action];
+  if (label) return label;
   // An action without a text of its own: in English its last part as words, starting the sentence with a capital.
   if (resolved.locale !== "en") return event.action;
   const words = event.action.split(".").at(-1)!.replaceAll("_", " ");
