@@ -2,7 +2,7 @@ import { ButtonLink, NotFoundState, Placeholder } from "@k2b/ui";
 import type { Context } from "hono";
 import type { PageErrorOptions, PageErrorStatus } from "../_internal/page-responses";
 import { PWA_SCOPE } from "../contracts/pwa";
-import { maintenanceGameMessages, offersMaintenanceGame } from "../maintenance-game";
+import { type MaintenanceGameTexts, maintenanceGameMessages, offersMaintenanceGame } from "../maintenance-game";
 import { getLocale } from "../server/locale";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import Layout from "./Layout";
@@ -22,6 +22,43 @@ const pwaPartName = (c: Context): string | undefined => {
   const app = owner ? getRuntimeContext(c).apps.find((candidate) => candidate.id === owner && candidate.pwa) : undefined;
   return app ? resolveAppPresentation(app, getLocale(c)).name : undefined;
 };
+
+/**
+ * The generic „not found“ and server failure in the layout of the maintenance page: a symbol, the heading, one
+ * sentence and the way home, with the waiting scene below. The scene's box is part of the first paint, so nothing
+ * moves when the game code arrives. The symbol starts a round, but takes no focus: „Go to home page“ comes first.
+ */
+const WaitingErrorPage = (props: {
+  status: number;
+  title: string;
+  description: string;
+  action: { label: string; href: string };
+  game: MaintenanceGameTexts;
+}) => (
+  <div class="cloud-error-page">
+    <div class="cloud-error-page__copy" data-waiting-error-copy>
+      <div class="cloud-error-page__fold">
+        <div>
+          <button type="button" class="cloud-error-page__tile" tabindex="-1" aria-label={props.game.start} data-waiting-game-start>
+            {/* „404“ has its own glyph; a server failure shows its code in the same small digits. */}
+            {props.status === 404 ? <i class="ti ti-error-404" aria-hidden="true" /> : <span aria-hidden="true">{props.status}</span>}
+          </button>
+        </div>
+      </div>
+      <h1>{props.title}</h1>
+      <div class="cloud-error-page__fold">
+        <div>
+          <p>{props.description}</p>
+        </div>
+      </div>
+      <div class="cloud-error-page__actions">
+        <ButtonLink href={props.action.href}>{props.action.label}</ButtonLink>
+      </div>
+    </div>
+    <WaitingGame t={props.game} anchor="[data-waiting-error-copy]" />
+    <div class="cloud-error-page__road" />
+  </div>
+);
 
 export const renderPageError = (c: Context, status: PageErrorStatus, options: PageErrorOptions) => {
   const { t } = pageErrorMessages.resolve([getLocale(c)]);
@@ -44,12 +81,18 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
   c.get("page").title = title;
   // Only the generic „not found“ and server failure show the waiting game, below the way out.
   const offered = offersMaintenanceGame(status, { ...options, path: c.req.path });
-  const page = () => (
-    <>
+  const page = () =>
+    offered ? (
+      <WaitingErrorPage
+        status={status}
+        title={title}
+        description={description}
+        action={action}
+        game={maintenanceGameMessages.resolve([getLocale(c)]).t}
+      />
+    ) : (
       <NotFoundState code={String(status)} title={title} description={description} action={action} />
-      {offered ? <WaitingGame t={maintenanceGameMessages.resolve([getLocale(c)]).t} /> : null}
-    </>
-  );
+    );
 
   if (options.layout === "pwa") {
     const pwa = pwaMessages.resolve([getLocale(c)]).t;
@@ -76,7 +119,9 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
         <main class="flex-1 bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">{page()}</main>
       </MinimalLayout>
     ) : (
-      <Layout c={c} title={title}>
+      // Like the maintenance page, the shell names the Cloud above the heading instead of repeating it; the document
+      // keeps the error as its title.
+      <Layout c={c} title={offered ? undefined : title}>
         {page()}
       </Layout>
     );

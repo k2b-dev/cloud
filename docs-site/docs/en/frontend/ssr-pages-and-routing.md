@@ -141,12 +141,17 @@ missing and inaccessible resources apart. Other HTTP error statuses are
 preserved and receive generic failure copy. This does not catch exceptions.
 
 The generic `404` and `5xx` pages, without your own `title`, `description`, or
-`action` and outside `/admin` and `"pwa"`, show the waiting game of the
-maintenance page below the home link: a robot on a road that starts a round
-with Space or a tap, never on its own. Its space is part of the first paint, and
-its code loads right after the page. Pages with your own copy never show it,
-and neither do `403` and other client errors: there the person has a problem to
-solve.
+`action` and outside `/admin` and `"pwa"`, look like the maintenance page: a
+left-aligned block with a symbol (the `404` glyph, or the code of a server
+failure), the heading, one sentence, and the home link, with the maintenance
+page's waiting game below. Its robot waits on a road and starts a round with
+Space, a tap on the road, or a click on the symbol, never on its own. The home
+link comes before the game in the focus order. The road's room is part of the
+first paint, and the game's code loads right after the page. In the Cloud shell
+the header names the Cloud rather than repeating the heading; signed-in people
+keep their navigation. Pages with your own copy keep the centered error state
+and never show the game, and neither do `403` and other client errors: there
+the person has a problem to solve.
 
 The optional third argument accepts `title`, `description`,
 `action: { label, href, icon? }`, and `layout: "cloud" | "minimal" | "pwa"`

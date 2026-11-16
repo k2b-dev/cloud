@@ -9,6 +9,7 @@
     "./test/charts/**/*.tsx",
     "./test/island-errors/**/*.ts",
     "./test/island-errors/**/*.tsx",
+    "./test/error-page/**/*.ts",
     "./test/island-props-csp/**/*.ts",
     "./test/island-props-csp/**/*.tsx",
     "./examples/app-pwa/src/**/*.ts",

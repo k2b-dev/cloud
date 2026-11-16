@@ -1,8 +1,12 @@
-import { onMount } from "solid-js";
+import { onCleanup, onMount } from "solid-js";
 import { importOnDemand } from "../browser/reload";
-import type { MaintenanceGameFactory, MaintenanceGameTexts } from "../maintenance-game";
+import type { MaintenanceGameController, MaintenanceGameFactory, MaintenanceGameTexts } from "../maintenance-game";
 
-export type WaitingGameProps = { t: MaintenanceGameTexts };
+export type WaitingGameProps = {
+  t: MaintenanceGameTexts;
+  /** Selector of the page content above the road; its bottom edge is the horizon. */
+  anchor: string;
+};
 
 const GLOBAL = "__k2bLauf";
 
@@ -33,23 +37,32 @@ const loadFactory = async (): Promise<MaintenanceGameFactory | undefined> => {
 };
 
 /**
- * The waiting game below a generic error page: the robot waits on its road, and Space or a tap starts a round. The
- * server renders the scene's box at its final size, so the page does not move when the game code arrives.
+ * The waiting game of a generic error page: the robot waits on its road below the page's content, and Space, a tap on
+ * the road or a click on an element marked `data-waiting-game-start` starts a round. The scene fills its positioned
+ * parent behind the content; the page reserves the road's room, so nothing moves when the game code arrives.
  */
 export default function WaitingGame(props: WaitingGameProps) {
   let host: HTMLDivElement | undefined;
+  let game: MaintenanceGameController | undefined;
+  const start = (event: MouseEvent) => {
+    if (event.target instanceof Element && event.target.closest("[data-waiting-game-start]")) game?.start();
+  };
   onMount(() => {
+    // Registered in the browser only: the server render has no document to clean up.
+    document.addEventListener("click", start);
+    onCleanup(() => document.removeEventListener("click", start));
     void loadFactory().then((factory) => {
       if (!factory || !host) return;
-      factory({
+      game = factory({
         host,
-        anchor: () => null,
+        anchor: () => document.querySelector(props.anchor),
         t: props.t,
         dark: () => document.documentElement.classList.contains("dark"),
         // These pages never end a maintenance, so a round never waits for one.
         onFinish: () => {},
-      }).open();
+      });
+      game.open();
     });
   });
-  return <div ref={host} class="relative isolate h-[clamp(20rem,52vh,32rem)] w-full shrink-0" data-waiting-game />;
+  return <div ref={host} class="absolute inset-0 isolate" data-waiting-game />;
 }

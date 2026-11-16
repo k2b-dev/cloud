@@ -252,3 +252,124 @@
   font-weight: 600;
 }
 .k2b-ui .cloud-ai-approval-detail p + p { margin-top: .75rem; }
+
+/*
+ * The generic „not found“ and server failure (`renderPageError`) in the layout
+ * of the maintenance page: a left-aligned block of the same width with a soft
+ * symbol tile, the heading, one sentence and the way home. The waiting scene
+ * fills the whole block behind the text; its road starts below the text, in
+ * room the page reserves from the first paint. While a round runs
+ * (`[data-lauf=run]` on the root), the symbol and the sentence fold away and
+ * the heading shrinks, so the road gets the room, as on the maintenance page.
+ */
+.cloud-error-page {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+}
+.cloud-error-page__copy {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 31rem;
+  margin: 0 auto;
+  padding: 6vh 1rem 0;
+  transition: padding 0.35s ease;
+}
+.cloud-error-page__fold {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 0.35s ease,
+    opacity 0.25s ease;
+}
+.cloud-error-page__fold > div {
+  min-height: 0;
+  overflow: hidden;
+}
+.cloud-error-page__tile {
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-bottom: 1rem;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0.75rem;
+  background: var(--k2b-surface-muted);
+  color: var(--k2b-text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+/* A status code in digits, at the weight and size of the „404“ glyph. */
+.cloud-error-page__tile > span {
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+@keyframes cloud-error-page-wiggle {
+  25% {
+    rotate: -7deg;
+  }
+  75% {
+    rotate: 7deg;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cloud-error-page__tile:hover > * {
+    animation: cloud-error-page-wiggle 0.45s ease-in-out;
+  }
+}
+.cloud-error-page h1 {
+  margin: 0;
+  color: var(--k2b-text);
+  font-size: 1.625rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  transition: font-size 0.35s ease;
+}
+.cloud-error-page__copy p {
+  margin: 0.5rem 0 0;
+  color: var(--k2b-text-secondary);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.cloud-error-page__actions {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  margin-top: 1.375rem;
+}
+.cloud-error-page__road {
+  min-height: clamp(20rem, 52vh, 32rem);
+  flex: 1 0 auto;
+}
+[data-lauf="run"] .cloud-error-page__fold {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+[data-lauf="run"] .cloud-error-page__copy {
+  padding-top: 0.625rem;
+}
+[data-lauf="run"] .cloud-error-page h1 {
+  font-size: 1.125rem;
+}
+@media (max-width: 640px) {
+  .cloud-error-page__copy {
+    padding-top: 1.375rem;
+  }
+  .cloud-error-page h1 {
+    font-size: 1.4375rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cloud-error-page__copy,
+  .cloud-error-page__fold,
+  .cloud-error-page h1 {
+    transition: none;
+  }
+}

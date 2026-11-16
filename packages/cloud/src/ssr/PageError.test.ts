@@ -262,8 +262,11 @@ describe("shared page access and error responses", () => {
   test("only the generic not-found and server-failure pages show the waiting game", async () => {
     const offered = async (path: string, init?: RequestInit) => {
       const body = await (await server.request(path, init)).text();
-      // The scene's box is part of the first paint, so nothing moves when the game code arrives.
-      return body.includes("data-waiting-game>") && body.includes("h-[clamp(20rem,52vh,32rem)]");
+      // The road's room is part of the first paint, so nothing moves when the game code arrives.
+      const waiting = body.includes("data-waiting-game>") && body.includes("cloud-error-page__road");
+      // The other pages keep their centered state.
+      expect(body.includes("k2b-not-found")).toBe(!waiting);
+      return waiting;
     };
     expect(await offered("/nested/missing")).toBe(true);
     expect(await offered("/minimal")).toBe(true);
@@ -275,6 +278,27 @@ describe("shared page access and error responses", () => {
     expect(await offered("/unsafe")).toBe(false);
     expect(await offered("/app/test/item")).toBe(false);
     expect(await offered("/admin/missing")).toBe(false);
+  });
+  test("the waiting layout names the Cloud above its heading and puts the way home before the game", async () => {
+    for (const [path, status, symbol, heading] of [
+      ["/nested/missing", 404, '<i class="ti ti-error-404" aria-hidden="true">', "Page not found"],
+      ["/service-error", 503, '<span aria-hidden="true">503</span>', "Could not open this page"],
+    ] as const) {
+      const response = await server.request(path);
+      const body = await response.text();
+      expect(response.status).toBe(status);
+      expect(body).toContain(symbol);
+      // The document title and the page heading name the error; the header names the Cloud instead of a third copy.
+      expect(body.split(heading).length - 1).toBe(2);
+      expect(body).toContain(`<title>${heading}`);
+      // The symbol starts a round but takes no focus; the way home is the page's first stop.
+      expect(body).toMatch(/<button[^>]*tabindex="-1"[^>]*data-waiting-game-start/);
+      expect(body.indexOf(">Go to home page<")).toBeLessThan(body.indexOf("data-waiting-game>"));
+    }
+    const german = await (await server.request("/nested/missing", { headers: { "Accept-Language": "de" } })).text();
+    expect(german).toContain("Seite nicht gefunden");
+    expect(german).toContain("Die Adresse gibt es nicht oder nicht mehr.");
+    expect(german).toContain(">Zur Startseite<");
   });
   test("denied POST actions never execute or replay effects", async () => {
     expect((await server.request("/action", { method: "POST" })).status).toBe(302);

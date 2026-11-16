@@ -26,7 +26,9 @@ frames it, such as a section, dialog, detail panel, or `Paper`, leave
 keeps its layout but draws no border, background, or shadow of its own.
 
 Use `NotFoundState` when a requested page or resource cannot be shown. Display
-a code such as `404` only when it accurately describes the result.
+a code such as `404` only when it accurately describes the result. Cloud's own
+generic `404` and `5xx` pages from `ssr.error` use the maintenance page's
+layout instead; see [Render page errors](/en/docs/frontend/ssr-pages-and-routing#render-page-errors).
 
 Use `state="empty"` for “Nothing here yet”, `state="no-results"` for “No
 matches” after filtering, and `state="no-access"` for “You do not have access”.
