@@ -105,7 +105,9 @@ suiteFor(
       jobs.push(job.turnId);
     };
     await drainQueuedMessages(push, chat.id);
-    expect(await sql`SELECT status,error FROM ai.queued_messages WHERE id=${id}::uuid`).toEqual([{ status: "pending", error: null }]);
+    expect(await sql<{ status: string; error: string | null }[]>`SELECT status,error FROM ai.queued_messages WHERE id=${id}::uuid`).toEqual(
+      [{ status: "pending", error: null }],
+    );
     await drainQueuedMessages(push, chat.id, async (current) => current);
     expect(jobs).toHaveLength(1);
   });
@@ -139,7 +141,9 @@ suiteFor(
         throw Object.assign(new Error("Deadlock"), { code: "ERR_POSTGRES_SERVER_ERROR", errno: "40P01" });
       },
     );
-    expect(await sql`SELECT status,error FROM ai.queued_messages WHERE id=${id}::uuid`).toEqual([{ status: "pending", error: null }]);
+    expect(await sql<{ status: string; error: string | null }[]>`SELECT status,error FROM ai.queued_messages WHERE id=${id}::uuid`).toEqual(
+      [{ status: "pending", error: null }],
+    );
     const jobs: string[] = [];
     await drainQueuedMessages(
       async (job) => {

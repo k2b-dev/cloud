@@ -307,10 +307,11 @@ export const drainQueuedMessages = async (
           return null;
         });
       if (!outcome) break;
-      if ("turnId" in outcome) {
+      const { turnId } = outcome;
+      if (turnId !== undefined) {
         // A failed wake is recovered by the ordinary turn sweep; never fail an already committed admission.
-        await enqueue({ conversationId: chat.conversation_id, turnId: outcome.turnId }).catch(() =>
-          log.warn("Queued turn wake failed", { conversationId: chat.conversation_id, turnId: outcome.turnId }),
+        await enqueue({ conversationId: chat.conversation_id, turnId }).catch(() =>
+          log.warn("Queued turn wake failed", { conversationId: chat.conversation_id, turnId }),
         );
         break;
       }
