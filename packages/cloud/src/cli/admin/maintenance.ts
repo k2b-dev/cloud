@@ -2,7 +2,6 @@ import { MAINTENANCE_ADMIN_API_PATH, MaintenanceBypassSchema, MaintenanceStatusS
 import { arg, command, flag } from "../commands";
 import type { CloudCliContext } from "../index";
 import {
-  cliColorEnabled,
   maintenanceBypassLines,
   maintenanceBypassOffSentence,
   maintenanceOffSentence,
@@ -19,8 +18,7 @@ const call = async (ctx: CloudCliContext, method: "GET" | "POST", path: string, 
   MaintenanceStatusSchema.parse(await apiJson(ctx, method, `${MAINTENANCE_ADMIN_API_PATH}${path}`, body));
 
 const say = (ctx: CloudCliContext, lines: string[]) => {
-  const color = cliColorEnabled();
-  for (const line of lines) ctx.print(markMaintenanceWord(line, color));
+  for (const line of lines) ctx.print(markMaintenanceWord(line, ctx.color === true));
 };
 
 export const maintenanceCommands = [

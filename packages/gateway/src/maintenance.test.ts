@@ -254,7 +254,7 @@ test("a generated app favicon takes the app accent; other SVGs and invalid accen
   expect(tintAppIcon(generated, "#c2410c")).toContain('stroke="#c2410c"');
   expect(tintAppIcon(generated, "red")).toBe(generated);
   expect(tintAppIcon(generated, undefined)).toBe(generated);
-  expect(tintAppIcon("<svg><path stroke=\"#000\"/></svg>", "#c2410c")).toBe("<svg><path stroke=\"#000\"/></svg>");
+  expect(tintAppIcon('<svg><path stroke="#000"/></svg>', "#c2410c")).toBe('<svg><path stroke="#000"/></svg>');
 });
 
 // ─── Admin bypass link ───────────────────────────────────────────────────────
@@ -325,7 +325,7 @@ test("a valid bypass cookie passes maintenance like no maintenance; the cookie n
   f.availability.setMaintenance({ state, updatedAt: NOW });
   const token = bypassToken();
   const cookie = `session_token=abc; ${COOKIE}=${token}; theme=dark`;
-  const pass = await f.request("/app/spaces?view=kanban", { headers: { ...page.headers, Cookie: cookie } });
+  const pass = await f.request("/start?view=kanban", { headers: { ...page.headers, Cookie: cookie } });
   expect(pass.status).toBe(200);
   expect((await f.request("/login", { headers: { Cookie: cookie } })).status).toBe(200);
   expect(f.seen).toEqual([
