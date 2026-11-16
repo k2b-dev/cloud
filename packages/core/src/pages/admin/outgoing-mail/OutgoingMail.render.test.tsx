@@ -47,7 +47,7 @@ const state: OutgoingMailState = {
   apps: {
     defaultProfile: "noreply",
     items: [
-      { appId: "core", name: "Core", registered: true, declared: true, mode: "default", profiles: [], readDeclared: false, logApps: [] },
+      { appId: "core", name: "Cloud", registered: true, declared: true, mode: "default", profiles: [], readDeclared: false, logApps: [] },
       {
         appId: "invoices",
         name: "Invoices",
@@ -157,7 +157,7 @@ test("shows whose sent mail each app may read, on the page and in its dialog", (
     );
   const invoices = dialog("en", "invoices");
   // Core's system email is never offered, and an app does not need a grant for its own mail.
-  expect(invoices).not.toContain(">Core<");
+  expect(invoices).not.toContain(">Cloud<");
   expect(invoices).not.toContain(">Invoices<");
   expect(invoices).toContain("Metadata");
   expect(invoices).toContain("Content");
@@ -197,7 +197,7 @@ test("content grants are labelled separately, while missing old-server fields re
 test("lists apps that request mail before the others", () => {
   const html = render("en", state);
   expect(html.indexOf("Invoices")).toBeLessThan(html.indexOf("Files"));
-  expect(html.indexOf("Core")).toBeLessThan(html.indexOf("Files"));
+  expect(html.indexOf(">Cloud<")).toBeLessThan(html.indexOf("Files"));
 });
 
 test("an installation without profiles explains what to do first", () => {

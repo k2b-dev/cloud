@@ -27,7 +27,7 @@ const pageLocale = (req: Request, operatorDefault: string): "de" | "en" => {
 
 const nonce = (): string => Buffer.from(crypto.getRandomValues(new Uint8Array(18))).toString("base64url");
 
-const contentSecurityPolicy = (value: string): string =>
+export const contentSecurityPolicy = (value: string): string =>
   [
     "default-src 'none'",
     `script-src 'nonce-${value}'`,
