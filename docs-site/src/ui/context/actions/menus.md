@@ -70,6 +70,15 @@ and 12rem minimum width. Trigger styling is configured separately.
 </Dropdown.Root>
 ```
 
+Give an entry `key: "E"` when people choose from the menu often: while the menu
+is open and the focus is not in a field, that letter chooses the entry, and the
+row ends with the letter as a key cap (`aria-keyshortcuts` names it). A disabled
+entry keeps its letter without effect. Give each entry of a menu its own
+letter. `heading` puts a quiet line above the entries, such as "Open beside";
+`keyHint: [start, end]` puts how the keys work below them, such as "↑↓ choose ·
+Enter opens" and "A letter chooses directly". A phone sheet shows neither keys
+nor that hint.
+
 Set `phone="sheet"` on `Dropdown.Root` to open the same items in a bottom sheet
 below 48rem. The default `phone="menu"` keeps the menu beside its trigger.
 `SplitButton` takes the same `phone` prop and passes it to its menus.

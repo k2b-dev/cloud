@@ -1,0 +1,46 @@
+import { i18n } from "@k2b/stdlib";
+
+/** Copy of the menu behind "+" beside a chat (Feinschliff v3, section 6). */
+export const addMenuMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      open: "Open beside",
+      result: "Result from this chat",
+      resultNone: "No result in this chat yet",
+      files: "Files of the chat",
+      website: "Read a web page",
+      keysMove: "↑↓ choose · Enter opens",
+      keysLetter: "A letter chooses directly",
+      keysBack: "Esc back",
+      resultsHeading: "Open a result",
+      resultsSearch: ({ count }: { count: number }) => `Search ${count} results`,
+      noMatch: "Nothing matches.",
+      addressHeading: "Read a web page",
+      addressLabel: "Address",
+      addressPlaceholder: "https://…",
+      addressOpen: "Open",
+      addressInvalid: "Enter a web address that starts with https:// or http://.",
+      addressNote: "Cloud fetches the page for you in a reading view, without sign-in, scripts, or pictures.",
+    },
+    de: {
+      open: "Daneben öffnen",
+      result: "Ergebnis aus diesem Chat",
+      resultNone: "Noch kein Ergebnis in diesem Chat",
+      files: "Dateien des Chats",
+      website: "Webseite lesen",
+      keysMove: "↑↓ wählen · Enter öffnet",
+      keysLetter: "Buchstabe wählt direkt",
+      keysBack: "Esc zurück",
+      resultsHeading: "Ergebnis öffnen",
+      resultsSearch: ({ count }: { count: number }) => `In ${count} Ergebnissen suchen`,
+      noMatch: "Nichts gefunden.",
+      addressHeading: "Webseite lesen",
+      addressLabel: "Adresse",
+      addressPlaceholder: "https://…",
+      addressOpen: "Öffnen",
+      addressInvalid: "Gib eine Webadresse ein, die mit https:// oder http:// beginnt.",
+      addressNote: "Cloud holt die Seite für dich als Leseansicht, ohne Anmeldung, Skripte und Bilder.",
+    },
+  },
+});

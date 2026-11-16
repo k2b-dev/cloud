@@ -64,6 +64,14 @@ const activatePanesItem = (layout: PanesLayout, itemId: string): PanesLayout => 
   return layout.root ? { ...layout, root: visit(layout.root) } : layout;
 };
 
+/** Adds a tab to the group that holds `besideId`, at its end; the arrangement stays as it is when no group holds it. */
+const addBeside = (node: PanesNode, besideId: string, id: string): PanesNode =>
+  node.type === "group"
+    ? node.items.includes(besideId) && !node.items.includes(id)
+      ? { ...node, items: [...node.items, id] }
+      : node
+    : { ...node, first: addBeside(node.first, besideId, id), second: addBeside(node.second, besideId, id) };
+
 /** The arrangement for these tabs: the given one where it still fits, every other tab added to its first group. */
 const fitLayout = (layout: PanesLayout | null, tabs: readonly WorkspaceTab[]): PanesLayout | null => {
   const ids = tabs.map((tab) => workspaceTabId(tab.key));
@@ -194,7 +202,8 @@ export function createArtifactWorkspace(
     const url = new URL(address);
     if (url.protocol === "http:" || url.protocol === "https:") window.open(url.href, "_blank", "noopener,noreferrer");
   };
-  const open = (tab: WorkspaceTab | null) => {
+  /** Opens a tab in front; `beside` names a Panes item whose group takes a new tab, as the + of that group asked. */
+  const open = (tab: WorkspaceTab | null, options: { beside?: string | null } = {}) => {
     if (!tab || (tab.kind === "web" && !isWebAddress(tab.url))) return;
     if (tab.kind === "web" && tab.url.length > WEB_TAB_URL_MAX) {
       openInBrowser(tab.url);
@@ -203,8 +212,13 @@ export function createArtifactWorkspace(
     update((current) => {
       const opened = openWorkspaceTab(current, tab);
       const id = workspaceTabId(tab.key);
-      // A new tab joins the first pane, in front; the arrangement of the others stays.
-      const layout = fitLayout(current.layout, opened.tabs);
+      // A new tab joins the group whose + asked, otherwise the first pane, in front; the arrangement of the others stays.
+      const beside = options.beside;
+      const placed =
+        beside && current.layout?.root && !current.tabs.some((open) => open.key === tab.key)
+          ? { ...current.layout, root: addBeside(current.layout.root, beside, id) }
+          : current.layout;
+      const layout = fitLayout(placed, opened.tabs);
       return { ...current, ...opened, layout: layout && activatePanesItem(layout, id) };
     });
     setMobile("workspace");

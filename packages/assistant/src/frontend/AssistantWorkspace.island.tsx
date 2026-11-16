@@ -82,6 +82,7 @@ import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
 import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
+import type { AssistantAddMenuOpen } from "./AssistantAddMenu";
 import AssistantApprovalsView from "./AssistantApprovalsView";
 import {
   AssistantChatContextContent,
@@ -101,6 +102,7 @@ import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./Assistan
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
+import { bindAddMenuShortcut } from "./add-menu-shortcut";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {
@@ -224,6 +226,8 @@ type ProjectViewState = {
 
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
 const ArtifactWorkspace = lazy(() => import("../artifacts/Workspace").then((module) => ({ default: module.ArtifactWorkspace })));
+/** The menu behind "+" loads with its first use. */
+const AddMenu = lazy(() => import("./AssistantAddMenu").then((module) => ({ default: module.AssistantAddMenu })));
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
@@ -1609,6 +1613,18 @@ export default function AssistantWorkspace(props: Props) {
     ];
   });
   // The box "In this chat": a click opens the thing as a tab beside the chat, or jumps to it.
+  // The menu behind every "+" beside the chat loads with its first use; a request before then waits for it.
+  const [addMenuWanted, setAddMenuWanted] = createSignal(false);
+  const [addMenuOpenFor, setAddMenuOpenFor] = createSignal<string | null | undefined>(undefined);
+  let openAddMenu: AssistantAddMenuOpen | undefined;
+  let pendingAdd: [HTMLElement, string | null] | undefined;
+  // Ctrl/⌘ + Shift + 1 opens the same menu beside the + that shows.
+  onMount(() => onCleanup(bindAddMenuShortcut((from, beside) => requestAddMenu(from, beside))));
+  const requestAddMenu = (from: HTMLElement, beside: string | null) => {
+    if (openAddMenu) return openAddMenu(from, beside);
+    pendingAdd = [from, beside];
+    setAddMenuWanted(true);
+  };
   const contextBoxActions = (): ContextBoxActions => ({
     onOpen: (target) => {
       const actions = sidebarActions();
@@ -1624,6 +1640,7 @@ export default function AssistantWorkspace(props: Props) {
     onOpenAll: () => openContextOverview("files", sidebarCopy().title),
     onOpenSources: () => openContextOverview("sources", contextText("Sources")),
     onOpenContext: () => openContextOverview("context", artifactCopy().context),
+    onAdd: (from) => requestAddMenu(from, null),
   });
   const openContextSheet = () =>
     // The phone sheet loads when it opens.
@@ -3023,6 +3040,22 @@ export default function AssistantWorkspace(props: Props) {
                           </Show>
                         </div>
                         <Show when={activeConversation() && !emptyChat()}>
+                          <Show when={addMenuWanted()}>
+                            <AddMenu
+                              chatId={chat.activeConversationId()}
+                              project={activeConversationProject()}
+                              snapshot={contextState.snapshot}
+                              webReader={webReader() === true}
+                              openTab={(tab, beside) => artifactWorkspace.open(tab, { beside })}
+                              onOpenFor={setAddMenuOpenFor}
+                              register={(open) => {
+                                openAddMenu = open;
+                                const pending = pendingAdd;
+                                pendingAdd = undefined;
+                                if (pending) queueMicrotask(() => open(...pending));
+                              }}
+                            />
+                          </Show>
                           <AssistantChatContextPlaces
                             chatId={chat.activeConversationId()}
                             state={contextState}
@@ -3096,7 +3129,8 @@ export default function AssistantWorkspace(props: Props) {
                     onOpenSecrets={openChatSecrets}
                     snapshot={contextState.snapshot}
                     onAsk={askAboutTab}
-                    onAdd={() => openContextOverview("files", sidebarCopy().title)}
+                    onAdd={(target, from) => requestAddMenu(from, target)}
+                    addMenuOpenFor={addMenuOpenFor()}
                     webReader={webReader() === true}
                     arrangeHintSeen={props.arrangeHintSeen === true}
                   />

@@ -1,7 +1,10 @@
 import { AppWorkspace, LocaleProvider } from "@k2b/ui";
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput } from "../chat-workspace";
+import { AssistantAddMenu, type AssistantAddMenuOpen } from "../frontend/AssistantAddMenu";
 import { emptySidebarSnapshot, fileResult, upload } from "../frontend/AssistantChatSidebar.fixture";
+import { bindAddMenuShortcut } from "../frontend/add-menu-shortcut";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
 import { contextTab, fileTab, presentationTab, webTab } from "./workspace-state";
@@ -71,6 +74,13 @@ const snapshot = emptySidebarSnapshot({
   fileCount: 1,
 });
 const locale = new URL(location.href).searchParams.get("lang") ?? "de";
+// `?web=0`: the operator has not set up reading web pages; `?results=0`: the chat has no result yet.
+const params = new URL(location.href).searchParams;
+const webReader = params.get("web") !== "0";
+const shown = params.get("results") === "0" ? { ...snapshot, results: [] } : snapshot;
+let openAdd: AssistantAddMenuOpen | undefined;
+bindAddMenuShortcut((from, beside) => openAdd?.(from, beside));
+const [addMenuOpenFor, setAddMenuOpenFor] = createSignal<string | null | undefined>(undefined);
 
 render(
   () => (
@@ -83,6 +93,11 @@ render(
                 <div class="harness-chat" style={{ padding: "1.5rem", height: "100%" }}>
                   <p>Leg zu jedem Lieferavis den Lieferschein aus dem Anhang im Ordner „Lieferscheine 2026“ ab.</p>
                   <p>Mache ich. Ich erweitere die Automation des Postfachs.</p>
+                  {/* A field of the page and the chat's composer, for the key that opens the menu behind "+". */}
+                  <input aria-label="Chats durchsuchen" />
+                  <div class="assistant-chat-composer">
+                    <textarea aria-label="Gustav etwas fragen" />
+                  </div>
                 </div>
               </AppWorkspace.MainPane>
               <AppWorkspace.MainPane
@@ -101,10 +116,21 @@ render(
                   conversationId={chatId}
                   onJump={() => {}}
                   onAsk={(title) => ((window as unknown as { asked?: string }).asked = title)}
-                  onAdd={() => controller.open(contextTab(chatId, "files", "In diesem Chat"))}
+                  onAdd={(target, from) => openAdd?.(from, target)}
+                  addMenuOpenFor={addMenuOpenFor()}
                   arrangeHintSeen
-                  webReader
-                  snapshot={() => snapshot}
+                  webReader={webReader}
+                  snapshot={() => shown}
+                />
+                <AssistantAddMenu
+                  chatId={chatId}
+                  snapshot={() => shown}
+                  webReader={webReader}
+                  openTab={(tab, beside) => controller.open(tab, { beside })}
+                  onOpenFor={setAddMenuOpenFor}
+                  register={(open) => {
+                    openAdd = open;
+                  }}
                 />
               </AppWorkspace.MainPane>
             </AppWorkspace.Main>
