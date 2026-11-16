@@ -58,7 +58,6 @@ import {
   dialogCore,
   LocaleProvider,
   NoticeCard,
-  openSpotlightSearch,
   Placeholder,
   prompts,
   reconcileChatMentions,
@@ -1655,42 +1654,17 @@ export default function AssistantWorkspace(props: Props) {
   });
 
   const chooseEmptyChatProject = async () => {
-    const selected = await openSpotlightSearch<{ projectId: string | null }>({
-      title: t().chooseProjectTitle,
-      icon: "ti ti-folder-open",
-      placeholder: t().searchProjects,
-      minQueryLength: 0,
-      noResultsText: t().noMatchingProjects,
-      resolve: ({ query }) => {
-        const normalized = query.trim().toLocaleLowerCase();
-        return [
-          {
-            value: { projectId: null },
-            label: t().noProject,
-            desc: t().separateChat,
-            icon: "ti ti-message-circle",
-          },
-          ...projects()
-            .filter((project) => !normalized || `${project.name} ${project.description}`.toLocaleLowerCase().includes(normalized))
-            .map((project) => ({
-              value: { projectId: project.id },
-              label: project.name,
-              desc: project.description || t().sharedProjectContext,
-              icon: project.icon || "ti ti-folder",
-            })),
-        ];
-      },
-    });
-    if (!selected?.value || selected.value.projectId === emptyProjectId()) return;
+    const selected = await import("./empty-chat-project-picker").then(({ pickEmptyChatProject }) => pickEmptyChatProject(t(), projects));
+    if (selected === undefined || selected.projectId === emptyProjectId()) return;
 
     setChoosingProject(true);
     try {
       const conversation = activeConversation();
       if (!conversation) {
-        if (selected.value.projectId) await createConversation(true, selected.value.projectId);
+        if (selected.projectId) await createConversation(true, selected.projectId);
         return;
       }
-      const updated = await assistantApi.updateConversationProject(conversation.id, selected.value.projectId);
+      const updated = await assistantApi.updateConversationProject(conversation.id, selected.projectId);
       setEmptyProjectId(updated.projectId);
       await Promise.all([
         chat.refreshActiveConversation(),
