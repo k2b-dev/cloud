@@ -37,7 +37,7 @@ type EntryState = "pending" | "sending" | "failed";
 const ORIGIN_ICON: Record<AssistantQueueOrigin["kind"] | "own", string> = {
   own: "ti ti-corner-down-right",
   person: "ti ti-user",
-  automation: "ti ti-app-window",
+  automation: "ti ti-feat-code",
   chat: "ti ti-sparkles",
 };
 

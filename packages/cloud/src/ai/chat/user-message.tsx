@@ -84,7 +84,7 @@ export const aiUserMessageSource = (entry: AiStoredMessage, locale: string): JSX
   const content = (
     <>
       <i
-        class={`ai-message-source__icon ${origin.kind === "automation" ? "ti ti-app-window" : "ti ti-sparkles"}`}
+        class={`ai-message-source__icon ${origin.kind === "automation" ? "ti ti-feat-code" : "ti ti-sparkles"}`}
         data-kind={origin.kind}
         aria-hidden="true"
       />
