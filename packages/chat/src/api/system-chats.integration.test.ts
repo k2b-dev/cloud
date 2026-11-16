@@ -253,6 +253,51 @@ suite("system chats use caller-authorized readers", () => {
     expect(outbox.map((row) => row.ordering_key).sort()).toEqual([`s:${chat.id}:${secret.id}`, `t:${chat.id}:${secret.id}`]);
   });
 
+  test("a quote of a message in an unreadable item thread looks like an unknown message, with or without thread and reply", async () => {
+    const owner = await f.person(),
+      guest = await f.person();
+    const id = testShortId(),
+      hidden = testShortId(),
+      visible = testShortId();
+    for (const person of [owner, guest]) grant(person, "spaces.space", id, { name: "Project", permission: "write" });
+    grant(owner, "spaces.item", hidden, { title: "Secret", kind: "task", spaceId: id });
+    for (const person of [owner, guest]) grant(person, "spaces.item", visible, { title: "Visible", kind: "event", spaceId: id });
+    key(guest, "spaces.item", hidden);
+    const chat = await open(owner, id);
+    await open(guest, id);
+    const secret = await thread(owner, chat.id, hidden),
+      publicThread = await thread(owner, chat.id, visible);
+    const post = async (person: Person, input: Record<string, unknown>) => {
+      const response = await f.request(person.headers, `/${chat.id}/messages`, "POST", { clientId: crypto.randomUUID(), ...input });
+      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+    };
+    const hiddenMessage = await post(owner, { body: "Secret plan for Friday", thread: secret.id });
+    expect(hiddenMessage.status).toBe(201);
+    const readable = await post(owner, { body: "Visible plan", thread: publicThread.id });
+    expect(readable.status).toBe(201);
+    const hiddenId = String(hiddenMessage.body.id);
+    const unknown = await post(guest, { body: "Answer", quotes: [{ message: testShortId(10), text: "Secret plan" }] });
+    expect(unknown.status).toBe(404);
+    for (const input of [
+      { body: "Answer", quotes: [{ message: hiddenId, text: "Secret plan" }] },
+      { body: "Answer", quotes: [{ message: hiddenId, text: "invented words" }] },
+      { body: "Answer", thread: publicThread.id, quotes: [{ message: hiddenId, text: "Secret plan" }] },
+      { body: "Answer", replyTo: String(readable.body.id), quotes: [{ message: hiddenId, text: "Secret plan" }] },
+    ]) {
+      const refused = await post(guest, input);
+      // The same answer as for a message that does not exist: nothing tells the guest that it exists or where.
+      expect({ status: refused.status, code: refused.body.code, message: refused.body.message }).toEqual({
+        status: unknown.status,
+        code: unknown.body.code,
+        message: unknown.body.message,
+      });
+    }
+    // The owner, who reads both threads, gets the thread rule instead.
+    expect(
+      (await post(owner, { body: "Answer", thread: publicThread.id, quotes: [{ message: hiddenId, text: "Secret plan" }] })).status,
+    ).toBe(400);
+  });
+
   test("system item messages project each viewer's reactions and publish only an item-scoped hint", async () => {
     const owner = await f.person(),
       reader = await f.person();

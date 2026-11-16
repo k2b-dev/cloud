@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import * as nav from "@k2b/ssr/nav";
 import { createSignal } from "solid-js";
 import { delegateEvents, render } from "solid-js/web";
 import { createNavigation, type NavigationItem } from "../src/layout/navigation-model";
@@ -512,6 +513,51 @@ test("the tree is built once per change, however many rows read it, and not befo
     expect(dom.root.textContent).toContain("Renamed");
   } finally {
     dispose();
+    dom.cleanup();
+  }
+});
+
+test("a plain link swaps the page after the host closed its menu, so a host with page swaps keeps its document", async () => {
+  const dom = createDomTestHarness();
+  const swapped = spyOn(nav, "swapPage").mockResolvedValue();
+  const loaded = spyOn(nav, "documentNavigate").mockImplementation(() => {});
+  try {
+    const { default: Navigation } = await import("../src/layout/Navigation");
+    const order: string[] = [];
+    swapped.mockImplementation(async (href) => {
+      order.push(`swap ${new URL(href).pathname}`);
+    });
+    const navigation = createNavigation({
+      items: () => [
+        { id: "berlin", label: "Berlin", href: "/app/weather/berlin" },
+        { id: "list", label: "List", href: "/app/weather/list", scroll: "preserve" },
+      ],
+    });
+    const dispose = render(
+      () => (
+        <Navigation
+          navigation={navigation}
+          label="Weather"
+          beforeSelect={async () => {
+            order.push("dismissed");
+            return true;
+          }}
+        />
+      ),
+      dom.root,
+    );
+    const links = dom.root.querySelectorAll<HTMLAnchorElement>("a");
+    links[0]!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    links[1]!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(order).toEqual(["dismissed", "swap /app/weather/berlin", "dismissed", "swap /app/weather/list"]);
+    expect(swapped.mock.calls.map(([, options]) => options)).toEqual([{}, { scroll: "preserve" }]);
+    expect(loaded).not.toHaveBeenCalled();
+    dispose();
+  } finally {
+    swapped.mockRestore();
+    loaded.mockRestore();
     dom.cleanup();
   }
 });

@@ -7,7 +7,8 @@ export const PANEL_CONTEXT_CHANGED = "cloud.panel.context.changed";
 export const PANEL_CONTEXT_ELEMENT = "cloud-panel-context";
 export const PANEL_SHORTCUTS_ELEMENT = "cloud-panel-shortcuts";
 export const PANEL_SHORTCUTS_CHANGED = "cloud.panel.shortcuts.changed";
-export type PageContextSource = { scope?: CloudResourceRef };
+/** Null explicitly clears the server scope while this publication is active. */
+export type PageContextSource = { scope?: CloudResourceRef | null };
 export type PageContextCollection = { sources: PageContextSource[] };
 export type PanelConsentRequest = { provider: string; allowed: boolean };
 export type PanelState = { provider: string; appName: string; consent: boolean; allowed: boolean; saving: boolean; open: boolean };
