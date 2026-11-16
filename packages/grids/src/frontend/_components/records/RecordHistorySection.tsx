@@ -1,6 +1,5 @@
-import { CloudAvatar } from "@k2b/cloud/account/ui";
 import type { DateContext } from "@k2b/stdlib";
-import { IconButton, Placeholder, Section, Tooltip, useLocale } from "@k2b/ui";
+import { type ActivityDensity, type ActivityEntry, ActivityList, type ActivityTone, Section, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { PublicRecordHistoryEntry as RecordHistoryEntry } from "../../../api/public-audit";
 import type { PublicField as Field } from "../../../api/public-dto";
@@ -27,23 +26,14 @@ const ACTION_ICONS: Record<string, string> = {
   "document_link.accessed": "ti-link",
 };
 
-const ACTION_COLORS: Record<string, string> = {
-  created: "text-emerald-600 dark:text-emerald-400",
-  updated: "text-blue-600 dark:text-blue-400",
-  deleted: "text-red-600 dark:text-red-400",
-  restored: "text-amber-600 dark:text-amber-400",
-  imported: "text-zinc-600 dark:text-zinc-400",
-  "file.added": "text-emerald-600 dark:text-emerald-400",
-  "file.replaced": "text-blue-600 dark:text-blue-400",
-  "file.removed": "text-amber-600 dark:text-amber-400",
-  finalized: "text-emerald-600 dark:text-emerald-400",
-  "record_snapshot.created": "text-blue-600 dark:text-blue-400",
-  "document.created": "text-blue-600 dark:text-blue-400",
-};
-
 export const formatRecordHistoryAction = (action: string, locale = "en"): string => {
   const t = recordMessages.resolve([locale]).t;
   const labels: Record<string, string> = {
+    created: t.created,
+    updated: t.updated,
+    deleted: t.deleted,
+    restored: t.restored,
+    imported: t.imported,
     "file.added": t.fileAdded,
     "file.replaced": t.fileReplaced,
     "file.removed": t.fileRemoved,
@@ -87,132 +77,109 @@ type HistoryProps = {
   fields: Field[];
   dateConfig?: DateContext;
   onOpenRecord?: (recordId: string, deleted: boolean) => void;
+  /** `wide` for a dialog: the meta line on the right. Defaults to the compact density of the detail panel. */
+  density?: ActivityDensity;
+  /** Older events follow below, such as in the combined audit trail; the rail fades out. */
+  more?: boolean;
 };
+
+/** Only a completed state carries a tone; every other action stays grey. */
+const actionTone = (action: string): ActivityTone => (action === "finalized" ? "success" : "neutral");
 
 export function RecordHistoryList(props: HistoryProps) {
   const locale = useLocale();
   const t = () => recordMessages.resolve([locale()]).t;
   const fieldNames = () => new Map(props.fields.map((field) => [field.id, field.name]));
-  return (
-    <div class="flex flex-col gap-2">
-      <Show when={props.entries.length === 0}>
-        <Placeholder align="left" class="px-0 py-2" description={<>{t().noHistory}</>} />
-      </Show>
-      <For each={props.entries}>
-        {(entry) => {
-          const fieldsChanged = entry.diff ? Object.keys(entry.diff) : [];
-          const combinedEntry = "source" in entry;
-          const changedLabels = fieldsChanged.map(
-            (fieldId) => fieldNames().get(fieldId) ?? (combinedEntry ? t().unavailableField : fieldId),
-          );
-          const summary =
-            fieldsChanged.length === 0
-              ? null
-              : fieldsChanged.length <= 3
-                ? changedLabels.join(", ")
-                : `${changedLabels.slice(0, 3).join(", ")} ${t().more({ count: fieldsChanged.length - 3 })}`;
-          return (
-            <div class="relative">
-              <details class="text-xs">
-                <summary
-                  class={`cursor-pointer select-none flex items-baseline gap-2 ${props.onOpenRecord && entry.recordId ? "pr-8" : ""}`}
-                >
-                  <i
-                    class={`ti ${ACTION_ICONS[entry.action] ?? "ti-circle"} ${ACTION_COLORS[entry.action] ?? "text-dimmed"} text-xs`}
-                    aria-hidden="true"
-                  />
-                  <span class="text-secondary">{formatRecordHistoryAction(entry.action, locale())}</span>
-                  <Show
-                    when={entry.userDisplayName}
-                    fallback={
-                      <Show when={entry.userId === null} fallback={<span class="text-dimmed italic">{t().deletedUser}</span>}>
-                        <span class="text-dimmed inline-flex items-center gap-1">
-                          <i class="ti ti-user-question text-[10px]" aria-hidden="true" />
-                          {t().systemActorBy}
-                        </span>
-                      </Show>
-                    }
-                  >
-                    {(name) => (
-                      <span class="inline-flex min-w-0 items-center gap-1 text-dimmed">
-                        {t().by}
-                        <CloudAvatar
-                          username={name()}
-                          userId={entry.userId}
-                          avatarHash={entry.userAvatarHash}
-                          size="xs"
-                          class="h-4! w-4! text-[8px]!"
-                        />
-                        <span class="truncate">{name()}</span>
-                      </span>
-                    )}
+  const fieldName = (fieldId: string, combined: boolean) => fieldNames().get(fieldId) ?? (combined ? t().unavailableField : fieldId);
+  // Each event is one timeline row: what happened, which fields changed and where it was published from, and who did it.
+  // Answers and the before and after of each field fold out on a click.
+  const activityEntries = (): ActivityEntry[] =>
+    props.entries.map((entry) => {
+      const fieldsChanged = entry.diff ? Object.keys(entry.diff) : [];
+      const combined = "source" in entry;
+      const changedLabels = fieldsChanged.map((fieldId) => fieldName(fieldId, combined));
+      const summary =
+        fieldsChanged.length === 0
+          ? null
+          : fieldsChanged.length <= 3
+            ? changedLabels.join(", ")
+            : `${changedLabels.slice(0, 3).join(", ")} ${t().more({ count: fieldsChanged.length - 3 })}`;
+      const source = "source" in entry ? entry.source : null;
+      const detail = [
+        summary ? t().changed({ value: summary }) : null,
+        source ? t().publishedFrom({ base: source.baseName, table: source.tableName }) : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+      const answers = entry.context?.answers ?? [];
+      const recordId = entry.recordId;
+      return {
+        id: entry.id,
+        at: entry.createdAt,
+        icon: `ti ${ACTION_ICONS[entry.action] ?? "ti-circle"}`,
+        tone: actionTone(entry.action),
+        text: formatRecordHistoryAction(entry.action, locale()),
+        detail: detail || undefined,
+        actor: entry.userDisplayName ?? (entry.userId === null ? t().systemActor : t().deletedUser),
+        details:
+          answers.length > 0 || fieldsChanged.length > 0
+            ? () => (
+                <div class="flex flex-col gap-2 text-[13px]">
+                  <Show when={answers.length > 0}>
+                    <dl class="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1">
+                      <For each={answers}>
+                        {(answer) => (
+                          <>
+                            <dt class="text-dimmed">{answer.label}</dt>
+                            <dd class="whitespace-pre-wrap text-secondary">{answer.optionLabel ?? answer.value}</dd>
+                          </>
+                        )}
+                      </For>
+                    </dl>
                   </Show>
-                  <Tooltip.Anchor content={entry.createdAt} class="ml-auto shrink-0">
-                    <span class="text-[10px] text-dimmed">{formatRecordRelativeTime(entry.createdAt, props.dateConfig)}</span>
-                  </Tooltip.Anchor>
-                </summary>
-                <Show when={summary}>{(value) => <p class="ml-5 text-[11px] text-dimmed">{t().changed({ value: value() })}</p>}</Show>
-                <Show when={"source" in entry ? entry.source : null}>
-                  {(source) => (
-                    <p class="ml-5 text-[11px] text-dimmed">{t().publishedFrom({ base: source().baseName, table: source().tableName })}</p>
-                  )}
-                </Show>
-                <Show when={(entry.context?.answers.length ?? 0) > 0}>
-                  <dl class="ml-5 mt-2 grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-[11px]">
-                    <For each={entry.context?.answers ?? []}>
-                      {(answer) => (
-                        <>
-                          <dt class="text-dimmed">{answer.label}</dt>
-                          <dd class="whitespace-pre-wrap text-secondary">{answer.optionLabel ?? answer.value}</dd>
-                        </>
-                      )}
-                    </For>
-                  </dl>
-                </Show>
-                <Show when={entry.diff && fieldsChanged.length > 0}>
-                  <dl class="ml-5 mt-2 flex flex-col gap-2">
-                    <For each={fieldsChanged}>
-                      {(fieldId) => {
-                        const change = entry.diff?.[fieldId];
-                        return (
-                          <div class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-2 text-[11px]">
-                            <dt class="font-medium text-secondary">
-                              {fieldNames().get(fieldId) ?? (combinedEntry ? t().unavailableField : fieldId)}
-                            </dt>
-                            <dd class="mt-1 grid grid-cols-[3rem_minmax(0,1fr)] gap-x-2 gap-y-1">
-                              <span class="text-dimmed">{t().before}</span>
-                              <span class="break-words text-secondary">{displayValue(change?.old, t().empty)}</span>
-                              <span class="text-dimmed">{t().after}</span>
-                              <span class="break-words text-secondary">{displayValue(change?.new, t().empty)}</span>
-                            </dd>
-                          </div>
-                        );
-                      }}
-                    </For>
-                  </dl>
-                </Show>
-              </details>
-              <Show when={props.onOpenRecord && entry.recordId}>
-                <Tooltip.Anchor content={t().openRecord} class="absolute right-0 top-0">
-                  <IconButton
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    class="-my-1"
-                    label={t().openRecord}
-                    onClick={() => {
-                      props.onOpenRecord?.(entry.recordId!, "recordDeletedAt" in entry && entry.recordDeletedAt !== null);
-                    }}
-                  >
-                    <i class="ti ti-arrow-up-right" aria-hidden="true" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              </Show>
-            </div>
-          );
-        }}
-      </For>
-    </div>
+                  <Show when={fieldsChanged.length > 0}>
+                    <dl class="flex flex-col gap-2">
+                      <For each={fieldsChanged}>
+                        {(fieldId) => {
+                          const change = entry.diff?.[fieldId];
+                          return (
+                            <div>
+                              <dt class="font-medium text-secondary">{fieldName(fieldId, combined)}</dt>
+                              <dd class="mt-0.5">
+                                <ActivityList.Change
+                                  before={displayValue(change?.old, t().empty)}
+                                  now={displayValue(change?.new, t().empty)}
+                                />
+                              </dd>
+                            </div>
+                          );
+                        }}
+                      </For>
+                    </dl>
+                  </Show>
+                </div>
+              )
+            : undefined,
+        action:
+          props.onOpenRecord && recordId
+            ? {
+                icon: "ti ti-arrow-up-right",
+                label: t().openRecord,
+                onClick: () => props.onOpenRecord?.(recordId, "recordDeletedAt" in entry && entry.recordDeletedAt !== null),
+              }
+            : null,
+      };
+    });
+  return (
+    <Show when={props.entries.length > 0} fallback={<ActivityList.Empty text={t().noHistory} />}>
+      <ActivityList
+        entries={activityEntries()}
+        density={props.density}
+        more={props.more}
+        dateConfig={props.dateConfig}
+        label={t().history}
+      />
+    </Show>
   );
 }
 

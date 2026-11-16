@@ -223,7 +223,14 @@ function CombinedAuditDialog(props: Props) {
                 />
               )}
             </Show>
-            <RecordHistoryList entries={items()} fields={props.fields} dateConfig={props.dateConfig} onOpenRecord={openRecord} />
+            <RecordHistoryList
+              entries={items()}
+              fields={props.fields}
+              dateConfig={props.dateConfig}
+              onOpenRecord={openRecord}
+              density="wide"
+              more={Boolean(cursor())}
+            />
             <Show when={cursor()}>
               <Button
                 variant="secondary"
