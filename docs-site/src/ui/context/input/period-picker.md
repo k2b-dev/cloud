@@ -85,6 +85,50 @@ every preset and the whole current year as explicit days, so a new choice never
 moves the title or links beside it. A range across the turn of the
 year may be wider; right-aligned in a header it grows to the left.
 
+## Step through periods
+
+With `steps`, two small arrows stand before the trigger and step to the
+previous and next period, as in a report that people read week by week. After
+the trigger a text link leads back to the current period: **This week**,
+**This month**, **This quarter**, **This year**, **Today**, or **Current
+period** for any other range. On the current period the link is hidden but
+keeps its place, so the row never moves while stepping.
+
+- A calendar week, month, quarter or year steps to its neighbour; months keep
+  their own length, so October 1–31 steps to November 1–30.
+- Any other range, including a single day, moves by its own length:
+  October 28 – November 6 steps to November 7–16.
+- **All time** and other open periods do not step; both arrows are disabled.
+- A step that lands on the days of a preset in the list stores that preset,
+  for example **Last week** one step before **This week**, so the value stays
+  relative. Any other step stores explicit days.
+- A calendar week, month or year that the picker shows as explicit days reads
+  as that: **9.–15. Nov. 2026**, **October 2026**, **2025**.
+- `min` and `max` are the first and last day there is anything to show. An
+  arrow whose neighbour lies wholly before `min` or after `max` stays
+  focusable, says why in its name and tooltip, for example **Next period:
+  nothing after 11/30/2026**, and does not step. The calendar of **Custom
+  range** offers no days outside them, and typed days outside them are refused
+  with their reason.
+- Today, the time zone and the week start come from `now` and `dateConfig`,
+  as for the presets.
+
+```tsx
+<PeriodPicker
+  aria-label="Period"
+  steps
+  min="2019-03-14"
+  max={today}
+  value={period()}
+  onValueChange={setPeriod}
+  presets={[periodPresets.thisWeek, periodPresets.lastWeek, periodPresets.thisMonth, periodPresets.lastMonth]}
+  dateConfig={{ timeZone: "Europe/Berlin", weekStartsOn: 1 }}
+/>
+```
+
+The picker stays an island control: stepping calls `onValueChange` like any
+other choice, and the app writes the value to the URL or settings.
+
 ## Pick a custom range
 
 **Custom range** opens the calendar beside the list in the same popover, with
@@ -115,6 +159,9 @@ type PeriodPickerProps = Omit<ValueFieldProps<PeriodValue | null>, "value"> & {
   dateConfig?: DateContext;
   now?: Date;
   loading?: boolean;
+  steps?: boolean;
+  min?: string;
+  max?: string;
 };
 ```
 
@@ -135,6 +182,12 @@ where the arrow keys move between days and also into the second month,
 date as its name. **Tab** moves between the list, the fields, the calendar, and
 **Apply**. **Escape** closes without a change and returns focus to the
 trigger. Typed errors are linked to their field and set `aria-invalid`.
+
+With `steps`, the arrows are buttons named **Previous period** and **Next
+period** before the trigger in the tab order, and the link back is a button
+after it. An arrow at `min` or `max` keeps focus and adds the reason to its
+name instead of leaving the tab order. A hidden link back is out of the tab
+order.
 
 ## Runtime
 

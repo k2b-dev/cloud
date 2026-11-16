@@ -1,15 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import {
+  currentPeriodOf,
   formatPeriodDays,
   formatPeriodRange,
+  formatPeriodUnit,
   isPeriodDay,
   type PeriodPreset,
   parsePeriodValue,
   periodContext,
   periodDayCount,
   periodInstants,
+  periodKind,
   periodPresets,
+  periodStep,
   resolvePeriod,
+  stepPeriod,
 } from "./period";
 
 const presets: PeriodPreset[] = [
@@ -150,5 +155,67 @@ describe("period labels", () => {
     expect(formatPeriodRange({ start: "2026-11-01", end: "2026-11-07" }, "de")).toBe("01.–07.11.2026");
     expect(formatPeriodRange({ start: "2025-12-29", end: "2026-01-04" }, "de")).toBe("29.12.2025 – 04.01.2026");
     expect(formatPeriodRange({ start: "2026-11-07", end: "2026-11-07" }, "en-US")).toBe("11/07/2026");
+  });
+});
+
+describe("stepping through periods", () => {
+  test("a calendar month, quarter or year steps to its neighbour, also across years and short months", () => {
+    const month = { start: "2026-01-01", end: "2026-01-31" };
+    expect(periodStep(month)).toEqual({ months: 1 });
+    expect(stepPeriod(month, { months: 1 }, 1)).toEqual({ start: "2026-02-01", end: "2026-02-28" });
+    expect(stepPeriod(month, { months: 1 }, -1)).toEqual({ start: "2025-12-01", end: "2025-12-31" });
+    const quarter = { start: "2026-10-01", end: "2026-12-31" };
+    expect(periodStep(quarter)).toEqual({ months: 3 });
+    expect(stepPeriod(quarter, { months: 3 }, 1)).toEqual({ start: "2027-01-01", end: "2027-03-31" });
+    expect(stepPeriod({ start: "2026-01-01", end: "2026-12-31" }, { months: 12 }, -1)).toEqual({ start: "2025-01-01", end: "2025-12-31" });
+  });
+
+  test("a week, a day or a free range moves by its own length", () => {
+    const week = { start: "2026-11-09", end: "2026-11-15" };
+    expect(periodStep(week)).toEqual({ days: 7 });
+    expect(stepPeriod(week, { days: 7 }, -1)).toEqual({ start: "2026-11-02", end: "2026-11-08" });
+    expect(stepPeriod({ start: "2026-11-07", end: "2026-11-07" }, { days: 1 }, 1)).toEqual({ start: "2026-11-08", end: "2026-11-08" });
+    const free = { start: "2026-10-28", end: "2026-11-06" };
+    expect(periodStep(free)).toEqual({ days: 10 });
+    expect(stepPeriod(free, { days: 10 }, 1)).toEqual({ start: "2026-11-07", end: "2026-11-16" });
+  });
+
+  test("an open period has no neighbour", () => {
+    expect(periodStep({ start: null, end: "2026-11-07" })).toBeUndefined();
+    expect(periodStep({ start: "2026-11-07", end: null })).toBeUndefined();
+  });
+
+  test("the current period keeps the kind and rhythm of the value", () => {
+    expect(currentPeriodOf({ start: "2026-08-01", end: "2026-08-31" }, { months: 1 }, "2026-11-07")).toEqual({
+      start: "2026-11-01",
+      end: "2026-11-30",
+    });
+    expect(currentPeriodOf({ start: "2026-10-19", end: "2026-10-25" }, { days: 7 }, "2026-11-07")).toEqual({
+      start: "2026-11-02",
+      end: "2026-11-08",
+    });
+    // A later period counts back to today too.
+    expect(currentPeriodOf({ start: "2027-04-01", end: "2027-06-30" }, { months: 3 }, "2026-11-07")).toEqual({
+      start: "2026-10-01",
+      end: "2026-12-31",
+    });
+  });
+
+  test("names the kind of a period with the configured week start", () => {
+    expect(periodKind({ start: "2026-11-09", end: "2026-11-15" }, 1)).toBe("week");
+    expect(periodKind({ start: "2026-11-08", end: "2026-11-14" }, 0)).toBe("week");
+    expect(periodKind({ start: "2026-11-08", end: "2026-11-14" }, 1)).toBe("range");
+    expect(periodKind({ start: "2026-11-01", end: "2026-11-30" }, 1)).toBe("month");
+    expect(periodKind({ start: "2026-10-01", end: "2026-12-31" }, 1)).toBe("quarter");
+    expect(periodKind({ start: "2026-11-01", end: "2027-01-31" }, 1)).toBe("range");
+    expect(periodKind({ start: "2026-01-01", end: "2026-12-31" }, 1)).toBe("year");
+    expect(periodKind({ start: "2026-11-07", end: "2026-11-07" }, 1)).toBe("day");
+  });
+
+  test("a calendar week, month or year reads as that", () => {
+    expect(formatPeriodUnit({ start: "2026-11-09", end: "2026-11-15" }, 1, "de")).toBe("9.–15. Nov. 2026");
+    expect(formatPeriodUnit({ start: "2026-10-01", end: "2026-10-31" }, 1, "de")).toBe("Oktober 2026");
+    expect(formatPeriodUnit({ start: "2025-01-01", end: "2025-12-31" }, 1, "en")).toBe("2025");
+    expect(formatPeriodUnit({ start: "2026-10-28", end: "2026-11-06" }, 1, "de")).toBeUndefined();
   });
 });
