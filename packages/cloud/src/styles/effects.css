@@ -44,8 +44,8 @@
   white-space: nowrap;
 }
 
-/* The work line (Gustav chat v12): ✦ and the app tiles, one sentence in 13 px, the time in 12 px tabular figures, and
-   the chevron. One line in every state and the same height whether the turn runs or has ended (Bauplan 6b). */
+/* The work line (Gustav chat v12, Feinschliff 4): only ✦, one sentence in 13 px, then on the right the steps and the
+   time in 12 px tabular figures, and the chevron. The same height whether the turn runs or has ended (Bauplan 6b). */
 .k2b-ui .ai-turn-work {
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
@@ -81,7 +81,8 @@
   white-space: nowrap;
 }
 
-/* The sentence gives way first: it fades at its end, while the step count and what did not go through stay whole. */
+/* The sentence gives way first: it fades at its end (its whole text in the title), while the steps on the right stay
+   whole. */
 .k2b-ui .ai-turn-work__text {
   display: flex;
   min-width: 0;
@@ -94,16 +95,39 @@
 
 .k2b-ui .ai-turn-work__steps {
   flex: none;
+  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  font-size: 0.75rem;
+  line-height: 1.25rem;
   white-space: pre;
 }
 
-/* On a narrow chat the sentence needs the room: the plain step count gives way, what did not go through stays. */
+.k2b-ui .ai-turn-work__steps [data-issue="danger"] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .ai-turn-work__steps [data-issue="warning"] {
+  color: var(--k2b-warning-text);
+}
+
+/* On a narrow chat (Feinschliff 2) the line is 44 px high, so a finished sentence may take two 18 px lines instead of
+   being cut; the step count gives way only where what did not go through stands beside it. */
 @container k2b-chat (max-width: 39.999rem) {
-  .k2b-ui .ai-turn-work__count {
-    display: none;
+  .k2b-ui .ai-turn-work > .k2b-chat-activity__row {
+    min-height: 2.75rem;
   }
 
-  .k2b-ui .ai-turn-work__steps:not([data-issues]) {
+  .k2b-ui .ai-turn-work > .k2b-chat-activity__row > .k2b-chat-activity__copy strong {
+    white-space: normal;
+  }
+
+  /* Wrapped lines end at a word; at most two lines show, so even a rare longer sentence never ends mid-word. */
+  .k2b-ui .ai-turn-work__sentence {
+    max-height: 2.25rem;
+    line-height: 1.125rem;
+    white-space: normal;
+  }
+
+  .k2b-ui .ai-turn-work__steps[data-issues] .ai-turn-work__count {
     display: none;
   }
 }
@@ -113,20 +137,27 @@
   content: " …";
 }
 
+/* ✦ alone, 16 px, centred in its 18 px column, without a surface (Feinschliff 2 and 4). */
 .k2b-ui .ai-turn-work__lead {
   display: inline-flex;
-  align-items: center;
-  gap: 0.1875rem;
+  width: 1.125rem;
+  justify-content: center;
 }
 
 .k2b-ui .ai-turn-work__lead > i {
-  margin-inline-end: 0.3125rem;
   color: var(--k2b-ai-accent);
-  font-size: 0.9375rem;
+  font-size: 1rem;
 }
 
 .k2b-ui .ai-turn-work .k2b-chat-activity__trailing {
   margin-inline-start: auto;
+}
+
+/* Only the work line's own row: steps and time side by side; the opened steps keep their own trailing. */
+.k2b-ui .ai-turn-work > .k2b-chat-activity__row > .k2b-chat-activity__trailing {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
 }
 
 /* The time follows the sentence and the chevron follows the time, each right beside the other (v12); tabular figures keep
@@ -134,6 +165,21 @@
 .k2b-ui .ai-turn-work__meta {
   font-size: 0.75rem;
   line-height: 1.25rem;
+}
+
+/* The work line's own time has a fixed column (Feinschliff 2: 56 px, phone 48 px) in the steps' grey, so steps and time
+   end on the same edges. Folded rows use the same class for their counts and keep their own width. */
+.k2b-ui .ai-turn-work > .k2b-chat-activity__row > .k2b-chat-activity__trailing > .ai-turn-work__meta {
+  width: 3.5rem;
+  flex: none;
+  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  text-align: end;
+}
+
+@container k2b-chat (max-width: 39.999rem) {
+  .k2b-ui .ai-turn-work > .k2b-chat-activity__row > .k2b-chat-activity__trailing > .ai-turn-work__meta {
+    width: 3rem;
+  }
 }
 
 /* Only the sentence shimmers while Gustav works: a plum light runs over it every 2.2 s, on the sentence itself so its

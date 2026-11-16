@@ -206,20 +206,35 @@ test("what a message brings along stands above it: images as previews, files as 
 }, 60_000);
 
 for (const width of [1440, 390])
-  test(`the work line says in one line what the turn did, with ✦ and app tiles, and opens the steps in words (${width} px)`, async () => {
+  test(`the work line says in one line what the turn did, with only ✦, its steps and time on the right, and opens the steps in words (${width} px)`, async () => {
     const { page, close } = await open("antwort", width);
     try {
       const line = ".ai-turn-work > summary";
-      expect(await page.locator(`${line} .ai-turn-work__text`).textContent()).toBe(
-        "In Mail und Dateien nachgesehen · 5 Schritte, 1 ohne Zugriff",
-      );
-      // The sentence gives way first: the step count and what did not go through are never cut.
+      // The sentence names only what the turn did; steps and time stand right in their own column (Feinschliff 4).
+      expect(await page.locator(`${line} .ai-turn-work__text`).textContent()).toBe("In Mail und Dateien nachgesehen");
+      // The sentence is never cut: a phone gives it two 18 px lines in its 44 px row (Feinschliff 2). The whole sentence
+      // is also in the title.
+      const sentenceFits = await page
+        .locator(`${line} .ai-turn-work__sentence`)
+        .evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5 && node.scrollHeight <= node.clientHeight + 0.5);
+      expect(sentenceFits).toBe(true);
+      expect(await page.locator(`${line} .ai-turn-work__text`).getAttribute("title")).toBe("In Mail und Dateien nachgesehen");
+      // The steps are never cut; what did not go through takes the warning colour.
       const whole = await page.locator(`${line} .ai-turn-work__steps`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5);
       expect(whole).toBe(true);
-      // On a phone the plain step count gives way to the sentence; what did not go through stays.
+      // On a phone the step count gives way where what did not go through stands beside it.
       const visible = (await page.locator(`${line} .ai-turn-work__steps`).innerText()).replace(/\s+/g, " ").trim();
-      expect(visible).toBe(width < 768 ? "· 1 ohne Zugriff" : "· 5 Schritte, 1 ohne Zugriff");
-      // ✦ in the AI colour, then one 20 px tile per app that went through, in the app's colour on its tint.
+      expect(visible).toBe(width < 768 ? "1 ohne Zugriff" : "5 Schritte · 1 ohne Zugriff");
+      const warning = await page.locator(`${line} .ai-turn-work__steps [data-issue="warning"]`).evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--k2b-warning-text)";
+        document.body.append(probe);
+        const value = getComputedStyle(probe).color;
+        probe.remove();
+        return getComputedStyle(node).color === value;
+      });
+      expect(warning).toBe(true);
+      // Only ✦ leads the line, in the AI colour and without a tinted surface; app tiles are gone.
       const spark = await page.locator(`${line} .ai-turn-work__lead > i`).evaluate((node) => getComputedStyle(node).color);
       const plum = await page.evaluate(() => {
         const probe = document.createElement("span");
@@ -230,19 +245,25 @@ for (const width of [1440, 390])
         return value;
       });
       expect(spark).toBe(plum);
-      const tiles = page.locator(`${line} .ai-app-tile`);
-      expect(await tiles.count()).toBe(2);
-      const tile = await box(page, `${line} .ai-app-tile`);
-      expect([tile.width, tile.height, tile.radius]).toEqual([20, 20, "6px"]);
-      // One line in 13 px, the time in 12 px tabular figures on the right, the chevron last.
+      expect(await page.locator(`${line} .ai-app-tile`).count()).toBe(0);
+      // 13 px text, the time in 12 px tabular figures on the right, the chevron last; 28 px high, 44 px on a phone.
       const row = await box(page, line);
-      expect(row.height).toBe(28);
+      expect(row.height).toBe(width < 768 ? 44 : 28);
       expect(await page.locator(`${line} .ai-turn-work__text`).evaluate((node) => getComputedStyle(node).fontSize)).toBe("13px");
       const time = page.locator(`${line} .ai-turn-work__meta`);
       expect(await time.evaluate((node) => [getComputedStyle(node).fontSize, getComputedStyle(node).fontVariantNumeric])).toEqual([
         "12px",
         "tabular-nums",
       ]);
+      // The steps sit right of the sentence and left of the time, in 12 px.
+      const order = await page.locator(line).evaluate((node) => {
+        const sentence = node.querySelector(".ai-turn-work__sentence")!.getBoundingClientRect();
+        const steps = node.querySelector(".ai-turn-work__steps")!;
+        const meta = node.querySelector(".ai-turn-work__meta")!.getBoundingClientRect();
+        const box = steps.getBoundingClientRect();
+        return { afterSentence: box.left >= sentence.right, beforeTime: box.right <= meta.left, size: getComputedStyle(steps).fontSize };
+      });
+      expect(order).toEqual({ afterSentence: true, beforeTime: true, size: "12px" });
       const ends = await page.locator(line).evaluate((node) => {
         const chevron = node.querySelector(".k2b-chat-activity__chevron")!.getBoundingClientRect();
         const meta = node.querySelector(".ai-turn-work__meta")!.getBoundingClientRect();
@@ -401,3 +422,16 @@ for (const width of [1440, 390])
       await close();
     }
   }, 60_000);
+
+test("a prepared automation reads as its effect and its examples, whole and without Code's tile (Feinschliff 4)", async () => {
+  const { page, close } = await open("automation", 1440);
+  try {
+    const line = ".ai-turn-work > summary";
+    expect(await page.locator(`${line} .ai-turn-work__text`).textContent()).toBe("Automation vorbereitet · 3 von 3 Beispielen erfolgreich");
+    expect(await page.locator(`${line} .ai-turn-work__sentence`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5)).toBe(true);
+    expect(await page.locator(`${line} .ai-app-tile`).count()).toBe(0);
+    expect((await page.locator(`${line} .ai-turn-work__steps`).innerText()).trim()).toBe("4 Schritte");
+  } finally {
+    await close();
+  }
+}, 60_000);

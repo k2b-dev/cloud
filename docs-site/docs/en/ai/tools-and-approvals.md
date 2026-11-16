@@ -187,7 +187,9 @@ and the trend stays neutral because a card does not say whether up is better.
 Its title, value, caption and trend wrap instead of being cut off; the tool
 asks for a short value of about 20 characters and a one-line caption.
 Optional `icon` is a Tabler icon name, such as `wallet`, drawn as the small
-sign before the title; a name that is no Tabler icon name is left out.
+sign before the title. Every key figure has a sign: without `icon`, or with a
+name that is no Tabler icon name, the figure shows the same neutral sign
+(`hash`), never one guessed from its value.
 Several figures computed in `code_run` belong in `cloud.view.stats` in that
 run, followed by `present({path})`. Consecutive cards stand together as one
 flat row of key figures under one head, and a chart call whose charts are all
@@ -312,6 +314,8 @@ rights.
 
 A saved stats view is `{view: "stats", title, subtitle?, items}`. Each item has
 `label` and `value` (a finite number, or short text for a state such as `"OK"`),
+optional `icon` (a Tabler icon name such as `wallet`, the small sign before the
+label; without it the neutral sign, as for cards; any other name is rejected),
 optional number `format`, `sub`, finite `delta`, `better: "up" | "down"`, and
 `sparkline` (2..480 finite numbers, oldest first). Format and delta require a
 numeric value; better requires a numeric delta. A numeric delta stays in the

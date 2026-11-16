@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-15
+updated: 2026-11-16
 ---
 
 # API surface
@@ -315,10 +315,11 @@ For [resource discussions](/en/docs/platform/resource-types-and-discussions),
 `ResourceReadableInputSchema`, `ResourceReadableDataSchema`,
 `ResourceManagersInputSchema`, `ResourceManagersDataSchema`,
 `ResourceActivityEventSchema`, the `Discussion*Schema` values,
-`typeViewIssues`, and `discussionsIssues` come from `@k2b/cloud/contracts`.
+`typeViewIssues`, `discussionsIssues`, and `discussionContainersPageIssues`
+come from `@k2b/cloud/contracts`.
 `discussionProviders`, `readResourcePrincipals`, `listResourceManagers`, and `ResourceReaderRateLimited` come from
-`@k2b/cloud/capabilities/server`; `assertResourceView` comes from
-`@k2b/cloud/capabilities/testing`. The generated Query's context is
+`@k2b/cloud/capabilities/server`; `assertResourceView` and
+`assertDiscussionContainersPage` come from `@k2b/cloud/capabilities/testing`. The generated Query's context is
 `CapabilityAppExecutionContext`.
 
 For [calendar sources](/en/docs/platform/calendar-sources), `calendarSource`,

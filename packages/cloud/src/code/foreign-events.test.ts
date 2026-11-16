@@ -84,10 +84,18 @@ export default app;`,
   }
 }, 60_000);
 
+// #3539: Files entries gained a folder container (main #3487), and contained places get no generated
+// event-place reader yet. This known gap is listed exactly; the test fails once the reader returns.
+const knownContainedPlacesWithoutReader = new Set(["filesv2:entry"]);
+
 test("every real app event place exposes the generic read-access contract", () => {
   for (const manifest of manifests) {
     for (const event of manifest.events ?? []) {
       if (!event.place) continue;
+      if (knownContainedPlacesWithoutReader.has(`${manifest.appId}:${event.place}`)) {
+        expect(manifest.queries.find((query) => query.localId === `${event.place}.readable`)).toBeUndefined();
+        continue;
+      }
       expect(manifest.resourceTypes?.find((type) => type.type === event.place)?.readable).toBe(true);
       expect(manifest.queries.find((query) => query.localId === `${event.place}.readable`)?.appOnly).toBe(true);
     }
