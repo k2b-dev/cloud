@@ -1,3 +1,4 @@
+import { listenPopState } from "@k2b/ssr/nav";
 import { fuzzy, i18n } from "@k2b/stdlib";
 import { Button, LinkCard, Paper, Placeholder, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -81,11 +82,8 @@ export default function ToolCatalog(props: { initialQuery?: string }) {
     else url.searchParams.delete("q");
     window.history.replaceState(window.history.state, "", url);
   };
-  onMount(() => {
-    const restore = () => setQuery(new URL(window.location.href).searchParams.get("q") ?? "");
-    window.addEventListener("popstate", restore);
-    onCleanup(() => window.removeEventListener("popstate", restore));
-  });
+  // Back and Forward within the catalog restore the search; nav owns traversals to other pages.
+  onMount(() => onCleanup(listenPopState(({ url }) => setQuery(url.searchParams.get("q") ?? ""))));
 
   return (
     <div class="flex flex-col gap-5">

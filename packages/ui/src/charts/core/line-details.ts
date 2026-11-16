@@ -1,5 +1,5 @@
 /** Existing line renderer, separated so detailed drawing stays behind lazy chart boundaries. */
-import type { ChartTimeAxis, ChartTimeStep } from "../../content/chart-time-calendar";
+import { type ChartTimeAxis, type ChartTimeStep, chartTimeTickBudget } from "../../content/chart-time-calendar";
 import { lineForecastLayout, lineLegendX } from "./line-options";
 import {
   chartDatumSvg,
@@ -87,7 +87,7 @@ export const renderLineDetailsSvg = (opts: LineOptions, time: LineTimeAdapter, s
     ...(timeAxis ? (opts.references?.filter((ref) => ref.axis === "x").map((ref) => ref.value) ?? []) : []),
   ];
   const xAxis = computeAxisScale(xValues, timeAxis && !opts.xAxis?.domain ? { ...opts.xAxis, domain: computeDomain(xValues) } : opts.xAxis);
-  const timeStep = timeAxis ? chartTimeStep(xAxis.domain[1] - xAxis.domain[0], (opts.xAxis?.ticks ?? 3) + 2) : undefined;
+  const timeStep = timeAxis ? chartTimeStep(xAxis.domain[1] - xAxis.domain[0], chartTimeTickBudget(width, opts.xAxis?.ticks)) : undefined;
   if (timeAxis && timeStep) {
     xAxis.ticks = chartTimeTicks(xAxis.domain, timeAxis.timeZone, timeStep);
     xAxis.minorTicks = [];
