@@ -8,6 +8,21 @@ import { platformMessages } from "./platform-messages";
 import { readShellData } from "./shell-data";
 import { observeWorkspaceNavigation, readWorkspaceNavigation } from "./workspace-navigation";
 
+/** The sheet's "All apps" tab name, with the header's news dot while any app has a count. */
+export function AllAppsLabel(props: { news: boolean }) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
+  return (
+    <span class="cloud-mobile-menu__apps" data-news={props.news ? "" : undefined}>
+      <span class="block k2b-truncate-fade">{t().allApps}</span>
+      <span class="cloud-launchpad-dot" aria-hidden="true" />
+      <Show when={props.news}>
+        <span class="sr-only">, {t().newInApps}</span>
+      </Show>
+    </span>
+  );
+}
+
 export function openCloudMobileMenu(apps: AppLaunchpadContext) {
   return openMobileMenu((beforeSelect) => (close, context) => (
     <MobileNavigation apps={apps} beforeSelect={beforeSelect} close={close} dismiss={context.requestDismiss} />
@@ -53,15 +68,7 @@ function MobileNavigation(props: {
                 {
                   value: "apps",
                   // The header's dot leads here: the counts behind it are in this tab, so it carries the same dot.
-                  label: (
-                    <span class="cloud-mobile-menu__apps">
-                      <span class="block k2b-truncate-fade">{t().allApps}</span>
-                      <Show when={anyAppBadge(props.apps.apps)}>
-                        <span class="cloud-launchpad-dot" aria-hidden="true" />
-                        <span class="sr-only">, {t().newInApps}</span>
-                      </Show>
-                    </span>
-                  ),
+                  label: <AllAppsLabel news={anyAppBadge(props.apps.apps)} />,
                 },
               ]}
             />

@@ -131,22 +131,27 @@ test("the phone header's app menu shows one dot while any app has a count, live 
   const disposeHeader = render(() => createComponent(CloudShell, { slot: "header", authenticated: true, launchpad: true }), header);
   const menu = () => header.querySelector<HTMLButtonElement>(".cloud-launchpad-trigger")!;
   try {
-    // The server and the first browser frame know no counts.
-    expect(menu().querySelector(".cloud-launchpad-dot")).toBeNull();
-    expect(menu().getAttribute("aria-label")).toBe("Open apps");
     await settle();
+    // The dot stays in the markup, hidden from screen readers; `data-news` shows it and the name says why.
     expect(menu().querySelector(".cloud-launchpad-dot")?.getAttribute("aria-hidden")).toBe("true");
+    expect(menu().hasAttribute("data-news")).toBe(true);
     expect(menu().getAttribute("aria-label")).toBe("Open apps, new in your apps");
     responses["/api/chat/badge"] = () => Response.json({ count: 0 });
     refreshAppBadges();
     await settle();
-    expect(menu().querySelector(".cloud-launchpad-dot")).toBeNull();
+    expect(menu().hasAttribute("data-news")).toBe(false);
     expect(menu().getAttribute("aria-label")).toBe("Open apps");
-    // An approval waiting in any app counts like an unread message.
+    // An approval waiting in any app of the menu counts like an unread message.
     responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 1, apps: { mail: 1 } });
     refreshAppBadges();
     await settle();
-    expect(menu().querySelector(".cloud-launchpad-dot")).not.toBeNull();
+    expect(menu().hasAttribute("data-news")).toBe(true);
+    // Leave no counts behind for the next test: the badge signals live as long as the module.
+    responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 0, apps: {} });
+    responses["/api/chat/badge"] = () => Response.json({ count: 0 });
+    refreshAppBadges();
+    await settle();
+    expect(menu().hasAttribute("data-news")).toBe(false);
   } finally {
     disposeHeader();
     disposeRail();

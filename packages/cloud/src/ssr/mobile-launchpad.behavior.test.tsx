@@ -198,10 +198,11 @@ test("with news in any app, the sheet's All apps tab carries the header's dot, s
   const dom = createDomTestHarness();
   dom.window.innerWidth = 390;
   const { APPROVAL_COUNTS_PATH } = await import("../contracts/approvals");
+  let count = 2;
   const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: string | URL | Request) =>
-        String(input) === APPROVAL_COUNTS_PATH ? Response.json({ total: 0, apps: {} }) : Response.json({ count: 2 }),
+        String(input) === APPROVAL_COUNTS_PATH ? Response.json({ total: 0, apps: {} }) : Response.json({ count }),
       { preconnect: globalThis.fetch.preconnect },
     ),
   );
@@ -223,13 +224,21 @@ test("with news in any app, the sheet's All apps tab carries the header's dot, s
     dom.root,
   );
   try {
-    for (let attempt = 0; !dom.root.querySelector(".cloud-launchpad-dot") && attempt < 100; attempt++) await Bun.sleep(10);
+    for (let attempt = 0; !dom.root.querySelector("[data-news]") && attempt < 100; attempt++) await Bun.sleep(10);
     expect(dom.root.querySelector("button")?.getAttribute("aria-label")).toBe("Open apps, new in your apps");
     dom.root.querySelector<HTMLButtonElement>("button")!.click();
     for (let attempt = 0; !document.querySelector("dialog .cloud-mobile-menu__apps") && attempt < 100; attempt++) await Bun.sleep(10);
     const apps = document.querySelector("dialog .cloud-mobile-menu__apps")!;
+    expect(apps.hasAttribute("data-news")).toBe(true);
     expect(apps.querySelector(".cloud-launchpad-dot")?.getAttribute("aria-hidden")).toBe("true");
     expect(apps.textContent).toBe("All apps, new in your apps");
+    // Leave no counts behind: the badge signals live as long as the module.
+    count = 0;
+    const { refreshAppBadges } = await import("../browser/app-badges");
+    refreshAppBadges();
+    for (let attempt = 0; apps.hasAttribute("data-news") && attempt < 100; attempt++) await Bun.sleep(10);
+    expect(apps.hasAttribute("data-news")).toBe(false);
+    expect(apps.textContent).toBe("All apps");
   } finally {
     window.dispatchEvent(new Event("pagehide"));
     for (let attempt = 0; document.querySelector("dialog") && attempt < 100; attempt++) await Bun.sleep(10);

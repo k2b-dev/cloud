@@ -1091,6 +1091,12 @@
   pointer-events: none;
 }
 
+/* The dot is always in the markup and shows only while its owner has news. */
+.cloud-launchpad-trigger:not([data-news]) .cloud-launchpad-dot,
+.cloud-mobile-menu__apps:not([data-news]) > .cloud-launchpad-dot {
+  display: none;
+}
+
 /* On the corner of the rail icon, not of its 44 px target. */
 .rail-item > .cloud-app-badge {
   top: 0.25rem;

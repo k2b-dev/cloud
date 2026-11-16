@@ -639,7 +639,7 @@ router.get("/api/inventory/badge", async (c) => {
   the end of the row and can only shorten the name beside it. Screen readers
   hear it with the app's name, for example "Chat, 3 new".
 - **Phone header:** on a phone the app bar is hidden, so its counts are out of
-  sight. While any app has a count, or any app has an approval waiting, the
+  sight. While any app in the menu has a count or an approval waiting, the
   header's app menu button shows one blue dot instead of a number, and screen
   readers hear "Open apps, new in your apps". When the menu opens on the
   current app's own menu, its **All apps** tab carries the same dot, and that
