@@ -170,17 +170,6 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
           description:
             "Einen Ordner zum Auswählen oder Speichern von Dateien öffnen: zuerst die zugänglichen Ablagen, darin Ordner und Dateien.",
         },
-        "entry.readable": {
-          title: "Leser für Datei oder Ordner prüfen",
-          description: "Prüfen, welche aktuellen Konten diese Ressource lesen dürfen; ohne Inhaltszugriff.",
-          input: {
-            id: "Öffentliche ID der Ressource.",
-            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
-            "container.type": "Typ des erwarteten Orts.",
-            "container.id": "Öffentliche ID des erwarteten Orts.",
-            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
-          },
-        },
         "entry.read": {
           title: "Dateieintrag lesen",
           doneTitle: "Dateieintrag gelesen",

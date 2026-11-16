@@ -160,8 +160,10 @@ test("discussion containers pages carry a page that matches data.next, for every
   const middle = { data: { items: [], next: "cursor-2" }, page: { hasMore: true as const, nextCursor: "cursor-2" } };
   expect(validate(middle)).toMatchObject({ ok: true, data: { page: { hasMore: true, nextCursor: "cursor-2" } } });
   expect(validate({ data: { items: [], next: null }, page: { hasMore: false } })).toMatchObject({ ok: true });
-  // The rule belongs to the containers role; other discussion queries keep their own contract.
-  expect(validateCapabilityResult(compiled, compiled.queries.get("collection.activity")!, { data: [] }).ok).toBe(true);
+  // The rule belongs to the containers role; other discussion queries keep their own contract (a cursor input still needs a page).
+  expect(validateCapabilityResult(compiled, compiled.queries.get("collection.activity")!, { data: [], page: { hasMore: false } }).ok).toBe(
+    true,
+  );
   assertDiscussionContainersPage(middle);
   expect(discussionContainersPageIssues({ data: { items: [], next: "cursor-2" } })).toEqual(["page must continue at data.next"]);
   expect(() => assertDiscussionContainersPage({ data: { items: [], next: null } })).toThrow("page must be final");

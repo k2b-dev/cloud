@@ -108,17 +108,24 @@ describe("built-in Capability presentation", () => {
     }
   });
 
-  test.each([
-    ["chat", chatCapabilities, "conversation.readable"],
-    ["filesv2", filesCapabilities, "entry.readable"],
-  ] as const)("%s translates the generated event-place reader and every input field", (appId, definitions, localId) => {
-    const compiled = compileCapabilities(appId, definitions);
-    const query = compiled.manifest.queries.find((entry) => entry.localId === localId);
-    expect(query?.appOnly).toBe(true);
-    const copy = compiled.presentation?.translations.de?.queries?.[localId];
-    expect(copy?.title).toBeTruthy();
-    expect(copy?.description).toBeTruthy();
-    for (const path of schemaFieldPaths(query?.inputSchema)) expect(copy?.input?.[path]).toBeTruthy();
+  test.each([["chat", chatCapabilities, "conversation.readable"]] as const)(
+    "%s translates the generated event-place reader and every input field",
+    (appId, definitions, localId) => {
+      const compiled = compileCapabilities(appId, definitions);
+      const query = compiled.manifest.queries.find((entry) => entry.localId === localId);
+      expect(query?.appOnly).toBe(true);
+      const copy = compiled.presentation?.translations.de?.queries?.[localId];
+      expect(copy?.title).toBeTruthy();
+      expect(copy?.description).toBeTruthy();
+      for (const path of schemaFieldPaths(query?.inputSchema)) expect(copy?.input?.[path]).toBeTruthy();
+    },
+  );
+
+  // Files discussions (#3487) put `filesv2.entry` inside `filesv2.folder`, and the platform derives no reader for a contained
+  // event place. Until #3539 decides how Code checks such a place, Files has none; this fails once it does, so the case above returns.
+  test("filesv2 has no generated event-place reader while its entry place is contained (#3539)", () => {
+    const compiled = compileCapabilities("filesv2", filesCapabilities);
+    expect(compiled.manifest.queries.some((entry) => entry.localId === "entry.readable")).toBe(false);
   });
 
   test("resolves declared German contact field descriptions through language ancestors", () => {
