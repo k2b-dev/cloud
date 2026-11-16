@@ -36,7 +36,7 @@ import { openAssistantTaskRun } from "../frontend/AssistantActivitiesDialog";
 import { AssistantChatContextContent, type ContextView } from "../frontend/AssistantChatContext";
 import type { ChatSidebarJump } from "../frontend/AssistantChatSidebar";
 import { AssistantTaskDetail } from "../frontend/AssistantTasksDialog";
-import { ADD_MENU_SHORTCUT } from "../frontend/add-menu-shortcut";
+import { ADD_MENU_SHORTCUT } from "../frontend/add-menu-key";
 import { useAssistantLive } from "../frontend/assistant-live";
 import { dismissAssistantPanesHint } from "../frontend/chat-sidebar-layout";
 import { chatSidebarMessages } from "../frontend/chat-sidebar-messages";

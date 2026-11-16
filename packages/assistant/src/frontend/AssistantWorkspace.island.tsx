@@ -102,7 +102,7 @@ import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./Assistan
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
-import { bindAddMenuShortcut } from "./add-menu-shortcut";
+import { bindAddMenuShortcut } from "./add-menu-key";
 import { assistantChatFilePaths } from "./assistant-context";
 import { createAssistantDictation } from "./assistant-dictation";
 import {

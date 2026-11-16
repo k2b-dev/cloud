@@ -4,7 +4,7 @@ import { render } from "solid-js/web";
 import type { ChatWorkspaceSnapshot, SaveChatWorkspaceInput } from "../chat-workspace";
 import { AssistantAddMenu, type AssistantAddMenuOpen } from "../frontend/AssistantAddMenu";
 import { emptySidebarSnapshot, fileResult, upload } from "../frontend/AssistantChatSidebar.fixture";
-import { bindAddMenuShortcut } from "../frontend/add-menu-shortcut";
+import { bindAddMenuShortcut } from "../frontend/add-menu-key";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
 import { contextTab, fileTab, presentationTab, webTab } from "./workspace-state";

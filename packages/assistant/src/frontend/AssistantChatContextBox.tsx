@@ -4,7 +4,7 @@ import { AnchoredPopover, Button, formatFileViewSize, IconButton, IconButtonLink
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, on, Show, untrack } from "solid-js";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { type ChatSidebarState, createReadingFreeze } from "./AssistantChatSidebar";
-import { ADD_MENU_SHORTCUT } from "./add-menu-shortcut";
+import { ADD_MENU_SHORTCUT } from "./add-menu-key";
 import {
   buildContextBoxModel,
   type ContextBoxGroup,
