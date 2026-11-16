@@ -375,6 +375,18 @@ for (const locale of ["de", "en"]) {
 }
 
 for (const locale of ["de", "en"]) {
+  test(`after deciding their own version the author is addressed directly, not told about a notice to themselves (${locale})`, () => {
+    const t = codeReviewMessages.resolve([locale]).t;
+    const self = renderedText(render(review, "soleApproved", locale), " ").replaceAll(/\s+/g, " ");
+    expect(self).toContain(t.afterApprovedSelf);
+    expect(self).not.toContain(t.afterApproved({ who: "Ben Schulz" }));
+    const other = renderedText(render(review, "approved", locale), " ").replaceAll(/\s+/g, " ");
+    expect(other).toContain(t.afterApproved({ who: "Lea Muster" }));
+    expect(other).not.toContain(t.afterApprovedSelf);
+  });
+}
+
+for (const locale of ["de", "en"]) {
   test(`sole author sees the approval/report breakdown in the initial HTML (${locale})`, () => {
     const t = codeAdminMessages.resolve([locale]).t;
     const html = render(review, "sole", locale, { approvals: 1, reports: 1 });
