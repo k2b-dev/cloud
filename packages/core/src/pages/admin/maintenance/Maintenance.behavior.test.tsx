@@ -19,25 +19,25 @@ const active: MaintenanceStatus = {
   apps: { ready: 9, total: 11, starting: ["files", "mail"] },
 };
 
-const waitFor = async (condition: () => boolean, label: string) => {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+const waitFor = async (condition: () => boolean, label: string, timeoutMs = 2_000) => {
+  for (let attempt = 0; attempt < timeoutMs / 10; attempt += 1) {
     if (condition()) return;
     await Bun.sleep(10);
   }
   throw new Error(`Timed out waiting for ${label}`);
 };
 
-const mockFetch = (route: (method: string, path: string, body: unknown) => Response | Promise<Response> | undefined) => {
-  const calls: { method: string; path: string; body: unknown }[] = [];
+const mockFetch = (route: (method: string, path: string, body: unknown, url: URL) => Response | Promise<Response> | undefined) => {
+  const calls: { method: string; path: string; body: unknown; url: string }[] = [];
   const spy = spyOn(globalThis, "fetch").mockImplementation(
     Object.assign(
       async (input: string | URL | Request, init?: RequestInit) => {
         const request = input instanceof Request ? input : new Request(new URL(String(input), "http://localhost/"), init);
-        const path = new URL(request.url).pathname;
+        const url = new URL(request.url);
         const text = await request.text();
         const body: unknown = text ? JSON.parse(text) : undefined;
-        calls.push({ method: request.method, path, body });
-        return route(request.method, path, body) ?? Response.json({ code: "UNAVAILABLE" }, { status: 503 });
+        calls.push({ method: request.method, path: url.pathname, body, url: url.href });
+        return route(request.method, url.pathname, body, url) ?? Response.json({ code: "UNAVAILABLE" }, { status: 503 });
       },
       { preconnect: globalThis.fetch.preconnect },
     ),
@@ -83,41 +83,104 @@ const type = (element: HTMLInputElement | HTMLTextAreaElement | null | undefined
   element.dispatchEvent(new Event("input", { bubbles: true }));
 };
 const apiCalls = (calls: { method: string; path: string }[]) => calls.map((call) => `${call.method} ${call.path}`);
+const bypassLink = (token: string) => ({
+  url: `https://cloud.test/?cloud-maintenance-bypass=${token}`,
+  expiresAt: "2026-11-17T01:10:00.000Z",
+});
+
+/**
+ * The gateway's half as the page meets it: the link answers a redirect and lets this browser in only for a token the
+ * gateway accepts; its status reports `bypass: true` only after that.
+ */
+const gateway = (accepts: (token: string) => boolean) => {
+  let inside = false;
+  return {
+    route: (method: string, path: string, url: URL): Response | undefined => {
+      if (method === "GET" && path === PATH && url.searchParams.has("cloud-maintenance-bypass")) {
+        if (accepts(url.searchParams.get("cloud-maintenance-bypass")!)) inside = true;
+        return new Response(null, { status: 303, headers: { Location: PATH } });
+      }
+      if (method === "GET" && path === "/_cloud/gateway/status")
+        return Response.json({ maintenance: { active: true, until: null, ...(inside ? { bypass: true } : {}) } });
+      return undefined;
+    },
+  };
+};
+/** A promise the test settles when it chooses. */
+const deferred = <T,>() => {
+  let settle!: (value: T) => void;
+  const promise = new Promise<T>((resolve) => {
+    settle = resolve;
+  });
+  return { promise, settle };
+};
 
 if (isServer) test.skip("requires browser conditions", () => {});
 else {
   beforeAll(() => setSystemTime(NOW));
   afterAll(() => setSystemTime());
 
-  test("starting switches maintenance on, then opens the bypass link back to this page", async () => {
+  test("starting switches maintenance on, lets this browser past the wall on this page's origin, then reloads", async () => {
     const dom = createDomTestHarness();
     const navigate = spyOn(dom.window.location, "assign").mockImplementation(() => {});
-    const fetch = mockFetch((method, path) => {
+    const reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
+    const wall = gateway((token) => token === "token");
+    const fetch = mockFetch((method, path, _body, url) => {
       if (method === "POST" && path === "/api/admin/maintenance/on")
         return Response.json({ ...active, message: "Wir spielen Version 2.4 ein." });
-      if (method === "POST" && path === "/api/admin/maintenance/bypass")
-        return Response.json({ url: "https://cloud.test/?cloud-maintenance-bypass=token", expiresAt: "2026-11-17T01:10:00.000Z" });
-      if (method === "GET" && path === "/_cloud/gateway/status") return Response.json({ maintenance: { active: true, until: null } });
-      return undefined;
+      if (method === "POST" && path === "/api/admin/maintenance/bypass") return Response.json(bypassLink("token"));
+      return wall.route(method, path, url);
     });
     const dispose = mount(dom, off);
     try {
       type(dom.root.querySelector("textarea"), "Wir spielen Version 2.4 ein.");
       button(dom, "Start maintenance")!.click();
-      await waitFor(() => navigate.mock.calls.length > 0, "navigation");
+      await waitFor(() => reload.mock.calls.length > 0, "reload");
       expect(apiCalls(fetch.calls)).toEqual([
         "POST /api/admin/maintenance/on",
         "POST /api/admin/maintenance/bypass",
+        `GET ${PATH}`,
         "GET /_cloud/gateway/status",
       ]);
       expect(fetch.calls[0]!.body).toEqual({ message: "Wir spielen Version 2.4 ein.", until: SUGGESTED });
-      expect(String(navigate.mock.calls[0]![0])).toBe(`https://cloud.test${PATH}?cloud-maintenance-bypass=token`);
-      // Until the browser leaves, the page shows the running maintenance and keeps its action busy.
+      // The link is followed on this page's origin, not the link's host, so the host-only cookie lands here.
+      expect(fetch.calls[2]!.url).toBe(`http://localhost${PATH}?cloud-maintenance-bypass=token`);
+      // The browser does not leave the page; the reload comes only after the gateway confirmed the bypass.
+      expect(navigate).not.toHaveBeenCalled();
+      expect(reload).toHaveBeenCalledTimes(1);
+      // Until the reload, the page shows the running maintenance and keeps its action busy.
       expect(dom.root.textContent).toContain("Everyone except you sees the maintenance page right now.");
     } finally {
       dispose();
       fetch.restore();
       navigate.mockRestore();
+      reload.mockRestore();
+      dom.cleanup();
+    }
+  });
+
+  test("while starting, End maintenance is disabled and not announced as ending", async () => {
+    const dom = createDomTestHarness();
+    const link = deferred<Response>();
+    const fetch = mockFetch((method, path) => {
+      if (method === "POST" && path === "/api/admin/maintenance/on") return Response.json(active);
+      if (method === "POST" && path === "/api/admin/maintenance/bypass") return link.promise;
+      return undefined;
+    });
+    const dispose = mount(dom, off);
+    try {
+      button(dom, "Start maintenance")!.click();
+      await waitFor(() => Boolean(button(dom, "End maintenance")), "running state while the link is pending");
+      const end = button(dom, "End maintenance")!;
+      expect(end.disabled).toBe(true);
+      expect(end.getAttribute("aria-busy")).toBeNull();
+      expect(end.getAttribute("aria-label")).toBeNull();
+      expect(dom.root.textContent).not.toContain("Ending maintenance…");
+      expect(button(dom, "Move end")!.disabled).toBe(true);
+    } finally {
+      link.settle(Response.json({ code: "INTERNAL" }, { status: 500 }));
+      dispose();
+      fetch.restore();
       dom.cleanup();
     }
   });
@@ -178,18 +241,16 @@ else {
 
   test("a failed bypass link keeps the running state visible and retries only the link", async () => {
     const dom = createDomTestHarness();
-    const navigate = spyOn(dom.window.location, "assign").mockImplementation(() => {});
+    const reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
     let bypassAnswers = 0;
-    const fetch = mockFetch((method, path) => {
+    const wall = gateway((token) => token === "again");
+    const fetch = mockFetch((method, path, _body, url) => {
       if (method === "POST" && path === "/api/admin/maintenance/on") return Response.json(active);
       if (method === "POST" && path === "/api/admin/maintenance/bypass") {
         bypassAnswers += 1;
-        return bypassAnswers === 1
-          ? Response.json({ code: "INTERNAL" }, { status: 500 })
-          : Response.json({ url: "https://cloud.test/?cloud-maintenance-bypass=again", expiresAt: "2026-11-17T01:10:00.000Z" });
+        return bypassAnswers === 1 ? Response.json({ code: "INTERNAL" }, { status: 500 }) : Response.json(bypassLink("again"));
       }
-      if (method === "GET" && path === "/_cloud/gateway/status") return Response.json({ maintenance: { active: true, until: null } });
-      return undefined;
+      return wall.route(method, path, url);
     });
     const dispose = mount(dom, off);
     try {
@@ -198,16 +259,57 @@ else {
       expect(dom.root.querySelector('[role="alert"]')!.textContent).toContain("Maintenance is on, but your link");
       expect(dom.root.textContent).toContain("Active");
       button(dom, "Try again")!.click();
-      await waitFor(() => navigate.mock.calls.length > 0, "navigation");
+      await waitFor(() => reload.mock.calls.length > 0, "reload");
       expect(apiCalls(fetch.calls).filter((call) => call.endsWith("/on"))).toHaveLength(1);
-      expect(String(navigate.mock.calls[0]![0])).toBe(`https://cloud.test${PATH}?cloud-maintenance-bypass=again`);
+      expect(fetch.calls.find((call) => call.path === PATH)!.url).toBe(`http://localhost${PATH}?cloud-maintenance-bypass=again`);
     } finally {
       dispose();
       fetch.restore();
-      navigate.mockRestore();
+      reload.mockRestore();
       dom.cleanup();
     }
   });
+
+  test("a gateway that never confirms the bypass leaves the page in place, says so, and retries only the link step", async () => {
+    const dom = createDomTestHarness();
+    const reload = spyOn(dom.window.location, "reload").mockImplementation(() => {});
+    let links = 0;
+    // The gateway has not learned the maintenance yet, so the first link sets nothing; the retry's link works.
+    const wall = gateway((token) => token === "second");
+    const fetch = mockFetch((method, path, _body, url) => {
+      if (method === "POST" && path === "/api/admin/maintenance/on") return Response.json(active);
+      if (method === "POST" && path === "/api/admin/maintenance/bypass") {
+        links += 1;
+        return Response.json(bypassLink(links === 1 ? "first" : "second"));
+      }
+      return wall.route(method, path, url);
+    });
+    const dispose = mount(dom, off);
+    try {
+      button(dom, "Start maintenance")!.click();
+      await waitFor(() => Boolean(dom.root.querySelector('[role="alert"]')), "notice after the bounded wait", 6_000);
+      expect(dom.root.querySelector('[role="alert"]')!.textContent).toContain("Maintenance is on, but your link");
+      expect(dom.root.textContent).toContain("Everyone sees the maintenance page right now, you too from your next page load.");
+      expect(dom.root.textContent).not.toContain("Everyone except you");
+      expect(reload).not.toHaveBeenCalled();
+      // Bounded: fifteen link-and-status rounds, then it stops asking.
+      const firstRound = apiCalls(fetch.calls);
+      expect(firstRound.filter((call) => call === `GET ${PATH}`)).toHaveLength(15);
+      expect(firstRound.filter((call) => call === "GET /_cloud/gateway/status")).toHaveLength(15);
+      expect(button(dom, "End maintenance")!.disabled).toBe(false);
+
+      fetch.calls.length = 0;
+      button(dom, "Try again")!.click();
+      await waitFor(() => reload.mock.calls.length > 0, "reload after the retry");
+      expect(apiCalls(fetch.calls)).toEqual(["POST /api/admin/maintenance/bypass", `GET ${PATH}`, "GET /_cloud/gateway/status"]);
+      expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+    } finally {
+      dispose();
+      fetch.restore();
+      reload.mockRestore();
+      dom.cleanup();
+    }
+  }, 15_000);
 
   test("moving the end starts from the current end, saves it and shows the answer", async () => {
     const dom = createDomTestHarness();
@@ -231,6 +333,57 @@ else {
       modules!.ui.dialogCore.close();
       dispose();
       fetch.restore();
+      dom.cleanup();
+    }
+  });
+
+  test("a refresh answer that left before a moved end does not overwrite it; the next refresh applies again", async () => {
+    const dom = createDomTestHarness();
+    // The page refreshes every ten seconds; the test runs that refresh by hand instead of waiting.
+    const interval = spyOn(globalThis, "setInterval");
+    const tick = () => {
+      const refresh = interval.mock.calls.find((call) => call[1] === 10_000)?.[0];
+      if (typeof refresh !== "function") throw new Error("Missing refresh timer");
+      refresh();
+    };
+    const stale = deferred<Response>();
+    let reads = 0;
+    const fetch = mockFetch((method, path) => {
+      if (method === "GET" && path === "/api/admin/maintenance") {
+        reads += 1;
+        return reads === 1
+          ? stale.promise
+          : Response.json({ ...active, until: "2026-11-17T00:30:00.000Z", apps: { ready: 11, total: 11, starting: [] } });
+      }
+      if (method === "POST" && path === "/api/admin/maintenance/until")
+        return Response.json({ ...active, until: "2026-11-17T00:30:00.000Z" });
+      return undefined;
+    });
+    const dispose = mount(dom, active);
+    try {
+      // The refresh leaves with the old end …
+      tick();
+      await waitFor(() => reads === 1, "refresh request");
+      // … the end moves while it is on its way …
+      button(dom, "Move end")!.click();
+      await waitFor(() => Boolean(button(dom, "Save", "dialog")), "end dialog");
+      button(dom, "Save", "dialog")!.click();
+      await waitFor(() => (dom.root.textContent ?? "").includes("01:30"), "moved end");
+      // … and its late answer, still with the old end, changes nothing.
+      stale.settle(Response.json(active));
+      await Bun.sleep(50);
+      expect(dom.root.textContent).toContain("01:30");
+      expect(dom.root.textContent).not.toContain("14:30");
+      expect(dom.root.textContent).toContain("9 of 11");
+      // A refresh that leaves after the write applies as before.
+      tick();
+      await waitFor(() => (dom.root.textContent ?? "").includes("11 of 11"), "next refresh");
+      expect(dom.root.textContent).toContain("01:30");
+    } finally {
+      modules!.ui.dialogCore.close();
+      dispose();
+      fetch.restore();
+      interval.mockRestore();
       dom.cleanup();
     }
   });

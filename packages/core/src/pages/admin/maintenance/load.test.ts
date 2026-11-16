@@ -67,3 +67,29 @@ test("an administrator gets the state and the app names for starting apps", asyn
   const result = await loadMaintenanceAdmin(person(["admin"]), { service, knownApps });
   expect(result).toEqual({ ok: true, data: { status: { active: false, apps }, appNames: { mail: "Mail", files: "Dateien" } } });
 });
+
+test("an unreadable state or app catalogue gives the UNAVAILABLE result instead of throwing", async () => {
+  const { service, knownApps } = setup();
+  const brokenStore = createMaintenanceService({
+    store: {
+      read: async () => {
+        throw new Error("NATS unreachable");
+      },
+      write: async () => {},
+      clear: async () => {},
+    },
+    appsReady: async () => apps,
+    record: async () => {},
+  });
+  const brokenApps = async (): Promise<KnownApp[]> => {
+    throw new Error("database unreachable");
+  };
+  for (const deps of [
+    { service: brokenStore, knownApps },
+    { service, knownApps: brokenApps },
+  ]) {
+    const result = await loadMaintenanceAdmin(person(["admin"]), deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("UNAVAILABLE");
+  }
+});

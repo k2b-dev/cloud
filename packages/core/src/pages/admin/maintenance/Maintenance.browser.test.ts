@@ -1,7 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors } from "../../../../../ui/test/browser";
-import { MAINTENANCE_FIXTURE_NOW, maintenanceBrowserFixture, pinPageClock } from "./Maintenance.browser-fixture";
+import {
+  MAINTENANCE_FIXTURE_BYPASS_COOKIE,
+  MAINTENANCE_FIXTURE_NOW,
+  maintenanceBrowserFixture,
+  pinPageClock,
+} from "./Maintenance.browser-fixture";
 
 let browser: Browser;
 let fixture: Awaited<ReturnType<typeof maintenanceBrowserFixture>>;
@@ -18,9 +23,11 @@ const views = [
   { width: 1440, height: 900 },
   { width: 390, height: 844 },
 ] as const;
-const open = async (view: { width: number; height: number }, query: string) => {
+const open = async (view: { width: number; height: number }, query: string, holdsBypass = !query.includes("state=aus")) => {
   const page = await browser.newPage({ viewport: view, reducedMotion: "reduce", isMobile: view.width < 600, hasTouch: view.width < 600 });
   const errors = pageErrors(page);
+  // An admin on a running maintenance already holds the gateway's bypass cookie; one that starts it earns it.
+  if (holdsBypass) await page.context().addCookies([{ ...MAINTENANCE_FIXTURE_BYPASS_COOKIE, url: new URL(fixture.url).origin }]);
   await page.addInitScript(pinPageClock, MAINTENANCE_FIXTURE_NOW.getTime());
   await page.goto(`${fixture.url}?${query}`);
   await page.locator('#maintenance-fixture[data-ready="true"]').waitFor();
@@ -52,20 +59,72 @@ test("both states fit a phone and a desktop in both themes and say what the mock
       }
 }, 120_000);
 
-test("starting comes back to this page through the bypass link and shows the running maintenance", async () => {
-  const { page, errors } = await open(views[1], "state=aus&locale=de");
+const gatewayStatus = (page: Page) =>
+  page.evaluate(async (): Promise<unknown> => (await fetch("/_cloud/gateway/status", { cache: "no-store" })).json());
+
+test("starting lets this browser past the wall: the gateway confirms the bypass and the reload shows the running maintenance", async () => {
+  // The address names no scenario, so the reload shows whatever the fixture's Core and gateway hold by then.
+  fixture.use("aus");
+  const { page, errors } = await open(views[1], "locale=de", false);
   try {
     fixture.control.requests.length = 0;
+    const loads: string[] = [];
+    page.on("load", () => loads.push(page.url()));
     await page.getByLabel("Hinweis für alle").fill("Wir spielen Version 2.4 ein.");
+    const reloaded = page.waitForEvent("load", { timeout: 10_000 });
     await page.getByRole("button", { name: "Wartung starten", exact: true }).click();
-    await page.waitForURL((url) => url.pathname === "/admin/settings/maintenance" && !url.search.includes("state="));
-    await page.locator('[data-maintenance-admin="active"]').waitFor();
+    await reloaded;
+    await page.locator('#maintenance-fixture[data-ready="true"] [data-maintenance-admin="active"]').waitFor();
+    // The reload passed the wall: the server rendered the running maintenance for a browser the gateway lets in.
+    expect(await page.locator("[data-maintenance-wall]").count()).toBe(0);
+    // The fixture gateway confirms only for a browser holding its HttpOnly cookie, which the page's script cannot set.
+    expect(await gatewayStatus(page)).toEqual({ maintenance: { active: true, until: null, bypass: true } });
     const calls = fixture.control.requests.map((request) => `${request.method} ${request.path}`);
-    expect(calls.slice(0, 2)).toEqual(["POST /api/admin/maintenance/on", "POST /api/admin/maintenance/bypass"]);
+    expect(calls).toEqual([
+      "POST /api/admin/maintenance/on",
+      "POST /api/admin/maintenance/bypass",
+      "GET /admin/settings/maintenance?cloud-maintenance-bypass",
+      "GET /_cloud/gateway/status",
+      "GET /admin/settings/maintenance",
+      "GET /_cloud/gateway/status",
+    ]);
+    // The browser stayed on this page and reloaded it once.
+    expect(loads).toEqual([fixture.url + "?locale=de"]);
+    const text = await page.locator("[data-maintenance-admin]").innerText();
+    expect(text).toContain("Alle außer dir sehen gerade die Wartungsseite.");
     // The suggested end, one hour ahead and rounded up to the quarter hour.
-    expect(await page.locator("[data-maintenance-admin]").innerText()).toContain("15:15 Uhr");
+    expect(text).toContain("15:15 Uhr");
     expect(errors).toEqual([]);
   } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("when the gateway never confirms the bypass, the page says so and stays: no reload, no endless asking", async () => {
+  fixture.use("aus");
+  const { page, errors } = await open(views[0], "locale=de", false);
+  fixture.control.gatewayKnowsMaintenance = false;
+  try {
+    fixture.control.requests.length = 0;
+    const loads: string[] = [];
+    page.on("load", () => loads.push(page.url()));
+    await page.getByRole("button", { name: "Wartung starten", exact: true }).click();
+    const notice = page.locator('[data-maintenance-admin] [role="alert"]');
+    await notice.waitFor({ timeout: 10_000 });
+    expect(await notice.innerText()).toContain("Die Wartung läuft, aber dein Link an der Wartungsseite vorbei ließ sich nicht erstellen.");
+    const text = await page.locator("[data-maintenance-admin]").innerText();
+    expect(text).toContain("Alle sehen gerade die Wartungsseite, du ab dem nächsten Laden auch.");
+    expect(await notice.getByRole("button", { name: "Erneut versuchen", exact: true }).isVisible()).toBe(true);
+    // Bounded: fifteen link-and-status rounds, then nothing more, and the page never reloaded into the wall.
+    const linkRequests = () => fixture.control.requests.filter((request) => request.path.endsWith("?cloud-maintenance-bypass")).length;
+    expect(linkRequests()).toBe(15);
+    await page.waitForTimeout(600);
+    expect(linkRequests()).toBe(15);
+    expect(loads).toEqual([]);
+    expect(await gatewayStatus(page)).toEqual({ maintenance: { active: true, until: null } });
+    expect(errors).toEqual([]);
+  } finally {
+    fixture.control.gatewayKnowsMaintenance = true;
     await page.close();
   }
 }, 60_000);

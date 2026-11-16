@@ -12,6 +12,8 @@ import { Dynamic, renderToString } from "solid-js/web";
 import { defaultEnd } from "./time";
 
 const PATH = "/admin/settings/maintenance";
+/** The development name of the gateway's host-only bypass cookie; the fixture serves plain HTTP. */
+export const MAINTENANCE_FIXTURE_BYPASS_COOKIE = { name: "cloud_maintenance_bypass", value: "fixture" } as const;
 /** The clock the browser test sets: 14:10 in Berlin, so the mockup's 14:02 and 14:30 read as today. */
 export const MAINTENANCE_FIXTURE_NOW = new Date("2026-11-16T13:10:00.000Z");
 
@@ -125,7 +127,16 @@ export async function maintenanceBrowserFixture() {
 
   // The synthetic Core and gateway: one state, reset when a page names a scenario.
   let state: MaintenanceStatus = MAINTENANCE_SCENARIOS.aus();
-  const control = { failOn: false, failBypass: false, requests: [] as Array<{ method: string; path: string; body: string }> };
+  const control = {
+    failOn: false,
+    failBypass: false,
+    /** False: the gateway has not learned the maintenance yet, so its link sets no cookie. */
+    gatewayKnowsMaintenance: true,
+    requests: [] as Array<{ method: string; path: string; body: string }>,
+  };
+  const { name: cookieName, value: cookieValue } = MAINTENANCE_FIXTURE_BYPASS_COOKIE;
+  const bypassed = (request: Request) =>
+    (request.headers.get("Cookie") ?? "").split(";").some((part) => part.trim() === `${cookieName}=${cookieValue}`);
 
   const api = new Hono()
     .use(async (c, next) => {
@@ -153,7 +164,7 @@ export async function maintenanceBrowserFixture() {
     .post("/api/admin/maintenance/bypass", (c) =>
       control.failBypass
         ? c.json({ code: "INTERNAL", message: "Synthetic outage" }, 500)
-        : c.json({ url: `${new URL(c.req.url).origin}/?cloud-maintenance-bypass=fixture`, expiresAt: "2026-11-17T01:10:00.000Z" }),
+        : c.json({ url: `${new URL(c.req.url).origin}/?cloud-maintenance-bypass=${cookieValue}`, expiresAt: "2026-11-17T01:10:00.000Z" }),
     )
     .post("/api/admin/maintenance/off", (c) => {
       state = MAINTENANCE_SCENARIOS.aus();
@@ -176,8 +187,6 @@ export async function maintenanceBrowserFixture() {
   pages.get(PATH, (c) => {
     const locale = c.req.query("locale") === "en" ? "en" : "de";
     const theme = c.req.query("theme") === "dark" ? "dark" : "light";
-    const scenario = Object.entries(MAINTENANCE_SCENARIOS).find(([name]) => name === c.req.query("state"));
-    if (scenario) state = scenario[1]();
     c.req.raw.headers.set("x-cloud-locale", locale);
     c.set("runtime", { apps: [{ id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
     c.set("user", user);
@@ -224,20 +233,43 @@ export async function maintenanceBrowserFixture() {
         const path = resolve(root, `.${url.pathname}`);
         return path.startsWith(`${publicDir}/`) ? new Response(Bun.file(path)) : new Response(null, { status: 404 });
       }
-      // The gateway's half: the status it answers from memory, and a bypass link it turns into a redirect.
-      if (url.pathname === "/_cloud/gateway/status")
-        return Response.json({ maintenance: state.active ? { active: true, until: null } : null });
+      // The gateway's half, as the real one behaves: the status reports `bypass: true` only for a browser holding the
+      // cookie, and a bypass link always answers a 303 without its parameter, setting the cookie only for a valid token
+      // while the gateway knows the running maintenance.
+      if (url.pathname === "/_cloud/gateway/status") {
+        control.requests.push({ method: request.method, path: url.pathname, body: "" });
+        return Response.json({
+          maintenance: state.active ? { active: true, until: null, ...(bypassed(request) ? { bypass: true } : {}) } : null,
+        });
+      }
       if (url.searchParams.has("cloud-maintenance-bypass")) {
+        control.requests.push({ method: request.method, path: `${url.pathname}?cloud-maintenance-bypass`, body: "" });
+        const valid = url.searchParams.get("cloud-maintenance-bypass") === cookieValue && state.active && control.gatewayKnowsMaintenance;
         url.searchParams.delete("cloud-maintenance-bypass");
-        return new Response(null, { status: 303, headers: { Location: `${url.pathname}${url.search}` } });
+        const headers = new Headers({ Location: `${url.pathname}${url.search}`, "Cache-Control": "no-store" });
+        if (valid) headers.set("Set-Cookie", `${cookieName}=${cookieValue}; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax`);
+        return new Response(null, { status: 303, headers });
       }
       if (url.pathname.startsWith("/api/")) return api.fetch(request);
+      // A page named with a scenario sets the state first; the wall then stands for every browser without the cookie.
+      const scenario = Object.entries(MAINTENANCE_SCENARIOS).find(([name]) => name === url.searchParams.get("state"));
+      if (scenario) state = scenario[1]();
+      if (url.pathname === PATH) control.requests.push({ method: request.method, path: url.pathname, body: "" });
+      if (state.active && !bypassed(request))
+        return new Response('<!doctype html><html lang="de"><body><main data-maintenance-wall>Wartung</main></body></html>', {
+          status: 503,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
       return pages.fetch(request);
     },
   });
   return {
     url: `http://127.0.0.1:${server.port}${PATH}`,
     control,
+    /** Sets the state without a scenario in the page address, so a reload keeps what the page changed. */
+    use(scenario: MaintenanceScenario) {
+      state = MAINTENANCE_SCENARIOS[scenario]();
+    },
     close() {
       server.stop(true);
       rmSync(root, { recursive: true, force: true });
