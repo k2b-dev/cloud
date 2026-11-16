@@ -426,6 +426,14 @@ export const createChatStore = (snapshot: ChatStoreSnapshot, dependencies: { api
     const known = chat.messages.get(message.id);
     const contentNewer = (message.contentRevision ?? 0) > (known?.contentRevision ?? 0);
     if (known && message.rev <= known.rev && !contentNewer) return;
+    // Quoted passages stay as they were quoted; only a deleted original takes its passages with it.
+    if (message.deletedAt)
+      for (const [id, quoting] of chat.messages)
+        if (quoting.quotes?.some((quote) => "id" in quote && quote.id === message.id))
+          chat.messages.set(id, {
+            ...quoting,
+            quotes: (quoting.quotes ?? []).map((quote) => ("id" in quote && quote.id === message.id ? { deleted: true as const } : quote)),
+          });
     // Reply quotes are a projection of the original, including originals outside the loaded window.
     for (const [id, reply] of chat.messages) {
       if (reply.replyTo && "id" in reply.replyTo && reply.replyTo.id === message.id) {

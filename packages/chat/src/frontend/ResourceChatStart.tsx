@@ -1,7 +1,8 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { Chat, EmojiPicker, IconButtonLink, PageTitle, Placeholder, Skeleton, useLocale } from "@k2b/ui";
+import { Chat, IconButtonLink, PageTitle, Placeholder, Skeleton, useLocale } from "@k2b/ui";
 import { createSignal, type JSX, Show } from "solid-js";
 import { chatMessages } from "../messages";
+import { EmojiPopover } from "./emoji-popover";
 
 /**
  * The discussion about the host page's resource while nobody has written there: a ready chat with its title, a quiet
@@ -74,7 +75,7 @@ export default function ResourceChatStart(props: {
               }
             }}
           />
-          <EmojiPicker.Popover
+          <EmojiPopover
             anchor={emojiTarget()?.anchor}
             onPick={(emoji) => emojiTarget()?.insert(emoji)}
             onClose={() => setEmojiTarget(undefined)}

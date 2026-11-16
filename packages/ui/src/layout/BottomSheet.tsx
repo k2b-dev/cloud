@@ -1,24 +1,11 @@
 import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
-import type { OpenDialogOptions } from "../feedback/dialog-core";
 import type { DialogTone } from "../feedback/dialog-tone";
 import { suppressTextSelection } from "../internal/text-selection";
 import { useUiMessages } from "../intl/messages";
 import PanelDialog from "./PanelDialog";
-import { attachSheetMotion, type SheetDetent, type SheetMotion, sheetInitialFocus } from "./sheet-motion";
+import { attachSheetMotion, type SheetDetent, type SheetMotion } from "./sheet-motion";
 
-export const bottomSheetOptions = {
-  panelClassName: "k2b-dialog k2b-bottom-sheet-frame",
-  contentClassName: "k2b-panel-dialog-viewport k2b-bottom-sheet-viewport",
-  initialFocus: sheetInitialFocus,
-} satisfies OpenDialogOptions;
-
-/** A sheet on phones and a centered dialog from 48rem up, for decisions and forms; menus keep
- * `bottomSheetOptions`. The stylesheet picks the mode with the phone media query, so the first
- * frame is already right and a rotation or resize switches it in place, without a remount. */
-export const bottomSheetAdaptiveOptions = {
-  ...bottomSheetOptions,
-  panelClassName: `${bottomSheetOptions.panelClassName} is-adaptive`,
-} satisfies OpenDialogOptions;
+export { bottomSheetAdaptiveOptions, bottomSheetOptions } from "./bottom-sheet-options";
 
 export type BottomSheetProps = {
   children: JSX.Element;
