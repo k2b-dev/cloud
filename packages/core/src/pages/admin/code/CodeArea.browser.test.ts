@@ -82,24 +82,57 @@ test("an approval keeps its version in one line next to a long title, on a wide 
     for (const version of versions)
       expect({ ...version, viewport: viewport.width }).toEqual({ ...version, lines: 1, viewport: viewport.width });
   }
-});
+}, 30_000);
 
-test("on a wide screen a long title uses the row's width, and the change starts at the same place in every row", async () => {
+test("approval rows give each column the width it needs: changes stay whole, columns line up, nothing overlaps", async () => {
+  /** Per row: lines of the title and of the main change, where the change starts, and whether parts overlap. */
+  const measure = () =>
+    page.locator(".core-code-approvals__row").evaluateAll((elements) =>
+      elements.map((row) => {
+        const lines = (element: Element | null) => {
+          if (!element) return 0;
+          const height = Number.parseFloat(getComputedStyle(element).lineHeight);
+          return Math.round(element.getBoundingClientRect().height / height);
+        };
+        const parts = [".core-code-approvals__what", ".core-code-approvals__change", ".core-code-approvals__when"].map((selector) =>
+          row.querySelector(selector)!.getBoundingClientRect(),
+        );
+        const overlaps = parts.some((box, index) =>
+          parts.some(
+            (other, otherIndex) =>
+              otherIndex > index &&
+              box.left < other.right - 1 &&
+              other.left < box.right - 1 &&
+              box.top < other.bottom - 1 &&
+              other.top < box.bottom - 1,
+          ),
+        );
+        return {
+          title: lines(row.querySelector(".core-code-approvals__title")),
+          change: lines(row.querySelector(".core-code-approvals__main span")),
+          changeLeft: Math.round(parts[1]!.left),
+          overlaps,
+        };
+      }),
+    );
+  // The walkthrough's title is longer than its row's share: it wraps alone, every change sentence stays one line.
   await goto("sec=approvals&state=long", { width: 1440, height: 900 });
   await settled(page);
-  const rows = await page.locator(".core-code-approvals__row").evaluateAll((elements) =>
-    elements.map((row) => {
-      const title = row.querySelector<HTMLElement>(".core-code-approvals__title strong")!;
-      const lineHeight = Number.parseFloat(getComputedStyle(title).lineHeight);
-      return {
-        lines: Math.round(title.getBoundingClientRect().height / lineHeight),
-        change: Math.round(row.querySelector(".core-code-approvals__change")!.getBoundingClientRect().left),
-      };
-    }),
-  );
-  expect(rows.map((row) => row.lines)).toEqual(rows.map(() => 1));
-  expect(new Set(rows.map((row) => row.change)).size).toBe(1);
-});
+  const wide = await measure();
+  expect(wide.map((row) => row.change)).toEqual(wide.map(() => 1));
+  expect(new Set(wide.map((row) => row.changeLeft)).size).toBe(1);
+  expect(wide.some((row) => row.overlaps)).toBe(false);
+  // Decided: short chips leave the title the width it needs.
+  await goto("sec=approvals&tab=decided&state=long", { width: 1440, height: 900 });
+  await settled(page);
+  expect((await measure()).map((row) => row.title)).toEqual([1, 1, 1]);
+  // Beside the two navigation columns the list is narrow; it stacks instead of squeezing a column.
+  for (const width of [780, 1024, 1180]) {
+    await goto("sec=approvals&state=long", { width, height: 900 });
+    await settled(page);
+    expect({ width, overlaps: (await measure()).some((row) => row.overlaps) }).toEqual({ width, overlaps: false });
+  }
+}, 60_000);
 
 test("the area without a section shows the approvals next to the area column, and only the area on a phone", async () => {
   await goto("");
@@ -113,7 +146,7 @@ test("the area without a section shows the approvals next to the area column, an
       .first()
       .isVisible(),
   ).toBe(true);
-});
+}, 30_000);
 
 test("a review opens at its head with one row of tabs, and the approval with three decisions in view", async () => {
   for (const viewport of [

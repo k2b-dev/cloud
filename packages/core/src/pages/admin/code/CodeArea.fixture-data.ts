@@ -1060,10 +1060,15 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
   if (state === "long" && (query.sec ?? "approvals") === "approvals" && !query.id)
     data.approvals = {
       items: fixtureApprovals().map((entry, index) =>
-        index === 0 ? { ...entry, title: "Backups prüfen – wöchentliche Aufgabe im Space Betrieb" } : entry,
+        index === 0 ? { ...entry, title: "Rückrufe bestätigen – wöchentliche Aufgabe im Space Kundendienst Nord" } : entry,
       ),
       nextCursor: null,
     };
+  // In the decided list the chips are short: a title as long as the walkthrough's fits beside them.
+  if (state === "long" && (query.sec ?? "approvals") === "approvals" && query.tab === "decided" && Array.isArray(data.decided))
+    data.decided = data.decided.map((entry, index) =>
+      index === 0 ? { ...entry, title: "Backups prüfen – wöchentliche Aufgabe im Space Betrieb" } : entry,
+    );
   if (state === "long" && query.sec === "history") data.history = { items: [...fixtureHistory(), ...fixtureHistory()], nextPage: 2 };
   if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
   if (query.sec === "code" && query.status) {
