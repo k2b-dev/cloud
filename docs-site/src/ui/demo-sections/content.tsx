@@ -54,6 +54,7 @@ import {
   type MessageRowStatus,
   MessageSystemRow,
   mapPalette,
+  openActivityDialog,
   Pagination,
   PanelDialog,
   Paper,
@@ -1102,6 +1103,39 @@ const ActivityWideDemo = () => (
     code={`<ActivityList entries={entries()} density="wide" now={data.now} timeZone="Europe/Berlin" />`}
   >
     <ActivityList entries={activityEntries()} density="wide" now={ACTIVITY_NOW} timeZone="Europe/Berlin" />
+  </DemoCard>
+);
+
+const ActivityDialogDemo = () => (
+  <DemoCard
+    id="activity-list-dialog"
+    chip={{ kind: "component", name: "openActivityDialog", from: "@k2b/ui" }}
+    description="The same dialog as All N, opened from anywhere, such as a menu entry Show activity: the subtitle under the title, the filter by kind, and the list in the wide density."
+    code={`<Button onClick={() => void openActivityDialog({
+  entries: () => entries(),
+  subtitle: "Summer party",
+  kinds,
+  now: data.now,
+  timeZone: "Europe/Berlin",
+})}>Show activity</Button>`}
+  >
+    <div>
+      <Button
+        variant="secondary"
+        onClick={() =>
+          void openActivityDialog({
+            entries: activityEntries,
+            subtitle: "Summer party",
+            kinds: activityKinds,
+            now: ACTIVITY_NOW,
+            timeZone: "Europe/Berlin",
+          })
+        }
+      >
+        <i class="ti ti-history" aria-hidden="true" />
+        Show activity
+      </Button>
+    </div>
   </DemoCard>
 );
 
@@ -2694,6 +2728,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <ActivityListDemo />
       <ActivityWideDemo />
+      <ActivityDialogDemo />
     </DemoGrid>
   ),
   "message-rows": () => (
