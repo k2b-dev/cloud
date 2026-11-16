@@ -342,3 +342,26 @@ integration("a durable interruption blocks server and nested capability starts e
     await f.close();
   }
 });
+
+integration("the start barrier does not wait on a concurrent audit insert that references the same turn", async () => {
+  const f = await fixture();
+  try {
+    const { turn } = await aiConversations.submitChatTurn(f.input("Current work"));
+    const target = { conversationId: f.chat.id, turnId: turn.id, callId: "parallel", toolName: "write_file" };
+    // An uncommitted ai.tool_calls insert holds FOR KEY SHARE on the turn through its foreign key.
+    // A FOR UPDATE barrier waited on it and deadlocked with the second audit write of the same step.
+    await sql.begin(async (tx) => {
+      await tx`INSERT INTO ai.tool_calls (turn_id, conversation_id, call_id, tool_name, location, status)
+        VALUES (${turn.id}::uuid, ${f.chat.id}::uuid, 'other', 'write_file', 'server', 'running')`;
+      const outcome = await Promise.race([
+        aiToolAudit.noteToolStarted(target).then((started) => ({ started })),
+        Bun.sleep(2_000).then(() => "waited on the foreign-key lock" as const),
+      ]);
+      expect(outcome).toEqual({ started: true });
+    });
+    const started = await aiToolAudit.noteCapabilityDispatch({ ...target, callId: "nested", requestId: crypto.randomUUID() });
+    expect(started).toBe(true);
+  } finally {
+    await f.close();
+  }
+});

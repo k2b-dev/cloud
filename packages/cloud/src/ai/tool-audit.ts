@@ -50,7 +50,7 @@ export const aiToolAudit = {
   }): Promise<boolean> =>
     sql.begin(async (tx) => {
       const [turn] = await tx<{ cancellation_reason: string | null }[]>`SELECT cancellation_reason FROM ai.turns
-      WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid FOR UPDATE`;
+      WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid FOR NO KEY UPDATE`;
       if (!turn || turn.cancellation_reason === "queue_interrupt") return false;
       await tx`
       INSERT INTO ai.tool_calls (
@@ -110,7 +110,7 @@ export const aiToolAudit = {
       // This existing audit write also serializes step start with Send now. A delayed
       // control delivery cannot let a new effect cross the durable interruption barrier.
       const [turn] = await tx<{ cancellation_reason: string | null }[]>`SELECT cancellation_reason FROM ai.turns
-        WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid FOR UPDATE`;
+        WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid FOR NO KEY UPDATE`;
       if (!turn || turn.cancellation_reason === "queue_interrupt") return false;
       await tx`
       INSERT INTO ai.tool_calls (

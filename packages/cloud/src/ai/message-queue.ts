@@ -125,7 +125,8 @@ export const queuedMessageReceipt = async (conversationId: string, id: string): 
 /** One serialized request. An entry keeps its FIFO position even when explicitly sent ahead. */
 export const requestQueuedMessageSendNow = async (conversationId: string, id: string) =>
   sql.begin(async (tx) => {
-    const [conversation] = await tx`SELECT id FROM ai.conversations WHERE id=${conversationId}::uuid AND archived_at IS NULL FOR UPDATE`;
+    const [conversation] =
+      await tx`SELECT id FROM ai.conversations WHERE id=${conversationId}::uuid AND archived_at IS NULL FOR NO KEY UPDATE`;
     if (!conversation) return null;
     const [entry] = await tx<{ status: string; send_requested_at: Date | null }[]>`
     SELECT status,send_requested_at FROM ai.queued_messages WHERE id=${id}::uuid AND conversation_id=${conversationId}::uuid`;
@@ -135,7 +136,7 @@ export const requestQueuedMessageSendNow = async (conversationId: string, id: st
     AND status IN ('pending','failed') AND send_requested_at IS NOT NULL`;
     if (other) throw new AiMessageQueueConflict("Another queued message is being sent.");
     const [active] = await tx<{ id: string }[]>`SELECT id FROM ai.turns WHERE conversation_id=${conversationId}::uuid
-    AND NOT COALESCE(run_config ? 'background',false) AND status IN ('queued','running','waiting_for_action') FOR UPDATE`;
+    AND NOT COALESCE(run_config ? 'background',false) AND status IN ('queued','running','waiting_for_action') FOR NO KEY UPDATE`;
     const [client] = active
       ? await tx<{ deadline: Date; call_ids: string[] }[]>`SELECT array_agg(p.call_id) AS call_ids, LEAST(t.deadline,
       min(p.created_at) + (${AI_ACTION_BUDGET_MS} * interval '1 millisecond')) AS deadline
@@ -283,7 +284,7 @@ export const reconcileQueuedInterruptions = async (conversationId?: string): Pro
     ORDER BY send_requested_at LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
   for (const row of rows) {
     const ready = await sql.begin(async (tx) => {
-      await tx`SELECT id FROM ai.conversations WHERE id=${row.conversation_id}::uuid FOR UPDATE`;
+      await tx`SELECT id FROM ai.conversations WHERE id=${row.conversation_id}::uuid FOR NO KEY UPDATE`;
       const [entry] = await tx<
         { expired: boolean; expected_count: number; client_wait: boolean; steps: InterruptedStep[] }[]
       >`SELECT interruption_deadline < now() AS expired, COALESCE(cardinality(interruption_client_calls),0) AS expected_count, interruption_deadline IS NOT NULL AS client_wait, interruption_steps AS steps
@@ -293,7 +294,7 @@ export const reconcileQueuedInterruptions = async (conversationId?: string): Pro
         { ownerless: boolean }[]
       >`SELECT (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now()) AS ownerless
         FROM ai.turns WHERE id=${row.interrupted_turn_id}::uuid AND cancellation_reason='queue_interrupt'
-        AND status IN ('queued','running','waiting_for_action') FOR UPDATE`;
+        AND status IN ('queued','running','waiting_for_action') FOR NO KEY UPDATE`;
       if (!turn) return false;
       const actions = await tx<
         { status: "pending" | "resolved" | "aborted"; resolved_event: import("@k2b/nessi").InboundEvent | null; late: boolean }[]

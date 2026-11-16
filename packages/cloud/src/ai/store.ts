@@ -69,21 +69,6 @@ const MESSAGE_BM25_INDEX = "ai.messages_search_bm25_idx";
 const SEARCH_CAPABILITY_ERROR_CODES = new Set(["0A000", "42704", "42883", "55000"]);
 const log = logger("ai:conversation-search");
 
-export const resolveAiTurnShortIds = async (input: {
-  conversationId: string;
-  turnIds: readonly string[];
-}): Promise<Map<string, string>> => {
-  const turnIds = [...new Set(input.turnIds.filter(Boolean))];
-  if (turnIds.length === 0) return new Map();
-  const rows = await sql<{ id: string; short_id: string }[]>`
-    SELECT id::text AS id, short_id
-    FROM ai.turns
-    WHERE conversation_id = ${input.conversationId}::uuid
-      AND id::text = ANY(${toPgTextArray(turnIds)}::text[])
-  `;
-  return new Map(rows.map((row) => [row.id, row.short_id]));
-};
-
 /**
  * Marker texts of the owner's latest sent messages, newest first. The candidates carry no message bodies; only the
  * newest few are read for their resource markers.
@@ -3379,7 +3364,7 @@ export const aiConversations: AiConversationService = {
 
   completeTurn: async (input) => {
     return sql.begin(async (tx) => {
-      await tx`SELECT id FROM ai.conversations WHERE id=${input.conversationId}::uuid FOR UPDATE`;
+      await tx`SELECT id FROM ai.conversations WHERE id=${input.conversationId}::uuid FOR NO KEY UPDATE`;
       const turnRows = await tx<{ id: string; cancellation_reason: string | null }[]>`
         SELECT id,cancellation_reason
         FROM ai.turns
@@ -3747,7 +3732,7 @@ export const aiConversations: AiConversationService = {
   savePendingTurnAction: async (input) =>
     sql.begin(async (tx) => {
       const [turn] = await tx<{ cancellation_reason: string | null }[]>`SELECT cancellation_reason FROM ai.turns
-      WHERE id=${input.turnId}::uuid FOR UPDATE`;
+      WHERE id=${input.turnId}::uuid FOR NO KEY UPDATE`;
       if (turn?.cancellation_reason === "queue_interrupt") return false;
       await tx`
       INSERT INTO ai.pending_actions (

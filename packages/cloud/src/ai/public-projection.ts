@@ -1,7 +1,6 @@
-import { type AiOriginViewer, projectAiMessageOrigins } from "./message-origin";
+import { type AiOriginViewer, loadAiMessageOrigins } from "./message-origin";
 import { projectAiNextMessages } from "./next-message-store";
 import type { AiStoredMessageOrigin } from "./queue-contracts";
-import { resolveAiTurnShortIds } from "./store";
 import type { AiConversation, AiStoredMessage } from "./types";
 
 export const projectPublicAiStoredMessages = (
@@ -23,10 +22,6 @@ export const publicAiStoredMessages = async (
   viewerUserId?: string | null,
   originViewer: AiOriginViewer = {},
 ): Promise<AiStoredMessage[]> => {
-  const turnShortIds = await resolveAiTurnShortIds({
-    conversationId: conversation.id,
-    turnIds: messages.flatMap((message) => (message.loopId ? [message.loopId] : [])),
-  });
   const attributed = messages.flatMap((message) => {
     const origin: AiStoredMessageOrigin | undefined =
       message.meta?.writerOrigin ??
@@ -37,9 +32,10 @@ export const publicAiStoredMessages = async (
           : undefined);
     return origin ? [{ ...message, meta: { ...message.meta, writerOrigin: origin } }] : [];
   });
-  const origins = await projectAiMessageOrigins(
+  const { origins, turnShortIds } = await loadAiMessageOrigins(
     attributed.map((message) => message.meta!.writerOrigin!),
     { ...originViewer, userId: originViewer.userId ?? viewerUserId },
+    { conversationId: conversation.id, turnIds: messages.flatMap((message) => (message.loopId ? [message.loopId] : [])) },
   );
   const byId = new Map(attributed.map((message, index) => [message.id, origins[index]!]));
   const projected = messages.map((message) =>

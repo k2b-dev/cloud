@@ -16,21 +16,36 @@ import { addCloudResourceHrefs } from "./resource-refs";
 
 export type AiOriginViewer = { userId?: string | null; authority?: RequestAuthority | null; locale?: string };
 
-/** One bounded snapshot read, never called from the live event delivery path. */
+/** Origins of a message snapshot, projected for one viewer. */
 export const projectAiMessageOrigins = async (
   origins: readonly AiStoredMessageOrigin[],
   viewer: AiOriginViewer,
-): Promise<AiMessageOrigin[]> => {
-  if (!origins.length) return [];
+): Promise<AiMessageOrigin[]> => (await loadAiMessageOrigins(origins, viewer)).origins;
+
+/**
+ * One bounded snapshot read, never called from the live event delivery path. The
+ * turn short IDs of the same snapshot ride along, so attribution adds no statement.
+ */
+export const loadAiMessageOrigins = async (
+  origins: readonly AiStoredMessageOrigin[],
+  viewer: AiOriginViewer,
+  turns?: { conversationId: string; turnIds: readonly string[] },
+): Promise<{ origins: AiMessageOrigin[]; turnShortIds: Map<string, string> }> => {
   const ids = [...new Set(origins.map((origin) => origin.id))];
-  const rows = await sql<{ id: string; name: string; kind: "person" | "automation" | "chat"; href: string | null }[]>`
+  const turnIds = [...new Set(turns?.turnIds.filter(Boolean) ?? [])];
+  if (!ids.length && !turnIds.length) return { origins: [], turnShortIds: new Map() };
+  const rows = await sql<{ id: string; name: string; kind: "person" | "automation" | "chat" | "turn"; href: string | null }[]>`
     SELECT id::text, display_name AS name, 'person' AS kind, NULL::text AS href FROM auth.users WHERE id::text = ANY(${toPgTextArray(ids)}::text[])
     UNION ALL
     SELECT id::text, name, 'automation', NULL::text FROM auth.service_accounts WHERE id::text = ANY(${toPgTextArray(ids)}::text[])
     UNION ALL
     SELECT short_id, title, 'chat', CASE WHEN created_by_user_id=${viewer.userId ?? null}::uuid AND archived_at IS NULL
       THEN '/app/assistant?conversation=' || short_id ELSE NULL END FROM ai.conversations WHERE short_id=ANY(${toPgTextArray(ids)}::text[])
+    UNION ALL
+    SELECT id::text, short_id, 'turn', NULL::text FROM ai.turns
+    WHERE conversation_id = ${turns?.conversationId ?? null}::uuid AND id::text = ANY(${toPgTextArray(turnIds)}::text[])
   `;
+  const turnShortIds = new Map(rows.flatMap((row) => (row.kind === "turn" ? [[row.id, row.name] as const] : [])));
   const known = new Map(rows.map((row) => [`${row.kind}:${row.id}`, row]));
   const resources = new Map<string, Promise<{ name: string; href?: string } | null>>();
   const resolveAutomation = (origin: Extract<AiStoredMessageOrigin, { kind: "automation" }>) => {
@@ -67,7 +82,7 @@ export const projectAiMessageOrigins = async (
     resources.set(key, read);
     return read;
   };
-  return Promise.all(
+  const projectedOrigins = await Promise.all(
     origins.map(async (origin): Promise<AiMessageOrigin> => {
       const row = known.get(`${origin.kind}:${origin.id}`);
       const fallback = origin.kind === "person" ? "Person" : origin.kind === "chat" ? "Chat" : "Automation";
@@ -80,4 +95,5 @@ export const projectAiMessageOrigins = async (
       };
     }),
   );
+  return { origins: projectedOrigins, turnShortIds };
 };
