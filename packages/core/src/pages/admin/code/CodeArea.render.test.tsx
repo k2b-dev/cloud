@@ -105,6 +105,21 @@ test("the area without a section opens on the approvals instead of two empty col
   expect(render({}, "empty").match(/data-workspace-main-region="/g)?.length).toBe(2);
 });
 
+test("an approval names its author once when the author owns the Code personally, and both when they differ", () => {
+  const open = renderedText(render({ sec: "approvals" }), " ").replace(/\s+/g, " ");
+  // Lea submits her own personal Code; Tom his.
+  expect(open).toContain("Lea Muster, persönlich");
+  expect(open).not.toContain("Lea Muster Lea Muster");
+  expect(open).toContain("Tom Beispiel, persönlich");
+  expect(open).not.toContain("Tom Beispiel Tom Beispiel");
+  // Another owner keeps the author's name beside it.
+  expect(open).toContain("Lea Muster Postfach info@moebel-beispiel.de");
+  const decided = renderedText(render({ sec: "approvals", tab: "decided" }), " ").replace(/\s+/g, " ");
+  // Tom submitted Lea's personal Code: two people, two names.
+  expect(decided).toContain("Tom Beispiel Lea Muster, persönlich");
+  expect(decided).not.toContain("Lea Muster Lea Muster");
+});
+
 test("approvals are a page: a list with who, owner, main change and reason, and states", () => {
   const list = renderedText(render({ sec: "approvals" }), " ");
   expect(list).toContain("4 Versionen warten auf eine Entscheidung.");
