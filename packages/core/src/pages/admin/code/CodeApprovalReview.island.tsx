@@ -897,8 +897,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
               }
             >
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <Show when={explainFailed()}>
-                  <p class="core-code-review__muted">{t().explainFailed}</p>
+                {/* A decided version asks for no explanation by itself: its empty state is a line, next to the button. */}
+                <Show when={explainFailed() || (closed() && props.decision)}>
+                  <p class="core-code-review__muted">{explainFailed() ? t().explainFailed : t().noDescription}</p>
                 </Show>
                 <Button size="sm" variant="secondary" onClick={() => void explain()}>
                   <i class={`ti ${explainFailed() ? "ti-refresh" : "ti-sparkles"}`} aria-hidden="true" />
@@ -913,20 +914,6 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       </Section>
     );
   };
-
-  /** A decided version asks for no explanation any more: the stored one with its AI mark, or a line that there is none. */
-  const decidedDescription = () => (
-    <Show
-      when={explanation()}
-      fallback={
-        <Section frame="line" title={t().whatItDoes}>
-          <p class="core-code-review__muted">{t().noDescription}</p>
-        </Section>
-      }
-    >
-      {description()}
-    </Show>
-  );
 
   const commentsIsland = () => (
     <Show when={threads().length}>
@@ -1024,9 +1011,7 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       {frame(false)}
       <div class="core-code-review__columns">
         <div class="core-code-review__column">
-          <Show when={!closed() || !props.decision} fallback={decidedDescription()}>
-            {description()}
-          </Show>
+          {description()}
           {commentsIsland()}
         </div>
         <div class="core-code-review__column">

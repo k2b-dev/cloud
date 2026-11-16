@@ -416,12 +416,11 @@ for (const locale of ["de", "en"]) {
   });
 }
 
-test("a decided version keeps the left column: its stored description, or a line that there is none", () => {
+test("a decided version keeps the left column: its stored description, or a line that there is none beside the button", () => {
   const described = renderedText(render(review, "approved"), " ").replaceAll(/\s+/g, " ");
   expect(described).toContain("Was sie damit tut");
   expect(described).toContain("Legt werktags um 8 Uhr");
-  // A decided version offers no explanation any more.
-  expect(described).not.toContain("Diese Version erklären");
+  expect(described).not.toContain("Noch keine Beschreibung.");
   const withoutText = (area: AreaData): AreaData => {
     const approval = area.approval;
     if (!approval || approval === "failed" || approval === "missing" || !approval.readModel) return area;
@@ -435,10 +434,11 @@ test("a decided version keeps the left column: its stored description, or a line
     };
   };
   const empty = renderedText(render(review, "approved", "de", undefined, withoutText), " ").replaceAll(/\s+/g, " ");
-  expect(empty).toContain("Was sie damit tut Noch keine Beschreibung.");
-  expect(empty).not.toContain("Diese Version erklären");
+  expect(empty).toContain("Was sie damit tut");
+  // The way to an explanation stays: the empty line stands beside the button.
+  expect(empty).toContain("Noch keine Beschreibung. Diese Version erklären lassen");
   const english = renderedText(render(review, "approved", "en", undefined, withoutText), " ").replaceAll(/\s+/g, " ");
-  expect(english).toContain("What it does No description yet.");
+  expect(english).toContain("No description yet. Explain this version");
 });
 
 for (const locale of ["de", "en"]) {
