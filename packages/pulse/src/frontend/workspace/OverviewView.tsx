@@ -1,5 +1,4 @@
-import { dates } from "@k2b/stdlib";
-import { Button, ButtonLink, Chart, Format, Skeleton } from "@k2b/ui";
+import { type ActivityEntry, ActivityList, Button, ButtonLink, Chart, Format, Skeleton } from "@k2b/ui";
 import { createComputed, createMemo, createUniqueId, For, Match, on, Show, Switch } from "solid-js";
 import type { pulseMessages } from "../../messages";
 import type { Overview, OverviewActivity, OverviewAttention } from "../../overview-contracts";
@@ -321,60 +320,48 @@ const activityText = (item: OverviewActivity, t: Messages): string => {
   }
 };
 
-function OverviewActivityRow(props: { item: OverviewActivity; timezone: string; readAt: string }) {
-  const t = usePulseMessages();
-  const sameDay = () => {
-    const context = { locale: "en", timeZone: props.timezone };
-    return dates.formatDateKey(props.item.at, context) === dates.formatDateKey(props.readAt, context);
-  };
+const ACTIVITY_ICONS: Record<string, string> = {
+  "source.created": "ti ti-database-plus",
+  "source.updated": "ti ti-database-edit",
+  "source.removed": "ti ti-database-minus",
+  query_saved: "ti ti-device-floppy",
+  query_deleted: "ti ti-trash",
+  alert_saved: "ti ti-bell-plus",
+  alert_deleted: "ti ti-bell-minus",
+  alert_transition: "ti ti-bell-ringing",
+};
+
+/** One change as a timeline entry: what happened, keys a transition changed, and who; nobody reads as automatic. */
+const activityEntry = (item: OverviewActivity, t: Messages): ActivityEntry => {
   // A transition may have changed keys even when the rule's summary stayed the same.
-  const changedKeys = () => {
-    const keys = props.item.kind === "alert_transition" ? props.item.data.keys : null;
-    if (!Array.isArray(keys)) return [];
-    return keys.flatMap((entry: unknown) => {
-      if (typeof entry !== "object" || entry === null || !("key" in entry) || typeof entry.key !== "string" || !("state" in entry))
-        return [];
-      const state = alertState(entry.state, "severity" in entry ? entry.severity : null, t());
-      return state ? [t().overviewActivityKeyState({ key: entry.key, state })] : [];
-    });
+  const keys = item.kind === "alert_transition" ? item.data.keys : null;
+  const changedKeys = !Array.isArray(keys)
+    ? []
+    : keys.flatMap((entry: unknown) => {
+        if (typeof entry !== "object" || entry === null || !("key" in entry) || typeof entry.key !== "string" || !("state" in entry))
+          return [];
+        const state = alertState(entry.state, "severity" in entry ? entry.severity : null, t);
+        return state ? [t.overviewActivityKeyState({ key: entry.key, state })] : [];
+      });
+  const stale = item.kind === "source_freshness" ? item.data.stale : undefined;
+  return {
+    at: item.at,
+    icon:
+      stale === true ? "ti ti-clock-exclamation" : stale === false ? "ti ti-clock-check" : (ACTIVITY_ICONS[item.kind] ?? "ti ti-activity"),
+    tone: stale === true ? "warning" : stale === false ? "success" : "neutral",
+    text: activityText(item, t),
+    detail: changedKeys.length > 0 ? changedKeys.join(" · ") : undefined,
+    actor: item.actor ? (
+      item.actor.kind === "user" ? (
+        <bdi>{item.actor.name}</bdi>
+      ) : (
+        <>
+          {t.overviewActorService} <bdi>{item.actor.name}</bdi>
+        </>
+      )
+    ) : null,
   };
-  return (
-    <li class="pulse-overview__activity-row">
-      <Show
-        when={sameDay()}
-        fallback={
-          <Format.Date
-            class="pulse-overview__activity-time"
-            value={props.item.at}
-            timeZone={props.timezone}
-            title={`${props.item.at} (${props.timezone})`}
-          />
-        }
-      >
-        <Format.Time
-          class="pulse-overview__activity-time"
-          value={props.item.at}
-          timeZone={props.timezone}
-          title={`${props.item.at} (${props.timezone})`}
-        />
-      </Show>
-      <div class="pulse-overview__activity-copy">
-        <span>{activityText(props.item, t())}</span>
-        <Show when={props.item.actor}>
-          {(actor) => (
-            <>
-              {" · "}
-              {actor().kind === "user" ? t().overviewActorPerson : t().overviewActorService} <bdi>{actor().name}</bdi>
-            </>
-          )}
-        </Show>
-        <Show when={changedKeys().length > 0}>
-          <div class="pulse-overview__reason">{changedKeys().join(" · ")}</div>
-        </Show>
-      </div>
-    </li>
-  );
-}
+};
 
 export default function OverviewView(props: OverviewViewProps) {
   const t = usePulseMessages();
@@ -646,16 +633,16 @@ export default function OverviewView(props: OverviewViewProps) {
                   <h3 id={`${id}-activity`} class="pulse-overview__section-title">
                     {t().overviewRecentChanges}
                   </h3>
-                  <Show when={snapshot().activity.items.length > 0} fallback={<p class="pulse-overview__hint">{t().overviewNoActivity}</p>}>
-                    <ol class="pulse-overview__activity" aria-labelledby={`${id}-activity`}>
-                      <For each={snapshot().activity.items.map((item) => item.id)}>
-                        {(itemId) => (
-                          <Show when={snapshot().activity.items.find((item) => item.id === itemId)}>
-                            {(item) => <OverviewActivityRow item={item()} timezone={snapshot().timezone} readAt={snapshot().readAt} />}
-                          </Show>
-                        )}
-                      </For>
-                    </ol>
+                  <Show when={snapshot().activity.items.length > 0} fallback={<ActivityList.Empty text={t().overviewNoActivity} />}>
+                    <div class="pulse-overview__activity">
+                      <ActivityList
+                        entries={snapshot().activity.items.map((item) => activityEntry(item, t()))}
+                        now={snapshot().readAt}
+                        timeZone={snapshot().timezone}
+                        label={t().overviewRecentChanges}
+                        more={snapshot().activity.nextCursor !== null}
+                      />
+                    </div>
                   </Show>
                   <Show when={snapshot().activity.nextCursor !== null}>
                     <div class="pulse-overview__paging">

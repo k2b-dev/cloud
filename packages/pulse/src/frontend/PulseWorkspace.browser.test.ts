@@ -251,7 +251,7 @@ describe("Pulse base overview", () => {
         await tab.evaluate(() => document.fonts.ready);
         await tab.locator(".pulse-overview__headline").waitFor();
         const snapshot = () =>
-          tab.locator(".pulse-overview__headline, .pulse-overview__value, .pulse-overview__activity-time").evaluateAll((nodes) =>
+          tab.locator(".pulse-overview__headline, .pulse-overview__value, .pulse-overview__activity time").evaluateAll((nodes) =>
             nodes.map((node) => {
               const box = node.getBoundingClientRect();
               return { text: node.textContent, x: box.x, y: box.y, width: box.width, height: box.height };
