@@ -729,15 +729,18 @@ main > .code-page-host {
   gap: 0.25rem;
   min-width: 0;
 }
+/* The version follows the title in its line and wraps only as a whole, so "Version 2" never breaks apart. */
 .core-code-approvals__title {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
   min-width: 0;
   font-size: var(--k2b-type-14, 0.875rem);
 }
 .core-code-approvals__title strong {
+  margin-inline-end: 0.5rem;
   font-weight: 600;
+}
+.core-code-approvals__version {
+  display: inline-block;
+  white-space: nowrap;
 }
 .core-code-approvals__version,
 .core-code-approvals__when,

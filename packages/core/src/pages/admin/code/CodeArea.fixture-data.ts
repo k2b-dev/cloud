@@ -1055,6 +1055,14 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
     ];
     data.approval = state === "missing" ? "missing" : fixtureApprovalDetail(variants.find((entry) => entry === variant) ?? "normal");
   }
+  // A title long enough to wrap next to its version, as in the walkthrough.
+  if (state === "long" && (query.sec ?? "approvals") === "approvals" && !query.id)
+    data.approvals = {
+      items: fixtureApprovals().map((entry, index) =>
+        index === 0 ? { ...entry, title: "Rückrufe bestätigen – wöchentliche Aufgabe im Space Kundendienst Nord" } : entry,
+      ),
+      nextCursor: null,
+    };
   if (state === "long" && query.sec === "history") data.history = { items: [...fixtureHistory(), ...fixtureHistory()], nextPage: 2 };
   if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
   if (query.sec === "code" && query.status) {
