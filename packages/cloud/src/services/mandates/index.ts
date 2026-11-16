@@ -10,6 +10,7 @@ import { audit } from "../audit";
 import { requireRegisteredAppAccess, resolveIssuanceAuthority } from "../identity/issue-invocation";
 import { logger } from "../logging";
 import { parsePgJsonValue } from "../postgres";
+import { startRuntimeInterval } from "../runtime-lifecycle";
 import { isMandatePolicyNarrowing, type MandatePolicyV1, MandatePolicyV1Schema, mandatePolicyAllows, parseMandatePolicy } from "./policy";
 
 export {
@@ -828,8 +829,7 @@ export const withMandateIssueAuthority = <T>(
 const ORPHAN_RECONCILE_LIMIT = 100;
 const ORPHAN_RECONCILE_INTERVAL_MS = 60_000;
 const log = logger("mandates");
-let mandateMaintenanceTimer: ReturnType<typeof setInterval> | null = null;
-let mandateMaintenanceRunning = false;
+let mandateMaintenance: ReturnType<typeof startRuntimeInterval> | null = null;
 
 /** Revokes a bounded batch of remote mandates whose owner never confirmed persistence. */
 export const reconcileUnconfirmedMandates = async (options: { db?: SQL; limit?: number } = {}): Promise<number> => {
@@ -879,24 +879,19 @@ export const reconcileUnconfirmedMandates = async (options: { db?: SQL; limit?: 
 };
 
 export const startMandateMaintenance = (): (() => void) => {
-  if (mandateMaintenanceTimer) return () => undefined;
-  const reconcile = async (): Promise<void> => {
-    if (mandateMaintenanceRunning) return;
-    mandateMaintenanceRunning = true;
-    try {
+  if (mandateMaintenance) return () => undefined;
+  const maintenance = startRuntimeInterval({
+    run: async () => {
       await reconcileUnconfirmedMandates();
-    } catch (error) {
-      log.error("Mandate orphan reconciliation failed", { error: error instanceof Error ? error.message : String(error) });
-    } finally {
-      mandateMaintenanceRunning = false;
-    }
-  };
-  void reconcile();
-  mandateMaintenanceTimer = setInterval(() => void reconcile(), ORPHAN_RECONCILE_INTERVAL_MS);
-  mandateMaintenanceTimer.unref?.();
+    },
+    intervalMs: ORPHAN_RECONCILE_INTERVAL_MS,
+    onError: (error) =>
+      log.error("Mandate orphan reconciliation failed", { error: error instanceof Error ? error.message : String(error) }),
+  });
+  mandateMaintenance = maintenance;
   return () => {
-    if (mandateMaintenanceTimer) clearInterval(mandateMaintenanceTimer);
-    mandateMaintenanceTimer = null;
+    if (mandateMaintenance === maintenance) mandateMaintenance = null;
+    void maintenance.stop();
   };
 };
 

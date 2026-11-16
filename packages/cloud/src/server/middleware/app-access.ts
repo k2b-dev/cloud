@@ -146,6 +146,7 @@ export const watchAppAccess = (options: WatchOptions): (() => void) => {
       }
     }
   };
+  // runtime-timer: refreshes the app access decision that request handling reads.
   const timer = options.intervalMs === false ? undefined : setInterval(() => void check(), options.intervalMs ?? APP_ACCESS_RECHECK_MS);
   timer?.unref?.();
   unsubscribe = options.subscribe(() => void check());
@@ -174,6 +175,7 @@ export const watchCredentialExpiry = (expiresAt: number, expired: () => void): (
       expired();
       return;
     }
+    // runtime-timer: enforces the expiry of a credential an open request or socket holds.
     timer = setTimeout(arm, Math.min(remaining, 2_147_483_647));
     timer.unref?.();
   };

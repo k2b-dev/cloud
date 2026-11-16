@@ -1,6 +1,6 @@
 import type { EphemeralConfig } from "@k2b/sync";
 import { lazySync } from "../_internal/process-sync";
-import { type MaintenanceState, parseMaintenanceState } from "../contracts/maintenance";
+import { type MaintenanceState, parseMaintenanceState, type QuietReport, QuietReportSchema } from "../contracts/maintenance";
 
 /**
  * Maintenance state: one key on a Sync ephemeral of the process Sync
@@ -63,6 +63,8 @@ export const watchMaintenanceState = async ({
 }): Promise<void> => {
   while (!signal.aborted) {
     const snapshot = await store().snapshot({ prefix: MAINTENANCE_STATE_KEY });
+    // A watcher stopped while it read hears nothing more.
+    if (signal.aborted) return;
     const entry = snapshot.entries.find((candidate) => candidate.key === MAINTENANCE_STATE_KEY);
     const state = entry ? parseMaintenanceState(entry.value) : null;
     onChange(entry && state ? { state, updatedAt: entry.updatedAt.getTime() } : null);
@@ -81,4 +83,45 @@ export const watchMaintenanceState = async ({
     }
     if (!resync) return;
   }
+};
+
+/**
+ * Stage „Ruhe“ (quiesce) reports: while maintenance asks for quiesce, every
+ * app instance publishes how much background work it still runs, one key per
+ * instance on a second ephemeral next to the state. Core reads one snapshot
+ * for `cld admin maintenance status`; nothing here touches Postgres. A
+ * report lives 45 s and is renewed every 15 s, so an instance that crashed
+ * drops out soon; one that stops cleanly or resumes deletes its key.
+ */
+export const QUIET_REPORT_TTL_MS = 45_000;
+export const QUIET_REPORT_INTERVAL_MS = 15_000;
+const QUIET_REPORT_PREFIX = "instances/";
+
+export const QUIET_REPORT_CONFIG = {
+  id: "cloud-quiesce",
+  owner: "cloud",
+  ttlMs: QUIET_REPORT_TTL_MS,
+  maxEntries: 1024,
+  maxValueBytes: 1024,
+} as const satisfies EphemeralConfig;
+
+const quietReports = lazySync((sync) => sync.ephemeral<unknown>(QUIET_REPORT_CONFIG));
+
+const quietReportKey = (instanceId: string) => `${QUIET_REPORT_PREFIX}${instanceId}`;
+
+export const publishQuietReport = async (report: QuietReport): Promise<void> => {
+  await quietReports().upsert({ key: quietReportKey(report.instanceId), value: report });
+};
+
+export const clearQuietReport = async (instanceId: string): Promise<void> => {
+  await quietReports().delete({ key: quietReportKey(instanceId) });
+};
+
+/** Every valid report, at most `QUIET_REPORT_CONFIG.maxEntries`; invalid values are skipped. */
+export const readQuietReports = async (): Promise<QuietReport[]> => {
+  const snapshot = await quietReports().snapshot({ prefix: QUIET_REPORT_PREFIX });
+  return snapshot.entries.flatMap((entry) => {
+    const parsed = QuietReportSchema.safeParse(entry.value);
+    return parsed.success ? [parsed.data] : [];
+  });
 };
