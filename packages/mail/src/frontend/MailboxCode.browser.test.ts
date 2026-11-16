@@ -69,6 +69,13 @@ for (const [path, file] of plexFiles) plex = plex.replaceAll(`./fonts/${file.spl
 /** What Core answers while the person switches on: the activation's final state. */
 let activationEnd: "active" | "owner_refused" | "unavailable" | "lost-active" | "silent" = "active";
 const activations: unknown[] = [];
+/** What the chat chooser of personal Code asked Core to bind. */
+const chatBindingSets: { input?: unknown; target?: unknown }[] = [];
+const chatView = (id: string, title: string) => ({
+  ref: { type: "core.ai.chat", id },
+  title,
+  links: [{ rel: "open", href: `/app/assistant?conversation=${id}` }],
+});
 const unexpectedRoutes: string[] = [];
 const server = Bun.serve({
   port: 0,
@@ -109,6 +116,21 @@ const server = Bun.serve({
           versionId: "00000000-0000-4000-8000-000000000005",
           state: "active",
           failure: null,
+        },
+      });
+    }
+    // Personal Code's chat chooser: the owner's active chats, then the binding change.
+    if (url.pathname === "/api/capabilities/v1/queries/core/ai.chats.search")
+      return Response.json({ data: [chatView("Wk7chat", "Wochenbericht"), chatView("Lyon42", "Reise nach Lyon")] });
+    if (url.pathname === "/api/capabilities/v1/actions/core/code.chat_binding.set") {
+      const body = (await request.json()) as { input?: { chatId?: string }; target?: unknown };
+      chatBindingSets.push(body);
+      return Response.json({
+        data: {
+          codeId: "c_woche1",
+          revision: 2,
+          canChange: true,
+          chat: { state: "available", id: body.input?.chatId ?? "", title: "Reise nach Lyon", project: null, href: "/app/assistant" },
         },
       });
     }
@@ -264,6 +286,62 @@ describe("Mailbox Code page in a browser", () => {
       await page.context().close();
     }
   });
+
+  // Automations v5, 4.4: the owner chooses the chat their personal Code writes to; the page never moves for it.
+  test("the owner chooses another chat for personal Code in a dialog, with Core's revision", async () => {
+    for (const width of [1440, 390]) {
+      chatBindingSets.length = 0;
+      const page = await load("personal", width);
+      try {
+        const row = page.locator(".cloud-code__may .cloud-code__row", { hasText: "In den Chat „Wochenbericht“ schreiben" });
+        await row.getByRole("button", { name: "Anderen Chat wählen" }).click();
+        const dialog = page.getByRole("dialog", { name: "Chat für diese Automation" });
+        await dialog.getByText("Gustav antwortet im gewählten Chat, mit dessen Projekt, Modell und Dateien.", { exact: false }).waitFor();
+        await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).waitFor();
+        // The current chat is marked; choosing it again changes nothing.
+        expect(await dialog.getByText("Aktuell").count()).toBe(1);
+        expect(await dialog.getByRole("button", { name: "Diesen Chat nehmen" }).isDisabled()).toBe(true);
+        await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).check();
+        const box = await dialog.boundingBox();
+        expect(box !== null && box.x >= 0 && box.x + box.width <= width).toBe(true);
+        await dialog.getByRole("button", { name: "Diesen Chat nehmen" }).click();
+        // The dialog closes only after Core answered.
+        await dialog.waitFor({ state: "hidden" });
+        expect(chatBindingSets).toHaveLength(1);
+        expect(chatBindingSets[0]).toMatchObject({
+          input: { chatId: "Lyon42", revision: 1 },
+          target: { type: "core.code", id: "c_woche1" },
+        });
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
+
+  test("a missing chat is said above the page, with choose and restore for the owner, at a fixed place", async () => {
+    for (const width of [1440, 390]) {
+      const page = await load("personal-chat-missing", width);
+      try {
+        const notice = page.getByText("Der Chat „Wochenbericht“ ist archiviert.");
+        await notice.waitFor();
+        await page.getByRole("button", { name: "Chat wählen …" }).first().waitFor();
+        await page.getByRole("button", { name: "Chat wiederherstellen" }).waitFor();
+        const geometry = await page.evaluate(() => {
+          const may = document.querySelector(".cloud-code__may");
+          const notice = Array.from(document.querySelectorAll(".k2b-notice-card")).find((card) =>
+            card.textContent?.includes("ist archiviert"),
+          );
+          return {
+            aboveMay: Boolean(notice && may && notice.getBoundingClientRect().bottom <= may.getBoundingClientRect().top),
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          };
+        });
+        expect(geometry).toEqual({ aboveMay: true, overflow: 0 });
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
 
   test("the sidebar shows a warning dot, never a number, when the Code needs attention", async () => {
     for (const [state, dot] of [

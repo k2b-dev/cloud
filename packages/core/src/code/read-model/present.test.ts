@@ -209,7 +209,7 @@ test("an unavailable static grant carries an independent reader reference and lo
 test.each(["de", "en"])("bound chat grants defer names and preserve permission comparisons in %s", (locale) => {
   const dynamic = {
     ...manifest,
-    permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null } }],
+    permissions: [{ ...manifest.permissions[0]!, operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null } }],
   };
   const input = { personal: true, manifest: dynamic, comparison: dynamic, locale, explanation: null };
   const boundChat = { type: "core.ai.chat", id: "cHt234" };
@@ -239,7 +239,10 @@ test.each(["de", "en"])("bound chat grants defer names and preserve permission c
   const literal = present({
     ...input,
     boundChat,
-    manifest: { ...dynamic, permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: "Other1" } }] },
+    manifest: {
+      ...dynamic,
+      permissions: [{ ...manifest.permissions[0]!, operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: "Other1" } }],
+    },
   });
   expect(JSON.stringify(literal.mayDo)).not.toContain(boundChat.id);
 });

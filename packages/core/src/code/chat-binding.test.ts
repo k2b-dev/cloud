@@ -43,7 +43,7 @@ test("only personal ownership permits changing the chat, independently of editor
 });
 
 test("hidden and deleted bindings carry no chat identity or title", () => {
-  for (const chat of [{ state: "hidden" }, { state: "unavailable", reason: "deleted" }]) {
+  for (const chat of [{ state: "hidden" }, { state: "unavailable", reason: "deleted" }] as const) {
     const base = { codeId: "c_1234", revision: 1, canChange: false, chat };
     expect(CodeChatBindingSchema.parse(base)).toEqual(base);
     for (const field of [{ title: "Private chat" }, { id: "cHt234" }])
@@ -53,7 +53,7 @@ test("hidden and deleted bindings carry no chat identity or title", () => {
 
 test("unavailable bindings require a reason and archived bindings may identify the restorable chat", () => {
   const base = { codeId: "c_1234", revision: 1, canChange: true };
-  const archived = { state: "unavailable", reason: "archived", id: "cHt234", title: "Morning report" };
+  const archived = { state: "unavailable", reason: "archived", id: "cHt234", title: "Morning report" } as const;
   expect(CodeChatBindingSchema.parse({ ...base, chat: archived }).chat).toEqual(archived);
   expect(CodeChatBindingSchema.parse({ ...base, chat: { state: "unavailable", reason: "archived" } }).chat).toEqual({
     state: "unavailable",
@@ -108,6 +108,7 @@ test("init passes only the authenticated chat origin into Code creation, keeping
 
 const runContext = (): CapabilityExecutionContext => ({
   authority: context.authority,
+  locale: "en",
   actor: {
     kind: "user",
     user,

@@ -94,6 +94,7 @@ async function personalRun(codeId: string, account = owner): Promise<CapabilityE
     user,
     origin: "http",
     requestId: "binding-fixture",
+    locale: "en",
     signal: new AbortController().signal,
     target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
   };
