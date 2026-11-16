@@ -5,7 +5,7 @@ section: Platform services
 order: 564
 description: Declare resource containment, a standard reader presentation, and a discussions provider without application-specific consumers.
 tags: [capabilities, resources, discussions, authorization]
-updated: 2026-11-15
+updated: 2026-11-16
 ---
 
 # Resource types and discussions
@@ -117,6 +117,9 @@ containers the current caller can read. Reuse these contracts from
   1–100 and defaults to 50.
 - `DiscussionContainersDataSchema`: `{ items, next }`. Each item has
   `{ ref, title }`; `next` is an opaque cursor or `null` on the last page.
+  The result also returns `page: capabilityPage(next)`, so generic readers
+  such as agents follow the same cursor. The platform rejects a containers
+  page whose `page` does not match `next` as an invalid app response.
   Changing `limit` between pages continues after the last returned item.
 - Optional `DiscussionActivityInputSchema`: `{ container, item?, timeZone?,
   before?, after?, cursor?, limit? }`. `container` and `item` are opaque
@@ -242,7 +245,9 @@ Provider tests can run `typeViewIssues(manifest, localTypeId)` and
 `discussionsIssues(manifest)`. Use `assertResourceView(result,
 expectedContainerRef?)` beside `assertResourceOpenLink(result)` from
 `@k2b/cloud/capabilities/testing`. The former validates `result.data.view`
-and, when supplied, the exact expected container ref. Cover every permission
+and, when supplied, the exact expected container ref. Call
+`assertDiscussionContainersPage(result)` on a continued and a final
+containers page; tests that call `run` directly skip the platform's own check. Cover every permission
 level and locale your reader supports, account status, group rights, service
 accounts without credential scope ceilings, and moved items with a stale
 expected container.
