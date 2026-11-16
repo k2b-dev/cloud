@@ -16,7 +16,7 @@ import { approvalArgsDigest } from "@k2b/cloud/services/approvals";
 import { err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { aiChatSendData, chatSendSnapshot } from "./ai-chat-send-result";
-import { chatWriteAuthority, codeChatDestination, ownedActiveChat } from "./ai-code-chat";
+import { chatWriteAuthority, codeChatDestination, ownedActiveChat, sendsToItself } from "./ai-code-chat";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
 import { codeSettings } from "./code/settings";
 
@@ -34,6 +34,7 @@ const messages = i18n.define({
       ai_disabled: "AI is disabled. Ask an administrator to enable it before trying again.",
       ai_no_model: "No model is available for this chat. Check the AI model settings before trying again.",
       model_policy_mismatch: "The Code owner may not use this model. Choose a model their account may use.",
+      busy: "This Code already has a message waiting or running in this chat. Try again after it finishes.",
     },
     de: {
       origin: ({ name }: { name: string }) => `Gestartet von Code ${name}`,
@@ -42,6 +43,7 @@ const messages = i18n.define({
       ai_disabled: "KI ist deaktiviert. Bitte die Administration, sie vor einem weiteren Versuch zu aktivieren.",
       ai_no_model: "Für diesen Chat ist kein Modell verfügbar. Prüfe die KI-Modelleinstellungen vor einem weiteren Versuch.",
       model_policy_mismatch: "Der Code-Eigentümer darf dieses Modell nicht verwenden. Wähle ein für sein Konto freigegebenes Modell.",
+      busy: "Dieser Code hat in diesem Chat schon eine wartende oder laufende Nachricht. Versuche es erneut, wenn sie fertig ist.",
     },
   },
 });
@@ -78,6 +80,7 @@ export const aiChatSendAction = {
     if (!context.user) return fail(err.forbidden("Chat writes require their owner"));
     const chat = await ownedActiveChat(context.user.id, codeChatDestination(context), sql);
     if (!chat) return fail(err.notFound("Chat"));
+    if (sendsToItself(source.data.origin, chat.short_id)) return fail(err.badInput("Choose another chat"));
     const de = context.locale.split("-")[0] === "de";
     return ok({
       locale: de ? "de" : "en",
@@ -142,6 +145,7 @@ export const aiChatSendAction = {
     const id = crypto.randomUUID();
     const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
     if (!chat) return fail(err.notFound("Chat"));
+    if (sendsToItself(source.data.origin, chat.short_id)) return fail(err.badInput("Choose another chat"));
     const hash = approvalArgsDigest({ chatId: chat.short_id, ...parsed.data });
     const user = await accounts.users.get({ id: owner });
     if (!user || isAccountExpired(user.accountExpires)) return fail(err.forbidden("The chat owner is inactive"));
@@ -211,6 +215,16 @@ export const aiChatSendAction = {
           if (!current.ok) return current;
           const refused = await checkCodeChatRunBudget(code.runId, db, limits);
           if (refused) return fail({ code: refused, message: t.budget, status: 409 as const });
+        }
+        if (code) {
+          // Until whole-turn reservation lands, the daily check above sees only booked or running inference.
+          // One waiting or running message per Code and chat keeps that check meaningful.
+          const [open] = await db`SELECT 1 FROM ai.queued_messages WHERE conversation_id=${chat.id}::uuid
+              AND status='pending' AND submission#>>'{runConfig,codeOrigin,codeId}'=${code.id}
+            UNION ALL SELECT 1 FROM ai.turns WHERE conversation_id=${chat.id}::uuid
+              AND status IN ('queued','running','waiting_for_action') AND run_config#>>'{codeOrigin,codeId}'=${code.id}
+            LIMIT 1`;
+          if (open) return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
         }
         await enqueueAutomationChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
         await db`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)

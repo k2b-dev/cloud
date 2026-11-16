@@ -729,10 +729,12 @@ describe("capability tool presentation", () => {
     const storedHtml = renderSegment(blocks, { workedMs: 190_000 });
     const liveHtml = renderSegment(blocks, { phase: "running" });
 
-    expect(storedHtml).toContain("Worked 3 min");
-    expect(storedHtml).toContain("3 steps");
-    // The work line says what the turn did, then how long and how many steps.
-    expect(storedHtml).toContain('aria-label="Created files. Worked 3 minutes, 3 steps"');
+    // Presenting a file stores nothing new, so there is no confirmed outcome to name: the sentence says the turn worked,
+    // and its steps and time stand right in their own column (Feinschliff 4).
+    expect(storedHtml).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Worked</);
+    expect(storedHtml).toMatch(/ai-turn-work__count[^>]*>(?:<!--[^>]*-->)*3 steps/);
+    expect(storedHtml).toMatch(/ai-turn-work__meta[^>]*>(?:<!--[^>]*-->)*3 min/);
+    expect(storedHtml).toContain('aria-label="Worked 3 minutes, 3 steps"');
     expect(hasOpenDetails(storedHtml)).toBe(false);
     for (const html of [storedHtml, liveHtml]) {
       expect(html).not.toContain("Before tool");
@@ -775,6 +777,8 @@ describe("capability tool presentation", () => {
     const folded = renderSegment(blocks, { workedMs: 2_000 });
     expect(hasOpenDetails(folded)).toBe(false);
     expect(folded).not.toContain('data-tone="danger"');
+    // Only the meta word on the right takes the danger colour (Feinschliff 2); the row stays quiet.
+    expect(folded).toMatch(/data-issue="danger"[^>]*>(?:<!--[^>]*-->)*1 failed/);
     expect(folded).not.toContain("Mailbox is required");
     expect(folded).toContain("I could not finish that.");
 
@@ -1613,7 +1617,7 @@ describe("text editor presentation", () => {
     expect(activeHtml).toContain('class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70');
     expect(activeHtml).toContain("Hello **Ada**");
     expect(activeHtml).not.toContain("<strong>Ada</strong>");
-    expect(activeHtml).not.toContain("Waiting for the assistant to continue");
+    expect(activeHtml).not.toContain("Waiting for Gustav to continue");
     expect(historicalHtml).toContain("Review mail · submitted");
   });
 
@@ -2085,11 +2089,14 @@ describe("turn places in the reader's language", () => {
       { id: "tool-run", kind: "tool", callId: "run", name: "memory", status: "completed", result: {} },
     ];
     const english = renderPlaces(blocks, { phase: "failed", workedMs: 240_000 });
-    expect(english).toContain("Worked 4 min · interrupted");
+    expect(english).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Interrupted</);
+    expect(english).toMatch(/ai-turn-work__meta[^>]*>(?:<!--[^>]*-->)*4 min/);
     expect(english).toContain('aria-label="Worked 4 minutes, interrupted, 1 step"');
     expect(english).not.toContain("Now I build the dashboard.");
-    expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toContain("4 Min. gearbeitet · abgebrochen");
-    expect(renderPlaces(blocks, { phase: "stopped", workedMs: 240_000 })).toContain("Worked 4 min · stopped");
+    expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toMatch(
+      /ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Abgebrochen</,
+    );
+    expect(renderPlaces(blocks, { phase: "stopped", workedMs: 240_000 })).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Stopped</);
     expect(renderPlaces(blocks, { workedMs: 240_000 })).not.toMatch(/interrupted|stopped/);
   });
 });

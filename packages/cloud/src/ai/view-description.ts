@@ -1,3 +1,4 @@
+import { figureSign } from "./figure-sign";
 import type { CloudAiChartView, CloudAiStatsView, CloudAiView, CloudStatsDescription, CloudViewDescription } from "./view-block";
 
 /** Saved view envelopes remain compatible; hosts draw their contents through the portable node. */
@@ -18,8 +19,9 @@ export function cloudAiViewDescription(view: CloudAiView): CloudViewDescription 
     return {
       block,
       ...data,
-      items: items.map(({ delta, better, ...item }) => ({
+      items: items.map(({ delta, better, icon, ...item }) => ({
         ...item,
+        icon: figureSign(icon),
         ...(delta === undefined
           ? {}
           : { delta: typeof delta === "number" ? { value: delta, unit: "absolute", better, format: item.format } : delta }),

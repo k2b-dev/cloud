@@ -17,6 +17,8 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
     "activity.chain": "Followed a file movement",
     "share.access": "Read public-link access counts",
     "entry.read": "Read file entry",
+    "folder.read": "Read discussion folder",
+    "folder.containers": "Listed discussion folders",
     "entry.search": "Searched files",
     "storage.read": "Read machine storage",
     "template.read": "Read file template",
@@ -62,6 +64,7 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
       types: {
         storage: { title: "Maschinenspeicher", description: "Eine verwaltete Maschinenablage." },
         template: { title: "Dateivorlage", description: "Eine verwaltete Dateivorlage." },
+        folder: { title: "Ordner", description: "Ein Ordner oder eine Speicherwurzel mit Diskussionen zu seinen Einträgen." },
         entry: { title: "Datei oder Ordner", description: "Eine Datei oder ein Ordner in einer zugänglichen Cloud- oder FreeIPA-Ablage." },
       },
       queries: {
@@ -94,6 +97,16 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
           title: "Dateivorlage lesen",
           doneTitle: "Dateivorlage gelesen",
           description: "Vorlagenmetadaten nach derselben Verwalten-Prüfung wie im Teilen-Dialog lesen.",
+        },
+        "folder.read": {
+          title: "Diskussionsordner lesen",
+          doneTitle: "Diskussionsordner gelesen",
+          description: "Einen Ordner oder eine Speicherwurzel mit den aktuellen Berechtigungen lesen.",
+        },
+        "folder.containers": {
+          title: "Diskussionsordner auflisten",
+          doneTitle: "Diskussionsordner aufgelistet",
+          description: "Lesbare Speicherwurzeln und Ordner mit Fortsetzung auflisten, auch nach leeren Seiten.",
         },
         "activity.get": {
           title: "Verlaufseintrag lesen",
@@ -156,17 +169,6 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
           doneTitle: "Dateien zur Auswahl durchsucht",
           description:
             "Einen Ordner zum Auswählen oder Speichern von Dateien öffnen: zuerst die zugänglichen Ablagen, darin Ordner und Dateien.",
-        },
-        "entry.readable": {
-          title: "Leser für Datei oder Ordner prüfen",
-          description: "Prüfen, welche aktuellen Konten diese Ressource lesen dürfen; ohne Inhaltszugriff.",
-          input: {
-            id: "Öffentliche ID der Ressource.",
-            container: "Erwarteter aktueller Ort; nur bei Typen mit Ort.",
-            "container.type": "Typ des erwarteten Orts.",
-            "container.id": "Öffentliche ID des erwarteten Orts.",
-            principals: "Konkrete Konten, deren Leserecht geprüft wird; höchstens 500.",
-          },
         },
         "entry.read": {
           title: "Dateieintrag lesen",

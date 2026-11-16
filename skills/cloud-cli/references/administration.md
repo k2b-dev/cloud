@@ -10,6 +10,16 @@ inspect the relevant `nats`, `sync`, `apps status`, `capabilities`, `telemetry
 browser`, `retention show`, or app plugin command. Existing resource
 permissions still apply. No separate diagnostics grant is required.
 
+## Maintenance mode
+
+`cld admin maintenance on [--message <text>] [--until <HH:MM|ISO>]`, `until <time>`,
+`off` and `status` switch the whole Cloud into maintenance and back. Ask the
+person before switching it on: everyone else then sees only the maintenance
+page. While it is on, every other command exits with code `75` and one
+sentence such as „Wartungsmodus aktiv, geplant bis 14:30 Uhr.“ Treat that code
+as "wait and retry", not as a failure. Code `75` with "restarting or
+unavailable" means one app is starting; retry after a few seconds.
+
 ## Agent API keys
 
 ```bash
