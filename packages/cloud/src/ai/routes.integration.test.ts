@@ -108,6 +108,28 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
+  test("an untitled chat is named in the caller's language and keeps automatic naming", async () => {
+    const userId = await insertUser();
+    const token = await createTestSession(userId);
+    const post = (language: string) =>
+      aiRoutes.request("/conversations", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Accept-Language": language },
+        body: "{}",
+      });
+    try {
+      const german = await post("de-DE");
+      expect(german.status).toBe(201);
+      expect(await german.json()).toMatchObject({ title: "Neuer Chat", titleSource: "default" });
+      const english = await post("en");
+      expect(english.status).toBe(201);
+      expect(await english.json()).toMatchObject({ title: "New chat", titleSource: "default" });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("lost submission response and concurrent same-revision retries accept one turn, including compacted lookup", async () => {
     const userId = await insertUser();
     const stranger = await insertUser();

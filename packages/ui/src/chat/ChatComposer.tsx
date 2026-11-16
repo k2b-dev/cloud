@@ -12,6 +12,7 @@ import {
   onCleanup,
   onMount,
   Show,
+  sharedConfig,
   untrack,
 } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
@@ -463,6 +464,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   let shellRef: HTMLDivElement | undefined;
   let composerRef: HTMLElement | undefined;
   let textareaRef: HTMLTextAreaElement | undefined;
+  let typedBeforeHydration: string | undefined;
   let fileInputRef: HTMLInputElement | undefined;
   let measureRef: HTMLTextAreaElement | undefined;
   let fieldToolsRef: HTMLDivElement | undefined;
@@ -2329,7 +2331,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       </Show>
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: popup attributes are conditional with the combobox role */}
       <textarea
-        ref={textareaRef}
+        ref={(element) => {
+          textareaRef = element;
+          // The server's field takes typing before the island hydrates, and hydration writes `value` over it.
+          if (sharedConfig.context && element.value !== props.value) typedBeforeHydration = element.value;
+        }}
         classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 || Boolean(dictationView()) }}
         rows={1}
         value={props.value}
@@ -2468,6 +2474,16 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   // A press on a row remembers its command. The host can rebuild the list, or the whole menu, between press and release;
   // the browser then sends the click to a common ancestor (#2140). A release on the same command's new row runs it.
   let pressedCommand: { key: string; row: HTMLElement } | undefined;
+  // Keep what the person typed into the server-rendered field before hydration, as if typed now.
+  onMount(() => {
+    const typed = typedBeforeHydration;
+    typedBeforeHydration = undefined;
+    if (typed === undefined || typed === props.value || editBlocked()) return;
+    edit(typed);
+    autoResize();
+    textareaRef?.setSelectionRange(typed.length, typed.length);
+    syncCaret();
+  });
   onMount(() => {
     const release = (event: PointerEvent | FocusEvent) => {
       const pressed = pressedCommand;
