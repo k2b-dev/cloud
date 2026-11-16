@@ -10,7 +10,6 @@ import type {
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
@@ -266,10 +265,8 @@ type ProjectViewState = {
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
 const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) => ({ default: module.ChatWorkspace })));
 // "Quote" loads with the first selection in the chat; a draft's quote rows load with its first quote.
-const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
-const ComposerQuotes = lazy(async () => ({
-  default: (await importOnDemand(() => import("./assistant-quotes")))?.ChatComposerQuotes ?? (() => null),
-}));
+const QuoteSelection = lazy(() => import("./assistant-quotes"));
+const ComposerQuotes = lazy(() => import("./assistant-quotes").then((module) => ({ default: module.ChatComposerQuotes })));
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
