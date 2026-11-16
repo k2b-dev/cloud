@@ -1,6 +1,8 @@
 import { DescriptionList, StatCell, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
 import { type Accessor, createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { CloudChartGroupView, CloudChartView, CloudExplorerView } from "#chat-charts";
+import { BlockActions } from "../../blocks/block-actions";
+import { figuresCopy } from "../../blocks/block-copy";
 import { importOnDemand } from "../../browser/reload";
 import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
@@ -95,6 +97,24 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescrip
         id={id}
         title={props.input?.title ?? props.summary.title}
         subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
+        actions={
+          <BlockActions
+            kind="figures"
+            quiet
+            name={props.input?.title ?? props.summary.title}
+            copy={(root) =>
+              figuresCopy(
+                Array.from(root?.querySelectorAll(".k2b-stat-cell") ?? [])
+                  .filter((cell) => !cell.closest('[aria-hidden="true"]'))
+                  .map((cell) => ({
+                    label: cell.querySelector(".k2b-stat-cell__label")?.textContent?.trim() ?? "",
+                    value: cell.querySelector(".k2b-stat-cell__value")?.textContent?.trim() ?? "",
+                  })),
+              )
+            }
+            content={() => <CloudStatsView {...props} />}
+          />
+        }
       />
       <Show
         when={ready()}
@@ -236,6 +256,41 @@ export function CloudViewBlock(props: {
       untrack(() => props.path),
       untrack(() => props.summary),
     );
+  return <ViewOf path={props.path} summary={props.summary} view={view()} island={props.island} />;
+}
+
+/**
+ * A view file on its own, such as a result opened in a tab beside the chat: the same views as in the chat, drawn from
+ * the file alone. It loads and checks the file with the viewer's access like a presented one, and takes its size from
+ * the file once loaded; a file that is no view, or no longer valid, says it is unavailable.
+ */
+export function CloudViewFile(props: { path: string; url: string }) {
+  // undefined while loading, null when unavailable.
+  const [file, setFile] = createSignal<{ summary: CloudAiViewSummary; view: CloudViewDescription } | null | undefined>(undefined);
+  onMount(() => {
+    const abort = new AbortController();
+    onCleanup(() => abort.abort());
+    void importOnDemand(() => import("./view-file")).then(async (reader) => {
+      if (abort.signal.aborted) return;
+      const loaded = reader ? await reader.loadViewFile(props.url, props.path, abort.signal) : null;
+      if (!abort.signal.aborted) setFile(loaded);
+    });
+  });
+  return (
+    <Show when={file()} fallback={<ViewStatus loading={file() === undefined} />}>
+      {(loaded) => <ViewOf path={props.path} summary={loaded().summary} view={loaded().view} />}
+    </Show>
+  );
+}
+
+function ViewOf(props: {
+  path: string;
+  summary: CloudAiViewSummary;
+  view: CloudViewDescription | null | undefined;
+  /** Inside an island, which is already the frame: a table drops its own. */
+  island?: boolean;
+}) {
+  const view = () => props.view;
   const chartSummary = (): ChartSummary | undefined => (props.summary.view === "chart" ? props.summary : undefined);
   const tableSummary = (): TableSummary | undefined => (props.summary.view === "table" ? props.summary : undefined);
   const groupSummary = (): GroupSummary | undefined => (props.summary.view === "group" ? props.summary : undefined);
