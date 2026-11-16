@@ -11043,7 +11043,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 }
 
 /* Stepping (`steps`): two small arrows before the trigger and the way back to the current period after it. The way
-   back keeps its place while hidden, and every label it can show shares one cell, so the row never moves. */
+   back keeps its place while hidden, so the row never moves. */
 .k2b-ui .k2b-period-picker__steps {
   display: flex;
   min-width: 0;
@@ -11055,29 +11055,17 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   flex: 0 1 auto;
 }
 
-.k2b-ui .k2b-period-picker__home-slot {
-  display: inline-grid;
-  flex: 0 0 auto;
-}
-
-.k2b-ui .k2b-period-picker__home-slot > * {
-  grid-area: 1 / 1;
-  padding: 0 0.25rem;
-  font-size: 0.8125rem;
-  line-height: 1.25rem;
-  white-space: nowrap;
-}
-
-.k2b-ui .k2b-period-picker__home-slot > span {
-  visibility: hidden;
-}
-
 .k2b-ui .k2b-period-picker__home {
+  flex: 0 0 auto;
+  padding: 0 0.25rem;
   border: 0;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-action);
   background: none;
   font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
   text-align: left;
   cursor: pointer;
 }

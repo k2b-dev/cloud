@@ -72,7 +72,7 @@ const home = (page: Page) => page.locator(".k2b-period-picker__home");
 const shown = (page: Page) => page.locator(".k2b-period-picker__value > span:not([aria-hidden])").innerText();
 const boxes = (page: Page) =>
   page.evaluate(() =>
-    [".k2b-period-picker__trigger", ".k2b-period-picker__home-slot"].map((selector) => {
+    [".k2b-period-picker__trigger", ".k2b-period-picker__home"].map((selector) => {
       const { x, width } = document.querySelector(selector)!.getBoundingClientRect();
       return { x: Math.round(x), width: Math.round(width) };
     }),
@@ -169,7 +169,7 @@ describe("PeriodPicker steps", () => {
     try {
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
       const right = await page.evaluate(() =>
-        Math.round(document.querySelector(".k2b-period-picker__home-slot")!.getBoundingClientRect().right),
+        Math.round(document.querySelector(".k2b-period-picker__home")!.getBoundingClientRect().right),
       );
       expect(right).toBeLessThanOrEqual(390 - 16);
       expect(await home(page).isVisible()).toBe(true);

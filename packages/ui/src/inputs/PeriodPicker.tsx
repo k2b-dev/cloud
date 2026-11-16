@@ -394,7 +394,10 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
         }
       }}
     >
-      <i class="ti ti-calendar" aria-hidden="true" />
+      {/* Between the arrows the period reads as text with its chevron, as in a report head. */}
+      <Show when={!props.steps}>
+        <i class="ti ti-calendar" aria-hidden="true" />
+      </Show>
       <span class="k2b-period-picker__value" data-placeholder={current() ? undefined : "true"}>
         <span id={valueId}>
           <Show when={current()} fallback={t().choosePeriod}>
@@ -430,13 +433,11 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
           {stepButton(-1)}
           {stepButton(1)}
           {triggerButton}
-          {/* Every label the link can show shares one cell, and an unneeded link only hides, so the row never moves. */}
-          <span class="k2b-period-picker__home-slot">
-            <button type="button" class="k2b-period-picker__home" hidden={atHome()} disabled={disabled()} onClick={goHome}>
-              {homeLabel(kind())}
-            </button>
-            <For each={Object.values(homeLabels(t()))}>{(text) => <span aria-hidden="true">{text}</span>}</For>
-          </span>
+          {/* Stepping never changes the kind of period, so the link keeps one label; on the current period it only
+              hides and keeps its place, so the row never moves. */}
+          <button type="button" class="k2b-period-picker__home" hidden={atHome()} disabled={disabled()} onClick={goHome}>
+            {homeLabel(kind())}
+          </button>
         </div>
       </Show>
       <div
