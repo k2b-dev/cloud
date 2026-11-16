@@ -41,7 +41,8 @@ const messages = i18n.define({
       ai_disabled: "AI is disabled. Ask an administrator to enable it before trying again.",
       ai_no_model: "No model is available for this chat. Check the AI model settings before trying again.",
       model_policy_mismatch: "The Code owner may not use this model. Choose a model their account may use.",
-      busy: "This Code already has a message waiting or running in a chat. Try again after it finishes.",
+      busy: "A Code message of this person is already waiting or running in a chat. Try again after it finishes.",
+      run_gone: "The Code run that sent this message has ended.",
     },
     de: {
       origin: ({ name }: { name: string }) => `Gestartet von Code ${name}`,
@@ -50,16 +51,17 @@ const messages = i18n.define({
       ai_disabled: "KI ist deaktiviert. Bitte die Administration, sie vor einem weiteren Versuch zu aktivieren.",
       ai_no_model: "Für diesen Chat ist kein Modell verfügbar. Prüfe die KI-Modelleinstellungen vor einem weiteren Versuch.",
       model_policy_mismatch: "Der Code-Eigentümer darf dieses Modell nicht verwenden. Wähle ein für sein Konto freigegebenes Modell.",
-      busy: "Dieser Code hat schon eine wartende oder laufende Nachricht in einem Chat. Versuche es erneut, wenn sie fertig ist.",
+      busy: "Eine Code-Nachricht dieser Person wartet oder läuft schon in einem Chat. Versuche es erneut, wenn sie fertig ist.",
+      run_gone: "Der Code-Lauf, der diese Nachricht gesendet hat, ist beendet.",
     },
   },
 });
 
-/** Logical admission key; public queue IDs are independently generated.
- * Code callers get their own key space, so two Codes of one person never share a key. */
-const sendKeyHash = (account: string, codeId: string | null, key: string) =>
+/** Logical admission key; public queue IDs are independently generated. Like every Action key,
+ * it is scoped to the acting person: personal Codes of one owner share it (see the Code SDK). */
+const sendKeyHash = (account: string, key: string) =>
   createHash("sha256")
-    .update(JSON.stringify([account, "ai.chat.send", codeId, key]))
+    .update(JSON.stringify([account, "ai.chat.send", key]))
     .digest("hex");
 const result = async (conversationId: string, chatId: string, id: string) => {
   const snapshot = await chatSendSnapshot(conversationId, chatId, id);
@@ -71,32 +73,45 @@ const result = async (conversationId: string, chatId: string, id: string) => {
       })
     : snapshot;
 };
-/** An open Code message (waiting or retrying) or an unfinished turn from it, in any chat. */
-const openCodeChatWork = async (codeId: string, db: SQL, exceptMessageId?: string) => {
-  const [open] = await db`SELECT 1 FROM ai.queued_messages WHERE status IN ('pending','failed')
-      AND submission#>>'{runConfig,codeOrigin,codeId}'=${codeId}
-      AND (${exceptMessageId ?? null}::uuid IS NULL OR id<>${exceptMessageId ?? null}::uuid)
-    UNION ALL SELECT 1 FROM ai.turns WHERE status IN ('queued','running','waiting_for_action')
-      AND NOT COALESCE(run_config ? 'background',false) AND run_config#>>'{codeOrigin,codeId}'=${codeId}
+/** Until the whole-turn reservation of slice 6 lands, the daily checks see only booked or running
+ * inference. At most one open, unsettled Code message or turn per owner, across all chats and Codes,
+ * keeps them exact. Every caller takes this owner lock before any budget row lock. */
+const lockOwnerCodeChats = (owner: string, db: SQL) =>
+  db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.owner:${owner}`},0))`;
+const openOwnerCodeChatWork = async (owner: string, db: SQL, exceptMessageId?: string) => {
+  const [open] = await db`SELECT 1 FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
+      WHERE c.created_by_user_id=${owner}::uuid AND c.archived_at IS NULL
+        AND q.status IN ('pending','failed') AND q.submission->'runConfig' ? 'codeOrigin'
+        AND (${exceptMessageId ?? null}::uuid IS NULL OR q.id<>${exceptMessageId ?? null}::uuid)
+    UNION ALL SELECT 1 FROM ai.turns t JOIN ai.conversations c ON c.id=t.conversation_id
+      WHERE c.created_by_user_id=${owner}::uuid AND t.status IN ('queued','running','waiting_for_action')
+        AND NOT COALESCE(t.run_config ? 'background',false) AND t.run_config ? 'codeOrigin'
     LIMIT 1`;
   return Boolean(open);
 };
+const BUDGET_WAITS = ["code_ai_daily_budget_limit", "code_ai_owner_daily_budget_limit"];
 
-/** A queued Code send starts only while its Code is enabled, has no other open turn,
- * and the Code and its owner still have daily AI allowance left. */
+/** A queued Code send starts only while its run exists, its Code is enabled, its owner has no other
+ * open Code turn, and the Code and owner daily AI limits have room. A message that waited for the
+ * allowance does not outlive the budget day it was refused on. */
 export const admitQueuedCodeSend: AdmitQueuedCodeStart = async (submission, messageId) => {
   const origin = submission.runConfig.codeOrigin;
-  if (!origin?.runId) return "code_ai_budget_limit";
+  const owner = submission.runConfig.send?.accountId;
+  if (!origin?.runId || !owner) return "code_run_gone";
   const limits = {
     code: await codeSettings.get("core.code.ai_daily_budget_usd"),
     owner: await codeSettings.get("core.code.ai_owner_daily_budget_usd"),
     timeZone: (await coreSettings.get<string>("app.timezone")) || "UTC",
   };
   return sql.begin(async (db) => {
-    await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.code:${origin.codeId}`},0))`;
+    await lockOwnerCodeChats(owner, db);
     const [code] = await db<{ state: string }[]>`SELECT state FROM code.codes WHERE id=${origin.codeId}`;
     if (!code || code.state !== "active") return "code_inactive";
-    if (await openCodeChatWork(origin.codeId, db, messageId)) return "code_busy";
+    const [entry] = await db<{ error: string | null; stale: boolean }[]>`SELECT error,
+      (quota_checked_at AT TIME ZONE ${limits.timeZone})::date < (clock_timestamp() AT TIME ZONE ${limits.timeZone})::date AS stale
+      FROM ai.queued_messages WHERE id=${messageId}::uuid`;
+    if (entry?.stale && BUDGET_WAITS.includes(entry.error ?? "")) return "code_budget_day_ended";
+    if (await openOwnerCodeChatWork(owner, db, messageId)) return "code_busy";
     return checkCodeChatRunBudget(origin.runId, db, limits);
   });
 };
@@ -166,7 +181,7 @@ export const aiChatSendAction = {
     const parsed = aiChatSendInput.safeParse(input);
     if (!key.success || !parsed.success) return fail(err.badInput("Supply text and a valid idempotency key"));
     const owner = context.user.id;
-    const keyHash = sendKeyHash(owner, source.data.code?.id ?? null, key.data);
+    const keyHash = sendKeyHash(owner, key.data);
     const id = crypto.randomUUID();
     const hash = approvalArgsDigest({ chatId: codeChatDestination(context), ...parsed.data });
     const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
@@ -240,24 +255,22 @@ export const aiChatSendAction = {
         await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send:${keyHash}`},0))`;
         const previous = await existing(db);
         if (previous) return previous;
+        if (code) {
+          await lockOwnerCodeChats(owner, db);
+          if (await openOwnerCodeChatWork(owner, db)) return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
+        }
         if (code && limits) {
           await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE`;
           await db`SELECT id FROM code.runs WHERE id=${code.runId}::uuid FOR UPDATE`;
           const current = await chatWriteAuthority(context, db);
           if (!current.ok) return current;
           const refused = await checkCodeChatRunBudget(code.runId, db, limits);
-          if (refused) return fail({ code: refused, message: t.budget, status: 409 as const });
+          if (refused) return fail({ code: refused, message: refused === "code_run_gone" ? t.run_gone : t.budget, status: 409 as const });
         }
         const currentChat = await ownedActiveChat(owner, chat.short_id, db, { lock: true });
         if (!currentChat) return fail(err.notFound("Chat"));
         if (currentChat.project_id !== chat.project_id)
           return fail({ code: "chat_changed", message: "The chat Project changed; read the chat again.", status: 409 as const });
-        if (code) {
-          // Until the whole-turn reservation lands, the daily check above sees only booked or running
-          // inference. At most one open, unsettled message or turn per Code, across all chats, keeps it exact.
-          await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.code:${code.id}`},0))`;
-          if (await openCodeChatWork(code.id, db)) return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
-        }
         await enqueueChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
         return ok(null);
       });
