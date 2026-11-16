@@ -1,6 +1,6 @@
+import { formatCodeMoment } from "@k2b/cloud/code/schedule";
 import { Button, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
-import { formatCodeTime } from "./code-client";
 import { codeVersionCardMessages } from "./code-version-card-messages";
 
 /** A decision on a version, as Cloud writes it at the end of the chat in which the version was made. */
@@ -67,18 +67,8 @@ export default function AssistantCodeDecisionLine(props: {
   const t = createMemo(() => codeVersionCardMessages.resolve([locale()]).t);
   const [missing, setMissing] = createSignal(false);
   let line: HTMLDivElement | undefined;
-  const when = () => {
-    const day = (date: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: props.timeZone, dateStyle: "short" }).format(date);
-    try {
-      if (day(new Date(props.at)) === day(new Date()))
-        return t().todayAt({
-          time: new Intl.DateTimeFormat(locale(), { timeZone: props.timeZone, timeStyle: "short" }).format(new Date(props.at)),
-        });
-    } catch {
-      /* An unknown time zone falls back to the full date. */
-    }
-    return formatCodeTime(props.at, locale(), props.timeZone);
-  };
+  // The same moment as on the card above and on the Code page.
+  const when = () => formatCodeMoment(props.at, { locale: locale(), timeZone: props.timeZone });
   const sentence = () => {
     const version = props.decision.number;
     switch (props.decision.outcome) {

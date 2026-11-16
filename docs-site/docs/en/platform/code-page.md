@@ -85,6 +85,16 @@ zone, otherwise the repeating schedule, or returns `null` without a schedule.
 Unrecognized cron shapes stay verbatim. These pure helpers need no SSR runtime;
 the existing `@k2b/cloud/ssr/code-schedule` entry re-exports the same functions.
 
+A moment of a Code, such as a run, a decision or a switch-on, reads the same on
+every Code surface through `formatCodeMoment(iso, { locale, timeZone, now? })`
+from the same entry: "today, 15:28" on its day, "Sun, 11/15, 15:28" in the
+current year, and the year only outside it. German reads "heute, 15:28" and
+"So, 15.11., 15:28". `formatCodeDay` writes only the day ("Mo, 16.11."), for
+lists such as a card's next run. The weekday words are fixed, so every surface
+writes the same day the same way. Pass the server's clock as `now` when a page
+renders on the server, so the server and the first browser render agree on
+"today".
+
 ## Refused calls
 
 The page reports a refused call like cron reports a failed job: what the Code
