@@ -22,10 +22,13 @@ export type CodeAreaQuery = {
   sec?: CodeAreaSection;
   /** Version UUID in approvals, Code ID in code, group UUID in groups, person UUID in effective. */
   id?: string;
-  /** Version UUID whose source the Code detail shows, read-only. */
+  /**
+   * `decided` shows decided versions in the approvals list; `code` and `diff` are the tabs of one approval, whose
+   * overview has no parameter.
+   */
+  tab?: "decided" | "code" | "diff";
+  /** A version of the Code detail, from the former source view; the detail points to that version's review. */
   version?: string;
-  /** `decided` shows decided versions in approvals. */
-  tab?: "decided";
   status?: CodeAdminCodeStatus;
   app?: string;
   q?: string;
@@ -53,13 +56,22 @@ export const parseCodeAreaQuery = (query: Record<string, string | undefined>): C
   const sec = CODE_AREA_SECTIONS.find((section) => section === query.sec);
   if (!sec) return {};
   const id = query.id ?? "";
-  if (sec === "approvals")
+  if (sec === "approvals") {
+    const detail = UUID.test(id);
+    const tab = detail
+      ? query.tab === "code" || query.tab === "diff"
+        ? query.tab
+        : undefined
+      : query.tab === "decided"
+        ? ("decided" as const)
+        : undefined;
     return {
       sec,
-      ...(query.tab === "decided" ? { tab: "decided" as const } : {}),
-      ...(UUID.test(id) ? { id } : {}),
+      ...(tab ? { tab } : {}),
+      ...(detail ? { id } : {}),
       ...(query.tab !== "decided" && query.after && APPROVAL_AFTER.test(query.after) ? { after: query.after } : {}),
     };
+  }
   if (sec === "databases") return { sec, ...(CODE_ID.test(query.after ?? "") ? { after: query.after } : {}) };
   if (sec === "cleanup") return { sec, ...(query.after && UUID.test(query.after) ? { after: query.after } : {}) };
   if (sec === "code") {
@@ -75,6 +87,8 @@ export const parseCodeAreaQuery = (query: Record<string, string | undefined>): C
     };
   }
   if (sec === "groups" || sec === "effective") return { sec, ...(UUID.test(id) ? { id } : {}) };
+  // The history page with older changes, as a page number.
+  if (sec === "history") return { sec, ...(/^[2-9]$|^[1-9]\d{1,2}$/.test(query.after ?? "") ? { after: query.after } : {}) };
   return { sec };
 };
 
@@ -84,6 +98,7 @@ export const codeAreaLevel = (query: CodeAreaQuery): "area" | "section" | "detai
 
 /** Sections whose content fills the list and detail columns together. */
 export const isWideCodeSection = (section: CodeAreaSection | undefined): boolean =>
+  section === "approvals" ||
   section === "databases" ||
   section === "policy" ||
   section === "history" ||

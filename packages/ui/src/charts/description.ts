@@ -94,6 +94,8 @@ type Variants<N> =
       legend?: boolean;
       area?: boolean;
       smooth?: boolean;
+      /** A hollow point on every value; off by default. */
+      points?: boolean;
       step?: "after" | "before" | "middle";
       zero?: boolean;
       legendValues?: boolean;

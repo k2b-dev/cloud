@@ -100,6 +100,9 @@ content; the frame owns everything around it, the same way in every app:
   missing. A reserved body reaches the frame's left, right and bottom
   edges. With both, `height` wins: the content fills it and scrolls inside,
   so a table keeps its header in view;
+- `footer`, one quiet line under the body in every state, such as how many
+  rows a search finds ("3 matches"). It is announced as a status, so a
+  screen reader hears the count without the focus leaving the search;
 - `compact` shows loading, empty and failure as one quiet line, for short
   content such as an amount.
 

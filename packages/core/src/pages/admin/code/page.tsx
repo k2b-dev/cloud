@@ -12,10 +12,9 @@ import {
   readCodeAdminCode,
   readCodeAdminEffective,
   readCodeAdminPolicy,
-  readCodeAdminPolicyHistory,
+  readCodeAdminPolicyHistoryPage,
   readCodeAdminRunners,
   readCodeAdminSummary,
-  readCodeAdminVersionSource,
 } from "../../../code/admin";
 import { listUnusedCodeDatabases } from "../../../code/database-retention";
 import { listCodePageReports } from "../../../code/page-reports";
@@ -51,7 +50,8 @@ export default ssr<AuthContext>(async (c) => {
   if (allowed) {
     try {
       const summary = await attempt(() => readCodeAdminSummary(context, c.get("adminCodeCounts")));
-      const sec = query.sec;
+      // Without a section the area opens on the approvals (see the view).
+      const sec = query.sec ?? "approvals";
       const limitKeys = [
         ...CODE_LIMIT_KEYS,
         ...Object.keys(CODE_SETTINGS).filter((key) => !CODE_LIMIT_KEYS.some((limit) => limit === key)),
@@ -74,13 +74,10 @@ export default ssr<AuthContext>(async (c) => {
             : null,
         code: sec === "code" && query.id ? await attempt(() => readCodeAdminCode(query.id ?? "", context)) : null,
         reports: sec === "code" && query.id ? await attempt(() => listCodePageReports({ codeId: query.id ?? "" }, context)) : null,
-        source:
-          sec === "code" && query.id && query.version
-            ? await attempt(() => readCodeAdminVersionSource(query.id ?? "", query.version ?? "", context))
-            : null,
         policy: sec === "policy" || sec === "groups" || sec === "effective" ? await attempt(() => readCodeAdminPolicy(context)) : null,
         effective: sec === "effective" && query.id ? await attempt(() => readCodeAdminEffective(query.id ?? "", context)) : null,
-        history: sec === "history" ? await attempt(() => readCodeAdminPolicyHistory(context)) : null,
+        history:
+          sec === "history" ? await attempt(() => readCodeAdminPolicyHistoryPage(context, { page: Number(query.after ?? 1) })) : null,
         databases: sec === "databases" ? await attempt(() => listUnusedCodeDatabases(context, query.after)) : null,
         cleanup: sec === "cleanup" ? await attempt(() => listCodeAdminCleanup(context, { cursor: query.after })) : null,
         runners: sec === "runners" ? await attempt(() => readCodeAdminRunners(context)) : null,
@@ -109,6 +106,7 @@ export default ssr<AuthContext>(async (c) => {
         data={data}
         noPermission={noPermission}
         retryHref={requestPath(c)}
+        viewerId={c.get("user")?.id}
         appNames={Object.fromEntries(runtime.apps.map((app) => [app.id, app.name]))}
         documentationBase={documentationBase}
       />

@@ -4,7 +4,9 @@ import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { launchBrowser } from "../../../../ui/test/browser";
+import { chartToolResult } from "../gustav-views";
 import type { AiWireEvent } from "../protocol";
+import { capabilityResultView } from "../result-view";
 import type { AiStoredMessage } from "../types";
 import { truncatedAnswer } from "./stop-notice.test-fixture";
 
@@ -1290,7 +1292,14 @@ for (const view of [
           ...base,
           seq: 5,
           type: "block_set",
-          block: { ...chart, args, status: "completed", result: { displayed: true } },
+          // The server stores the chart's view with the result; it is the island the running call already showed.
+          block: {
+            ...chart,
+            args,
+            status: "completed",
+            result: chartToolResult(args),
+            view: capabilityResultView(chartToolResult(args)) ?? undefined,
+          },
         });
         await emit(page, {
           ...base,
@@ -1306,7 +1315,10 @@ for (const view of [
         // The section is named by its title, and the chart can be explored by keyboard.
         expect(await page.getByRole("region", { name: "Orders per region" }).count()).toBe(1);
         expect(await page.locator(".k2b-chart[tabindex='0']").count()).toBe(1);
-        expect(await page.getByRole("button", { name: german ? "Daten kopieren" : "Copy data" }).count()).toBe(1);
+        // In an answer the chart's head carries Copy as a picture and Maximize (Feinschliff v3 §5), not the explorer's own.
+        expect(await page.getByRole("button", { name: german ? "Diagramm als Bild kopieren" : "Copy chart as image" }).count()).toBe(1);
+        expect(await page.getByRole("button", { name: german ? "Maximieren" : "Maximize" }).count()).toBe(1);
+        expect(await page.getByRole("button", { name: german ? "Daten kopieren" : "Copy data" }).count()).toBe(0);
         // Tick labels stay inside the chart, also for long values on a phone.
         const ticks = await page.evaluate(() => {
           const frame = document.querySelector(".k2b-chart__svg")!.getBoundingClientRect();
@@ -1321,13 +1333,18 @@ for (const view of [
           expect(tick.right).toBeGreaterThanOrEqual(-1);
         }
 
-        // The data table replaces the chart in the same height.
-        await page.getByRole("button", { name: german ? "Diagrammansicht" : "Chart view" }).click();
+        // Drawn large, the chart has the explorer's own controls again: its rows are one switch away as a table, in the
+        // chart's height. The answer's chart stays as it was.
+        await page.getByRole("button", { name: german ? "Maximieren" : "Maximize" }).click();
+        const large = page.locator(".k2b-lightbox[open] .k2b-lightbox__view");
+        await large.getByRole("button", { name: german ? "Diagrammansicht" : "Chart view" }).click();
         await page.getByRole("menuitemradio", { name: german ? "Tabelle" : "Table" }).click();
         await frames(page);
-        expect(await page.locator(".k2b-chart-explorer__viewport table").count()).toBe(1);
-        const table = await page.locator(".k2b-chart-explorer__viewport").innerText();
+        expect(await large.locator(".k2b-chart-explorer__viewport table").count()).toBe(1);
+        const table = await large.locator(".k2b-chart-explorer__viewport").innerText();
         for (const label of ["North", "South", "East", "West", german ? "1.250.000" : "1,250,000"]) expect(table).toContain(label);
+        await page.keyboard.press("Escape");
+        await frames(page);
         expect({ section: await section.boundingBox(), viewport: await viewport.boundingBox() }).toEqual(shown);
       } finally {
         await context.close();
@@ -1638,7 +1655,7 @@ for (const width of [1440, 390])
       await line.waitFor();
       // The activity lends only its place: no second sign, the line fills the row.
       expect(await line.locator(".k2b-chat-activity__leading").isVisible()).toBe(false);
-      const action = line.getByRole("button", { name: "Einschalten …" });
+      const action = line.getByRole("button", { name: "Zur Karte" });
       const look = await action.evaluate((node) => {
         const style = getComputedStyle(node);
         return { border: style.borderTopWidth, background: style.backgroundColor, height: Math.round(node.getBoundingClientRect().height) };

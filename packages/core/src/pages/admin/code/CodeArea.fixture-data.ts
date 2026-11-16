@@ -1,5 +1,6 @@
 /** Fictional data for render tests, browser tests and screenshots of Administration › Code. */
 
+import type { CodeVersionReadModel } from "@k2b/cloud/contracts";
 import { CORE_SETTINGS } from "../../../_settings";
 import type {
   CodeAdminApproval,
@@ -14,6 +15,7 @@ import type {
 } from "../../../code/admin";
 import type { CodeCleanupJob } from "../../../code/lifecycle-contracts";
 import { codePolicyPreset } from "../../../code/policy-contracts";
+import type { CodeReviewComment } from "../../../code/review-contracts";
 import type { CodeRunnerMetrics } from "../../../code/scheduling-contracts";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { CODE_LIMIT_KEYS } from "./area";
@@ -49,7 +51,11 @@ export const fixtureApprovals = (): CodeAdminApproval[] => [
     versionId: V.rueckruf3,
     number: 3,
     title: "Rückruf bestätigen",
-    author: { id: FIXTURE_PEOPLE.lea, name: "Lea Muster" },
+    author: { id: FIXTURE_PEOPLE.lea, name: "Lea Muster", avatarHash: null },
+    owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
+    ownerName: "Postfach info@moebel-beispiel.de",
+    mainChange: "Darf neu Aufgaben anlegen im Space Logistik",
+    reason: { row: "silent_shared", label: "braucht die Freigabe" },
     submittedAt: "2026-11-01T11:10:00.000Z",
     rows: ["silent_shared"],
     stat: { first: false, added: 3, removed: 1, lines: 41, files: 1 },
@@ -60,7 +66,11 @@ export const fixtureApprovals = (): CodeAdminApproval[] => [
     versionId: V.lieferzeit1,
     number: 1,
     title: "Lieferzeit beantworten",
-    author: { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel" },
+    author: { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel", avatarHash: null },
+    owner: { kind: "person", userId: FIXTURE_PEOPLE.tom },
+    ownerName: "Tom Beispiel",
+    mainChange: "Darf Unterhaltungen der Logistik zuweisen",
+    reason: { row: "silent_shared", label: "braucht die Freigabe" },
     submittedAt: "2026-11-01T08:10:00.000Z",
     rows: ["silent_shared"],
     stat: { first: true, added: 20, removed: 0, lines: 20, files: 1 },
@@ -71,7 +81,11 @@ export const fixtureApprovals = (): CodeAdminApproval[] => [
     versionId: V.rechnungen2,
     number: 2,
     title: "Rechnungen an die Buchhaltung",
-    author: { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel" },
+    author: { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel", avatarHash: null },
+    owner: { kind: "resource", ref: { type: "spaces.space", id: "k7qm2x9a" } },
+    ownerName: null,
+    mainChange: "Darf neu api.buchhaltung-beispiel.de aufrufen",
+    reason: { row: "internet", label: "braucht die Freigabe" },
     submittedAt: "2026-10-31T15:42:00.000Z",
     rows: ["internet"],
     stat: { first: false, added: 2, removed: 1, lines: 28, files: 1 },
@@ -82,7 +96,11 @@ export const fixtureApprovals = (): CodeAdminApproval[] => [
     versionId: V.wochenbericht3,
     number: 3,
     title: "Wochenbericht Vertrieb",
-    author: { id: FIXTURE_PEOPLE.lea, name: "Lea Muster" },
+    author: { id: FIXTURE_PEOPLE.lea, name: "Lea Muster", avatarHash: null },
+    owner: { kind: "person", userId: FIXTURE_PEOPLE.lea },
+    ownerName: "Lea Muster",
+    mainChange: "Darf neu Gustav fragen",
+    reason: { row: "ai", label: "braucht die Freigabe" },
     submittedAt: "2026-10-31T09:05:00.000Z",
     rows: ["ai"],
     stat: { first: false, added: null, removed: null, lines: 64, files: 2 },
@@ -96,6 +114,11 @@ export const fixtureDecided = (): CodeAdminDecided[] => [
     number: 2,
     title: "Termin-Antworten",
     approved: true,
+    outcome: "approved",
+    mine: false,
+    author: { id: FIXTURE_PEOPLE.lea, name: "Lea Muster", avatarHash: null },
+    owner: { kind: "resource", ref: { type: "mail.mailbox", id: "m_info" } },
+    ownerName: "Postfach info@moebel-beispiel.de",
     soleAdmin: false,
     decidedBy: "Ben Schulz",
     decidedAt: "2026-10-30T10:00:00.000Z",
@@ -106,6 +129,11 @@ export const fixtureDecided = (): CodeAdminDecided[] => [
     number: 1,
     title: "Kundenportal-Eingang",
     approved: false,
+    outcome: "changes_requested",
+    mine: true,
+    author: { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel", avatarHash: null },
+    owner: { kind: "person", userId: FIXTURE_PEOPLE.tom },
+    ownerName: "Tom Beispiel",
     soleAdmin: false,
     decidedBy: "Jana Probe",
     decidedAt: "2026-10-29T14:20:00.000Z",
@@ -116,6 +144,11 @@ export const fixtureDecided = (): CodeAdminDecided[] => [
     number: 4,
     title: "Anfragen sortieren",
     approved: true,
+    outcome: "approved",
+    mine: false,
+    author: { id: FIXTURE_PEOPLE.lea, name: "Lea Muster", avatarHash: null },
+    owner: { kind: "person", userId: FIXTURE_PEOPLE.lea },
+    ownerName: "Lea Muster",
     soleAdmin: true,
     decidedBy: "Ben Schulz",
     decidedAt: "2026-10-21T08:30:00.000Z",
@@ -175,13 +208,198 @@ const FIXTURE_SPACE_TARGET = {
   href: "/app/spaces/k7qm2x9a",
 };
 
-export const fixtureApprovalDetail = (
-  variant: "normal" | "first" | "newer" | "own" | "sole" | "difffail" | "approved" | "rejected" = "normal",
-): CodeAdminApprovalDetail => {
+/** Detail variants of one review the captures and tests switch to. */
+export type FixtureReviewVariant =
+  | "normal"
+  | "first"
+  | "newer"
+  | "own"
+  | "sole"
+  | "soleApproved"
+  | "difffail"
+  | "approved"
+  | "rejected"
+  | "changes"
+  | "withdrawn"
+  | "cli"
+  | "nocomments"
+  | "noexamples"
+  | "followup"
+  | "long";
+
+export const FIXTURE_COMMENT_IDS = {
+  first: "c1000000-0000-4000-8000-000000000001",
+  reply: "c1000000-0000-4000-8000-000000000002",
+  other: "c1000000-0000-4000-8000-000000000003",
+};
+/** Two threads on version 3: Ben's with Jana's reply on the new task line, and Jana's own on the internet call. */
+export const fixtureComments = (): CodeReviewComment[] => [
+  {
+    id: FIXTURE_COMMENT_IDS.first,
+    author: { id: FIXTURE_PEOPLE.ben, name: "Ben Schulz", avatarHash: null },
+    createdAt: "2026-11-01T11:40:00.000Z",
+    body: "Hier bekommt jede ungelesene Mail eine Aufgabe, nicht nur ein Rückrufwunsch.",
+    parentId: null,
+    path: "code.ts",
+    line: 11,
+  },
+  {
+    id: FIXTURE_COMMENT_IDS.reply,
+    author: { id: FIXTURE_PEOPLE.jana, name: "Jana Probe", avatarHash: null },
+    createdAt: "2026-11-01T11:55:00.000Z",
+    body: "Sehe ich auch so. Das fordere ich an.",
+    parentId: FIXTURE_COMMENT_IDS.first,
+    path: "code.ts",
+    line: 11,
+  },
+  {
+    id: FIXTURE_COMMENT_IDS.other,
+    author: { id: FIXTURE_PEOPLE.jana, name: "Jana Probe", avatarHash: null },
+    createdAt: "2026-11-01T11:59:00.000Z",
+    body: "Reicht der Buchhaltung die Nummer der Aufgabe, oder braucht sie den Namen?",
+    parentId: null,
+    path: "code.test.ts",
+    line: 3,
+  },
+];
+
+const list = <T>(items: T[]) => ({ items, more: 0, moreText: null });
+/** The version in words, as Core presents it, for "Rückruf bestätigen" version 3. */
+export const fixtureReadModel = (noExamples = false): CodeVersionReadModel => ({
+  versionId: V.rueckruf3,
+  number: 3,
+  submittedAt: "2026-11-01T11:10:00.000Z",
+  locale: "de",
+  description: {
+    state: "visible",
+    text: "Legt werktags um 8 Uhr für jede ungelesene Mail im Eingang eine Aufgabe „Rückruf“ im Space Logistik an und markiert die Unterhaltung. Wird im Space Ankauf eine Aufgabe fällig, meldet sie das an die Buchhaltung.",
+    modelLabel: "KI-Erklärung, nicht von Cloud geprüft",
+  },
+  assurance: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+  mayDo: list([
+    { text: "Mail: Mails auflisten, Unterhaltungen markieren im Postfach info@moebel-beispiel.de" },
+    { text: "Spaces: Aufgaben anlegen im Space Logistik, Aufgaben lesen im Space Ankauf" },
+    { text: "Internet: api.buchhaltung-beispiel.de, ohne Secret" },
+  ]),
+  timing: list([{ text: "Mo–Fr um 08:00" }, { text: "wenn im Space Ankauf eine Aufgabe fällig wird" }]),
+  changes: {
+    state: "changed",
+    text: "gegenüber Version 2",
+    rows: list([
+      { kind: "add", text: "Darf neu Aufgaben anlegen im Space Logistik", note: "Für andere sichtbar" },
+      { kind: "add", text: "Darf neu Unterhaltungen markieren im Postfach info@moebel-beispiel.de" },
+      { kind: "remove", text: "Darf nicht mehr Entwürfe anlegen" },
+      { kind: "same", text: "Läuft Mo–Fr um 08:00" },
+      { kind: "same", text: "Darf Mails auflisten im Postfach info@moebel-beispiel.de" },
+      { kind: "same", text: "Darf api.buchhaltung-beispiel.de aufrufen" },
+    ]),
+    assurance: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+  },
+  examples: noExamples
+    ? { state: "none", passed: 0, total: 0, summary: "Keine Beispiele", explanation: "", items: [] }
+    : {
+        state: "passed",
+        passed: 3,
+        total: 3,
+        summary: "3 von 3 Beispielen erfolgreich",
+        explanation:
+          "Gustav denkt sich Fälle aus und lässt die Automation mit erfundenen Daten laufen. Erfolgreich heißt: Sie hat getan, was Gustav für den Fall erwartet hat. Nichts davon passiert wirklich.",
+        items: [
+          {
+            name: "Werktag mit 1 ungelesenen Mail",
+            modelLabel: "von Gustav erdacht",
+            state: "succeeded",
+            status: "Erfolgreich",
+            sentence: "1 Aufgabe im Space Logistik angelegt, 1 Unterhaltung markiert.",
+            differences: [],
+          },
+          {
+            name: "Werktag ohne ungelesene Mail",
+            modelLabel: "von Gustav erdacht",
+            state: "succeeded",
+            status: "Erfolgreich",
+            sentence: "Nichts geändert.",
+            differences: [],
+          },
+          {
+            name: "Aufgabe im Space Ankauf wird fällig",
+            modelLabel: "von Gustav erdacht",
+            state: "succeeded",
+            status: "Erfolgreich",
+            sentence: "1 Meldung an api.buchhaltung-beispiel.de gesendet.",
+            differences: [],
+          },
+        ],
+      },
+  notices: list([]),
+});
+const fixtureReadModelFirst = (): CodeVersionReadModel => ({
+  ...fixtureReadModel(),
+  versionId: V.lieferzeit1,
+  number: 1,
+  description: {
+    state: "visible",
+    text: "Weist jede neue Mail mit „Lieferzeit“ im Betreff der Logistik zu.",
+    modelLabel: "KI-Erklärung, nicht von Cloud geprüft",
+  },
+  mayDo: list([{ text: "Mail: Unterhaltungen lesen und zuweisen" }]),
+  timing: list([{ text: "wenn eine Mail im Postfach von Tom Beispiel ankommt" }]),
+  changes: {
+    state: "first",
+    text: "erste Version, alles ist neu",
+    rows: list([
+      { kind: "add", text: "Läuft, wenn eine Mail im Postfach von Tom Beispiel ankommt" },
+      { kind: "add", text: "Darf Unterhaltungen der Logistik zuweisen", note: "Für andere sichtbar" },
+    ]),
+    assurance: "Cloud prüft Zugriffe und Auslöser, nicht das Verhalten.",
+  },
+  examples: {
+    state: "passed",
+    passed: 2,
+    total: 2,
+    summary: "2 von 2 Beispielen erfolgreich",
+    explanation: "",
+    items: [],
+  },
+});
+
+export const fixtureApprovalDetail = (variant: FixtureReviewVariant = "normal"): CodeAdminApprovalDetail => {
   const first = variant === "first";
+  const decided = variant === "approved" || variant === "soleApproved" || variant === "rejected" || variant === "changes";
   return {
     approvalId: "e0000000-0000-4000-8000-000000000001",
-    status: variant === "approved" ? "approved" : variant === "rejected" ? "rejected" : "pending",
+    status:
+      variant === "approved" || variant === "soleApproved"
+        ? "approved"
+        : variant === "rejected"
+          ? "rejected"
+          : variant === "changes"
+            ? "changes_requested"
+            : variant === "withdrawn"
+              ? "withdrawn"
+              : "pending",
+    origin:
+      variant === "cli"
+        ? { kind: "cli" }
+        : { kind: "ai_chat", conversationId: "c0ffee00-0000-4000-8000-000000000001", automaticAfterReview: false },
+    activeVersion: first ? null : { id: V.rueckruf2, number: 2 },
+    comments: {
+      items: variant === "nocomments" || first ? [] : fixtureComments(),
+      nextBefore: variant === "long" ? FIXTURE_COMMENT_IDS.first : null,
+      total: variant === "nocomments" || first ? 0 : variant === "long" ? 23 : 3,
+    },
+    previousChangesRequest:
+      variant === "followup"
+        ? {
+            versionId: V.rueckruf2,
+            number: 2,
+            message: "Bitte nur für Mails mit einem Rückrufwunsch eine Aufgabe anlegen.",
+            comments: fixtureComments().map(({ path: _path, line: _line, ...comment }) => comment),
+            nextBefore: null,
+          }
+        : null,
+    readModel: first ? fixtureReadModelFirst() : fixtureReadModel(variant === "noexamples"),
+    authorAvatarHash: null,
     code: {
       id: first ? "c_liefer" : "c_rueck",
       title: first ? "Lieferzeit beantworten" : "Rückruf bestätigen",
@@ -194,7 +412,7 @@ export const fixtureApprovalDetail = (
       number: first ? 1 : 3,
       submittedAt: first ? "2026-11-01T08:10:00.000Z" : "2026-11-01T11:10:00.000Z",
       author:
-        variant === "own" || variant === "sole"
+        variant === "own" || variant === "sole" || variant === "soleApproved"
           ? { id: FIXTURE_PEOPLE.ben, name: "Ben Schulz" }
           : first
             ? { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel" }
@@ -258,22 +476,36 @@ export const fixtureApprovalDetail = (
     database: !first,
     newer:
       variant === "newer" ? { versionId: V.rueckruf4, number: 4, author: "Lea Muster", submittedAt: "2026-11-01T11:40:00.000Z" } : null,
-    canApprove: variant !== "own",
-    own: variant === "own" || variant === "sole",
+    canApprove: variant !== "own" && !decided,
+    own: variant === "own" || variant === "sole" || variant === "soleApproved",
     soleAdminNotice: variant === "sole" ? "Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft." : null,
     decision:
-      variant === "approved"
+      variant === "approved" || variant === "soleApproved"
         ? {
             approved: true,
             outcome: "approved",
             comment: null,
-            soleAdmin: false,
+            soleAdmin: variant === "soleApproved",
             decidedBy: FIXTURE_PEOPLE.ben,
             decidedAt: "2026-11-01T12:20:00.000Z",
             label: "",
             decidedByName: "Ben Schulz",
           }
-        : null,
+        : variant === "changes" || variant === "rejected"
+          ? {
+              approved: false,
+              outcome: variant === "changes" ? "changes_requested" : "rejected",
+              comment:
+                variant === "changes"
+                  ? "Bitte nur für Mails mit einem Rückrufwunsch eine Aufgabe anlegen, nicht für jede ungelesene Mail."
+                  : "Rückrufe legen wir bei uns nicht automatisch an. Bitte sprecht das erst mit der Logistik ab.",
+              soleAdmin: false,
+              decidedBy: FIXTURE_PEOPLE.jana,
+              decidedAt: "2026-11-01T13:01:00.000Z",
+              label: "",
+              decidedByName: "Jana Probe",
+            }
+          : null,
     evidence: first
       ? {
           version: 1,
@@ -628,10 +860,26 @@ export const fixtureRunners = (empty = false): CodeRunnerMetrics =>
         oldestWaitingMs: 4_200,
         instances: 3,
         freeSlots: 5,
+        slots: 12,
         runners: [
-          { instanceId: "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60", freeSlots: 1, lastSeenAt: new Date(Date.now() - 8_000).toISOString() },
-          { instanceId: "9b4d2f31-6e2c-4d30-8b21-2c3d4e5f6071", freeSlots: 0, lastSeenAt: new Date(Date.now() - 5_000).toISOString() },
-          { instanceId: "ac5e3042-7f3d-4e41-9c32-3d4e5f607182", freeSlots: 4, lastSeenAt: new Date(Date.now() - 2_000).toISOString() },
+          {
+            instanceId: "8a3c1e20-5d1b-4c2f-9a10-1b2c3d4e5f60",
+            freeSlots: 1,
+            busySlots: 3,
+            lastSeenAt: new Date(Date.now() - 8_000).toISOString(),
+          },
+          {
+            instanceId: "9b4d2f31-6e2c-4d30-8b21-2c3d4e5f6071",
+            freeSlots: 0,
+            busySlots: 4,
+            lastSeenAt: new Date(Date.now() - 5_000).toISOString(),
+          },
+          {
+            instanceId: "ac5e3042-7f3d-4e41-9c32-3d4e5f607182",
+            freeSlots: 4,
+            busySlots: 0,
+            lastSeenAt: new Date(Date.now() - 2_000).toISOString(),
+          },
         ],
         nextCursor: null,
       };
@@ -681,10 +929,9 @@ export const fixtureData = (): CodeAreaData => ({
   approval: null,
   codes: { items: fixtureCodes(), total: 8, owners: 5, nextCursor: null },
   code: null,
-  source: null,
   policy: fixturePolicy(),
   effective: null,
-  history: fixtureHistory(),
+  history: { items: fixtureHistory(), nextPage: null },
   databases: {
     items: [
       {
@@ -715,6 +962,7 @@ export const CODE_FIXTURE_STATES = [
   "newer",
   "own",
   "sole",
+  "soleApproved",
   "difffail",
   "approved",
   "missing",
@@ -722,6 +970,14 @@ export const CODE_FIXTURE_STATES = [
   "savefail",
   "saving",
   "lost",
+  "changes",
+  "rejected",
+  "withdrawn",
+  "cli",
+  "nocomments",
+  "noexamples",
+  "followup",
+  "long",
 ] as const;
 export type CodeFixtureState = (typeof CODE_FIXTURE_STATES)[number];
 
@@ -760,7 +1016,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       codes: { items: [], total: 0, owners: 0, nextCursor: null },
       databases: { items: [], nextCursor: null },
       cleanup: { items: [], nextCursor: null },
-      history: [],
+      history: { items: [], nextPage: null },
       runners: fixtureRunners(true),
       policy: data.policy !== null && data.policy !== "failed" && data.policy !== "missing" ? { ...data.policy, groups: [] } : data.policy,
     };
@@ -776,37 +1032,39 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       history: "failed",
       runners: "failed",
       limits: "failed",
-      ...(query.sec === "code" && query.id
-        ? { code: fixtureCodeDetail(query.id), source: query.version ? ("failed" as const) : null }
-        : {}),
+      ...(query.sec === "code" && query.id ? { code: fixtureCodeDetail(query.id) } : {}),
     };
   if (query.sec === "approvals" && query.id) {
     const variant = query.id === FIXTURE_VERSIONS.lieferzeit1 ? "first" : state;
-    data.approval =
-      state === "missing"
-        ? "missing"
-        : fixtureApprovalDetail(
-            variant === "first" ||
-              variant === "newer" ||
-              variant === "own" ||
-              variant === "sole" ||
-              variant === "difffail" ||
-              variant === "approved"
-              ? variant
-              : "normal",
-          );
+    const variants: readonly FixtureReviewVariant[] = [
+      "first",
+      "newer",
+      "own",
+      "sole",
+      "soleApproved",
+      "difffail",
+      "approved",
+      "rejected",
+      "changes",
+      "withdrawn",
+      "cli",
+      "nocomments",
+      "noexamples",
+      "followup",
+      "long",
+    ];
+    data.approval = state === "missing" ? "missing" : fixtureApprovalDetail(variants.find((entry) => entry === variant) ?? "normal");
   }
+  // A title long enough to wrap next to its version, as in the walkthrough.
+  if (state === "long" && (query.sec ?? "approvals") === "approvals" && !query.id)
+    data.approvals = {
+      items: fixtureApprovals().map((entry, index) =>
+        index === 0 ? { ...entry, title: "Rückrufe bestätigen – wöchentliche Aufgabe im Space Kundendienst Nord" } : entry,
+      ),
+      nextCursor: null,
+    };
+  if (state === "long" && query.sec === "history") data.history = { items: [...fixtureHistory(), ...fixtureHistory()], nextPage: 2 };
   if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
-  if (query.sec === "code" && query.id && query.version)
-    data.source =
-      state === "missing"
-        ? "missing"
-        : {
-            versionId: query.version,
-            number: 2,
-            bundleHash: h("bb"),
-            files: [{ path: "code.ts", lines: before.split("\n").map((text) => ({ kind: "add" as const, text })) }],
-          };
   if (query.sec === "code" && query.status) {
     const codes = data.codes;
     if (codes !== null && codes !== "failed" && codes !== "missing")

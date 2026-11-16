@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { bindView, validateBlocks } from "@k2b/cloud/blocks";
 import { capabilityCallFromTool, normalizeCapabilityCall } from "@k2b/cloud/capabilities/server";
-import { assertCapabilityReview, assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import {
+  assertCapabilityReview,
+  assertResourceOpenLink,
+  assertResourceView,
+  compileCapabilityManifest,
+} from "@k2b/cloud/capabilities/testing";
 import {
   CapabilityActionCallReviewSchema,
   CapabilityActionReviewDataSchema,
@@ -11,6 +16,8 @@ import {
   capabilityContractIssues,
   capabilityResultSchema,
   contactDirectory,
+  discussionsIssues,
+  typeViewIssues,
   type User,
 } from "@k2b/cloud/contracts";
 import { audit } from "@k2b/cloud/services";
@@ -19,8 +26,8 @@ import {
   CONTACT_COLLECTION_LIMIT,
   CONTACT_TAG_LIMIT,
   ContactCreateInputSchema,
-  ContactDetailDataSchema,
   ContactListInputSchema,
+  ContactReaderDataSchema,
   ContactResolveDataSchema,
   ContactSuggestDataSchema,
   ContactTagChangeInputSchema,
@@ -177,6 +184,7 @@ describe("contacts capabilities", () => {
   test("declares the complete local v1 surface", () => {
     expect(Object.keys(contactsCapabilities.types).sort()).toEqual(["book", "contact", "note", "tag"]);
     expect(Object.keys(contactsCapabilities.queries).sort()).toEqual([
+      "book.containers",
       "book.list",
       "book.read",
       "contact.list",
@@ -382,7 +390,7 @@ describe("contacts capabilities", () => {
     const result = await contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, context);
     expect(result.ok).toBeTrue();
     if (!result.ok) return;
-    expect(ContactDetailDataSchema.safeParse(result.data.data).success).toBeTrue();
+    expect(ContactReaderDataSchema.safeParse(result.data.data).success).toBeTrue();
     expect(result.data.data.tags).toHaveLength(CONTACT_TAG_LIMIT);
     expect(result.data.data.emails).toHaveLength(CONTACT_COLLECTION_LIMIT);
     expect(result.data.data.phones).toHaveLength(CONTACT_COLLECTION_LIMIT);
@@ -862,6 +870,21 @@ describe("contacts capabilities", () => {
     permission.mockResolvedValue("none");
     expect((await contactRead.run({ id: publicContactId }, agent(["read"]))).ok).toBeFalse();
 
+    const containers = contactsCapabilities.queries["book.containers"];
+    listPage.mockClear();
+    expect((await containers.run(containers.input.parse({}), agent(["openid"]))).ok).toBeFalse();
+    expect(listPage).not.toHaveBeenCalled();
+    const boundReader = serviceAccountContext({ id: agentId, kind: "resource_bound", resourceId: bookId }, ["read"]);
+    expect((await containers.run(containers.input.parse({}), boundReader)).ok).toBeTrue();
+    expect(listPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        subject: boundReader.accessSubject,
+        boundBookId: bookId,
+        offset: 0,
+        filter: { minimumPermission: "read" },
+      }),
+    );
+
     // Exact binding and detail scope caps are covered by api/book-permission.integration.test.ts.
     permission.mockResolvedValue("admin");
     const bound = serviceAccountContext(
@@ -1107,3 +1130,115 @@ for (const [locale, reachable, address, email, phone] of [
     ]);
   });
 }
+
+describe("Contacts discussion provider", () => {
+  test("compiles a compatible role and standard views without changing other Types", () => {
+    const manifest = compileCapabilityManifest("contacts", contactsCapabilities);
+    expect(manifest.discussions).toEqual({ item: "contact", containers: "book.containers" });
+    expect(manifest.resourceTypes).toContainEqual({ type: "contact", container: "book", view: true });
+    expect(typeViewIssues(manifest, "contact")).toEqual([]);
+    expect(typeViewIssues(manifest, "book")).toEqual([]);
+    expect(discussionsIssues(manifest)).toEqual([]);
+  });
+
+  for (const permission of ["read", "write", "admin"] as const) {
+    for (const locale of ["en", "de"]) {
+      test(`readers expose current book and ${permission} permission in ${locale}`, async () => {
+        spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+        spyOn(books, "get").mockResolvedValue(book);
+        spyOn(contacts, "get").mockResolvedValue(contact);
+        const check = spyOn(access, "getActorBookPermission").mockResolvedValue(permission);
+        const caller = { ...context, locale };
+        const item = await contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, caller);
+        const container = await contactsCapabilities.queries["book.read"].run({ id: publicBookId }, caller);
+        if (!item.ok || !container.ok) throw new Error("Reader failed");
+        assertResourceView(item.data, { type: "contacts.book", id: publicBookId });
+        assertResourceView(container.data);
+        assertResourceOpenLink(item.data);
+        assertResourceOpenLink(container.data);
+        expect(item.data.data.view).toEqual({
+          title: "Ada Example",
+          permission,
+          container: { ref: { type: "contacts.book", id: publicBookId }, title: book.name },
+        });
+        expect(container.data.data.view).toEqual({ title: book.name, permission });
+        expect(
+          check.mock.calls.every(([config]) => config.actor === caller.actor && config.accessSubject === caller.accessSubject),
+        ).toBeTrue();
+      });
+    }
+  }
+
+  test("denied refs expose no contact, title or projected book", async () => {
+    spyOn(contacts, "findBookId").mockResolvedValue(bookId);
+    spyOn(books, "get").mockResolvedValue(book);
+    spyOn(access, "getActorBookPermission").mockResolvedValue("none");
+    const load = spyOn(contacts, "get");
+    const project = spyOn(publicResources, "projectBooks");
+    for (const result of [
+      await contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, context),
+      await contactsCapabilities.queries["book.read"].run({ id: publicBookId }, context),
+    ]) {
+      expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+      expect(result).not.toHaveProperty("data");
+    }
+    expect(load).not.toHaveBeenCalled();
+    expect(project).not.toHaveBeenCalled();
+  });
+
+  test("a moved contact authorizes its current book and never falls back to the old book", async () => {
+    const targetBookId = "99999999-9999-4999-8999-999999999999";
+    spyOn(contacts, "findBookId").mockResolvedValue(targetBookId);
+    spyOn(books, "get").mockResolvedValue({ ...book, id: targetBookId });
+    const check = spyOn(access, "getActorBookPermission").mockResolvedValue("none");
+    // A reader call by ref names no book; a target naming the old book is refused before any permission check.
+    const { target: _oldBook, ...byRef } = context;
+    const result = await contactsCapabilities.queries["contact.read"].run({ id: publicContactId }, byRef);
+    expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(check).toHaveBeenCalledTimes(1);
+    expect(check).toHaveBeenCalledWith({ bookId: targetBookId, actor: context.actor, accessSubject: context.accessSubject });
+  });
+
+  test("container cursors continue by offset when page size changes and preserve caller authority", async () => {
+    const list = spyOn(books, "listPage").mockImplementation(async (config) => ({
+      items: [{ ...book, permission: "read" }],
+      page: 1,
+      perPage: config.pagination?.perPage ?? 50,
+      total: 2,
+      hasNext: config.offset === 0,
+    }));
+    const query = contactsCapabilities.queries["book.containers"];
+    const first = await query.run(query.input.parse({ query: "Test", limit: 1 }), context);
+    if (!first.ok) throw new Error("Container list failed");
+    expect(query.data.safeParse(first.data.data).success).toBeTrue();
+    expect(first.data.data.items).toEqual([{ ref: { type: "contacts.book", id: publicBookId }, title: book.name }]);
+    const next = first.data.data.next;
+    if (next === null) throw new Error("Expected a continuation cursor");
+    expect(first.data.page).toEqual({ hasMore: true, nextCursor: next });
+    const last = await query.run(query.input.parse({ query: "Test", limit: 3, cursor: next }), context);
+    expect(last).toMatchObject({ ok: true, data: { data: { next: null }, page: { hasMore: false } } });
+    expect(list).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        subject: context.accessSubject,
+        actor: context.actor,
+        accessSubject: context.accessSubject,
+        boundBookId: null,
+        offset: 1,
+        pagination: { perPage: 3 },
+        filter: { query: "Test", minimumPermission: "read" },
+      }),
+    );
+  });
+
+  test("rejects malformed cursors before any container lookup", async () => {
+    const list = spyOn(books, "listPage");
+    const query = contactsCapabilities.queries["book.containers"];
+    for (const cursor of [
+      "invalid",
+      ...[-1, 0.5, Number.MAX_SAFE_INTEGER + 1].map((offset) => Buffer.from(JSON.stringify({ v: 1, offset })).toString("base64url")),
+    ]) {
+      expect(await query.run(query.input.parse({ cursor }), context)).toMatchObject({ ok: false, error: { code: "BAD_INPUT" } });
+    }
+    expect(list).not.toHaveBeenCalled();
+  });
+});

@@ -1,3 +1,4 @@
+import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { formatDateTime, formatRelative } from "@k2b/cloud/shared";
 import { codeRunName } from "@k2b/cloud/ssr/code-page/targets";
@@ -6,12 +7,13 @@ import {
   AppWorkspace,
   ButtonLink,
   DataTable,
+  DotStrip,
+  type DotStripTone,
   IconButton,
   IconButtonLink,
   NoticeCard,
   Placeholder,
-  StatCell,
-  StatGrid,
+  Section,
   StatusBadge,
   type StatusTone,
   ViewTabs,
@@ -28,7 +30,6 @@ import type {
   CodeAdminPolicy,
   CodeAdminPolicyChange,
   CodeAdminSummary,
-  CodeAdminVersionSource,
 } from "../../../code/admin";
 import type { CodeOwner } from "../../../code/contracts";
 import type { UnusedCodeDatabase } from "../../../code/database-retention";
@@ -38,7 +39,7 @@ import type { CodeRunnerMetrics } from "../../../code/scheduling-contracts";
 import CoreSettingsForm, { type SettingFieldDef } from "../settings/_components/CoreSettingsForm.island";
 import { CODE_POLICY_ROW_GROUPS, type CodeAreaQuery, type CodeAreaSection, codeAreaHref, codeAreaLevel, isWideCodeSection } from "./area";
 import CodeAccountHandle from "./CodeAccountHandle.island";
-import CodeApprovalReview, { type CodeApprovalCheck, type CodeApprovalReviewProps } from "./CodeApprovalReview.island";
+import CodeApprovalReview, { type CodeApprovalReviewProps, type CodeReviewTab } from "./CodeApprovalReview.island";
 import CodeDatabaseControls from "./CodeDatabaseControls.island";
 import CodeListFilters from "./CodeListFilters.island";
 import CodePageReports from "./CodePageReports";
@@ -47,8 +48,8 @@ import CodePolicyEditor from "./CodePolicyEditor.island";
 import CodePolicyPicker from "./CodePolicyPicker.island";
 import CodeRefusal from "./CodeRefusal.island";
 import CodeUnusedDatabases from "./CodeUnusedDatabases.island";
-import CodeVersionSource from "./CodeVersionSource.island";
 import type { CodeAdminMessages } from "./messages";
+import { type CodeReviewMessages, codeReviewMessages } from "./review-messages";
 
 /** A part of the page: its data, a failed load, a selection that no longer exists, or not needed for this URL. */
 export type Loaded<T> = T | "failed" | "missing" | null;
@@ -61,11 +62,9 @@ export type CodeAreaData = {
   code: Loaded<CodeAdminCodeDetail>;
   /** Open reports on the selected automation's pages. */
   reports?: Loaded<CodePageReportPage>;
-  /** One version's source, read-only, when the URL selects it. */
-  source: Loaded<CodeAdminVersionSource>;
   policy: Loaded<CodeAdminPolicy>;
   effective: Loaded<CodeAdminEffective>;
-  history: Loaded<CodeAdminPolicyChange[]>;
+  history: Loaded<{ items: CodeAdminPolicyChange[]; nextPage: number | null }>;
   databases?: Loaded<{ items: UnusedCodeDatabase[]; nextCursor: string | null }>;
   cleanup: Loaded<{ items: CodeCleanupJob[]; nextCursor: string | null }>;
   runners: Loaded<CodeRunnerMetrics>;
@@ -79,6 +78,8 @@ type Props = {
   data: CodeAreaData | null;
   noPermission: boolean;
   retryHref: string;
+  /** The reading admin, for "You" and for deleting own comments. */
+  viewerId?: string;
   appNames: Record<string, string>;
   documentationBase?: string;
 };
@@ -106,14 +107,32 @@ const sectionIcon: Record<CodeAreaSection, string> = {
   runners: "ti ti-server-2",
 };
 
+/** The sign of the policy row that asks for an admin, beside its name in the list. */
+const reasonIcon = (row: string): string =>
+  row === "silent_shared"
+    ? "ti ti-eye"
+    : row === "internet"
+      ? "ti ti-world"
+      : row === "ai"
+        ? "ti ti-sparkles"
+        : row === "public_routes"
+          ? "ti ti-world-www"
+          : row === "silent_draft"
+            ? "ti ti-pencil"
+            : row === "silent_you"
+              ? "ti ti-user"
+              : row === "read"
+                ? "ti ti-book"
+                : "ti ti-lock";
+
 const ownerIcon = (owner: CodeOwner) => (owner.kind === "person" ? "ti ti-user" : owner.kind === "app" ? "ti ti-apps" : "ti ti-box");
 
 export function ownerLabel(t: CodeAdminMessages, owner: CodeOwner, ownerName: string | null, appNames: Record<string, string>): string {
   if (owner.kind === "person") return t.ownerPerson({ who: ownerName ?? t.unknownAuthor });
   if (owner.kind === "app") return t.ownerApp({ app: appNames[owner.appId] ?? owner.appId });
   const appId = owner.ref.type.split(".")[0] ?? "";
-  // The place's own name when its reader let this admin read it, else its ID.
-  return `${appNames[appId] ?? appId} · ${ownerName ?? owner.ref.id}`;
+  // The place's own name when its reader let this admin read it; otherwise only its kind, never its identifier.
+  return ownerName ?? t.ownerHidden({ app: appNames[appId] ?? t.ownerUnknown });
 }
 
 const statusText = (t: CodeAdminMessages, code: Pick<CodeAdminCode, "status" | "pauseReason">) =>
@@ -123,60 +142,37 @@ const statusText = (t: CodeAdminMessages, code: Pick<CodeAdminCode, "status" | "
       ? t.pausedOwner
       : t.statusLabel({ s: code.status });
 
-/** Approval list text: line totals, the whole first version, or the file count when the summary budget ran out. */
-export function approvalStat(t: CodeAdminMessages, item: CodeAdminApproval): string {
-  if (item.stat.first) return t.linesNew({ n: item.stat.lines });
-  if (item.stat.added === null || item.stat.removed === null) return t.filesChanged({ n: item.stat.files });
-  return t.linesChanged({ add: item.stat.added, del: item.stat.removed });
-}
-
-/** Word what Core recorded at submission. Calls of both versions are listed once, the newly called ones with `before` 0. */
-export function approvalCheck(t: CodeAdminMessages, detail: CodeAdminApprovalDetail): CodeApprovalCheck | null {
-  const evidence = detail.evidence;
-  if (!evidence) return null;
-  const { state, passed, total } = evidence.tests;
-  const trial = evidence.trial;
-  const before = detail.comparison ? detail.comparisonEvidence?.trial : null;
-  const operations = [...new Set([...(trial?.calls ?? []), ...(before?.calls ?? [])].map((call) => call.operation))];
-  return {
-    tests:
-      state === "passed"
-        ? t.testsPassed({ n: total })
-        : state === "failed"
-          ? t.testsFailed({ passed, total })
-          : state === "none"
-            ? t.testsNone
-            : t.testsUnavailable,
-    testsOk: state === "passed",
-    trial: trial ? t.trial({ runs: trial.runs, calls: trial.calls.reduce((sum, call) => sum + call.count, 0) }) : null,
-    calls: operations.map((operation) => ({
-      label: detail.titles.operations[operation] ?? operation,
-      operation,
-      now: trial?.calls.find((call) => call.operation === operation)?.count ?? 0,
-      before: before?.calls.find((call) => call.operation === operation)?.count ?? 0,
-    })),
-    comparedWith: before && detail.comparison ? detail.comparison.number : null,
-  };
+/** Why an admin is asked, in words: what the strictest rows let it do, and which policy says so. */
+export function approvalReason(r: CodeReviewMessages, detail: CodeAdminApprovalDetail): string {
+  if (!detail.why.length) return r.reasonNone;
+  const rows = [...new Set(detail.why.map((row) => r.rowReason({ row: row.row })))].join(" ");
+  const groups = [...new Set(detail.why.flatMap((row) => (row.source === "default" ? [] : row.groups)))];
+  return r.reason({ rows, policy: groups.length ? r.policyGroups({ groups: groups.join(", ") }) : r.policyDefault });
 }
 
 /** Build the island props for one version under review. */
 export function approvalReviewProps(
   t: CodeAdminMessages,
+  r: CodeReviewMessages,
   detail: CodeAdminApprovalDetail,
   list: readonly CodeAdminApproval[],
-  when: (iso: string) => string,
-  appNames: Record<string, string>,
+  options: { tab: CodeReviewTab; viewerId: string; dateConfig: DateContext },
 ): CodeApprovalReviewProps {
-  const who = detail.code.owner.kind === "person" ? (detail.ownerName ?? t.unknownAuthor) : (detail.version.author.name ?? t.unknownAuthor);
-  const others = list.filter((item) => item.versionId !== detail.version.id);
   const index = list.findIndex((item) => item.versionId === detail.version.id);
+  const others = list.filter((item) => item.versionId !== detail.version.id);
   const next = (index >= 0 ? list.slice(index + 1).concat(list.slice(0, index)) : others)[0];
+  const origin = detail.origin;
   return {
+    codeId: detail.code.id,
     versionId: detail.version.id,
-    authorUserId: detail.version.author.id,
-    explanation: detail.explanation,
-    check: approvalCheck(t, detail),
     number: detail.version.number,
+    title: detail.code.title,
+    viewerId: options.viewerId,
+    dateConfig: options.dateConfig,
+    tab: options.tab,
+    authorUserId: detail.version.author.id,
+    recipient: detail.version.author.name ?? t.unknownAuthor,
+    next: origin?.kind === "ai_chat" ? (origin.automaticAfterReview ? "button" : "chat") : "cli",
     binding: detail.binding,
     status: detail.status,
     canApprove: detail.canApprove,
@@ -190,66 +186,33 @@ export function approvalReviewProps(
           href: codeAreaHref({ sec: "approvals", id: detail.newer.versionId }),
         }
       : null,
-    why: detail.why.map((row) =>
-      t.whyRow({
-        label: t.rowLabel({ row: row.row }),
-        who,
-        source: row.source === "group" ? t.fromGroups({ groups: row.groups.join(", ") }) : t.fromDefault,
-      }),
-    ),
-    automations: detail.automations,
-    // Code of an app runs as its service account, named after the app as its Code page here names it.
-    routeOwner:
-      detail.code.owner.kind === "person"
-        ? { kind: "person", name: detail.ownerName ?? t.unknownAuthor }
-        : {
-            kind: "account",
-            name:
-              detail.code.owner.kind === "app"
-                ? t.accountName({ app: appNames[detail.code.owner.appId] ?? detail.code.owner.appId })
-                : null,
-          },
-    rights: detail.permissions.map((permission) => {
-      const typeTitle = permission.target ? (detail.titles.types[permission.target.type] ?? permission.target.type) : "";
-      return {
-        icon: permission.operation.includes(".") && detail.titles.operations[permission.operation] ? "ti ti-plug" : "ti ti-code",
-        label: detail.titles.operations[permission.operation] ?? permission.operation,
-        sub: [
-          permission.operation,
-          permission.target
-            ? permission.target.id
-              ? t.atTarget({ type: typeTitle, id: permission.target.id })
-              : t.atDynamic({ type: typeTitle })
-            : t.appWide,
-        ].join(" · "),
-        change: permission.change,
-        file: permission.file,
-        line: permission.line,
-      };
-    }),
-    diffHeader: detail.comparison
-      ? t.diffFrom({
-          a: detail.comparison.number,
-          b: detail.version.number,
-          by: detail.comparison.decidedBy,
-          when: detail.comparison.decidedAt ? when(detail.comparison.decidedAt) : null,
-        })
-      : t.diffFirst({ n: detail.version.number }),
+    reason: approvalReason(r, detail),
+    readModel: detail.readModel ?? null,
+    explanation: detail.explanation,
+    activeVersion: detail.activeVersion?.number ?? null,
+    comparison: detail.comparison?.number ?? null,
     files: detail.files,
     decision: detail.decision
       ? {
-          approved: detail.decision.approved,
-          soleAdmin: detail.decision.soleAdmin,
+          outcome: detail.decision.outcome,
+          comment: detail.decision.comment ?? null,
           by: detail.decision.decidedByName ?? t.unknownAuthor,
-          when: when(detail.decision.decidedAt),
+          byId: detail.decision.decidedBy ?? null,
+          at: detail.decision.decidedAt,
         }
       : null,
+    previous: detail.previousChangesRequest
+      ? {
+          number: detail.previousChangesRequest.number,
+          message: detail.previousChangesRequest.message,
+          comments: detail.previousChangesRequest.comments,
+        }
+      : null,
+    comments: detail.comments?.items ?? [],
+    commentsNext: detail.comments?.nextBefore ?? null,
+    commentsTotal: detail.comments?.total ?? 0,
+    listHref: codeAreaHref(detail.status === "pending" ? { sec: "approvals" } : { sec: "approvals", tab: "decided" }),
     nextHref: next ? codeAreaHref({ sec: "approvals", id: next.versionId }) : null,
-    database: detail.database,
-    internet: detail.internet,
-    secrets: detail.secrets,
-    codeHref: codeAreaHref({ sec: "code", id: detail.code.id }),
-    listHref: codeAreaHref({ sec: "approvals" }),
   };
 }
 
@@ -318,7 +281,13 @@ export function CodeAreaView(props: Props) {
 
   // ---------- Column 1: the area ----------
   const item = (section: CodeAreaSection, label: string, extra: { meta?: JSX.Element; title?: string } = {}) => (
-    <AppWorkspace.SidebarItem href={codeAreaHref({ sec: section })} active={query.sec === section} meta={extra.meta} title={extra.title}>
+    // Without a section the approvals are open beside the area, so their row is the chosen one.
+    <AppWorkspace.SidebarItem
+      href={codeAreaHref({ sec: section })}
+      active={(query.sec ?? "approvals") === section}
+      meta={extra.meta}
+      title={extra.title}
+    >
       {/* The list of all Code carries the feat/code sign; the other sections keep their own icons. */}
       {section === "code" ? (
         <AppWorkspace.SidebarItemIcon>
@@ -362,158 +331,244 @@ export function CodeAreaView(props: Props) {
   );
 
   // ---------- Approvals ----------
+  const r = codeReviewMessages.resolve([props.locale]).t;
   const approvalsTabs = () => (
-    <div class="px-2 pb-2">
-      <ViewTabs
-        label={t.approvals}
-        current={query.tab === "decided" ? "decided" : "open"}
-        items={[
-          { id: "open", label: t.open, href: codeAreaHref({ sec: "approvals" }), count: summary?.approvals || undefined },
-          { id: "decided", label: t.decided, href: codeAreaHref({ sec: "approvals", tab: "decided" }) },
-        ]}
-      />
-    </div>
+    <ViewTabs
+      label={t.approvals}
+      current={query.tab === "decided" ? "decided" : "open"}
+      items={[
+        {
+          id: "open",
+          label: r.tabOpen,
+          href: codeAreaHref({ sec: "approvals" }),
+          count: summary?.approvals ?? 0,
+          countReserve: "99",
+        },
+        { id: "decided", label: r.tabDecided, href: codeAreaHref({ sec: "approvals", tab: "decided" }) },
+      ]}
+    />
+  );
+  const personAvatar = (person: { id: string | null; name: string | null; avatarHash?: string | null }) => (
+    <CloudAvatar username={person.name ?? t.unknownAuthor} userId={person.id} avatarHash={person.avatarHash ?? null} size="sm" />
+  );
+  /** One row of the list: what, who submitted it, whom it belongs to, the main change, why you are asked, when. */
+  const approvalRow = (entry: {
+    href: string;
+    title: string;
+    version: string;
+    author: { id: string | null; name: string | null; avatarHash?: string | null };
+    owner?: CodeOwner;
+    ownerName?: string | null;
+    change?: string;
+    tag: JSX.Element;
+    when: string;
+  }) => (
+    <li>
+      <a class="core-code-approvals__row" href={entry.href}>
+        {personAvatar(entry.author)}
+        <span class="core-code-approvals__what">
+          <span class="core-code-approvals__title">
+            <strong>{entry.title}</strong>
+            <span class="core-code-approvals__version">{entry.version}</span>
+          </span>
+          <span class="core-code-approvals__who">
+            <span>{entry.author.name ?? t.unknownAuthor}</span>
+            <Show when={entry.owner}>
+              {(owner) => (
+                <span class="core-code-approvals__owner">
+                  <i class={ownerIcon(owner())} aria-hidden="true" />
+                  <span class="k2b-truncate-fade">
+                    {owner().kind === "person"
+                      ? r.ownerPersonal({ who: ownerLabel(t, owner(), entry.ownerName ?? null, props.appNames) })
+                      : ownerLabel(t, owner(), entry.ownerName ?? null, props.appNames)}
+                  </span>
+                </span>
+              )}
+            </Show>
+          </span>
+        </span>
+        <span class="core-code-approvals__change">
+          <Show when={entry.change}>
+            {(change) => (
+              <span class="core-code-approvals__main">
+                <i class="ti ti-plus" aria-hidden="true" />
+                <span>{change()}</span>
+              </span>
+            )}
+          </Show>
+          <span class="core-code-approvals__tag">{entry.tag}</span>
+        </span>
+        <span class="core-code-approvals__when">{entry.when}</span>
+        <i class="ti ti-chevron-right core-code-approvals__go" aria-hidden="true" />
+      </a>
+    </li>
   );
   const approvalsList = (): JSX.Element => {
     if (query.tab === "decided") {
       const decided = data.decided;
       if (!ok(decided)) return failure;
       return (
-        <>
+        <div class="core-code-approvals">
           {approvalsTabs()}
-          <Show when={decided.length} fallback={<Placeholder icon="ti ti-history" title={t.emptyDecided} />}>
-            <AppWorkspace.SidebarSection>
-              <For each={decided}>
-                {(entry) => (
-                  <AppWorkspace.SidebarItem
-                    variant="object"
-                    href={codeAreaHref({ sec: "approvals", tab: "decided", id: entry.versionId })}
-                    active={query.id === entry.versionId}
-                    description={`${t.versionRow({ n: entry.number })} · ${t.decidedBy({ who: entry.decidedBy ?? t.unknownAuthor, when: when(entry.decidedAt) })}`}
-                    note={entry.soleAdmin ? t.selfApproved : undefined}
-                    meta={
-                      <StatusBadge
-                        tone={entry.approved ? "ok" : "neutral"}
-                        variant="text"
-                        icon={entry.approved ? "ti ti-check" : "ti ti-x"}
-                        label={entry.approved ? t.approvedState : t.rejectedState}
-                      />
-                    }
-                  >
-                    {entry.title}
-                  </AppWorkspace.SidebarItem>
-                )}
-              </For>
-            </AppWorkspace.SidebarSection>
+          <Show when={decided.length} fallback={<Placeholder icon="ti ti-history" title={r.emptyDecided} />}>
+            <Section frame="line" title={t.decided} class="core-code-approvals__frame">
+              <ul class="core-code-approvals__list">
+                <For each={decided}>
+                  {(entry) => {
+                    const who = entry.mine ? r.you : (entry.decidedBy ?? t.unknownAuthor);
+                    return approvalRow({
+                      href: codeAreaHref({ sec: "approvals", id: entry.versionId }),
+                      title: entry.title,
+                      version: r.version({ n: entry.number }),
+                      author: entry.author,
+                      owner: entry.owner,
+                      ownerName: entry.ownerName,
+                      tag:
+                        entry.outcome === "approved" ? (
+                          <StatusBadge tone="ok" variant="chip" icon="ti ti-check" label={r.approvedBy({ who })} />
+                        ) : entry.outcome === "changes_requested" ? (
+                          <StatusBadge tone="warning" variant="chip" icon="ti ti-message-2" label={r.changesBy({ who })} />
+                        ) : (
+                          <StatusBadge tone="neutral" variant="chip" icon="ti ti-x" label={r.rejectedBy({ who })} />
+                        ),
+                      when: ago(entry.decidedAt),
+                    });
+                  }}
+                </For>
+              </ul>
+            </Section>
           </Show>
-        </>
+        </div>
       );
     }
     const page = data.approvals;
     if (!ok(page)) return failure;
     const approvals = page.items;
-    if (!approvals.length && !query.after)
-      return (
-        <>
-          {approvalsTabs()}
-          <Placeholder
-            icon="ti ti-inbox"
-            title={t.emptyApprovals}
-            description={t.emptyApprovalsSub}
-            action={
-              <ButtonLink variant="secondary" size="sm" href={codeAreaHref({ sec: "policy" })}>
-                <i class="ti ti-table-options" aria-hidden="true" />
-                {t.viewPolicy}
-              </ButtonLink>
-            }
-          />
-        </>
-      );
     return (
-      <>
+      <div class="core-code-approvals">
         {approvalsTabs()}
-        <AppWorkspace.SidebarSection>
-          <For each={approvals}>
-            {(entry) => (
-              <AppWorkspace.SidebarItem
-                variant="object"
-                href={codeAreaHref({ sec: "approvals", id: entry.versionId, after: query.after })}
-                active={query.id === entry.versionId}
-                description={
-                  entry.stat.first
-                    ? `${t.firstApproval({ n: entry.number })} · ${entry.author.name ?? t.unknownAuthor}`
-                    : t.versionBy({ n: entry.number, who: entry.author.name ?? t.unknownAuthor })
+        <Show
+          when={approvals.length || query.after}
+          fallback={
+            <Placeholder
+              icon="ti ti-mood-check"
+              title={r.emptyTitle}
+              description={r.emptySub}
+              action={
+                <ButtonLink variant="secondary" size="sm" href={codeAreaHref({ sec: "policy" })}>
+                  <i class="ti ti-table-options" aria-hidden="true" />
+                  {t.viewPolicy}
+                </ButtonLink>
+              }
+            />
+          }
+        >
+          <Section frame="line" title={r.tabOpen} class="core-code-approvals__frame">
+            <ul class="core-code-approvals__list">
+              <For each={approvals}>
+                {(entry) =>
+                  approvalRow({
+                    href: codeAreaHref({ sec: "approvals", id: entry.versionId, after: query.after }),
+                    title: entry.title,
+                    version: entry.stat.first ? r.versionFirst({ n: entry.number }) : r.version({ n: entry.number }),
+                    author: entry.author,
+                    owner: entry.owner,
+                    ownerName: entry.ownerName,
+                    change: entry.mainChange,
+                    tag: entry.reason ? (
+                      <StatusBadge
+                        tone="neutral"
+                        variant="chip"
+                        icon={reasonIcon(entry.reason.row)}
+                        label={t.rowLabel({ row: entry.reason.row })}
+                      />
+                    ) : (
+                      <span />
+                    ),
+                    when: ago(entry.submittedAt),
+                  })
                 }
-                note={<span class="font-mono">{approvalStat(t, entry)}</span>}
-                meta={
-                  entry.rows[0] ? (
-                    <StatusBadge tone="neutral" variant="chip" icon={null} label={t.rowLabel({ row: entry.rows[0] })} />
-                  ) : undefined
-                }
-              >
-                {entry.title}
-              </AppWorkspace.SidebarItem>
-            )}
-          </For>
-        </AppWorkspace.SidebarSection>
-        {moreLink(page.nextCursor, (after) => codeAreaHref({ sec: "approvals", after }))}
-      </>
+              </For>
+            </ul>
+            {moreLink(page.nextCursor, (after) => codeAreaHref({ sec: "approvals", after }))}
+          </Section>
+        </Show>
+      </div>
     );
   };
   const approvalDetail = (): JSX.Element => {
     const detail = data.approval;
-    if (detail === null) return hint("ti ti-git-compare", t.chooseVersion);
     if (detail === "missing") return missing(t.closedTitle, { sec: "approvals" });
-    if (detail === "failed") return failure;
+    if (detail === "failed" || detail === null) return failure;
     const list = ok(data.approvals) ? data.approvals.items : [];
-    return <CodeApprovalReview {...approvalReviewProps(t, detail, list, when, props.appNames)} />;
+    const tab: CodeReviewTab = query.tab === "code" || query.tab === "diff" ? query.tab : "overview";
+    return (
+      <CodeApprovalReview
+        {...approvalReviewProps(t, r, detail, list, { tab, viewerId: props.viewerId ?? "", dateConfig: props.dateConfig })}
+      />
+    );
   };
   const approvalPosition = (): JSX.Element => {
     const list = ok(data.approvals) ? data.approvals.items : [];
     const index = list.findIndex((entry) => entry.versionId === query.id);
-    if (index < 0 || query.tab === "decided") return undefined;
+    const detail = ok(data.approval) ? data.approval : null;
+    // Its own wrapper: on a phone the head's back arrow closes, and only this wrapper's display hides the button.
+    const close = (
+      <span class="core-code-approvals__close">
+        <IconButtonLink
+          label={r.close}
+          size="sm"
+          href={codeAreaHref(detail && detail.status !== "pending" ? { sec: "approvals", tab: "decided" } : { sec: "approvals" })}
+        >
+          <i class="ti ti-x" aria-hidden="true" />
+        </IconButtonLink>
+      </span>
+    );
+    if (index < 0) return close;
     const previous = list[index - 1];
     const next = list[index + 1];
+    const step = (entry: CodeAdminApproval | undefined, label: string, icon: string) =>
+      entry ? (
+        <IconButtonLink label={label} size="sm" href={codeAreaHref({ sec: "approvals", id: entry.versionId, after: query.after })}>
+          <i class={icon} aria-hidden="true" />
+        </IconButtonLink>
+      ) : (
+        <IconButton label={label} size="sm" disabled>
+          <i class={icon} aria-hidden="true" />
+        </IconButton>
+      );
     return (
-      <span class="flex items-center gap-1">
-        <span class="text-xs text-(--k2b-text-muted) tabular-nums">
-          {t.xOfY({ i: index + 1, n: Math.max(list.length, summary?.approvals ?? 0) })}
-        </span>
-        <Show
-          when={previous}
-          fallback={
-            <IconButton label={t.previous} size="sm" disabled>
-              <i class="ti ti-chevron-up" aria-hidden="true" />
-            </IconButton>
-          }
-        >
-          {(entry) => (
-            <IconButtonLink
-              label={t.previous}
-              size="sm"
-              href={codeAreaHref({ sec: "approvals", id: entry().versionId, after: query.after })}
-            >
-              <i class="ti ti-chevron-up" aria-hidden="true" />
-            </IconButtonLink>
-          )}
-        </Show>
-        <Show
-          when={next}
-          fallback={
-            <IconButton label={t.next} size="sm" disabled>
-              <i class="ti ti-chevron-down" aria-hidden="true" />
-            </IconButton>
-          }
-        >
-          {(entry) => (
-            <IconButtonLink label={t.next} size="sm" href={codeAreaHref({ sec: "approvals", id: entry().versionId, after: query.after })}>
-              <i class="ti ti-chevron-down" aria-hidden="true" />
-            </IconButtonLink>
-          )}
-        </Show>
+      <span class="core-code-approvals__position">
+        <span class="core-code-approvals__count">{r.position({ i: index + 1, n: Math.max(list.length, summary?.approvals ?? 0) })}</span>
+        {step(previous, r.previous, "ti ti-chevron-up")}
+        {step(next, r.next, "ti ti-chevron-down")}
+        {close}
       </span>
     );
   };
+  const approvalHeadTitle = (): string =>
+    ok(data.approval) ? r.headTitle({ title: data.approval.code.title, n: data.approval.version.number }) : r.listTitle;
+  const approvalHeadSub = (): string | undefined => {
+    if (!query.id) {
+      if (query.tab === "decided") return r.listDecidedSub;
+      return summary?.approvals ? r.listOpenSub({ n: summary.approvals }) : r.listNothingSub;
+    }
+    if (!ok(data.approval)) return undefined;
+    const detail = data.approval;
+    const owner = ownerLabel(t, detail.code.owner, detail.ownerName, props.appNames);
+    const owned = detail.code.owner.kind === "person" ? r.ownerPersonal({ who: owner }) : owner;
+    const values = { who: detail.version.author.name ?? t.unknownAuthor, when: ago(detail.version.submittedAt), owner: owned };
+    return detail.origin?.kind === "ai_chat" ? r.headSubChat(values) : r.headSubCli(values);
+  };
+  const approvalLead = (): JSX.Element =>
+    ok(data.approval) ? (
+      <CloudAvatar
+        username={data.approval.version.author.name ?? t.unknownAuthor}
+        userId={data.approval.version.author.id}
+        avatarHash={data.approval.authorAvatarHash ?? null}
+        size="md"
+      />
+    ) : undefined;
 
   // ---------- All Code ----------
   const appFilterOptions = () =>
@@ -587,10 +642,6 @@ export function CodeAreaView(props: Props) {
     if (detail === "missing") return missing(t.codeMissing, { sec: "code" });
     if (detail === "failed") return failure;
     const code = detail.code;
-    const codeLink = (extra: Pick<CodeAreaQuery, "version">) =>
-      codeAreaHref({ sec: "code", id: code.id, status: query.status, app: query.app, q: query.q, after: query.after, ...extra });
-    const newest = detail.versions[0]?.version.id;
-    const source = data.source;
     // Code of an app runs as its service account; this detail is its Code page (concept 14 W13).
     const account = code.owner.kind === "app" ? t.accountName({ app: props.appNames[code.owner.appId] ?? code.owner.appId }) : null;
     // Runs read as their automations do on the Code page; the own place by the name this admin may read, else type and ID.
@@ -632,31 +683,21 @@ export function CodeAreaView(props: Props) {
             </section>
           )}
         </Show>
-        <Show when={source !== null}>
-          <section class="grid gap-2" aria-labelledby="code-detail-source">
-            <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <h3 id="code-detail-source" class="text-base font-semibold">
-                {t.viewCode}
-              </h3>
-              <ButtonLink size="sm" variant="ghost" href={codeLink({})}>
-                <i class="ti ti-x" aria-hidden="true" />
-                {t.closeCode}
-              </ButtonLink>
-            </div>
-            {source === "failed" ? (
-              failure
-            ) : source === "missing" ? (
-              <Placeholder icon="ti ti-search-off" title={t.sourceMissing} />
-            ) : ok(source) ? (
-              <>
-                <p class="text-xs text-(--k2b-text-muted)">
-                  {t.codeReadOnly({ n: source.number, hash: `${source.bundleHash.slice(0, 4)}…${source.bundleHash.slice(-2)}` })} ·{" "}
-                  {t.codeReadOnlyHint}
-                </p>
-                <CodeVersionSource files={source.files} label={t.viewCode} />
-              </>
-            ) : undefined}
-          </section>
+        <Show when={query.version}>
+          {(versionId) => (
+            <NoticeCard
+              tone="info"
+              icon="ti ti-arrow-forward-up"
+              title={t.sourceMoved}
+              detail={
+                <div class="mt-1">
+                  <ButtonLink size="sm" variant="secondary" href={codeAreaHref({ sec: "approvals", id: versionId(), tab: "code" })}>
+                    {t.openReview}
+                  </ButtonLink>
+                </div>
+              }
+            />
+          )}
         </Show>
         <Show when={detail.pendingVersionId}>
           {(versionId) => (
@@ -687,8 +728,6 @@ export function CodeAreaView(props: Props) {
           <dd>{code.activeVersionNumber ? t.versionRow({ n: code.activeVersionNumber }) : t.none}</dd>
           <dt class="text-(--k2b-text-muted)">{t.createdAt}</dt>
           <dd>{when(code.createdAt)}</dd>
-          <dt class="text-(--k2b-text-muted)">ID</dt>
-          <dd class="font-mono text-xs">{code.id}</dd>
         </dl>
         <Show when={detail.database}>
           {(database) => (
@@ -705,14 +744,6 @@ export function CodeAreaView(props: Props) {
           )}
         </Show>
         <div class="flex flex-wrap items-center gap-2">
-          <Show when={source === null && newest}>
-            {(versionId) => (
-              <ButtonLink size="sm" variant="secondary" href={codeLink({ version: versionId() })}>
-                <i class="ti ti-code" aria-hidden="true" />
-                {t.viewCode}
-              </ButtonLink>
-            )}
-          </Show>
           <Show when={code.activeVersionNumber !== null && (code.state === "active" || code.state === "paused")}>
             <CodePauseAction codeId={code.id} title={code.title} paused={code.state === "paused"} />
           </Show>
@@ -726,14 +757,14 @@ export function CodeAreaView(props: Props) {
               <For each={detail.versions}>
                 {(entry) => (
                   <li class="flex flex-wrap items-baseline justify-between gap-x-3">
-                    <a
-                      class="k2b-text-link font-medium"
-                      href={codeLink({ version: entry.version.id })}
-                      aria-current={query.version === entry.version.id ? "true" : undefined}
-                      aria-label={`${t.viewCode}: ${t.versionRow({ n: entry.version.number })}`}
+                    <Show
+                      when={entry.status !== "submitted"}
+                      fallback={<span class="font-medium">{t.versionRow({ n: entry.version.number })}</span>}
                     >
-                      {t.versionRow({ n: entry.version.number })}
-                    </a>
+                      <a class="k2b-text-link font-medium" href={codeAreaHref({ sec: "approvals", id: entry.version.id })}>
+                        {t.versionRow({ n: entry.version.number })}
+                      </a>
+                    </Show>
                     <span class="text-(--k2b-text-muted)">
                       {entry.decision?.soleAdmin ? t.selfApproved : t.versionStatus({ s: entry.status })}
                       {entry.decision ? ` · ${when(entry.decision.decidedAt)}` : ` · ${when(entry.version.createdAt)}`}
@@ -788,7 +819,7 @@ export function CodeAreaView(props: Props) {
     if (!policy) return failure;
     return (
       <div class="grid min-h-full grid-rows-[auto_1fr]">
-        <p class="px-2 pb-2 text-sm text-(--k2b-text-muted)">{t.policyLead}</p>
+        <p class="pb-2 text-sm text-(--k2b-text-muted)">{t.policyLead}</p>
         <CodePolicyEditor
           revision={policy.policy.revision}
           definition={policy.policy.definition}
@@ -922,39 +953,78 @@ export function CodeAreaView(props: Props) {
   };
 
   const historySection = (): JSX.Element => {
-    const entries = data.history;
-    if (!ok(entries)) return failure;
+    const loaded = data.history;
+    const entries = ok(loaded) ? loaded.items : loaded;
+    if (!ok(entries))
+      return (
+        <Placeholder
+          state="error"
+          icon="ti ti-alert-triangle"
+          title={t.historyFailed}
+          description={t.historyFailedSub}
+          action={
+            <ButtonLink variant="secondary" size="sm" href={props.retryHref}>
+              <i class="ti ti-refresh" aria-hidden="true" />
+              {t.retryLoad}
+            </ButtonLink>
+          }
+        />
+      );
     const value = (cell: CodeAdminPolicyChange["changes"][number]["before"]) => (cell ? t.value({ value: cell }) : t.unset);
     const presetLabel = (preset: string) =>
       ({ off: t.presetOff, admin: t.presetAdmin, open: t.presetOpen, custom: t.presetCustom })[preset] ?? preset;
+    const change = (label: string, before: string, after: string) => (
+      <>
+        {label}: <s class="core-code-history__was">{before}</s> <i class="ti ti-arrow-right" aria-hidden="true" /> <strong>{after}</strong>
+      </>
+    );
     return (
-      <div class="grid content-start gap-4 px-2 pt-1 pb-6">
-        <Show when={entries.length} fallback={<Placeholder icon="ti ti-history" title={t.historyEmpty} description={t.historyEmptySub} />}>
-          <ol class="grid gap-4">
-            <For each={entries}>
-              {(entry) => (
-                <li class="grid gap-1">
-                  <p class="text-sm">
-                    <span class="font-semibold">{entry.by ?? t.unknownAuthor}</span>
-                    <span class="text-(--k2b-text-muted)"> · {when(entry.at)}</span>
-                  </p>
-                  <ul class="grid gap-0.5 text-sm">
-                    <Show when={entry.preset}>
-                      {(preset) => <li>{t.historyPreset({ before: presetLabel(preset().before), after: presetLabel(preset().after) })}</li>}
-                    </Show>
-                    <For each={entry.changes}>
-                      {(change) => (
-                        <li>
-                          {t.historyRow({ row: t.rowLabel({ row: change.row }), group: change.group })}:{" "}
-                          <span class="text-(--k2b-text-muted)">{value(change.before)}</span> → {value(change.after)}
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </li>
-              )}
-            </For>
-          </ol>
+      <div class="grid content-start gap-4 pt-1 pb-6">
+        <Show
+          when={entries.length}
+          fallback={<Placeholder icon="ti ti-history-off" title={t.historyEmpty} description={t.historyEmptySub} />}
+        >
+          <Section frame="line" title={t.history} class="core-code-history__frame">
+            <ol class="core-code-history">
+              <For each={entries}>
+                {(entry) => (
+                  <li class="core-code-history__entry">
+                    <CloudAvatar username={entry.by ?? t.unknownAuthor} size="sm" />
+                    <div class="core-code-history__body">
+                      <p class="core-code-history__head">
+                        <strong>{entry.by ?? t.unknownAuthor}</strong>
+                        <span> · {when(entry.at)}</span>
+                      </p>
+                      <ul class="core-code-history__changes" aria-label={t.historyChangesLabel}>
+                        <Show when={entry.preset}>
+                          {(preset) => <li>{change(t.presets, presetLabel(preset().before), presetLabel(preset().after))}</li>}
+                        </Show>
+                        <For each={entry.changes}>
+                          {(item) => (
+                            <li>
+                              {change(
+                                t.historyRow({ row: t.rowLabel({ row: item.row }), group: item.group }),
+                                value(item.before),
+                                value(item.after),
+                              )}
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </div>
+                  </li>
+                )}
+              </For>
+            </ol>
+          </Section>
+          <Show when={ok(loaded) ? loaded.nextPage : null}>
+            {(next) => (
+              <ButtonLink variant="secondary" size="sm" href={codeAreaHref({ sec: "history", after: String(next()) })}>
+                <i class="ti ti-chevron-down" aria-hidden="true" />
+                {t.olderChanges}
+              </ButtonLink>
+            )}
+          </Show>
         </Show>
       </div>
     );
@@ -985,7 +1055,6 @@ export function CodeAreaView(props: Props) {
             return (
               <div class="min-w-0">
                 <p class="text-sm">{row.title}</p>
-                <p class="font-mono text-xs text-(--k2b-text-muted)">{row.codeId}</p>
               </div>
             );
           if (col.id === "state")
@@ -1001,7 +1070,9 @@ export function CodeAreaView(props: Props) {
               <p>
                 {t.attempts({ n: row.attempts })} · {t.nextAttempt({ when: when(row.nextAttemptAt) })}
               </p>
-              <Show when={row.lastError}>{(code) => <p class="font-mono">{t.lastError({ code: code() })}</p>}</Show>
+              <Show when={row.lastError}>
+                <p>{t.lastErrorWorded}</p>
+              </Show>
             </div>
           );
         }}
@@ -1012,7 +1083,7 @@ export function CodeAreaView(props: Props) {
     const page = data.databases;
     if (!page || !ok(page)) return failure;
     return (
-      <div class="grid content-start gap-4 px-2 pt-1 pb-6">
+      <div class="grid content-start gap-4 pt-1 pb-6">
         <p class="text-sm text-(--k2b-text-muted)">{t.unusedDatabasesLead}</p>
         <Show when={page.items.length || query.after} fallback={<Placeholder icon="ti ti-database" title={t.noUnusedDatabases} />}>
           <CodeUnusedDatabases rows={page.items} dateConfig={props.dateConfig} />
@@ -1026,7 +1097,7 @@ export function CodeAreaView(props: Props) {
     if (!ok(page)) return failure;
     const jobs = page.items;
     return (
-      <div class="grid content-start gap-4 px-2 pt-1 pb-6">
+      <div class="grid content-start gap-4 pt-1 pb-6">
         <p class="text-sm text-(--k2b-text-muted)">{t.cleanupLead}</p>
         <p class="text-sm text-(--k2b-text-muted)">{t.cleanupAccessNote}</p>
         <Show
@@ -1040,45 +1111,97 @@ export function CodeAreaView(props: Props) {
     );
   };
   const waitText = (ms: number) => (ms < 60_000 ? t.seconds({ n: Math.round(ms / 1000) }) : t.minutes({ n: Math.round(ms / 60_000) }));
-  // Replaceable: the decision lane delivers a dedicated runner view later; this section only presents CodeRunnerMetrics.
+  /** A large number with its words, as one line of figures; a warning colours both when the fleet falls behind. */
+  const figure = (value: string, label: string, tone?: "warning" | "danger") => (
+    <span class="core-code-runners__figure" data-tone={tone}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </span>
+  );
   const runnersSection = (): JSX.Element => {
     const metrics = data.runners;
-    if (!ok(metrics)) return failure;
+    if (!ok(metrics))
+      return (
+        <Placeholder
+          state="error"
+          icon="ti ti-alert-triangle"
+          title={t.runnersFailed}
+          description={t.runnersFailedSub}
+          action={
+            <ButtonLink variant="secondary" size="sm" href={props.retryHref}>
+              <i class="ti ti-refresh" aria-hidden="true" />
+              {t.retryLoad}
+            </ButtonLink>
+          }
+        />
+      );
+    const slots = metrics.slots ?? metrics.freeSlots;
+    const none = metrics.instances === 0;
+    // The queue grows when nothing is free and runs wait.
+    const behind = !none && metrics.freeSlots === 0 && metrics.queued > 0;
+    const short = (id: string) => id.replace(/-/g, "").slice(0, 4);
     return (
-      <div class="grid content-start gap-4 px-2 pt-1 pb-6" data-section="code-runners">
-        <p class="text-sm text-(--k2b-text-muted)">{t.runnersLead}</p>
-        <StatGrid columns={5} size="sm">
-          <StatCell label={t.instances} value={metrics.instances} />
-          <StatCell label={t.freeSlots} value={metrics.freeSlots} />
-          <StatCell label={t.queue} value={metrics.queued} />
-          <StatCell label={t.running} value={metrics.running} />
-          <StatCell label={t.waitTime} value={waitText(metrics.oldestWaitingMs)} />
-        </StatGrid>
-        <Show
-          when={metrics.runners.length}
-          fallback={<Placeholder icon="ti ti-server-off" title={t.noRunners} description={t.noRunnersSub} />}
-        >
-          <DataTable
-            ariaLabel={t.runners}
-            rows={metrics.runners}
-            getRowId={(row) => row.instanceId}
-            hoverRows={false}
-            columns={[
-              { id: "instance", header: t.instance },
-              { id: "slots", header: t.freeSlots, align: "right" },
-              { id: "seen", header: t.lastSeen },
-            ]}
-            renderCell={({ row, col }) =>
-              col.id === "instance" ? (
-                <span class="font-mono text-xs">{row.instanceId}</span>
-              ) : col.id === "slots" ? (
-                <span class="tabular-nums">{row.freeSlots}</span>
-              ) : (
-                <span class="text-sm text-(--k2b-text-muted)">{ago(row.lastSeenAt)}</span>
-              )
-            }
+      <div class="grid content-start gap-4 pt-1 pb-6" data-section="code-runners">
+        <Show when={none}>
+          <NoticeCard tone="danger" icon="ti ti-plug-off" title={t.noRunners} detail={t.noRunnersSub} />
+        </Show>
+        <Show when={behind}>
+          <NoticeCard
+            tone="warning"
+            icon="ti ti-alert-triangle"
+            title={t.queueGrows}
+            detail={t.queueGrowsSub({ wait: waitText(metrics.oldestWaitingMs) })}
           />
         </Show>
+        <Section frame="line" title={t.runnersNow}>
+          <p class="core-code-runners__figures">
+            {figure(String(metrics.instances), t.runnerUnit({ n: metrics.instances }), none ? "danger" : undefined)}
+            <Show when={!none}>
+              {figure(t.slotsOf({ free: metrics.freeSlots, total: slots }), t.slotsFree, behind ? "warning" : undefined)}
+            </Show>
+            {figure(
+              String(metrics.queued),
+              t.runsWaiting({ n: metrics.queued }),
+              metrics.queued > 0 && (behind || none) ? "warning" : undefined,
+            )}
+            {figure(waitText(metrics.oldestWaitingMs), t.longestWait, behind || none ? "warning" : undefined)}
+          </p>
+        </Section>
+        <Section frame="line" title={t.runners} count={metrics.runners.length}>
+          <Show when={metrics.runners.length} fallback={<p class="core-code-runners__empty">{t.noRunnersList}</p>}>
+            <ul class="core-code-runners__list">
+              <For each={metrics.runners}>
+                {(runner, index) => {
+                  const busy = runner.busySlots ?? 0;
+                  const total = busy + runner.freeSlots;
+                  return (
+                    <li class="core-code-runners__row">
+                      <span class="core-code-runners__icon k2b-icon-tile">
+                        <i class="ti ti-server-2" aria-hidden="true" />
+                      </span>
+                      <span class="core-code-runners__what">
+                        <span>
+                          <strong>{t.runnerName({ n: index() + 1 })}</strong>
+                          <span class="core-code-runners__id"> · {short(runner.instanceId)}</span>
+                        </span>
+                        <span class="core-code-runners__slots">
+                          <DotStrip
+                            variant="slot"
+                            dots={Array.from({ length: busy }, (): DotStripTone => "accent")}
+                            length={total}
+                            label={t.slotsBusy({ busy, total })}
+                          />
+                          <span>{t.slotsFreeOf({ free: runner.freeSlots, total })}</span>
+                        </span>
+                      </span>
+                      <StatusBadge tone="ok" variant="text" icon="ti ti-circle-check" label={t.connected} />
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </Show>
+        </Section>
       </div>
     );
   };
@@ -1087,7 +1210,7 @@ export function CodeAreaView(props: Props) {
     if (!ok(entries)) return failure;
     return (
       <div class="grid content-start gap-2 pt-1 pb-6">
-        <p class="px-2 text-sm text-(--k2b-text-muted)">{t.limitsLead}</p>
+        <p class="text-sm text-(--k2b-text-muted)">{t.limitsLead}</p>
         <CoreSettingsForm
           documentationBase={props.documentationBase}
           documentationTopic="code-limits"
@@ -1102,22 +1225,21 @@ export function CodeAreaView(props: Props) {
   };
 
   // ---------- Composition ----------
-  const section = query.sec;
+  // The area without a section opens on the approvals, the work that waits; the area stays the level a phone shows.
+  const section = query.sec ?? "approvals";
   const level = codeAreaLevel(query);
-  const sectionLabel = section
-    ? {
-        approvals: t.approvals,
-        code: t.allCode,
-        policy: t.standard,
-        groups: t.groups,
-        effective: t.effective,
-        history: t.history,
-        cleanup: t.cleanup,
-        databases: t.unusedDatabases,
-        limits: t.limits,
-        runners: t.runners,
-      }[section]
-    : t.area;
+  const sectionLabel = {
+    approvals: t.approvals,
+    code: t.allCode,
+    policy: t.standard,
+    groups: t.groups,
+    effective: t.effective,
+    history: t.history,
+    cleanup: t.cleanup,
+    databases: t.unusedDatabases,
+    limits: t.limits,
+    runners: t.runners,
+  }[section];
   const sectionDescription = (): string | undefined => {
     if (section === "approvals") return summary?.approvals ? t.nWaiting({ n: summary.approvals }) : t.nothingOpen;
     if (section === "code")
@@ -1132,54 +1254,44 @@ export function CodeAreaView(props: Props) {
     return undefined;
   };
   const wideContent = (): JSX.Element =>
-    section === "databases"
-      ? databasesSection()
-      : section === "policy"
-        ? policyStandard()
-        : section === "history"
-          ? historySection()
-          : section === "cleanup"
-            ? cleanupSection()
-            : section === "runners"
-              ? runnersSection()
-              : limitsSection();
+    section === "approvals"
+      ? query.id
+        ? approvalDetail()
+        : approvalsList()
+      : section === "databases"
+        ? databasesSection()
+        : section === "policy"
+          ? policyStandard()
+          : section === "history"
+            ? historySection()
+            : section === "cleanup"
+              ? cleanupSection()
+              : section === "runners"
+                ? runnersSection()
+                : limitsSection();
   const secondColumn = (): JSX.Element =>
-    section === "approvals"
-      ? approvalsList()
-      : section === "code"
-        ? codeList()
-        : section === "groups"
-          ? groupsList()
-          : section === "effective"
-            ? effectiveList()
-            : hint("ti ti-code", t.areaSub);
+    section === "code"
+      ? codeList()
+      : section === "groups"
+        ? groupsList()
+        : section === "effective"
+          ? effectiveList()
+          : hint("ti ti-code", t.areaSub);
   const detailColumn = (): JSX.Element =>
-    section === "approvals"
-      ? approvalDetail()
-      : section === "code"
-        ? codeDetail()
-        : section === "groups"
-          ? groupDetail()
-          : section === "effective"
-            ? effectiveDetail()
-            : hint("ti ti-code", t.areaSub);
+    section === "code"
+      ? codeDetail()
+      : section === "groups"
+        ? groupDetail()
+        : section === "effective"
+          ? effectiveDetail()
+          : hint("ti ti-code", t.areaSub);
   const detailLabel = (): string => {
-    if (section === "approvals" && ok(data.approval))
-      return t.versionTitle({ title: data.approval.code.title, n: data.approval.version.number });
     if (section === "code" && ok(data.code)) return data.code.code.title;
     if (section === "groups") return selectedGroupName() ?? t.groups;
     if (section === "effective" && ok(data.effective)) return data.effective.person.name;
     return sectionLabel;
   };
   const detailDescription = (): string | undefined => {
-    if (section === "approvals" && ok(data.approval)) {
-      const detail = data.approval;
-      const parts = [
-        t.submittedBy({ who: detail.version.author.name ?? t.unknownAuthor, when: when(detail.version.submittedAt) }),
-        ownerLabel(t, detail.code.owner, detail.ownerName, props.appNames),
-      ];
-      return detail.comparison ? parts.join(" · ") : `${parts.join(" · ")} · ${t.firstSub}`;
-    }
     if (section === "code" && ok(data.code)) return ownerLabel(t, data.code.code.owner, data.code.code.ownerName, props.appNames);
     if (section === "groups" && query.id) return t.groupDeviates;
     if (section === "effective" && ok(data.effective))
@@ -1206,10 +1318,14 @@ export function CodeAreaView(props: Props) {
       {isWideCodeSection(section) ? (
         <AppWorkspace.MainPane
           id="section"
-          label={sectionLabel}
-          description={sectionDescription()}
+          heading="page"
+          label={section === "approvals" ? approvalHeadTitle() : sectionLabel}
+          description={section === "approvals" ? approvalHeadSub() : sectionDescription()}
+          lead={section === "approvals" && query.id ? approvalLead() : undefined}
           actions={
-            section === "policy" ? (
+            section === "approvals" && query.id ? (
+              approvalPosition()
+            ) : section === "policy" ? (
               <ButtonLink variant="ghost" size="sm" href={codeAreaHref({ sec: "history" })}>
                 <i class="ti ti-history" aria-hidden="true" />
                 {t.history}
@@ -1225,9 +1341,7 @@ export function CodeAreaView(props: Props) {
             id="section"
             label={sectionLabel}
             description={sectionDescription()}
-            href={
-              section ? codeAreaHref({ sec: section, tab: query.tab, status: query.status, app: query.app, q: query.q }) : codeAreaHref({})
-            }
+            href={codeAreaHref({ sec: section, tab: query.tab, status: query.status, app: query.app, q: query.q })}
             defaultSize={320}
             minSize={280}
             maxSize={480}

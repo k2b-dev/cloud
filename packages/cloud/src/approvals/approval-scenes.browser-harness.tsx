@@ -5,8 +5,15 @@ import type { ActionCard, ActionText } from "../ai/chat/action-card";
 import { toolActionCard } from "../ai/chat/action-card";
 import type { ActionLine } from "../ai/chat/action-question";
 import { actionFixtures, FIXTURE_AT } from "../ai/chat/action-question.fixtures";
+import { AiTurnBlockView } from "../ai/chat/blocks";
 import { legacyOutcomeWords } from "../ai/chat/tool-action-words";
+import { createAiToolDisclosureState } from "../ai/chat/tool-disclosure";
+import { layoutAiTurn } from "../ai/chat/turn-layout";
+import { AiTurnView } from "../ai/chat/turn-view";
 import { CloudSurveyBlock } from "../ai/chat/visual-tools";
+import { cardToolResult, chartToolResult } from "../ai/gustav-views";
+import type { AiTurnBlock } from "../ai/protocol";
+import { capabilityResultView } from "../ai/result-view";
 import type { ApprovalPage } from "../contracts/approvals";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import { ApprovalCard } from "./ApprovalCard";
@@ -198,6 +205,235 @@ const scenes: Record<string, () => JSX.Element> = {
     </>
   ),
   // The frame a Code version fills (Gustav v12, version card): data only, no Capability.
+  // Gustav's own chart (v12 06): the same island under Cloud's head as an app's result, with Gustav as its origin.
+  gustav: () => {
+    const args = {
+      kind: "line",
+      title: "Gesamtsaldo",
+      subtitle: "letzte 6 Monate, in Tausend Euro",
+      area: true,
+      series: [
+        {
+          label: "Saldo",
+          data: [13.4, 14.1, 13.2, 14.2, 15, 15.5].map((y, index) => ({ x: `2026-${String(index + 6).padStart(2, "0")}-01`, y })),
+        },
+      ],
+    };
+    const result = chartToolResult(args);
+    return (
+      <>
+        <Label>Gustavs Diagramm</Label>
+        <AiTurnBlockView
+          turnId="turn-1"
+          block={{
+            id: "tool-chart",
+            kind: "tool",
+            callId: "chart-1",
+            name: "chart",
+            args,
+            status: "completed",
+            at: FIXTURE_AT,
+            result,
+            view: capabilityResultView(result) ?? undefined,
+          }}
+        />
+      </>
+    );
+  },
+  // Gustav's key figures and chart in one answer (v12 06): one flat row under one head, the chart as an island.
+  konten: () => {
+    const tool = (id: string, name: string, args: Record<string, unknown>, result: unknown): AiTurnBlock => ({
+      id,
+      kind: "tool",
+      callId: id,
+      name,
+      args,
+      status: "completed",
+      at: FIXTURE_AT,
+      result,
+      view: capabilityResultView(result) ?? undefined,
+    });
+    const card = (id: string, args: Record<string, unknown>) => tool(id, "card", args, cardToolResult(args));
+    const chartArgs = {
+      kind: "line",
+      title: "Gesamtsaldo",
+      subtitle: "letzte 6 Monate, in Tausend Euro",
+      area: true,
+      series: [
+        {
+          label: "Saldo",
+          data: [13.4, 14.1, 13.2, 14.2, 15, 15.5].map((y, index) => ({ x: `2026-${String(index + 6).padStart(2, "0")}-01`, y })),
+        },
+      ],
+    };
+    const blocks: AiTurnBlock[] = [
+      card("c1", { icon: "building-bank", title: "Girokonto", value: "2.481,20 €", trendValue: "+312,00 €", trendLabel: "seit 01.11." }),
+      card("c2", { icon: "pig-money", title: "Tagesgeld", value: "12.050,00 €", caption: "2,1 % Zins" }),
+      card("c3", { icon: "home", title: "Haushaltstopf", value: "640,00 €", caption: "dein Anteil" }),
+      card("c4", { icon: "credit-card", title: "Kreditkarte", value: "−312,45 €", caption: "Abbuchung 28.11." }),
+      tool("g1", "chart", chartArgs, chartToolResult(chartArgs)),
+      { id: "t1", kind: "text", text: "Nach den 4 Zahlungen bleiben auf dem Girokonto etwa **1.176 €**." },
+    ];
+    return (
+      <>
+        <Label>Konten im November</Label>
+        <AiTurnView
+          segment={() => ({
+            id: "ai-turn:turn-1:start",
+            turnId: "turn-1",
+            phase: "completed",
+            layout: layoutAiTurn(blocks, { phase: "completed" }),
+            earlier: false,
+            duration: () => null,
+          })}
+          disclosureState={createAiToolDisclosureState()}
+        />
+      </>
+    );
+  },
+  // Feinschliff v3, section 5: one answer with key figures, an app's table and Gustav's chart. No origin lines; every
+  // block carries Copy and Maximize, and the Lightbox steps through all three.
+  baustein: () => {
+    const tool = (
+      id: string,
+      name: string,
+      args: Record<string, unknown>,
+      result: unknown,
+      presentation?: Extract<AiTurnBlock, { kind: "tool" }>["presentation"],
+    ): AiTurnBlock => ({
+      id,
+      kind: "tool",
+      callId: id,
+      name,
+      args,
+      status: "completed",
+      at: FIXTURE_AT,
+      result,
+      view: capabilityResultView(result) ?? undefined,
+      ...(presentation ? { presentation } : {}),
+    });
+    const card = (id: string, args: Record<string, unknown>) => tool(id, "card", args, cardToolResult(args));
+    const rows = [
+      ["2026-11-03", "Polsterei Beispiel", "Stoffmuster", -48.9],
+      ["2026-11-04", "Schraubenwelt", "Beschläge, 200 Stück", -112],
+      ["2026-11-07", "Lena Vogt", "Anzahlung Sideboard", 450],
+      ["2026-11-11", "Holzhandel Nord", "Eiche, 3 Bohlen", -386.4],
+      ["2026-11-14", "Druckerei Kern", "Preisschilder", -29.5],
+    ].map(([date, who, what, amount]) => ({ date, who, what, amount }));
+    const tableResult = {
+      data: {},
+      view: {
+        version: 1,
+        blocks: [
+          {
+            kind: "Table",
+            title: "PayPal-Buchungen im November",
+            subtitle: "37 Buchungen · Summe 1.284,60 €",
+            search: true,
+            columns: [
+              { key: "date", label: "Datum", type: "date" },
+              { key: "who", label: "Empfänger" },
+              { key: "what", label: "Verwendung" },
+              { key: "amount", label: "Betrag", type: "amount", format: { style: "currency", currency: "EUR" } },
+            ],
+            rows,
+          },
+        ],
+      },
+    };
+    const chartArgs = {
+      kind: "line",
+      title: "PayPal-Umsatz",
+      subtitle: "letzte 6 Monate, in Tausend Euro",
+      series: [
+        {
+          label: "Umsatz",
+          data: [0.6, 0.9, 0.5, 1, 1.2, 1.4].map((y, index) => ({ x: `2026-${String(index + 6).padStart(2, "0")}-01`, y })),
+        },
+      ],
+    };
+    const blocks: AiTurnBlock[] = [
+      card("c1", { icon: "arrow-down-left", title: "Eingang", value: "1.570,00 €", caption: "3 Buchungen" }),
+      card("c2", { icon: "arrow-up-right", title: "Ausgang", value: "−806,74 €", caption: "34 Buchungen" }),
+      tool("q1", "mail__query__paypal", {}, tableResult, {
+        kind: "capability",
+        appId: "mail",
+        appName: "Mail",
+        appIcon: "ti ti-mail",
+        title: "PayPal-Buchungen",
+        capabilityKind: "query",
+      }),
+      tool("g1", "chart", chartArgs, chartToolResult(chartArgs)),
+      { id: "t1", kind: "text", text: "Im November bleibt ein Plus von **741,92 €**." },
+    ];
+    return (
+      <>
+        <Label>Eine Antwort, drei Bausteine</Label>
+        <AiTurnView
+          segment={() => ({
+            id: "ai-turn:turn-1:start",
+            turnId: "turn-1",
+            phase: "completed",
+            layout: layoutAiTurn(blocks, { phase: "completed" }),
+            earlier: false,
+            duration: () => null,
+          })}
+          disclosureState={createAiToolDisclosureState()}
+        />
+      </>
+    );
+  },
+  // Durchgang 5, #78: Gustav asked for three key figures, once as stat charts, once as cards with their signs; both
+  // stand as the flat row of key figures under his head.
+  kennzahlen: () => {
+    const tool = (id: string, name: string, args: Record<string, unknown>, result: unknown): AiTurnBlock => ({
+      id,
+      kind: "tool",
+      callId: id,
+      name,
+      args,
+      status: "completed",
+      at: FIXTURE_AT,
+      result,
+      view: capabilityResultView(result) ?? undefined,
+    });
+    const statArgs = {
+      title: "Logistik – Kennzahlen",
+      subtitle: "Stand 15.11., 13:35",
+      layout: "grid",
+      charts: [
+        { kind: "stat", title: "Offene Aufgaben", value: 1366, subtitle: "Momentaufnahme", icon: "list-check" },
+        { kind: "stat", title: "Diese Woche fällig", value: 3, subtitle: "15. – 21.11.", icon: "calendar-due" },
+        { kind: "stat", title: "Ohne Fälligkeit", value: 1363, subtitle: "Überwiegend Automation-Duplikate", icon: "calendar-off" },
+      ],
+    };
+    const card = (id: string, args: Record<string, unknown>) => tool(id, "card", args, cardToolResult(args));
+    const segment = (id: string, blocks: AiTurnBlock[]) => (
+      <AiTurnView
+        segment={() => ({
+          id: `ai-turn:${id}:start`,
+          turnId: id,
+          phase: "completed",
+          layout: layoutAiTurn(blocks, { phase: "completed" }),
+          earlier: false,
+          duration: () => null,
+        })}
+        disclosureState={createAiToolDisclosureState()}
+      />
+    );
+    return (
+      <>
+        <Label>Als Stat-Diagramme</Label>
+        {segment("turn-1", [tool("s1", "chart", statArgs, chartToolResult(statArgs))])}
+        <Label>Als Karten</Label>
+        {segment("turn-2", [
+          card("c1", { icon: "list-check", title: "Offene Aufgaben", value: "1.366", caption: "Momentaufnahme" }),
+          card("c2", { icon: "calendar-due", title: "Diese Woche fällig", value: "3", caption: "15. – 21.11." }),
+          card("c3", { icon: "calendar-off", title: "Ohne Fälligkeit", value: "1.363", caption: "Überwiegend Automation-Duplikate" }),
+        ])}
+      </>
+    );
+  },
   // Gustav's own question with options (v12 07): the same flat choice as a view's.
   survey: () => (
     <>

@@ -1153,6 +1153,8 @@ export type LineOptions = SeriesChartOptions & {
   /** Fill the area below each line with the series color (translucent).
    *  Renders as a separate path so the line stroke remains crisp. Default false. */
   area?: boolean;
+  /** Mark every value with a hollow point: a ring in the series color around the surface. Default false. */
+  points?: boolean;
   /** Render a step (stair) line instead of a smooth/straight one. Implies
    *  `smooth: false`. */
   step?: "before" | "after" | "middle";
@@ -1388,4 +1390,16 @@ export type SparklineOptions = {
   area?: boolean;
   /** Appended to the root `<svg>`'s class attribute. */
   className?: string;
+};
+
+const LINE_POINT_PALETTE = ["#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16", "#f97316"];
+/** The hollow points of one series (`points`): the surface inside, a ring in the series color, above its line. */
+export const linePointsSvg = (points: ReadonlyArray<{ x: number; y: number }>, seriesIndex: number): string => {
+  const color = `var(--stdlib-chart-c${(seriesIndex % 8) + 1}, ${LINE_POINT_PALETTE[seriesIndex % 8]})`;
+  return points
+    .map(
+      (p) =>
+        `<circle class="k2b-line-point" cx="${fmt(p.x)}" cy="${fmt(p.y)}" r="3.5" fill="var(--k2b-surface, #fff)" stroke="${color}" stroke-width="1.75" pointer-events="none"/>`,
+    )
+    .join("");
 };

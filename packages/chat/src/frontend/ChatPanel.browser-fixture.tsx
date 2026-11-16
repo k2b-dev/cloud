@@ -11,6 +11,7 @@ import { buildIslandClosure } from "../../../../scripts/fixtures/island-closure"
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { assistantPanelFixture } from "../../../assistant/src/frontend/AssistantPanel.test-fixture";
 import { startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
+import { panelResourceChat } from "./panel-resource";
 
 /** Public Layout/PanelLayout with the actual Chat workspace and its existing synthetic REST/live fixture. */
 export async function startConversationPanelFixture() {
@@ -31,6 +32,7 @@ export async function startConversationPanelFixture() {
   const backend = await startChatHarness({ client: false });
   const assistant = assistantPanelFixture();
   let contextAllowed = false;
+  let chatContextAllowed = false;
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", resolve(import.meta.dir, "../../../cloud")))).default;
   const cssBuild = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "../../../assistant/src/styles/app.css")],
@@ -45,7 +47,10 @@ export async function startConversationPanelFixture() {
     stubRailSnapshot(),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
     spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
-    spyOn(consent.panelContextConsent, "get").mockImplementation(async () => ({ allowed: contextAllowed, revision: 1 })),
+    spyOn(consent.panelContextConsent, "get").mockImplementation(async (_user, provider) => ({
+      allowed: provider === "chat" ? chatContextAllowed : contextAllowed,
+      revision: 1,
+    })),
   ];
   try {
     const person: User = {
@@ -113,11 +118,30 @@ export async function startConversationPanelFixture() {
       })
       .get(
         "*",
-        ...app.ssr<Environment>((c) => {
+        ...app.ssr<Environment>(async (c) => {
           const url = new URL(c.req.url);
           const embedded = /\/app\/(chat|assistant)\/panel/.test(url.pathname);
           const assistantPage = url.pathname.startsWith("/app/assistant");
           const chatPage = url.pathname.startsWith("/app/chat");
+          // The real Chat page's start in the discussion about the host page's resource, against the synthetic backend.
+          const { resourceChat, redirect, scope } =
+            chatPage && embedded
+              ? await panelResourceChat(c, async (ref) => {
+                  const query = new URLSearchParams({ type: ref.type, id: ref.id });
+                  const response = await fetch(new URL(`api/chat/system-chats/for-resource?${query}`, backend.url));
+                  if (!response.ok) return null;
+                  const { conversation, ...location } = (await response.json()) as {
+                    conversation: string | null;
+                    thread: string | null;
+                    item: boolean;
+                    title: string;
+                    canWrite: boolean;
+                  };
+                  return { ...location, id: conversation };
+                })
+              : { resourceChat: null, redirect: null, scope: null };
+          if (redirect) return c.redirect(redirect, 302);
+          const board = /^\/app\/fixture\/board\/([^/]+)$/.exec(url.pathname)?.[1];
           const id = /\/c\/([^/]+)/.exec(url.pathname)?.[1];
           const snapshot = {
             ...backend.props({
@@ -127,6 +151,9 @@ export async function startConversationPanelFixture() {
               panel: url.searchParams.get("panel") ?? undefined,
             }),
             embedded,
+            resourceChat,
+            resourcePage: chatPage && embedded && resourceChat !== null && url.pathname.endsWith("/resource"),
+            panelScope: scope,
           };
           const content = () =>
             assistantPage ? (
@@ -164,7 +191,12 @@ export async function startConversationPanelFixture() {
                 {content()}
               </PanelLayout>
             ) : (
-              <Layout c={c} title={chatPage ? "Chat" : "Synthetic project"} fullPage>
+              <Layout
+                c={c}
+                title={chatPage ? "Chat" : "Synthetic project"}
+                fullPage
+                context={board ? { scope: { type: "inventory.collection", id: board } } : undefined}
+              >
                 {content()}
               </Layout>
             );
@@ -235,7 +267,7 @@ document.documentElement.dataset.fixtureReady = "true";
           return Response.json({
             answers: {
               assistant: { allowed: contextAllowed, revision: 1 },
-              chat: { allowed: false, revision: 1 },
+              chat: { allowed: chatContextAllowed, revision: 1 },
               second: { allowed: false, revision: 1 },
             },
           });
@@ -247,6 +279,8 @@ document.documentElement.dataset.fixtureReady = "true";
         if (assistantResponse) return assistantResponse;
         if (!url.pathname.startsWith("/app/")) return fetch(new Request(new URL(url.pathname + url.search, backend.url), request));
         const response = await routes.fetch(request);
+        // Redirects, such as the panel's move into a resource's discussion, pass unchanged.
+        if (response.status >= 300 && response.status < 400) return response;
         const html = await new HTMLRewriter()
           .on('script[src], script[type="module"], link[rel="stylesheet"], link[rel="preload"], link[rel="modulepreload"]', {
             element: (element) => void element.remove(),
@@ -288,6 +322,9 @@ document.documentElement.dataset.fixtureReady = "true";
       assistant,
       allowContext: (allowed: boolean) => {
         contextAllowed = allowed;
+      },
+      allowChatContext: (allowed: boolean) => {
+        chatContextAllowed = allowed;
       },
       url: server.url.href,
       panelRuntimePath: `${outputUrl(panelScript)}?provider=assistant`,

@@ -811,6 +811,10 @@ streaming block IDs. Pending local steering remains visible until acknowledged.
 In-attempt continuations publish a complete turn baseline before incremental
 updates, so persisted and streamed representations do not appear together.
 
+ZIP archives (`.zip` or `.ZIP`, `application/zip` or `application/x-zip-compressed`)
+are ordinary file attachments with a download and the same 50 MiB file limit.
+Uploads store their bytes unchanged; the server does not unpack archives.
+
 Conversation multipart uploads accept an optional `directory` form field
 (default `/`). The normal path validation and reserved Project namespace apply.
 Collisions receive a suffix; use the returned `file.path` rather than deriving

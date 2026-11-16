@@ -1,12 +1,14 @@
 import { fileIcons } from "@k2b/stdlib";
-import { Chat } from "@k2b/ui";
+import { Chat, Paper, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import { formatAiFileSize } from "../attachments";
 import type { AiTurnBlock } from "../protocol";
 import { CloudAiViewSummarySchema, isAiViewFile } from "../view-block";
+import { ViewFrame } from "./capability-view";
 import { useAiChatActions } from "./message-actions";
 import { aiToolIcon, isRecord } from "./message-utils";
-import { CloudViewBlock } from "./view-block";
+import { aiChatMessages } from "./messages";
+import { CloudViewBlock, createCloudViewFile } from "./view-block";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type PresentResult = { path: string; size: number; mediaType: string };
@@ -41,7 +43,10 @@ const preparingView = (block: ToolBlock) =>
     : false;
 
 /** A presented file: a view file shows as its chart or table, every other file as a chip to open and download. */
+const ISLANDS: ReadonlySet<string> = new Set(["chart", "table", "group", "explorer"]);
+
 export function PresentToolBlock(props: { block: ToolBlock }) {
+  const locale = useLocale();
   // Live updates replace the block with an equal result; only a different view loads again.
   const view = createMemo(() => presentedView(props.block), null, { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) });
   return (
@@ -54,7 +59,28 @@ export function PresentToolBlock(props: { block: ToolBlock }) {
         </Show>
       }
     >
-      {(view) => <CloudViewBlock path={view.path} summary={view.summary} />}
+      {(view) => {
+        // Loaded once: the view in the chat and its large view in the Lightbox draw the same file.
+        const file = createCloudViewFile(view.path, view.summary);
+        return (
+          // Gustav's view file stands under the same head as an app's result; the file still loads on demand and keeps
+          // its history, only its frame is the shared one.
+          <ViewFrame
+            origin={{ name: "Gustav", icon: "ti ti-moustache", accent: "var(--k2b-ai-accent)" }}
+            title={aiChatMessages(locale()).viewKind({ view: view.summary.view })}
+            at={props.block.at}
+            data={props.block.result}
+          >
+            {/* A chart, table, group or explorer is an island, as in an app's view; the island is the table's frame, so the
+              table drops its own. Key figures and details stay flat. */}
+            <Show when={ISLANDS.has(view.summary.view)} fallback={<CloudViewBlock path={view.path} summary={view.summary} file={file} />}>
+              <Paper class="k2b-dashboard-frame">
+                <CloudViewBlock path={view.path} summary={view.summary} island file={file} />
+              </Paper>
+            </Show>
+          </ViewFrame>
+        );
+      }}
     </Show>
   );
 }

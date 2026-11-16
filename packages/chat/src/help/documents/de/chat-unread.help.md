@@ -68,4 +68,4 @@ Liest du die Nachricht in ihrem Thread, ist sie auch hier gelesen. Du siehst nur
 
 ## Liste filtern {icon="filter"}
 
-Wähle **Ungelesen** über der Liste, um Chats mit neuen Nachrichten oder deiner Ungelesen-Markierung zu sehen. Ein Chat bleibt nach dem Lesen in dieser Ansicht, bis du den Filter verlässt. **Alle** zeigt wieder die ganze Liste. Die Adresse behält deinen Filter beim Neuladen und Zurückgehen.
+Wähle **Chats filtern** neben der Suche und dann **Ungelesen**, um Chats mit neuen Nachrichten oder deiner Ungelesen-Markierung zu sehen. Ein Chat bleibt nach dem Lesen in dieser Ansicht, bis du den Filter verlässt. **Alle** zeigt wieder die ganze Liste. Die Adresse behält deinen Filter beim Neuladen und Zurückgehen.

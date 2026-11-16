@@ -134,9 +134,12 @@ export const listPage = async (config: {
   subject: AccessSubject;
   boundBookId: string | null;
   pagination?: PageParams;
+  /** Absolute continuation position, independent of the requested page size. */
+  offset?: number;
   filter?: { query?: string; minimumPermission?: PermissionLevel };
 }): Promise<Paginated<ReadableContactBook>> => {
-  const { page, perPage, offset } = paginate(config.pagination);
+  const { page, perPage, offset: pageOffset } = paginate(config.pagination);
+  const offset = config.offset ?? pageOffset;
 
   const principalMatch = buildAccessPrincipalCondition({
     subject: config.subject,
@@ -209,7 +212,7 @@ export const listPage = async (config: {
     page,
     perPage,
     total,
-    hasNext: page * perPage < total,
+    hasNext: offset + perPage < total,
   };
 };
 

@@ -163,7 +163,7 @@ function LoadedExplorer(props: { summary: ExplorerSummary; input: Omit<CloudExpl
                 const cells = props.input.rows[Number(row.key)];
                 const cell = cells ? cloudAiViewCellOf(cells, column.id) : null;
                 const text = row.cells[column.id] ?? "";
-                return cell && typeof cell === "object" ? <ReferenceText text={text} reference={cell} /> : text;
+                return cell && typeof cell === "object" && cell.title?.trim() ? <ReferenceText text={text} reference={cell} /> : text;
               },
             }
           : {}),

@@ -3,6 +3,70 @@
 release-please maintains this file from the next release on. Do not edit it by
 hand; entries come from squash-commit titles on `main`.
 
+## [0.79.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.78.0...cloud-v0.79.0) (2026-11-15)
+
+
+### Features
+
+* **assistant:** Gustav shows how full its context is and keeps fixed blue out ([#3374](https://github.com/k2b-dev/cloud/issues/3374)) ([cd62e14](https://github.com/k2b-dev/cloud/commit/cd62e144f9cc1f5e8cc4f7726d3033c874bc9c07))
+* **assistant:** Gustav's composer offers the suggested next message ([#3379](https://github.com/k2b-dev/cloud/issues/3379)) ([9b1de7c](https://github.com/k2b-dev/cloud/commit/9b1de7ca81f0d07a3b97c8939f15022a19a9c59c))
+* **assistant:** things of a chat open as tabs beside it, remembered per chat, and web pages open as a reading view ([#3389](https://github.com/k2b-dev/cloud/issues/3389)) ([402edce](https://github.com/k2b-dev/cloud/commit/402edce8b928509ed4d7a57a450bd6415e780c0a))
+* **assistant:** Waiting for you is one calm row with kinds and a full list, and the task plan follows Gustav's work ([#3378](https://github.com/k2b-dev/cloud/issues/3378)) ([9652e30](https://github.com/k2b-dev/cloud/commit/9652e30416ba28f1e7cd4e7a6147796a9cdac96d))
+* **assistant:** what a chat holds shows in a compact box beside it, and as a button when tabs are open ([#3385](https://github.com/k2b-dev/cloud/issues/3385)) ([f919d59](https://github.com/k2b-dev/cloud/commit/f919d593a6aa6c5c7127480bb9d80128d370f43a))
+* **cloud:** a finished app Query says in Gustav's step list what it did ([#3420](https://github.com/k2b-dev/cloud/issues/3420)) ([45f389b](https://github.com/k2b-dev/cloud/commit/45f389b728e0b153153d994fc4148722fb5a32f2))
+* **cloud:** a stopped answer says so calmly with Answer again, errors say what stays, and Gustav reads in one 764 px column ([#3383](https://github.com/k2b-dev/cloud/issues/3383)) ([0d5ce02](https://github.com/k2b-dev/cloud/commit/0d5ce0217891bda463155a6287ef3b94c808a35e))
+* **cloud:** apps can take the AI colour as primary ([#2818](https://github.com/k2b-dev/cloud/issues/2818)) ([3eba73b](https://github.com/k2b-dev/cloud/commit/3eba73b87cda508860890b7beec4b70aea994064))
+* **cloud:** Gustav cites its sources with numbered chips and lists them under the answer ([#3359](https://github.com/k2b-dev/cloud/issues/3359)) ([fe8a475](https://github.com/k2b-dev/cloud/commit/fe8a475ad6e212ce322f7d9e9057dcb346d31678))
+* **cloud:** Gustav's work line says what it did with app tiles and opens its steps in words ([#3371](https://github.com/k2b-dev/cloud/issues/3371)) ([b79088e](https://github.com/k2b-dev/cloud/commit/b79088ee8cf8a9c5207a71d3bb3bce27b5b5b69f))
+* **cloud:** text between steps stays at its step as a note that opens in place ([#3384](https://github.com/k2b-dev/cloud/issues/3384)) ([ac8ee21](https://github.com/k2b-dev/cloud/commit/ac8ee21add1645edbc1974d5e8eb0eec2252be47))
+* **ui:** a chat message shows its images as previews and its files as tiles with name and size ([#3388](https://github.com/k2b-dev/cloud/issues/3388)) ([f354d81](https://github.com/k2b-dev/cloud/commit/f354d81ce40fc9743fc73a17c8fee978b42d83f9))
+* **ui:** a compact discussion thread with flush entries, a reply field, and writing in place ([#3377](https://github.com/k2b-dev/cloud/issues/3377)) ([08da57d](https://github.com/k2b-dev/cloud/commit/08da57df02760c925922c13023e2d1f88abd5458))
+* **ui:** a hover card shows rich details beside its control ([#3317](https://github.com/k2b-dev/cloud/issues/3317)) ([241866e](https://github.com/k2b-dev/cloud/commit/241866e07599ac98068840c72c05b2a0d2677fdd))
+* **ui:** a hover card with actions opens on a press as a small dialog and fits the room beside its control ([#3372](https://github.com/k2b-dev/cloud/issues/3372)) ([e325d09](https://github.com/k2b-dev/cloud/commit/e325d09aba0ebabda602782137a17834639a34a6))
+* **ui:** a link card can show a thing with its state: a strip top right, a body line, and a footer ([#3415](https://github.com/k2b-dev/cloud/issues/3415)) ([987a63b](https://github.com/k2b-dev/cloud/commit/987a63bdac0e9ee3f98b71f96870c9733cecf334))
+* **ui:** an AI primary scope that every component follows ([#2800](https://github.com/k2b-dev/cloud/issues/2800)) ([5476e23](https://github.com/k2b-dev/cloud/commit/5476e235bc389b73e2f2368086faef6dcfea280b))
+* **ui:** one thin scrollbar without a track everywhere, without layout shift ([#3335](https://github.com/k2b-dev/cloud/issues/3335)) ([978d464](https://github.com/k2b-dev/cloud/commit/978d4647375fd575e714a2f0c1633decabc95cf4))
+* **ui:** one usage control for context and budget ([#2846](https://github.com/k2b-dev/cloud/issues/2846)) ([628254e](https://github.com/k2b-dev/cloud/commit/628254e5bf5b886f87aa20725f0de95c7d5a3300))
+* **ui:** prompts rise from the bottom edge as sheets on phones ([#3395](https://github.com/k2b-dev/cloud/issues/3395)) ([5471c20](https://github.com/k2b-dev/cloud/commit/5471c2093df9561579b8edf10a313a910d51848d))
+* **ui:** run strips show a shape per state and link each run, change lists show signs and marks, tab counts keep their width ([#3396](https://github.com/k2b-dev/cloud/issues/3396)) ([0766353](https://github.com/k2b-dev/cloud/commit/0766353aca2d3e5e273d645c0b5831c2d857a4c7))
+* **ui:** sheets with a handle move by transform, and apps use the approved toast and sheet variants ([#3360](https://github.com/k2b-dev/cloud/issues/3360)) ([70a7f4c](https://github.com/k2b-dev/cloud/commit/70a7f4ce7cdf793cd4307b7db9dd6b7b75572dee))
+* **ui:** the assistant composer edge follows the AI colour ([#2810](https://github.com/k2b-dev/cloud/issues/2810)) ([453dae3](https://github.com/k2b-dev/cloud/commit/453dae344399d0992c7303759150b4a59091a534))
+* **ui:** the assistant composer stops in the AI colour ([#3387](https://github.com/k2b-dev/cloud/issues/3387)) ([86534f6](https://github.com/k2b-dev/cloud/commit/86534f60655a917bb0df3886bb4c370e405dd073))
+* **ui:** the composer offers a suggested next message ([#2853](https://github.com/k2b-dev/cloud/issues/2853)) ([5ddb183](https://github.com/k2b-dev/cloud/commit/5ddb18333201d61431f58abe67963aeb172891c3))
+* **ui:** the working plan glides to the current step, folds upwards, and has a still list ([#3367](https://github.com/k2b-dev/cloud/issues/3367)) ([ddd73e8](https://github.com/k2b-dev/cloud/commit/ddd73e87afc10466e1c1ab30e775a16d8064fd49))
+
+
+### Bug Fixes
+
+* **assistant:** Gustav's composer rests on load, shows the suggestion mark small below and names a missing model legibly ([#3430](https://github.com/k2b-dev/cloud/issues/3430)) ([eb8fc06](https://github.com/k2b-dev/cloud/commit/eb8fc0624acd30e694e3f45088b1be67c77d99c7))
+* **assistant:** the box button stands in a head row instead of over the chat, with the chat's title on phones ([#3427](https://github.com/k2b-dev/cloud/issues/3427)) ([13c422e](https://github.com/k2b-dev/cloud/commit/13c422ecc909bea4125629629ba9a6cc1d32d55b))
+* **assistant:** web tabs open only HTTP and HTTPS addresses ([#3437](https://github.com/k2b-dev/cloud/issues/3437)) ([127f3df](https://github.com/k2b-dev/cloud/commit/127f3df762aefae164031f4baf3cbe9d778dfd2a))
+* **chat:** preserve thread links across live updates ([#3330](https://github.com/k2b-dev/cloud/issues/3330)) ([b155bc7](https://github.com/k2b-dev/cloud/commit/b155bc7424a89f4c4d3efa72b931316398bbcb07)), closes [#2411](https://github.com/k2b-dev/cloud/issues/2411)
+* **cloud:** Gustav's citations, work line, Waiting for you row and image hint match the v12 tour ([#3431](https://github.com/k2b-dev/cloud/issues/3431)) ([ce93db8](https://github.com/k2b-dev/cloud/commit/ce93db88abcbc7f08c87a1a3c2fd9790d92ceeb9))
+* **cloud:** keep link retention checks stable across hourly ticks ([#3376](https://github.com/k2b-dev/cloud/issues/3376)) ([ed661db](https://github.com/k2b-dev/cloud/commit/ed661dba192d3f6074f4f1c0781fc955af4f670e)), closes [#3375](https://github.com/k2b-dev/cloud/issues/3375)
+* **cloud:** keep live reconnects open while access checks catch up ([#3354](https://github.com/k2b-dev/cloud/issues/3354)) ([1adbe28](https://github.com/k2b-dev/cloud/commit/1adbe2807e1445dc8873bdde7c133a1fc6841f47)), closes [#3300](https://github.com/k2b-dev/cloud/issues/3300) [#3353](https://github.com/k2b-dev/cloud/issues/3353)
+* **cloud:** preserve Unicode patterns in schema roundtrips ([#3445](https://github.com/k2b-dev/cloud/issues/3445)) ([f552627](https://github.com/k2b-dev/cloud/commit/f55262773cd183628c816318b29fd3796bbea819)), closes [#3426](https://github.com/k2b-dev/cloud/issues/3426)
+* **cloud:** the AI chat shows text between steps in three lines and leaves no empty space when a status is replaced ([#3344](https://github.com/k2b-dev/cloud/issues/3344)) ([0350973](https://github.com/k2b-dev/cloud/commit/0350973d7fc4fb4feb9fa9871e5a0b3821ebccdc))
+* **core:** access changes for signed-in-everyone and public grants reach open live channels ([ee24074](https://github.com/k2b-dev/cloud/commit/ee2407496e6b57131408ee561bd7b4ec60672679))
+* **core:** enumerate identity recipients without per-user membership scans ([#3356](https://github.com/k2b-dev/cloud/issues/3356)) ([23b994e](https://github.com/k2b-dev/cloud/commit/23b994ea8e455d418b17e3c4d12406406f9af64c))
+* **files:** the selection pill always sits at the bottom of the column ([#3345](https://github.com/k2b-dev/cloud/issues/3345)) ([007d594](https://github.com/k2b-dev/cloud/commit/007d59433cc6e5d6f98e38e28b2e03f572c76495))
+* **mail:** recognising links in a composed message takes linear time ([ee24074](https://github.com/k2b-dev/cloud/commit/ee2407496e6b57131408ee561bd7b4ec60672679))
+* **mail:** the draft dialog's phone test reads its choices after the sheet has slid in ([#3449](https://github.com/k2b-dev/cloud/issues/3449)) ([ee24074](https://github.com/k2b-dev/cloud/commit/ee2407496e6b57131408ee561bd7b4ec60672679))
+* **mail:** wait for the rule sheet without background hover ([#3352](https://github.com/k2b-dev/cloud/issues/3352)) ([bde2be7](https://github.com/k2b-dev/cloud/commit/bde2be7cfce12d996faa1f38073749768b63b440)), closes [#3351](https://github.com/k2b-dev/cloud/issues/3351)
+* **ssr:** dispose dev reload listeners between browser tests ([#3350](https://github.com/k2b-dev/cloud/issues/3350)) ([de0b57c](https://github.com/k2b-dev/cloud/commit/de0b57cc105c7e6861fd57eabf5f4ec7beeed7f0)), closes [#3287](https://github.com/k2b-dev/cloud/issues/3287)
+* **ui:** a ScrollArea keeps its width in Safari when it starts to scroll ([#3398](https://github.com/k2b-dev/cloud/issues/3398)) ([a5b2281](https://github.com/k2b-dev/cloud/commit/a5b22813199160fc04aceb8a0f06ebefaf917a2a))
+* **ui:** a sheet with a handle glides to a detent its owner sets mid-move ([#3400](https://github.com/k2b-dev/cloud/issues/3400)) ([2e53f22](https://github.com/k2b-dev/cloud/commit/2e53f22cb4362311f2de12544acc658ce229cccb))
+* **ui:** a table that overflows sideways keeps its height when its code arrives ([#3440](https://github.com/k2b-dev/cloud/issues/3440)) ([148898a](https://github.com/k2b-dev/cloud/commit/148898a0237fc359edf711d9009e788647a44f2a))
+* **ui:** a toast's single message reads calmly instead of bold ([#3347](https://github.com/k2b-dev/cloud/issues/3347)) ([fc48720](https://github.com/k2b-dev/cloud/commit/fc48720f8ef026d0555894ce2eebf1102d3ddfaa))
+* **ui:** an image attachment without its preview shows its sign in quiet ink ([#3416](https://github.com/k2b-dev/cloud/issues/3416)) ([49b2672](https://github.com/k2b-dev/cloud/commit/49b2672ca75d3fb342821730a318a43538bf4c8a))
+* **ui:** collapsible section headings and text actions hover in a darker blue without a fill ([#3334](https://github.com/k2b-dev/cloud/issues/3334)) ([85d65c9](https://github.com/k2b-dev/cloud/commit/85d65c93f1f1ab6141a2c3018e413470bea880ff))
+* **ui:** dates on a stretched line chart give way instead of drawing over each other ([#3444](https://github.com/k2b-dev/cloud/issues/3444)) ([ba4d4c0](https://github.com/k2b-dev/cloud/commit/ba4d4c0c2c2653dd1787373ba5a8ad8a9435b14b))
+* **ui:** floating tool pills share one compact size with even inner spacing ([#3337](https://github.com/k2b-dev/cloud/issues/3337)) ([7ed54d6](https://github.com/k2b-dev/cloud/commit/7ed54d6c8c4ce3b26b05970dc5b1baf02ed096a5))
+* **ui:** the map dialog phone test reads the sheet grip once the sheet stands ([#3392](https://github.com/k2b-dev/cloud/issues/3392)) ([a9b973b](https://github.com/k2b-dev/cloud/commit/a9b973b0f18e094e24387bb33213431989c676dd)), closes [#3391](https://github.com/k2b-dev/cloud/issues/3391)
+* **ui:** the primary scope audit treats syntax token text as content colour ([#3397](https://github.com/k2b-dev/cloud/issues/3397)) ([f6d618d](https://github.com/k2b-dev/cloud/commit/f6d618d436e806ddd371f3e2a200c1adfb9c5189))
+* **ui:** the primary scope test audits a bounded slice of the emoji picker ([#3390](https://github.com/k2b-dev/cloud/issues/3390)) ([2ed29ad](https://github.com/k2b-dev/cloud/commit/2ed29ad05b4bc26287663a0f8657fd2ca79c8bab)), closes [#3373](https://github.com/k2b-dev/cloud/issues/3373)
+* **ui:** the QR scanner retry test presses "Try again" where the product shows it ([#3451](https://github.com/k2b-dev/cloud/issues/3451)) ([a6c238c](https://github.com/k2b-dev/cloud/commit/a6c238ccd8ff888fd2d905b88a64ed7c880b3421))
+
 ## [0.78.0](https://github.com/k2b-dev/cloud/compare/cloud-v0.77.0...cloud-v0.78.0) (2026-11-14)
 
 

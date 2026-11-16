@@ -212,7 +212,7 @@ export const aiChatSendAction = {
           const current = await chatWriteAuthority(context, db);
           if (!current.ok) return current;
           const refused = await checkCodeChatRunBudget(code.runId, db, limits);
-          if (refused) return fail({ code: refused, message: t.budget, status: 429 as const });
+          if (refused) return fail({ code: refused, message: t.budget, status: 409 as const });
         }
         await enqueueAutomationChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
         await db`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
@@ -226,7 +226,7 @@ export const aiChatSendAction = {
       return result(chat.id, chat.short_id, id);
     } catch (cause) {
       if (cause instanceof AiMessageQueueConflict) return fail({ code: "chat_busy", message: cause.message, status: 409 as const });
-      if (cause instanceof AiQuotaError) return fail({ code: cause.code, message: cause.message, status: 429 as const });
+      if (cause instanceof AiQuotaError) return fail({ code: cause.code, message: cause.message, status: 409 as const });
       if (isAiSettingsError(cause))
         return fail({
           code: cause.aiError.code,

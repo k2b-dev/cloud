@@ -1,3 +1,4 @@
+import { stretchedTickRoomsSvg } from "../../content/chart-tick-room";
 import { calendarLayout } from "./calendar-layout";
 import { type ChartSelection, type ChartTooltip, type ChartTooltipFormatter, isChartDatum } from "./inspection";
 import { type ChartRenderOptions, chartRenderHeight, renderChartSvg } from "./render";
@@ -82,7 +83,8 @@ export function prepareChartSnapshot(
   );
   return {
     kind: options.kind,
-    svg: formattedSvg,
+    // A stretched line's dates give way in a narrow box instead of drawing over each other.
+    svg: options.kind === "line" && options.timeAxis ? stretchedTickRoomsSvg(formattedSvg) : formattedSvg,
     width: options.kind === "balanceFlow" ? width * Math.max(1, options.periods.length) : width,
     height,
     ...(calendar ? { minWidth: calendar.minWidth, maxWidth: calendar.maxWidth } : {}),

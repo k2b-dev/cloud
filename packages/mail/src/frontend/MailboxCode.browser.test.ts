@@ -237,6 +237,19 @@ describe("Mailbox Code page in a browser", () => {
         expect(rows.find((row) => row.text === "Aufgabe Lieferung Polsterei Weber angelegt")?.href).toBe("/app/spaces/Lg8x2q");
         expect(rows.find((row) => row.text === "Aufgabe angelegt")).toMatchObject({ href: null });
         expect(JSON.stringify(rows)).not.toMatch(/Hd7q2w|\{name\}/);
+        // Leitfaden: link text stays running text; only the underline carries the tint (Rundgang 6, Fable 8).
+        const link = await page.evaluate(() => {
+          const anchor = document.querySelector<HTMLElement>(".cloud-code__feed-text a");
+          const text = anchor?.closest<HTMLElement>(".cloud-code__feed-text");
+          if (!anchor || !text) return null;
+          const style = getComputedStyle(anchor);
+          return {
+            same: style.color === getComputedStyle(text).color,
+            underline: style.textDecorationLine,
+            tinted: style.textDecorationColor !== style.color,
+          };
+        });
+        expect(link).toEqual({ same: true, underline: "underline", tinted: true });
         // 6b: every row keeps one height, named or not.
         expect(new Set(rows.map((row) => row.height)).size).toBe(1);
       } finally {
