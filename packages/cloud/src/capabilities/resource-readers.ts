@@ -61,8 +61,11 @@ export const readResourcePrincipals = async (
     // container, and it runs the type's ordinary reader as each principal, as event delivery already authorizes every
     // resource event (packages/cloud/src/services/app-events/deliver.ts:172). An explicit hook expects a container and
     // answers every other caller; a derived reader cannot check a container, so such a caller finds no reader.
+    // A schema without readable properties answers neither question.
     const properties = query.inputSchema.properties;
-    const takesContainer = typeof properties === "object" && properties !== null && "container" in properties;
+    if (typeof properties !== "object" || properties === null || Array.isArray(properties))
+      return { state: "not_configured", reason: "no_readable" };
+    const takesContainer = "container" in properties;
     if (takesContainer === Boolean(options.eventPlace)) return { state: "not_configured", reason: "no_readable" };
     if (!options.eventPlace && input.container?.type !== `${appId}.${model.container}`)
       throw new Error("Reader check requires a reference to the declared container type");

@@ -1,6 +1,9 @@
 import { capture, type Finding, type Rule } from "./rule";
 
-/** `readResourcePrincipals({ eventPlace: true })` asks a contained place without its container (#3539). */
+/**
+ * `readResourcePrincipals({ eventPlace: true })` asks a contained place without its container (#3539). A whole-word
+ * search finds every spelling in source files; it skips test files and cannot see a key built from strings at runtime.
+ */
 const ALLOWED = new Set([
   // Defines the option and the exception.
   "packages/cloud/src/capabilities/resource-readers.ts",
