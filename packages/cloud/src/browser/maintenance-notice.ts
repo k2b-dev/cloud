@@ -21,10 +21,7 @@ import { type MaintenanceNoticeMessages, maintenanceNoticeMessages } from "./mai
  * blocks nothing, and offers administrators to end the maintenance.
  */
 
-type Condition =
-  | { kind: "cloud" }
-  | { kind: "app"; appId: string; reason: AppUnavailableReason }
-  | { kind: "bypass"; canEnd: boolean };
+type Condition = { kind: "cloud" } | { kind: "app"; appId: string; reason: AppUnavailableReason } | { kind: "bypass"; canEnd: boolean };
 
 export type MaintenanceNoticeOptions = {
   locale: () => string;
