@@ -48,11 +48,11 @@ const marked = (lines: readonly string[], index: number): boolean =>
 export const backgroundWorkFindings = (source: string, { allowCreateSync = false } = {}): { line: number; kind: "timer" | "sync" }[] => {
   const lines = source.split("\n");
   const found: { line: number; kind: "timer" | "sync" }[] = [];
-  lines.forEach((line, index) => {
-    if (isComment(line)) return;
+  for (const [index, line] of lines.entries()) {
+    if (isComment(line)) continue;
     if (setIntervalCall.test(line) && !marked(lines, index)) found.push({ line: index + 1, kind: "timer" });
     if (!allowCreateSync && createSyncCall.test(line)) found.push({ line: index + 1, kind: "sync" });
-  });
+  }
   return found;
 };
 
