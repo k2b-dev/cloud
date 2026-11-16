@@ -62,8 +62,38 @@ const de = (locale: string | undefined) => cloudCliLanguage(locale) === "de";
 
 export const maintenanceOnSentence = (status: MaintenanceStatus, { locale, now }: Words = {}): string => {
   const until = status.until ? formatMaintenanceTime(status.until, locale, now) : null;
-  if (de(locale)) return until ? `Wartungsmodus aktiviert. Geplant bis ${until} Uhr.` : "Wartungsmodus aktiviert.";
-  return until ? `Maintenance mode on. Planned until ${until}.` : "Maintenance mode on.";
+  if (de(locale)) {
+    const on = until ? `Wartungsmodus aktiviert. Geplant bis ${until} Uhr.` : "Wartungsmodus aktiviert.";
+    return status.quiesce ? `${on} Ruhe: Hintergrundarbeit hält an.` : on;
+  }
+  const on = until ? `Maintenance mode on. Planned until ${until}.` : "Maintenance mode on.";
+  return status.quiesce ? `${on} Quiet: background work is stopping.` : on;
+};
+
+/** After `on --no-quiesce`: maintenance stays, background work runs again. */
+export const maintenanceResumeSentence = ({ locale }: Words = {}): string =>
+  de(locale) ? "Ruhe aus: Hintergrundarbeit läuft wieder." : "Quiet off: background work runs again.";
+
+/** At most this many busy apps are named; the rest are counted. */
+const QUIET_NAMED_APPS = 3;
+
+/** „Ruhe: 8 von 9 Apps ruhig, Mail: 2 Jobs laufen noch“ / "Quiet: 8 of 9 apps quiet, Mail: 2 jobs still running". */
+export const maintenanceQuietLine = (quiet: NonNullable<MaintenanceStatus["quiet"]>, { locale }: Words = {}): string => {
+  const german = de(locale);
+  const parts = [german ? `Ruhe: ${quiet.quiet} von ${quiet.total} Apps ruhig` : `Quiet: ${quiet.quiet} of ${quiet.total} apps quiet`];
+  for (const app of quiet.busy.slice(0, QUIET_NAMED_APPS)) {
+    const jobs = app.inFlight;
+    if (jobs > 0)
+      parts.push(
+        german
+          ? `${app.name}: ${jobs} ${jobs === 1 ? "Job läuft" : "Jobs laufen"} noch`
+          : `${app.name}: ${jobs} ${jobs === 1 ? "job" : "jobs"} still running`,
+      );
+    else parts.push(german ? `${app.name}: noch keine Rückmeldung` : `${app.name}: no report yet`);
+  }
+  const more = quiet.busy.length - QUIET_NAMED_APPS;
+  if (more > 0) parts.push(german ? `${more} weitere` : `${more} more`);
+  return parts.join(", ");
 };
 
 export const maintenanceUntilSentence = (status: MaintenanceStatus, { locale, now }: Words = {}): string => {
@@ -88,6 +118,7 @@ export const maintenanceStatusLines = (status: MaintenanceStatus, { locale, now 
   const { ready, total, starting } = status.apps;
   const waiting = starting.length ? ` (${starting.join(", ")} ${german ? "starten" : "starting"})` : "";
   lines.push(german ? `Apps bereit: ${ready} von ${total}${waiting}` : `Apps ready: ${ready} of ${total}${waiting}`);
+  if (status.quiesce && status.quiet) lines.push(maintenanceQuietLine(status.quiet, { locale }));
   return lines;
 };
 

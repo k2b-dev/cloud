@@ -1,10 +1,12 @@
-import { readAppRegistrySnapshot } from "@k2b/cloud";
+import { listAppsDetailed, readAppRegistrySnapshot } from "@k2b/cloud";
 import {
   MAINTENANCE_MESSAGE_MAX_LENGTH,
+  type MaintenanceBusyApp,
   type MaintenanceOnInput,
   type MaintenanceState,
   type MaintenanceStatus,
   normalizeMaintenanceMessage,
+  type QuietReport,
 } from "@k2b/cloud/contracts/maintenance";
 import { hasRole, type User } from "@k2b/cloud/contracts/shared";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
@@ -13,6 +15,7 @@ import {
   clearMaintenanceState,
   type ObservedMaintenance,
   readMaintenanceState,
+  readQuietReports,
   writeMaintenanceState,
 } from "@k2b/cloud/services/maintenance-state";
 import { listKnownApps } from "./known-apps";
@@ -38,11 +41,48 @@ export const readAppsReady = async (): Promise<MaintenanceStatus["apps"]> => {
   return { ready: expected.size - starting.length, total: expected.size, starting };
 };
 
+type QuietApp = { id: string; name: string; instances?: { instanceId: string }[] };
+
+/**
+ * Stage „Ruhe“ per running app: quiet when every live instance reports no
+ * work in flight. An instance without a report (not yet applied, or its
+ * report expired) keeps its app from counting as quiet.
+ */
+export const summarizeQuiet = (apps: readonly QuietApp[], reports: readonly QuietReport[]): NonNullable<MaintenanceStatus["quiet"]> => {
+  const byInstance = new Map(reports.map((report) => [report.instanceId, report]));
+  const busy: MaintenanceBusyApp[] = [];
+  let quiet = 0;
+  for (const app of [...apps].sort((a, b) => a.id.localeCompare(b.id))) {
+    const instances = app.instances?.length
+      ? app.instances.map(({ instanceId }) => byInstance.get(instanceId))
+      : reports.filter((report) => report.appId === app.id);
+    let inFlight = 0;
+    let unreported = 0;
+    for (const report of instances.length ? instances : [undefined]) {
+      if (report && report.appId === app.id) inFlight += report.inFlight;
+      else unreported += 1;
+    }
+    if (inFlight === 0 && unreported === 0) quiet += 1;
+    else busy.push({ id: app.id, name: app.name, inFlight, unreported });
+  }
+  return { quiet, total: apps.length, busy };
+};
+
+/** Read without Postgres: the registry and one snapshot of the quiesce reports. */
+export const readQuiet = async (): Promise<NonNullable<MaintenanceStatus["quiet"]>> => {
+  const [apps, reports] = await Promise.all([listAppsDetailed(), readQuietReports()]);
+  return summarizeQuiet(apps, reports);
+};
+
 const randomKey = (bytes: number): string => Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString("base64url");
 
 const iso = (epochMs: number | undefined) => (epochMs === undefined ? undefined : new Date(epochMs).toISOString());
 
-const view = (state: MaintenanceState | null, apps: MaintenanceStatus["apps"]): MaintenanceStatus =>
+const view = (
+  state: MaintenanceState | null,
+  apps: MaintenanceStatus["apps"],
+  quiet: MaintenanceStatus["quiet"] | undefined,
+): MaintenanceStatus =>
   state
     ? {
         active: true,
@@ -50,6 +90,8 @@ const view = (state: MaintenanceState | null, apps: MaintenanceStatus["apps"]): 
         startedBy: state.startedBy,
         ...(state.message ? { message: state.message } : {}),
         ...(state.until ? { until: iso(state.until) } : {}),
+        quiesce: state.quiesce,
+        ...(state.quiesce && quiet ? { quiet } : {}),
         apps,
       }
     : { active: false, apps };
@@ -57,11 +99,13 @@ const view = (state: MaintenanceState | null, apps: MaintenanceStatus["apps"]): 
 export const createMaintenanceService = ({
   store = { read: readMaintenanceState, write: writeMaintenanceState, clear: clearMaintenanceState },
   appsReady = readAppsReady,
+  quietReady = readQuiet,
   record = audit.record,
   now = Date.now,
 }: {
   store?: Store;
   appsReady?: () => Promise<MaintenanceStatus["apps"]>;
+  quietReady?: () => Promise<NonNullable<MaintenanceStatus["quiet"]>>;
   record?: typeof audit.record;
   now?: () => number;
 } = {}) => {
@@ -77,13 +121,14 @@ export const createMaintenanceService = ({
   const status = async (actor: User | undefined): Promise<Result<MaintenanceStatus>> => {
     if (!requireAdmin(actor)) return fail(err.forbidden("Administrator access required"));
     const [observed, apps] = await Promise.all([store.read(), appsReady()]);
-    return ok(view(observed?.state ?? null, apps));
+    const state = observed?.state ?? null;
+    return ok(view(state, apps, state?.quiesce ? await quietReady() : undefined));
   };
 
   return {
     status,
 
-    /** Switch on, or update message and end while already on; id, start and bypass key stay. */
+    /** Switch on, or update message, end and quiesce while already on; id, start and bypass key stay. */
     on: async (actor: User | undefined, input: MaintenanceOnInput): Promise<Result<MaintenanceStatus>> => {
       if (!requireAdmin(actor)) return fail(err.forbidden("Administrator access required"));
       const message = normalizeMaintenanceMessage(input.message);
@@ -105,7 +150,7 @@ export const createMaintenanceService = ({
         startedBy: current?.startedBy ?? { id: actor.id, label: (actor.displayName || actor.uid).slice(0, 200) },
         ...(nextMessage ? { message: nextMessage } : {}),
         ...(nextUntil ? { until: nextUntil } : {}),
-        quiesce: current?.quiesce ?? false,
+        quiesce: input.quiesce ?? current?.quiesce ?? false,
         bypassKey: current?.bypassKey ?? randomKey(32),
       };
       await store.write(state);
@@ -114,7 +159,7 @@ export const createMaintenanceService = ({
         outcome: "allowed",
         actor: { userId: actor.id, uid: actor.uid, provider: actor.provider, roles: actor.roles },
         target: { type: "maintenance", id: state.id },
-        metadata: { until: iso(state.until) ?? null, message: !!state.message },
+        metadata: { until: iso(state.until) ?? null, message: !!state.message, quiesce: state.quiesce },
       });
       return status(actor);
     },
