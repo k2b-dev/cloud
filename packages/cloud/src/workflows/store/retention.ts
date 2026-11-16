@@ -148,7 +148,8 @@ export const startWorkflowEventRetention = (): (() => void) => {
       if (expired > 0) log.info("Expired workflow event payloads", { expired });
     },
     intervalMs: RETENTION_INTERVAL_MS,
-    onError: (error) => log.error("Workflow event retention sweep failed", { error: error instanceof Error ? error.message : String(error) }),
+    onError: (error) =>
+      log.error("Workflow event retention sweep failed", { error: error instanceof Error ? error.message : String(error) }),
   });
   retention = interval;
   return () => {

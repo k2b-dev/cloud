@@ -19,24 +19,25 @@ export const startEventDispatcher = (
   const wake = () => {
     if (stopping) return;
     requested = true;
-    active ??= tasks.run(async () => {
-      try {
-        do {
-          requested = false;
-          const processed = await broker.work({ reconcile: false });
-          requested ||= processed > 0;
-          if (Date.now() >= maintenanceAt) {
-            maintenanceAt = Date.now() + 60_000;
-            await broker.checkGap();
-            await broker.retain();
-          }
-        } while (!stopping && requested);
-      } catch (error) {
-        report(error);
-      } finally {
-        active = undefined;
-      }
-    }) ?? undefined;
+    active ??=
+      tasks.run(async () => {
+        try {
+          do {
+            requested = false;
+            const processed = await broker.work({ reconcile: false });
+            requested ||= processed > 0;
+            if (Date.now() >= maintenanceAt) {
+              maintenanceAt = Date.now() + 60_000;
+              await broker.checkGap();
+              await broker.retain();
+            }
+          } while (!stopping && requested);
+        } catch (error) {
+          report(error);
+        } finally {
+          active = undefined;
+        }
+      }) ?? undefined;
   };
   // runtime-timer: wake() runs passes through the task tracker, which quiesce gates.
   const timer = setInterval(wake, 5_000);

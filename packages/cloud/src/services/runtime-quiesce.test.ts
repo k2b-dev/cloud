@@ -96,11 +96,14 @@ describe("quiesce controller", () => {
   test("a failed drain is reported and the worker still resumes", async () => {
     const controller = createQuiesceController();
     const { created, start } = starter();
-    await quiesceWorker(async () => {
-      const worker = await start();
-      if (created.length === 1) worker.failDrain = new Error("drain timed out");
-      return worker;
-    }, { controller });
+    await quiesceWorker(
+      async () => {
+        const worker = await start();
+        if (created.length === 1) worker.failDrain = new Error("drain timed out");
+        return worker;
+      },
+      { controller },
+    );
     const errors = await controller.quiesce();
     expect(errors.map((error) => (error as Error).message)).toEqual(["drain timed out"]);
     expect(await controller.resume()).toEqual([]);
@@ -136,11 +139,14 @@ describe("quiesce controller", () => {
   test("a resume that cannot start a worker is returned to the caller", async () => {
     const controller = createQuiesceController();
     let calls = 0;
-    await quiesceWorker(async () => {
-      calls += 1;
-      if (calls > 1) throw new Error("consumer unavailable");
-      return fakeWorker();
-    }, { controller });
+    await quiesceWorker(
+      async () => {
+        calls += 1;
+        if (calls > 1) throw new Error("consumer unavailable");
+        return fakeWorker();
+      },
+      { controller },
+    );
     await controller.quiesce();
     const failures = await controller.resume();
     expect(failures.map((error) => (error as Error).message)).toEqual(["consumer unavailable"]);

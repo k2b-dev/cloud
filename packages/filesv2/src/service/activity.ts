@@ -417,8 +417,8 @@ export async function journalAction<T>(id: string, effect: () => Promise<T>, opt
   };
   const heartbeat = () => sql`UPDATE filesv2.activity SET heartbeat_at=now() WHERE id=${id}::uuid AND state IN ('pending','unclear')`;
   const timer = active
-    // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
-    ? setInterval(() => {
+    ? // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
+      setInterval(() => {
         void heartbeat().catch((error: unknown) => log.error("Activity heartbeat failed", { id, error }));
       }, 10_000)
     : undefined;

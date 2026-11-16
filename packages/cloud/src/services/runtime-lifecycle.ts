@@ -237,7 +237,10 @@ type RuntimeLifecycleHooks = {
  * (maintenance stage „Ruhe“) a started runtime is stopped and started again
  * on resume; `start()` while quiesced only marks it to start on resume.
  */
-export const createRuntimeLifecycle = (hooks: RuntimeLifecycleHooks, { controller = processQuiesce }: { controller?: QuiesceController } = {}) => {
+export const createRuntimeLifecycle = (
+  hooks: RuntimeLifecycleHooks,
+  { controller = processQuiesce }: { controller?: QuiesceController } = {},
+) => {
   let state: "stopped" | "started" | "cleanup-required" = "stopped";
   // Wanted running, but held stopped by quiesce.
   let held = false;

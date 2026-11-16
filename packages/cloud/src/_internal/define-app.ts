@@ -1282,7 +1282,10 @@ export const defineApp = <
           void shutdown().finally(() => process.exit(1));
         },
         onReportError: (error) =>
-          log.warn("Maintenance quiesce status unavailable", { appId: meta.id, error: error instanceof Error ? error.message : String(error) }),
+          log.warn("Maintenance quiesce status unavailable", {
+            appId: meta.id,
+            error: error instanceof Error ? error.message : String(error),
+          }),
       });
       cleanup.push(() => quiesce.stop());
 

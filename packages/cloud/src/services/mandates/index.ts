@@ -885,7 +885,8 @@ export const startMandateMaintenance = (): (() => void) => {
       await reconcileUnconfirmedMandates();
     },
     intervalMs: ORPHAN_RECONCILE_INTERVAL_MS,
-    onError: (error) => log.error("Mandate orphan reconciliation failed", { error: error instanceof Error ? error.message : String(error) }),
+    onError: (error) =>
+      log.error("Mandate orphan reconciliation failed", { error: error instanceof Error ? error.message : String(error) }),
   });
   mandateMaintenance = maintenance;
   return () => {
