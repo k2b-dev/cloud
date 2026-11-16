@@ -33,11 +33,19 @@ const html = (initial: MaintenanceStatus, locale = "de") =>
     }),
   );
 
-const text = (markup: string) =>
-  markup
-    .replace(/<!--[^>]*-->/g, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ");
+/** Visible text of trusted test markup: every tag (and comment) becomes a space, character by character. */
+const text = (markup: string) => {
+  let out = "";
+  let inTag = false;
+  for (const char of markup) {
+    if (char === "<") inTag = true;
+    else if (char === ">" && inTag) {
+      inTag = false;
+      out += " ";
+    } else if (!inTag) out += char;
+  }
+  return out.replace(/\s+/g, " ");
+};
 
 test("off: the switch with its note, a suggested end with its date and the cld way out, and no start-time choice", () => {
   const page = text(html({ active: false, apps: { ready: 11, total: 11, starting: [] } }));
