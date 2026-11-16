@@ -255,7 +255,8 @@ Opt in with `defineApp({ pageSwap: true, ... })`. The default is off.
 Before you opt in, move every `beforeunload` guard of the app's pages to
 [`protectUnsavedInput()`](#protect-unsaved-input) and give the app the
 browser tests described in [Swap stability](#swap-stability).
-Cloud keeps the rail, panel slot, and provider document.
+Cloud keeps the rail, panel slot, and provider document. Links in the app menu
+behind the page title on phones swap like links in the column.
 It replaces the header, banners, warnings, page trail, main content, footer,
 and the page's shell data and Help ids. Regular and full-page layouts can
 swap between each other.
