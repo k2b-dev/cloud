@@ -90,7 +90,8 @@ export function CloudTableView(props: {
             {/* The summary reserves the tools from the first frame; they wait, disabled, for the rows. */}
             <Show when={counted()}>
               <SearchToggle
-                label={blockWords(locale()).searchIn({ title: props.input?.title ?? props.summary.title })}
+                label={blockWords(locale()).searchTable}
+                describedBy={props.id}
                 disabled={!table()}
                 onOpen={() => setSearching(true)}
               />
@@ -98,7 +99,9 @@ export function CloudTableView(props: {
             <Show when={searchable() || props.summary.grouped}>
               <div ref={tools} class="cloud-table-search-host contents" onFocusOut={() => setSearching(false)}>
                 <DataTableTools
-                  label={props.input?.title ?? props.summary.title}
+                  // A fixed word, never the view's title: the heading names the table for the field too.
+                  label={blockWords(locale()).table}
+                  describedBy={props.id}
                   query={query()}
                   onQueryChange={searchable() ? setQuery : undefined}
                   groups={props.summary.grouped ? (groups() ?? []) : undefined}

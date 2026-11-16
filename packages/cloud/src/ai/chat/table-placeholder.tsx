@@ -51,7 +51,7 @@ export function CloudTablePlaceholder(props: { id: string; summary: TableSummary
         actions={
           <div class="cloud-table-tools flex min-w-0 flex-wrap items-center gap-2">
             <Show when={counted()}>
-              <SearchToggle label={blockWords(locale()).searchIn({ title: props.summary.title })} disabled />
+              <SearchToggle label={blockWords(locale()).searchTable} describedBy={props.id} disabled />
             </Show>
             <Show when={searchable() || props.summary.grouped}>
               <div class="cloud-table-search-host k2b-data-table-tools" aria-hidden="true">

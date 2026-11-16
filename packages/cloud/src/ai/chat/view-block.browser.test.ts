@@ -815,8 +815,8 @@ for (const view of [
       );
       await page.waitForSelector("[data-view-path] .k2b-data-table-tools");
       // The tools wait, disabled, in the place they keep once the rows arrive. On a phone the search is a sign.
-      const search = page.getByRole("searchbox", { name: "Search Campaigns" });
-      const sign = page.getByRole("button", { name: "Search Campaigns" });
+      const search = page.getByRole("searchbox", { name: "Search table" });
+      const sign = page.getByRole("button", { name: "Search table" });
       const phone = view.width < 480;
       expect(await (phone ? sign : search).isDisabled()).toBe(true);
       await settled(page);
@@ -869,9 +869,14 @@ for (const width of [1280, 390])
       await page.evaluate((block) => window.show([block]), present("/views/stock-2b3c4d5e.view.json", cloudAiViewSummary(parsed)));
       await page.waitForSelector("[data-view-path] table");
       await settled(page);
-      const search = page.getByRole("searchbox", { name: "Search Stock" });
+      const search = page.getByRole("searchbox", { name: "Search table" });
       // On a phone the search is a sign that opens it over the title.
-      if (width < 480) await page.getByRole("button", { name: "Search Stock" }).click();
+      if (width < 480) await page.getByRole("button", { name: "Search table" }).click();
+      // The label never carries the view's title; the heading names the table for the field and the sign.
+      expect(await search.getAttribute("aria-describedby")).toBeTruthy();
+      expect(await search.evaluate((input) => document.getElementById(input.getAttribute("aria-describedby") ?? "")?.textContent)).toBe(
+        "Stock",
+      );
       await search.fill("hall");
       await page.locator("[data-view-path] .cloud-block-foot", { hasText: "1 match" }).waitFor();
       expect(await page.locator("[data-view-path] tbody tr").count()).toBe(1);
@@ -1671,9 +1676,7 @@ for (const width of [1280, 390])
       await settled(page);
       const first = await boxes(page);
       code();
-      const search = phone
-        ? page.getByRole("button", { name: "Search Campaigns" })
-        : page.getByRole("searchbox", { name: "Search Campaigns" });
+      const search = phone ? page.getByRole("button", { name: "Search table" }) : page.getByRole("searchbox", { name: "Search table" });
       await search.waitFor();
       expect(await search.isDisabled()).toBe(true);
       await settled(page);

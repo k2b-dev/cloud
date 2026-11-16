@@ -45,6 +45,8 @@ export function createDataTableView<T>(options: DataTableViewOptions<T>): DataTa
 export type DataTableToolsProps = {
   /** The table's name, for the search field's accessible name ("Search Campaigns"). */
   label: string;
+  /** The id of an element that describes the search field, such as the heading of a table whose `label` is generic. */
+  describedBy?: string;
   query?: string;
   onQueryChange?: (query: string) => void;
   /** Columns the reader may group by; without them no group choice shows. An empty list keeps the choice in place while it loads. */
@@ -71,6 +73,7 @@ export function DataTableTools(props: DataTableToolsProps): JSX.Element {
           icon="ti ti-search"
           placeholder={t().search}
           aria-label={t().searchTable({ label: props.label })}
+          aria-describedby={props.describedBy}
           value={props.query ?? ""}
           onValueChange={(value) => props.onQueryChange?.(value)}
           clearable
