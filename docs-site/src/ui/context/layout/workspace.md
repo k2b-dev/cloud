@@ -1306,7 +1306,7 @@ type AppWorkspaceSidebarSwitcherProps = {
 };
 
 type AppWorkspaceSwitcherOption = {
-  id: string; label: string; description?: string; icon?: string; color?: string; href: string;
+  id: string; label: string; description?: string; descriptionVisual?: () => JSX.Element; icon?: string; color?: string; href: string;
 };
 
 type AppWorkspaceSwitcherAction = {
