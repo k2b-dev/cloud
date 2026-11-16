@@ -379,6 +379,12 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(html).not.toContain("<main");
     expect(html).toContain("<h1>Page not found</h1>");
     expect(html).toContain('href="/"');
+
+    const quiet = renderToString(() =>
+      createComponent(NotFoundState, { code: "404", title: "Gone", action: { label: "Home", href: "/" }, children: "Play for a moment?" }),
+    );
+    expect(quiet.indexOf("Play for a moment?")).toBeGreaterThan(quiet.indexOf('href="/"'));
+    expect(quiet).toEndWith("Play for a moment?</div>");
   });
 
   test("renders persistent notices and an empty-safe responsive compound grid", () => {

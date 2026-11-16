@@ -2,6 +2,7 @@ import { ButtonLink, NotFoundState, Placeholder } from "@k2b/ui";
 import type { Context } from "hono";
 import type { PageErrorOptions, PageErrorStatus } from "../_internal/page-responses";
 import { PWA_SCOPE } from "../contracts/pwa";
+import { maintenanceGameMessages, offersMaintenanceGame } from "../maintenance-game";
 import { getLocale } from "../server/locale";
 import { resolveAppPresentation } from "../shared/app-presentation";
 import Layout from "./Layout";
@@ -10,6 +11,7 @@ import PwaLayout from "./PwaLayout";
 import { pageErrorMessages } from "./page-error-messages";
 import { pwaMessages } from "./pwa-messages";
 import { getRuntimeContext } from "./runtime";
+import WaitingGame from "./WaitingGame.island";
 
 /**
  * The part a page of the mobile app belongs to, by its owner, in the reader's language. Read from the whole registry:
@@ -40,6 +42,21 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
           : t.failedDescription);
   const action = options.action ?? { label: t.home, href: "/" };
   c.get("page").title = title;
+  // Only the generic „not found“ and server failure offer the waiting game, quietly below the way out.
+  const offered = offersMaintenanceGame(status, { ...options, path: c.req.path });
+  const page = () => (
+    <NotFoundState code={String(status)} title={title} description={description} action={action}>
+      {offered ? (
+        <WaitingGame
+          t={maintenanceGameMessages.resolve([getLocale(c)]).t}
+          title={title}
+          description={description}
+          action={{ label: action.label, href: action.href }}
+          icon={status === 404 ? "ti ti-error-404" : "ti ti-server-off"}
+        />
+      ) : undefined}
+    </NotFoundState>
+  );
 
   if (options.layout === "pwa") {
     const pwa = pwaMessages.resolve([getLocale(c)]).t;
@@ -63,13 +80,11 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
   return () =>
     options.layout === "minimal" ? (
       <MinimalLayout c={c}>
-        <main class="flex-1 bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">
-          <NotFoundState code={String(status)} title={title} description={description} action={action} />
-        </main>
+        <main class="flex-1 bg-[var(--ui-canvas)] p-[var(--ui-space-shell)]">{page()}</main>
       </MinimalLayout>
     ) : (
       <Layout c={c} title={title}>
-        <NotFoundState code={String(status)} title={title} description={description} action={action} />
+        {page()}
       </Layout>
     );
 };

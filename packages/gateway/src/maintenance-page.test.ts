@@ -1,4 +1,5 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test";
+import { LAUF_CSS, LAUF_SCRIPT } from "@k2b/cloud/maintenance-game";
 import { type MaintenancePageModel, POLL_STEPS, pollDelay, renderMaintenancePage } from "./maintenance-page";
 
 const NOW = Date.parse("2026-11-16T13:58:00+01:00");
@@ -188,7 +189,33 @@ test("the poll schedule slows down over time and spreads by 20 %", () => {
   expect(pollDelay("cloud", 0, 0.999_999)).toBeCloseTo(6_000, 0);
 });
 
-test("the page stays small: under 12 KB gzip with a long note and a logo", () => {
+test("the game stays small: its script and style under 14 KB gzip", () => {
+  expect(Bun.gzipSync(LAUF_SCRIPT + LAUF_CSS).length).toBeLessThan(14 * 1024);
+});
+
+test("the page offers the game below the status line, on app pages only once it takes longer than usual", () => {
+  const cloud = render({ ...base, kind: "cloud", message: MESSAGE, until: at("14:30") });
+  const views = config(cloud).views;
+  for (const state of ["plain", "active", "late", "moved", "offline"]) {
+    expect(views[state]?.html).toContain('<button type="button" class="play" data-play>Kurz spielen?</button>');
+    expect(views[state]?.html.indexOf('class="play"')).toBeGreaterThan(views[state]?.html.indexOf('class="live"') ?? Infinity);
+  }
+  expect(views.active?.html).toContain('<button type="button" class="tile maint" data-play="start" aria-label="Mini-Spiel starten">');
+  for (const state of ["ended", "done"]) expect(views[state]?.html).not.toContain("data-play");
+  expect(views.ended?.html).toContain('<b>Wartung beendet</b></span><button type="button" class="btn primary" data-next>Weiter</button>');
+  expect(visible(cloud)).toContain("Kurz spielen?");
+
+  const app = render({ ...base, locale: "en", kind: "app", app: mail, reason: "updating" });
+  const appViews = config(app).views;
+  expect(visible(app)).not.toContain("data-play");
+  expect(appViews.base?.html).not.toContain("data-play");
+  expect(appViews.long?.html).toContain("Play for a moment?");
+  expect(appViews.ended?.html).toContain("data-next>Continue</button>");
+  // The game itself is part of the one script and starts only from these entries.
+  expect(script(cloud).startsWith(`const LAUF=${LAUF_SCRIPT};`)).toBe(true);
+});
+
+test("the page stays small: under 20 KB gzip with the game, a long note and a logo", () => {
   const html = render({
     ...base,
     cloud: { name: "Musterverein Cloud", logo: { src: `data:image/png;base64,${"A".repeat(1_000)}` } },
@@ -196,7 +223,7 @@ test("the page stays small: under 12 KB gzip with a long note and a logo", () =>
     message: "Wir spielen Version 2.4 ein. ".repeat(20),
     until: at("14:30"),
   });
-  expect(Bun.gzipSync(html).length).toBeLessThan(12 * 1024);
+  expect(Bun.gzipSync(html).length).toBeLessThan(20 * 1024);
 });
 
 type Timer = { fn: () => void; ms: number; id: number };

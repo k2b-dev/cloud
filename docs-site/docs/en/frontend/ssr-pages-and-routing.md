@@ -140,6 +140,13 @@ service's intentional existence-hiding `404`; do not add a lookup to tell
 missing and inaccessible resources apart. Other HTTP error statuses are
 preserved and receive generic failure copy. This does not catch exceptions.
 
+The generic `404` and `5xx` pages, without your own `title`, `description`, or
+`action` and outside `/admin` and `"pwa"`, add a quiet "Play for a moment?"
+line below the home link. It opens the waiting game of the maintenance page,
+which loads only on that click and never starts on its own. Pages with your own
+copy never offer it, and neither do `403` and other client errors: there the
+person has a problem to solve.
+
 The optional third argument accepts `title`, `description`,
 `action: { label, href, icon? }`, and `layout: "cloud" | "minimal" | "pwa"`
 (default `"cloud"`). Supply only safe, localized application copy, never
