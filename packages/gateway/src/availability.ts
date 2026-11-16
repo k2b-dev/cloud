@@ -195,10 +195,13 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
     /** Why a known app is away right now: a clean deregistration says "updating"; everything else "unavailable". */
     reasonFor: (appId: string): AppUnavailableReason => (!live.has(appId) && vanished.get(appId)?.reason) || "unavailable",
 
-    status: (appId: string | null): GatewayStatus => {
+    /** `bypass`: the request carries a valid admin bypass cookie for the running maintenance (Cloud host only). */
+    status: (appId: string | null, { bypass = false }: { bypass?: boolean } = {}): GatewayStatus => {
       const state = maintenance?.state;
       return {
-        maintenance: state ? { active: true, until: state.until ? new Date(state.until).toISOString() : null } : null,
+        maintenance: state
+          ? { active: true, until: state.until ? new Date(state.until).toISOString() : null, ...(bypass ? { bypass: true as const } : {}) }
+          : null,
         ...(appId !== null ? { app: { available: available(appId) } } : {}),
       };
     },

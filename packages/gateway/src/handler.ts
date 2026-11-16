@@ -5,6 +5,7 @@ import { publishRequestTelemetry } from "@k2b/cloud/services";
 import { type DomainSnapshot, decideHost } from "./app-domains";
 import type { Availability } from "./availability";
 import type { ClientAddress } from "./client-address";
+import { bypassesMaintenance, bypassLinkAnswer, splitBypassParam, takeBypassCookie } from "./maintenance-bypass";
 import { boundTemplateCardinality, derivePathTemplate } from "./path-template";
 import { type ProxyAvailability, type ProxyStats, proxyRequest } from "./proxy";
 import { checkPublicRate, publicResponseHeaders, rejectPublicOrigin, stripPublicHeaders } from "./public-protections";
@@ -29,6 +30,8 @@ type GatewayDependencies = {
   readDomainCheckAnswer?: (key: string) => Promise<string | null>;
   /** Maintenance state and app presentation held in memory; without it the gateway answers as before. */
   availability?: Availability;
+  /** Clock for admin bypass expiry. */
+  now?: () => number;
 };
 
 const unavailable = (): Response => new Response("Service unavailable", { status: 503, headers: { "Retry-After": "5" } });
@@ -46,13 +49,31 @@ const passesMaintenance = (req: Request, url: URL, table: RouteTable): boolean =
   return matchRoute(table, url.pathname)?.appId === "core";
 };
 
+/**
+ * A request with the admin bypass parameter never reaches an app: `GET`/`HEAD` get the gateway's redirect without
+ * it (with the cookie only for a valid link on the Cloud host), every other method a `400`.
+ */
+const bypassLink = (
+  req: Request,
+  url: URL,
+  availability: Availability | undefined,
+  options: { development: boolean; allowCookie: boolean; now: number },
+): Response =>
+  req.method === "GET" || req.method === "HEAD"
+    ? bypassLinkAnswer(url, splitBypassParam(url.search).token, availability?.maintenance() ?? null, options)
+    : new Response("Bad Request", { status: 400, headers: { "Cache-Control": "no-store" } });
+
 /** One authority decision owns every path, including storage, probes and sockets. */
 export const createGatewayHandler =
   (dependencies: GatewayDependencies) =>
   async (req: Request, server: GatewayServer, client: ClientAddress | null): Promise<Response | undefined> => {
     stripPublicHeaders(req.headers);
+    const now = dependencies.now ?? Date.now;
     const url = new URL(req.url);
     const snapshot = dependencies.snapshot();
+    // The admin bypass cookie is gateway business on every host: read it, then no upstream ever sees it.
+    const bypassCookie = takeBypassCookie(req.headers, snapshot.development);
+    const bypassParam = url.search.length > 1 && splitBypassParam(url.search).present;
     const decision = decideHost(req, snapshot);
     const websocket = req.headers.get("Upgrade")?.toLowerCase() === "websocket";
     const healthPath = url.pathname === "/health" || url.pathname === APP_READINESS_PATH;
@@ -96,6 +117,9 @@ export const createGatewayHandler =
         return respond(unavailable());
       }
       const availability = dependencies.availability;
+      // App domains never bypass maintenance; the link only loses its parameter here.
+      if (bypassParam)
+        return respond(bypassLink(req, url, availability, { development: snapshot.development, allowCookie: false, now: now() }));
       if (availability && isStatusRequest(req, url)) return respond(statusAnswer(req, url, availability));
       if (isInternalPath(url.pathname, true) && !isDomainCheckPath(url.pathname))
         return respond(new Response("Not found", { status: 404 }));
@@ -148,9 +172,13 @@ export const createGatewayHandler =
     // The gateway owns its readiness probe; existing Cloud access routes still proxy.
     if (url.pathname === APP_READINESS_PATH && !websocket) return Response.json({ status: "ready", appId: "gateway" });
     const availability = dependencies.availability;
-    if (availability && isStatusRequest(req, url)) return statusAnswer(req, url, availability);
+    if (bypassParam) return bypassLink(req, url, availability, { development: snapshot.development, allowCookie: true, now: now() });
+    const maintenance = availability?.maintenance() ?? null;
+    // A valid admin bypass cookie passes the maintenance wall exactly as if there were no maintenance.
+    const bypassed = maintenance !== null && bypassesMaintenance(bypassCookie, maintenance, now());
+    if (availability && isStatusRequest(req, url)) return statusAnswer(req, url, availability, { bypass: bypassed });
     if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
-    if (availability?.maintenance()) {
+    if (availability && maintenance && !bypassed) {
       if (url.pathname === "/health" && !websocket) return dependencies.health();
       if (websocket || !passesMaintenance(req, url, dependencies.table())) return maintenanceAnswer(req, availability);
     }
