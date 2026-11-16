@@ -247,7 +247,8 @@ export async function maintenanceBrowserFixture() {
         const valid = url.searchParams.get("cloud-maintenance-bypass") === cookieValue && state.active && control.gatewayKnowsMaintenance;
         url.searchParams.delete("cloud-maintenance-bypass");
         const headers = new Headers({ Location: `${url.pathname}${url.search}`, "Cache-Control": "no-store" });
-        if (valid) headers.set("Set-Cookie", `${cookieName}=${cookieValue}; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax`);
+        // The literal name keeps the cookie guard able to classify it (credential-cookies.test.ts).
+        if (valid) headers.set("Set-Cookie", `cloud_maintenance_bypass=${cookieValue}; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax`);
         return new Response(null, { status: 303, headers });
       }
       if (url.pathname.startsWith("/api/")) return api.fetch(request);
