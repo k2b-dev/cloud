@@ -259,7 +259,9 @@ domTest("repeated reads open in place with their title, target and call count", 
     expect(steps).toHaveLength(3);
     const repeat = steps[0]!;
     expect(repeat.querySelector("summary")?.textContent).toContain("Read file");
-    expect(repeat.querySelector("summary")?.textContent).toContain("/products-100.csv");
+    // The file, never its path.
+    expect(repeat.querySelector("summary")?.textContent).toContain("products-100.csv");
+    expect(repeat.querySelector("summary")?.textContent).not.toContain("/products-100.csv");
     expect(repeat.querySelector("summary")?.textContent).toContain("3 times");
     expect(steps.slice(1).map((step) => step.querySelector("summary")?.textContent)).toEqual([
       expect.stringContaining("Ran code"),

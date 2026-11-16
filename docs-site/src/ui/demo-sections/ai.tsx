@@ -422,7 +422,7 @@ const StepListDemo = () => (
   </Chat.Activity>
   <Chat.Activity icon="ti ti-calculator" label="Added up the numbers from the file" meta="Failed" metaTone="danger" duration="2 s"
     info={{ label: "Details: Added up the numbers from the file", title: "Added up the numbers from the file", detail: "Failed · 2 s", content: "Two rows have no amount. Result: Gustav went on without this result." }} />
-  <Chat.Activity icon="ti ti-mail" accent="var(--k2b-accent-500)" label="Sent the confirmation to Lena Vogt" meta="Outcome unclear" metaTone="warning" duration="8 s"
+  <Chat.Activity icon="ti ti-mail" label="Sent the confirmation to Lena Vogt" meta="Outcome unclear" metaTone="warning" duration="8 s"
     info={{ label: "Details: Sent the confirmation to Lena Vogt", title: "Sent the confirmation to Lena Vogt", detail: "Outcome unclear · 8 s",
       content: "Cloud got no answer. Whether the mail went out is not known. Gustav does not send it again.",
       actions: <Button size="sm" variant="secondary">Check status</Button> }} />
@@ -471,7 +471,6 @@ const StepListDemo = () => (
         />
         <Chat.Activity
           icon="ti ti-mail"
-          accent="var(--k2b-accent-500)"
           label="Sent the confirmation to Lena Vogt"
           meta="Outcome unclear"
           metaTone="warning"

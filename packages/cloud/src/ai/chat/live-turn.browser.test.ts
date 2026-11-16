@@ -1525,7 +1525,7 @@ for (const view of [
         expect(opened.rows.some(({ text }) => text.includes(path))).toBe(false);
         const parts = opened.rows.filter(({ text }) => text.includes(file)).slice(1);
         expect(parts).toHaveLength(3);
-        expect(parts.map(({ left }) => left)).toEqual([live.line + 26, live.line + 26, live.line + 26]);
+        expect(parts.map(({ left }) => left)).toEqual([live.line + 24, live.line + 24, live.line + 24]);
         expect(opened.overflowX).toBeLessThanOrEqual(0);
         await page.screenshot({ path: `/tmp/ai-work-repeat-open-${view.name}-${theme}.png` });
         await repeatSummary.click();

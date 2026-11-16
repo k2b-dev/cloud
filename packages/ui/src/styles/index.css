@@ -14763,7 +14763,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: grid;
   width: 100%;
   min-height: 2rem;
-  grid-template-columns: 1.125rem minmax(0, 1fr) minmax(0, auto) 3.5rem 1.125rem;
+  grid-template-columns: 1rem minmax(0, 1fr) minmax(0, auto) 3.5rem 1.125rem;
   align-items: center;
   column-gap: 0.5rem;
   padding: 0.375rem 0;
@@ -14776,7 +14776,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 @media (max-width: 47.999rem) {
   .k2b-ui .k2b-chat-activity__row {
     min-height: 2.75rem;
-    grid-template-columns: 1.125rem minmax(0, 1fr) minmax(0, auto) 3rem 1.125rem;
+    grid-template-columns: 1rem minmax(0, 1fr) minmax(0, auto) 3rem 1.125rem;
   }
 }
 
@@ -15100,9 +15100,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
-/* A body starts on the text edge of its row: the icon column and the gap. */
+/* A body starts on the text edge of its row, 1.5rem in: the icon column and the gap. Every icon-led line of a chat
+   question starts its words there too, so steps and questions share one text axis. */
 .k2b-ui .k2b-chat-activity__body {
-  margin-left: 1.625rem;
+  margin-left: 1.5rem;
   padding: 0.375rem 0 0;
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
