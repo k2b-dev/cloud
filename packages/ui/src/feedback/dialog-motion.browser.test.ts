@@ -15,9 +15,13 @@ import { onCleanup } from "solid-js";
 import { dialogCore, Lightbox, panelDialogWorkspaceOptions } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 window.results = [];
 window.disposed = 0;
+window.pressed = 0;
+window.submitted = 0;
 const content = (label) => () => {
-  const body = document.createElement("div");
-  body.innerHTML = "<h2>" + label + "</h2><input aria-label='Name'><button type='button'>Done</button>";
+  const body = document.createElement("form");
+  body.innerHTML = "<h2>" + label + "</h2><input aria-label='Name'><button type='button' data-done>Done</button>";
+  body.querySelector("[data-done]").onclick = () => { window.pressed++; };
+  body.onsubmit = (event) => { event.preventDefault(); window.submitted++; };
   onCleanup(() => { window.disposed++; });
   return body;
 };
@@ -45,6 +49,8 @@ const script = await build.outputs[0]!.text();
 type MotionWindow = Window & {
   results: string[];
   disposed: number;
+  pressed: number;
+  submitted: number;
   lightboxClosed: number;
   openDialog: (label?: string, options?: Record<string, unknown>) => void;
   openWorkspace: () => void;
@@ -99,9 +105,17 @@ const openFromButton = (page: Page, kind: "dialog" | "workspace" = "dialog") =>
 
 const transitionsDone = (page: Page) =>
   page.waitForFunction(() =>
-    // animation-settle: all timelines - The fixture has no scroll-driven animations.
-    document.getAnimations().every((animation) => animation.playState !== "running"),
+    document
+      .getAnimations()
+      .filter((animation) => animation.timeline === document.timeline)
+      .every((animation) => animation.playState !== "running"),
   );
+
+/**
+ * Whether the engine keeps a closing dialog in the top layer for its exit (`overlay`). Without it, as in WebKit today,
+ * the dialog leaves at once and closes as it did before (Bauplan §2).
+ */
+const exitFades = (page: Page) => page.evaluate(() => CSS.supports("overlay", "auto"));
 
 describe(`${browserName} dialog entrance and exit`, () => {
   test("a dialog rises 8 px over the base time and has focus in its first frame", async () => {
@@ -158,17 +172,49 @@ describe(`${browserName} dialog entrance and exit`, () => {
           }),
       );
       expect(closing.open).toBe(false);
-      expect(closing.inert).toBe(true);
-      // The picture stays while it fades; its content is disposed afterwards.
-      expect(closing.present).toBe(true);
-      expect(closing.disposed).toBe(0);
       expect(closing.resolved).toEqual(["saved"]);
       expect(closing.focusOnOpener).toBe(true);
-      const byProperty = Object.fromEntries(closing.transitions.map((transition) => [transition.property, transition.duration]));
-      expect(byProperty.opacity).toBe(120);
-      expect(byProperty.translate).toBe(120);
+      if (await exitFades(page)) {
+        expect(closing.inert).toBe(true);
+        // The picture stays while it fades; its content is disposed afterwards.
+        expect(closing.present).toBe(true);
+        expect(closing.disposed).toBe(0);
+        const byProperty = Object.fromEntries(closing.transitions.map((transition) => [transition.property, transition.duration]));
+        expect(byProperty.opacity).toBe(120);
+        expect(byProperty.translate).toBe(120);
+      } else {
+        expect({ present: closing.present, disposed: closing.disposed }).toEqual({ present: false, disposed: 1 });
+      }
       await page.waitForFunction(() => document.querySelector("dialog") === null);
       expect(await page.evaluate(() => (window as unknown as MotionWindow).disposed)).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("from the first moment of closing, the dialog no longer acts as open", async () => {
+    const page = await load();
+    try {
+      await openFromButton(page);
+      await transitionsDone(page);
+      const done = await page.getByRole("button", { name: "Done" }).boundingBox();
+      await page.evaluate(() => (window as unknown as MotionWindow).closeDialog());
+      // Still fading where the engine keeps it in the top layer, but neither found nor usable.
+      expect(await page.getByRole("dialog").count()).toBe(0);
+      expect(await page.getByRole("textbox", { name: "Name" }).count()).toBe(0);
+      expect(await page.getByRole("button", { name: "Done" }).count()).toBe(0);
+      await page.mouse.click(done!.x + done!.width / 2, done!.y + done!.height / 2);
+      await page.keyboard.press("Enter");
+      const state = await page.evaluate(() => {
+        const dialog = document.querySelector("dialog");
+        const motion = window as unknown as MotionWindow;
+        return {
+          hidden: dialog === null || (dialog.inert && dialog.getAttribute("aria-hidden") === "true"),
+          pressed: motion.pressed,
+          submitted: motion.submitted,
+        };
+      });
+      expect(state).toEqual({ hidden: true, pressed: 0, submitted: 0 });
     } finally {
       await page.context().close();
     }
@@ -177,6 +223,8 @@ describe(`${browserName} dialog entrance and exit`, () => {
   test("closing during the entrance turns around from where the dialog is", async () => {
     const page = await load();
     try {
+      // Without `overlay` there is no exit to turn into; the closing test covers that engine.
+      if (!(await exitFades(page))) return;
       // settled: turning around in the middle of the entrance is the subject.
       const turn = await page.evaluate(
         () =>
@@ -295,7 +343,8 @@ describe(`${browserName} dialog entrance and exit`, () => {
         open: document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox")?.open,
         focusOnOpener: document.activeElement === document.querySelector("#opener"),
       }));
-      expect(closing).toEqual({ closed: 0, open: false, focusOnOpener: true });
+      if (await exitFades(page)) expect(closing).toEqual({ closed: 0, open: false, focusOnOpener: true });
+      else expect({ closed: closing.closed, focusOnOpener: closing.focusOnOpener }).toEqual({ closed: 1, focusOnOpener: true });
       await page.waitForFunction(() => (window as unknown as MotionWindow).lightboxClosed === 1);
       expect(await page.evaluate(() => document.querySelector("dialog.k2b-lightbox"))).toBeNull();
     } finally {

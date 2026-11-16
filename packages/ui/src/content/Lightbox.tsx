@@ -170,7 +170,9 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
     if (closing) return;
     closing = true;
     if (dialog.open) dialog.close();
+    // From now on it no longer acts as open: no input and out of the accessibility tree; only its picture fades.
     dialog.inert = true;
+    dialog.setAttribute("aria-hidden", "true");
     returnFocus(opener, openerRing);
     afterExitTransitions(dialog, () => {
       if (mounted) props.onClose();

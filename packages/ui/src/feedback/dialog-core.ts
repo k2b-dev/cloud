@@ -535,9 +535,11 @@ export const createDialogCore = () => {
       dialog.removeAttribute("aria-label");
       dialog.removeAttribute("aria-labelledby");
       dialog.removeAttribute("aria-describedby");
-      // State and focus change now; the frame only fades out. It leaves the top layer and the page is usable at once,
-      // while the content stays visible and inert until the exit transition ends.
+      // State and focus change now; the frame only fades out. It leaves the top layer and the page is usable at once.
+      // From this moment it no longer acts as open: inert (no input, focus, drop or submit) and out of the
+      // accessibility tree, so neither a person nor a query by role or name finds it; only its picture fades.
       dialog.inert = true;
+      dialog.setAttribute("aria-hidden", "true");
       if (dialog.open && typeof dialog.close === "function") dialog.close();
       else dialog.removeAttribute("open");
       state.element = undefined;
