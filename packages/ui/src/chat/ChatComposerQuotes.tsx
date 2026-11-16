@@ -4,7 +4,7 @@ import { useQuoteMessages } from "../content/quote-messages";
 import type { ChatComposerQuote } from "./ChatComposer";
 
 /**
- * The passages a draft quotes, for `ChatComposer`'s `above`: each with the quote icon, at most two lines, its author,
+ * The passages a draft quotes, for `ChatComposer`'s `accessory`: each with the quote icon, at most two lines, its author,
  * and a button that removes it. Several scroll in their own area. Load it with the first quote, so composers that never
  * quote carry none of its code.
  */

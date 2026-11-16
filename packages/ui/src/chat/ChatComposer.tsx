@@ -295,7 +295,10 @@ export type ChatComposerProps = {
   onMentionsChange?: (mentions: readonly ChatMention[]) => void;
   /** Suggests people after `@`; needs `mentions` and `onMentionsChange`. */
   people?: ChatComposerPeople;
-  /** Shared surface above the editor; suggestions temporarily replace this content. */
+  /**
+   * Shared surface above the editor, such as the passages a draft quotes in `ChatComposerQuotes`; suggestions
+   * temporarily replace this content.
+   */
   accessory?: JSX.Element;
   contextUsage?: ChatContextUsageData;
   /**
@@ -354,11 +357,6 @@ export type ChatComposerProps = {
    * button that cancels the reply. `onSelect` makes the quote a button, for example to jump to the original.
    */
   reply?: ChatComposerReply;
-  /**
-   * Content inside the composer above the field, below `reply`, such as the passages the draft quotes in
-   * `ChatComposerQuotes`. It renders only what it is given, so composers without it carry no code for it.
-   */
-  above?: JSX.Element;
   /** A suggested next message in the empty field; see `ChatComposerSuggestion`. */
   suggestion?: ChatComposerSuggestion;
 };
@@ -2853,7 +2851,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             </div>
           )}
         </Show>
-        {props.above}
         <Show when={attachments().length > 0}>
           <div class="k2b-chat-composer__attachments" role="list" aria-label={chatMessages().attachments} tabIndex={0}>
             <For each={attachments()}>

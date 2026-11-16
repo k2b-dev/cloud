@@ -1715,7 +1715,7 @@ const MessageQuotesDemo = () => {
       code={`<SelectionAction root={history} label="Quote" icon="ti ti-quote"
   within={(node) => (node instanceof Element ? node : node.parentElement)?.closest(".k2b-message-row__text")}
   onAction={({ text, element }) => addQuote(keyOf(element), text)} />
-<Chat.Composer variant="conversation" above={draft.quotes.length ? <ChatComposerQuotes quotes={draft.quotes.map((quote) => ({ ...quote, onRemove: () => remove(quote) }))} /> : undefined} … />
+<Chat.Composer variant="conversation" accessory={draft.quotes.length ? <ChatComposerQuotes quotes={draft.quotes.map((quote) => ({ ...quote, onRemove: () => remove(quote) }))} /> : undefined} … />
 <MessageRow quotes={message.quotes.map((quote) => ({ ...quote,
   onSelect: () => feed.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }) }))} … />`}
     >
@@ -1749,7 +1749,7 @@ const MessageQuotesDemo = () => {
           onValueChange={setDraft}
           inputLabel="Answer"
           placeholder="Write an answer"
-          above={
+          accessory={
             quotes().length ? (
               <ChatComposerQuotes
                 quotes={quotes().map((quote) => ({

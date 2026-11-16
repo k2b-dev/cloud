@@ -16729,6 +16729,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overscroll-behavior: contain;
 }
 
+/* In a conversation composer's accessory, the quotes take the field's column, so both share their edges. */
+.k2b-ui .k2b-chat-composer-shell:has(> .k2b-chat-composer[data-variant="conversation"]) .k2b-chat-composer__quotes {
+  width: 100%;
+  max-width: calc(var(--k2b-reading-column) - 1.5rem);
+  margin-inline: auto;
+}
+
 .k2b-ui .k2b-chat-composer__quote > .k2b-message-quote {
   max-width: none;
   flex: 1 1 0;

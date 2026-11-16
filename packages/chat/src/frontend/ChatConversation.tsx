@@ -863,7 +863,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             }
             draftKey={props.draftKey ?? props.chatId}
             reply={props.reply}
-            above={props.quotes?.length ? <ComposerQuotes quotes={props.quotes} /> : undefined}
+            accessory={props.quotes?.length ? <ComposerQuotes quotes={props.quotes} /> : undefined}
             focusToken={quoted()}
             formatting
             emoji={{ onOpen: setEmojiTarget, onPick: remember }}

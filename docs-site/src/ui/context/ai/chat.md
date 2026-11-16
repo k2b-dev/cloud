@@ -613,11 +613,11 @@ type ChatComposerProps = {
   inputLabel?: string; disabled?: boolean; error?: string; focusToken?: unknown; class?: string;
   variant?: "default" | "conversation"; sendKey?: "enter" | "mod-enter"; formatting?: boolean;
   emoji?: ChatComposerEmoji; microphone?: ChatComposerMicrophone; hint?: JSX.Element;
-  reply?: ChatComposerReply; above?: JSX.Element; suggestion?: ChatComposerSuggestion;
+  reply?: ChatComposerReply; suggestion?: ChatComposerSuggestion;
 };
 
 type ChatComposerQuote = { id: string; author: string; text: string; onRemove: () => void; onSelect?: () => void };
-// <ChatComposerQuotes quotes={readonly ChatComposerQuote[]} /> renders them, for `above`.
+// <ChatComposerQuotes quotes={readonly ChatComposerQuote[]} /> renders them, for `accessory`.
 
 type ChatComposerSuggestion = { text: string; onAccept: () => void; onDismiss: () => void };
 
@@ -945,10 +945,7 @@ command list and its search field instead; offer file selection as an
   lines. Its × button calls `onCancel`; `onSelect` makes the quote a button,
   for example to jump to the original. The application decides where the reply
   goes and clears `reply` after sending.
-- **Above the field:** `above` renders content inside the composer between
-  `reply` and the field, and nothing when it is not given, so composers that
-  never use it carry none of its code.
-- **Quotes:** pass `<ChatComposerQuotes quotes={…} />` as `above` for the
+- **Quotes:** pass `<ChatComposerQuotes quotes={…} />` as `accessory` for the
   passages a draft quotes. Each row has the quote icon, the passage in at
   most two lines, its author, and an × button that calls `onRemove`;
   `onSelect` makes the passage a button, for example to jump to it, and `id`
