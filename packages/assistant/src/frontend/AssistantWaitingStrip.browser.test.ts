@@ -808,7 +808,8 @@ describe("Waiting for you", () => {
             if (!node.textContent?.trim()) continue;
             range.selectNodeContents(node);
             for (const box of range.getClientRects())
-              if (box.bottom > band.y && box.top < band.y + band.height && box.right > band.x && box.left < band.x + band.width) return true;
+              if (box.bottom > band.y && box.top < band.y + band.height && box.right > band.x && box.left < band.x + band.width)
+                return true;
           }
           return false;
         }, band);
