@@ -24,6 +24,7 @@ import {
   Placeholder,
   prompts,
   ScrollArea,
+  Skeleton,
   TextInput,
   toast,
   useLocale,
@@ -87,7 +88,6 @@ import { createItemEventsApi } from "./item-events-api";
 import type { ChosenMember } from "./MemberPicker";
 
 import { createNotificationCleanup } from "./notification-cleanup";
-import ResourceChatLoading from "./ResourceChatLoading";
 import ResourceChatStart from "./ResourceChatStart";
 import { createReadReporter, seenRange } from "./read-reporter";
 import { createResourceCards, FRESH_MS } from "./resource-cards";
@@ -3157,7 +3157,13 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                   )}
                 </Match>
                 <Match when={followPending()}>
-                  <ResourceChatLoading />
+                  {/* A place shared after the panel loaded (such as after "Allow"): its discussion loading, in the
+                      frame it opens in, instead of the list the panel is about to leave. */}
+                  <section class="chat-conversation chat-resource-start" aria-busy="true" aria-label={t().loadingResourceChat}>
+                    <header class="chat-conversation__header">
+                      <Skeleton class="chat-resource-loading__title" />
+                    </header>
+                  </section>
                 </Match>
                 <Match when={true}>
                   <nav class="chat-list-page" aria-label={t().chats}>
