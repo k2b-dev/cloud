@@ -14,6 +14,19 @@ const { default: SpacesOverview } = await import("./SpacesOverview.island.tsx");
 const { overviewMessages } = await import("./overview-messages");
 const { LocaleProvider } = await import("@k2b/ui");
 
+// The rendered text as a parser reads it: text nodes only, without tags or hydration comments.
+const textOf = (html: string) => {
+  let plain = "";
+  new HTMLRewriter()
+    .onDocument({
+      text(chunk) {
+        plain += chunk.text;
+      },
+    })
+    .transform(html);
+  return plain;
+};
+
 const render = (initialActivityError: string | null = null, locale = "en") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -113,7 +126,7 @@ describe("Spaces overview", () => {
     // Activity is the shared timeline: the sentence links to the item, the person stands in the meta line.
     expect(html).toContain('class="k2b-activity"');
     expect(html).toContain('href="/app/spaces/Space1?item=Item01"');
-    expect(html.replace(/<[^>]+>/g, "")).toContain("12:00 · 2 hr. ago · Sofie");
+    expect(textOf(html)).toContain("12:00 · 2 hr. ago · Sofie");
     expect(html).not.toContain("spaces-overview-space-list");
     expect(html).toContain("Ship overview");
     expect(html).not.toContain("k2b-stat-grid");
