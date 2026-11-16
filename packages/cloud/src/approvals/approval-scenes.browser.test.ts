@@ -18,6 +18,9 @@ const buildHarness = async (): Promise<string> => {
     target: "browser",
     format: "esm",
     conditions: ["browser"],
+    // Every test opens the page anew through a route: a minified bundle reaches and runs in the page in a fraction of
+    // the time, so opening a scene stays well inside a test's five seconds on a busy machine.
+    minify: true,
     plugins: [
       {
         name: "solid-approval-scenes-test",
