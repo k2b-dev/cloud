@@ -208,8 +208,9 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
           title: label(),
           detail: [outcome()?.word, duration()].filter(Boolean).join(" · ") || undefined,
           content,
-          // Only a card with an action is a dialog; one without opens on hover and focus like any hint.
-          actions: checkable() || showable() ? actions : undefined,
+          // Only a card with an action is a dialog; one without opens on hover and focus like any hint. A card that offered
+          // a check stays a dialog once the check settled it, so the focus stays in it with the result.
+          actions: (failure() === "unknown" && work.turnId() !== undefined) || showable() ? actions : undefined,
         }
       : undefined,
   );

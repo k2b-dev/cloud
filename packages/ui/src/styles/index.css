@@ -15082,7 +15082,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-chat-activity .k2b-chat-activity__info:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: 0;
+  outline-offset: var(--k2b-focus-offset);
 }
 
 /* Touch: 44px to hit, 16px to see. The area grows up, down, and to the left, inside the 44px row, never past its edge. */
