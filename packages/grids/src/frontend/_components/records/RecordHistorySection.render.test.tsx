@@ -14,7 +14,7 @@ afterAll(() => setSystemTime());
 
 const status = { id: "Fld001", name: "Status" } as PublicField;
 const entry = (overrides: Partial<PublicRecordHistoryEntry>): PublicRecordHistoryEntry => ({
-  id: crypto.randomUUID(),
+  id: "00000000-0000-4000-8000-000000000001",
   baseId: "Base01",
   tableId: "Tbl001",
   recordId: "Rec001",
@@ -30,9 +30,9 @@ const entry = (overrides: Partial<PublicRecordHistoryEntry>): PublicRecordHistor
   ...overrides,
 });
 const history = [
-  entry({ action: "finalized", userDisplayName: null, createdAt: "2026-11-12T15:00:00.000Z" }),
+  entry({ id: "00000000-0000-4000-8000-000000000002", action: "finalized", userDisplayName: null, createdAt: "2026-11-12T15:00:00.000Z" }),
   entry({ diff: { Fld001: { old: "Open", new: "Done" } } }),
-  entry({ action: "created", userId: null, userDisplayName: null, createdAt: "2026-11-12T09:00:00.000Z" }),
+  entry({ id: "00000000-0000-4000-8000-000000000003", action: "created", userId: null, userDisplayName: null, createdAt: "2026-11-12T09:00:00.000Z" }),
 ];
 
 const render = (props: Partial<Parameters<typeof RecordHistoryList>[0]> = {}) =>
