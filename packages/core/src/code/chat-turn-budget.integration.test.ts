@@ -189,7 +189,7 @@ suiteFor(
     >`SELECT settled_at FROM code.chat_turn_budgets WHERE turn_id=${entry.turnId}::uuid`;
     expect(budget?.settled_at).toBeNull();
   });
-  test("nested model attempts share the sixteen slots, pinned model and explicit output ceiling", async () => {
+  test("nested model attempts share the turn's model slots, pinned model and explicit output ceiling", async () => {
     await reset();
     const entry = await turn();
     const claim = await aiConversations.claimTurn({
@@ -239,6 +239,28 @@ suiteFor(
     expect(
       (await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget`).map((row) => Number(row.cost)),
     ).toEqual([0.000432, 0.000432]);
+  });
+  test("the turn's output allowance caps each call by what is left, then stops the turn", async () => {
+    await reset();
+    const entry = await turn();
+    const claim = await aiConversations.claimTurn({
+      ...entry,
+      leaseOwner: "output-budget",
+      leaseMs: 30000,
+      from: "queue",
+      maxAttempts: 5,
+      runBudgetMs: 30000,
+    });
+    expect(claim).not.toBeNull();
+    await reserve(entry.turnId, "c_output");
+    const context = { ...entry, kind: "background" as const, task: "view-image" };
+    const first = await beginAiCall(profile, context, 10, 2000);
+    expect(first.maxOutputTokens).toBe(1000);
+    await finishAiCall(first.id, { input: 10, output: AUTOMATION_TURN_BUDGET.outputTokens - 400 }, "ok");
+    const last = await beginAiCall(profile, context, 10, 2000);
+    expect(last.maxOutputTokens).toBe(400);
+    await finishAiCall(last.id, { input: 10, output: 400 }, "ok");
+    await expect(beginAiCall(profile, context, 10, 2000)).rejects.toMatchObject({ reason: "output_tokens" });
   });
   test("parallel starts cannot overbook either the Code or the shared owner day", async () => {
     for (const codes of [
