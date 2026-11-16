@@ -105,7 +105,12 @@ export const startMaintenanceQuiesce = async ({
   };
 
   // An unreadable state does not block the start; the watcher below applies it once NATS answers.
-  apply(await dependencies.read().catch((error: unknown) => (onReportError(error), null)));
+  apply(
+    await dependencies.read().catch((error: unknown) => {
+      onReportError(error);
+      return null;
+    }),
+  );
   void superviseRuntimeTask({
     name: "Maintenance quiesce watcher",
     signal: watching.signal,
