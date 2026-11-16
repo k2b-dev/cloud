@@ -47,7 +47,7 @@ const html = (props: Partial<AssistantQueueProps> = {}, locale = "de") =>
           entries: ENTRIES,
           layout: "line",
           sendingId: null,
-          failedIds: new Set(),
+          failedIds: new Set<string>(),
           busy: false,
           onSendNow: () => undefined,
           onEdit: () => undefined,
