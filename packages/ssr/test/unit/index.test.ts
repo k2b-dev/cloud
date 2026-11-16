@@ -3,6 +3,7 @@ import { Window } from "happy-dom";
 import { createComponent } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { createConfig } from "../../src/index";
+import { TYPED_INPUT_SCRIPT } from "../../src/typed-fields";
 
 describe("createConfig() cache busting", () => {
   test("uses version 0 without island build output or preloads", async () => {
@@ -13,7 +14,7 @@ describe("createConfig() cache busting", () => {
     expect(output).toContain('<script type="module" data-ssr-assets=');
 
     expect(output).toBe(
-      `<style>solid-client,solid-island{display:contents}</style>\n<script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`,
+      `<style>solid-client,solid-island{display:contents}</style>\n<script>${TYPED_INPUT_SCRIPT}</script>\n<script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`,
     );
   });
 

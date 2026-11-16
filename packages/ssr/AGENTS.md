@@ -120,12 +120,16 @@ Test `transform()` directly in both modes when changing it, including the
 `mount()` in `src/mount.ts` gives each wrapper element its own `render()` root
 with a root `ErrorBoundary`; `JSON.parse` and Seroval `fromJSON` parse props
 inside the boundary. Rendering replaces the server markup, so the runtime
-carries over what the person did in it meanwhile: focus moves to the element
-at the same place, and text typed into a text field or `<textarea>` moves to
-the field with the same tag, type, `name`, `aria-label`, and position among
-such fields, with one bubbling `input` event. Password, file, and other
-non-text fields never move, a field missing from the new markup drops its
-text, and a field that already ends with the text gets no event. Missing or malformed `data-props` throws there. One
+carries over what the person did in it meanwhile (`src/typed-fields.ts`):
+focus moves to the element at the same place, taken right after `render()`
+before any event; text typed into a text field moves to the field with the
+same tag, type, `name`, `aria-label`, and place among such fields, only when
+the new markup has as many of them and the field is editable. Only fields
+with a trusted `input` event count; `html()` writes the recording listener
+(`TYPED_INPUT_SCRIPT`) before the loader. An `<input>` takes the value, a
+`<textarea>` keeps text the island set itself in front, an emptied field
+stays empty; one `input` event, plus `change` when the field was not focused,
+and a focused field gets its selection back. Missing or malformed `data-props` throws there. One
 failing element never stops the loop. The default fallback is plain DOM
 (`role="alert"`, `data-ssr-error`, a **Try again** button calling `reset()`).
 Each caught error dispatches a bubbling, cancelable `ssr:island-error` event

@@ -16,6 +16,7 @@ import { buildIslands, type DevSourcemap } from "./build";
 import { ISLAND_ID_LENGTH } from "./island-id";
 import { resolveIslandImport } from "./island-resolve";
 import { transform } from "./transform";
+import { TYPED_INPUT_SCRIPT } from "./typed-fields";
 
 export type { IslandErrorProps } from "./mount";
 
@@ -191,7 +192,8 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     const hydrationScript = `<script type="module"${loaderData}>const p=${JSON.stringify(assetPath)};${preload}${loader}</script>`;
 
     // Framework-injected assets
-    let scripts = `${islandDisplayStyle}\n${hydrationScript}`;
+    // The typed-input listener runs before any island script, so the mount runtime knows what the person typed.
+    let scripts = `${islandDisplayStyle}\n<script>${TYPED_INPUT_SCRIPT}</script>\n${hydrationScript}`;
 
     // Add dev tools script in dev mode (inlined)
     if (dev) {

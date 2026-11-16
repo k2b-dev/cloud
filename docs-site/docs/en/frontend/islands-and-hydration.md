@@ -36,11 +36,13 @@ may hydrate islands instead.
 
 This has two consequences:
 
-- State that exists only in the server HTML inside an island is lost when the
-  island mounts: a value typed into an input, focus, a text selection, or a
-  scroll position. Keep islands small so that they mount soon after the page
-  appears. Do not rely on input made before mount; derive the island's initial
-  state from its props or the URL. `AppWorkspace.SidebarBody` restores its own
+- State that exists only in the server HTML inside an island is replaced when
+  the island mounts. The runtime carries over two things: focus moves to the
+  element at the same place in the new markup, and typed text moves to the
+  same field, as described below. Everything else is lost, for example a
+  scroll position or the value of a checkbox. Keep islands small so that they
+  mount soon after the page appears, and derive the island's initial state
+  from its props or the URL. `AppWorkspace.SidebarBody` restores its own
   scroll offset again on mount.
 - The server and the browser must render the same markup from the same props.
   When they differ, the page moves as the island mounts. Do not read
@@ -48,6 +50,23 @@ This has two consequences:
   browser's clock during the first render. Pass the server's value as a prop,
   for example the server's render time, or read the value in `onMount` and
   reserve its space in the server markup.
+
+Text a person typed into a text field (`<textarea>`, or `<input>` of type
+text, search, email, url, or tel) before the island mounted moves to the same
+field of the new markup. The field is found by tag, type, `name`,
+`aria-label`, and its place among fields with the same four; when the new
+markup has a different number of such fields, or the field is disabled or
+read-only, the text is dropped and never given to another field. Only fields
+that received the person's input count: an inline listener, which `html()`
+writes before the island loader, records them, so values the browser restored
+by itself stay out. An `<input>` takes the typed value. A `<textarea>` does
+too, unless the island put other text into it itself, such as a restored
+draft; then the typed text follows on a new line. An emptied field stays
+empty. The field hears one bubbling `input` event, and a `change` event when
+it was not the focused field. A focused field keeps its focus and its
+selection. Password, file, and other fields never move. Fields the island
+renders later, for example behind `lazy` or `Suspense`, do not exist at mount
+and drop their text.
 
 ## Cross the prop boundary
 

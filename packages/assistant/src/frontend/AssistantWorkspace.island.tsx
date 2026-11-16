@@ -1653,7 +1653,13 @@ export default function AssistantWorkspace(props: Props) {
   });
 
   const chooseEmptyChatProject = async () => {
-    const selected = await import("./empty-chat-project-picker").then(({ pickEmptyChatProject }) => pickEmptyChatProject(t(), projects));
+    // A chunk that cannot load says so; the chat stays as it is.
+    const picker = await import("./empty-chat-project-picker").catch(() => {
+      toast.error(t().chatActionFailed);
+      return null;
+    });
+    if (!picker) return;
+    const selected = await picker.pickEmptyChatProject(t(), projects);
     if (selected === undefined || selected.projectId === emptyProjectId()) return;
 
     setChoosingProject(true);
@@ -2811,7 +2817,11 @@ export default function AssistantWorkspace(props: Props) {
           onNewConversation={() => void createAndFocusConversation()}
           onCreateProject={async () => {
             // Loaded when someone creates a project: the form stays out of the workspace bundle.
-            const project = await import("./AssistantProjectsDialog").then((module) => module.openAssistantCreateProjectDialog());
+            const dialog = await import("./AssistantProjectsDialog").catch(() => {
+              toast.error(t().chatActionFailed);
+              return null;
+            });
+            const project = await dialog?.openAssistantCreateProjectDialog();
             if (project) navigateTo(assistantProjectHref(basePath, project.id));
           }}
           onOpenProject={openProject}

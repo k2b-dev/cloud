@@ -21,12 +21,27 @@ re-rendering follow:
 - state that exists only in the server HTML inside an island, such as a scroll
   position, is replaced on mount. Focus and typed text are kept: an element
   focused before the island mounted passes its focus to the element at the
-  same place in the new markup, which hears the focus like any other. Text
-  typed into a text field or `<textarea>` moves to the same field (same tag,
-  type, name, and `aria-label`) with an `input` event, so the island's state
-  has it; text the island put into a `<textarea>` itself stays in front of it;
+  same place in the new markup, which hears the focus like any other, and
+  typed text moves to the same field (see below);
 - server and client must render the same markup from the same props, or the
   page shifts when the island mounts.
+
+Text a person typed into a text field (`<textarea>`, or `<input>` of type
+text, search, email, url, or tel) before the island mounted moves to the same
+field of the new markup. The field is found by tag, type, `name`,
+`aria-label`, and its place among fields with the same four; when the new
+markup has a different number of such fields, or the field is disabled or
+read-only, the text is dropped and never given to another field. Only fields
+that received the person's input count: an inline listener, which `html()`
+writes before the island loader, records them, so values the browser restored
+by itself stay out. An `<input>` takes the typed value. A `<textarea>` does
+too, unless the island put other text into it itself, such as a restored
+draft; then the typed text follows on a new line. An emptied field stays
+empty. The field hears one bubbling `input` event, and a `change` event when
+it was not the focused field. A focused field keeps its focus and its
+selection. Password, file, and other fields never move. Fields the island
+renders later, for example behind `lazy` or `Suspense`, do not exist at mount
+and drop their text.
 
 ## Island lifetime
 

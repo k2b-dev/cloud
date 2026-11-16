@@ -1,6 +1,7 @@
 import { fromJSON } from "seroval";
 import { type Component, getOwner, type Owner } from "solid-js";
 import { createComponent, ErrorBoundary, render } from "solid-js/web";
+import { captureTypedFields, focusTypedField, restoreTypedFields } from "./typed-fields";
 
 /** Props received by a configured island error fallback component. */
 export type IslandErrorProps = {
@@ -55,22 +56,6 @@ export const islandOf = (owner: Owner): HTMLElement | undefined => {
   }
 };
 
-/**
- * Text fields of an island by identity: tag, type, name and label, numbered among fields of the same identity, so a
- * field that is gone from the new markup takes no other field's text. Password and file fields never take part.
- */
-const textFields = (root: HTMLElement): Map<string, HTMLInputElement | HTMLTextAreaElement> => {
-  const fields = new Map<string, HTMLInputElement | HTMLTextAreaElement>();
-  for (const field of root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("textarea,input")) {
-    if (field.localName !== "textarea" && !["text", "search", "email", "url", "tel"].includes(field.type)) continue;
-    const key = `${field.localName} ${field.type} ${field.name} ${field.getAttribute("aria-label")}`;
-    let n = 0;
-    while (fields.has(`${key} ${n}`)) n++;
-    fields.set(`${key} ${n}`, field);
-  }
-  return fields;
-};
-
 const mountElement = <Props extends object>(
   element: HTMLElement,
   Component: Component<Props>,
@@ -81,14 +66,11 @@ const mountElement = <Props extends object>(
   const start = (): void => {
     try {
       // The browser renders the island again over its server markup. Focus taken before that (a keyboard user, or a
-      // test that is faster than the island's script) moves to the same element of the new markup instead of the body.
+      // test that is faster than the island's script) moves to the same element of the new markup instead of the body,
+      // and text typed into a server field moves to the same field (typed-fields.ts).
       const all = element.getElementsByTagName("*");
       const focused = [...all].indexOf(document.activeElement!);
-      // Text typed into a server field before that (right after the page appeared) goes to the same field of the new
-      // markup, with an input event, so the island's state has it too.
-      const typed = [...textFields(element)].flatMap(([key, field]) =>
-        field.value === field.defaultValue ? [] : [[key, field.value] as const],
-      );
+      const typed = captureTypedFields(element);
       element.innerHTML = "";
       const dispose = render(() => {
         const owner = getOwner();
@@ -118,18 +100,12 @@ const mountElement = <Props extends object>(
         });
       }, element);
       mounted.set(element, dispose);
-      const fields = textFields(element);
-      for (const [key, value] of typed) {
-        const field = fields.get(key);
-        // A field that is gone takes its text with it; a field that already shows the text needs no event.
-        if (!field || field.value.endsWith(value)) continue;
-        // Text the island put there itself, such as a restored draft, stays in front of what was typed.
-        field.value = field.localName === "textarea" && field.value ? `${field.value}\n${value}` : value;
-        field.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-      // The same markup puts the same element at that place, so focusing it scrolls nothing; -1 finds none.
+      // Taken before any event: the live collection moves when a handler changes the markup.
       const node = all[focused];
-      if (node instanceof HTMLElement) node.focus();
+      const typedFocus = restoreTypedFields(element, typed);
+      // The same markup puts the same element at that place, so focusing it scrolls nothing; -1 finds none.
+      if (typedFocus) focusTypedField(typedFocus);
+      else if (node instanceof HTMLElement) node.focus();
     } catch (error) {
       report(element, error, start);
       element.replaceChildren(defaultFallback(start));
