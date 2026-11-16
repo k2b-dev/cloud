@@ -159,7 +159,7 @@ import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
 import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
-import { finishedPlanShown, type TaskHostChoice, taskHostOpen } from "./task-host";
+import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
 
@@ -2334,7 +2334,7 @@ export default function AssistantWorkspace(props: Props) {
             <>
               <Show when={!projectComposer() && (hasOpenTodos() || completedPlanShown())}>
                 <Chat.Tasks
-                  items={todoItems()}
+                  items={shownTasks(todoItems(), chat.activeTurn()?.status)}
                   open={todoOpen()}
                   onOpenChange={setTodoOpen}
                   label={todoLabel()}
