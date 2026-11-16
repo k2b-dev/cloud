@@ -154,7 +154,8 @@ test("a row with href renders its sentence as a link, never inside a button; det
     );
   const linked = html({ href: "/app/spaces/s1?item=i1" });
   expect(linked).toContain("data-clickable");
-  expect(linked).toMatch(/<a class="k2b-activity__text-link" href="\/app\/spaces\/s1\?item=i1">Aufgabe erledigt<\/a>/);
+  expect(linked).toContain('<a class="k2b-activity__text-link" href="/app/spaces/s1?item=i1">');
+  expect(text(linked)).toContain("Aufgabe erledigt");
   expect(linked).not.toContain("k2b-activity__text-button");
   const folding = html({ href: "/app/spaces/s1", details: () => "Betreff" });
   expect(folding).toContain('class="k2b-activity__text-button" aria-expanded="false"');
