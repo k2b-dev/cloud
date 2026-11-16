@@ -14818,31 +14818,30 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 1rem;
 }
 
-.k2b-ui .k2b-chat-activity[data-tone="ai"] .k2b-chat-activity__leading {
+.k2b-ui .k2b-chat-activity[data-tone="ai"] > .k2b-chat-activity__row > .k2b-chat-activity__leading {
   color: var(--k2b-ai-accent);
 }
 
-.k2b-ui .k2b-chat-activity[data-tone="success"] .k2b-chat-activity__leading {
+.k2b-ui .k2b-chat-activity[data-tone="success"] > .k2b-chat-activity__row > .k2b-chat-activity__leading {
   color: var(--k2b-success-600);
 }
 
-.k2b-ui .k2b-chat-activity[data-tone="danger"] .k2b-chat-activity__leading {
+.k2b-ui .k2b-chat-activity[data-tone="danger"] > .k2b-chat-activity__row > .k2b-chat-activity__leading {
   color: var(--k2b-danger-500);
 }
 
-.k2b-ui .k2b-chat-activity[data-tone="warning"] .k2b-chat-activity__leading {
+.k2b-ui .k2b-chat-activity[data-tone="warning"] > .k2b-chat-activity__row > .k2b-chat-activity__leading {
   color: var(--k2b-warning-text);
 }
 
-.k2b-ui .k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading {
+.k2b-ui .k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading {
   color: color-mix(in srgb, var(--k2b-chat-activity-accent) 78%, black);
 }
 
 .k2b-ui[data-theme="dark"]
-  .k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
-  .k2b-chat-activity__leading,
-.k2b-ui.k2b-dark .k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
-.dark .k2b-ui .k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading {
+  .k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
+.k2b-ui.k2b-dark .k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
+.dark .k2b-ui .k2b-chat-activity[data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading {
   color: color-mix(in srgb, var(--k2b-chat-activity-accent) 58%, white);
 }
 
@@ -14862,8 +14861,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 400;
 }
 
-.k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
-.k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong,
+.k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
+.k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__copy strong,
 .k2b-ui .k2b-chat-composer__loading strong {
   background-image: linear-gradient(105deg, currentColor 38%, color-mix(in srgb, currentColor 55%, transparent) 50%, currentColor 62%);
   background-size: 240% 100%;
@@ -14873,26 +14872,24 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   animation: k2b-chat-activity-shimmer 2s linear infinite;
 }
 
-.k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading {
+.k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading {
   --k2b-chat-activity-busy-color: var(--k2b-text-muted);
 }
 
-.k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
+.k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__copy strong {
   --k2b-chat-activity-busy-color: var(--k2b-text-secondary);
 }
 
 /* A running step turns its icon to the AI accent, also with reduced motion. A host accent keeps its colour. */
 .k2b-ui
-  .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]):not([data-accent="true"])
-  .k2b-chat-activity__leading {
+  .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]):not([data-accent="true"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading {
   --k2b-chat-activity-busy-color: var(--k2b-ai-accent);
   color: var(--k2b-ai-accent);
 }
 
 /* A spinning icon cannot be painted through the text shimmer, so it turns solid on its own. */
 .k2b-ui
-  .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
-  .k2b-chat-activity__leading:has(.k2b-spin) {
+  .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading:has(.k2b-spin) {
   background-image: none;
   -webkit-text-fill-color: currentColor;
   animation: none;
@@ -14918,19 +14915,19 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   align-items: start;
 }
 
-.k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__leading {
+.k2b-ui .k2b-chat-activity[data-wrap="true"] > .k2b-chat-activity__row > .k2b-chat-activity__leading {
   min-height: 1.25rem;
 }
 
-.k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__copy {
+.k2b-ui .k2b-chat-activity[data-wrap="true"] > .k2b-chat-activity__row > .k2b-chat-activity__copy {
   flex-direction: column;
   align-items: flex-start;
   gap: 0.125rem;
   line-height: 1.25rem;
 }
 
-.k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__copy strong,
-.k2b-ui .k2b-chat-activity[data-wrap="true"] .k2b-chat-activity__copy small {
+.k2b-ui .k2b-chat-activity[data-wrap="true"] > .k2b-chat-activity__row > .k2b-chat-activity__copy strong,
+.k2b-ui .k2b-chat-activity[data-wrap="true"] > .k2b-chat-activity__row > .k2b-chat-activity__copy small {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
@@ -15046,7 +15043,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-size: 0.9375rem;
 }
 
-.k2b-ui .k2b-chat-activity[open] .k2b-chat-activity__chevron {
+.k2b-ui .k2b-chat-activity[open] > .k2b-chat-activity__row > .k2b-chat-activity__chevron {
   transform: rotate(90deg);
 }
 
@@ -17939,8 +17936,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     opacity: 0.6;
   }
 
-  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
-  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
+  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
+  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__copy strong {
     animation: none;
     color: var(--k2b-chat-activity-busy-color);
     background-image: none;
@@ -17958,8 +17955,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   opacity: 0.6;
 }
 
-:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
-:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__copy strong {
   animation: none;
   color: var(--k2b-chat-activity-busy-color);
   background-image: none;
@@ -19755,14 +19752,14 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   .k2b-ui .k2b-chat-composer__loading strong { animation: none; background-image: none; -webkit-text-fill-color: currentColor; }
   .k2b-ui .k2b-chat-composer__loading .k2b-spin { animation: none; }
   /* As specific as the shimmer rule it undoes, or a busy label stays transparent and disappears. */
-  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
-  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
+  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
+  .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
 }
 
 :where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-composer__loading strong { animation: none; background-image: none; -webkit-text-fill-color: currentColor; }
 :where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-composer__loading .k2b-spin { animation: none; }
-:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
-:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__copy strong { -webkit-text-fill-color: currentColor; }
 
 /* The working plan above the composer (Chat.Tasks): a plum-tinted tray without edge or shadow. The header lies at
    the composer and stays put; the list opens upwards and only its height moves. Rows keep their height in every

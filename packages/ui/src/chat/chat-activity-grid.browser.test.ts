@@ -108,3 +108,43 @@ for (const width of [390, 1440])
       }
     });
   }
+
+test("an open AI row gives its tone and its open chevron to its own row only, never to the rows inside it", async () => {
+  const nested = renderToString(() =>
+    createComponent(Chat.Activity, {
+      label: "Analyzed a file",
+      tone: "ai",
+      defaultOpen: true,
+      bodyInset: false,
+      get children() {
+        return [
+          createComponent(Chat.Activity, { label: "Thought it over", icon: "ti ti-bulb" }),
+          createComponent(Chat.Activity, { label: "Loaded tools", icon: "ti ti-stack-2", meta: "2 steps", children: "Two steps" }),
+        ];
+      },
+    }),
+  );
+  const page = await browser.newPage({ viewport: { width: 1440, height: 600 }, colorScheme: "light" });
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" style="margin:0;padding:16px"><div id="list" style="max-width:48rem">${nested}</div></body></html>`,
+    );
+    const look = await page.$$eval(".k2b-chat-activity__row", (rows) =>
+      rows.map((row) => ({
+        icon: getComputedStyle(row.querySelector(".k2b-chat-activity__leading")!).color,
+        chevron: row.querySelector(":scope > .k2b-chat-activity__chevron")
+          ? getComputedStyle(row.querySelector(":scope > .k2b-chat-activity__chevron")!).transform
+          : null,
+      })),
+    );
+    const [outer, thought, group] = look;
+    expect(outer!.chevron).not.toBe("none");
+    // Gustav's own steps keep the third grey; the open group's tone stays on its own row.
+    expect(thought!.icon).not.toBe(outer!.icon);
+    expect(group!.icon).toBe(thought!.icon);
+    // The closed group inside an open row keeps its chevron pointing right.
+    expect(group!.chevron).toBe("none");
+  } finally {
+    await page.close();
+  }
+});

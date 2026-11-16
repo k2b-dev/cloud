@@ -77,11 +77,9 @@
 /* Only the sentence shimmers while Gustav works: a plum light runs over it every 2.2 s. ✦ and the meta keep their
    colours; with reduced motion nothing moves. The selectors repeat the shared busy rule's conditions, so they win. */
 .k2b-ui
-  .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
-  .k2b-chat-activity__leading,
+  .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
 .k2b-ui
-  .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
-  .k2b-chat-activity__copy
+  .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__copy
   strong {
   background-image: none;
   -webkit-text-fill-color: currentColor;
