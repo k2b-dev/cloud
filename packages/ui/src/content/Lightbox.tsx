@@ -15,6 +15,7 @@ import {
 } from "solid-js";
 import { Button, ButtonLink, IconButton, IconButtonLink } from "../actions/Button";
 import { Toolbar } from "../actions/Toolbar";
+import { afterExitTransitions } from "../internal/exit-motion";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { showTruncatedTitle } from "../internal/truncated-title";
 import { createDelayedLoading } from "../surfaces/Skeleton";
@@ -159,10 +160,21 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
         : [...ZOOM_STEPS].reverse().find((candidate) => candidate < value - 0.001);
     if (next !== undefined) setZoom(next);
   };
+  let closing = false;
+  let mounted = true;
+  onCleanup(() => {
+    mounted = false;
+  });
+  // Focus returns at once and the page is usable; the veil fades out, and the owner unmounts the Lightbox after it.
   const close = () => {
+    if (closing) return;
+    closing = true;
     if (dialog.open) dialog.close();
+    dialog.inert = true;
     returnFocus(opener, openerRing);
-    props.onClose();
+    afterExitTransitions(dialog, () => {
+      if (mounted) props.onClose();
+    });
   };
 
   // A key belongs to the Lightbox while focus is inside it, or on the page with no other dialog open above it.

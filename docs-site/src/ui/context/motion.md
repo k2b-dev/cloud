@@ -12,6 +12,8 @@ Use one vocabulary for every time and curve. The tokens are available on
 | `--k2b-motion-morph` | `280ms` | One large surface changes size or place, such as a pill that grows into an editor. |
 | `--k2b-motion-celebrate` | `600ms` | Completion moments only, such as the check that `celebrate` draws in a success toast, `prompts.success`, or a success `PanelDialog`. |
 | `--k2b-fresh-fade` | `1600ms` | Color only: a highlight fades out. |
+| `--k2b-shift-in` | `8px` | How far a surface travels as it arrives, such as a dialog rising into place. |
+| `--k2b-shift-out` | `4px` | How far a surface travels as it leaves. |
 | `--k2b-ease-out` | `cubic-bezier(0.23, 1, 0.32, 1)` | Standard curve. |
 | `--k2b-ease-morph` | `cubic-bezier(0.2, 0, 0, 1)` | With `--k2b-motion-morph` only: a soft start and a long, calm landing. |
 | `--k2b-ease-spring` | `cubic-bezier(0.34, 1.56, 0.64, 1)` | Small marks only: check, switch knob, badge. |
@@ -68,13 +70,21 @@ run without animation and must show the same result.
 
 Popovers and menus get only an entry animation. Closing stays synchronous.
 
+Dialogs are the one surface that also leaves visibly, after state and focus
+already apply. A dialog rises by `--k2b-shift-in` and fades in over
+`--k2b-motion-base`; when it closes, its result resolves, focus returns to the
+opener, and the page is usable at once, while the frame sinks by
+`--k2b-shift-out` and fades out over `--k2b-motion-fast`. Large surfaces, such
+as a workspace dialog or the `Lightbox`, only fade. A dialog that a reload
+brings back has no entrance.
+
 ## Keep an interaction within its motion budget
 
 Use CSS and small tree-shakable helpers. Do not add a motion library.
 
 - Read layout at most once per interaction. For FLIP, measure first, then
   animate only the transform.
-- Animate only transform, opacity, color, and shadow. Never animate width,
+- Animate only transform (including `translate`), opacity, color, and shadow. Never animate width,
   height, padding, or position.
 - Do not animate on first paint or component mount.
 - Virtualized lists animate only items that arrived live.

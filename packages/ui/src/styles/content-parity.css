@@ -4915,8 +4915,30 @@
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
+/* A large surface: it only fades, in over the base time and out over the fast time, with its veil. Closing returns
+   focus at once; the component calls `onClose` after the fade. A pull follows the finger without a transition. */
+.k2b-ui .k2b-lightbox,
+.k2b-ui .k2b-lightbox::backdrop {
+  opacity: 0;
+  transition:
+    opacity var(--k2b-motion-fast) var(--k2b-ease-out),
+    overlay var(--k2b-motion-fast) allow-discrete,
+    display var(--k2b-motion-fast) allow-discrete;
+}
+.k2b-ui .k2b-lightbox[open],
+.k2b-ui .k2b-lightbox[open]::backdrop {
+  opacity: 1;
+  transition-duration: var(--k2b-motion-base);
+}
+@starting-style {
+  .k2b-ui .k2b-lightbox[open],
+  .k2b-ui .k2b-lightbox[open]::backdrop {
+    opacity: 0;
+  }
+}
 .k2b-ui .k2b-lightbox[style*="--k2b-lightbox-pull"] {
   opacity: calc(1 - var(--k2b-lightbox-pull) * 0.5);
+  transition: none;
 }
 .k2b-ui .k2b-lightbox__head {
   position: absolute;
