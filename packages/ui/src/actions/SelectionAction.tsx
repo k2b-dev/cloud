@@ -27,6 +27,8 @@ export type SelectionActionProps = {
 };
 
 /** A selection's text as the action receives it: each run of whitespace as one space, trimmed. */
+type Selected = { range: Range; element: HTMLElement; text: string };
+
 const selectionActionText = (text: string) => text.replace(/\s+/gu, " ").trim();
 
 const coarse = () => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
@@ -58,9 +60,14 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
   const [dismissed, setDismissed] = createSignal<Range>();
   let pill: HTMLDivElement | undefined;
   let returnFocus: HTMLElement | null = null;
+  /**
+   * The selection as Tab took it into the pill. Moving the focus to a button clears the selection in WebKit, so the
+   * pill keeps this copy while it has the focus.
+   */
+  let held: Selected | null = null;
 
   /** The selection and its part, while it lies in one part of the root. */
-  const current = (): { range: Range; element: HTMLElement; text: string } | null => {
+  const current = (): Selected | null => {
     const selection = document.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
     const range = selection.getRangeAt(0);
@@ -81,22 +88,25 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
     a.endContainer === b.endContainer &&
     a.endOffset === b.endOffset;
 
+  const selected = () => current() ?? (held && pill?.contains(document.activeElement) ? held : null);
+
   const anchor = () => {
     revision();
     if (pressed()) return null;
-    const selected = current();
-    if (!selected || sameRange(dismissed(), selected.range)) return null;
+    const chosen = selected();
+    if (!chosen || sameRange(dismissed(), chosen.range)) return null;
     const below = coarse();
-    const box = lineBox(selected.range, below);
+    const box = lineBox(chosen.range, below);
     // Below on touch also clears the selection handles under the last line.
     return box && below ? new DOMRect(box.left, box.top, box.width, box.height + 16) : box;
   };
   const open = () => !!anchor();
 
   const close = (restore: boolean) => {
-    const selected = current();
+    const chosen = selected();
+    held = null;
     batch(() => {
-      if (selected) setDismissed(selected.range.cloneRange());
+      if (chosen) setDismissed(chosen.range.cloneRange());
       setRevision((value) => value + 1);
     });
     if (restore) returnFocus?.focus({ preventScroll: true });
@@ -104,9 +114,10 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
   };
 
   const run = () => {
-    const selected = current();
-    if (!selected) return;
-    props.onAction({ text: selected.text, element: selected.element });
+    const chosen = selected();
+    held = null;
+    if (!chosen) return;
+    props.onAction({ text: chosen.text, element: chosen.element });
     document.getSelection()?.removeAllRanges();
     returnFocus?.focus({ preventScroll: true });
     returnFocus = null;
@@ -149,9 +160,14 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
         const button = pill?.querySelector<HTMLButtonElement>("button");
         if (!button) return;
         const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const chosen = current();
+        held = chosen && { ...chosen, range: chosen.range.cloneRange() };
         button.focus({ preventScroll: true });
         // Only a pill that took the focus takes the key; an inert page leaves Tab to the browser.
-        if (document.activeElement !== button) return;
+        if (document.activeElement !== button) {
+          held = null;
+          return;
+        }
         event.preventDefault();
         returnFocus = before;
       }
@@ -172,7 +188,16 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
 
   return (
     <SelectionToolbar label={props.label} anchor={anchor} placement={coarse() ? "below" : "above"}>
-      <div ref={pill} style={{ display: "contents" }}>
+      <div
+        ref={pill}
+        style={{ display: "contents" }}
+        onFocusOut={(event) => {
+          // The focus leaving the pill drops the copy of the selection it took along.
+          if (event.relatedTarget instanceof Node && pill?.contains(event.relatedTarget)) return;
+          held = null;
+          setRevision((value) => value + 1);
+        }}
+      >
         <Button size="sm" variant="ghost" onClick={run}>
           <i class={props.icon} aria-hidden="true" />
           {props.label}
