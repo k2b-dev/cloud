@@ -9,9 +9,9 @@
  * (on app pages only once the restart takes longer than usual). A round never starts on its own; Space, a tap on the
  * road or a click on the maintenance symbol starts one.
  */
-import { LAUF_CSS, LAUF_SCRIPT, maintenanceGameMessages } from "@k2b/cloud/maintenance-game";
 
 import { MAINTENANCE_POLL_STEPS } from "@k2b/cloud/contracts/maintenance";
+import { LAUF_CSS, LAUF_SCRIPT, maintenanceGameMessages } from "@k2b/cloud/maintenance-game";
 
 export type MaintenancePageImage = { src: string /* data: URI */ };
 export type MaintenancePageModel = {
