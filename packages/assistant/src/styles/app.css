@@ -869,16 +869,15 @@
   inset-inline: 0;
   inset-block-end: calc(100% + var(--assistant-waiting-offset));
 }
-/* The row covers the free end from its top down to the field, so the conversation never shows between the chips (v12
-   §9). Above the row, within the free end, text that scrolls on fades into the page instead of ending at a hard edge. */
-.k2b-ui .assistant-chat-composer__column > .assistant-waiting::before {
-  position: absolute;
-  z-index: -1;
-  inset-inline: 0;
-  inset-block: calc(var(--assistant-waiting-height) + var(--assistant-waiting-offset) - var(--assistant-free-end)) calc(-1 * var(--assistant-waiting-offset));
-  background: linear-gradient(to bottom, transparent, var(--k2b-surface) calc(var(--assistant-free-end) - var(--assistant-waiting-height) - var(--assistant-waiting-offset)));
-  content: "";
-  pointer-events: none;
+/* While the row shows, the conversation scrolling behind it is masked out from the row's top down to the field, so it
+   never shows between the chips (v12 §9); above the row, within the free end, it fades out. A mask, not a colour, so it
+   holds on every surface and theme and across the conversation's whole width. */
+.k2b-ui .assistant-chat-layout:has(.assistant-chat-composer__column > .assistant-waiting:not([data-quiet])) .k2b-chat-timeline__viewport {
+  mask-image: linear-gradient(
+    to top,
+    transparent calc(var(--assistant-waiting-height) + var(--assistant-waiting-offset)),
+    #000 var(--assistant-free-end)
+  );
 }
 .k2b-ui .assistant-waiting[data-quiet] { visibility: hidden; }
 /* The slash list opens over the row's place: the row steps back, keeping its place, until the list closes. */
