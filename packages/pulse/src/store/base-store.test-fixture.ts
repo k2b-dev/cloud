@@ -26,16 +26,31 @@ export const fixturePolicy: PulsePolicy = {
 const password = "obviously-fake-base-store-fixture-password";
 export const fixtureConnection = () => ({ url: clickhouseTestAdmin().url, user: `${clickhouseTestPrefix}service`, password });
 export const fixtureClock = () => new Date("2026-10-17T12:00:00.000Z");
+/** ClickHouse evaluates TTL against its own wall clock. Shift every retention
+ * expression by the distance between that clock and the fixture clock, so rows
+ * written at fixture time expire as if ClickHouse ran at fixture time. */
+const anchorTtl = (statement: string, clock: () => Date) => {
+  if (!/^(CREATE TABLE|ALTER TABLE)\b/.test(statement)) return statement;
+  const offsetSeconds = Math.round((Date.now() - clock().getTime()) / 1000);
+  let anchored = 0;
+  const result = statement.replace(/\bTTL ([^,]*?toInterval(?:Day|Hour)\(\d+\))/g, (_, ttl: string) => {
+    anchored++;
+    return `TTL ${ttl} + toIntervalSecond(${offsetSeconds})`;
+  });
+  const expressions = (statement.match(/\bTTL\b/g)?.length ?? 0) - (statement.match(/\bREMOVE TTL\b/g)?.length ?? 0);
+  if (anchored !== expressions) throw new Error(`Fixture store cannot anchor this TTL to the fixture clock: ${statement}`);
+  return result;
+};
 export const fixtureStore = (clock = fixtureClock) => {
   const store = createBaseStore({ prefix: clickhouseTestPrefix, connection: async () => fixtureConnection(), clock });
   const query = store.query;
   store.query = async (statement, params, connection) => {
     if (/\bsystem\.disks\b/i.test(statement)) throw new Error("Tests must inject disk measurements");
     // Freeze the ClickHouse view clock at DDL time. Tests that advance their clock
-    // must reconcile again to advance these read boundaries.
+    // must reconcile again to advance these read boundaries and TTLs.
     const frozen = statement.startsWith("CREATE OR REPLACE VIEW")
       ? statement.replaceAll("now64(3,'UTC')", `fromUnixTimestamp64Milli(${clock().getTime()},'UTC')`)
-      : statement;
+      : anchorTtl(statement, clock);
     return query(frozen, params, connection);
   };
   return store;
