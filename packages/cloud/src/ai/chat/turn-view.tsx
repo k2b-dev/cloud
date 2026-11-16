@@ -194,9 +194,19 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const phase = segment().phase;
     return phase === "stopped" ? "stopped" : phase === "failed" && !segment().error ? "failed" : null;
   };
-  // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1).
-  const thinkingPhase = () =>
-    working() && stepPhrase(layout().current, t(), false) === t().stepThinking ? `${segment().id}:${currentStep() ?? "start"}` : null;
+  // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1). A
+  // phase lasts as long as the line says "Thinking", across blocks: a thinking block, a finished call, and the next
+  // thinking block are one phase. It starts with the step the line turned to thinking at, on the work clock.
+  const thinking = createMemo(() => working() && stepPhrase(layout().current, t(), false) === t().stepThinking);
+  const thinkingStart = createMemo(
+    on(thinking, (now) => (now ? { id: `${segment().id}:${currentStep() ?? "start"}`, at: segment().duration()?.workedMs ?? 0 } : null)),
+  );
+  const thinkingPhase = () => thinkingStart()?.id ?? null;
+  const thinkingMs = () => {
+    const start = thinkingStart();
+    const workedMs = segment().duration()?.workedMs;
+    return start === null || workedMs === undefined ? 0 : workedMs - start.at;
+  };
   const thinkingWords = (phase: string) => aiThinkingWordRound(phase, aiThinkingWords(locale()));
   const sentence = () => {
     if (reconnecting()) return t().reconnecting;
@@ -256,7 +266,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
                 <Chat.Activity.Words
                   first={t().thinking}
                   words={thinkingWords(phase)}
-                  elapsedMs={stepMs()}
+                  elapsedMs={thinkingMs()}
                   announce={aiThinkingMessages(locale()).announcement({ assistant: t().assistant })}
                 />
               )}

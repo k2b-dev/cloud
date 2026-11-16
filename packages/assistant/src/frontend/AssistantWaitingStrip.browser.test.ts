@@ -770,9 +770,16 @@ describe("Waiting for you", () => {
       const { page, errors, unrouted, close } = await open(view, { locale: "de", scenario: "three" });
       try {
         await strip(page).waitFor();
-        await scrollTimeline(page, "top");
         const pill = page.getByRole("button", { name: "Zur neuesten Nachricht" });
-        await pill.waitFor();
+        // Scrolled up as a person does, again while the chat still lays out its end and follows it (WebKit, 1440).
+        await until(
+          page,
+          async () => {
+            await scrollTimeline(page, "top");
+            return pill.isVisible();
+          },
+          "the pill shows",
+        );
         await settled(page);
         const withRow = await rect(page, ".k2b-chat-timeline__latest");
         const row = await rect(page, "nav.assistant-waiting");

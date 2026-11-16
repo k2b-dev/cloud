@@ -65,6 +65,8 @@
 .k2b-ui .assistant-chat-layout {
   --assistant-layer-waiting: 2;
   --assistant-layer-to-latest: 3;
+  /* The timeline's free end below its last message, always there (v12 §9); "Waiting for you" lies on it. */
+  --assistant-free-end: 3.375rem;
   --assistant-waiting-height: 2rem;
   --assistant-waiting-offset: 0.375rem;
   --assistant-to-latest-above-waiting: calc(var(--assistant-waiting-height) + var(--assistant-waiting-offset));
@@ -850,7 +852,7 @@
 /* "Waiting for you" (Gustav chat v12, Bauplan 3m): one 32 px row that never wraps. Over the chat it lies on the
    timeline's free end, which is always 54 px, so it comes and goes without moving the field or the conversation; on
    the start screen and in a project it stands in the flow above the field. Hidden, it keeps its place. */
-.k2b-ui .assistant-chat-layout .k2b-chat-timeline__content { padding-block-end: 3.375rem; }
+.k2b-ui .assistant-chat-layout .k2b-chat-timeline__content { padding-block-end: var(--assistant-free-end); }
 .k2b-ui .assistant-chat-composer__column { position: relative; }
 .k2b-ui .assistant-waiting {
   container: assistant-waiting / inline-size;
@@ -866,8 +868,17 @@
   z-index: var(--assistant-layer-waiting);
   inset-inline: 0;
   inset-block-end: calc(100% + var(--assistant-waiting-offset));
-  /* Text that scrolls under the row fades into the page, never behind a hard edge. */
-  background: linear-gradient(to bottom, transparent, var(--k2b-surface) 55%);
+}
+/* The row covers the free end from its top down to the field, so the conversation never shows between the chips (v12
+   §9). Above the row, within the free end, text that scrolls on fades into the page instead of ending at a hard edge. */
+.k2b-ui .assistant-chat-composer__column > .assistant-waiting::before {
+  position: absolute;
+  z-index: -1;
+  inset-inline: 0;
+  inset-block: calc(var(--assistant-waiting-height) + var(--assistant-waiting-offset) - var(--assistant-free-end)) calc(-1 * var(--assistant-waiting-offset));
+  background: linear-gradient(to bottom, transparent, var(--k2b-surface) calc(var(--assistant-free-end) - var(--assistant-waiting-height) - var(--assistant-waiting-offset)));
+  content: "";
+  pointer-events: none;
 }
 .k2b-ui .assistant-waiting[data-quiet] { visibility: hidden; }
 /* The slash list opens over the row's place: the row steps back, keeping its place, until the list closes. */
