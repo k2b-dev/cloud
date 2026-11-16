@@ -3,6 +3,7 @@ import { sql } from "@k2b/cloud";
 import { accounts } from "@k2b/cloud/services";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { contactsCapabilities } from "../capabilities";
 import { newShortId } from "../lib/short-id";
 import { contactsService } from ".";
 
@@ -81,6 +82,31 @@ suite("Contacts book ordering (SRV-09)", () => {
       }
       expect(adminIds).toEqual(ids);
       expect(readableIds).toEqual(ids);
+
+      // Discussion cursors store positions, so changing the page size cannot skip readable books.
+      const containers = contactsCapabilities.queries["book.containers"];
+      const context = {
+        actor: { kind: "user" as const, user: callerUser },
+        accessSubject: { type: "user" as const, userId: callerUser.id },
+        user: callerUser,
+        locale: "en",
+        origin: "app" as const,
+        requestId: "contacts-discussion-pagination",
+        signal: new AbortController().signal,
+      };
+      const discussionIds: string[] = [];
+      let cursor: string | undefined;
+      for (const limit of [2, 3, 3]) {
+        const result = await containers.run(containers.input.parse({ query: marker, limit, cursor }), context);
+        if (!result.ok) throw new Error(result.error.message);
+        discussionIds.push(...result.data.data.items.map((item) => item.ref.id));
+        cursor = result.data.data.next ?? undefined;
+      }
+      expect(cursor).toBeUndefined();
+      const expected = await sql<{ short_id: string }[]>`
+        SELECT short_id FROM contacts.books WHERE id IN ${sql(ids)} ORDER BY id
+      `;
+      expect(discussionIds).toEqual(expected.map((row) => row.short_id));
     } finally {
       await sql.begin(async (tx) => {
         await tx`DELETE FROM contacts.book_access WHERE book_id IN ${tx(ids)}`;

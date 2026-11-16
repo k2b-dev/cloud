@@ -18,7 +18,22 @@ export async function islandBundleSize(entries: string[], files?: Record<string,
       .map((input) => resolve(input))
       .filter((input) => !used.has(input)),
   );
-  const build = await buildIslandClosure(entries, files, dead);
+  // Every name a module of the build imports or re-exports by name; a dead module keeps only those exports.
+  const imported = new Set<string>();
+  for (const input of Object.keys(first.metafile.inputs)) {
+    const path = resolve(input);
+    if (!/\.[cm]?[jt]sx?$/.test(path)) continue;
+    const code = files?.[path] ?? (await Bun.file(path).text());
+    for (const [, list] of code.matchAll(/\b(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\b/g))
+      for (const item of list!.split(",")) {
+        const name = item
+          .trim()
+          .replace(/^type\s+/, "")
+          .split(/\s+as\s+/)[0];
+        if (name) imported.add(name);
+      }
+  }
+  const build = await buildIslandClosure(entries, files, dead, imported);
   const meta = build.metafile;
   if (!meta) throw new Error("Missing island bundle metafile");
   const outputs = new Map(Object.entries(meta.outputs).map(([path, output]) => [basename(path), output]));

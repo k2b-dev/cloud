@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { capabilityCallFromTool, capabilityToolInputSchema } from "@k2b/cloud/capabilities/server";
-import { assertResourceOpenLink, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   CapabilityActionCallReviewSchema,
@@ -461,6 +461,7 @@ describe("Grids capabilities", () => {
     expect(gridsCapabilities.protocolVersion).toBe(2);
     expect(Object.keys(gridsCapabilities.types ?? {}).sort()).toEqual(["base", "document", "record", "table", "view", "workflow-run"]);
     expect(Object.keys(gridsCapabilities.queries ?? {}).sort()).toEqual([
+      "base.containers",
       "base.list",
       "base.read",
       "base.search",
@@ -680,6 +681,7 @@ describe("Grids capabilities", () => {
         view: { title: "Capability Base", permission: "write" },
       });
       if (loadedBase.ok) {
+        expect(assertResourceView(loadedBase.data)).toEqual({ title: "Capability Base", permission: "write" });
         expect(loadedBase.data.data).not.toHaveProperty("shortId");
         expect(loadedBase.data.summary).toBe("Read Grids base “Capability Base”.");
       }
@@ -688,6 +690,14 @@ describe("Grids capabilities", () => {
       const managedBase = await invoke("query", "base.read", { id: basePublicId }, context);
       expect(managedBase).toMatchObject({ ok: true, data: { data: { view: { permission: "admin" } } } });
       await sql`UPDATE auth.access SET permission='write' WHERE id=${access.id}::uuid`;
+
+      const discussionContainers = await invoke("query", "base.containers", { query: basePublicId }, context);
+      expect(discussionContainers.ok && discussionContainers.data.data).toEqual({
+        items: [{ ref: { type: "grids.base", id: basePublicId }, title: "Capability Base" }],
+        next: null,
+      });
+      const deniedContainers = await invoke("query", "base.containers", { query: basePublicId }, userContext(testUser(uuid())));
+      expect(deniedContainers.ok && deniedContainers.data.data).toEqual({ items: [], next: null });
 
       const tables = await invoke(
         "query",
@@ -1007,6 +1017,7 @@ describe("Grids capabilities", () => {
       const loadedRecord = await invoke("query", "record.read", { id: record.id }, context);
       expect(loadedRecord.ok && loadedRecord.data.data).toMatchObject({ id: record.id, version: 1 });
       if (loadedRecord.ok) {
+        expect(assertResourceView(loadedRecord.data, { type: "grids.base", id: basePublicId }).permission).toBe("write");
         expect(loadedRecord.data.data).not.toHaveProperty("data");
         expect(loadedRecord.data.summary).toBe("Read a Record in “Items” at version 1.");
       }

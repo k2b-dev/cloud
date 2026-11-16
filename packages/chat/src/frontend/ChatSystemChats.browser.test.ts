@@ -193,7 +193,7 @@ for (const [name, options, mobile] of [
       }
     }, 30_000);
 
-    test("loading has three skeletons; errors retry to empty without changing the section button", async () => {
+    test("without discussions the section stays away while loading and when empty; a failure shows with its retry", async () => {
       let release!: () => void;
       const pending = new Promise<void>((resolve) => {
         release = resolve;
@@ -206,18 +206,17 @@ for (const [name, options, mobile] of [
       });
       try {
         const section = list(page, mobile).locator(".chat-system-chats");
-        const button = section.getByRole("button", { name: /Diskussionen/ });
-        await button.click();
-        expect(await section.locator(".chat-system-chats__skeleton").count()).toBe(3);
         await settled(page);
-        const before = await button.boundingBox();
+        // No placeholder text and no skeleton: nothing is known about discussions yet.
+        expect(await section.count()).toBe(0);
         release();
+        // A failure is not silent: the section appears open with the error and its retry.
         await section.getByText("Diskussionen konnten nicht geladen werden.", { exact: false }).waitFor();
+        expect(await section.getByRole("button", { name: /Diskussionen/ }).getAttribute("aria-expanded")).toBe("true");
         await page.unroute("**/api/chat/system-chats");
         await section.getByRole("button", { name: "Erneut versuchen" }).click();
-        await section.getByText("Noch keine. Sobald jemand über eine Ressource schreibt, erscheint ihr Chat hier.").waitFor();
-        await settled(page);
-        expect(await button.boundingBox()).toEqual(before);
+        await section.waitFor({ state: "detached" });
+        expect(await list(page, mobile).getByText("Sobald jemand über eine Ressource schreibt", { exact: false }).count()).toBe(0);
       } finally {
         release();
         await page.context().close();
@@ -588,7 +587,8 @@ test("system item directory and info keep their links inside the universal panel
     await page.waitForURL(`**/app/chat/panel/c/${chat}/t/${threads[0]}`);
     const info = page.getByRole("link", { name: "Chat-Info", exact: true });
     expect(await info.getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/t/${threads[0]}?panel=info`);
-    expect(await page.locator(".chat-conversation__back a").getAttribute("href")).toBe(`/app/chat/panel/c/${chat}/threads`);
+    // The panel's way back is "All chats"; the overview stays in the sidebar and the thread picker.
+    expect(await page.locator(".chat-conversation__back a").getAttribute("href")).toBe("/app/chat/panel");
     await info.click();
     await page.getByText("Mitglieder: alle mit Zugriff auf diesen Bereich. Zugriff änderst du dort.").waitFor();
     expect(errors).toEqual([]);
@@ -669,7 +669,8 @@ test("personal Unread and the system directory filter survive reload and Back in
   try {
     const sidebar = page.locator(".k2b-app-workspace__sidebar");
     const directory = page.locator(".chat-threads-page .chat-system-directory");
-    await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).click();
+    await sidebar.locator(".chat-list-filter").click();
+    await page.getByRole("menuitemradio", { name: "Ungelesen", exact: true }).click();
     await page.waitForURL(/listFilter=unread/);
     await directory.getByRole("button", { name: "Erledigt", exact: true }).click();
     await page.waitForURL(/filter=done/);
@@ -682,13 +683,12 @@ test("personal Unread and the system directory filter survive reload and Back in
       const props = await (await fetch(`/__props?path=${encodeURIComponent(location.pathname + location.search)}`)).json();
       await window.mountChat(props, "de");
     });
-    await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).waitFor();
-    expect(await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).getAttribute("aria-pressed")).toBe("true");
+    await sidebar.locator('.chat-list-filter[data-active="true"]').waitFor();
     await page.goBack();
     await page.waitForURL((url) => url.pathname === `/app/chat/c/${chat}/threads`);
     await directory.getByRole("link", { name: /Einladung freigeben/ }).waitFor();
     expect(await directory.getByRole("button", { name: "Erledigt", exact: true }).getAttribute("aria-pressed")).toBe("true");
-    expect(await sidebar.getByRole("button", { name: "Ungelesen", exact: true }).getAttribute("aria-pressed")).toBe("true");
+    expect(await sidebar.locator(".chat-list-filter").getAttribute("data-active")).toBe("true");
     await directory.getByRole("button", { name: "Erledigt", exact: true }).click();
     await page.waitForURL((url) => !url.searchParams.has("filter"));
     expect(new URL(page.url()).searchParams.get("listFilter")).toBe("unread");

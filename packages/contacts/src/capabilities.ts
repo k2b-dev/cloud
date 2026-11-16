@@ -6,9 +6,10 @@ import {
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CapabilityResult,
-  CloudResourceReaderViewSchema,
   type CloudResourceView,
   capabilityPage,
+  DiscussionContainersDataSchema,
+  DiscussionContainersInputSchema,
   defineCapabilities,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
@@ -17,20 +18,19 @@ import {
 import type { PermissionLevel } from "@k2b/cloud/server";
 import { type AuditActor, audit } from "@k2b/cloud/services";
 import { err, fail, ok, type Paginated, type Result, type ServiceError } from "@k2b/stdlib";
-import type { z } from "zod";
+import { z } from "zod";
 import { contactsEvents } from "./app-events";
 import { contactAutomationReview } from "./capability-action-reviews";
 import {
   CONTACT_COLLECTION_LIMIT,
   CONTACT_TAG_LIMIT,
-  ContactBookDataSchema,
   ContactBookListDataSchema,
   ContactBookListInputSchema,
+  ContactBookReaderDataSchema,
   ContactBookReadInputSchema,
   ContactCreateInputSchema,
   ContactDeleteDataSchema,
   ContactDeleteInputSchema,
-  ContactDetailDataSchema,
   ContactListInputSchema,
   ContactMoveInputSchema,
   ContactMutationDataSchema,
@@ -40,6 +40,7 @@ import {
   ContactNoteListDataSchema,
   ContactNoteListInputSchema,
   ContactNoteReadInputSchema,
+  ContactReaderDataSchema,
   ContactReadInputSchema,
   ContactResolveDataSchema,
   ContactResolveInputSchema,
@@ -688,6 +689,15 @@ const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, con
   if (!resolved.ok) return resolved;
   const [contact] = await projectContacts([resolved.data.contact]);
   if (!contact) return fail(err.notFound("Contact"));
+  const access = await contactsService.book.get({
+    id: resolved.data.bookId,
+    actor: context.actor,
+    accessSubject: context.accessSubject,
+  });
+  if (!access.ok) return withBookAccessMessage(access, "read");
+  if (access.data.permission === "none") return fail(err.forbidden("Read access to this address book is required"));
+  const [book] = await projectBooks([access.data.book]);
+  if (!book) return fail(err.notFound("Book"));
   const data = mapContactDetail(contact);
   const { t } = contactCapabilityMessages.resolve([context.locale]);
   const reachable = [
@@ -724,7 +734,14 @@ const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, con
     ],
   };
   return ok({
-    data,
+    data: {
+      ...data,
+      view: {
+        title: resolveContactName(contact).slice(0, 500),
+        permission: access.data.permission,
+        container: { ref: { type: "contacts.book", id: book.id }, title: book.name.slice(0, 500) },
+      },
+    },
     view,
     summary: boundedCapabilitySummary(`Read contact “${resolveContactName(contact)}”.`),
     refs: [contactRef(contact)],
@@ -742,13 +759,14 @@ const runBookRead = async (input: z.infer<typeof ContactBookReadInputSchema>, co
   if (!access.ok) return access;
   const [book] = await projectBooks([access.data.book]);
   if (!book) return fail(err.notFound("Book"));
+  if (access.data.permission === "none") return fail(err.forbidden("Read access to this address book is required"));
   return ok({
     data: {
+      view: { title: book.name.slice(0, 500), permission: access.data.permission },
       id: book.id,
       name: book.name,
       description: book.description,
       permission: access.data.permission,
-      view: { title: book.name, permission: access.data.permission },
       links: [{ rel: "open" as const, href: `/app/contacts/${book.id}` }],
       createdAt: book.createdAt,
       updatedAt: book.updatedAt,
@@ -1179,6 +1197,7 @@ export const contactsCapabilities = defineCapabilities({
       description: "A person or organization in an address book.",
       icon: "ti ti-address-book",
       reader: "contact.read",
+      container: "book",
       pages: ["/app/contacts/:book?contact=:id", "/app/contacts/:book/e/:id"],
     },
     book: {
@@ -1203,7 +1222,47 @@ export const contactsCapabilities = defineCapabilities({
       reader: "note.read",
     },
   },
+  discussions: { item: "contact", containers: "book.containers" },
   queries: {
+    "book.containers": {
+      title: "List discussion address books",
+      description: "List address books the caller can read, with opaque pagination.",
+      input: DiscussionContainersInputSchema,
+      data: DiscussionContainersDataSchema,
+      openWorld: false,
+      run: async (input, context) => {
+        let offset = 0;
+        if (input.cursor) {
+          try {
+            offset = z
+              .object({ v: z.literal(1), offset: z.number().int().nonnegative() })
+              .strict()
+              .parse(JSON.parse(Buffer.from(input.cursor, "base64url").toString("utf8"))).offset;
+          } catch {
+            return fail(err.badInput("Invalid cursor"));
+          }
+        }
+        const result = await contactsService.book.listPage({
+          actor: context.actor,
+          accessSubject: context.accessSubject,
+          pagination: { perPage: input.limit },
+          offset,
+          filter: { query: input.query, minimumPermission: "read" },
+        });
+        if (!result.ok) return withCollectionAccessMessage(result);
+        const books = await projectBooks(result.data.items);
+        const nextOffset = offset + books.length;
+        return ok({
+          data: {
+            items: books.map((book) => ({ ref: { type: "contacts.book", id: book.id }, title: book.name.slice(0, 500) })),
+            next:
+              result.data.hasNext && books.length > 0
+                ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url")
+                : null,
+          },
+        });
+      },
+    },
     "contact.search": {
       title: "Search contacts",
       description:
@@ -1252,7 +1311,7 @@ export const contactsCapabilities = defineCapabilities({
       description:
         "Read one contacts.contact ref returned by contact.search, contact.list, contact.suggest, or contact.resolve after checking its owning address book.",
       input: ContactReadInputSchema,
-      data: ContactDetailDataSchema,
+      data: ContactReaderDataSchema,
       openWorld: false,
       run: runContactRead,
     },
@@ -1260,7 +1319,7 @@ export const contactsCapabilities = defineCapabilities({
       title: "Read address book",
       description: "Read one contacts.book ref or address-book ID returned by book.list.",
       input: ContactBookReadInputSchema,
-      data: ContactBookDataSchema.extend({ view: CloudResourceReaderViewSchema }),
+      data: ContactBookReaderDataSchema,
       openWorld: false,
       run: runBookRead,
     },

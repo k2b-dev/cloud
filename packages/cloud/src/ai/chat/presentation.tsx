@@ -12,7 +12,9 @@ import {
   onCleanup,
   type Setter,
   Show,
+  sharedConfig,
 } from "solid-js";
+import { isServer } from "solid-js/web";
 import { blockWords } from "../../blocks/messages";
 import type { AiActiveTurn } from "../client/projection";
 import { aiModelChooserMessages } from "../model-chooser-messages";
@@ -23,7 +25,7 @@ import { AiReaderTimeZoneProvider } from "./action-sentences";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
-import { aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
+import { type AiStopNotice, aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
@@ -387,7 +389,19 @@ const storedItems = (
       const lastMessage = item.entries.findLast((entry) => entry.message.role === "assistant");
       // One ending, never two: the person's stop is the quiet line; only a turn Cloud ended explains itself in a notice.
       const byPerson = last && segmentPhase === "stopped" && stoppedByPerson(item.entries);
-      const stopNotice = index === lastAssistant && lastMessage && !byPerson ? aiMessageStopNotice(lastMessage) : null;
+      const storedNotice = index === lastAssistant && lastMessage && !byPerson ? aiMessageStopNotice(lastMessage) : null;
+      // A finished turn whose steps leave nothing to read, act on, or explain ends visibly, never in silence.
+      const silent =
+        last &&
+        segmentPhase === "completed" &&
+        !error &&
+        !storedNotice &&
+        !task &&
+        layout.steps > 0 &&
+        layout.text.length === 0 &&
+        layout.results.length === 0 &&
+        layout.actions.length === 0;
+      const stopNotice: AiStopNotice | null = storedNotice ?? (silent ? { kind: "no_answer" } : null);
       if (isEmptyLayout(layout) && !messageActions && !task && !error && !stopNotice) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
       return [
@@ -410,7 +424,7 @@ const storedItems = (
             stopNotice: error ? null : stopNotice,
             // A stopped answer offers to answer the person's message again, where it stopped.
             answerAgain:
-              last && segmentPhase === "stopped" && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
+              last && (segmentPhase === "stopped" || silent) && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
                 ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
                 : undefined,
             continuable:
@@ -517,7 +531,11 @@ const activeItems = (
  * running, so a step that starts right after the pause is timed from the true work time.
  */
 const createActiveTurnClock = (source: AiChatTimelineSource, paused: Accessor<boolean>): Accessor<AiTurnDuration | null> => {
-  const [now, setNow] = createSignal(Date.now());
+  // The server's render time seeds the clock only for the server render and the hydration that adopts it, so both show
+  // the same time and word. A timeline built later, such as for another chat, starts from the real clock: an old render
+  // time would otherwise become the start of a newer turn.
+  const rendered = source.renderedAt && (isServer || sharedConfig.context) ? Date.parse(source.renderedAt) : Number.NaN;
+  const [now, setNow] = createSignal(Number.isFinite(rendered) ? rendered : Date.now());
   const running = createMemo(() => source.activeTurn() !== null);
   createEffect(() => {
     if (!running() || typeof window === "undefined") return;
@@ -576,6 +594,12 @@ export type AiChatTimelineSource = {
    * browser. Defaults to the browser's own zone, and to UTC outside a browser.
    */
   timeZone?: string;
+  /**
+   * When the server rendered the page, such as the island's `renderedAt`. The work clock starts there, so the server
+   * output and the first browser frame show the same time and the same thinking word; the browser counts on from its
+   * own clock after that frame.
+   */
+  renderedAt?: string;
 };
 
 /**
