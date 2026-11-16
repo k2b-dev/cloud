@@ -2333,7 +2333,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       <textarea
         ref={(element) => {
           textareaRef = element;
-          // The server's field takes typing before the island hydrates, and hydration writes `value` over it.
+          // The server's field takes typing before the island hydrates; the owner's value does not know that text yet.
           if (sharedConfig.context && element.value !== props.value) typedBeforeHydration = element.value;
         }}
         classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 || Boolean(dictationView()) }}
