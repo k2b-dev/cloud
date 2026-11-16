@@ -125,7 +125,7 @@ export function presentCodeVersion(input: {
   const restrictedText = !denied && targets.some((ref) => names.target(ref).unavailable) ? t.unresolvedDescription : t.restricted;
   const mayDo = [
     ...new Map(
-      manifest.permissions.map(({ operation, target }) => {
+      manifest.permissions.map(({ operation, target }): [string, CodeVersionReadModel["mayDo"]["items"][number]] => {
         const action = names.operation(operation);
         if (input.personal && operation === "core.ai.chat.send" && target?.type === "core.ai.chat" && target.id === null)
           return [
