@@ -139,6 +139,8 @@ export default function DocumentsWorkspace(props: {
   };
 
   const downloadMut = mutations.create<void, PublicDocument, { documentId: string }>({
+    // Another row's download starts while one runs; the running download still finishes.
+    concurrency: "replace",
     onBefore: (document) => {
       setBusyDocumentId(document.id);
       return { documentId: document.id };

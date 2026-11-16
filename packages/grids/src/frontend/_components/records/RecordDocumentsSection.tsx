@@ -119,10 +119,18 @@ export default function RecordDocumentsSection(props: {
       setDocumentCursor(page.cursor);
       setHasMoreDocuments(page.hasMore);
     },
-    onError: (error) => retryToast(error.message, { retryLabel: t().retry, retry: () => loadMoreDocumentsMut.mutate() }),
+    onError: (error) =>
+      retryToast(error.message, {
+        retryLabel: t().retry,
+        retry: async () => {
+          await loadMoreDocumentsMut.mutate();
+        },
+      }),
   });
 
   const redownloadMut = mutations.create<void, PublicDocument>({
+    // Another row's download starts while one runs; the running download still finishes.
+    concurrency: "replace",
     onBefore: (document) => setActiveDownloadId(document.id),
     mutation: async (document) => {
       const res = await requestDocumentDownload(document.id);
@@ -229,7 +237,9 @@ export default function RecordDocumentsSection(props: {
       document,
       templateName: props.templates.find((candidate) => candidate.id === document.templateId)?.name,
       canWrite: props.canWrite,
-      onDownload: (item) => redownloadMut.mutate(item),
+      onDownload: async (item) => {
+        await redownloadMut.mutate(item);
+      },
       ...(props.live && props.canWrite && template ? { onGenerateAgain: () => generate(template) } : {}),
     });
   };

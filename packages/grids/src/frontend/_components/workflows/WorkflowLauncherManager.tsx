@@ -613,9 +613,7 @@ export function WorkflowLauncherManager(props: {
       props.workflow,
       props.tables,
       async (draft) => {
-        await saveMut.mutate({ launcher, draft });
-        const error = saveMut.error();
-        if (error) throw error;
+        if ((await saveMut.mutate({ launcher, draft })) === "error") throw saveMut.error();
       },
       launcher,
     );

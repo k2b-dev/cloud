@@ -251,29 +251,29 @@ export const openPulseBaseSettingsDialog = (options: BaseSettingsDialogOptions) 
       const grantAccess = async (principal: Principal, permission: GrantableLevel) => {
         requireOpen();
         requireAccessWritable();
-        await grantMutation.mutate({ principal, permission });
+        const outcome = await grantMutation.mutate({ principal, permission });
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
-        const error = grantMutation.error();
-        if (error) throw error;
+        if (outcome === "error") throw grantMutation.error();
+        if (outcome !== "success") throw new DOMException("Access grant did not run", "AbortError");
         wroteAccess = true;
         return grantMutation.data()!;
       };
       const updateAccess = async (accessId: string, permission: GrantableLevel) => {
         requireOpen();
         requireAccessWritable();
-        await updateMutation.mutate({ accessId, permission });
+        const outcome = await updateMutation.mutate({ accessId, permission });
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
-        const error = updateMutation.error();
-        if (error) throw error;
+        if (outcome === "error") throw updateMutation.error();
+        if (outcome !== "success") throw new DOMException("Access update did not run", "AbortError");
         wroteAccess = true;
       };
       const revokeAccess = async (accessId: string) => {
         requireOpen();
         requireAccessWritable();
-        await revokeMutation.mutate(accessId);
+        const outcome = await revokeMutation.mutate(accessId);
         if (disposed) throw new DOMException("Settings dialog was disposed", "AbortError");
-        const error = revokeMutation.error();
-        if (error) throw error;
+        if (outcome === "error") throw revokeMutation.error();
+        if (outcome !== "success") throw new DOMException("Access revoke did not run", "AbortError");
         wroteAccess = true;
       };
       // Changes are collected in the access dialog and saved together; the list reloads once afterwards.

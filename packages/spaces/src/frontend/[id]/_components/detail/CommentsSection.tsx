@@ -205,9 +205,7 @@ export default function CommentsSection(props: Props) {
           placeholder={t.commentPlaceholder}
           submitLabel={t.postComment}
           onSubmit={async (content) => {
-            await createCommentMutation.mutate(content);
-            const error = createCommentMutation.error();
-            if (error) throw error;
+            if ((await createCommentMutation.mutate(content)) === "error") throw createCommentMutation.error();
           }}
         />
       </Show>

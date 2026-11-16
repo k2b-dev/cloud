@@ -84,7 +84,8 @@ row. Every place that reads one mutation shows the same state, no matter which
 button, menu item, hotkey, or code started the call.
 
 `abort()` cancels the active operation. An aborted fetch calls `onAbort`, not
-`onError`.
+`onError`. A call still in `onBefore` ends `aborted` at once, and the mutation
+accepts a new call right after `abort()`.
 
 `retry()` repeats the previous variables and context. It does not run
 `onBefore` again. `onError` receives the failed call as its third argument;
@@ -92,12 +93,27 @@ button, menu item, hotkey, or code started the call.
 suits a "Try again" action in a toast.
 
 A second call while one is `pending` or `loading` is dropped: it runs nothing,
-changes no state, and its Promise resolves. This guards double clicks, the
-Enter key in a form, and hotkeys without a local `loading()` check. When the
+changes no state, runs no hook (also not `onFinally`), and its Promise resolves
+`"dropped"`. This guards double clicks, the Enter key in a form, and hotkeys
+without a local `loading()` check. When the
 newest call must win, as in search as you type, reads that follow a changing
 selection or filter, or reloads after a change, create the mutation with
 `concurrency: "replace"`. A newer call then starts anyway and a late result
-from the older one is ignored.
+from the older one is ignored. One mutation for many rows drops a click on a
+second row while the first one runs; give each row its own mutation, or use
+`concurrency: "replace"` when the rows' work is independent, such as
+downloads.
+
+`mutate()`, `retry()`, and `run.retry()` resolve with the outcome of this
+call: `"success"`, `"error"`, `"aborted"`, or `"dropped"`. After `await`, read
+the outcome, not `error()` or `data()`, which may describe another call:
+
+```ts
+if ((await update.mutate(values)) === "success") close();
+```
+
+Release a local busy flag set before `mutate()` from the outcome, not only in
+`onFinally`, because a dropped call runs no hook.
 
 To ask before the work starts, call `cancel()` from the second argument of
 `onBefore`. The call ends as `aborted` without `onError` or `onAbort`, and

@@ -1,4 +1,4 @@
-import { mutation as mutations } from "@k2b/stdlib/solid";
+import { mutation as mutations, type MutationOutcome } from "@k2b/stdlib/solid";
 import { prompts, SettingsGroup, TagEditor } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { SpaceTag } from "@/contracts";
@@ -65,8 +65,8 @@ export function TagsSection(props: {
     },
   });
 
-  const throwMutationError = (error: Error | null) => {
-    if (error) throw error;
+  const throwMutationError = (outcome: MutationOutcome, error: Error | null) => {
+    if (outcome === "error") throw error;
   };
   let deletePromptPending = false;
 
@@ -78,12 +78,10 @@ export function TagsSection(props: {
         disabled={createMut.loading() || updateMut.loading() || deleteMut.loading()}
         onDirtyChange={props.onDirtyChange}
         onCreate={async (value) => {
-          await createMut.mutate(value);
-          throwMutationError(createMut.error());
+          throwMutationError(await createMut.mutate(value), createMut.error());
         }}
         onUpdate={async (tag, value) => {
-          await updateMut.mutate({ id: tag.id, ...value });
-          throwMutationError(updateMut.error());
+          throwMutationError(await updateMut.mutate({ id: tag.id, ...value }), updateMut.error());
         }}
         onDelete={async (tag) => {
           if (deletePromptPending || deleteMut.loading()) return;
@@ -91,8 +89,7 @@ export function TagsSection(props: {
           try {
             const confirmed = await prompts.confirm(m.deleteTagConfirm, { title: m.deleteTag, variant: "danger" });
             if (!confirmed) return;
-            await deleteMut.mutate(tag);
-            throwMutationError(deleteMut.error());
+            throwMutationError(await deleteMut.mutate(tag), deleteMut.error());
           } finally {
             deletePromptPending = false;
           }
