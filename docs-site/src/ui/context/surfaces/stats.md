@@ -5,7 +5,8 @@ framed tile of its own: an optional icon and the label at the top, the figure
 with its change below, and one support line with the comparison, a note, and
 the trend. The tile is an island (layers and shadows): lifted in the main
 content, flat inside another island, a column, a panel, or a dialog. A muted
-grid tints its tiles instead and never lifts them.
+grid tints its tiles instead and never lifts them. With `variant="plain"` the
+same figures stand without tiles, for example under a page head.
 
 The application owns the values, their scope, and the links used to investigate them.
 
@@ -51,7 +52,8 @@ import {
 | `action` | `{ label: string; href: string }` | none | Adds a link beside the title when `title` is present. |
 | `columns` | `1 \| 2 \| 3 \| 4 \| 5 \| 6` | `4` | Tiles per row on a wide container. |
 | `size` | `"lg" \| "md" \| "sm"` | `"md"` | Sets the density inherited by the tiles. |
-| `surface` | `"white" \| "muted"` | `"white"` | Gives the tiles the page or the muted surface. |
+| `surface` | `"white" \| "muted"` | `"white"` | Gives the tiles the page or the muted surface. No effect with `variant="plain"`. |
+| `variant` | `"tiles" \| "plain"` | `"tiles"` | `plain` sets the figures without frame, surface and shadow, in equal columns with a thin line between. See [Figures without tiles](#figures-without-tiles). |
 | `class` | `string` | none | Adds sizing or layout classes to the outer element. |
 
 The grid is a container, so the row follows the space it gets, not the
@@ -67,8 +69,8 @@ or less (one at 280 px or less). Tiles in a row share one height. Tiles keep
 | `label` | `string` | Names the measurement. |
 | `value` | `string \| number \| JSX.Element \| null` | Displays the figure. `null` shows the empty dash (—), which screen readers announce as "No value"; say why in `sub`. |
 | `icon` | `string` | Shows a Tabler icon in a chip before the label. |
-| `tone` | `"zinc" \| "blue" \| "emerald" \| "amber" \| "red" \| "in" \| "out"` | Colors the icon chip. Defaults to zinc. `in` and `out` are the money colors of `FlowAmount` for tiles such as "In in October"; pass a `FlowAmount` as `value` there. |
-| `delta` | `StatCellDelta` | Shows the change as a badge beside the figure. |
+| `tone` | `"zinc" \| "blue" \| "emerald" \| "amber" \| "red" \| "in" \| "out"` | Colors the icon chip. Defaults to zinc. `in` and `out` are the money colors of `FlowAmount` for tiles such as "In in October"; pass a `FlowAmount` as `value` there. In a `plain` grid, `amber` and `red` also color the figure and its third line. |
+| `delta` | `StatCellDelta` | Shows the change as a badge beside the figure; in a `plain` grid always on the third line. |
 | `deltaPlacement` | `"below"` | Reserves a separate row for the change, including while loading. Omit it for the default responsive placement. |
 | `compare` | `StatCellCompare` | Names the comparison value in the support line, such as "Last month 44,560". |
 | `sub` | `string` | Qualifies the value with scope, unit, or time range. |
@@ -103,6 +105,42 @@ have one height; a support text longer than two lines still makes its tile
 taller when it arrives. Below 200 px an `lg` tile drops its trend. These
 adjustments follow the grid; a `StatCell` on its own keeps its sizes and
 wraps. `md` and `sm` tiles take the height of their content.
+
+### Figures without tiles
+
+`<StatGrid variant="plain">` sets the figures without frame, surface and
+shadow, for a row of figures under a page head. The `StatCell` props stay the
+same; only the grid chooses the form, and a cell outside a grid stays a tile.
+
+- **Columns:** equal columns with a 1 px line in `--k2b-border` between them;
+  the first figure of a row has none. `columns` sets the count (4 by default).
+  In a container of 34rem or less every grid with two or more columns shows two.
+- **Three rows:** label (13 px), figure (28 px; `size="lg"` 36 px for a main
+  figure, `sm` 20 px) and a third line (13 px). The third line is always
+  reserved, also when a figure has nothing there, so all figures stand on one
+  line. It holds `sub`, the change and the comparison, or an `accent`, each as
+  words with an icon, no pill.
+- **Unit:** put it in `value` as JSX, quiet beside the number:
+  `value={<>128 <small>of 340</small></>}`.
+- **Warning:** `tone="amber"` colors the figure and its third line in the
+  warning color, `tone="red"` in the danger color. Say what is wrong with
+  `accent={{ tone: "amber", icon: "ti ti-alert-triangle", text: "oldest for 2 days" }}`,
+  so the warning has a symbol and a word, not only a color.
+- `title`, `action`, `columns` and `size` work as for tiles; `surface` has no
+  effect. Loading, error, empty and stale keep the three rows.
+
+```tsx
+<StatGrid variant="plain">
+  <StatCell label="Open" value={<>128 <small>of 340</small></>} sub="38 % of stock" />
+  <StatCell label="Due this week" value={12} accent={{ tone: "zinc", icon: "ti ti-trending-up", text: "4 more than last week" }} />
+  <StatCell label="Overdue" value={3} tone="amber" accent={{ tone: "amber", icon: "ti ti-alert-triangle", text: "oldest for 2 days" }} />
+  <StatCell label="Done" value={212} sub="62 % of all" />
+</StatGrid>
+```
+
+Use tiles on dashboards, where each figure is its own object. Use the plain
+row where figures describe the page they stand on, such as the head of a
+project or the usage tab of a settings dialog.
 
 ### Change and comparison
 

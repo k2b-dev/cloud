@@ -4,6 +4,8 @@ export type StatGridSize = "lg" | "md" | "sm";
 export type StatGridSurface = "white" | "muted";
 export type StatGridColumns = 1 | 2 | 3 | 4 | 5 | 6;
 export type StatGridAction = { label: string; href: string };
+/** `tiles` frames each figure; `plain` sets the figures in equal columns with a thin line between, for a page head. */
+export type StatGridVariant = "tiles" | "plain";
 
 export type StatGridProps = {
   children: JSX.Element;
@@ -12,30 +14,45 @@ export type StatGridProps = {
   /** Tiles per row on a wide container. Defaults to 4; at 600 px or less two share a row, and five or six take three up to 900 px. */
   columns?: StatGridColumns;
   size?: StatGridSize;
+  /** Applies to `tiles` only: a `plain` row has no surface. */
   surface?: StatGridSurface;
+  /**
+   * `tiles` (default) frames each figure. `plain` drops frame, surface and shadow: equal columns with a 1 px line
+   * between them, two columns below a 34rem container. Every figure keeps three rows (label, figure, a reserved third
+   * line for `sub`, the change or the comparison), so all figures stand on one line.
+   */
+  variant?: StatGridVariant;
   class?: string;
 };
 
 const StatGridSizeContext = createContext<StatGridSize>("md");
 const StatGridSurfaceContext = createContext<StatGridSurface>("white");
+// A cell outside a grid stays a tile.
+const StatGridVariantContext = createContext<StatGridVariant>("tiles");
 
 export const useStatGridSize = (): StatGridSize => useContext(StatGridSizeContext);
 export const useStatGridSurface = (): StatGridSurface => useContext(StatGridSurfaceContext);
+export const useStatGridVariant = (): StatGridVariant => useContext(StatGridVariantContext);
 
 const columnValue = (columns?: StatGridColumns): StatGridColumns => {
   if (columns && Number.isInteger(columns) && columns >= 1 && columns <= 6) return columns;
   return 4;
 };
 
-/** A row of key figures, each a framed tile of its own; the optional title and action sit above the row. */
+/**
+ * A row of key figures, each a framed tile of its own or, with `variant="plain"`, flat figures in equal columns; the
+ * optional title and action sit above the row.
+ */
 export function StatGrid(props: StatGridProps): JSX.Element {
   const surface = () => props.surface ?? "white";
+  const variant = (): StatGridVariant => (props.variant === "plain" ? "plain" : "tiles");
   return (
     <section
       class={`k2b-stat-grid ${props.class ?? ""}`}
       data-columns={columnValue(props.columns)}
       data-size={props.size ?? "md"}
       data-surface={surface()}
+      data-variant={variant()}
       aria-label={props.title}
     >
       <Show when={props.title}>
@@ -53,7 +70,9 @@ export function StatGrid(props: StatGridProps): JSX.Element {
       </Show>
       <StatGridSizeContext.Provider value={props.size ?? "md"}>
         <StatGridSurfaceContext.Provider value={surface()}>
-          <div class="k2b-stat-grid__body">{props.children}</div>
+          <StatGridVariantContext.Provider value={variant()}>
+            <div class="k2b-stat-grid__body">{props.children}</div>
+          </StatGridVariantContext.Provider>
         </StatGridSurfaceContext.Provider>
       </StatGridSizeContext.Provider>
     </section>
