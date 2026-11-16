@@ -61,8 +61,9 @@ change with time, such as thinking. It shows `first` for 3 s, then one of
 before the next one fades in, so one word stands in its place at any moment.
 `elapsedMs` is how long the phase has run by the host's clock: the server
 renders the word for that time, and the first browser frame shows the same
-word. A pointer or the focus on the row holds the word, a hidden tab changes
-nothing, and with reduced motion the stylesheet shows a resting `first`, already in the server's HTML. The words are `aria-hidden`; screen
+word. A pointer moved on the row or the focus in it holds the word; a row that
+appears under a resting pointer and a finger's tap hold nothing. A hidden tab
+changes nothing, and with reduced motion the stylesheet shows a resting `first`, already in the server's HTML. The words are `aria-hidden`; screen
 readers hear `announce` once, from one status element. Keep the time beside it
 in `trailing`, so a longer or shorter word moves nothing. The host owns the
 words and their order; key the component by the phase, so each phase starts
