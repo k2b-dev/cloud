@@ -368,6 +368,8 @@ describe("Quoting in Gustav's chat", () => {
         expect(await row.textContent()).toContain(PASSAGE);
         await settled(page);
         expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
+        // Set ASSISTANT_SHOTS to a directory to keep a picture of the quote above the field.
+        if (process.env.ASSISTANT_SHOTS) await page.screenshot({ path: `${process.env.ASSISTANT_SHOTS}/quote-draft-${view.name}.png` });
         // It is saved with the draft, apart from the text, once the draft's save comes due.
         const saved = () => (state.drafts.at(-1) as unknown[] | undefined)?.some((part) => JSON.stringify(part) === JSON.stringify(expected));
         const expected = { type: "quote", from: "assistant", text: PASSAGE };
@@ -391,6 +393,7 @@ describe("Quoting in Gustav's chat", () => {
       // The passage a sent message quoted shows above its text, and selecting in it offers nothing.
       const quoted = page.locator(".ai-user-quotes .k2b-message-quote");
       expect(await quoted.textContent()).toContain(PASSAGE);
+      if (process.env.ASSISTANT_SHOTS) await page.screenshot({ path: `${process.env.ASSISTANT_SHOTS}/quote-sent-1440.png` });
       expect(await quoted.textContent()).toContain("Gustav");
       await select(page, ".ai-user-quotes", PASSAGE);
       await settled(page);
