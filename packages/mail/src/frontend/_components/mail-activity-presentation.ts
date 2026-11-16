@@ -74,7 +74,11 @@ export const mailActivityLabel = (event: MailActivityEvent, locale = "en"): stri
     "message.delivery_receipt_received": t.activityDeliveryReceipt,
     "message.read_receipt_received": t.activityReadReceipt,
   };
-  return labels[event.action] ?? (resolved.locale === "en" ? event.action.split(".").at(-1)!.replaceAll("_", " ") : event.action);
+  if (labels[event.action]) return labels[event.action];
+  // An action without a text of its own: in English its last part as words, starting the sentence with a capital.
+  if (resolved.locale !== "en") return event.action;
+  const words = event.action.split(".").at(-1)!.replaceAll("_", " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
 export const mailActivityIcon = (event: MailActivityEvent): string => {
@@ -111,6 +115,8 @@ export const mailActivityEntry = (event: MailActivityEvent, locale = "en"): Acti
     at: event.createdAt,
     icon: `ti ${failed ? "ti-alert-circle" : mailActivityIcon(event)}`,
     tone: failed ? "danger" : "neutral",
+    // The red icon alone does not say it to a screen reader.
+    iconLabel: failed ? t.activityFailed : undefined,
     text: label,
     actor: mailActivityActorLabel(event, locale),
     bundle: { key: `${event.actor.kind}:${event.actor.id ?? ""}:${label}`, text: (count) => t.activityRepeated({ label, count }) },

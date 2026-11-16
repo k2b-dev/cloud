@@ -24,11 +24,12 @@ export const openMailActivityDialog = (options: {
           }}
         />
       ),
-      { title: t.activityTitle, size: "large" },
+      { title: t.activityTitle, icon: "ti ti-activity", size: "large" },
     );
   return openActivityDialog({
     entries: () => options.activity.map((event) => mailActivityEntry(event, options.locale)),
     title: t.activityTitle,
+    icon: "ti ti-activity",
     emptyText: t.noActivity,
     dateConfig: options.dateConfig,
   });

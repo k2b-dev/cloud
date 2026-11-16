@@ -63,6 +63,13 @@ describe("mail activity presentation", () => {
     expect(mailActivityEntry(event(), "en").bundle?.key).toBe(mailActivityEntry(event(), "en").bundle?.key);
     expect(mailActivityEntry({ ...event(), outcome: "failed" }).icon).toBe("ti ti-alert-circle");
     expect(mailActivityEntry({ ...event(), outcome: "failed" }).tone).toBe("danger");
+    // The red icon names the failure for screen readers; a done event needs no label.
+    expect(mailActivityEntry({ ...event(), outcome: "failed" }, "de").iconLabel).toBe("fehlgeschlagen");
+    expect(mailActivityEntry(event(), "de").iconLabel).toBeUndefined();
+  });
+
+  test("an action without a text of its own still starts its sentence with a capital", () => {
+    expect(mailActivityLabel({ ...event(), action: "conversation.future_thing_done" })).toBe("Future thing done");
   });
 
   test("uses quiet semantic icons and names workflows explicitly", () => {
