@@ -1066,6 +1066,8 @@ export type AiConversationService = {
       resources?: AiConversationResourceObservation[];
       /** Retry source whose immutable turn-file bytes are copied into the new turn. */
       retrySourceTurnId?: string;
+      /** The person changed the retried text: the writer becomes the person. */
+      retryEdited?: true;
     },
     db?: SQL,
   ): Promise<{ turn: AiTurn; message: AiStoredMessage }>;

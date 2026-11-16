@@ -146,6 +146,8 @@ export type SubmitAiChatTurnInput = {
   expectedFiles?: ReadonlyArray<{ path: string; version: number }>;
   fileSnapshot?: AiConversationFileSnapshot;
   retrySourceTurnId?: string;
+  /** The person changed the retried text: the new message is the person's own. */
+  retryEdited?: true;
 };
 
 export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
@@ -249,6 +251,7 @@ export const prepareAiChatTurn = async (input: SubmitAiChatTurnInput) => {
     expectedProjectId: input.expectedProjectId,
     resources: input.resources,
     retrySourceTurnId: input.retrySourceTurnId,
+    ...(input.retryEdited ? { retryEdited: true as const } : {}),
   };
 };
 

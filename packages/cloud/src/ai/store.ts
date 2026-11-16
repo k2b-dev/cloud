@@ -2504,6 +2504,16 @@ export const aiConversations: AiConversationService = {
         SET reviewed_at = now()
         WHERE conversation_id IN (SELECT id FROM archived)
           AND reviewed_at IS NULL
+      ), withdrawn_code_messages AS (
+        -- A Code message still waiting for an allowance leaves with the chat; it never revives on restore.
+        UPDATE ai.queued_messages
+        SET status = 'cancelled', error = 'chat_archived', content = '[]'::jsonb,
+          submission = jsonb_build_object('runConfig', jsonb_build_object('send', submission#>'{runConfig,send}', 'turnTrigger', submission#>'{runConfig,turnTrigger}'))
+        WHERE conversation_id IN (SELECT id FROM archived)
+          AND status IN ('pending', 'failed') AND submission->'runConfig' ? 'codeOrigin'
+        RETURNING id
+      ), withdrawn_code_files AS (
+        DELETE FROM ai.queued_message_files WHERE message_id IN (SELECT id FROM withdrawn_code_messages)
       )
       SELECT id FROM archived
     `;
@@ -3175,6 +3185,8 @@ export const aiConversations: AiConversationService = {
         SELECT draft_revision, project_id, created_by_user_id, archived_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
       `;
       if (!conversation) throw new Error("Conversation not found.");
+      // The dispatcher's snapshot can predate archiving; an archived chat starts no queued turn.
+      if (input.queuedMessageId && conversation.archived_at) throw new Error("Conversation is archived.");
       if (input.retrySourceTurnId) {
         const [source] = await tx<{ run_config: AiTurnRunConfig | null }[]>`
           SELECT run_config FROM ai.turns WHERE id=${input.retrySourceTurnId}::uuid AND conversation_id=${input.conversationId}::uuid`;
@@ -3183,10 +3195,18 @@ export const aiConversations: AiConversationService = {
           ...input,
           runConfig: {
             ...input.runConfig,
-            writerOrigin: config?.kind !== "compact" ? config?.writerOrigin : undefined,
+            // An edited retry is the person's own message; a plain retry keeps who wrote it.
+            writerOrigin:
+              input.retryEdited && input.runConfig.actor?.kind === "user"
+                ? { kind: "person" as const, id: input.runConfig.actor.user.id }
+                : config?.kind !== "compact"
+                  ? config?.writerOrigin
+                  : undefined,
+            // The initiator and send receipt stay for the chain rule and status. A person's retry runs on
+            // their own allowance, so the Code's budget attribution does not carry over.
             turnTrigger: config?.kind !== "compact" ? config?.turnTrigger : undefined,
             send: config?.kind !== "compact" ? config?.send : undefined,
-            codeOrigin: config?.kind !== "compact" ? config?.codeOrigin : undefined,
+            codeOrigin: undefined,
             ...(config?.kind !== "compact" && config?.sourceRestricted ? { sourceRestricted: true as const } : {}),
           },
         };

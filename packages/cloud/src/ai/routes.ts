@@ -1233,10 +1233,11 @@ export const aiRoutes = (() => {
           }
           const result = await submitAiChatTurn({
             assistantChat: true,
+            // Editing makes the message the person's own; retrying keeps its writer. Either way the
+            // person's retry runs on their own allowance, without the Code's budget attribution.
             writerOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.writerOrigin : undefined,
             turnTrigger: originalRunConfig?.kind !== "compact" ? originalRunConfig?.turnTrigger : undefined,
             send: originalRunConfig?.kind !== "compact" ? originalRunConfig?.send : undefined,
-            codeOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.codeOrigin : undefined,
             ...(!ctx.signedInSession || (originalRunConfig?.kind !== "compact" && originalRunConfig?.sourceRestricted)
               ? { sourceRestricted: true as const }
               : {}),
@@ -1258,6 +1259,7 @@ export const aiRoutes = (() => {
             truncateFromSeq: target.seq,
             fileSnapshot: originalRunConfig?.kind !== "compact" ? originalRunConfig?.files : undefined,
             retrySourceTurnId: target.loopId ?? undefined,
+            ...(body.content?.length ? { retryEdited: true as const } : {}),
             // Local context and tools belong to the retrying client, not the original workspace.
             clientToolIds:
               body.clientToolIds ??

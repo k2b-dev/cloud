@@ -58,10 +58,15 @@ export const migrateAiMessageQueue = async () => {
 };
 
 export const listQueuedMessages = async (conversationId: string) => {
-  const rows = await sql<{ id: string; content: AiDraftContentPart[]; error: string | null }[]>`
-    SELECT id, content, error FROM ai.queued_messages
+  const rows = await sql<{ id: string; content: AiDraftContentPart[]; error: string | null; code: boolean }[]>`
+    SELECT id, content, error, submission->'runConfig' ? 'codeOrigin' AS code FROM ai.queued_messages
     WHERE conversation_id = ${conversationId}::uuid AND status IN ('pending','failed') ORDER BY position`;
-  return rows.map((row) => ({ id: row.id, content: row.content, failed: Boolean(row.error) }));
+  // A Code message waiting for an allowance is still queued, as the send status reports it.
+  return rows.map((row) => ({
+    id: row.id,
+    content: row.content,
+    failed: Boolean(row.error) && !(row.code && isAiQueueRetryableError(row.error)),
+  }));
 };
 
 export const queuedMessageAccepted = async (conversationId: string, id: string) => {
@@ -216,8 +221,12 @@ export const drainQueuedMessages = async (
       }
       const quotaSubject = aiChatAccessSubject(row.submission.runConfig.actor);
       if (isAssistantChatTurn(row.submission.runConfig) && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, row.submission.modelId);
-      await sql`UPDATE ai.queued_messages SET status='pending', error=NULL WHERE id=${row.id}::uuid AND status='failed' AND error IN ${waits}`;
-      const result = await aiConversations.submitChatTurn({ ...row.submission, queuedMessageId: row.id });
+      // Back to pending and the turn itself commit together under the chat lock, or not at all.
+      const result = await sql.begin(async (tx) => {
+        await tx`SELECT id FROM ai.conversations WHERE id=${row.conversation_id}::uuid FOR UPDATE`;
+        await tx`UPDATE ai.queued_messages SET status='pending', error=NULL WHERE id=${row.id}::uuid AND status='failed' AND error IN ${tx([...AI_QUEUE_RETRYABLE_ERRORS])}`;
+        return aiConversations.submitChatTurn({ ...row.submission, queuedMessageId: row.id }, tx);
+      });
       await enqueue({ conversationId: row.conversation_id, turnId: result.turn.id });
     } catch (error) {
       if (error instanceof AiQuotaError) {
