@@ -128,17 +128,23 @@ export default function RecordDocumentsSection(props: {
       }),
   });
 
-  const redownloadMut = mutations.create<void, PublicDocument>({
+  const redownloadMut = mutations.create<void, PublicDocument, { documentId: string }>({
     // Another row's download starts while one runs; the running download still finishes.
     concurrency: "replace",
-    onBefore: (document) => setActiveDownloadId(document.id),
+    onBefore: (document) => {
+      setActiveDownloadId(document.id);
+      return { documentId: document.id };
+    },
     mutation: async (document) => {
       const res = await requestDocumentDownload(document.id);
       await downloadPdfResponse(res, document.filename);
     },
     // Runs from the open document details dialog, so the failure belongs in a dialog too.
     onError: (error) => prompts.error(error.message),
-    onFinally: () => setActiveDownloadId(null),
+    // A superseded download must not clear the newer row's busy mark.
+    onFinally: (ctx) => {
+      if (ctx?.documentId === activeDownloadId()) setActiveDownloadId(null);
+    },
   });
 
   const createSnapshotMut = mutations.create<PublicRecordSnapshotSummary[], void>({

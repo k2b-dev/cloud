@@ -77,9 +77,9 @@ export default function ContactFavoriteButton(props: Props) {
     const sourceKey = contactFavoriteKey(props.bookId, props.contactId);
     if (!lifecycle.begin(sourceKey)) return;
     setSaving(true);
-    void saveMutation.mutate({ bookId: props.bookId, contactId: props.contactId, favorite: !favorite() }).then((outcome) => {
-      // onFinally does not run for a dropped call, so release the button here.
-      if (outcome === "dropped" && lifecycle.settle(sourceKey)) setSaving(false);
+    void saveMutation.mutate({ bookId: props.bookId, contactId: props.contactId, favorite: !favorite() }).then(() => {
+      // Whatever the outcome (onFinally may not run for a call that never started), the button is free again.
+      if (lifecycle.settle(sourceKey)) setSaving(false);
     });
   };
 

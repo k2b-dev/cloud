@@ -264,6 +264,8 @@ export default function NoteCommentsSection(props: Props) {
         onSubmit={async (content) => {
           const outcome = await createMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, content });
           if (outcome === "error") throw createMutation.error();
+          // A call that did not run keeps the draft.
+          return outcome === "success";
         }}
       />
     </Show>
@@ -387,6 +389,7 @@ export default function NoteCommentsSection(props: Props) {
                           content,
                         });
                         if (outcome === "error") throw updateMutation.error();
+                        return outcome === "success";
                       }}
                     />
                   </Show>
