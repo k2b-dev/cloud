@@ -1,6 +1,6 @@
 import { type CompactFn, estimateTokens, type Message, type Provider, type ProviderRequest, type Tool } from "@k2b/nessi";
 import type { AiTurnPolicyToolCall } from "./turn-policy";
-import type { AiCodeAuthoringStop } from "./types";
+import type { AiAutomationTurnStop, AiCodeAuthoringStop } from "./types";
 
 /**
  * Authoring has no F7 attempt allowance: F7 covers AI invoked BY saved Code.
@@ -18,6 +18,16 @@ export const CODE_AUTHORING_TURN_BUDGET = {
   modelCalls: (4 * 128_000) / (128_000 / 4),
   // Initial failure plus the same two repair attempts allowed for malformed model calls.
   identicalErrorRetries: 2,
+} as const;
+
+/** Initial automation allocation: four 128k input windows and sixteen attempts.
+ * Shared by chat calls, provider retries and compaction, regardless of pricing.
+ * Revisit only after the twenty-briefing measurement protocol has run.
+ */
+export const AUTOMATION_TURN_BUDGET = {
+  inputTokens: 512_000,
+  modelCalls: 16,
+  unknownInputTokens: 64_000,
 } as const;
 
 const authoringNames = new Set([
@@ -116,10 +126,15 @@ export function createCodeAuthoringTurnBudget(input: {
   priorCalls: { calls: number; inputTokens: number };
   finishedToolCalls: readonly AiTurnPolicyToolCall[];
   selected: boolean;
+  /** Missing or non-person triggers are bounded from the first provider attempt. */
+  nonPerson?: boolean;
   onStop?: (reason: "model_calls" | "input_tokens" | "repeated_error") => void;
 }) {
-  let active = input.selected;
+  let authoring = input.selected;
+  const active = () => input.nonPerson || authoring;
+  const allocation = input.nonPerson ? AUTOMATION_TURN_BUDGET : CODE_AUTHORING_TURN_BUDGET;
   let stopped: AiCodeAuthoringStop | null = null;
+  let automationStop: AiAutomationTurnStop | null = null;
   const receipts = new Map<string | number, AiTurnPolicyToolCall>();
   const progress = () => {
     let completedSteps = 0;
@@ -175,8 +190,8 @@ export function createCodeAuthoringTurnBudget(input: {
     // supersedes the wrapper's provisional success, for the stop snapshot.
     receipts.set(call.callId ?? receipts.size, call);
     if (call.callId && seenCalls.has(call.callId)) return;
-    if (authoringNames.has(call.name) || (call.name === "load_skill" && record(call.result)?.name === "code-authoring")) active = true;
-    if (!active) return;
+    if (authoringNames.has(call.name) || (call.name === "load_skill" && record(call.result)?.name === "code-authoring")) authoring = true;
+    if (!authoring) return;
     const keys = failureKeys(call);
     // Output validation follows the tool wrapper. A provisional success must
     // not hide a later failed result from nessi for that same call ID.
@@ -185,27 +200,27 @@ export function createCodeAuthoringTurnBudget(input: {
   };
   for (const call of input.finishedToolCalls) noteToolCall(call);
   const stopReason = (estimate: number) =>
-    [...errors.values()].some((count) => count > CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries)
+    authoring && [...errors.values()].some((count) => count > CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries)
       ? "repeated_error"
-      : calls >= CODE_AUTHORING_TURN_BUDGET.modelCalls
+      : calls >= allocation.modelCalls
         ? "model_calls"
-        : inputTokens + estimate > CODE_AUTHORING_TURN_BUDGET.inputTokens
+        : inputTokens + estimate > allocation.inputTokens
           ? "input_tokens"
           : null;
   return {
     noteToolCall,
     stopped: () => stopped,
+    automationStopped: () => automationStop,
     // Compaction's source is bounded to 60k characters; a half-window reserves
     // room for that source, its instructions, and the next chat admission.
     // Never let a locally generated stop become a persisted conversation summary.
     compact:
       (compact: CompactFn): CompactFn =>
       (context) => {
-        if (active && stopReason(CODE_AUTHORING_TURN_BUDGET.unknownInputTokens)) return null;
+        if (active() && stopReason(allocation.unknownInputTokens)) return null;
         // Large-window models may reach the turn allowance before their normal
         // fill threshold. Compact history early so a later turn can continue.
-        const largeHistory =
-          active && estimateTokens(context.entries.map((entry) => entry.message)) > CODE_AUTHORING_TURN_BUDGET.unknownInputTokens;
+        const largeHistory = active() && estimateTokens(context.entries.map((entry) => entry.message)) > allocation.unknownInputTokens;
         return compact(largeHistory ? { ...context, fillRatio: Math.max(1, context.fillRatio ?? 0) } : context);
       },
     tools: (tools: Tool[]): Tool[] =>
@@ -215,7 +230,7 @@ export function createCodeAuthoringTurnBudget(input: {
           : {
               ...tool,
               async execute(args, context) {
-                active = true;
+                authoring = true;
                 if ([...errors.values()].some((count) => count > CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries))
                   return {
                     version: 1,
@@ -234,16 +249,14 @@ export function createCodeAuthoringTurnBudget(input: {
     wrap: (provider: Provider, purpose: "chat" | "compaction" = "chat"): Provider => ({
       ...provider,
       async *stream(request) {
-        const prepared = active ? { ...request, messages: projectCodeAuthoringContext(request.messages) } : request;
+        const prepared = authoring ? { ...request, messages: projectCodeAuthoringContext(request.messages) } : request;
         const estimated = codeAuthoringInputTokens(prepared);
-        const reason = active ? stopReason(estimated) : null;
+        const reason = active() ? stopReason(estimated) : null;
         if (reason) {
           // An oversized custom compaction prompt must never persist the stop as a summary.
           if (purpose === "compaction") return;
-          stopped = {
-            reason,
-            ...progress(),
-          };
+          if (input.nonPerson && !authoring && reason !== "repeated_error") automationStop = { reason };
+          else stopped = { reason, ...progress() };
           input.onStop?.(reason);
           // A local terminal response costs no additional model call and cannot request more tools.
           // This boundary runs only after all tools of the previous response have settled.

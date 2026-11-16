@@ -639,6 +639,7 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
   'codeDecision', ${todoMetaJson()}->'codeDecision',
   'codeReviewStart', ${todoMetaJson()}->'codeReviewStart',
   'writerOrigin', ${todoMetaJson()}->'writerOrigin',
+  'automationTurnStop', ${todoMetaJson()}->'automationTurnStop',
   'turnTrigger', ${todoMetaJson()}->'turnTrigger'
 )), '{}'::jsonb)`;
 
@@ -4274,7 +4275,12 @@ export const aiConversations: AiConversationService = {
       if (message.role === "user") return;
       const stop = message.role === "assistant" && opts?.kind !== "summary" ? input.codeAuthoringStop?.() : null;
       const toolMeta = toolMessageMeta(message, input.toolPresentations, input.rejectedToolCallIds, input.approvedToolCallIds);
-      const meta = stop ? { ...toolMeta, codeAuthoringStop: stop } : toolMeta;
+      const automationStop = message.role === "assistant" && opts?.kind !== "summary" ? input.automationTurnStop?.() : null;
+      const meta = stop
+        ? { ...toolMeta, codeAuthoringStop: stop }
+        : automationStop
+          ? { ...toolMeta, automationTurnStop: automationStop }
+          : toolMeta;
 
       if (input.turnId && input.leaseOwner) {
         const appended = await appendTurnOwnedMessage({

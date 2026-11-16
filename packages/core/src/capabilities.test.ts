@@ -476,6 +476,62 @@ describe("Core AI capabilities", () => {
     }
   });
 
+  test("chat readers retain an empty automatic stop with its machine-readable reason", async () => {
+    spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+    spyOn(aiConversations, "listMessagesPage").mockResolvedValue({
+      hasMore: false,
+      messages: [
+        storedMessage(1, { role: "assistant", content: [] }, { meta: { automationTurnStop: { reason: "model_calls" } } }),
+        storedMessage(2, { role: "assistant", content: [] }),
+      ],
+    });
+    const result = await aiCapabilities.queries["ai.chat.read"].run({ id: chat.shortId, limit: 20 }, context);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { data: { messages: [{ seq: 1, safetyStop: { reason: "model_calls" } }] } },
+    });
+    if (result.ok) {
+      expect(result.data.data.messages).toHaveLength(1);
+      expect(result.data.data.messages[0]?.text).toContain("safety limit");
+      expect(() => aiCapabilities.queries["ai.chat.read"].data.parse(result.data.data)).not.toThrow();
+    }
+  });
+
+  test("chat readers expose authoring stop reasons as nonempty localized notices", async () => {
+    spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
+    for (const reason of ["model_calls", "input_tokens", "repeated_error"] as const) {
+      spyOn(aiConversations, "listMessagesPage").mockResolvedValue({
+        hasMore: false,
+        messages: [
+          storedMessage(
+            1,
+            { role: "assistant", content: [] },
+            {
+              meta: {
+                codeAuthoringStop: {
+                  reason,
+                  completedSteps: 0,
+                  drafts: 0,
+                  unchecked: 0,
+                  untested: 0,
+                  unsubmitted: 0,
+                },
+              },
+            },
+          ),
+        ],
+      });
+      for (const locale of ["en", "de"]) {
+        const result = await aiCapabilities.queries["ai.chat.read"].run({ id: chat.shortId, limit: 20 }, { ...context, locale });
+        expect(result).toMatchObject({ ok: true, data: { data: { messages: [{ safetyStop: { reason } }] } } });
+        if (result.ok) {
+          expect(result.data.data.messages[0]?.text).toContain(locale === "de" ? "Gustav pausiert" : "Gustav paused");
+          expect(() => aiCapabilities.queries["ai.chat.read"].data.parse(result.data.data)).not.toThrow();
+        }
+      }
+    }
+  });
+
   test("searches visible messages in one explicitly owned chat", async () => {
     spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
     const search = spyOn(aiConversations, "searchConversationMessages").mockResolvedValue({

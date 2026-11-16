@@ -846,7 +846,14 @@ export default app;
 
 `Chat23` is fictional. `text` contains 1–10,000 characters after trimming;
 optional `context` contains at most 10,000 characters of untrusted source data.
-Keep instructions in `text` and changing facts in `context`. For a prepared
+Keep instructions in `text` and changing facts in `context`. Saved Code must
+supply the input object directly at the call site. Its `text` must be a string
+literal or a const string initialized from fixed literals, including named imports of
+const strings. Event fields, query results, model output, mutable strings and
+dynamic templates are rejected with `code_chat_text_fixed`, even when a type
+assertion claims they are literals. Put those values in `context`. One-shot
+`code_run` calls are exempt from this static rule. Saved Code also cannot
+bind Send as a model tool, since the model would choose the instruction. For a prepared
 number, ask Gustav to confirm the supplied data in one sentence, without a new
 calculation. Every send can start an AI turn and incur its normal costs.
 
@@ -854,7 +861,10 @@ The Action returns `{ id, chatId, status, reason, origin }` promptly. Status is
 `queued`, `running`, `waiting`, `done`, `failed` or `cancelled`. A busy chat keeps
 the message in its existing queue, without consuming the person's draft. Read
 one later snapshot with `core.ai.chat.read({ id: "Chat23", message: sent.id })`;
-the Query returns `{ data: { chat, messages, message } }`. Finish the Code run
+the Query returns `{ data: { chat, messages, message } }`. An automatic budget
+stop remains in `messages` with `safetyStop.reason` (`model_calls`, `input_tokens` or `repeated_error`)
+and a localized notice in `text`. This also covers Code-authoring stops and
+keeps every returned message text nonempty. Finish the Code run
 when a person must answer; do not poll for approval.
 
 One required key identifies the intended message across Code runs for the same

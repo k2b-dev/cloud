@@ -80,4 +80,37 @@ suite("Code authoring usage recovery", () => {
     expect(dispatched).toBe(true);
     expect(events).toEqual([]);
   });
+  test("automatic recovery includes failed attempts and compaction without SQL on the provider path", async () => {
+    const automaticTurnId = "00000000-0000-4000-8000-000000003324";
+    await sql`INSERT INTO ai.inference_calls(id,model_profile_id,turn_id,input,kind,task,provider_model,lease_expires_at,status)
+      SELECT ('00000000-0000-4000-8001-' || lpad(n::text,12,'0'))::uuid,'fixture',${automaticTurnId}::uuid,1000,
+        CASE WHEN n=16 THEN 'background' ELSE 'chat' END,
+        CASE WHEN n=16 THEN 'chat-compaction' ELSE 'chat' END,'fixture','2026-11-14T12:02:00Z','failed'
+      FROM generate_series(1,16) n`;
+    const usage = await readAiTurnCallUsage(automaticTurnId);
+    expect(usage).toEqual({ calls: 16, inputTokens: 16000, unknownCalls: 0 });
+    const guard = createCodeAuthoringTurnBudget({ priorCalls: usage, selected: false, nonPerson: true, finishedToolCalls: [] });
+    const provider = guard.wrap({
+      name: "fixture",
+      family: "openai-compatible",
+      model: "fixture",
+      capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: false },
+      async *stream() {
+        throw new Error("No seventeenth attempt");
+      },
+    });
+    const meter = await meterSql();
+    try {
+      expect(
+        await meter.during(async () => {
+          for await (const _ of provider.stream({ messages: [] })) {
+            /* drain */
+          }
+        }),
+      ).toEqual([]);
+    } finally {
+      await meter.close();
+    }
+    expect(guard.automationStopped()).toEqual({ reason: "model_calls" });
+  });
 });

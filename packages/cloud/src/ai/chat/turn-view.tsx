@@ -794,7 +794,7 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean; a
       title={
         props.notice.kind === "output_limit"
           ? t().outputLimitReached
-          : props.notice.kind === "code_authoring"
+          : props.notice.kind === "code_authoring" || props.notice.kind === "automation"
             ? t().authoringTurnStopped
             : props.notice.kind === "no_answer"
               ? t().noAnswerTitle

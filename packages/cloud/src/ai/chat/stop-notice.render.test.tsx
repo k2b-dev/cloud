@@ -124,3 +124,17 @@ test("a stopped automatic review cannot offer to answer an earlier personal mess
   expect(review).toContain("Du hast gestoppt");
   expect(review).not.toContain("Neu antworten");
 });
+test("an automatic budget stop survives reload and offers only explicit continuation", () => {
+  const html = renderHistory([
+    {
+      ...truncatedAnswer,
+      stopReason: "stop",
+      message: { role: "assistant", content: [] },
+      meta: { automationTurnStop: { reason: "model_calls" } },
+    },
+  ]);
+  expect(html).toContain("Die Arbeit pausiert, weil die Grenze für diesen Lauf erreicht ist.");
+  expect(html).toContain("Was bis hier steht, bleibt erhalten.");
+  expect(html).toContain("Weiterschreiben");
+  expect(html).not.toContain("code_authoring");
+});
