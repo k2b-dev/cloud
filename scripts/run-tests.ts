@@ -171,7 +171,8 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
       // When the package also lists its files, each file runs through that script as a suite of its own,
       // so shards can balance a large package by its measured file times.
       if (integrationCommand && listsIntegrationFiles) {
-        for (const file of listOwnedIntegrationFiles(cwd)) suites.push({ name: `${name} ${file}`, cwd, command: [...integrationCommand, file] });
+        for (const file of listOwnedIntegrationFiles(cwd))
+          suites.push({ name: `${name} ${file}`, cwd, command: [...integrationCommand, file] });
         return;
       }
       if (integrationCommand) {
