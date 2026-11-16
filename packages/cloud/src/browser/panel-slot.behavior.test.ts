@@ -1721,6 +1721,21 @@ else {
     expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { seq: 3, scope: pageContext.scope } });
   });
 
+  test("an overview publisher explicitly clears the server resource scope until disposed", async () => {
+    const { publishPageContext } = await import("./panel");
+    const h = setupCore();
+    h.open();
+    const post = spyFrame(h);
+    ready(h);
+    const dispose = publishPageContext({ scope: null });
+    const message = post.mock.calls.at(-1)?.[0];
+    if (!isPanelContextMessage(message)) throw new Error("Expected a panel context message");
+    expect(message).toMatchObject({ context: { app: pageContext.app } });
+    expect(message.context).not.toHaveProperty("scope");
+    dispose();
+    expect(post.mock.calls.at(-1)?.[0]).toMatchObject({ context: { scope: pageContext.scope } });
+  });
+
   test("save failures keep the question and error visible and re-enable the answers", async () => {
     fetchSpy = spyOn(globalThis, "fetch").mockRejectedValue(new Error("Offline"));
     const h = setupContext(pageContext, true, null);

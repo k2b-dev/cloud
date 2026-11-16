@@ -897,6 +897,10 @@ solid-island {
 .cloud-mobile-menu__switch { width: 100%; flex-wrap: nowrap; }
 .cloud-mobile-menu__switch button { flex: 1; min-width: 0; min-height: 3rem; white-space: nowrap; }
 .cloud-mobile-menu__switch button > span { min-width: 0; overflow: hidden; }
+/* "All apps" keeps room for its news dot on both sides, so the dot fits inside its clipping label and the name stays
+   centred and in place whether the dot shows or not. */
+.cloud-mobile-menu__apps { position: relative; display: inline-block; max-width: 100%; padding-inline: 0.75rem; vertical-align: middle; }
+.cloud-mobile-menu__apps > .cloud-launchpad-dot { top: 0; right: 0; }
 .cloud-mobile-menu .k2b-dialog__close { width: 2.75rem; height: 2.75rem; flex-shrink: 0; }
 
 .cloud-mobile-menu .k2b-panel-dialog__body { padding: .75rem 1rem 1rem; }

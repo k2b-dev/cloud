@@ -13,18 +13,16 @@ const thinkingMessages = /* @__PURE__ */ i18n.define({
         "Pondering|Tinkering|Puzzling it out|Weighing it up|Putting two and two together|Sorting things out|Sifting through|Piecing it together|Tidying up|Connecting the dots|Double-checking the sums",
       wink: "Sharpening the pencil|Polishing the glasses|Furrowing the brow|Rolling up the sleeves|Reading the small print|Bringing order to the chaos",
       moustache: "Twirling the moustache|Consulting the moustache",
-      announcement: ({ assistant }: { assistant: string }) => `${assistant} is thinking`,
     },
     de: {
       plain: "Grübelt|Tüftelt|Knobelt|Wägt ab|Kombiniert|Sortiert|Sichtet|Puzzelt|Ordnet|Verknüpft|Rechnet nach",
       wink: "Spitzt den Bleistift|Putzt die Brille|Legt die Stirn in Falten|Krempelt die Ärmel hoch|Liest das Kleingedruckte|Bringt Ordnung ins Chaos",
       moustache: "Zwirbelt den Schnurrbart|Hält Rücksprache mit dem Schnurrbart",
-      announcement: ({ assistant }) => `${assistant} denkt nach`,
     },
   },
 });
 
-/** The thinking words and the announcement in the reader's language. */
+/** The thinking words in the reader's language. */
 export const aiThinkingMessages = (locale: string) => thinkingMessages.resolve([locale]).t;
 
 /** The words of one language by kind. */
