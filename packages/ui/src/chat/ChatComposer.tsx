@@ -1359,17 +1359,15 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const focus = () => textareaRef?.focus();
   // The quote rows load with a draft's first quote, so composers that never quote carry none of their code.
   const [quotesView, setQuotesView] = createSignal<typeof import("./ChatComposerQuotes")["default"]>();
-  const [quotesFailed, setQuotesFailed] = createSignal(false);
   createEffect(() => {
     if (!props.quotes?.length || quotesView()) return;
-    // A changed list tries again; until the rows show, a notice says why sending waits and removes the quotes.
+    // Quotes that cannot be shown are not sent unseen: they leave the draft, and `onError` says why. The text stays.
     void import("./ChatComposerQuotes").then(
-      (module) =>
-        batch(() => {
-          setQuotesView(() => module.default);
-          setQuotesFailed(false);
-        }),
-      () => setQuotesFailed(true),
+      (module) => setQuotesView(() => module.default),
+      (error) => {
+        for (const quote of props.quotes ?? []) quote.onRemove();
+        props.onError?.(error);
+      },
     );
   });
 
@@ -2871,32 +2869,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             </div>
           )}
         </Show>
-        <Show when={quotesFailed() && props.quotes?.length && !quotesView()}>
-          <div class="k2b-chat-composer__quote" role="alert">
-            <div class="k2b-message-quote">{chatMessages().quotesUnavailable}</div>
-            <button
-              type="button"
-              class="k2b-chat-composer__icon-action k2b-chat-composer__quote-remove"
-              aria-label={chatMessages().removeQuote}
-              title={chatMessages().removeQuote}
-              onMouseDown={keepFieldFocus}
-              onClick={() => {
-                for (const quote of props.quotes ?? []) quote.onRemove();
-              }}
-            >
-              <i class="ti ti-x" aria-hidden="true" />
-            </button>
-          </div>
-        </Show>
         <Show when={props.quotes?.length ? quotesView() : undefined}>
-          {(view) => (
-            <Dynamic
-              component={view()}
-              quotes={props.quotes ?? []}
-              label={chatMessages().quoteFrom}
-              removeLabel={chatMessages().removeQuote}
-            />
-          )}
+          {(view) => <Dynamic component={view()} quotes={props.quotes ?? []} />}
         </Show>
         <Show when={attachments().length > 0}>
           <div class="k2b-chat-composer__attachments" role="list" aria-label={chatMessages().attachments} tabIndex={0}>

@@ -121,7 +121,8 @@ a chat history. It is a small pill with an icon and a label, built on
   showing it never moves the page.
 - `within` names the part one selection may lie in, such as the text of one
   message. A selection that starts and ends in different parts, or outside
-  every part, offers nothing.
+  every part, offers nothing. A triple click, which ends at the start of the
+  next block, counts as a selection of its part.
 - `onAction` receives the selected text, with each run of whitespace as one
   space, and the part's element. The selection is cleared afterwards.
 - Tab right after the selection moves the focus to the pill, Enter runs it,

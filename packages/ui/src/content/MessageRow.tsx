@@ -611,7 +611,7 @@ export function MessageRow(props: MessageRowProps): JSX.Element {
   const quotesBlock = () => (
     <Show when={content() && props.quotes?.length}>
       <div class="k2b-message-quotes">
-        <For each={props.quotes}>{(value) => <MessageQuote quote={value} label={chatMessages().quoteFrom} />}</For>
+        <For each={props.quotes}>{(value) => <MessageQuote quote={value} />}</For>
       </div>
     </Show>
   );
