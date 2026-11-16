@@ -2334,7 +2334,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         ref={(element) => {
           textareaRef = element;
           // The server's field takes typing before the island hydrates; the owner's value does not know that text yet.
-          if (sharedConfig.context && element.value !== props.value) typedBeforeHydration = element.value;
+          // The server shows its initial text, so only a difference from it is typing.
+          if (sharedConfig.context && element.value !== element.defaultValue) typedBeforeHydration = element.value;
         }}
         classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 || Boolean(dictationView()) }}
         rows={1}
@@ -2475,13 +2476,24 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   // the browser then sends the click to a common ancestor (#2140). A release on the same command's new row runs it.
   let pressedCommand: { key: string; row: HTMLElement } | undefined;
   // Keep what the person typed into the server-rendered field before hydration, as if typed now.
+  // A draft the owner restored meanwhile stays; the typed text follows it.
   onMount(() => {
     const typed = typedBeforeHydration;
     typedBeforeHydration = undefined;
-    if (typed === undefined || typed === props.value || editBlocked()) return;
-    edit(typed);
+    const current = props.value;
+    // A server-rendered textarea ignores its `value` attribute, and hydration keeps the empty field: show the value.
+    if (typed === undefined || editBlocked()) {
+      if (textareaRef && textareaRef.value !== current) {
+        textareaRef.value = current;
+        autoResize();
+      }
+      return;
+    }
+    const next = !current || typed.startsWith(current) ? typed : current.endsWith(typed) ? current : `${current}\n${typed}`;
+    if (next === current) return;
+    edit(next);
     autoResize();
-    textareaRef?.setSelectionRange(typed.length, typed.length);
+    textareaRef?.setSelectionRange(next.length, next.length);
     syncCaret();
   });
   onMount(() => {

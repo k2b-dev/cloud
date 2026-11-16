@@ -10,10 +10,12 @@ import { launchBrowser } from "../../test/browser";
 
 // A server-rendered field takes typing before its island hydrates, for example right after opening a chat by its
 // address. What the person typed there stays in the field and reaches the owner's state; nothing is lost.
-const composer = (initial: string) => `
-import { createComponent, createSignal } from "solid-js";
-function Composer() {
-  const [value, setValue] = createSignal(${JSON.stringify(initial)});
+const composer = `
+import { createComponent, createEffect, createSignal } from "solid-js";
+function Composer(props) {
+  const [value, setValue] = createSignal(props.initial ?? "");
+  // Like the Assistant, an owner may restore a saved draft in an effect while it hydrates.
+  if (typeof window !== "undefined" && window.restoreDraft) createEffect(() => setValue(window.restoreDraft));
   return createComponent(Chat.Composer, {
     get value() { return value(); },
     onValueChange: (next) => {
@@ -33,8 +35,9 @@ const serverBuild = await Bun.build({
     [serverEntry]: `
 import { Chat } from "../index";
 import { generateHydrationScript, renderToString } from "solid-js/web";
-${composer("")}
+${composer}
 export const empty = renderToString(() => createComponent(Composer, {}));
+export const prefilled = renderToString(() => createComponent(Composer, { initial: "Von der App vorbelegt" }));
 export const hydrationScript = generateHydrationScript();
 `,
   },
@@ -63,15 +66,15 @@ const serverDir = mkdtempSync(resolve(tmpdir(), "k2b-ui-chat-composer-hydration-
 process.once("exit", () => rmSync(serverDir, { recursive: true, force: true }));
 const serverModule = resolve(serverDir, "server.mjs");
 writeFileSync(serverModule, await serverBuild.outputs[0]!.text());
-const { empty, hydrationScript }: { empty: string; hydrationScript: string } = await import(serverModule);
+const { empty, prefilled, hydrationScript }: { empty: string; prefilled: string; hydrationScript: string } = await import(serverModule);
 const css = readFileSync(resolve(import.meta.dir, "../../dist/styles.css"), "utf8");
 const browserEntry = resolve(import.meta.dir, "../../dist/browser/index.js");
 const fixturePath = resolve(import.meta.dir, "chat-composer-hydration.fixture.ts");
 const fixture = `
 import { Chat } from ${JSON.stringify(browserEntry)};
 import { hydrate } from "solid-js/web";
-${composer("")}
-hydrate(() => createComponent(Composer, {}), document.getElementById("app"));
+${composer}
+hydrate(() => createComponent(Composer, { initial: window.initialValue }), document.getElementById("app"));
 requestAnimationFrame(() => requestAnimationFrame(() => { document.body.dataset.ready = "true"; }));
 `;
 const build = await Bun.build({ entrypoints: [fixturePath], files: { [fixturePath]: fixture }, target: "browser", format: "iife" });
@@ -120,10 +123,53 @@ test("text typed into the server-rendered field before hydration stays and reach
   }
 });
 
+test("a draft the owner restores while hydrating stays, and the typed text follows it", async () => {
+  const page = await browser.newPage({ colorScheme: "light", viewport: { width: 1440, height: 800 }, reducedMotion: "reduce" });
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" data-theme="light"><div id="app">${empty}</div>${hydrationScript}</body></html>`,
+    );
+    await page.evaluate(() => {
+      (window as unknown as { restoreDraft: string }).restoreDraft = "Gespeicherter Entwurf";
+    });
+    const field = page.getByRole("textbox");
+    await field.click();
+    await page.keyboard.insertText("Hallo Gustav");
+    await page.addScriptTag({ content: script });
+    await page.waitForSelector('body[data-ready="true"]');
+    expect(await field.inputValue()).toBe("Gespeicherter Entwurf\nHallo Gustav");
+    expect(await page.evaluate(() => (window as unknown as { composerValues?: string[] }).composerValues?.at(-1))).toBe(
+      "Gespeicherter Entwurf\nHallo Gustav",
+    );
+  } finally {
+    await page.close();
+  }
+});
+
+test("an untouched field the owner rendered with text hydrates to that text and reports no change", async () => {
+  const page = await browser.newPage({ colorScheme: "light", viewport: { width: 1440, height: 800 }, reducedMotion: "reduce" });
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" data-theme="light"><div id="app">${prefilled}</div>${hydrationScript}</body></html>`,
+    );
+    await page.evaluate(() => {
+      (window as unknown as { initialValue: string }).initialValue = "Von der App vorbelegt";
+    });
+    await page.addScriptTag({ content: script });
+    await page.waitForSelector('body[data-ready="true"]');
+    expect(await page.getByRole("textbox").inputValue()).toBe("Von der App vorbelegt");
+    expect(await page.evaluate(() => (window as unknown as { composerValues?: string[] }).composerValues)).toBeUndefined();
+  } finally {
+    await page.close();
+  }
+});
+
 test("an untouched server-rendered field hydrates without reporting a change", async () => {
   const page = await browser.newPage({ colorScheme: "light", viewport: { width: 1440, height: 800 }, reducedMotion: "reduce" });
   try {
-    await page.setContent(`<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" data-theme="light"><div id="app">${empty}</div>${hydrationScript}</body></html>`);
+    await page.setContent(
+      `<!doctype html><html lang="en"><head><style>${css}</style></head><body class="k2b-ui" data-theme="light"><div id="app">${empty}</div>${hydrationScript}</body></html>`,
+    );
     await page.addScriptTag({ content: script });
     await page.waitForSelector('body[data-ready="true"]');
     expect(await page.getByRole("textbox").inputValue()).toBe("");

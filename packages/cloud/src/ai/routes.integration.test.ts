@@ -111,11 +111,11 @@ suite("global AI conversation boundaries", () => {
   test("an untitled chat is named in the caller's language and keeps automatic naming", async () => {
     const userId = await insertUser();
     const token = await createTestSession(userId);
-    const post = (language: string) =>
+    const post = (language: string, body: object = {}) =>
       aiRoutes.request("/conversations", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "Accept-Language": language },
-        body: "{}",
+        body: JSON.stringify(body),
       });
     try {
       const german = await post("de-DE");
@@ -124,6 +124,12 @@ suite("global AI conversation boundaries", () => {
       const english = await post("en");
       expect(english.status).toBe(201);
       expect(await english.json()).toMatchObject({ title: "New chat", titleSource: "default" });
+      // The default follows the language, the replay identity does not: a retry in another language is the same chat.
+      const requestId = crypto.randomUUID();
+      const first = await (await post("de", { requestId })).json();
+      const replay = await post("en", { requestId });
+      expect(replay.status).toBe(201);
+      expect(await replay.json()).toMatchObject({ id: first.id, title: "Neuer Chat" });
     } finally {
       await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
