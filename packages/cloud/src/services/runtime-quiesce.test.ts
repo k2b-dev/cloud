@@ -263,14 +263,17 @@ describe("quiesce controller", () => {
     expect(heard).toEqual([true, false]);
   });
 
-  test("release clears quiet without starting anything again", async () => {
+  test("release clears quiet without starting anything again or calling listeners", async () => {
     const controller = createQuiesceController();
     const { created, start } = starter();
     await quiesceWorker(start, { controller });
     await controller.quiesce();
+    const heard: boolean[] = [];
+    controller.onChange((quiesced) => heard.push(quiesced));
     controller.release();
     expect(controller.quiesced).toBe(false);
     expect(created).toHaveLength(1);
+    expect(heard).toEqual([]);
   });
 });
 

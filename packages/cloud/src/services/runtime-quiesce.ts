@@ -254,13 +254,15 @@ export const createQuiesceController = ({
      * Clear quiet without resuming anyone: the maintenance watcher of this
      * process stopped (shutdown, an in-process restart, a test), and nothing
      * may stay quiet behind a watcher that no longer follows the record.
-     * Participants that went quiet stay stopped until their owners stop them.
+     * Participants that went quiet stay stopped until their owners stop them,
+     * and listeners are not called, so a process that shuts down starts no
+     * background work; work started later sees `quiesced` false.
      */
     release: (): void => {
       if (!quiesced) return;
       quiesced = false;
       epoch += 1;
-      notify();
+      for (const wake of wakers) wake();
     },
     /** Work still running in this process; 0 while quiesced means quiet. */
     inFlight: (): number => {
