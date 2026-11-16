@@ -7731,6 +7731,11 @@
   background: var(--k2b-activity-surface, var(--k2b-surface));
   font-size: 15px;
 }
+/* The glyph fills the icon's box, so the row's ink starts on the column edge like the section title. */
+.k2b-ui .k2b-activity__icon > i {
+  width: 100%;
+  text-align: center;
+}
 .k2b-ui .k2b-activity__entry:hover .k2b-activity__icon { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-activity__icon[data-tone="success"] { color: var(--k2b-success-text); }
 .k2b-ui .k2b-activity__icon[data-tone="warning"] { color: var(--k2b-warning-text); }
