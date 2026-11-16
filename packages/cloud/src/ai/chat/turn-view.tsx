@@ -31,7 +31,6 @@ import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord,
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import type { AiStopNotice } from "./stop-notice";
-import { aiThinkingMessages, aiThinkingWordRound, aiThinkingWords } from "./thinking-words";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, useAiToolDisclosure } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
@@ -157,6 +156,10 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   return withTarget(t.stepTool);
 };
 
+/** The thinking words, loaded once on the first thinking phase: most of a turn never shows them. */
+const [thinkingWordsModule, setThinkingWordsModule] = createSignal<typeof import("./thinking-words")>();
+const loadThinkingWords = () => void import("./thinking-words").then(setThinkingWordsModule);
+
 /**
  * The work line of a turn: ✦ and the tiles of the apps it worked in, then one sentence. While the turn runs the
  * sentence is the current step and shimmers, with the work time beside it; once it ends it says what the turn did and
@@ -207,7 +210,12 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const workedMs = segment().duration()?.workedMs;
     return start === null || workedMs === undefined ? 0 : workedMs - start.at;
   };
-  const thinkingWords = (phase: string) => aiThinkingWordRound(phase, aiThinkingWords(locale()));
+  // The words show only after 3 s of thinking, so they load when a phase begins; until then the first word stands.
+  createEffect(() => thinkingPhase() && loadThinkingWords());
+  const thinkingWords = (phase: string) => {
+    const words = thinkingWordsModule();
+    return words ? words.aiThinkingWordRound(phase, words.aiThinkingWords(locale())) : [];
+  };
   const sentence = () => {
     if (reconnecting()) return t().reconnecting;
     if (working()) return liveStepLabel(layout().current, t(), stepMs());
@@ -267,8 +275,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
                   first={t().thinking}
                   words={thinkingWords(phase)}
                   elapsedMs={thinkingMs()}
-                  // The chat speaks for Gustav, as its views do (Feinschliff v3: "Gustav denkt nach").
-                  announce={aiThinkingMessages(locale()).announcement({ assistant: "Gustav" })}
+                  announce={t().thinkingAnnouncement}
                 />
               )}
             </Show>

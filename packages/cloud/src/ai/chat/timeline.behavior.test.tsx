@@ -638,6 +638,9 @@ const renderTimeline = async (
       () => emit({ ...base, seq: seq++, type: "block_delta", blockId: "think-2", blockKind: "thinking", delta: "Now the notes" }),
       () => emit({ ...base, seq: seq++, type: "block_delta", blockId: "think-3", blockKind: "thinking", delta: "And the tasks" }),
     ];
+    // The words load when the phase begins; their module is in the cache once this import settles.
+    await import("./thinking-words");
+    for (let flush = 0; flush < 5; flush++) await Promise.resolve();
     for (const step of steps) {
       jest.advanceTimersByTime(700);
       step();

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { aiChatMessages } from "./messages";
-import { aiThinkingMessages, aiThinkingWordRound, aiThinkingWords } from "./thinking-words";
+import { aiThinkingWordRound, aiThinkingWords } from "./thinking-words";
 
 for (const locale of ["de", "en"]) {
   const t = aiChatMessages(locale);
@@ -10,7 +10,7 @@ for (const locale of ["de", "en"]) {
   test(`${locale}: the catalog holds the 19 approved words after "${t.thinking}"`, () => {
     expect([words.plain.length, words.wink.length, words.moustache.length]).toEqual([11, 6, 2]);
     expect(t.stepThinking).toBe(t.thinking);
-    expect(aiThinkingMessages(locale).announcement({ assistant: "Gustav" })).toBe(
+    expect(t.thinkingAnnouncement).toBe(
       locale === "de" ? "Gustav denkt nach" : "Gustav is thinking",
     );
   });
