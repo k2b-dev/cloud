@@ -646,6 +646,7 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
       root: { type: "group", items: ["source"], active: "source" },
     });
     const targets: Array<string | null> = [];
+    const froms: HTMLElement[] = [];
     const dispose = render(
       () =>
         createComponent(Panes, {
@@ -653,24 +654,30 @@ describe("@k2b/ui Panes and SettingsModal behavior", () => {
             return layout();
           },
           onLayoutChange: setLayout,
-          onAddItem: (target) => targets.push(target),
+          onAddItem: (target, from) => {
+            targets.push(target);
+            froms.push(from);
+          },
           items: [{ id: "source", title: "Source", render: () => "Source" }],
         }),
       dom.root,
     );
     const groupAdd = dom.root.querySelector<HTMLButtonElement>(".k2b-panes__add--tab");
     if (!groupAdd) throw new Error(dom.root.innerHTML);
-    const addClick = (groupAdd as HTMLButtonElement & { $$click?: () => void }).$$click;
+    // Solid's delegated handler gets the event; the + that was clicked is where the consumer's menu opens.
+    const addClick = (groupAdd as HTMLButtonElement & { $$click?: (event: { currentTarget: Element }) => void }).$$click;
     expect(typeof addClick).toBe("function");
-    addClick?.();
+    addClick?.({ currentTarget: groupAdd });
     expect(targets).toEqual(["source"]);
+    expect(froms).toEqual([groupAdd]);
     setLayout({ version: 2, root: null });
     await Promise.resolve();
     const emptyAdd = dom.root.querySelector<HTMLButtonElement>(".k2b-panes__empty .k2b-panes__add");
-    const emptyAddClick = (emptyAdd as (HTMLButtonElement & { $$click?: () => void }) | null)?.$$click;
+    const emptyAddClick = (emptyAdd as (HTMLButtonElement & { $$click?: (event: { currentTarget: Element }) => void }) | null)?.$$click;
     expect(typeof emptyAddClick).toBe("function");
-    emptyAddClick?.();
+    if (emptyAdd) emptyAddClick?.({ currentTarget: emptyAdd });
     expect(targets).toEqual(["source", null]);
+    expect(froms).toEqual([groupAdd, emptyAdd]);
     dispose();
     dom.cleanup();
   });

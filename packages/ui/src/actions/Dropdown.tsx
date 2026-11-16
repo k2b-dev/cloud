@@ -335,8 +335,15 @@ const itemContent = (props: {
       <span>{props.children}</span>
       <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
     </span>
-    {props.trailing}
-    <Show when={props.shortcutKey}>{(key) => <Kbd keys={key().toLowerCase()} class="k2b-dropdown__key" />}</Show>
+    {/* One node with the trailing information, so a row without a letter renders exactly as before. */}
+    <Show when={props.shortcutKey} fallback={props.trailing}>
+      {(key) => (
+        <>
+          {props.trailing}
+          <Kbd keys={key().toLowerCase()} class="k2b-dropdown__key" />
+        </>
+      )}
+    </Show>
   </>
 );
 
@@ -871,6 +878,33 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
     else if (next) open(focus);
     else close(false);
   };
+  const bodyNode = () => (
+    <Show when={props.body}>
+      {(body) => {
+        const Body = body();
+        return (
+          <Body
+            close={close}
+            open={isOpen}
+            api={(api) => {
+              searchApi = api;
+              onCleanup(() => {
+                if (searchApi === api) searchApi = undefined;
+              });
+            }}
+          />
+        );
+      }}
+    </Show>
+  );
+  // Hidden from the menu's children, which are entries only; the menu reads it as its description.
+  const noteNode = () => (
+    <Show when={props.note}>
+      <p id={`${menuId}-note`} class="k2b-dropdown__note" aria-hidden="true">
+        {props.note}
+      </p>
+    </Show>
+  );
   const handleMenuKeyDown = (event: KeyboardEvent) => {
     // A letter chooses the entry that carries it, unless the person is typing in a field of the menu.
     if (chooseByKey(menuRef, event)) return;
@@ -1008,29 +1042,16 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
           }}
         >
           <Show when={entriesShown()}>
-            <Show when={props.heading}>
+            {/* The heading shares the body's place, and the key hint the note's, so a menu without them renders as before. */}
+            <Show when={props.heading} fallback={bodyNode()}>
               {(heading) => (
-                <p class="k2b-dropdown__heading" aria-hidden="true">
-                  {heading()}
-                </p>
+                <>
+                  <p class="k2b-dropdown__heading" aria-hidden="true">
+                    {heading()}
+                  </p>
+                  {bodyNode()}
+                </>
               )}
-            </Show>
-            <Show when={props.body}>
-              {(body) => {
-                const Body = body();
-                return (
-                  <Body
-                    close={close}
-                    open={isOpen}
-                    api={(api) => {
-                      searchApi = api;
-                      onCleanup(() => {
-                        if (searchApi === api) searchApi = undefined;
-                      });
-                    }}
-                  />
-                );
-              }}
             </Show>
             <Show
               when={!props.body && props.search}
@@ -1058,19 +1079,16 @@ function DropdownRoot(props: DropdownProps & { body?: DropdownBody; placeMenu?: 
                 />
               )}
             </Show>
-            <Show when={props.keyHint}>
+            <Show when={props.keyHint} fallback={noteNode()}>
               {(hint) => (
-                <p class="k2b-dropdown__keys" aria-hidden="true">
-                  <span>{hint()[0]}</span>
-                  <span>{hint()[1]}</span>
-                </p>
+                <>
+                  <p class="k2b-dropdown__keys" aria-hidden="true">
+                    <span>{hint()[0]}</span>
+                    <span>{hint()[1]}</span>
+                  </p>
+                  {noteNode()}
+                </>
               )}
-            </Show>
-            {/* Hidden from the menu's children, which are entries only; the menu reads it as its description. */}
-            <Show when={props.note}>
-              <p id={`${menuId}-note`} class="k2b-dropdown__note" aria-hidden="true">
-                {props.note}
-              </p>
             </Show>
           </Show>
         </div>
