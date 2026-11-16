@@ -2133,8 +2133,8 @@ export const aiConversations: AiConversationService = {
       }
       if (message.status === "failed") return { delivered: false as const, reason: "failed" as const };
 
-      const [target] = await tx<{ archived_at: Date | string | null }[]>`
-        SELECT archived_at FROM ai.conversations WHERE id = ${message.target_conversation_id}::uuid FOR UPDATE
+      const [target] = await tx<{ archived_at: Date | string | null; queue_held_at: Date | string | null }[]>`
+        SELECT archived_at, queue_held_at FROM ai.conversations WHERE id = ${message.target_conversation_id}::uuid FOR UPDATE
       `;
       if (!target || target.archived_at) {
         await tx`UPDATE ai.inter_chat_messages SET status = 'failed', error = 'Target chat is unavailable' WHERE id = ${message.id}::uuid`;
@@ -2147,7 +2147,8 @@ export const aiConversations: AiConversationService = {
           AND status IN ('queued', 'running', 'waiting_for_action')
         LIMIT 1
       `;
-      if (active) return { delivered: false as const, reason: "busy" as const };
+      // After a person's Stop nothing starts by itself: the message waits like for a busy chat.
+      if (active || target.queue_held_at) return { delivered: false as const, reason: "busy" as const };
 
       const writerOrigin = { kind: "chat" as const, id: message.source_chat_id, turnId: message.source_turn_short_id };
       const turnRows = await withAiShortIdForDb(
@@ -3044,9 +3045,12 @@ export const aiConversations: AiConversationService = {
         RETURNING *
       `,
       );
-      // Queue acceptance already recorded the user's interaction time.
+      // Queue acceptance already recorded the user's interaction time. A person's own message resumes a queue that their
+      // Stop held; a message written for an automation or another chat leaves the hold.
+      const person = !input.runConfig.writerOrigin && input.runConfig.actor?.kind !== "service_account";
       if (!input.queuedMessageId)
-        await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now() WHERE id = ${input.conversationId}::uuid`;
+        await tx`UPDATE ai.conversations SET done = CASE WHEN done IS TRUE THEN NULL ELSE done END, last_used_at = now(),
+          queue_held_at = CASE WHEN ${person} THEN NULL ELSE queue_held_at END WHERE id = ${input.conversationId}::uuid`;
       const turn = rowToTurn(turnRows[0]!);
       const attachedFiles = input.runConfig.files?.attached ?? [];
       for (const file of attachedFiles) {
@@ -3345,7 +3349,9 @@ export const aiConversations: AiConversationService = {
 
   requestTurnAbort: async (input, options) => {
     const reason = input.reason ?? "user";
+    // A person's Stop also holds the chat's queue in the same statement: nothing starts by itself afterwards.
     const rows = await (options?.db ?? sql)<TurnRow[]>`
+      WITH stopped AS (
       UPDATE ai.turns
       SET cancel_requested_at = COALESCE(cancel_requested_at, now()),
           cancellation_reason = CASE WHEN ${reason} = 'routine_deleted' THEN ${reason}
@@ -3357,6 +3363,11 @@ export const aiConversations: AiConversationService = {
         AND conversation_id = ${input.conversationId}
         AND status IN ('queued', 'running', 'waiting_for_action')
       RETURNING status, lease_owner, lease_expires_at, id, conversation_id, attempt, model_profile_id, created_at, completed_at, error
+      ), held AS (
+        UPDATE ai.conversations SET queue_held_at = now()
+        WHERE id = ${input.conversationId} AND ${reason} = 'user' AND EXISTS (SELECT 1 FROM stopped)
+      )
+      SELECT * FROM stopped
     `;
     if (!rows[0]) return { found: false };
     const row = rows[0];

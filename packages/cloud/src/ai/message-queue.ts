@@ -62,6 +62,9 @@ export const migrateAiQueuedMessagesTable = async () => {
   // Legacy entries belonged to the chat owner. Never discard an existing queue above the new limit.
   await sql`UPDATE ai.queued_messages q SET origin = jsonb_build_object('kind','person','id',COALESCE(q.submission#>>'{runConfig,actor,user,id}',c.created_by_user_id::text,'unknown')),
     author_user_id = c.created_by_user_id FROM ai.conversations c WHERE c.id=q.conversation_id AND q.origin IS NULL`.simple();
+  // A person's Stop holds the queue until that person acts again (coordinator, 16.11.): Send now starts one entry, a new
+  // message of the person releases the hold. Kept on the chat, so no entry needs a second state.
+  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS queue_held_at timestamptz`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS ai_queued_messages_one_send_now ON ai.queued_messages(conversation_id)
     WHERE send_requested_at IS NOT NULL AND status IN ('pending','failed')`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_pending ON ai.queued_messages(conversation_id, position) WHERE status IN ('pending','failed')`.simple();
@@ -237,7 +240,9 @@ export const enqueueChatMessage = async (id: string, input: Submission, content:
       WHERE conversation_id = ${input.conversationId}::uuid AND path = ${file.path} AND version = ${file.version ?? -1} RETURNING path`;
       if (!copied.length) throw new AiMessageQueueConflict("An attached file changed before the message was queued.");
     }
-    await tx`UPDATE ai.conversations SET draft_content = '[]'::jsonb, draft_revision = draft_revision + 1, draft_updated_at = now(), last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END WHERE id = ${input.conversationId}::uuid`;
+    // A new message of the person resumes a queue that their Stop held; an automation's message leaves the hold.
+    await tx`UPDATE ai.conversations SET draft_content = '[]'::jsonb, draft_revision = draft_revision + 1, draft_updated_at = now(), last_used_at = now(), done = CASE WHEN done IS TRUE THEN NULL ELSE done END,
+      queue_held_at = CASE WHEN ${origin.kind === "person"} THEN NULL ELSE queue_held_at END WHERE id = ${input.conversationId}::uuid`;
   });
 
 /** Cancellation and retry share the conversation lock with promotion. */
@@ -375,8 +380,10 @@ export const drainQueuedMessages = async (
     JOIN ai.conversations c ON c.id = q.conversation_id
     WHERE (q.status = 'pending' OR (q.status = 'failed' AND q.error IN ('quota_exhausted','quota_usage_unknown'))) AND c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL
       AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
+      -- Send now starts exactly its entry; the rest waits while a person's Stop holds the queue.
       AND (q.send_requested_at IS NOT NULL OR (
-        NOT EXISTS (SELECT 1 FROM ai.queued_messages priority WHERE priority.conversation_id=q.conversation_id AND priority.status IN ('pending','failed') AND priority.send_requested_at IS NOT NULL)
+        c.queue_held_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM ai.queued_messages priority WHERE priority.conversation_id=q.conversation_id AND priority.status IN ('pending','failed') AND priority.send_requested_at IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM ai.queued_messages earlier WHERE earlier.conversation_id = q.conversation_id AND earlier.position < q.position AND earlier.status IN ('pending','failed'))))
       AND NOT EXISTS (SELECT 1 FROM ai.turns t WHERE t.conversation_id = q.conversation_id AND NOT COALESCE(t.run_config ? 'background', false) AND t.status IN ('queued','running','waiting_for_action'))
     ORDER BY q.quota_checked_at NULLS FIRST, q.position LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
