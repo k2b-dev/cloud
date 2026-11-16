@@ -84,15 +84,27 @@ describe("ActivityList", () => {
         const list = document.querySelector(".k2b-activity")!.getBoundingClientRect();
         const row = document.querySelectorAll<HTMLElement>(".k2b-activity__entry")[1]!;
         const rail = getComputedStyle(row, "::before");
-        const icon = row.querySelector(".k2b-activity__icon")!.getBoundingClientRect();
+        const below = getComputedStyle(row, "::after");
+        const iconElement = row.querySelector(".k2b-activity__icon")!;
+        const icon = iconElement.getBoundingClientRect();
+        // A compact list in a container sized by its content (a popover) keeps its width.
+        const probe = document.createElement("div");
+        probe.style.width = "max-content";
+        probe.append(document.querySelector(".k2b-activity")!.cloneNode(true));
+        document.body.append(probe);
+        const fitted = probe.getBoundingClientRect().width;
+        probe.remove();
         const body = row.querySelector(".k2b-activity__body")!.getBoundingClientRect();
         const text = getComputedStyle(row.querySelector(".k2b-activity__text")!);
         const meta = getComputedStyle(row.querySelector(".k2b-activity__meta")!);
         const day = document.querySelector<HTMLElement>(".k2b-activity__day")!;
         return {
           rail: [rail.width, rail.left, rail.borderStyle],
+          // The rail pauses behind the icon (6 to 26 px) instead of a disc covering it, on any surface.
+          gap: [rail.top, rail.height, below.top, below.width, below.left, getComputedStyle(iconElement).backgroundColor],
+          fitted,
           icon: [icon.width, icon.left - list.left],
-          gap: body.left - icon.right,
+          column: body.left - icon.right,
           text: [text.fontSize, text.lineHeight],
           meta: [meta.fontSize, meta.lineHeight],
           day: [getComputedStyle(day).fontSize, getComputedStyle(day.querySelector(".k2b-activity__day-line")!).width],
@@ -101,7 +113,9 @@ describe("ActivityList", () => {
       });
       expect(geometry.rail.slice(0, 2)).toEqual(["2px", "17px"]);
       expect(geometry.icon).toEqual([20, 0]);
-      expect(geometry.gap).toBe(12);
+      expect(geometry.column).toBe(12);
+      expect(geometry.gap).toEqual(["0px", "6px", "26px", "2px", "17px", "rgba(0, 0, 0, 0)"]);
+      expect(geometry.fitted).toBeGreaterThan(200);
       expect(geometry.text).toEqual(["14px", "20px"]);
       expect(geometry.meta).toEqual(["13px", "18px"]);
       expect(geometry.day).toEqual(["12px", "22px"]);

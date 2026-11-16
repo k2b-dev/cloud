@@ -1139,6 +1139,65 @@ const ActivityDialogDemo = () => (
   </DemoCard>
 );
 
+// Linked rows of a recent-activity column: each row links to its object and keeps its key across a refresh.
+const linkedActivity = (refreshes: number): ActivityEntry[] => [
+  {
+    id: "event-3",
+    at: "2026-11-12T14:58:00+01:00",
+    icon: "ti ti-circle-check",
+    tone: "success",
+    text: "Venue booked completed in Summer party",
+    href: "#activity-list-links",
+    actor: "Jonas Weber",
+  },
+  {
+    id: "event-2",
+    at: "2026-11-12T11:20:00+01:00",
+    icon: "ti ti-message-plus",
+    text: "Commented on Catering offers",
+    detail: refreshes > 0 ? `Refreshed ${refreshes} ${refreshes === 1 ? "time" : "times"}` : undefined,
+    href: "#activity-list-links",
+    actor: "Mira Lang",
+  },
+  {
+    id: "event-1",
+    at: "2026-11-11T09:02:00+01:00",
+    icon: "ti ti-mail",
+    text: "Invitation sent",
+    details: () => "To team@stadtpark.example · Subject “Invitation to the summer party”",
+    actor: "Mira Lang",
+  },
+];
+
+const ActivityLinksDemo = () => {
+  const [refreshes, setRefreshes] = createSignal(0);
+  return (
+    <DemoCard
+      id="activity-list-links"
+      chip={{ kind: "component", name: "ActivityList", from: "@k2b/ui" }}
+      description="Rows with href link to their object: the sentence is the link and a click anywhere on the row follows it; a middle click opens a new tab. With id a row keeps its node: fold out Invitation sent, then Refresh builds every entry anew and the details stay open. Below, a card under a page heading takes level 3."
+      code={`<ActivityList
+  entries={events().map((event) => ({ id: event.id, at: event.at, icon, text, href: event.href, actor }))}
+  now={data.now}
+  timeZone="Europe/Berlin"
+/>
+<ActivityCard level={3} entries={entries()} limit={3} now={data.now} timeZone="Europe/Berlin" />`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "1rem", "max-width": "40rem" }}>
+        <div>
+          <Button variant="secondary" size="sm" onClick={() => setRefreshes(refreshes() + 1)}>
+            <i class="ti ti-refresh" aria-hidden="true" />
+            Refresh
+          </Button>
+        </div>
+        <ActivityList entries={linkedActivity(refreshes())} now={ACTIVITY_NOW} timeZone="Europe/Berlin" label="Recent activity" />
+        <h2 style={{ margin: 0, "font-size": "1.125rem" }}>Summer party</h2>
+        <ActivityCard level={3} entries={activityEntries()} limit={3} now={ACTIVITY_NOW} timeZone="Europe/Berlin" kinds={activityKinds} />
+      </div>
+    </DemoCard>
+  );
+};
+
 // A week of a product team around today, in UTC so the server and the browser agree. Every week repeats the same
 // days: a busy today, a train ride, an empty day, a dense day with more overlaps than lanes, and a quiet one.
 const timelineDay = (offset: number) => {
@@ -2729,6 +2788,7 @@ const demos: DemoSection = {
       <ActivityListDemo />
       <ActivityWideDemo />
       <ActivityDialogDemo />
+      <ActivityLinksDemo />
     </DemoGrid>
   ),
   "message-rows": () => (
