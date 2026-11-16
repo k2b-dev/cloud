@@ -1,3 +1,4 @@
+import { publishPageContext } from "@k2b/cloud/browser/panel";
 import type { DateContext } from "@k2b/stdlib";
 import {
   AppWorkspace,
@@ -10,7 +11,7 @@ import {
   prompts,
   useLocale,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, Show } from "solid-js";
 import type {
   PublicField as Field,
   PublicForm as Form,
@@ -32,6 +33,7 @@ import type {
 import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
 import { filterSearchableFields } from "../../../searchable-fields";
 import { defaultTableAggregations } from "../../../table-defaults";
+import { gridsPageScope } from "../../page-context";
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
 import QueryWorkspace from "../query/QueryWorkspace";
 import type { QueryWorkspaceCurrentSource } from "../query/query-workspace-model";
@@ -435,6 +437,10 @@ export default function RecordsView(props: Props) {
     retry: retrySelectedRecord,
     refreshDetail: refreshSelectedRecordDetail,
   } = selectionController;
+
+  createEffect(() => {
+    onCleanup(publishPageContext({ scope: gridsPageScope(props.baseId, selectedRecord()) }));
+  });
 
   const bulkSelectionEnabled = () =>
     props.bulkSelectionLaunchers.length > 0 && !props.trashMode && !isGrouped() && renderMode() === "table";

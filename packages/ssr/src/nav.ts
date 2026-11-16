@@ -199,5 +199,13 @@ export function Link(props: LinkProps) {
   );
 }
 
-export { installPageSwap, type SwapPageOptions, swapPage } from "./nav-swap";
+export {
+  installPageSwap,
+  type PageSwapOptions,
+  type SwapFallbackDetail,
+  type SwapFallbackReason,
+  type SwapPageOptions,
+  swapPage,
+} from "./nav-swap";
+export { protectUnsavedInput, type UnsavedInputOptions } from "./nav-unsaved";
 export { type BeforeLeaveEvent, onBeforeLeave } from "./nav-veto";

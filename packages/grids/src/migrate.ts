@@ -390,6 +390,7 @@ const defineSchema = async (sql: SQL): Promise<void> => {
           result numeric;
           digits text;
           weight integer;
+          target_scale integer;
         BEGIN
           IF base IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
             OR exponent IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
@@ -400,9 +401,11 @@ const defineSchema = async (sql: SQL): Promise<void> => {
           base := trim_scale(base);
           exponent := trim_scale(exponent);
           IF exponent = trunc(exponent) AND exponent BETWEEN -2147483648 AND 2147483647 THEN
-            -- Request a stable minimum scale without changing the base's value.
-            -- PostgreSQL versions otherwise choose different integer-power scales.
-            RETURN round(power(base + 0.0000000000000000::numeric, exponent), least(1000, greatest(16, scale(base))));
+            target_scale := least(1000, greatest(16, scale(base)));
+            -- Native POWER can choose a scale just above our target and round
+            -- a reciprocal to a midpoint. Keep 16 guard places before the final
+            -- rounding, as for general powers, without changing the base's value.
+            RETURN round(power(base + round(0::numeric, least(1000, target_scale + 16)), exponent), target_scale);
           END IF;
           -- Native POWER gives a cheap first estimate of the result magnitude.
           -- Then request 80 significant digits plus 16 guard digits, without

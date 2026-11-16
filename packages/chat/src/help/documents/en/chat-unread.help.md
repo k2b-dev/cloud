@@ -68,4 +68,4 @@ Reading the message in its thread marks it read here too. You only see messages 
 
 ## Filter the list {icon="filter"}
 
-Choose **Unread** above the list to show chats with new messages or your unread mark. A chat stays in that view after you read it, until you leave the filter. **All** returns to the whole list. The address keeps your filter when you reload or go back.
+Choose **Filter chats** beside the search, then **Unread**, to show chats with new messages or your unread mark. A chat stays in that view after you read it, until you leave the filter. **All** returns to the whole list. The address keeps your filter when you reload or go back.
