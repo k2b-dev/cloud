@@ -64,11 +64,18 @@ const german = (children: () => JSX.Element) =>
   ).replace(/ data-hk="[^"]*"/g, "");
 const list = (props: Partial<import("./ActivityList").ActivityListProps> = {}) =>
   german(() => createComponent(ActivityList, { entries: entries(), now: NOW, timeZone: ZONE, ...props }));
-const text = (html: string) =>
-  html
-    .replace(/<[^>]+>/g, "")
-    .replace(/<!--[^>]*-->/g, "")
-    .replace(/\s+/g, " ");
+// The rendered text as a parser reads it: text nodes only, without tags or hydration comments.
+const text = (html: string) => {
+  let plain = "";
+  new HTMLRewriter()
+    .onDocument({
+      text(chunk) {
+        plain += chunk.text;
+      },
+    })
+    .transform(html);
+  return plain.replace(/\s+/g, " ");
+};
 
 test("renders the timeline with dashed dividers, meta lines, and a bundle with its count", () => {
   const html = list();

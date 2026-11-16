@@ -85,7 +85,7 @@ export type ActivityListProps = ActivityTimeProps & {
 };
 
 /** Bundle key of an entry: its bundle key and its actor; without `bundle` never bundled. */
-export const activityBundleKey = (entry: ActivityEntry): string | null =>
+const activityBundleKey = (entry: ActivityEntry): string | null =>
   entry.bundle ? `${entry.bundle.key}|${typeof entry.actor === "string" ? entry.actor : ""}` : null;
 
 /** The list's clock: first `start` (from the server, the same first render), then in the browser every minute anew. */
@@ -391,7 +391,7 @@ export const ActivityList: ActivityListComponent = Object.assign(ActivityListRoo
 });
 
 /** Newest rows a card shows; "All N" opens the rest. */
-export const ACTIVITY_CARD_LIMIT = 6;
+const ACTIVITY_CARD_LIMIT = 6;
 
 /** A kind for the filter of the "All N" dialog; only kinds with entries appear. */
 export type ActivityKind = { key: string; label: string };

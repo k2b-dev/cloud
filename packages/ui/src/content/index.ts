@@ -1,6 +1,5 @@
 export type { ChartDateFormat, ChartDatum, ChartDatumRole, ChartFormat, ChartNumberFormat } from "../charts/core";
 export {
-  ACTIVITY_CARD_LIMIT,
   type ActivityAction,
   ActivityCard,
   type ActivityCardProps,
@@ -11,7 +10,6 @@ export {
   ActivityList,
   type ActivityListProps,
   type ActivityTone,
-  activityBundleKey,
   openActivityDialog,
 } from "./ActivityList";
 export { BalanceSummary, type BalanceSummaryProps } from "./BalanceSummary";
