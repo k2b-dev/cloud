@@ -231,7 +231,10 @@ at most the viewport width less `1rem` per side. An entry or section label
 longer than that wraps instead of ending in an ellipsis, and an unbroken word
 breaks, so every label stays readable on a phone. A description wraps at
 `16rem` and never widens the menu past that, so a long explanation reads as a
-short paragraph under its label instead of stretching the menu. A radio choice reserves its
+short paragraph under its label instead of stretching the menu. An entry's
+`descriptionVisual`, such as a colored `Tag`, shows in place of the description
+text and keeps its line height; the text stays searched and read by screen
+readers, as in [Select](../input/select#show-a-visual-in-place-of-the-description). A radio choice reserves its
 check mark while unchecked, so choosing an option never widens an open menu.
 `ContextMenu` follows the same rule with a `13rem` minimum and `0.5rem` to each
 viewport edge, and is measured before it is clamped beside the pointer. When
@@ -258,7 +261,7 @@ something else:
 
 ```ts
 type DropdownActionBase = {
-  class?: string; disabled?: boolean; icon?: string; image?: string; label: string; ariaLabel?: string; description?: string; trailing?: JSX.Element;
+  class?: string; disabled?: boolean; icon?: string; image?: string; label: string; ariaLabel?: string; description?: string; descriptionVisual?: () => JSX.Element; trailing?: JSX.Element;
   variant?: "danger" | "accent";
 };
 

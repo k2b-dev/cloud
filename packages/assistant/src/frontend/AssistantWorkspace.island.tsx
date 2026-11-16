@@ -161,7 +161,7 @@ import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
 import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
-import { finishedPlanShown, type TaskHostChoice, taskHostOpen } from "./task-host";
+import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
 
@@ -228,6 +228,9 @@ type ProjectViewState = {
 const ArtifactWorkspace = lazy(() => import("../artifacts/Workspace").then((module) => ({ default: module.ArtifactWorkspace })));
 /** The menu behind "+" loads with its first use. */
 const AddMenu = lazy(() => import("./AssistantAddMenu").then((module) => ({ default: module.AssistantAddMenu })));
+
+/** The usage of a chat that has sent nothing yet. */
+const NOTHING_USED = { input: 0, output: 0, total: 0 };
 
 export default function AssistantWorkspace(props: Props) {
   const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
@@ -1138,7 +1141,7 @@ export default function AssistantWorkspace(props: Props) {
   });
   let questionJump = 0;
   /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
-  const jumpToQuestion = async (question: AiOpenQuestion) => {
+  const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor">) => {
     const jump = ++questionJump;
     // The question replaces any message the chat was opened at, also after a reload.
     const reveal = ++revealRequest;
@@ -2348,7 +2351,7 @@ export default function AssistantWorkspace(props: Props) {
             <>
               <Show when={!projectComposer() && (hasOpenTodos() || completedPlanShown())}>
                 <Chat.Tasks
-                  items={todoItems()}
+                  items={shownTasks(todoItems(), chat.activeTurn()?.status)}
                   open={todoOpen()}
                   onOpenChange={setTodoOpen}
                   label={todoLabel()}
@@ -2627,7 +2630,7 @@ export default function AssistantWorkspace(props: Props) {
               : []
           }
           contextPopupAction={
-            // An empty chat has nothing to summarize; the usage control appears with the first message.
+            // An empty chat has nothing to summarize; the action to do so appears with the first message.
             !projectComposer() && activeConversation() && chat.messages().length > 0
               ? {
                   id: "compact-context",
@@ -2646,7 +2649,8 @@ export default function AssistantWorkspace(props: Props) {
             projectComposer()
               ? undefined
               : {
-                  usage: usageSnapshot()?.request ?? null,
+                  // Nothing sent yet, such as on the start page: the ring stands empty in its place (v12 §9).
+                  usage: usageSnapshot()?.request ?? (emptyChat() ? NOTHING_USED : null),
                   loopUsage: usageSnapshot()?.loop ?? null,
                   contextWindow: usageModel()?.contextWindow,
                   modelLabel: usageModel()?.label,
@@ -2931,6 +2935,10 @@ export default function AssistantWorkspace(props: Props) {
                                     ),
                                     actionDisabled: () => chat.runStatus() === "stopping",
                                     onCheckAction: (request) => chat.checkAction(request),
+                                    onShowQuestion: (anchor) => {
+                                      const conversationId = chat.activeConversationId();
+                                      if (conversationId) void jumpToQuestion({ conversationId, anchor });
+                                    },
                                     onApproval: async (request, input) => {
                                       if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
                                     },

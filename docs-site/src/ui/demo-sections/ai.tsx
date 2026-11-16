@@ -6,6 +6,7 @@ import {
   type ChatTimelineItem,
   CodeDisplay,
   EmojiPicker,
+  HoverCard,
   IconButton,
   MessageRow,
   ProgressBar,
@@ -13,7 +14,7 @@ import {
   rememberEmoji,
   Toolbar,
 } from "@k2b/ui";
-import { createSignal, For, onCleanup } from "solid-js";
+import { createSignal, For, type JSX, onCleanup } from "solid-js";
 import { DemoCard } from "../DemoCard";
 import { DemoGrid, type DemoSection } from "./types";
 
@@ -404,6 +405,113 @@ const ContextUsageDemo = () => (
           sections={[usageBudget(percent)]}
         />
       ))}
+    </div>
+  </DemoCard>
+);
+
+/** The ⓘ a host puts at the end of a step: its details in a `HoverCard`. */
+const StepInfo = (props: { title: string; detail: string; content: string; actions?: JSX.Element }) => (
+  <HoverCard.Trigger
+    triggerClass="k2b-chat-activity__info"
+    aria-label={`Details: ${props.title}`}
+    align="end"
+    width="24rem"
+    title={props.title}
+    detail={props.detail}
+    content={props.content}
+    actions={props.actions}
+  >
+    <i class="ti ti-info-circle" aria-hidden="true" />
+  </HoverCard.Trigger>
+);
+
+const StepListDemo = () => (
+  <DemoCard
+    id="chat-step-list"
+    chip={[
+      { kind: "component", name: "Chat.Activity", from: "@k2b/ui" },
+      { kind: "component", name: "HoverCard", from: "@k2b/ui" },
+    ]}
+    description="One grid for every row: status words, durations, and the ⓘ or chevron end on one edge. Point at an ⓘ for the step's details; only the group opens."
+    code={`const StepInfo = (props) => (
+  <HoverCard.Trigger triggerClass="k2b-chat-activity__info" aria-label={\`Details: \${props.title}\`} align="end" width="24rem"
+    title={props.title} detail={props.detail} content={props.content} actions={props.actions}>
+    <i class="ti ti-info-circle" aria-hidden="true" />
+  </HoverCard.Trigger>
+);
+
+<Chat.Activity tone="ai" label="Analyzed a file, saved 1 table" meta={<>6 steps · <span data-tone="danger">1 failed</span></>} duration="12 s" bodyInset={false} defaultOpen>
+  <Chat.Activity icon="ti ti-file-text" label="Read the file “Sales-November.csv”" duration="1 s"
+    end={<StepInfo title="Read the file “Sales-November.csv”" detail="1 s" content="412 rows · 38 KB · attached by you" />} />
+  <Chat.Activity icon="ti ti-stack-2" label="Loaded tools and knowledge" meta="2 steps" duration="1 s">
+    <Chat.Activity icon="ti ti-book" label="Loaded skill “Write code”" duration="1 s" />
+    <Chat.Activity icon="ti ti-tool" label="Loaded tool “Calculate”" duration="1 s" />
+  </Chat.Activity>
+  <Chat.Activity icon="ti ti-calculator" label="Added up the numbers from the file" meta="Failed" metaTone="danger" duration="2 s"
+    end={<StepInfo title="Added up the numbers from the file" detail="Failed · 2 s" content="Two rows have no amount. Result: Gustav went on without this result." />} />
+  <Chat.Activity icon="ti ti-mail" label="Sent the confirmation to Lena Vogt" meta="Outcome unclear" metaTone="warning" duration="8 s"
+    end={<StepInfo title="Sent the confirmation to Lena Vogt" detail="Outcome unclear · 8 s"
+      content="Cloud got no answer. Whether the mail went out is not known. Gustav does not send it again."
+      actions={<Button size="sm" variant="secondary">Check status</Button>} />} />
+</Chat.Activity>`}
+  >
+    <div class="w-full max-w-[44rem]">
+      <Chat.Activity
+        tone="ai"
+        label="Analyzed a file, saved 1 table"
+        meta={
+          <>
+            6 steps · <span data-tone="danger">1 failed</span>
+          </>
+        }
+        duration="12 s"
+        bodyInset={false}
+        defaultOpen
+      >
+        <Chat.Activity
+          icon="ti ti-file-text"
+          label="Read the file “Sales-November.csv”"
+          duration="1 s"
+          end={<StepInfo title="Read the file “Sales-November.csv”" detail="1 s" content="412 rows · 38 KB · attached by you" />}
+        />
+        <Chat.Activity icon="ti ti-stack-2" label="Loaded tools and knowledge" meta="2 steps" duration="1 s">
+          <Chat.Activity icon="ti ti-book" label="Loaded skill “Write code”" duration="1 s" />
+          <Chat.Activity icon="ti ti-tool" label="Loaded tool “Calculate”" duration="1 s" />
+        </Chat.Activity>
+        <Chat.Activity
+          icon="ti ti-calculator"
+          label="Added up the numbers from the file"
+          meta="Failed"
+          metaTone="danger"
+          duration="2 s"
+          end={
+            <StepInfo
+              title="Added up the numbers from the file"
+              detail="Failed · 2 s"
+              content="Two rows have no amount. Result: Gustav went on without this result."
+            />
+          }
+        />
+        <Chat.Activity
+          icon="ti ti-mail"
+          label="Sent the confirmation to Lena Vogt"
+          meta="Outcome unclear"
+          metaTone="warning"
+          duration="8 s"
+          end={
+            <StepInfo
+              title="Sent the confirmation to Lena Vogt"
+              detail="Outcome unclear · 8 s"
+              content="Cloud got no answer. Whether the mail went out is not known. Gustav does not send it again."
+              actions={
+                <Button size="sm" variant="secondary">
+                  Check status
+                </Button>
+              }
+            />
+          }
+        />
+      </Chat.Activity>
     </div>
   </DemoCard>
 );
@@ -961,6 +1069,7 @@ const WorkingPlanDemo = () => {
 const demos: DemoSection = {
   chat: () => (
     <DemoGrid columns="one">
+      <StepListDemo />
       <StepRowsDemo />
       <MailDecisionDemo />
       <DecisionPoliciesDemo />

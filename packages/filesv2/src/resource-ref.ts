@@ -14,6 +14,7 @@ const decode = (value: string) => {
   return new TextDecoder("utf-8", { fatal: true }).decode(Uint8Array.from(atob(padded), (char) => char.charCodeAt(0)));
 };
 export const ENTRY_TYPE = "filesv2.entry";
+export const FOLDER_TYPE = "filesv2.folder";
 export function entryRefId(baseId: string, path: string): string | null {
   const id = encode(`${baseId}\n${path}`);
   return id.length <= 512 ? id : null;

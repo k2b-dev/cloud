@@ -11,7 +11,7 @@ import { startLiveOutbox } from "../events/live";
 import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
-import { registerPageSwap } from "../ssr/page-swap";
+import { assertPageSwapPaths, matchPageSwapScope, registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
 import { bindResourceAppAccess, RESOURCE_ACCESS_PATH } from "./app-access-resources";
@@ -96,6 +96,7 @@ import {
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { startLinksRuntime } from "../services/links/runtime";
 import { logger } from "../services/logging";
+import { startMaintenanceQuiesce } from "../services/maintenance-quiesce";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
 import { startPreviewsRuntime } from "../services/previews/runtime";
 import { readRailSnapshot } from "../services/rail-snapshot";
@@ -192,8 +193,12 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   appearance?: AppAppearance;
   /** URL prefix for SSR asset isolation. Omit for the global `/_ssr/` path (core). */
   basePath?: string;
-  /** Swap Layout content within this app while keeping the rail, tab bar and panel document. Default: false; focusMode pages still load a document. */
-  pageSwap?: boolean;
+  /**
+   * Swap Layout content while keeping the rail, tab bar and panel document. `true` swaps within the app's route prefix.
+   * A list of paths swaps only on pages under one of them, and only between pages under the same matched path; `:name`
+   * stands for one path segment (`"/app/mail/:mailboxId/code"`). Default: off; focusMode pages still load a document.
+   */
+  pageSwap?: true | readonly string[];
   /** Base URL as seen by other containers (e.g. "http://app-notebooks:3000"). */
   baseUrl: string;
   adminHref?: string;
@@ -533,6 +538,8 @@ export const defineApp = <
   const installable = opts.installable === undefined ? undefined : validateInstallable(opts.id, opts.routes, opts.installable);
   if (installable === null)
     throw new Error(`App "${opts.id}" declares invalid installable; use a canonical own /app/<id>/<surface>/ path covered by routes`);
+  const swapPaths = typeof opts.pageSwap === "object" ? opts.pageSwap : undefined;
+  if (swapPaths) assertPageSwapPaths(swapPaths);
   const requestInstallable = (path: string) => (installable && installableContains(installable.path, path) ? installable : undefined);
   validateAppNavBadge(opts);
   const panel = validateAppPanel(opts);
@@ -670,8 +677,9 @@ export const defineApp = <
   const ssr = Object.assign(
     createStatusPreservingSsrHandler<ResolvedPageOptions>(html, async (c) => {
       c.get("page").installable = requestInstallable(c.req.path);
-      if (opts.pageSwap && !c.get("page").installable)
-        registerPageSwap(c, isDevelopment ? String(developmentStamp) : `${buildMetadata.version}:${buildMetadata.release}`);
+      const swapScope = swapPaths ? matchPageSwapScope(swapPaths, new URL(c.req.url).pathname) : undefined;
+      if (opts.pageSwap && !c.get("page").installable && (!swapPaths || swapScope))
+        registerPageSwap(c, isDevelopment ? String(developmentStamp) : `${buildMetadata.version}:${buildMetadata.release}`, swapScope);
       c.get("page").lang = getLocale(c);
       c.get("page").themePreference = readThemePreferenceFromCookieHeader(c.req.header("Cookie"));
       const user = c.get("user");
@@ -773,6 +781,9 @@ export const defineApp = <
     // Recovery waits share one allowance; application setup retains its lifecycle.
     const settingsStartupBudget = Math.max(0, Math.floor(DEPENDENCY_STARTUP_BUDGET_MS - (performance.now() - dependencyStart)));
     const cleanup: Array<() => void | Promise<void>> = [() => processSync.stop()];
+    let shutdownPromise: Promise<void> | undefined;
+    // Assigned once the server is built; a failed resume before that only runs cleanup.
+    let shutdown = (): Promise<void> => stopStartedResources();
     let cleanupPromise: Promise<void> | undefined;
     const stopStartedResources = (): Promise<void> =>
       (cleanupPromise ??= (async () => {
@@ -1261,6 +1272,37 @@ export const defineApp = <
       // which reads the Bun server off `c.env`.
       server.all("*", (c) => Promise.resolve(startOpts.fetch(c.req.raw, c.env)));
 
+      // Maintenance stage „Ruhe“: before any background work starts, so it starts quiet when quiesce is on.
+      const quiesce = await startMaintenanceQuiesce({
+        appId: meta.id,
+        instanceId: membership.instanceId,
+        onDrainErrors: (errors) =>
+          log.warn("Background work did not drain completely for maintenance quiesce", {
+            appId: meta.id,
+            errors: errors.map((error) => (error instanceof Error ? error.message : String(error))),
+          }),
+        onResumeFailed: (errors) => {
+          log.error("Background work could not resume after maintenance quiesce; restarting", {
+            appId: meta.id,
+            errors: errors.map((error) => (error instanceof Error ? error.message : String(error))),
+          });
+          void shutdown().finally(() => process.exit(1));
+        },
+        onResumeRetry: ({ error, attempt, retryInMs }) =>
+          log.warn("Background work could not resume after maintenance quiesce; retrying", {
+            appId: meta.id,
+            attempt,
+            retryInMs,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        onReportError: (error) =>
+          log.warn("Maintenance quiesce status unavailable", {
+            appId: meta.id,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      });
+      cleanup.push(() => quiesce.stop());
+
       // Lifecycle
       const cloudCtx: CloudLifecycleContext = {
         logger,
@@ -1332,8 +1374,7 @@ export const defineApp = <
       log.info(`Registered "${meta.id}"`, { baseUrl });
 
       // Graceful shutdown
-      let shutdownPromise: Promise<void> | undefined;
-      const shutdown = () =>
+      shutdown = () =>
         (shutdownPromise ??= (async () => {
           const drained = http.stop();
           log.info(`Stopping: ${meta.id}`);

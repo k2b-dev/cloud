@@ -6,6 +6,7 @@ import { readPanelCookie } from "../_internal/panel-cookie";
 import { readShellFocusCookie } from "../_internal/shell-focus";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
 import { type CloudResourceRef, CloudResourceRefSchema } from "../contracts/capabilities";
+import { MAINTENANCE_BYPASS_HEADER } from "../contracts/maintenance-signals";
 import { PANEL_HELP_ID_MAX_LENGTH, PanelPageContextSchema } from "../contracts/panel-context";
 import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
@@ -31,7 +32,7 @@ import type { LayoutBreadcrumb } from "./layout-runtime";
 import PageTrailRow from "./PageTrailRow";
 import PanelSlot from "./PanelSlot";
 import PrivacyCountdown from "./PrivacyCountdown";
-import { getPageSwapBuild, pageSwapSignature } from "./page-swap";
+import { getPageSwap, pageSwapSignature } from "./page-swap";
 import { derivePageTrail } from "./page-trail";
 import { platformMessages } from "./platform-messages";
 import { sortRailApps } from "./rail-navigation";
@@ -191,8 +192,11 @@ export default function Layout(props: LayoutProps) {
   const searchLinks = Object.fromEntries(
     displayApps.flatMap((app) => (visibleAppIds.has(app.id) && app.searchLinks?.length ? [[app.id, app.searchLinks] as const] : [])),
   );
-  const swapBuild = getPageSwapBuild(c);
-  const swap = swapBuild !== undefined && !focusMode && !!currentRoute?.prefix;
+  const swapRegistration = getPageSwap(c);
+  const swapBuild = swapRegistration?.build;
+  // The app's opted-in path when it named one, otherwise its route prefix: links within it swap.
+  const swapScope = swapRegistration?.scope ?? currentRoute?.prefix;
+  const swap = swapBuild !== undefined && !focusMode && !!swapScope;
   const settings = c.get("settings");
   const announcements = c.get("announcements");
   const appName = settings?.app?.name || "Cloud";
@@ -231,6 +235,13 @@ export default function Layout(props: LayoutProps) {
   const proof = browserSession ? c.get("credentialProof") : undefined;
   const signedInBrowser =
     user && proof?.kind === "session" ? { userId: user.id, sid: proof.sid, ...(sessionIdle ? { idle: sessionIdle } : {}) } : undefined;
+  // The gateway let this request past the maintenance wall with an admin bypass link; administrators may end it.
+  const maintenanceBypass = c.req.raw.headers.get(MAINTENANCE_BYPASS_HEADER) === "1";
+  const canEndMaintenance = !!user && hasRole(user, "admin");
+  const maintenance =
+    maintenanceBypass || canEndMaintenance
+      ? { ...(maintenanceBypass ? { bypass: true as const } : {}), ...(canEndMaintenance ? { canEnd: true as const } : {}) }
+      : undefined;
   const profileName = user?.displayName || user?.uid || "?";
   const profileAvatarSrc =
     user?.avatarHash && user.id
@@ -345,6 +356,7 @@ export default function Layout(props: LayoutProps) {
             panel={panel ? true : undefined}
             privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
             browserSession={signedInBrowser}
+            {...(maintenance ? { maintenance } : {})}
           />
           {/* Without an app bar, the privacy screen's countdown floats at the bottom start corner. */}
           {user && (
@@ -404,7 +416,7 @@ export default function Layout(props: LayoutProps) {
         class={`cloud-app-canvas relative flex w-full ${fullPage && !swap ? "h-dvh overflow-hidden" : "min-h-dvh md:h-dvh md:overflow-hidden"}`}
         style={canvasStyle}
         data-nav-shell={signature}
-        data-nav-scope={swap ? currentRoute?.prefix : undefined}
+        data-nav-scope={swap ? swapScope : undefined}
         data-nav-attributes={swap ? "data-layout-full-page data-workspace-sidebar-collapsed" : undefined}
         data-panel={panelState.open ? "open" : undefined}
         data-app-id={currentApp?.id}
@@ -433,6 +445,7 @@ export default function Layout(props: LayoutProps) {
           banners={user && (swap || announcements?.banners.length) ? true : undefined}
           privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
           browserSession={signedInBrowser}
+          {...(maintenance ? { maintenance } : {})}
         />
         <ShellDataProvider data={shellData} skipScript={swap}>
           {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} name={appName} />}

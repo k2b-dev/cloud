@@ -5,7 +5,7 @@ section: Platform services
 order: 564
 description: Declare resource containment, a standard reader presentation, and a discussions provider without application-specific consumers.
 tags: [capabilities, resources, discussions, authorization]
-updated: 2026-11-15
+updated: 2026-11-16
 ---
 
 # Resource types and discussions
@@ -117,6 +117,9 @@ containers the current caller can read. Reuse these contracts from
   1–100 and defaults to 50.
 - `DiscussionContainersDataSchema`: `{ items, next }`. Each item has
   `{ ref, title }`; `next` is an opaque cursor or `null` on the last page.
+  The result also returns `page: capabilityPage(next)`, so generic readers
+  such as agents follow the same cursor. The platform rejects a containers
+  page whose `page` does not match `next` as an invalid app response.
   Changing `limit` between pages continues after the last returned item.
 - Optional `DiscussionActivityInputSchema`: `{ container, item?, timeZone?,
   before?, after?, cursor?, limit? }`. `container` and `item` are opaque
@@ -242,7 +245,9 @@ Provider tests can run `typeViewIssues(manifest, localTypeId)` and
 `discussionsIssues(manifest)`. Use `assertResourceView(result,
 expectedContainerRef?)` beside `assertResourceOpenLink(result)` from
 `@k2b/cloud/capabilities/testing`. The former validates `result.data.view`
-and, when supplied, the exact expected container ref. Cover every permission
+and, when supplied, the exact expected container ref. Call
+`assertDiscussionContainersPage(result)` on a continued and a final
+containers page; tests that call `run` directly skip the platform's own check. Cover every permission
 level and locale your reader supports, account status, group rights, service
 accounts without credential scope ceilings, and moved items with a stale
 expected container.
@@ -280,3 +285,20 @@ activity still enforce the caller's credential limits. The generated
 `readable` checks concern account rights, so a service account with a
 credential lacking read scope can still be reported as readable. Resource
 bindings, current account status, and current grants remain mandatory.
+
+Files declares `entry` inside the additional `folder` Type. A `folder` is a
+storage root or directory; both Types accept the existing Files entry IDs.
+Existing `entry` refs still address files and folders. Their reader reports
+the current parent folder in `view.container`; a root entry points to its
+root's `folder` ref. Folder pages report the `folder` scope, while a file's
+inspector and editor report `entry`. Rename and move retain stable Filegate
+IDs where supported; path refs retain their existing path identity.
+
+`folder.containers` lists authorized roots and descendant folders in fixed
+source pages of 100 folders, one storage base per call. The output limit may
+change between calls. Name filtering happens within each source page; an
+empty page can have a continuation. Keep following `next`. Storage failures
+remain failures. Files uses its existing membership, storage-grant and FreeIPA
+POSIX checks, including credential limits, for readers and listed folders.
+It offers no discussion activity or `access.readable` callbacks in this slice;
+interactive discussions work, but resource-discussion push is not configured.
