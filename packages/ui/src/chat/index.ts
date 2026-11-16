@@ -24,12 +24,14 @@ export type {
   ChatCommandSection,
   ChatComposerPeople,
   ChatComposerProps,
+  ChatComposerQuote,
   ChatComposerReply,
   ChatComposerSuggestion,
   ChatFileSelection,
   ChatPasteHandler,
   ChatPersonSuggestion,
 } from "./ChatComposer";
+export { ChatComposerQuotes } from "./ChatComposerQuotes";
 export type {
   ChatDecisionProps,
   ChatMarkProps,
