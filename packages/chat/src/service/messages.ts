@@ -86,12 +86,14 @@ export const resolveSources = async (
     return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
   if (quoted.length) threadId = quoted[0]!.row!.thread_id;
   if (data.thread) {
-    const thread = await findThread(db, conversationId, data.thread, input);
+    // With sources, their thread is checked already; the named thread needs its own check only when it differs, and
+    // then the send is refused anyway: as a missing thread when the sender cannot read it, otherwise as invalid.
+    const thread = await findThread(db, conversationId, data.thread, sourceThreads.size ? undefined : input);
     if (!thread) return threadNotFound(input);
-    if (sourceThreads.size && thread.id !== threadId) return fail(err.badInput(catalog(input).invalidInput));
+    if (sourceThreads.size && thread.id !== threadId)
+      return (await canReadThread(db, input, thread.id)) ? fail(err.badInput(catalog(input).invalidInput)) : threadNotFound(input);
     threadId = thread.id;
   }
-  if (!sourceThreads.size && !(await canReadThread(db, input, threadId))) return threadNotFound(input);
   // Only a reader of the thread learns whether a passage occurs in its message. The stored passage is the
   // message's own text, so its words and spaces are the author's, not the sender's.
   const found = quoted.map(({ quote, row }) => ({ row: row!, text: quoteExcerpt(row!.body_md ?? "", quote.text, decodeHTML) }));

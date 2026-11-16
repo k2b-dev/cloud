@@ -208,12 +208,24 @@ suiteFor(
     expect((await post(ben, chat, { quotes })).status).toBe(404);
     expect((await post(ben, chat, { quotes: missing })).status).toBe(404);
     const meter = await meterSql();
-    const statements = (log: string[]) => log.filter((statement) => !/^(LISTEN|UNLISTEN|NOTIFY)/i.test(statement));
+    // Sends before this test wake notification and event work after their commit on other connections; compare only
+    // the refused send's own transaction, once the process is quiet.
+    const quiet = async () => {
+      for (let round = 0; round < 50; round++) if ((await meter.during(() => Bun.sleep(300))).length === 0) return; // real clock: background work settles
+      throw new Error("Background statements did not settle");
+    };
+    const transaction = (statements: string[]) => {
+      const start = statements.findIndex((statement) => /^BEGIN/i.test(statement));
+      const end = statements.findIndex((statement, index) => index > start && /^(COMMIT|ROLLBACK)/i.test(statement));
+      return start < 0 || end < 0 ? statements : statements.slice(start, end + 1);
+    };
     try {
-      const mixed = await meter.during(async () => expect((await post(ben, chat, { quotes })).status).toBe(404));
-      const unknown = await meter.during(async () => expect((await post(ben, chat, { quotes: missing })).status).toBe(404));
+      await quiet();
+      const mixed = transaction(await meter.during(async () => expect((await post(ben, chat, { quotes })).status).toBe(404)));
+      await quiet();
+      const unknown = transaction(await meter.during(async () => expect((await post(ben, chat, { quotes: missing })).status).toBe(404)));
       // No thread lookup or provider read for any source: the same statements as for a message that does not exist.
-      expect(statements(mixed)).toEqual(statements(unknown));
+      expect(mixed).toEqual(unknown);
     } finally {
       await meter.close();
     }
