@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import {
   assertCapabilityReview,
+  assertDiscussionContainersPage,
   assertResourceOpenLink,
   assertResourceView,
   compileCapabilityManifest,
@@ -1067,8 +1068,10 @@ describe("Contacts discussion provider", () => {
     if (!next) throw new Error("Expected a continuation cursor");
     // A paginated Query's page mirrors its continuation cursor.
     expect(first.data.page).toEqual({ hasMore: true, nextCursor: next });
+    assertDiscussionContainersPage(first.data);
     const last = await query.run(query.input.parse({ query: "Test", limit: 3, cursor: first.data.data.next }), context);
     expect(last).toMatchObject({ ok: true, data: { data: { next: null }, page: { hasMore: false } } });
+    if (last.ok) assertDiscussionContainersPage(last.data);
     expect(list).toHaveBeenLastCalledWith(
       expect.objectContaining({
         subject: context.accessSubject,
