@@ -215,6 +215,8 @@ export function WorkflowRunDetailPanel(props: {
   });
 
   const loadMut = mutations.create<PublicWorkspaceWorkflowRunDetail, string, { runId: string }>({
+    // Selecting another run replaces the read in flight.
+    concurrency: "replace",
     onBefore: (runId) => ({ runId }),
     mutation: async (runId, { abortSignal }) => {
       const response = await workflowRunDetailApi.$get({ query: { runId } }, { init: { signal: abortSignal } });

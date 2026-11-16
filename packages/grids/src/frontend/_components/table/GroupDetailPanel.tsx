@@ -60,6 +60,8 @@ export default function GroupDetailPanel(props: Props) {
   const bucketKey = createMemo(() => JSON.stringify(props.bucket.keys));
 
   const fetchMut = mutation.create<PublicTableQueryResult, FetchVars, { reset: boolean }>({
+    // A new search or bucket aborts and replaces the read in flight.
+    concurrency: "replace",
     onBefore: (vars) => ({ reset: vars.reset }),
     mutation: async (vars, { abortSignal }) => {
       const query = buildMemberQuery({

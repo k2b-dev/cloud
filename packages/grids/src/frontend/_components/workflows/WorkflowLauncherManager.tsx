@@ -544,6 +544,8 @@ export function WorkflowLauncherManager(props: {
   const [loaded, setLoaded] = createSignal(false);
 
   const loadMut = mutations.create<void, void>({
+    // A reload after a change must not be dropped by an older reload in flight.
+    concurrency: "replace",
     onBefore: () => setLoaded(false),
     mutation: async (_, { abortSignal }) => {
       const res = await workflowLauncherApi[":workflowId"].launchers.$get(

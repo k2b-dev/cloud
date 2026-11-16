@@ -95,6 +95,8 @@ export default function RecordDocumentsSection(props: {
     { documents: { items: PublicDocument[]; cursor: string | null; hasMore: boolean }; snapshots: PublicRecordSnapshotSummary[] },
     void
   >({
+    // A refresh after new documents must not be dropped by an older refresh in flight.
+    concurrency: "replace",
     mutation: async () => {
       const [nextDocuments, nextSnapshots] = await Promise.all([loadDocuments(), loadSnapshots()]);
       return { documents: nextDocuments, snapshots: nextSnapshots };

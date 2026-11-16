@@ -76,15 +76,33 @@ const archive = mutation.create<void, { itemId: string }>({
 ```
 
 `mutate(vars)` starts the operation. `loading()`, `error()`, and `data()` are
-reactive accessors.
+reactive accessors. `status()` says where the mutation stands: `idle`,
+`pending` while `onBefore` runs, `loading` while the mutation function runs,
+then `success`, `error`, or `aborted` for the last call. `settledAt()` is the
+time of the last end and changes on every end, also for two equal errors in a
+row. Every place that reads one mutation shows the same state, no matter which
+button, menu item, hotkey, or code started the call.
 
 `abort()` cancels the active operation. An aborted fetch calls `onAbort`, not
 `onError`.
 
 `retry()` repeats the previous variables and context. It does not run
-`onBefore` again.
+`onBefore` again. `onError` receives the failed call as its third argument;
+`run.retry()` repeats exactly that call, also after other calls ran, which
+suits a "Try again" action in a toast.
 
-When a newer mutation starts, a late result from an older mutation is ignored.
+A second call while one is `pending` or `loading` is dropped: it runs nothing,
+changes no state, and its Promise resolves. This guards double clicks, the
+Enter key in a form, and hotkeys without a local `loading()` check. When the
+newest call must win, as in search as you type, reads that follow a changing
+selection or filter, or reloads after a change, create the mutation with
+`concurrency: "replace"`. A newer call then starts anyway and a late result
+from the older one is ignored.
+
+To ask before the work starts, call `cancel()` from the second argument of
+`onBefore`. The call ends as `aborted` without `onError` or `onAbort`, and
+`retry()` does not repeat it. Ask first, then make optimistic changes, so a
+cancel has nothing to undo.
 
 Capture the complete retryable intent before the request starts. Mutation
 variables or one-time context must include selected resources, destinations,

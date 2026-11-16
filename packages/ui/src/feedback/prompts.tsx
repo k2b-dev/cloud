@@ -469,6 +469,8 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
       const minQueryLength = options?.minQueryLength ?? 0;
       const debounceMs = options?.debounceMs ?? 180;
       const searchMutation = mutation.create<{ query: string; items: PromptSearchItem<T>[] }, string, { requestQuery: string }>({
+        // The newest query wins over a search still in flight.
+        concurrency: "replace",
         onBefore: (requestQuery) => ({ requestQuery }),
         mutation: async (requestQuery, context) => {
           const result = await resolver({
