@@ -238,7 +238,7 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const parts = workStepParts(layout().work, layout().steps, locale());
     const ended: AiWorkIssue[] =
       summary() && ending()
-        ? [ending() === "stopped" ? { text: t().workEndedStopped, tone: "neutral" } : { text: t().workEndedInterrupted, tone: "danger" }]
+        ? [ending() === "stopped" ? { text: t().workEndedStopped, tone: "neutral" } : { text: t().workEndedInterrupted, tone: "neutral" }]
         : [];
     return { count: parts.count, issues: [...parts.issues, ...ended] };
   };
@@ -318,12 +318,11 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
               </span>
             )}
           </Show>
-          {/* While the turn runs the seconds stay silent; the line announces its activity once. */}
-          <Show when={time()}>
-            <span class="ai-turn-work__meta" aria-hidden={isLive(segment().phase) ? "true" : undefined}>
-              {time()}
-            </span>
-          </Show>
+          {/* The time keeps its column even while empty. While the turn runs the seconds stay silent; the line announces
+              its activity once. */}
+          <span class="ai-turn-work__meta" aria-hidden={isLive(segment().phase) ? "true" : undefined}>
+            {time()}
+          </span>
         </Show>
       }
       bodyInset={false}

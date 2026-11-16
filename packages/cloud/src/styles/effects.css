@@ -109,13 +109,25 @@
   color: var(--k2b-warning-text);
 }
 
-/* On a narrow chat the sentence needs the room: the plain step count gives way, what did not go through stays. */
+/* On a narrow chat (Feinschliff 2) the line is 44 px high, so a finished sentence may take two 18 px lines instead of
+   being cut; the step count gives way only where what did not go through stands beside it. */
 @container k2b-chat (max-width: 39.999rem) {
-  .k2b-ui .ai-turn-work__count {
-    display: none;
+  .k2b-ui .ai-turn-work > .k2b-chat-activity__row {
+    min-height: 2.75rem;
   }
 
-  .k2b-ui .ai-turn-work__steps:not([data-issues]) {
+  .k2b-ui .ai-turn-work > .k2b-chat-activity__row > .k2b-chat-activity__copy strong {
+    white-space: normal;
+  }
+
+  /* Wrapped lines end at a word; at most two lines show, so even a rare longer sentence never ends mid-word. */
+  .k2b-ui .ai-turn-work__sentence {
+    max-height: 2.25rem;
+    line-height: 1.125rem;
+    white-space: normal;
+  }
+
+  .k2b-ui .ai-turn-work__steps[data-issues] .ai-turn-work__count {
     display: none;
   }
 }
@@ -125,38 +137,45 @@
   content: " …";
 }
 
+/* ✦ alone, 16 px, centred in its 18 px column, without a surface (Feinschliff 2 and 4). */
 .k2b-ui .ai-turn-work__lead {
   display: inline-flex;
-  align-items: center;
-  gap: 0.1875rem;
+  width: 1.125rem;
+  justify-content: center;
 }
 
 .k2b-ui .ai-turn-work__lead > i {
-  margin-inline-end: 0.3125rem;
   color: var(--k2b-ai-accent);
-  font-size: 0.9375rem;
+  font-size: 1rem;
 }
 
 .k2b-ui .ai-turn-work .k2b-chat-activity__trailing {
+  margin-inline-start: auto;
+}
+
+/* Only the work line's own row: steps and time side by side; the opened steps keep their own trailing. */
+.k2b-ui .ai-turn-work > .k2b-chat-activity__row > .k2b-chat-activity__trailing {
   display: inline-flex;
   align-items: baseline;
   gap: 0.5rem;
-  margin-inline-start: auto;
 }
 
 /* The time follows the sentence and the chevron follows the time, each right beside the other (v12); tabular figures keep
    a ticking clock from shifting the chevron within a unit. */
+/* The time has a fixed column (Feinschliff 2: 56 px, phone 48 px) in the steps' grey, so steps and time end on the same
+   edges in every row. */
 .k2b-ui .ai-turn-work__meta {
-  min-width: 3.5rem;
+  width: 3.5rem;
+  flex: none;
+  color: var(--k2b-text-subtle, var(--k2b-text-muted));
   font-size: 0.75rem;
   line-height: 1.25rem;
   text-align: end;
 }
 
-/* The time has a fixed column (Feinschliff 2: 56 px, phone 48 px), so steps and time end on the same edges in every row. */
 @container k2b-chat (max-width: 39.999rem) {
   .k2b-ui .ai-turn-work__meta {
-    min-width: 3rem;
+    width: 3rem;
   }
 }
 

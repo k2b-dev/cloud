@@ -212,15 +212,17 @@ for (const width of [1440, 390])
       const line = ".ai-turn-work > summary";
       // The sentence names only what the turn did; steps and time stand right in their own column (Feinschliff 4).
       expect(await page.locator(`${line} .ai-turn-work__text`).textContent()).toBe("In Mail und Dateien nachgesehen");
-      // On a desktop chat the sentence is never cut. A phone fades it at its end (Feinschliff 2, no "…"); the whole
-      // sentence stays in the title.
-      const sentenceFits = await page.locator(`${line} .ai-turn-work__sentence`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5);
-      if (width >= 768) expect(sentenceFits).toBe(true);
+      // The sentence is never cut: a phone gives it two 18 px lines in its 44 px row (Feinschliff 2). The whole sentence
+      // is also in the title.
+      const sentenceFits = await page
+        .locator(`${line} .ai-turn-work__sentence`)
+        .evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5 && node.scrollHeight <= node.clientHeight + 0.5);
+      expect(sentenceFits).toBe(true);
       expect(await page.locator(`${line} .ai-turn-work__text`).getAttribute("title")).toBe("In Mail und Dateien nachgesehen");
       // The steps are never cut; what did not go through takes the warning colour.
       const whole = await page.locator(`${line} .ai-turn-work__steps`).evaluate((node) => node.scrollWidth <= node.clientWidth + 0.5);
       expect(whole).toBe(true);
-      // On a phone the plain step count gives way to the sentence; what did not go through stays.
+      // On a phone the step count gives way where what did not go through stands beside it.
       const visible = (await page.locator(`${line} .ai-turn-work__steps`).innerText()).replace(/\s+/g, " ").trim();
       expect(visible).toBe(width < 768 ? "1 ohne Zugriff" : "5 Schritte · 1 ohne Zugriff");
       const warning = await page.locator(`${line} .ai-turn-work__steps [data-issue="warning"]`).evaluate((node) => {
@@ -244,9 +246,9 @@ for (const width of [1440, 390])
       });
       expect(spark).toBe(plum);
       expect(await page.locator(`${line} .ai-app-tile`).count()).toBe(0);
-      // One line in 13 px, the time in 12 px tabular figures on the right, the chevron last.
+      // 13 px text, the time in 12 px tabular figures on the right, the chevron last; 28 px high, 44 px on a phone.
       const row = await box(page, line);
-      expect(row.height).toBe(28);
+      expect(row.height).toBe(width < 768 ? 44 : 28);
       expect(await page.locator(`${line} .ai-turn-work__text`).evaluate((node) => getComputedStyle(node).fontSize)).toBe("13px");
       const time = page.locator(`${line} .ai-turn-work__meta`);
       expect(await time.evaluate((node) => [getComputedStyle(node).fontSize, getComputedStyle(node).fontVariantNumeric])).toEqual([

@@ -531,8 +531,10 @@ an existing file does not add one. An automation's effect and its counted
 examples read as one finding, such as "Prepared the automation · 3 of 3
 examples succeeded"; other parts join with a comma. Cloud's own capabilities
 are not named as an app. Step counts, failures and duration stay outside the
-sentence. A desktop chat shows the whole sentence; on a phone it fades at its
-end, and the full sentence is in its title.
+sentence. The sentence is never cut mid-word: on a phone the line is 44 px
+high and the sentence may take two lines, and the step count gives way only
+where what did not go through stands beside it. The full sentence is also in
+the line's title.
 
 Screen readers do not hear the work line's ticking clock or a status while it
 streams: both sit outside the conversation log's live announcements. A status
