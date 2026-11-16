@@ -14780,8 +14780,15 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* The hover area reaches 0.375rem past the icon and the text, which never move. Side shadows draw it, so it adds no
+   scrollable overflow on a narrow screen; hover only colours them. */
 .k2b-ui summary.k2b-chat-activity__row {
+  --k2b-chat-activity-hover: transparent;
   border-radius: var(--k2b-radius-control);
+  background: var(--k2b-chat-activity-hover);
+  box-shadow:
+    -0.375rem 0 0 var(--k2b-chat-activity-hover),
+    0.375rem 0 0 var(--k2b-chat-activity-hover);
   cursor: pointer;
 }
 
@@ -14789,13 +14796,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: none;
 }
 
-/* The hover area reaches 0.375rem past the icon and the text, which never move. Side shadows draw it, so it adds no
-   scrollable overflow on a narrow screen. */
 .k2b-ui summary.k2b-chat-activity__row:hover {
-  background: var(--k2b-edge-hover-bg);
-  box-shadow:
-    -0.375rem 0 0 var(--k2b-edge-hover-bg),
-    0.375rem 0 0 var(--k2b-edge-hover-bg);
+  --k2b-chat-activity-hover: var(--k2b-edge-hover-bg);
 }
 
 /* A row's text and icons re-render while it streams. Presses land on the summary itself, so a node replaced under the
@@ -15068,8 +15070,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin: 0;
   padding: 0;
   border: 0;
+  --k2b-chat-activity-info-hover: transparent;
   border-radius: 999px;
-  background: transparent;
+  background: var(--k2b-chat-activity-info-hover);
+  box-shadow: 0 0 0 0.1875rem var(--k2b-chat-activity-info-hover);
   color: var(--k2b-text-subtle);
   font-size: 1rem;
   cursor: pointer;
@@ -15078,8 +15082,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 /* A 24px circle around the 18px button, drawn as a shadow, so it reaches past the row without overflow. */
 .k2b-ui .k2b-chat-activity .k2b-chat-activity__info:hover,
 .k2b-ui .k2b-chat-activity .k2b-chat-activity__info[aria-expanded="true"] {
-  background: var(--k2b-edge-hover-bg);
-  box-shadow: 0 0 0 0.1875rem var(--k2b-edge-hover-bg);
+  --k2b-chat-activity-info-hover: var(--k2b-edge-hover-bg);
   color: var(--k2b-text);
 }
 

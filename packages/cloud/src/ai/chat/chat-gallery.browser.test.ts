@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
 import { startChatGallery } from "./chat-gallery.browser-fixture";
 
 // The Gustav chat's details are measured in a real browser: sizes, corners, and baselines depend on fonts and layout.
@@ -270,7 +270,7 @@ for (const width of [1440, 390])
         );
       const before = await rows();
       // A resting pointer opens the card of a step without actions.
-      await denied.getByRole("button", { name: /^Details: / }).hover();
+      await hoverInPlace(denied.getByRole("button", { name: /^Details: / }));
       const card = page.locator(".k2b-hover-card:popover-open");
       await card.waitFor();
       const said = (await card.innerText()).replace(/\s+/g, " ");

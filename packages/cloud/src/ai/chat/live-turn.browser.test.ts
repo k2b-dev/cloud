@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../../ui/test/browser";
 import type { AiWireEvent } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { truncatedAnswer } from "./stop-notice.test-fixture";
@@ -1845,7 +1845,7 @@ test("each text in the expanded work is a step of its own whose card holds the w
       );
     const before = await rows();
     // A resting pointer opens the card of a step without actions.
-    await note.getByRole("button", { name: "Details: Thought it over" }).hover();
+    await hoverInPlace(note.getByRole("button", { name: "Details: Thought it over" }));
     const card = page.locator(".k2b-hover-card:popover-open");
     await card.waitFor();
     // The whole text, also its last sentence; the card's body scrolls a long one.
