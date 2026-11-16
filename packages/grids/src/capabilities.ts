@@ -1007,7 +1007,9 @@ const runBaseContainers = async (input: z.infer<typeof DiscussionContainersInput
     if (permission.ok) items.push({ ref: { type: "grids.base", id: base.shortId }, title: base.name });
   }
   const nextOffset = cursor.data + result.items.length;
-  return ok({ data: { items, next: nextOffset < result.total ? encodeCursor(nextOffset) : null } });
+  const next = nextOffset < result.total ? encodeCursor(nextOffset) : null;
+  // The page mirrors `next`, as every paginated Query's result does.
+  return ok({ data: { items, next }, page: capabilityPage(next) });
 };
 
 const requireTable = async (tableShortId: string, access: GridsAccessContext, required: "read" | "write", locale?: string) => {

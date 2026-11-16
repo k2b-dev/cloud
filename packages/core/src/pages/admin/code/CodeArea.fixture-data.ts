@@ -215,6 +215,7 @@ export type FixtureReviewVariant =
   | "newer"
   | "own"
   | "sole"
+  | "soleApproved"
   | "difffail"
   | "approved"
   | "rejected"
@@ -364,11 +365,11 @@ const fixtureReadModelFirst = (): CodeVersionReadModel => ({
 
 export const fixtureApprovalDetail = (variant: FixtureReviewVariant = "normal"): CodeAdminApprovalDetail => {
   const first = variant === "first";
-  const decided = variant === "approved" || variant === "rejected" || variant === "changes";
+  const decided = variant === "approved" || variant === "soleApproved" || variant === "rejected" || variant === "changes";
   return {
     approvalId: "e0000000-0000-4000-8000-000000000001",
     status:
-      variant === "approved"
+      variant === "approved" || variant === "soleApproved"
         ? "approved"
         : variant === "rejected"
           ? "rejected"
@@ -411,7 +412,7 @@ export const fixtureApprovalDetail = (variant: FixtureReviewVariant = "normal"):
       number: first ? 1 : 3,
       submittedAt: first ? "2026-11-01T08:10:00.000Z" : "2026-11-01T11:10:00.000Z",
       author:
-        variant === "own" || variant === "sole"
+        variant === "own" || variant === "sole" || variant === "soleApproved"
           ? { id: FIXTURE_PEOPLE.ben, name: "Ben Schulz" }
           : first
             ? { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel" }
@@ -476,15 +477,15 @@ export const fixtureApprovalDetail = (variant: FixtureReviewVariant = "normal"):
     newer:
       variant === "newer" ? { versionId: V.rueckruf4, number: 4, author: "Lea Muster", submittedAt: "2026-11-01T11:40:00.000Z" } : null,
     canApprove: variant !== "own" && !decided,
-    own: variant === "own" || variant === "sole",
+    own: variant === "own" || variant === "sole" || variant === "soleApproved",
     soleAdminNotice: variant === "sole" ? "Du gibst deinen eigenen Code frei. Es gibt keinen zweiten Cloud-Admin, der ihn prüft." : null,
     decision:
-      variant === "approved"
+      variant === "approved" || variant === "soleApproved"
         ? {
             approved: true,
             outcome: "approved",
             comment: null,
-            soleAdmin: false,
+            soleAdmin: variant === "soleApproved",
             decidedBy: FIXTURE_PEOPLE.ben,
             decidedAt: "2026-11-01T12:20:00.000Z",
             label: "",
@@ -961,6 +962,7 @@ export const CODE_FIXTURE_STATES = [
   "newer",
   "own",
   "sole",
+  "soleApproved",
   "difffail",
   "approved",
   "missing",
@@ -1039,6 +1041,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       "newer",
       "own",
       "sole",
+      "soleApproved",
       "difffail",
       "approved",
       "rejected",
@@ -1052,6 +1055,14 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
     ];
     data.approval = state === "missing" ? "missing" : fixtureApprovalDetail(variants.find((entry) => entry === variant) ?? "normal");
   }
+  // A title long enough to wrap next to its version, as in the walkthrough.
+  if (state === "long" && (query.sec ?? "approvals") === "approvals" && !query.id)
+    data.approvals = {
+      items: fixtureApprovals().map((entry, index) =>
+        index === 0 ? { ...entry, title: "Rückrufe bestätigen – wöchentliche Aufgabe im Space Kundendienst Nord" } : entry,
+      ),
+      nextCursor: null,
+    };
   if (state === "long" && query.sec === "history") data.history = { items: [...fixtureHistory(), ...fixtureHistory()], nextPage: 2 };
   if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
   if (query.sec === "code" && query.status) {

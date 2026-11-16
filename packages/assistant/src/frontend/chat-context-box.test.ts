@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { AssistantChatResult } from "../chat-context";
 import { fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source } from "./AssistantChatSidebar.fixture";
 import { buildContextBoxModel, CONTEXT_BOX_ROW_LIMIT, contextBoxPending, contextBoxWhen } from "./chat-context-box";
 
@@ -25,6 +26,30 @@ describe("box model", () => {
     const [file, view] = build().results.rows;
     expect(file).toMatchObject({ trailing: "1400000 B", open: { kind: "file" }, hover: { kind: "download" } });
     expect(view).toMatchObject({ trailing: "14:09", open: { kind: "jump" }, hover: null });
+  });
+
+  test("a view says what it shows with its own sign, never a size, and points back to the chat", () => {
+    const view = (key: string, kind: AssistantChatResult["view"], icon: string, seq: number) => ({
+      ...fileResult(key, { at: minutesAgo(seq), turn: `t${seq}`, seq, size: 0, mediaType: "application/json" }),
+      icon,
+      view: kind,
+    });
+    const rows = build(
+      sidebarSnapshot({
+        results: [
+          view("/views/aufgaben.view.json", "chart", "ti ti-chart-bar", 1),
+          // Key figures read "Kennzahlen", not their JSON's size (#91: "0 B" in the box).
+          view("/views/kennzahlen.view.json", "stats", "ti ti-numbers", 2),
+          view("/views/alt.view.json", "view", "ti ti-file", 3),
+        ],
+      }),
+    ).results.rows;
+    expect(rows.map((row) => [row.trailing, row.icon, row.open.kind, row.hover?.kind])).toEqual([
+      ["Diagramm", "ti ti-chart-bar", "file", "jump"],
+      ["Kennzahlen", "ti ti-numbers", "file", "jump"],
+      ["Ansicht", "ti ti-presentation-analytics", "file", "jump"],
+    ]);
+    expect(rows.some((row) => row.trailing.endsWith(" B"))).toBe(false);
   });
 
   test("a visualization leads back to its place in the chat, with one action per row", () => {
