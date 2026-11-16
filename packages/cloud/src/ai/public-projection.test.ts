@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
-import { visibleMessages } from "./client/projection";
 import type { AppRegistryEntry } from "../contracts/registry";
+import { visibleMessages } from "./client/projection";
 import { projectPublicAiStoredMessages, withCurrentAppNames } from "./public-projection";
 import type { AiStoredMessage } from "./types";
 
