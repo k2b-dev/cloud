@@ -3,7 +3,7 @@ title: Put Cloud into maintenance mode
 navTitle: Maintenance mode
 section: Operations
 order: 1151
-description: Switch maintenance mode on and off with cld, get past it as an administrator, and know what browsers, API clients, sockets and probes see while it is on or while one app restarts.
+description: Switch maintenance mode on and off with cld or the admin settings, get past it as an administrator, and know what browsers, API clients, sockets and probes see while it is on or while one app restarts.
 tags: [maintenance, gateway, cli, operations]
 updated: 2026-11-16
 ---
@@ -51,6 +51,30 @@ OAuth app, so `cld` can still renew its token and switch maintenance off. Core
 checks the administrator role on every call. Every change is in the audit log
 (`maintenance.start`, `maintenance.update`, `maintenance.end`), and so is every
 bypass link (`maintenance.bypass`).
+
+## In the admin settings
+
+Administrators also find the switch under **Administration → Maintenance
+mode** (`/admin/settings/maintenance`). The page shows the same state as
+`cld admin maintenance status`. `cld` stays the safer way, because it also
+works while Core restarts.
+
+- While maintenance is off, you can write a note for everyone and the
+  expected end time, then choose **Start maintenance**. Maintenance starts
+  at once. The page then gets a bypass link for your browser and opens it, so
+  you stay in the Cloud while everyone else sees the maintenance page.
+- While maintenance is on, the page shows since when and who started it, the
+  planned end, the note and how many apps are ready. The apps line updates
+  every 10 seconds. **Move end** sets a new end time. **End maintenance** asks
+  once and switches maintenance off.
+- The end time is a time today in your time zone. A time that has already
+  passed is rejected.
+- If starting works but the bypass link fails, the page says so and offers to
+  try again. You can also run `cld admin maintenance bypass` or
+  `cld admin maintenance off`.
+
+Only administrators see the page; Core checks the role again before it reads
+the state.
 
 ## Get in as an administrator
 
