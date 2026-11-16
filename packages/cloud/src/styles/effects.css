@@ -45,6 +45,10 @@
   gap: 0.375rem;
   margin-bottom: 0.375rem;
 }
+/* In the person's tinted bubble a quote lifts lighter, as in the reader's own chat messages, never tone on tone. */
+.k2b-ui .ai-user-quotes .k2b-message-quote {
+  background: color-mix(in srgb, var(--k2b-surface) 70%, transparent);
+}
 
 .k2b-ui .ai-turn-work__meta {
   font-variant-numeric: tabular-nums;

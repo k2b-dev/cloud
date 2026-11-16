@@ -36,16 +36,22 @@ describe("quoted passages", () => {
     expect(parseAiQuoteMarker(`Look: ${marker}`)).toBeNull();
   });
 
-  test("a draft takes a passage once, cut to whole characters, and keeps the newest passages", () => {
+  test("a draft takes a passage once, says when it cut one, and takes no eleventh", () => {
     const long = `${"a".repeat(AI_DRAFT_QUOTE_MAX_CHARS - 1)}😀`;
-    expect(aiQuotesWith([], { from: "assistant", text: long })[0]!.text).toBe("a".repeat(AI_DRAFT_QUOTE_MAX_CHARS - 1));
-    expect(aiQuotesWith([], { from: "user", text: "   " })).toEqual([]);
-    const once = aiQuotesWith(aiQuotesWith([], { from: "user", text: "Bis Freitag" }), { from: "user", text: " Bis Freitag " });
-    expect(once).toEqual([{ from: "user", text: "Bis Freitag" }]);
-    let many: ReturnType<typeof aiQuotesWith> = [];
-    for (let index = 0; index <= AI_DRAFT_QUOTE_MAX_ITEMS; index++) many = aiQuotesWith(many, { from: "assistant", text: `Satz ${index}` });
-    expect(many).toHaveLength(AI_DRAFT_QUOTE_MAX_ITEMS);
-    expect(many[0]!.text).toBe("Satz 1");
+    expect(aiQuotesWith([], { from: "assistant", text: long })).toEqual({
+      quotes: [{ from: "assistant", text: "a".repeat(AI_DRAFT_QUOTE_MAX_CHARS - 1) }],
+      cut: true,
+      full: false,
+    });
+    expect(aiQuotesWith([], { from: "user", text: "   " }).quotes).toEqual([]);
+    const once = aiQuotesWith(aiQuotesWith([], { from: "user", text: "Bis Freitag" }).quotes, { from: "user", text: " Bis Freitag " });
+    expect(once).toEqual({ quotes: [{ from: "user", text: "Bis Freitag" }], cut: false, full: false });
+    let many: ReturnType<typeof aiQuotesWith>["quotes"] = [];
+    for (let index = 0; index < AI_DRAFT_QUOTE_MAX_ITEMS; index++)
+      many = aiQuotesWith(many, { from: "assistant", text: `Satz ${index}` }).quotes;
+    const eleventh = aiQuotesWith(many, { from: "assistant", text: "Elf" });
+    expect(eleventh.full).toBe(true);
+    expect(eleventh.quotes).toEqual(many);
   });
 
   test("a draft holds at most ten passages, and their text counts towards the draft's 20000 characters", () => {

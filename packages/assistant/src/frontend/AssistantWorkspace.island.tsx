@@ -10,7 +10,8 @@ import type {
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { aiQuotesWith, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
@@ -265,8 +266,11 @@ type ProjectViewState = {
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
 const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) => ({ default: module.ChatWorkspace })));
 // "Quote" loads with the first selection in the chat; a draft's quote rows load with its first quote.
-const QuoteSelection = lazy(() => import("./assistant-quotes"));
-const ComposerQuotes = lazy(() => import("./assistant-quotes").then((module) => ({ default: module.ChatComposerQuotes })));
+// A chunk an update replaced reloads the page instead of breaking the chat.
+const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
+const ComposerQuotes = lazy(async () => ({
+  default: (await importOnDemand(() => import("./assistant-quotes")))?.ChatComposerQuotes ?? (() => null),
+}));
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
@@ -655,6 +659,15 @@ export default function AssistantWorkspace(props: Props) {
     touchSession();
     setComposerQuotes((all) => ({ ...all, [key]: quotes }));
   };
+  /** A passage joins the chat's draft: a cut one or a full draft says so, and the answer is written in the field. */
+  const addQuote = (quote: AiQuoteMarker) => {
+    const key = composerSessionKey();
+    const next = aiQuotesWith(quotesFor(key), quote);
+    if (next.full) return void toast(t().quotesFull, { iconClass: "ti ti-info-circle" });
+    if (next.cut) toast(t().quoteCut, { iconClass: "ti ti-info-circle" });
+    setQuotesFor(key, next.quotes);
+    focusComposer();
+  };
   const setMentionsFor = (key: string, mentions: readonly ChatMention[]) => {
     editComposerSession(session(key));
     touchSession();
@@ -755,15 +768,19 @@ export default function AssistantWorkspace(props: Props) {
     return next;
   };
   type ComposerOverride = { text: string; mentions: readonly ChatMention[] };
-  const composerInput = (key: string, override?: ComposerOverride) => {
-    const input = aiComposerSendInput({
-      intent: "send",
-      text: override?.text ?? composerDraft(key),
-      mentions: override?.mentions ?? mentionsFor(key),
-      attachments: aiChatAttachments(composerAttachmentsFor(key)),
-    });
-    return quotesFor(key).length ? { ...input, quotes: [...quotesFor(key)] } : input;
-  };
+  /** The composer's input with the draft's quotes, which the composer itself does not know. */
+  const withQuotes = (key: string, input: AiComposerSendInput): AiComposerSendInput =>
+    quotesFor(key).length ? { ...input, quotes: [...quotesFor(key)] } : input;
+  const composerInput = (key: string, override?: ComposerOverride) =>
+    withQuotes(
+      key,
+      aiComposerSendInput({
+        intent: "send",
+        text: override?.text ?? composerDraft(key),
+        mentions: override?.mentions ?? mentionsFor(key),
+        attachments: aiChatAttachments(composerAttachmentsFor(key)),
+      }),
+    );
   /**
    * Only a save the server rejected for its revision is a conflict. Any other failure, such as an unreachable app,
    * leaves the saved draft as it was: the composer keeps its unsaved text and says that saving failed.
@@ -2749,10 +2766,11 @@ export default function AssistantWorkspace(props: Props) {
             composerProps.projectId
               ? sendProjectMessage(composerProps.projectId, aiComposerSendInput(input))
               : input.intent === "queue" || (input.intent === "send" && Boolean(queuedMessages.data()?.length))
-                ? queueMessage(aiComposerSendInput(input))
+                ? queueMessage(withQuotes(sessionKey(), aiComposerSendInput(input)))
                 : input.intent === "steer"
-                  ? steer(input.text)
-                  : send(aiComposerSendInput(input))
+                  ? // Steering is words only: the draft's quotes stay above the field for the next message.
+                    steer(input.text)
+                  : send(withQuotes(sessionKey(), aiComposerSendInput(input)))
           }
           onStop={
             !projectComposer() && chat.activeTurn()
@@ -2945,16 +2963,7 @@ export default function AssistantWorkspace(props: Props) {
         />
         <Show when={quoting() && timelineContent()}>
           {(root) => (
-            <QuoteSelection
-              root={root()}
-              label={t().quoteSelection}
-              quotes={quotesFor(composerSessionKey())}
-              onChange={(quotes) => {
-                setQuotesFor(composerSessionKey(), quotes);
-                // The answer to the passage is written in the field.
-                focusComposer();
-              }}
-            />
+            <QuoteSelection root={root()} label={t().quoteSelection} onQuote={addQuote} />
           )}
         </Show>
       </>
@@ -3374,6 +3383,7 @@ export default function AssistantWorkspace(props: Props) {
                               fallback={
                                 <AiChatActionsProvider
                                   actions={{
+                                    onQuote: addQuote,
                                     renderCodeAuthoringStop: (state, continuable) => (
                                       <AssistantAuthoringStop state={state} continuable={continuable} />
                                     ),

@@ -1,4 +1,4 @@
-import { type AiQuoteMarker, aiQuotesWith } from "@k2b/cloud/ai/browser";
+import type { AiQuoteMarker } from "@k2b/cloud/ai/browser";
 import { SelectionAction } from "@k2b/ui";
 import type { JSX } from "solid-js";
 
@@ -12,9 +12,7 @@ export { ChatComposerQuotes } from "@k2b/ui";
 export default function AssistantQuoteSelection(props: {
   root: HTMLElement;
   label: string;
-  /** The draft's quotes, which a new passage joins at the end. */
-  quotes: readonly AiQuoteMarker[];
-  onChange: (quotes: AiQuoteMarker[]) => void;
+  onQuote: (quote: AiQuoteMarker) => void;
 }): JSX.Element {
   return (
     <SelectionAction
@@ -29,9 +27,7 @@ export default function AssistantQuoteSelection(props: {
           null
         );
       }}
-      onAction={({ text, element }) =>
-        props.onChange(aiQuotesWith(props.quotes, { from: element.matches(".ai-turn__text") ? "assistant" : "user", text }))
-      }
+      onAction={({ text, element }) => props.onQuote({ from: element.matches(".ai-turn__text") ? "assistant" : "user", text })}
     />
   );
 }

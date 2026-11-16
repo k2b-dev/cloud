@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { AiConversation, AiOpenQuestions, AiStoredMessage } from "@k2b/cloud/ai";
 import type { Browser, Page, Route } from "playwright";
 import { aiQuoteMarker } from "../../../cloud/src/ai/quote-markers";
-import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 
 // Quoting in Gustav's chat: text selected in a finished answer or in the person's own message offers "Quote"; the passage
@@ -405,6 +405,34 @@ describe("Quoting in Gustav's chat", () => {
       await page.getByRole("button", { name: "Zitieren" }).click();
       await page.locator(".k2b-chat-composer__quote").waitFor();
       expect(await page.locator(".k2b-chat-composer__quote").textContent()).toContain("Du");
+    } finally {
+      await close();
+    }
+  }, 60_000);
+
+  test("a whole message quotes from its menu, and a send that fails keeps the text and the quote", async () => {
+    const state: State = { locale: "de", drafts: [] };
+    const { page, close } = await open(desktop, state);
+    try {
+      // Without selecting anything: the person's own message offers "Quote" among its actions.
+      const own = page.locator('.k2b-chat-message[data-role="user"]').first();
+      await own.waitFor();
+      await hoverInPlace(own);
+      await own.getByRole("button", { name: "Zitieren" }).click();
+      const row = page.locator(".k2b-chat-composer__quote");
+      await row.waitFor();
+      expect(await row.textContent()).toContain("Du");
+      expect(await row.textContent()).toContain("Was steht im Angebot zu Strom und Internet?");
+      // The message goes with its quote; this server refuses it, so both stay in the composer to send again.
+      await page.locator("textarea").first().fill("Gilt das auch für Halle 4?");
+      await page.keyboard.press("Enter");
+      const sent = () =>
+        (state.drafts.at(-1) as Array<{ type: string; text?: string }> | undefined)?.some((part) => part.type === "quote") &&
+        (state.drafts.at(-1) as Array<{ type: string; text?: string }>).some((part) => part.text === "Gilt das auch für Halle 4?");
+      for (let wait = 0; wait < 100 && !sent(); wait++) await page.waitForTimeout(50); // settled: the save comes before the send
+      expect(sent()).toBe(true);
+      await settled(page);
+      expect(await row.isVisible()).toBe(true);
     } finally {
       await close();
     }

@@ -137,6 +137,16 @@ export const createAiUserMessageActions = (entry: AiStoredMessage, actions: AiCh
   if (copyText) {
     result.push({ id: "copy", label: t.actionCopy, icon: "ti ti-copy", copyText });
   }
+  // The person's own words, as a whole; a message an automation wrote is no passage of theirs.
+  const ownText = entry.meta?.codeOrigin ? "" : userVisibleTextFromMessage(entry.message);
+  if (actions.onQuote && ownText) {
+    result.push({
+      id: "quote",
+      label: t.actionQuote,
+      icon: "ti ti-quote",
+      onSelect: () => actions.onQuote!({ from: "user", text: ownText }),
+    });
+  }
   // Answering again and its variants sit under the answer; here the message can be edited and sent again.
   if (!entry.compactedAt && actions.onRetryMessage) {
     result.push({

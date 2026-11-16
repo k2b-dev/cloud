@@ -1,4 +1,5 @@
 import type { Message, Usage } from "@k2b/nessi";
+import type { AiQuoteMarker } from "../quote-markers";
 import {
   Button,
   type ChatAction,
@@ -81,6 +82,8 @@ export type AiChatActions = {
   onForkMessage?: ForkMessageHandler;
   onRetryMessage?: RetryMessageHandler;
   onRetrySteer?: RetrySteerHandler;
+  /** Quotes a message as a whole: where no text can be selected, on touch screens and from the keyboard. */
+  onQuote?: (quote: AiQuoteMarker) => void;
   /**
    * Continue after a failed turn. Send `message`, a visible request in the reader's language to pick up where the
    * turn stopped, through the host's normal send path. Without it, a failed turn shows its reason only.
@@ -427,6 +430,14 @@ export function createAssistantMessageActions(props: {
       { id: "details", label: t.actionMoreDetailed, icon: "ti ti-list-details", overflow: true, onSelect: retry("details") },
       { id: "concise", label: t.actionMoreConcise, icon: "ti ti-align-left", overflow: true, onSelect: retry("concise") },
     );
+  if (actions.onQuote && props.copyText)
+    result.push({
+      id: "quote",
+      label: t.actionQuote,
+      icon: "ti ti-quote",
+      overflow: true,
+      onSelect: () => actions.onQuote!({ from: "assistant", text: props.copyText }),
+    });
   if (actions.onForkMessage)
     result.push({
       id: "fork",

@@ -287,7 +287,8 @@ const storedItems = (
           <>
             <Show when={item.entry.meta?.codeOrigin}>{(origin) => <p class="text-xs text-dimmed">{origin().label}</p>}</Show>
             <AiUserMessageQuotes entry={item.entry} />
-            {text ? <p class="ai-user-text whitespace-pre-wrap">{text}</p> : undefined}
+            {/* Only the person's own words are a passage to quote; a message an automation wrote is none. */}
+            {text ? <p class={`${item.entry.meta?.codeOrigin ? "" : "ai-user-text "}whitespace-pre-wrap`}>{text}</p> : undefined}
           </>
         ) : undefined,
         attachments: aiUserMessageAttachments(item.entry, actions),

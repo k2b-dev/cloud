@@ -30,16 +30,21 @@ export const parseAiQuoteMarker = (text: string): AiQuoteMarker | null => {
 };
 
 /**
- * A draft's quotes with `quote` at the end: its text cut to whole characters within the limit, the same passage once, and
- * at most the limit's number of passages, the oldest leaving first.
+ * A draft's quotes with `quote` at the end: its text cut to whole characters within the limit and the same passage once.
+ * A full draft takes nothing and says so (`full`); a cut passage says so too (`cut`), so neither happens silently.
  */
-export const aiQuotesWith = (quotes: readonly AiQuoteMarker[], quote: AiQuoteMarker): AiQuoteMarker[] => {
+export const aiQuotesWith = (
+  quotes: readonly AiQuoteMarker[],
+  quote: AiQuoteMarker,
+): { quotes: AiQuoteMarker[]; cut: boolean; full: boolean } => {
+  const whole = quote.text.trim();
   let text = "";
-  for (const character of quote.text.trim()) {
+  for (const character of whole) {
     if (text.length + character.length > AI_DRAFT_QUOTE_MAX_CHARS) break;
     text += character;
   }
-  if (!text) return [...quotes];
   const kept = quotes.filter((entry) => entry.from !== quote.from || entry.text !== text);
-  return [...kept, { from: quote.from, text }].slice(-AI_DRAFT_QUOTE_MAX_ITEMS);
+  if (!text) return { quotes: [...quotes], cut: false, full: false };
+  if (kept.length >= AI_DRAFT_QUOTE_MAX_ITEMS) return { quotes: [...quotes], cut: false, full: true };
+  return { quotes: [...kept, { from: quote.from, text }], cut: text.length < whole.length, full: false };
 };
