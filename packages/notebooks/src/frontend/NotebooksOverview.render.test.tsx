@@ -14,6 +14,19 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: NotebooksOverview } = await import("./NotebooksOverview.island.tsx");
 const { LocaleProvider } = await import("@k2b/ui");
 
+// The rendered text as a parser reads it: text nodes only, without tags or hydration comments.
+const textOf = (html: string) => {
+  let plain = "";
+  new HTMLRewriter()
+    .onDocument({
+      text(chunk) {
+        plain += chunk.text;
+      },
+    })
+    .transform(html);
+  return plain;
+};
+
 const renderOverview = (initialActivityError: string | null = null, locale = "en") =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -94,7 +107,7 @@ describe("Notebooks overview", () => {
     // Activity is the shared timeline: the sentence links to the note, the person stands in the meta line.
     expect(html).toContain('class="k2b-activity"');
     expect(html).toContain('<i class="ti ti-pencil"');
-    expect(html.replace(/<[^>]+>/g, "")).toContain("12:00 · 2 hr. ago · Sofie");
+    expect(textOf(html)).toContain("12:00 · 2 hr. ago · Sofie");
     expect(html).toContain('datetime="2026-08-20T10:00:00.000Z"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
     expect(html).toMatch(/<aside[^>]*id="k2b-workspace-detail-notebooks-overview-activity"(?![^>]*hidden)/);
