@@ -491,7 +491,10 @@ order:
    answer it had begun after its last step in this place; a status written
    before a step stays in the work line. A failed turn ends with a notice that
    names the reason and that what is there stays; a stopped one ends with a
-   quiet line and **Answer again**.
+   quiet line and **Answer again**. A turn that finished its steps but left no
+   text, result, or action, such as a model's empty answer, never ends in
+   silence: a notice says the answer ended without any text and offers
+   **Continue** and **Answer again**.
 4. **Actions.** Open approvals, surveys, editors, and secret prompts, and
    receipts for capability actions and for every approval the user decided.
    The question and result use the same card: a sentence with typed chips,

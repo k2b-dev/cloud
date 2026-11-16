@@ -5,7 +5,7 @@ section: Platform services
 order: 564
 description: Declare resource containment, a standard reader presentation, and a discussions provider without application-specific consumers.
 tags: [capabilities, resources, discussions, authorization]
-updated: 2026-10-29
+updated: 2026-11-15
 ---
 
 # Resource types and discussions
@@ -250,13 +250,23 @@ expected container.
 ## Built-in providers
 
 Spaces declares `item` inside `space`; Notebooks declares `note` inside
-`notebook`. Both Types in each pair expose `access.readable` and a standard
-reader view. Spaces task views include the current column or localized Done
+`notebook`; Contacts declares `contact` inside `book`; Grids declares `record`
+inside `base`. Contacts uses `book.containers` and standard reader views,
+without activity or `access.readable` checks. Its discussion messages work
+through current reader permissions; resource discussion push is not configured
+for Contacts. Grids uses `base.containers` and standard reader views and offers
+no activity query or account reader checks, so resource discussion push is not
+configured for Grids either. Its ordinary readers enforce current base grants,
+credential scopes, and base resource bindings. Table and View are not separate
+discussion containers.
+
+Both Types in the Spaces and Notebooks pairs expose `access.readable` and a
+standard reader view. Spaces task views include the current column or localized Done
 status, completion flag, and a due date when relevant. Event views include the
 localized schedule and completion flag. Notebook and note views describe
 their resource without a task status or completion flag.
 
-The roles use `space.containers` and `notebook.containers` for the standard
+Spaces and Notebooks use `space.containers` and `notebook.containers` for the standard
 `{ items, next }` container list. The published `space.list` and `notebook.list`
 array results remain available. Activity uses `space.activity` and
 `notebook.activity`: send `container`, or retain the published `space` or
@@ -264,9 +274,26 @@ array results remain available. Activity uses `space.activity` and
 match. Both accept `timeZone`; notebook activity has no date presentation
 that changes with that option.
 
-Readers preserve their existing domain fields, including the item's
+Spaces and Notebooks readers preserve their existing domain fields, including the item's
 `container: { ref, name, permission }`, beside `view`. Ordinary readers and
 activity still enforce the caller's credential limits. The generated
 `readable` checks concern account rights, so a service account with a
 credential lacking read scope can still be reported as readable. Resource
 bindings, current account status, and current grants remain mandatory.
+
+Files declares `entry` inside the additional `folder` Type. A `folder` is a
+storage root or directory; both Types accept the existing Files entry IDs.
+Existing `entry` refs still address files and folders. Their reader reports
+the current parent folder in `view.container`; a root entry points to its
+root's `folder` ref. Folder pages report the `folder` scope, while a file's
+inspector and editor report `entry`. Rename and move retain stable Filegate
+IDs where supported; path refs retain their existing path identity.
+
+`folder.containers` lists authorized roots and descendant folders in fixed
+source pages of 100 folders, one storage base per call. The output limit may
+change between calls. Name filtering happens within each source page; an
+empty page can have a continuation. Keep following `next`. Storage failures
+remain failures. Files uses its existing membership, storage-grant and FreeIPA
+POSIX checks, including credential limits, for readers and listed folders.
+It offers no discussion activity or `access.readable` callbacks in this slice;
+interactive discussions work, but resource-discussion push is not configured.

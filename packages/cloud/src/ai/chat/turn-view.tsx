@@ -539,7 +539,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
  * Output-limit notices use the established multiline message surface, so their explanation stays readable on phones.
  * Continue sends a visible follow-up through the host's normal send path, only while the newest turn is idle.
  */
-function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean }) {
+function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean; answerAgain?: () => void | Promise<void> }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const actions = useAiChatActions();
@@ -561,13 +561,32 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
     <NoticeCard
       tone="warning"
       class="ai-turn__notice"
-      title={props.notice.kind === "output_limit" ? t().outputLimitReached : t().turnErrorTitle}
-      detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : undefined}
+      title={
+        props.notice.kind === "output_limit"
+          ? t().outputLimitReached
+          : props.notice.kind === "no_answer"
+            ? t().noAnswerTitle
+            : t().turnErrorTitle
+      }
+      detail={
+        props.notice.kind === "output_limit" && props.notice.reasoning
+          ? t().outputLimitReasoning
+          : props.notice.kind === "no_answer"
+            ? t().noAnswerDetail
+            : undefined
+      }
     >
       <Show when={props.continuable && actions.onContinueTurn}>
         <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueAnswer()}>
-          <i class="ti ti-player-play" aria-hidden="true" /> {t().continueAnswer}
+          <i class="ti ti-player-play" aria-hidden="true" /> {props.notice.kind === "no_answer" ? t().continueTurn : t().continueAnswer}
         </Button>
+      </Show>
+      <Show when={props.notice.kind === "no_answer" && props.answerAgain}>
+        {(again) => (
+          <Button variant="text" size="sm" disabled={actions.actionDisabled?.()} onClick={() => void again()()}>
+            <i class="ti ti-refresh" aria-hidden="true" /> {t().actionAnswerAgain}
+          </Button>
+        )}
       </Show>
       <Show when={failed()}>
         <p role="alert">{t().continueAnswerFailed}</p>
@@ -859,7 +878,13 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} kept={kept()} />}
         </Show>
         <Show when={props.segment().stopNotice}>
-          {(notice) => <AiTurnStopNotice notice={notice()} continuable={props.segment().continuable === true} />}
+          {(notice) => (
+            <AiTurnStopNotice
+              notice={notice()}
+              continuable={props.segment().continuable === true}
+              answerAgain={props.segment().answerAgain}
+            />
+          )}
         </Show>
       </div>
     </AiToolDisclosureProvider>

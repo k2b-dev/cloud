@@ -17,6 +17,8 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
     "activity.chain": "Followed a file movement",
     "share.access": "Read public-link access counts",
     "entry.read": "Read file entry",
+    "folder.read": "Read discussion folder",
+    "folder.containers": "Listed discussion folders",
     "entry.search": "Searched files",
   },
   sentences: {
@@ -58,9 +60,20 @@ export const filesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       types: {
+        folder: { title: "Ordner", description: "Ein Ordner oder eine Speicherwurzel mit Diskussionen zu seinen Einträgen." },
         entry: { title: "Datei oder Ordner", description: "Eine Datei oder ein Ordner in einer zugänglichen Cloud- oder FreeIPA-Ablage." },
       },
       queries: {
+        "folder.read": {
+          title: "Diskussionsordner lesen",
+          doneTitle: "Diskussionsordner gelesen",
+          description: "Einen Ordner oder eine Speicherwurzel mit den aktuellen Berechtigungen lesen.",
+        },
+        "folder.containers": {
+          title: "Diskussionsordner auflisten",
+          doneTitle: "Diskussionsordner aufgelistet",
+          description: "Lesbare Speicherwurzeln und Ordner mit Fortsetzung auflisten, auch nach leeren Seiten.",
+        },
         "activity.get": {
           title: "Verlaufseintrag lesen",
           doneTitle: "Verlaufseintrag gelesen",
