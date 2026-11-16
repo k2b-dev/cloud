@@ -132,8 +132,9 @@ export const fixtureDecided = (): CodeAdminDecided[] => [
     outcome: "changes_requested",
     mine: true,
     author: { id: FIXTURE_PEOPLE.tom, name: "Tom Beispiel", avatarHash: null },
-    owner: { kind: "person", userId: FIXTURE_PEOPLE.tom },
-    ownerName: "Tom Beispiel",
+    // Submitted by Tom for Lea's personal Code: two people, two names.
+    owner: { kind: "person", userId: FIXTURE_PEOPLE.lea },
+    ownerName: "Lea Muster",
     soleAdmin: false,
     decidedBy: "Jana Probe",
     decidedAt: "2026-10-29T14:20:00.000Z",
@@ -1063,6 +1064,11 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
       ),
       nextCursor: null,
     };
+  // In the decided list the chips are short: a title as long as the walkthrough's fits beside them.
+  if (state === "long" && (query.sec ?? "approvals") === "approvals" && query.tab === "decided" && Array.isArray(data.decided))
+    data.decided = data.decided.map((entry, index) =>
+      index === 0 ? { ...entry, title: "Backups prüfen – wöchentliche Aufgabe im Space Betrieb" } : entry,
+    );
   if (state === "long" && query.sec === "history") data.history = { items: [...fixtureHistory(), ...fixtureHistory()], nextPage: 2 };
   if (query.sec === "code" && query.id) data.code = state === "missing" ? "missing" : fixtureCodeDetail(query.id);
   if (query.sec === "code" && query.status) {

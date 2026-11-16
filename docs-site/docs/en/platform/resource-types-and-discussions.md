@@ -217,7 +217,14 @@ The platform generates `<typeLocalId>.readable`, with fixed
 `ResourceReadableInputSchema` and `ResourceReadableDataSchema`:
 `{ id, container?, principals } → { readable }`. For a contained Type, the
 generated input requires `container`, fixes its Type to the declared local
-container Type, and leaves its ID opaque. Do not declare this Query yourself;
+container Type, and leaves its ID opaque. The one exception is a contained
+event place without `access.readable`: its derived reader checks the place
+itself and has no `container` input. Asking it without a container is reserved
+for Code's event-place check. This is a convention: the provider cannot tell
+Core from another caller with `resources:readers`, and the
+`event-place-exception` repository check rejects other mentions of the
+option outside tests in this repository; it does not see test files or a key
+built from strings (see [App events](/en/docs/platform/app-events)). Do not declare this Query yourself;
 a name collision fails startup. Before calling application code, the platform
 filters candidates through the shared current-account resolver: users must exist, be unexpired,
 not be locked in FreeIPA, and belong to an enabled account category; service accounts must exist and

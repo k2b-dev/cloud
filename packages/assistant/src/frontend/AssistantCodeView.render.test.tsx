@@ -108,7 +108,7 @@ describe("My apps & automations", () => {
       "Läuft gerade",
       "Letzter Lauf fehlgeschlagen",
       "Pausiert",
-      "nächster Lauf Mo., 16.11.",
+      "nächster Lauf Mo, 16.11.",
       "seit 3 Sekunden",
       "heute, 06:30",
       "seit 29.10.",
