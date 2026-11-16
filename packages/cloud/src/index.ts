@@ -32,6 +32,7 @@ export {
   listWidgets,
   readAppRegistrySnapshot,
   watchAppRegistry,
+  watchAppRegistryRemovals,
 } from "./_internal/registry";
 export type { RuntimeCompatibilityIssue } from "./_internal/runtime-compatibility";
 export { assessRuntimeCompatibility } from "./_internal/runtime-compatibility";
