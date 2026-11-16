@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { REQUEST_IDLE_TIMEOUT_MAX_SECONDS } from "@k2b/cloud/server/request-timeout.ts";
 import { MessageViewSchema } from "../service/contracts";
-import { createChatSends, createChatSendsApi } from "./chat-sends";
+import { ChatSendError, createChatSends, createChatSendsApi } from "./chat-sends";
 
 const message = MessageViewSchema.parse({
   reactions: [],
@@ -384,4 +384,52 @@ test("queued sends and retries retain an immutable snapshot of UTF-16 mention ra
   expect(calls).toEqual([expected, expected]);
   expect(send.status).toBe("sent");
   controller.dispose();
+});
+
+test("a send whose quotes the server refuses leaves the queue for the application, and the next send goes out", async () => {
+  const fake = fakePost();
+  let clientId = 0;
+  const refused: string[] = [];
+  const controller = createChatSends({
+    post: fake.post,
+    newClientId: () => `client-${++clientId}`,
+    now: () => new Date(message.createdAt),
+    onRejected: (send) => refused.push(`${send.body}|${send.quotes.map((quote) => quote.text).join()}`),
+  });
+  controller.send("abcdef", "Agreed", { quotes: [{ id: "message001", author: "Lea", text: "the report" }] });
+  controller.send("abcdef", "And one more thing");
+  expect(fake.calls).toHaveLength(1);
+  expect(fake.calls[0]!.input).toMatchObject({ quotes: [{ message: "message001", text: "the report" }] });
+  fake.calls[0]!.request.reject(new ChatSendError(400));
+  await Bun.sleep(0);
+  // Failed for good: no Try again that can never work, the application hears of it, and the queue moves on.
+  expect(refused).toEqual(["Agreed|the report"]);
+  expect(controller.sends("abcdef").map((send) => [send.body, send.status, send.refused ?? false])).toEqual([
+    ["Agreed", "failed", true],
+    ["And one more thing", "pending", false],
+  ]);
+  expect(fake.calls).toHaveLength(2);
+  controller.retry(controller.sends("abcdef")[0]!.clientId);
+  expect(fake.calls).toHaveLength(2);
+  fake.calls[1]!.request.resolve({ ...message, body: "And one more thing" });
+  await Bun.sleep(0);
+  expect(controller.sends("abcdef").map((send) => send.status)).toEqual(["failed", "sent"]);
+});
+
+test("a refused send without quotes, and a busy server, still wait for Try again", async () => {
+  for (const [error, quotes] of [
+    [new ChatSendError(400), []],
+    [new ChatSendError(429), [{ id: "message001", author: "Lea", text: "the report" }]],
+    [new ChatSendError(503), [{ id: "message001", author: "Lea", text: "the report" }]],
+    [new Error("offline"), [{ id: "message001", author: "Lea", text: "the report" }]],
+  ] as const) {
+    const fake = fakePost();
+    const refused: unknown[] = [];
+    const controller = createChatSends({ post: fake.post, onRejected: (send) => refused.push(send) });
+    controller.send("abcdef", "Agreed", { quotes });
+    fake.calls[0]!.request.reject(error);
+    await Bun.sleep(0);
+    expect(refused).toEqual([]);
+    expect(controller.sends("abcdef").map((send) => send.status)).toEqual(["failed"]);
+  }
 });
