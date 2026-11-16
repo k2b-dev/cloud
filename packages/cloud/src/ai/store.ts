@@ -28,6 +28,7 @@ import { aiTurnErrorText } from "./chat/turn-error";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
+import { AI_QUEUE_RETRYABLE_ERRORS } from "./queue-waits";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
 import {
   compactCapabilityReview,
@@ -3220,15 +3221,19 @@ export const aiConversations: AiConversationService = {
       if (input.queuedMessageId) {
         const [head] = await tx<
           { id: string; status: string }[]
-        >`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY position LIMIT 1`;
+        >`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
+          AND (status = 'pending' OR (status = 'failed' AND NOT (submission->'runConfig' ? 'codeOrigin' AND error IN ${tx([...AI_QUEUE_RETRYABLE_ERRORS])})))
+          ORDER BY position LIMIT 1`;
         const [busy] =
           await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
         if (!head || head.id !== input.queuedMessageId || head.status !== "pending" || busy)
           throw new Error("Queued message is no longer ready.");
       }
       if (!input.queuedMessageId) {
-        const [queued] =
-          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
+        const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
+            AND (status = 'pending' OR (status = 'failed' AND NOT (submission->'runConfig' ? 'codeOrigin' AND error IN ${tx([...AI_QUEUE_RETRYABLE_ERRORS])})))
+            LIMIT 1`;
+        // A Code message waiting for its allowance does not hold back the person.
         if (queued) throw new Error("Queued messages must be sent first.");
       }
       if (input.expectedDraftRevision !== undefined && Number(conversation.draft_revision) !== input.expectedDraftRevision) {
