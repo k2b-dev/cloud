@@ -195,3 +195,36 @@ describe("approval edits and compose safety", () => {
     expect(validateComposeSafetyEdits(base, edited, undefined)).toEqual({ ok: true, data: edited });
   });
 });
+
+test("reviews repeated unfinished anchors within the operation budget", async () => {
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "--no-env-file",
+      "--eval",
+      `
+    const { evaluateComposeSafety } = await import(${JSON.stringify(import.meta.dir + "/compose-safety.ts")});
+    const source = ${JSON.stringify(source())};
+    source.body = "<a ".repeat(65000);
+    const started = performance.now();
+    const review = evaluateComposeSafety(source);
+    console.log(JSON.stringify({ elapsed: performance.now() - started, warnings: review.warnings }));
+  `,
+    ],
+    { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+  );
+  const timer = setTimeout(() => child.kill(), 15000);
+  try {
+    const [exit, output, errors] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    expect(exit, errors).toBe(0);
+    const result = JSON.parse(output);
+    expect(result.warnings).toEqual([]);
+    expect(result.elapsed).toBeLessThan(500);
+  } finally {
+    clearTimeout(timer);
+    if (child.exitCode === null) {
+      child.kill();
+      await child.exited;
+    }
+  }
+}, 20000);

@@ -4,6 +4,7 @@ import { formatBytes as sharedFormatBytes } from "../../shared/format";
 import { type AiAttachmentRef, parseAiAttachmentMarkers } from "../attachments";
 import { AI_AUDIO_EXTENSIONS } from "../audio-format";
 import { CODE_RUNTIME_TOOL_NAMES } from "../browser-code-contracts";
+import { normalizeAiUploadMediaType } from "../file-media-type";
 import { aiProjectFilePathFromMount, aiSkillFilePathFromMount } from "../file-mount";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "../limits";
 import { type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
@@ -118,6 +119,9 @@ export const TEXT_ATTACHMENT_MEDIA_TYPES = new Set([
 export const FILE_INPUT_ACCEPT = [
   ...AI_IMAGE_MEDIA_TYPES,
   "audio/*",
+  "application/zip",
+  "application/x-zip-compressed",
+  ".zip",
   ...AI_AUDIO_EXTENSIONS.map((extension) => `.${extension}`),
   "text/*",
   ...Array.from(TEXT_ATTACHMENT_MEDIA_TYPES),
@@ -573,7 +577,7 @@ export const readImageFile = (file: File): Promise<PendingAiImage> => {
 /** Wrap any non-image file for deferred upload into the conversation VFS. */
 export const readVfsFile = (file: File): PendingAiVfsFile => {
   if (file.size > VFS_FILE_MAX_BYTES) throw new Error(`${file.name} is larger than ${formatBytes(VFS_FILE_MAX_BYTES)}.`);
-  const mediaType = file.type || "application/octet-stream";
+  const mediaType = normalizeAiUploadMediaType(file.name, file.type || "application/octet-stream");
   return {
     kind: "file",
     id: `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).slice(2)}`,

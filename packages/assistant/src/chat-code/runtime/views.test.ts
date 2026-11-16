@@ -730,7 +730,9 @@ test("details infer every type, normalize dates in the run time zone and strip r
       { label: "Object", ref: true, chars: "Task".length },
       { label: "Null", ref: false, chars: 0 },
       { label: "Missing", ref: false, chars: 0 },
-      { label: "Id", ref: true, chars: "task-2".length },
+      // A reference without its title reserves what an unreadable one shows; the reader's title replaces it when the
+      // file is read, and a reference's length never decides whether the record still matches.
+      { label: "Id", ref: true, chars: "Not available".length },
     ],
   });
 });

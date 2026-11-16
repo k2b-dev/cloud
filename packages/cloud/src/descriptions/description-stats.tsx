@@ -65,7 +65,12 @@ export function StatsBlock(props: {
               icon={typeof item.icon === "string" ? item.icon : undefined}
               tone={tone(item.tone)}
               value={empty() ? null : typeof item.value === "number" ? format(item.value) : descriptionText(item.value)}
-              valueTone={!empty() && typeof item.value === "number" && item.value < 0 ? "danger" : undefined}
+              // A negative figure reads red, given as a number or as text with its minus sign, such as "−312,45 €".
+              valueTone={
+                !empty() && (typeof item.value === "number" ? item.value < 0 : /^\s*[-−]\s*\d/.test(descriptionText(item.value)))
+                  ? "danger"
+                  : undefined
+              }
               sub={empty() ? t().nothingCounted : compare() ? undefined : descriptionText(item.note) || undefined}
               delta={empty() ? undefined : delta()}
               compare={empty() ? undefined : compare()}

@@ -1,22 +1,11 @@
 import { z } from "zod";
 import { resolveCapabilityManifestPresentation } from "../_internal/capabilities";
 import { CAPABILITY_DISCOVERY_TIMEOUT_MS } from "../_internal/capability-timeout";
-import { type listApps, listCapabilities } from "../_internal/registry";
-import { type CapabilityDispatchParams, dispatchCapability } from "../api/capabilities";
-import {
-  CloudResourceRefSchema,
-  capabilityResultSchema,
-  cloudResourceRefAppId,
-  LinkedCloudResourceReferenceSchema,
-  resolveCapabilityResourceReader,
-} from "../contracts/capabilities";
-import type { CapabilityRegistryEntry } from "../contracts/registry";
+import { CloudResourceRefSchema, LinkedCloudResourceReferenceSchema } from "../contracts/capabilities";
 import type { RequestAuthority } from "../server";
-import { discoverableAppEntries } from "../services/app-discovery";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
-import { LOCALE_HEADER } from "../shared/locale";
 import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
-import { addCloudResourceHrefs } from "./resource-refs";
+import { type AiResourceReaderDependencies, readAiResource, readableApps, withinBudget } from "./resource-readers";
 import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiRecentResource } from "./types";
@@ -36,12 +25,8 @@ export const AiRecentResourceSchema: z.ZodType<AiRecentResource> = z
   })
   .strict();
 
-const ReaderResult = capabilityResultSchema(z.unknown(), { consumer: true });
-export type AiRecentResourceDependencies = {
+export type AiRecentResourceDependencies = AiResourceReaderDependencies & {
   store?: Pick<AiConversationService, "listRecentSentResourceRefs">;
-  listRegistry?: () => Promise<CapabilityRegistryEntry[]>;
-  listApps?: typeof listApps;
-  dispatch?: (params: CapabilityDispatchParams) => Promise<Response>;
   skills?: Pick<typeof aiSkills, "list">;
   timeoutMs?: number;
 };
@@ -58,21 +43,6 @@ export const recentResourcePreview = (value: string | undefined): string | undef
   const clipped = line.slice(0, 159);
   const boundary = clipped.search(/\s+\S*$/);
   return `${(boundary > 0 ? clipped.slice(0, boundary) : clipped).trimEnd()}…`;
-};
-
-/** Enforce the shared budget even when a dependency ignores cancellation. */
-const withinBudget = async <T>(signal: AbortSignal, run: () => Promise<T>): Promise<T> => {
-  signal.throwIfAborted();
-  let abort: () => void = () => {};
-  const aborted = new Promise<never>((_, reject) => {
-    abort = () => reject(signal.reason);
-    signal.addEventListener("abort", abort, { once: true });
-  });
-  try {
-    return await Promise.race([run(), aborted]);
-  } finally {
-    signal.removeEventListener("abort", abort);
-  }
 };
 
 export const listAiRecentResources = async (input: {
@@ -100,9 +70,7 @@ export const listAiRecentResources = async (input: {
   const registry = candidates.some(
     ({ ref }) => ref.type !== "core.ai.skill" && ref.type !== "assistant.artifact" && ref.type !== "assistant.app",
   )
-    ? withinBudget(signal, async () =>
-        discoverableAppEntries(input.authority, await (deps.listRegistry ?? listCapabilities)(), deps.listApps),
-      ).catch(() => [])
+    ? readableApps({ authority: input.authority, signal, dependencies: deps })
     : Promise.resolve([]);
   const resources = await Promise.all(
     candidates.map(async (candidate): Promise<AiRecentResource | null> => {
@@ -124,32 +92,17 @@ export const listAiRecentResources = async (input: {
         }
         if (ref.type === "assistant.artifact" || ref.type === "assistant.app") return null;
         const apps = await registry;
-        signal.throwIfAborted();
-        const appId = cloudResourceRefAppId(ref);
-        const app = apps.find((app) => app.appId === appId);
-        const reader = app && resolveCapabilityResourceReader(app.manifest, ref);
-        if (!app || !reader) return null;
-        const response = await withinBudget(signal, () =>
-          (deps.dispatch ?? dispatchCapability)({
-            request: new Request("http://localhost/api/ai/resources/recent", {
-              method: "POST",
-              headers: { [LOCALE_HEADER]: input.locale, "x-request-id": crypto.randomUUID() },
-              signal,
-            }),
-            kind: "queries",
-            origin: "assistant",
-            appId: app.appId,
-            capabilityId: reader.localId,
-            input: { id: ref.id },
-            authority: input.authority,
-            locale: input.locale,
-          }),
-        );
-        if (!response.ok) return null;
-        const answer = ReaderResult.parse(addCloudResourceHrefs(await withinBudget(signal, () => response.json()), apps));
-        const matched = answer.refs?.find((entry) => entry.type === ref.type && entry.id === ref.id);
-        const ownRef = matched ? LinkedCloudResourceReferenceSchema.parse(matched) : undefined;
-        if (!ownRef?.title?.trim()) return null;
+        const reading = await readAiResource({
+          ref,
+          apps,
+          authority: input.authority,
+          locale: input.locale,
+          signal,
+          path: "/api/ai/resources/recent",
+          dependencies: deps,
+        });
+        if (!reading) return null;
+        const { app, ref: ownRef } = reading;
         signal.throwIfAborted();
         const manifest = resolveCapabilityManifestPresentation(app.manifest, app.presentation, input.locale);
         const type = manifest.types.find((type) => `${app.appId}.${type.localId}` === ref.type);

@@ -4,10 +4,11 @@ import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionReview,
   type CapabilityExecutionContext,
-  CloudResourceReaderViewSchema,
   type CloudResourceReference,
   type CloudResourceView,
   capabilityPage,
+  DiscussionContainersDataSchema,
+  DiscussionContainersInputSchema,
   defineCapabilities,
   UniversalSearchDataSchema,
   type UniversalSearchInput,
@@ -44,9 +45,9 @@ import { toPublicWorkflowReceipt } from "./api/workflow-api-shared";
 import { PublicWorkflowInvocationReceiptSchema } from "./api/workflow-public-contracts";
 import { gridsEvents } from "./app-events";
 import {
-  BaseCapabilityDataSchema,
   BaseListDataSchema,
   BaseListInputSchema,
+  BaseReaderDataSchema,
   BaseReadInputSchema,
   GqlContextDataSchema,
   GqlContextInputSchema,
@@ -59,6 +60,7 @@ import {
   RecordCreateInputSchema,
   RecordExternalUpsertDataSchema,
   RecordExternalUpsertInputSchema,
+  RecordReaderDataSchema,
   RecordReadInputSchema,
   RecordUpdateInputSchema,
   TableCapabilityDataSchema,
@@ -982,6 +984,34 @@ const requireBase = async (baseShortId: string, access: GridsAccessContext, loca
   return ok(base);
 };
 
+const runBaseContainers = async (input: z.infer<typeof DiscussionContainersInputSchema>, context: CapabilityExecutionContext) => {
+  const cursor = decodeCursor(input.cursor, context.locale);
+  if (!cursor.ok) return cursor;
+  const access = accessContext(context);
+  const scope = await gateCredentialScopeFor(access, "read");
+  if (!scope.ok) return scope;
+  const { viewer, boundBaseId } = visibleBaseParams(access);
+  if (boundBaseId === null) return fail(err.forbidden(capabilityMessagesFor(context.locale).credentialNotBound));
+  const result = await gridsService.base.listVisible({
+    ...viewer,
+    ...(boundBaseId ? { baseId: boundBaseId } : {}),
+    query: input.query,
+    limit: input.limit,
+    offset: cursor.data,
+  });
+  const items: z.infer<typeof DiscussionContainersDataSchema>["items"] = [];
+  for (const base of result.items) {
+    context.signal.throwIfAborted();
+    // Recheck current reader access before returning any presentation data.
+    const permission = await gateBaseAtAccess(access, base.id, "read");
+    if (permission.ok) items.push({ ref: { type: "grids.base", id: base.shortId }, title: base.name });
+  }
+  const nextOffset = cursor.data + result.items.length;
+  const next = nextOffset < result.total ? encodeCursor(nextOffset) : null;
+  // The page mirrors `next`, as every paginated Query's result does.
+  return ok({ data: { items, next }, page: capabilityPage(next) });
+};
+
 const requireTable = async (tableShortId: string, access: GridsAccessContext, required: "read" | "write", locale?: string) => {
   const t = capabilityMessagesFor(locale);
   const table = await gridsService.table.getByShortId(tableShortId);
@@ -1714,14 +1744,28 @@ const runRecordRead = async (input: z.infer<typeof RecordReadInputSchema>, conte
   if (!table) return fail(notFoundError(t.recordNotFound));
   const tableAccess = await gateBaseAtAccess(access, table.baseId, "read");
   if (!tableAccess.ok) return tableAccess;
+  if (tableAccess.data === "none") return fail(err.forbidden(t.noResourceAccess));
+  const base = await gridsService.base.get(table.baseId);
+  if (!base) return fail(notFoundError(t.recordNotFound));
   const dateConfig = await capabilityDateConfig(context.locale);
   const record = await gridsService.record.get(table.id, resolved.id, {
     dateConfig,
     viewer: actorViewerFor(access),
   });
-  return record
-    ? recordResult(record, table, t.readRecord({ table: table.name, version: record.version }), context.locale)
-    : fail(notFoundError(t.recordNotFound));
+  if (!record) return fail(notFoundError(t.recordNotFound));
+  return ok({
+    data: {
+      ...mapRecord(record, table),
+      view: {
+        title: `${table.name} · ${record.shortId}`,
+        permission: tableAccess.data,
+        container: { ref: { type: "grids.base", id: base.shortId }, title: base.name },
+      },
+    },
+    summary: t.readRecord({ table: table.name, version: record.version }),
+    refs: [{ type: "grids.record", id: record.shortId }],
+    links: [{ rel: "open" as const, href: recordHref(base, table, record.shortId) }],
+  });
 };
 
 const resolveRecordValues = async (tableId: string, values: Record<string, unknown>, locale?: string) => {
@@ -1941,13 +1985,22 @@ export const gridsCapabilities = defineCapabilities({
       description: "One stable record in a Grids Table.",
       icon: "ti ti-row-insert-bottom",
       reader: "record.read",
-      container: "table",
+      container: "base",
       pages: ["/app/grids/:base/table/:table?record=:id"],
     },
   },
+  discussions: { item: "record", containers: "base.containers" },
   queries: {
     ...integrityCapabilities.queries,
     ...dailyCapabilities.queries,
+    "base.containers": {
+      title: "List discussion containers",
+      description: "List Grids bases the caller can read, with opaque pagination.",
+      input: DiscussionContainersInputSchema,
+      data: DiscussionContainersDataSchema,
+      openWorld: false,
+      run: runBaseContainers,
+    },
     "base.search": {
       title: "Search Grids bases",
       description:
@@ -1971,7 +2024,7 @@ export const gridsCapabilities = defineCapabilities({
       title: "Read Grids base",
       description: "Read one grids.base ref returned by base.list or base.search.",
       input: BaseReadInputSchema,
-      data: BaseCapabilityDataSchema.extend({ view: CloudResourceReaderViewSchema }),
+      data: BaseReaderDataSchema,
       openWorld: false,
       run: runBaseRead,
     },
@@ -2037,7 +2090,7 @@ export const gridsCapabilities = defineCapabilities({
       description:
         "Read one grids.record ref returned by gql.execute, gql.preview, or a record Action. Returns metadata, finalization state, and the current version for record.update; use targeted gql.execute to read field values.",
       input: RecordReadInputSchema,
-      data: RecordCapabilityDataSchema,
+      data: RecordReaderDataSchema,
       openWorld: false,
       run: runRecordRead,
     },

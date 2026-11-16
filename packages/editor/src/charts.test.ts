@@ -297,6 +297,22 @@ test("saved references preserve their individual style and tone through schema a
   expect(schema.safeParse({ ...spec, references: [{ value: 3, tone: "unknown" }] }).success).toBe(false);
 });
 
+test("a saved line keeps its hollow points through schema and rendering; without them it draws none", () => {
+  const spec = {
+    kind: "line",
+    title: "Saldo",
+    series: [{ data: [1, 0, 0, 3].map((y, x) => ({ x, y })) }],
+    points: true,
+  } satisfies ChartInput;
+  const options = chartRenderOptions(parse(spec), "en");
+  if (options.kind !== "line") throw new Error("Expected line");
+  expect(options.points).toBe(true);
+  expect(charts.line(options).match(/class="k2b-line-point"/g)).toHaveLength(4);
+  const plain = chartRenderOptions(parse({ ...spec, points: undefined }), "en");
+  if (plain.kind !== "line") throw new Error("Expected line");
+  expect(charts.line(plain)).not.toContain("k2b-line-point");
+});
+
 describe("chart axes", () => {
   const ticks = (input: unknown, anchor: "end" | "middle") => {
     const svg = drawChart(chartRenderOptions(parse(input), "en"));

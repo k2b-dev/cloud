@@ -20,6 +20,7 @@ const codeDiffMessages = i18n.define({
       codeDiffLoading: "Loading the code",
       codeDiffError: "The code could not be loaded",
       codeDiffEmpty: "The code is unchanged",
+      codeDiffSameNoted: "This file is unchanged. The commented lines follow.",
     },
     de: {
       codeDiffLabel: "Code-Unterschied, nur lesen",
@@ -37,6 +38,7 @@ const codeDiffMessages = i18n.define({
       codeDiffLoading: "Code wird geladen",
       codeDiffError: "Der Code konnte nicht geladen werden",
       codeDiffEmpty: "Der Code ist unverändert",
+      codeDiffSameNoted: "Diese Datei ist unverändert. Unten stehen die kommentierten Zeilen.",
     },
   },
 });

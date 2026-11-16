@@ -1071,6 +1071,12 @@
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"] > .k2b-stat-cell__support { margin-top: 0; }
 /* Flat figures are given whole, never loaded into place: a support line with nothing to say takes no room. */
 .k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"] > .k2b-stat-cell__support:empty { display: none; }
+/* A flat figure with nothing beside it (no change, comparison or trend) reserves no room for one in any width: its
+   quiet line stands right under the figure, in its first frame as when its code arrives. */
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"][data-plain]:not([data-wrap]) .k2b-stat-cell__main { min-height: 1.75rem; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"][data-plain][data-size="sm"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 1.5rem; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"][data-plain][data-size="lg"]:not([data-wrap]) .k2b-stat-cell__main { min-height: 2.25rem; }
+.k2b-ui .k2b-stat-grid__body > .k2b-stat-cell[data-surface="flat"][data-plain]:not([data-wrap]) > .k2b-stat-cell__support { min-height: 1rem; }
 .k2b-ui .k2b-stat-cell__value[data-tone="danger"] { color: var(--k2b-danger-text); }
 .k2b-ui .k2b-stat-cell__value[data-tone="success"] { color: var(--k2b-success-text); }
 .k2b-ui .k2b-stat-cell[data-size="sm"] { gap: 0.125rem; padding: 0.625rem 0.75rem; }
@@ -2123,6 +2129,13 @@
   line-height: 1.25rem;
 }
 
+/* The subtitle of a chart in an island is the quiet line of the island's head, as a frame's own subtitle is. */
+:where(.k2b-ui) .k2b-dashboard-frame .k2b-chart-explorer__description {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
 :where(.k2b-ui) .k2b-dashboard-frame__header {
   display: flex;
   min-height: 2.5rem;
@@ -2145,6 +2158,22 @@
 }
 
 :where(.k2b-ui) .k2b-dashboard-frame__header .k2b-dashboard-frame__stale { color: var(--k2b-warning-text); }
+
+/* The quiet line under a frame's body, such as a search's matches; it stands in every state. */
+:where(.k2b-ui) .k2b-dashboard-frame__footer {
+  min-height: 1.25rem;
+  margin: 0.5rem 0 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+/* Under a body that reaches the frame's edges, such as a table, the line does too, below the table's own line. */
+:where(.k2b-ui) .k2b-dashboard-frame__stack + .k2b-dashboard-frame__footer {
+  margin: 1rem -1rem -1rem;
+  padding: 0.5rem 1rem 0.625rem;
+  box-shadow: inset 0 1px 0 var(--k2b-border);
+}
 
 /* Try again inside a line of text: underlined like every link in running text, and never taller than the line. */
 :where(.k2b-ui) .k2b-dashboard-frame__link {

@@ -38,3 +38,38 @@ export function rememberSidebarScroll(body: HTMLElement | null, fadeEdges: (body
   window.addEventListener("pagehide", remember);
   return () => window.removeEventListener("pagehide", remember);
 }
+
+const sidebarScrollKey = (body: HTMLElement) =>
+  // Same key as rememberSidebarScroll, which must stay self-contained.
+  `k2b-sidebar-scroll:${body.getAttribute("data-scroll-preserve") || location.pathname}:${
+    Array.from(document.querySelectorAll(".k2b-app-workspace__sidebar-body")).indexOf(body) + 1
+  }`;
+
+/**
+ * For sidebars that no inline script reached, such as those a page swap inserted: keeps each one's current item
+ * in view by moving only the sidebar, so a restored page scroll stays, and stores every connected sidebar's offset
+ * when the page is left. Returns the cleanup.
+ */
+export function followSidebarScroll(root: ParentNode, fadeEdges: (body: HTMLElement) => string | undefined): () => void {
+  for (const body of Array.from(root.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar-body"))) {
+    const current = body.querySelector<HTMLElement>('[aria-current="page"]') || body.querySelector<HTMLElement>('[aria-current="true"]');
+    if (current) {
+      const box = body.getBoundingClientRect();
+      const item = current.getBoundingClientRect();
+      if (item.top < box.top) body.scrollTop -= box.top - item.top;
+      else if (item.bottom > box.bottom) body.scrollTop += item.bottom - box.bottom;
+    }
+    const edges = fadeEdges(body);
+    if (edges) body.setAttribute("data-scroll-fade", edges);
+    else body.removeAttribute("data-scroll-fade");
+  }
+  const store = () => {
+    for (const body of Array.from(document.querySelectorAll<HTMLElement>(".k2b-app-workspace__sidebar-body"))) {
+      try {
+        window.sessionStorage.setItem(sidebarScrollKey(body), String(body.scrollTop));
+      } catch {}
+    }
+  };
+  window.addEventListener("pagehide", store);
+  return () => window.removeEventListener("pagehide", store);
+}

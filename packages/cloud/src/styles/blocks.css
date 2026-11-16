@@ -46,7 +46,7 @@
   }
 }
 
-/* A capability result in the conversation: Cloud's origin line, then the app's blocks in the flow. */
+/* A capability result in the conversation: the app's blocks in the flow, without an origin line above them. */
 .k2b-ui .cloud-capability-view {
   display: grid;
   min-width: 0;
@@ -54,33 +54,87 @@
   margin-block: 0.625rem 1rem;
 }
 
-.k2b-ui .cloud-capability-view__head {
+/* The head of an island in a chat answer: title 14/600, subtitle 12/400 in the quiet step (Feinschliff v3). */
+.k2b-ui .cloud-capability-view :is(.k2b-dashboard-frame__header p, .k2b-chart-explorer__description) {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+/* Copy and Maximize of a block: 30 px ghost buttons in its head; on touch each reaches 44 px. */
+.k2b-ui .cloud-block-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+/* 30 px like the selection toolbar's compact buttons; a coarse pointer keeps every button's own 44 px hit area. */
+.k2b-ui .cloud-block-actions .k2b-icon-button,
+.k2b-ui .cloud-table-search-toggle.k2b-icon-button {
+  inline-size: 1.875rem;
+  min-height: 1.875rem;
+}
+
+.k2b-ui .cloud-block-actions [data-copied] {
+  color: var(--k2b-success-text);
+}
+
+/* Key figures keep their row flat; their actions stand at its end, their room always kept. On a computer they show
+   when the row is pointed at or holds the focus, on touch always. */
+.k2b-ui .cloud-block-figures {
   display: flex;
   min-width: 0;
-  align-items: center;
-  gap: 0.4375rem;
-  color: var(--k2b-text);
-  font-size: 0.875rem;
+  align-items: flex-start;
+  gap: 0.5rem;
 }
 
-.k2b-ui .cloud-capability-view__app {
-  width: 1.5rem;
-  height: 1.5rem;
-  color: var(--k2b-text-secondary);
-  font-size: 0.875rem;
-}
-
-.k2b-ui .cloud-capability-view__title {
+.k2b-ui .cloud-block-figures > :first-child {
+  flex: 1;
   min-width: 0;
-  overflow: hidden;
-  color: var(--k2b-text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.k2b-ui .cloud-capability-view__tools {
-  display: inline-flex;
-  margin-inline-start: auto;
+.k2b-ui .cloud-block-actions[data-quiet] {
+  opacity: 0;
+  transition: opacity var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui :is(.cloud-block-figures, section):is(:hover, :focus-within) .cloud-block-actions[data-quiet] {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .k2b-ui .cloud-block-actions[data-quiet] {
+    opacity: 1;
+  }
+}
+
+/* "Raw data" in the Lightbox: the data behind the block, read only. */
+.k2b-ui .cloud-block-raw {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.k2b-ui .cloud-block-raw__head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.k2b-ui .cloud-block-raw__head > span {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .cloud-block-raw pre {
+  margin: 0;
+  overflow: auto;
+  max-height: 70vh;
+  font-family: var(--k2b-font-mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* The person's own message for a choice: where it was made, then what was chosen. */
@@ -567,4 +621,58 @@
 /* A value an app writes on several lines, such as an address or a list of files, keeps its lines. */
 .k2b-ui .cloud-blocks__value > strong {
   white-space: pre-line;
+}
+
+/*
+ * A searchable table in a chat answer (Feinschliff v3 §5). Its foot names what the search finds and keeps its line in
+ * every state. On a narrow island the search is a sign; opened, it lies over the title, which keeps its room, so the
+ * head keeps its height.
+ */
+.k2b-ui .cloud-table-frame {
+  container: cloud-table / inline-size;
+}
+
+.k2b-ui .cloud-block-foot {
+  min-height: 1.25rem;
+  margin: 0;
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .cloud-table-frame .cloud-table-search-toggle {
+  display: none;
+}
+
+@container cloud-table (max-width: 30rem) {
+  .k2b-ui .cloud-table-frame .cloud-table-search-toggle {
+    display: inline-flex;
+  }
+
+  .k2b-ui .cloud-table-frame:not(.cloud-table-frame--searching) :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools__search) {
+    display: none;
+  }
+
+  /* Opened, the sign keeps its place unseen and the title its width, so the head keeps its height. */
+  .k2b-ui .cloud-table-frame--searching .cloud-table-search-toggle {
+    visibility: hidden;
+  }
+
+  .k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) {
+    position: relative;
+  }
+
+  /* Out of sight, but still the island's heading for a screen reader. */
+  .k2b-ui .cloud-table-frame--searching :is(.k2b-dashboard-frame__header, .cloud-view-heading) > div:first-child {
+    opacity: 0;
+  }
+
+  .k2b-ui .cloud-table-frame--searching :is(.cloud-table-search, .cloud-table-search-host .k2b-data-table-tools__search) {
+    position: absolute;
+    z-index: 1;
+    inset-block-start: 0;
+    inset-inline: 0 var(--cloud-search-end, 0);
+    width: auto;
+    max-width: none;
+  }
 }

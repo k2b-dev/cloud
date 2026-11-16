@@ -17,6 +17,7 @@ import { requireDraftAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { actorRefFromRequest } from "./auth";
 import { sha256Json } from "./canonical";
+import { composeAnchorLinks } from "./compose-anchor-links";
 import { hasUnrenderedTemplateSyntax } from "./compose-renderer";
 import { loadSendContent } from "./send-content";
 
@@ -124,9 +125,7 @@ const markdownLinks = (body: string): Array<{ label: string; destination: string
   for (const match of body.matchAll(/\[([^\]\n]{1,2048})\]\(([^)\s]{1,8192})(?:\s+"[^"]*")?\)/g)) {
     links.push({ label: match[1]!, destination: match[2]! });
   }
-  for (const match of body.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>(.*?)<\/a>/gis)) {
-    links.push({ label: match[2]!.replace(/<[^>]+>/g, "").trim(), destination: match[1]! });
-  }
+  links.push(...composeAnchorLinks(body));
   return links;
 };
 

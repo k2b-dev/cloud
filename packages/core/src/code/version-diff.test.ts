@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { capabilityToolInputSchema } from "@k2b/cloud/capabilities/server";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { CAPABILITY_MAX_RESULT_BYTES, CapabilityActionCallReviewSchema } from "@k2b/cloud/contracts";
-import type { CodeDiffFile } from "@k2b/ui";
+import type { CodeDiffFile } from "@k2b/ui/code-diff";
 import { aiCapabilities } from "../capabilities";
 import { codeBundleHash, codeSourceHash } from "./store";
 import { CodeCheckedVersionManifestSchema, codeVersionContracts } from "./version-contracts";

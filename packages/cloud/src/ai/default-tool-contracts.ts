@@ -8,6 +8,11 @@ export const CloudAiCardInputSchema = /* @__PURE__ */ (() =>
   z.object({
     title: z.string().min(1),
     value: z.string().min(1).describe("The figure or status itself, short enough to read at a glance: about 20 characters."),
+    icon: z
+      .string()
+      .max(40)
+      .optional()
+      .describe("Tabler icon name for the small sign before the title, such as wallet, pig-money, home or credit-card."),
     emoji: z.string().max(8).optional().describe("Optional single emoji shown next to the card content. Omit when none fits."),
     caption: z.string().optional().describe("Optional scope or time range of the value in one short line."),
     tone: ToneSchema.default("teal"),
@@ -301,6 +306,7 @@ const flatChartSchema = () => {
     threshold: z.object({ value: z.number(), label: ChartLabel }).optional().describe("line: labelled warning threshold."),
     marker: z.object({ at: ChartCoordinate, label: ChartLabel }).optional().describe("line: labelled vertical marker, for example Today."),
     smooth: z.boolean().optional().describe("line: smooth curves."),
+    points: z.boolean().optional().describe("line: a hollow point on every value."),
     showLabels: z.boolean().optional().describe("pie, donut: name slices next to them."),
     bins: ChartBins.optional(),
     value: z.number().optional().describe("gauge, stat: value."),
@@ -317,6 +323,11 @@ const flatChartSchema = () => {
     thresholds: ChartThresholds.optional().describe("gauge, barGauge: ascending band bounds, within min/max."),
     delta: z.number().optional().describe("stat: change, in the value's units."),
     better: z.enum(["up", "down"]).optional().describe("stat: which direction improves the measure."),
+    icon: z
+      .string()
+      .max(40)
+      .optional()
+      .describe("stat: Tabler icon name for the small sign before the title, as the card tool's icon, such as list-check."),
     sparkline: z.array(z.number()).min(2).max(CLOUD_AI_CHART_MAX_VALUES).optional().describe("stat: recent values in order."),
   });
 };

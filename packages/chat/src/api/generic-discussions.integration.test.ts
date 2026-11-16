@@ -12,6 +12,8 @@ import {
   ForYouPageSchema,
   ItemEventsPageSchema,
   MessagePageSchema,
+  ResourceDiscussionSchema,
+  ResourceLocationSchema,
   SharedPageSchema,
   SystemChatPageSchema,
   ThreadListSchema,
@@ -587,5 +589,65 @@ suiteFor(
     expect(partial.systemUnavailable).toBeUndefined();
     expect(partial.incomplete).toBeTrue();
     expect(partial.items).toHaveLength(3);
+  });
+  test("the panel finds a shared container or item without creating it, and starts it only on request", async () => {
+    const person = await f.person();
+    // Fresh refs: earlier tests in this suite already started the shared fixture container and item.
+    const shelf = { type: collection.type, id: crypto.randomUUID() };
+    const box = { type: item.type, id: crypto.randomUUID() };
+    trackKeys(person, shelf);
+    trackKeys(person, collection);
+    trackKeys(person, box);
+    const openFor = (ref: { type: string; id: string }) => api(person, "/system-chats/for-resource", "POST", { ref });
+    const locate = async (ref: { type: string; id: string }) =>
+      ResourceLocationSchema.parse(await (await api(person, `/system-chats/for-resource?type=${ref.type}&id=${ref.id}`)).json());
+    const systemRows = async () =>
+      Number(
+        (
+          await sql<{ count: string }[]>`SELECT count(*) FROM chat.conversations
+            WHERE kind = 'system' AND resource_type = ${shelf.type} AND resource_id = ${shelf.id}`
+        )[0]!.count,
+      );
+    const threadRows = async () =>
+      Number(
+        (
+          await sql<{ count: string }[]>`SELECT count(*) FROM chat.threads WHERE resource_type = ${box.type} AND resource_id = ${box.id}`
+        )[0]!.count,
+      );
+    // Looking creates nothing: no conversation and no thread until the first message starts them.
+    expect(await locate(shelf)).toEqual({ conversation: null, thread: null, item: false, title: "Warehouse", canWrite: true });
+    expect(await locate(box)).toMatchObject({ thread: null, item: true, title: "Box", canWrite: true });
+    expect(await systemRows()).toBe(0);
+    expect(await threadRows()).toBe(0);
+    const container = ResourceDiscussionSchema.parse(await (await openFor(shelf)).json());
+    f.trackChat(container.conversation.id);
+    expect(container).toMatchObject({ thread: null, title: "Warehouse", conversation: { kind: "system", resource: shelf } });
+    expect((await locate(shelf)).conversation).toBe(container.conversation.id);
+    // An item starts its container's chat and its own thread, once.
+    const first = ResourceDiscussionSchema.parse(await (await openFor(box)).json());
+    f.trackChat(first.conversation.id);
+    expect(first.conversation.resource).toEqual(collection);
+    expect(first.title).toBe("Box");
+    expect(first.thread).not.toBeNull();
+    expect(ResourceDiscussionSchema.parse(await (await openFor(box)).json()).thread).toBe(first.thread);
+    expect(await locate(box)).toMatchObject({ conversation: first.conversation.id, thread: first.thread });
+    // A reader who may not write still finds the existing thread, but starts nothing.
+    writable = false;
+    await redis.send("DEL", trackKeys(person, collection));
+    expect((await locate(box)).canWrite).toBeFalse();
+    expect((await locate(box)).thread).toBe(first.thread);
+    await sql`DELETE FROM chat.threads WHERE short_id = ${first.thread}`;
+    expect((await openFor(box)).ok).toBeFalse();
+    expect((await locate(box)).thread).toBeNull();
+    // Unreadable items, unknown types and malformed refs name nothing.
+    readable = false;
+    await redis.send("DEL", trackKeys(person, box));
+    const denied = await openFor(box);
+    expect(denied.status).toBe(404);
+    expect(await denied.text()).not.toContain("Box");
+    expect((await api(person, `/system-chats/for-resource?type=${box.type}&id=${box.id}`)).status).toBe(404);
+    expect((await openFor({ type: "other.thing", id: "x" })).status).toBe(404);
+    expect((await api(person, "/system-chats/for-resource?type=other.thing&id=x")).status).toBe(404);
+    expect((await api(person, "/system-chats/for-resource", "POST", { ref: { type: "", id: "" } })).status).toBe(400);
   });
 });

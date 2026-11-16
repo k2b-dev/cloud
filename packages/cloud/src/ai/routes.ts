@@ -49,6 +49,7 @@ import { watchAiConversation } from "./conversation-watchers";
 import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { enqueueAiDictation } from "./dictation-runtime";
 import { AiDictationConflict, AiDictationListSchema, AiDictationStartSchema, aiDictations } from "./dictations";
+import { normalizeAiUploadMediaType } from "./file-media-type";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, decodeAiFileContent, guessAiMediaType, normalizeAiFilePath } from "./files-store";
 import {
@@ -126,6 +127,8 @@ import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
 import { aiToolPromptHints } from "./tools";
 import type { AiConversation, AiTurn } from "./types";
+import { isAiViewFile } from "./view-block";
+import { nameViewReferences } from "./view-names";
 
 const retryInstruction = (mode: "retry" | "details" | "concise"): string | null => {
   if (mode === "details") return "Answer the user's request again with more detail and specificity.";
@@ -208,6 +211,8 @@ const FilesListQuerySchema = z.object({
   after: z.string().max(4096).optional(),
 });
 const FilePathQuerySchema = z.object({ path: z.string().min(1) });
+/** `view=1` reads a view file for the chat: its references named for the reading person (`view-names.ts`). */
+const FileContentQuerySchema = FilePathQuerySchema.extend({ view: z.literal("1").optional() });
 const FileDeleteQuerySchema = FilePathQuerySchema.extend({ recursive: z.enum(["true", "false"]).optional() });
 const FileWriteSchema = z.object({
   path: z.string().min(1),
@@ -1758,7 +1763,7 @@ export const aiRoutes = (() => {
             conversationId: conversation.id,
             path,
             bytes: new Uint8Array(await file.arrayBuffer()),
-            mediaType: file.type || guessAiMediaType(path),
+            mediaType: normalizeAiUploadMediaType(path, file.type),
           });
           return respond(c, ok({ file: stat }));
         } catch (error) {
@@ -1772,20 +1777,26 @@ export const aiRoutes = (() => {
           return respond(c, fail(err.badInput(error instanceof Error ? error.message : "Upload failed")));
         }
       })
-      .get("/conversations/:conversationId/files/content", v("query", FilePathQuerySchema), async (c) => {
+      .get("/conversations/:conversationId/files/content", v("query", FileContentQuerySchema), async (c) => {
         const ctx = await resolveContext(c);
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        const path = normalizeAiFilePath(c.req.valid("query").path);
+        const query = c.req.valid("query");
+        const path = normalizeAiFilePath(query.path);
         if (!path) return fileNotFound(c);
         const stored = await aiFileStore.read({ conversationId: conversation.id, path });
         if (!stored) return fileNotFound(c);
         const filename = path.slice(path.lastIndexOf("/") + 1).replaceAll('"', "");
-        return c.body(stored.bytes as unknown as ArrayBuffer, 200, {
+        // The chat reads a view with its references named for this reader; the stored file and a download stay as written.
+        const bytes =
+          query.view === "1" && isAiViewFile({ path, origin: stored.origin })
+            ? await nameViewReferences(stored.bytes, { authority: auth.getAuthority(c), locale: getLocale(c), signal: c.req.raw.signal })
+            : stored.bytes;
+        return c.body(bytes as unknown as ArrayBuffer, 200, {
           "Content-Type": stored.mediaType || "application/octet-stream",
           "Content-Disposition": `attachment; filename="${filename}"`,
-          "Content-Length": String(stored.size),
+          "Content-Length": String(bytes.byteLength),
           "X-Cloud-Ai-File-Origin": stored.origin,
           "Cache-Control": "private, no-store",
         });

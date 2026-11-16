@@ -420,6 +420,8 @@ async function open(width: number, options: OpenOptions = {}) {
             return ["qr_code"];
           }
           async detect() {
+            // A test points the camera away to keep a scanner open, as a person does before the code is in view.
+            if ((globalThis as { cameraSeesCode?: boolean }).cameraSeesCode === false) return [];
             const corners = [
               { x: 0, y: 0 },
               { x: 1, y: 0 },
@@ -779,7 +781,11 @@ describe("Code page in a browser", () => {
       expect(await page.getByLabel("Title", { exact: true }).inputValue()).toBe("Typed");
       expect(state.treeLoads).toBe(0);
       expect(state.posts).toEqual([]);
-      // Back closes the scanner, not the page, and keeps what was typed.
+      // Back closes the scanner, not the page, and keeps what was typed. The camera sees no code now, so this scanner
+      // stays open until Back; one that read a code would close itself with its own Back, racing the test's (#3478).
+      await page.evaluate(() => {
+        (globalThis as { cameraSeesCode?: boolean }).cameraSeesCode = false;
+      });
       await page.getByRole("button", { name: "Scan", exact: true }).click();
       await page.getByRole("dialog", { name: "Scan code" }).waitFor();
       await page.goBack();
@@ -813,6 +819,11 @@ const rectOf = (page: Page, selector: string) =>
     const box = element.getBoundingClientRect();
     return { x: Math.round(box.x), y: Math.round(box.y), width: Math.round(box.width), height: Math.round(box.height) };
   }, selector);
+/**
+ * Moves the pointer off every control before the page settles: a click leaves it resting on a button, whose hover
+ * transition can start while `settled` waits (#3465).
+ */
+const restPointer = (page: Page) => page.mouse.move(1, 1);
 const pill = (page: Page) => page.locator(".code-page-provenance__pill");
 const card = (page: Page) => page.locator(".code-page-provenance__card");
 /** Opens the card with a press and waits for its facts (or its failure) to show. */
@@ -1329,6 +1340,8 @@ describe("the feat/code label of a Code page", () => {
         await card(page).getByRole("button", { name: "Seite melden" }).click();
         const dialog = page.locator(".code-page-report");
         await dialog.waitFor();
+        await page.getByText("Schreib einen Satz dazu. Dann kannst du melden.").waitFor();
+        await restPointer(page);
         await settled(page);
         const frame = () => rectOf(page, ".code-page-report-frame");
         const send = page.locator(".code-page-report__actions button").last();
@@ -1369,6 +1382,7 @@ describe("the feat/code label of a Code page", () => {
         await page.locator(".code-page-report textarea").fill("Die Seite fragt nach meinen Zugangsdaten zum Lieferantenportal.");
         expect(await send.isEnabled()).toBe(true);
         expect(await status.innerText()).toBe("Geht an die Admins dieser Cloud.");
+        await restPointer(page);
         await settled(page);
         expect(await frame()).toEqual(empty);
         if (width >= 768) await shoot(page, "75-seite-melden-light-1440");
@@ -1434,6 +1448,7 @@ describe("the feat/code label of a Code page", () => {
         expect(type.offSizes).toEqual([]);
         await send.click();
         await page.getByText("Deine Meldung ist angekommen.").waitFor();
+        await restPointer(page);
         await settled(page);
         if (width >= 768) await shoot(page, "90-seite-melden-gesendet-light-1440");
         expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Fertig");

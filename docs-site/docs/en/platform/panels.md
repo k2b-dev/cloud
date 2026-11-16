@@ -5,7 +5,7 @@ section: Platform services
 order: 588
 description: Offer an authorized application page beside the current Cloud app.
 tags: [panels, applications, layout, ssr]
-updated: 2026-10-31
+updated: 2026-11-15
 ---
 
 # Offer a panel
@@ -21,6 +21,10 @@ Assistant applications also offer their existing conversation workspaces in
 the slot, subject to their normal route and conversation permissions. All
 three use the same `panel`, `PanelLayout`, and context APIs as other applications.
 
+Chat starts in the discussion about the host page's resource when the page
+shares a scope that a discussion provider declares as its container; see
+[Chat system conversations](/en/docs/operations/chat-system-chats#open-beside-the-resource).
+Its head offers **All chats** and a way back to that discussion, but no full view link.
 Chat keeps text drafts per reader and conversation in the current browser tab.
 Panel and full view synchronize their saved text. If both edit before synchronization,
 Chat preserves the local text and shows the competing saved text for an explicit choice.

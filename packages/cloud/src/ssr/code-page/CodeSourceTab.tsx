@@ -1,5 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { ButtonLink, CodeDiff, type CodeDiffFile, Paper, Placeholder, Select, useLocale } from "@k2b/ui";
+import { ButtonLink, Paper, Placeholder, Select, useLocale } from "@k2b/ui";
+import { CodeDiff, type CodeDiffFile } from "@k2b/ui/code-diff";
 import { createMemo, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import type { CodePageInvoke } from "./data";
