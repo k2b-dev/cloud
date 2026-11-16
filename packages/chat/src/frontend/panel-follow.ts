@@ -77,8 +77,8 @@ export function followPanelContext(host: PanelFollowHost): () => void {
         // does not count as the reader's choice.
         const moved = host.route() !== shownRoute && host.route() !== followedRoute;
         if (!following || host.opens() !== opens || moved) {
-          host.setFollowPending(false);
-          return void host.setResourceChat(next);
+          host.setResourceChat(next);
+          return void host.setFollowPending(false);
         }
         const target = resourceChatExists(next)
           ? host.chatRoute(next.id, next.thread ?? "all")
@@ -92,9 +92,10 @@ export function followPanelContext(host: PanelFollowHost): () => void {
           followedRoute = host.route();
         }
         if (token !== scopeToken) return;
-        host.setFollowPending(false);
         inflight = null;
+        // The discussion takes the loading frame's place before the frame goes, so the list never mounts between.
         host.setResourceChat(next);
+        host.setFollowPending(false);
       })
       .catch(() => {
         if (token !== scopeToken) return;

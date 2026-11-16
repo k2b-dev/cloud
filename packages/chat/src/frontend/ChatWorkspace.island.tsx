@@ -3161,6 +3161,21 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
                       frame it opens in, instead of the list the panel is about to leave. */}
                   <section class="chat-conversation chat-resource-start" aria-busy="true" aria-label={t().loadingResourceChat}>
                     <header class="chat-conversation__header">
+                      {/* The way back the discussion has, in its place; leaving ends the wait, and following then
+                          finds that the reader moved. */}
+                      <span class="chat-conversation__back">
+                        <IconButtonLink
+                          href={listHref(basePath)}
+                          navigation="enhanced"
+                          onNavigate={(navigation) => {
+                            setFollowPending(false);
+                            return backToList(navigation);
+                          }}
+                          label={t().panelAllChats}
+                        >
+                          <i class="ti ti-list" aria-hidden="true" />
+                        </IconButtonLink>
+                      </span>
                       <Skeleton class="chat-resource-loading__title" />
                     </header>
                   </section>
