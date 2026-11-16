@@ -589,8 +589,8 @@ for (const system of [false, true])
           expect(new URL(page.url()).searchParams.get("list")).toBe("archive");
           expect(new URL(page.url()).searchParams.get("filter")).toBe("unread");
         }
-        const full = page.getByRole("link", { name: "Open full view", exact: true });
-        expect(new URL((await full.getAttribute("href"))!, page.url()).pathname).toBe(path.replace("/panel", ""));
+        // The panel stays the panel: no link leads out of it to the full view.
+        expect(await page.locator('.chat-conversation__header a[href^="/app/chat/c/"]').count()).toBe(0);
         if (selected === "thread") expect(harness.thread(chat, other)!.read!.lastReadSeq).toBe(10);
         expect(errors).toEqual([]);
       } finally {

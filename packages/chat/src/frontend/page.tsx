@@ -4,17 +4,19 @@ import { Layout, PanelLayout } from "@k2b/cloud/ssr";
 import { getCookie } from "hono/cookie";
 import { ssr } from "../config";
 import { chatMessages } from "../messages";
-import { chatRequestContext } from "../request-context";
+import { chatRequestContext, oauthAllowsWrites } from "../request-context";
 import { chatService, loadChatView } from "../service";
 
 import ChatWorkspace from "./ChatWorkspace.island";
 import { chatTitle } from "./chat-title";
 import { CHAT_DEVICE_NOTICE_COOKIE, parseDeviceNotice } from "./device-notice";
+import { panelResourceChat } from "./panel-resource";
 
 /**
  * `/app/chat`, a chat (`/c/:chat`), one of its threads (`/c/:chat/t/:thread`), each with a message deep link (`/m/:message`),
  * and the phone's thread page (`/c/:chat/threads`): the full view with the authorized snapshot. The universal panel
- * serves the same addresses below `/app/chat/panel`.
+ * serves the same addresses below `/app/chat/panel`. There it starts in the discussion about the host page's resource
+ * when the page shares a scope that a discussion provider declares as its container.
  */
 export default ssr<AuthContext>(async (c) => {
   const embedded = c.req.path === "/app/chat/panel" || c.req.path.startsWith("/app/chat/panel/");
@@ -22,6 +24,15 @@ export default ssr<AuthContext>(async (c) => {
   const { t } = chatMessages.resolve([locale]);
   const accessSubject = c.get("accessSubject");
   if (accessSubject.type !== "user") return ssr.error(c, 403);
+  const { resourceChat, redirect, scope } = embedded
+    ? await panelResourceChat(c, async (ref) => {
+        const found = await chatService.systemChats.locate({ ...chatRequestContext(c), ref, credentialWrites: oauthAllowsWrites(c) });
+        if (!found.ok) return null;
+        const { conversation, ...location } = found.data;
+        return { ...location, id: conversation };
+      })
+    : { resourceChat: null, redirect: null, scope: null };
+  if (redirect) return c.redirect(redirect, 302);
   const archived = c.req.path.endsWith("/archive") || c.req.query("list") === "archive";
   let unread = (c.req.query("listFilter") ?? c.req.query("filter")) === "unread";
   const channelsPage = /\/channels\/?$/.test(c.req.path);
@@ -30,6 +41,8 @@ export default ssr<AuthContext>(async (c) => {
     ? await chatService.channels.browse({ actor: c.get("actor"), accessSubject, locale, query: { q: channelQuery } }).catch(() => null)
     : null;
   const forYouPage = /\/for-you\/?$/.test(c.req.path);
+  // The panel's ready start in a resource's discussion while nobody has written there.
+  const resourcePage = embedded && resourceChat !== null && /\/resource\/?$/.test(c.req.path);
   const forYouResult = forYouPage ? await chatService.forYou.list({ ...chatRequestContext(c), query: {} }).catch(() => null) : null;
   const chatId = c.req.param("chat") ?? null;
   const thread = c.req.param("thread") ?? "all";
@@ -58,17 +71,23 @@ export default ssr<AuthContext>(async (c) => {
   const collapsed = preferences.data.collapsed;
   const liveDictation = (await getLiveDictationStatus(accessSubject)).available;
   // Without access the page names neither the chat nor whether it exists.
-  const title = channelsPage
-    ? t.browseChannels
-    : forYouPage
-      ? t.forYou
-      : chatId
-        ? (view.open?.conversation.title ?? t.noAccessTitle)
-        : undefined;
+  const title =
+    resourcePage && resourceChat
+      ? t.aboutResource({ title: resourceChat.title })
+      : channelsPage
+        ? t.browseChannels
+        : forYouPage
+          ? t.forYou
+          : chatId
+            ? (view.open?.conversation.title ?? t.noAccessTitle)
+            : undefined;
   const now = new Date();
   const workspace = () => (
     <ChatWorkspace
       embedded={embedded}
+      resourceChat={resourceChat}
+      resourcePage={resourcePage}
+      panelScope={scope}
       archived={archived}
       filter={unread ? "unread" : "all"}
       collapsed={collapsed}

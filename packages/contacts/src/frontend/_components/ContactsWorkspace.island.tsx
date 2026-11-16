@@ -1,5 +1,6 @@
+import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { AppWorkspace, useLocale } from "@k2b/ui";
-import { type ComponentProps, createSignal, onCleanup, onMount } from "solid-js";
+import { type ComponentProps, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import ContactDetailPanel from "./ContactDetailPanel";
 import ContactsWorkspaceMain from "./ContactsWorkspaceMain";
 import CreateContactButton from "./CreateContactButton";
@@ -38,6 +39,12 @@ export default function ContactsWorkspace(props: Props) {
   };
 
   onMount(() => {
+    createEffect(() => {
+      if (props.list.scope !== "book" || !props.list.bookId) return;
+      const contactId = selection().contactId;
+      const scope = contactId ? { type: "contacts.contact", id: contactId } : { type: "contacts.book", id: props.list.bookId };
+      onCleanup(publishPageContext({ scope }));
+    });
     const sync = (event: Event) => {
       const { contactId, bookId, addressId } = getSelectedContactFromUrl();
       const payload = event.type === CONTACT_DETAIL_EVENT ? (event as CustomEvent<ContactDetailPayload>).detail : undefined;
