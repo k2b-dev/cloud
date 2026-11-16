@@ -115,8 +115,17 @@ integration(
       expect(await updateQueuedMessage(chat.id, first, "retry")).toBe(false);
       await sql`UPDATE ai.files SET bytes=${new TextEncoder().encode("original")},size=8,version=${file.version} WHERE conversation_id=${chat.id}::uuid AND path=${file.path}`;
       const third = await enqueue("Cancel me");
-      expect(await editQueuedMessage(chat.id, third, "Edited in queue")).toBe(true);
+      expect(await editQueuedMessage(chat.id, third, "Edited in queue", { signedInSession: true })).toBe(true);
       expect((await listQueuedMessages(chat.id))[0]?.content).toEqual([{ type: "text", text: "Edited in queue" }]);
+      const restricted = async (id: string) =>
+        (
+          await sql<{ restricted: boolean }[]>`SELECT COALESCE((submission#>>'{runConfig,sourceRestricted}')::boolean,false) AS restricted
+          FROM ai.queued_messages WHERE id=${id}::uuid`
+        )[0]?.restricted;
+      // A session's edit keeps the message unrestricted; an edit from cld is accepted and restricts it.
+      expect(await restricted(third)).toBe(false);
+      expect(await editQueuedMessage(chat.id, third, "Edited from the terminal", { signedInSession: false })).toBe(true);
+      expect(await restricted(third)).toBe(true);
       expect(await updateQueuedMessage(chat.id, third, "cancel")).toBe(true);
       expect(await listQueuedMessages(chat.id)).toEqual([]);
       await sql`UPDATE ai.turns SET status='completed',completed_at=now() WHERE id=${jobs[1]!.turnId}::uuid`;

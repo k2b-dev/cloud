@@ -64,6 +64,92 @@ suite("AI conversation store integration", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("text from a source without a signed-in session restricts the turn: steer and tool answers", async () => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    const restricted = async (conversationId: string, turnId: string) => {
+      const config = await aiConversations.getTurnRunConfig({ conversationId, turnId });
+      return config?.kind === "chat" ? config.sourceRestricted === true : null;
+    };
+    const turn = async () => {
+      const chat = await aiConversations.createConversation({ ownerUserId: userId });
+      conversationIds.push(chat.id);
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "test-model",
+        userMessage: userMessage("Start"),
+        runConfig,
+      });
+      return { conversationId: chat.id, turnId: turn.id };
+    };
+    const tool = async (target: { conversationId: string; turnId: string }, callId: string) =>
+      aiConversations.savePendingTurnAction({
+        ...target,
+        callId,
+        kind: "client_tool",
+        status: "pending",
+        name: "browser-state",
+        args: {},
+        approvalScope: "browser-state",
+        allowAlways: false,
+        frontendMode: "client",
+        resolvedEvent: null,
+      });
+    try {
+      // A signed-in session keeps the turn unrestricted on both paths.
+      const session = await turn();
+      await aiConversations.enqueueTurnSteer({ ...session, clientRequestId: "s1", text: "From the browser", signedInSession: true });
+      await tool(session, "call-session");
+      await aiConversations.resolvePendingTurnAction({
+        ...session,
+        callId: "call-session",
+        event: { type: "tool_result", callId: "call-session", result: { value: 1 } },
+        signedInSession: true,
+      });
+      expect(await restricted(session.conversationId, session.turnId)).toBe(false);
+      // Steering from cld marks the turn; it is still accepted.
+      const steered = await turn();
+      const steer = await aiConversations.enqueueTurnSteer({
+        ...steered,
+        clientRequestId: "s2",
+        text: "From the terminal",
+        signedInSession: false,
+      });
+      expect(steer.ok).toBe(true);
+      expect(await restricted(steered.conversationId, steered.turnId)).toBe(true);
+      // A tool result from cld marks the turn; an approval carries no text and does not.
+      const answered = await turn();
+      await tool(answered, "call-cli");
+      await aiConversations.savePendingTurnAction({
+        ...answered,
+        callId: "call-approve",
+        kind: "approval",
+        status: "pending",
+        name: "danger",
+        args: {},
+        approvalScope: "danger",
+        allowAlways: false,
+        resolvedEvent: null,
+      });
+      await aiConversations.resolvePendingTurnAction({
+        ...answered,
+        callId: "call-approve",
+        event: { type: "approval_response", callId: "call-approve", approved: true },
+        signedInSession: false,
+      });
+      expect(await restricted(answered.conversationId, answered.turnId)).toBe(false);
+      await aiConversations.resolvePendingTurnAction({
+        ...answered,
+        callId: "call-cli",
+        event: { type: "tool_result", callId: "call-cli", result: { value: 2 } },
+        signedInSession: false,
+      });
+      expect(await restricted(answered.conversationId, answered.turnId)).toBe(true);
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
   test("authoring stop receipts survive reload but are omitted from forks without the draft", async () => {
     const userId = await insertUser();
     const source = await aiConversations.createConversation({ ownerUserId: userId });
@@ -1447,6 +1533,7 @@ suite("AI conversation store integration", () => {
         expect(
           (
             await aiConversations.resolvePendingTurnAction({
+              signedInSession: true,
               ...scope,
               callId,
               event: { type: "approval_response", callId, approved: true },
@@ -1556,6 +1643,7 @@ suite("AI conversation store integration", () => {
       expect(
         (
           await aiConversations.enqueueTurnSteer({
+            signedInSession: true,
             conversationId: conversation.id,
             turnId: turn.id,
             clientRequestId: "waiting-steer",
@@ -1577,6 +1665,7 @@ suite("AI conversation store integration", () => {
       expect(early).toBeNull();
 
       const resolved = await aiConversations.resolvePendingTurnAction({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         callId: "call-1",
@@ -1645,6 +1734,7 @@ suite("AI conversation store integration", () => {
       ).toBeNull();
 
       await aiConversations.resolvePendingTurnAction({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         callId: "call-2",
@@ -1716,6 +1806,7 @@ suite("AI conversation store integration", () => {
         resolvedEvent: null,
       });
       await aiConversations.resolvePendingTurnAction({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         callId: "inline-list",
@@ -1756,6 +1847,7 @@ suite("AI conversation store integration", () => {
           }),
         ).toBe(true);
         await aiConversations.resolvePendingTurnAction({
+          signedInSession: true,
           conversationId: conversation.id,
           turnId: turn.id,
           callId: "code-open",
@@ -1810,18 +1902,21 @@ suite("AI conversation store integration", () => {
       });
 
       const first = await aiConversations.enqueueTurnSteer({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         clientRequestId: "request-1",
         text: "First steer",
       });
       const duplicate = await aiConversations.enqueueTurnSteer({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         clientRequestId: "request-1",
         text: "First steer",
       });
       const second = await aiConversations.enqueueTurnSteer({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         clientRequestId: "request-2",
@@ -1900,6 +1995,7 @@ suite("AI conversation store integration", () => {
         userMessage: userMessage("abort me"),
       });
       await aiConversations.enqueueTurnSteer({
+        signedInSession: true,
         conversationId: conversation.id,
         turnId: turn.id,
         clientRequestId: "abort-steer",
@@ -2085,6 +2181,7 @@ suite("AI conversation store integration", () => {
       await approval(stopped, "secret-1", "client_tool");
       for (const callId of ["run-1-approval-1", "send-1", "run-5-approval-0"])
         await aiConversations.resolvePendingTurnAction({
+          signedInSession: true,
           conversationId: stopped.conversationId,
           turnId: stopped.turnId,
           callId,
@@ -2316,6 +2413,7 @@ suite("AI conversation store integration", () => {
         waitingBudgetMs: 60_000,
       });
       await aiConversations.resolvePendingTurnAction({
+        signedInSession: true,
         conversationId: resumeConv.id,
         turnId: resumeTurn.id,
         callId: "resume-call",

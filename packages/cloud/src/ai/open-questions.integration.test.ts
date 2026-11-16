@@ -123,6 +123,7 @@ databaseSuite()("open questions", () => {
     await approvals.cancel([cancelled.id]);
     const resolved = await owner.ask();
     await aiConversations.resolvePendingTurnAction({
+      signedInSession: true,
       conversationId: owner.chat.id,
       turnId: owner.turn.id,
       callId: resolved.callId,
@@ -238,6 +239,7 @@ databaseSuite()("open questions", () => {
     await sql`DELETE FROM events.outbox WHERE kind='live' AND app_id='core' AND ordering_key=${`u:${f.userId}`}`;
     expect(await approvals.decide(first.id, { approved: false }, { userId: f.userId, via: "web_session" })).toMatchObject({ ok: true });
     await aiConversations.resolvePendingTurnAction({
+      signedInSession: true,
       conversationId: f.chat.id,
       turnId: f.turn.id,
       callId: first.callId,
