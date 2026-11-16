@@ -26,13 +26,11 @@ export type StatGridProps = {
 };
 
 const StatGridSizeContext = createContext<StatGridSize>("md");
-const StatGridSurfaceContext = createContext<StatGridSurface>("white");
-// A cell outside a grid stays a tile.
-const StatGridVariantContext = createContext<StatGridVariant>("tiles");
+// A plain grid has no surface, so the surface context carries "plain" to its cells; a cell outside a grid stays a tile.
+const StatGridSurfaceContext = createContext<StatGridSurface | "plain">("white");
 
 export const useStatGridSize = (): StatGridSize => useContext(StatGridSizeContext);
-export const useStatGridSurface = (): StatGridSurface => useContext(StatGridSurfaceContext);
-export const useStatGridVariant = (): StatGridVariant => useContext(StatGridVariantContext);
+export const useStatGridSurface = (): StatGridSurface | "plain" => useContext(StatGridSurfaceContext);
 
 const columnValue = (columns?: StatGridColumns): StatGridColumns => {
   if (columns && Number.isInteger(columns) && columns >= 1 && columns <= 6) return columns;
@@ -45,14 +43,14 @@ const columnValue = (columns?: StatGridColumns): StatGridColumns => {
  */
 export function StatGrid(props: StatGridProps): JSX.Element {
   const surface = () => props.surface ?? "white";
-  const variant = (): StatGridVariant => (props.variant === "plain" ? "plain" : "tiles");
+  const plain = () => props.variant === "plain";
   return (
     <section
       class={`k2b-stat-grid ${props.class ?? ""}`}
       data-columns={columnValue(props.columns)}
       data-size={props.size ?? "md"}
       data-surface={surface()}
-      data-variant={variant()}
+      data-variant={plain() ? "plain" : "tiles"}
       aria-label={props.title}
     >
       <Show when={props.title}>
@@ -69,10 +67,8 @@ export function StatGrid(props: StatGridProps): JSX.Element {
         </header>
       </Show>
       <StatGridSizeContext.Provider value={props.size ?? "md"}>
-        <StatGridSurfaceContext.Provider value={surface()}>
-          <StatGridVariantContext.Provider value={variant()}>
-            <div class="k2b-stat-grid__body">{props.children}</div>
-          </StatGridVariantContext.Provider>
+        <StatGridSurfaceContext.Provider value={plain() ? "plain" : surface()}>
+          <div class="k2b-stat-grid__body">{props.children}</div>
         </StatGridSurfaceContext.Provider>
       </StatGridSizeContext.Provider>
     </section>
