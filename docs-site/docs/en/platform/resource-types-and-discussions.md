@@ -280,3 +280,20 @@ activity still enforce the caller's credential limits. The generated
 `readable` checks concern account rights, so a service account with a
 credential lacking read scope can still be reported as readable. Resource
 bindings, current account status, and current grants remain mandatory.
+
+Files declares `entry` inside the additional `folder` Type. A `folder` is a
+storage root or directory; both Types accept the existing Files entry IDs.
+Existing `entry` refs still address files and folders. Their reader reports
+the current parent folder in `view.container`; a root entry points to its
+root's `folder` ref. Folder pages report the `folder` scope, while a file's
+inspector and editor report `entry`. Rename and move retain stable Filegate
+IDs where supported; path refs retain their existing path identity.
+
+`folder.containers` lists authorized roots and descendant folders in fixed
+source pages of 100 folders, one storage base per call. The output limit may
+change between calls. Name filtering happens within each source page; an
+empty page can have a continuation. Keep following `next`. Storage failures
+remain failures. Files uses its existing membership, storage-grant and FreeIPA
+POSIX checks, including credential limits, for readers and listed folders.
+It offers no discussion activity or `access.readable` callbacks in this slice;
+interactive discussions work, but resource-discussion push is not configured.
