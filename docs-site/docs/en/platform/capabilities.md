@@ -1592,12 +1592,15 @@ or quota admission would now refuse a new one. The dispatcher can replay an
 admission response; the read Query gives current state. Different text, context
 or destination under that key returns `IDEMPOTENCY_CONFLICT`. A full queue
 returns `chat_busy`; a Project change during preparation returns `chat_changed`.
-One Code has at most one waiting or running message across all chats; another
-send returns `chat_busy` until it finishes. A Code message starts only while
-its Code is enabled and the Code and owner daily AI limits still have room. While
-it waits for an allowance, its status is `queued` with that reason, and the
-person's own messages pass it. If its Code is paused or removed, it is
-`cancelled` with the reason. A turn never sends into its own chat. Separate
+A person's Codes have at most one waiting or running message across all chats;
+another send returns `chat_busy` until it finishes. A Code message starts only
+while its run exists, its Code is enabled and the Code and owner daily AI limits
+still have room. While it waits for an allowance, its status is `queued` with
+that reason, and the person's own messages and chat actions pass it. It does not
+outlive the budget day it waited on. A message that cannot start is
+`cancelled` with the reason, for example `code_inactive`, `code_run_gone`,
+`code_budget_day_ended` or `dispatch_failed`. A turn never sends into its own
+chat. Separate
 automation receipts and capacity follow with the automation queue.
 
 Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.
