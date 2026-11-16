@@ -14,8 +14,15 @@ describe("createConfig() cache busting", () => {
     expect(output).toContain('<script type="module" data-ssr-assets=');
 
     expect(output).toBe(
-      `<style>solid-client,solid-island{display:contents}</style>\n<script>${TYPED_INPUT_SCRIPT}</script>\n<script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`,
+      `<style>solid-client,solid-island{display:contents}</style>\n<script type="module" data-ssr-assets="/_ssr/0">const p="/_ssr/0";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>`,
     );
+  });
+
+  test("writes the typed-input listener first in the body, before any island markup", async () => {
+    const { html } = createConfig({ dev: false, template: ({ body, scripts }) => `<body>${body}</body>${scripts}` });
+    const output = await (await html(() => "content")).text();
+    expect(output.startsWith(`<body><script>${TYPED_INPUT_SCRIPT}</script>content</body>`)).toBe(true);
+    expect(output.split(TYPED_INPUT_SCRIPT)).toHaveLength(2);
   });
 
   test("keeps hydration imports unversioned in dev mode", async () => {

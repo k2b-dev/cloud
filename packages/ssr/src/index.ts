@@ -192,8 +192,7 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     const hydrationScript = `<script type="module"${loaderData}>const p=${JSON.stringify(assetPath)};${preload}${loader}</script>`;
 
     // Framework-injected assets
-    // The typed-input listener runs before any island script, so the mount runtime knows what the person typed.
-    let scripts = `${islandDisplayStyle}\n<script>${TYPED_INPUT_SCRIPT}</script>\n${hydrationScript}`;
+    let scripts = `${islandDisplayStyle}\n${hydrationScript}`;
 
     // Add dev tools script in dev mode (inlined)
     if (dev) {
@@ -201,7 +200,8 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     }
 
     const content = await htmlTemplate({
-      body,
+      // The typed-input listener comes first in the body, before any island markup a person can type into.
+      body: `<script>${TYPED_INPUT_SCRIPT}</script>${body}`,
       scripts,
       ...opts,
     });

@@ -1,7 +1,7 @@
 import { fromJSON } from "seroval";
 import { type Component, getOwner, type Owner } from "solid-js";
 import { createComponent, ErrorBoundary, render } from "solid-js/web";
-import { captureTypedFields, focusTypedField, restoreTypedFields } from "./typed-fields";
+import { captureTypedFields, composingIn, focusTypedField, restoreTypedFields } from "./typed-fields";
 
 /** Props received by a configured island error fallback component. */
 export type IslandErrorProps = {
@@ -63,6 +63,11 @@ const mountElement = <Props extends object>(
 ): void => {
   const { mounted } = registry();
   if (mounted.has(element)) return;
+  // An unfinished input method character in the server markup finishes first; rendering now would cancel it.
+  if (composingIn(element)) {
+    document.addEventListener("compositionend", () => mountElement(element, Component, Fallback), { once: true });
+    return;
+  }
   const start = (): void => {
     try {
       // The browser renders the island again over its server markup. Focus taken before that (a keyboard user, or a

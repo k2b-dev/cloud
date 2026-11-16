@@ -152,6 +152,7 @@ import {
   sendBesideComposer,
 } from "./composer-session";
 import { isPlainChat } from "./conversation-view";
+import { lazyAction } from "./lazy-action";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
@@ -170,6 +171,10 @@ type Status = AiPeopleModels & {
   liveDictationAvailable?: boolean;
   error: AiSettingsError | null;
 };
+
+/** Rarely used parts that load when someone opens them. */
+const projectPicker = lazyAction(() => import("./empty-chat-project-picker"));
+const createProjectForm = lazyAction(() => import("./AssistantProjectsDialog"));
 
 type InitialDetail = {
   conversation: AiConversation;
@@ -1653,13 +1658,7 @@ export default function AssistantWorkspace(props: Props) {
   });
 
   const chooseEmptyChatProject = async () => {
-    // A chunk that cannot load says so; the chat stays as it is.
-    const picker = await import("./empty-chat-project-picker").catch(() => {
-      toast.error(t().chatActionFailed);
-      return null;
-    });
-    if (!picker) return;
-    const selected = await picker.pickEmptyChatProject(t(), projects);
+    const selected = await projectPicker(locale(), (module) => module.pickEmptyChatProject(t(), projects));
     if (selected === undefined || selected.projectId === emptyProjectId()) return;
 
     setChoosingProject(true);
@@ -2817,11 +2816,7 @@ export default function AssistantWorkspace(props: Props) {
           onNewConversation={() => void createAndFocusConversation()}
           onCreateProject={async () => {
             // Loaded when someone creates a project: the form stays out of the workspace bundle.
-            const dialog = await import("./AssistantProjectsDialog").catch(() => {
-              toast.error(t().chatActionFailed);
-              return null;
-            });
-            const project = await dialog?.openAssistantCreateProjectDialog();
+            const project = await createProjectForm(locale(), (module) => module.openAssistantCreateProjectDialog());
             if (project) navigateTo(assistantProjectHref(basePath, project.id));
           }}
           onOpenProject={openProject}

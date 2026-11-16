@@ -9,12 +9,23 @@
 
 /** Key of the page's set of fields that received the person's input. */
 const TYPED = "__k2bSsrTyped";
+/** Key of the field with an input method composition in progress, if any. */
+const COMPOSING = "__k2bSsrComposing";
 
 /**
- * Inline classic script for the page: one capture listener, before any island script, that remembers each field the
- * person typed into. The `html()` renderer emits it with the island loader.
+ * Inline classic script that `html()` writes at the start of `<body>`, before any island markup: capture listeners
+ * that remember each field the person typed into, and the field with an input method composition in progress.
  */
-export const TYPED_INPUT_SCRIPT = `addEventListener("input",e=>{e.isTrusted&&(globalThis.${TYPED}??=new WeakSet).add(e.target)},!0)`;
+export const TYPED_INPUT_SCRIPT = `addEventListener("input",e=>{e.isTrusted&&(globalThis.${TYPED}??=new WeakSet).add(e.target)},!0);addEventListener("compositionstart",e=>{globalThis.${COMPOSING}=e.target},!0);addEventListener("compositionend",()=>{globalThis.${COMPOSING}=null},!0)`;
+
+/**
+ * Whether a composition (an input method building a character, say for Japanese) runs inside `root`. Rendering over it
+ * would cancel the person's unfinished character, so the island waits for `compositionend`.
+ */
+export const composingIn = (root: Element): boolean => {
+  const target = (globalThis as { [COMPOSING]?: unknown })[COMPOSING];
+  return target instanceof Node && root.contains(target);
+};
 
 type TextField = HTMLInputElement | HTMLTextAreaElement;
 type Selection = [start: number | null, end: number | null, direction: TextField["selectionDirection"]];
@@ -58,42 +69,63 @@ export const captureTypedFields = (root: Element): Carried[] => {
   return carried;
 };
 
+type Focus = { field: TextField; selection: Selection; restored?: string };
+
+/** The text a field gets: the typed value, or for a textarea with text the island put there itself, that text first. */
+const merge = (field: TextField, island: string, server: string, value: string): string => {
+  if (field.localName !== "textarea" || island === server || island === "") return value;
+  // A restored draft stays. What the person added to the server's text follows it on a new line.
+  const added = (value.startsWith(server) ? value.slice(server.length) : value).trimStart();
+  return added ? `${island}\n${added}` : island;
+};
+
 /**
  * After the island rendered: each carried text goes to its counterpart, the field with the same identity at the same
  * place, when the new markup has as many fields of that identity and the counterpart is editable. Otherwise the text is
- * dropped, never given to another field. Returns the counterpart of the field that had focus, and where its selection
- * goes, for the caller to focus.
+ * dropped, never given to another field. Returns the counterpart of the field that had focus, where its selection goes,
+ * and the text it got, for the caller to focus.
  */
-export const restoreTypedFields = (root: Element, carried: readonly Carried[]): { field: TextField; selection: Selection } | undefined => {
+export const restoreTypedFields = (root: Element, carried: readonly Carried[]): Focus | undefined => {
   if (!carried.length) return undefined;
   const fields = textFields(root);
-  let focus: { field: TextField; selection: Selection } | undefined;
+  let focus: Focus | undefined;
   for (const { key, index, count, value, server, selection } of carried) {
     const list = fields.get(key);
     const field = list?.length === count ? list[index] : undefined;
     if (!field || field.disabled || field.readOnly) continue;
     const island = field.value;
-    // An input takes the typed text. A textarea does too unless the island put other text there itself, such as a
-    // restored draft: then the typed text follows it. A field the person emptied stays empty.
-    const appended = field.localName === "textarea" && island !== server && island !== "" && value !== "";
-    const next = appended ? `${island}\n${value}` : value;
-    if (next !== island) {
+    const next = merge(field, island, server, value);
+    const changed = next !== island;
+    if (changed) {
       field.value = next;
-      field.dispatchEvent(new Event("input", { bubbles: true }));
-      // A field that keeps its focus changes on blur, as it would have; the others are done.
+      // Like a browser's own replacement of the text, so handlers that read `inputType` work.
+      field.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText" }));
+      // A field without focus is done, as if the person had left it.
       if (!selection) field.dispatchEvent(new Event("change", { bubbles: true }));
     }
     if (selection) {
-      const offset = appended ? island.length + 1 : 0;
+      // The selection keeps its distance to the end of the typed text, which stays at the end of the field.
       const [start, end, direction] = selection;
-      focus = { field, selection: [start === null ? null : start + offset, end === null ? null : end + offset, direction] };
+      const place = (at: number | null) => (at === null ? null : Math.max(0, next.length - (value.length - at)));
+      focus = { field, selection: [place(start), place(end), direction], ...(changed ? { restored: next } : {}) };
     }
   }
   return focus;
 };
 
-/** Focus the counterpart of the focused field with the person's selection. */
-export const focusTypedField = ({ field, selection: [start, end, direction] }: { field: TextField; selection: Selection }) => {
+/**
+ * Focus the counterpart of the focused field with the person's selection. Its value was set before the focus, so the
+ * browser would not report a change on leaving it: if the person leaves it unchanged, `change` follows then.
+ */
+export const focusTypedField = ({ field, selection: [start, end, direction], restored }: Focus) => {
   field.focus();
   if (start !== null && end !== null) field.setSelectionRange(start, end, direction ?? undefined);
+  if (restored !== undefined)
+    field.addEventListener(
+      "blur",
+      () => {
+        if (field.value === restored) field.dispatchEvent(new Event("change", { bubbles: true }));
+      },
+      { once: true },
+    );
 };

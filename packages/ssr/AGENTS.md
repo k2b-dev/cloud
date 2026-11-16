@@ -126,10 +126,13 @@ before any event; text typed into a text field moves to the field with the
 same tag, type, `name`, `aria-label`, and place among such fields, only when
 the new markup has as many of them and the field is editable. Only fields
 with a trusted `input` event count; `html()` writes the recording listener
-(`TYPED_INPUT_SCRIPT`) before the loader. An `<input>` takes the value, a
-`<textarea>` keeps text the island set itself in front, an emptied field
-stays empty; one `input` event, plus `change` when the field was not focused,
-and a focused field gets its selection back. Missing or malformed `data-props` throws there. One
+(`TYPED_INPUT_SCRIPT`) at the start of `body`, which also tracks input method
+compositions so an island with one in progress mounts after `compositionend`.
+An `<input>` takes the value, a `<textarea>` keeps text the island set itself
+and appends what the person added to the server's text, an emptied field
+stays empty; one `InputEvent` with `inputType: "insertReplacementText"`, and
+`change` at once without focus or on leaving the focused field, which also
+gets its selection back. Missing or malformed `data-props` throws there. One
 failing element never stops the loop. The default fallback is plain DOM
 (`role="alert"`, `data-ssr-error`, a **Try again** button calling `reset()`).
 Each caught error dispatches a bubbling, cancelable `ssr:island-error` event

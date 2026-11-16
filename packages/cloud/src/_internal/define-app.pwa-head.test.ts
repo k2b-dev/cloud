@@ -72,10 +72,9 @@ const WEB_DOCUMENT = `<!DOCTYPE html>
     <script>${themeBootstrapScript}</script>
   </head>
   <body class="k2b-ui" data-k2b-app-workspace-controller="global">
-    body
+    <script>addEventListener("input",e=>{e.isTrusted&&(globalThis.__k2bSsrTyped??=new WeakSet).add(e.target)},!0);addEventListener("compositionstart",e=>{globalThis.__k2bSsrComposing=e.target},!0);addEventListener("compositionend",()=>{globalThis.__k2bSsrComposing=null},!0)</script>body
   </body>
   <style>solid-client,solid-island{display:contents}</style>
-<script>addEventListener("input",e=>{e.isTrusted&&(globalThis.__k2bSsrTyped??=new WeakSet).add(e.target)},!0)</script>
 <script type="module" data-ssr-assets="/_ssr/*">const p="/_ssr/*";document.querySelectorAll('solid-island,solid-client').forEach(e=>import(p+'/'+e.dataset.id+'.js'));</script>
 ${"  "}
 </html>`;

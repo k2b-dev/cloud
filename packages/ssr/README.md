@@ -31,17 +31,25 @@ text, search, email, url, or tel) before the island mounted moves to the same
 field of the new markup. The field is found by tag, type, `name`,
 `aria-label`, and its place among fields with the same four; when the new
 markup has a different number of such fields, or the field is disabled or
-read-only, the text is dropped and never given to another field. Only fields
-that received the person's input count: an inline listener, which `html()`
-writes before the island loader, records them, so values the browser restored
-by itself stay out. An `<input>` takes the typed value. A `<textarea>` does
-too, unless the island put other text into it itself, such as a restored
-draft; then the typed text follows on a new line. An emptied field stays
-empty. The field hears one bubbling `input` event, and a `change` event when
-it was not the focused field. A focused field keeps its focus and its
-selection. Password, file, and other fields never move. Fields the island
-renders later, for example behind `lazy` or `Suspense`, do not exist at mount
-and drop their text.
+read-only, the text is dropped and never given to another field. Fields that
+exist only in the browser's markup, or that the island renders later, for
+example behind `lazy` or `Suspense`, drop their text too.
+
+Only fields that received a trusted `input` event count. `html()` writes an
+inline listener at the start of `<body>` that records them; a custom template
+must keep `body` before any island markup, or text typed above the listener
+is not recorded. Values the browser restored by itself stay out; autofill
+that fires a trusted `input` event counts as typed.
+
+An `<input>` takes the typed value. A `<textarea>` does too, unless the
+island put other text into it itself, such as a restored draft: then the
+draft stays and what the person added to the server's text follows on a new
+line. An emptied field stays empty. The field hears one bubbling `input`
+event with `inputType: "insertReplacementText"`, and a `change` event: at
+once when it was not the focused field, on leaving it otherwise. The focused
+field keeps its focus and selection. While an input method composition runs
+inside an island (a character still being built), the island mounts after
+`compositionend`. Password, file, and other fields never move.
 
 ## Island lifetime
 

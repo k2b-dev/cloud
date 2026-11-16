@@ -39,7 +39,7 @@ beforeAll(async () => {
       const [search, setSearch] = createSignal("Lager");
       onMount(() => { document.documentElement.dataset.mounted = "yes"; });
       return <form>
-        <textarea aria-label="Message" id="message" value={message()} onInput={(e) => { setMessage(e.currentTarget.value); record("message", "Input", e.currentTarget.value); }} onChange={() => record("message", "Change")} />
+        <textarea aria-label="Message" id="message" value={message()} onInput={(e) => { setMessage(e.currentTarget.value); record("message", "Input", e.currentTarget.value); document.documentElement.dataset.messageType = e.inputType.startsWith("insert") ? "insert" : e.inputType; }} onChange={() => record("message", "Change")} />
         <input type="search" aria-label="Search" id="search" value={search()} onInput={(e) => { setSearch(e.currentTarget.value); record("search", "Input", e.currentTarget.value); }} onChange={() => record("search", "Change")} />
         <input type="password" aria-label="Password" id="password" onInput={(e) => record("password", "Input", e.currentTarget.value)} />
         <input type="text" aria-label="Code" id="code" disabled={Boolean(window.lockCode)} onInput={(e) => record("code", "Input", e.currentTarget.value)} />
@@ -74,10 +74,9 @@ beforeAll(async () => {
       const note = url.searchParams.has("note") ? `<input type="text" aria-label="Note" id="note">` : "";
       const props = JSON.stringify(toJSON({}));
       return new Response(
-        `<!doctype html><html><body>
+        `<!doctype html><html><body><script>${TYPED_INPUT_SCRIPT}</script>
         <solid-island data-id="${formId}" data-props='${props}'><form>${note}<textarea aria-label="Message" id="message">${prefill}</textarea><input type="search" aria-label="Search" id="search" value="Lager"><input type="password" aria-label="Password" id="password"><input type="text" aria-label="Code" id="code"></form></solid-island>
         <solid-island data-id="${nameId}" data-props='${props}'><input type="text" aria-label="Name" id="name"></solid-island>
-        <script>${TYPED_INPUT_SCRIPT}</script>
         <script type="module">window.mountIslands = () => Promise.all([import('/_ssr/v1/${formId}.js'), import('/_ssr/v1/${nameId}.js')]);</script>
         </body></html>`,
         { headers: { "content-type": "text/html" } },
@@ -100,13 +99,13 @@ afterAll(async () => {
 });
 
 /** Open the page before its islands loaded; `setup` runs then, like a person or a browser acting on the server markup. */
-const open = async (query = "", setup: (page: Page) => Promise<void> = async () => {}) => {
+const open = async (query = "", setup: (page: Page) => Promise<void> = async () => {}, wait = true) => {
   const page = await browser.newPage();
   await page.goto(`${origin}/${query}`);
   await page.waitForFunction(() => typeof (window as unknown as { mountIslands?: unknown }).mountIslands === "function");
   await setup(page);
   await page.evaluate(() => (window as unknown as { mountIslands: () => Promise<unknown> }).mountIslands());
-  await page.waitForFunction(() => document.documentElement.dataset.mounted === "yes");
+  if (wait) await page.waitForFunction(() => document.documentElement.dataset.mounted === "yes");
   return page;
 };
 const state = (page: Page) =>
@@ -158,6 +157,8 @@ test("typed text reaches the same field of the new markup once, with focus, sele
         // The focused field hears one input and no change; the others also hear change, as after leaving them.
         message: "Hallo Gustav",
         messageInput: "1",
+        // Handlers that read the input type get one, as from the browser.
+        messageType: "insert",
         search: "Regal",
         searchInput: "1",
         searchChange: "1",
@@ -235,6 +236,57 @@ test("a disabled counterpart and a value the browser set by itself take nothing"
   try {
     const result = await state(page);
     expect([result.code, result.search, result.heard.codeInput, result.heard.searchInput]).toEqual(["", "Lager", undefined, undefined]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("leaving the focused field after mount reports the change the person made before it", async () => {
+  const page = await open("", async (page) => {
+    await page.focus("#message");
+    await page.keyboard.insertText("Hallo Gustav");
+  });
+  try {
+    expect((await state(page)).heard.messageChange).toBeUndefined();
+    await page.keyboard.press("Tab");
+    expect((await state(page)).heard.messageChange).toBe("1");
+  } finally {
+    await page.close();
+  }
+});
+
+test("with a draft of the island and a prefilled server field, only what the person added follows the draft", async () => {
+  const page = await open("?prefill=Vorlage", async (page) => {
+    await page.evaluate(() => {
+      (window as unknown as { islandMessage: string }).islandMessage = "Entwurf";
+    });
+    await page.focus("#message");
+    await page.keyboard.press("End");
+    await page.keyboard.insertText(" mit Zusatz");
+  });
+  try {
+    expect((await state(page)).message).toBe("Entwurf\nmit Zusatz");
+  } finally {
+    await page.close();
+  }
+});
+
+test("an island waits for an unfinished input method character in its server markup", async () => {
+  const page = await open(
+    "",
+    async (page) => {
+      await page.focus("#message");
+      await page.evaluate(() =>
+        document.getElementById("message")!.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })),
+      );
+    },
+    false,
+  );
+  try {
+    // The islands' modules have run (mountIslands awaited them), and the form still waits.
+    expect(await page.evaluate(() => document.documentElement.dataset.mounted)).toBeUndefined();
+    await page.evaluate(() => document.getElementById("message")!.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
+    await page.waitForFunction(() => document.documentElement.dataset.mounted === "yes");
   } finally {
     await page.close();
   }
