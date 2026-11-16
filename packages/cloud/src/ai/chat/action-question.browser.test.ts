@@ -521,35 +521,41 @@ describe("a step whose outcome Cloud could not see", () => {
       try {
         await page.locator(".ai-turn-work > summary").click();
         await settled(page);
-        const step = page.locator(".ai-turn-steps > .k2b-chat-activity", {
-          has: page.locator('.k2b-chat-activity__meta[data-tone="warning"]'),
-        });
-        expect(await step.locator(".k2b-chat-activity__meta").innerText()).toBe("Ausgang unklar");
+        // The turn's only step: the send whose answer was lost.
+        const step = page.locator(".ai-turn-steps > .k2b-chat-activity").first();
+        const meta = step.locator(".k2b-chat-activity__meta");
+        expect(await meta.innerText()).toBe("Ausgang unklar");
+        expect(await meta.getAttribute("data-tone")).toBe("warning");
         const info = step.getByRole("button", { name: /^Details: / });
         expect(await info.getAttribute("aria-haspopup")).toBe("dialog");
         const card = page.locator(".k2b-hover-card:popover-open");
-        if (!view.touch) {
-          // A resting pointer opens no card with an action.
+        if (view.touch) {
+          // A tap opens the card as a sheet from below.
+          await info.tap();
+          await card.waitFor();
+          expect(await card.getAttribute("data-sheet")).toBe("");
+        } else {
+          // A resting pointer opens no card with an action; Enter does, and the focus moves in.
           await info.hover();
           await page.waitForTimeout(700); // fixed wait: nothing may open, so there is no event to await
           expect(await card.count()).toBe(0);
+          await info.focus();
+          await page.keyboard.press("Enter");
+          await card.waitFor();
         }
-        // Enter on a phone stands for the tap that opens it as a sheet; the focus moves in and Escape brings it back.
-        await info.focus();
-        await page.keyboard.press("Enter");
-        await card.waitFor();
-        if (view.touch) expect(await card.getAttribute("data-sheet")).toBe("");
         expect(await card.innerText()).toContain("Ob das geschehen ist, steht nicht fest.");
         const check = card.getByRole("button", { name: "Stand prüfen" });
         await check.waitFor();
+        await check.click();
+        await page.waitForFunction(() => (window as unknown as { checks: string[] }).checks.length === 1);
+        // The check found it done: the card says so, the row's outcome word is gone, and the focus stayed in the card.
+        await card.getByText("Geprüft: Es ist geschehen.").waitFor();
+        expect(await meta.count()).toBe(0);
         expect(await page.evaluate(() => document.querySelector(".k2b-hover-card:popover-open")?.contains(document.activeElement))).toBe(
           true,
         );
-        await check.click();
-        await page.waitForFunction(() => (window as unknown as { checks: string[] }).checks.length === 1);
         await page.keyboard.press("Escape");
-        await card.waitFor({ state: "detached" }).catch(() => undefined);
-        expect(await page.locator(".k2b-hover-card:popover-open").count()).toBe(0);
+        await page.waitForFunction(() => document.querySelector(".k2b-hover-card:popover-open") === null);
         expect(await info.evaluate((node) => node === document.activeElement)).toBe(true);
         expect(errors).toEqual([]);
       } finally {

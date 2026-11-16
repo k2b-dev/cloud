@@ -100,12 +100,14 @@ function StepCheck(props: { block: ToolBlock; turnId: string; onChecked: (check:
   const card = useToolActionCard(() => props.block);
   const [checking, setChecking] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
-  const check = async () => {
+  const check = async (button: HTMLElement) => {
     if (!actions.onCheckAction || checking()) return;
     setChecking(true);
     setFailed(false);
     try {
       const check = await actions.onCheckAction({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
+      // A settled outcome removes this button; the focus stays in the card, which now says what the check found.
+      if (check.state === "done" || check.state === "not_done") button.closest<HTMLElement>("[role=dialog]")?.focus();
       props.onChecked(check);
       if (check.state === "failed") setFailed(true);
     } catch {
@@ -116,7 +118,7 @@ function StepCheck(props: { block: ToolBlock; turnId: string; onChecked: (check:
   };
   return (
     <Show when={card().hasCheck && actions.onCheckAction}>
-      <Button size="sm" variant="secondary" loading={checking()} onClick={() => void check()}>
+      <Button size="sm" variant="secondary" loading={checking()} onClick={(event) => void check(event.currentTarget)}>
         {aiChatMessages(locale()).stepCheckStatus}
       </Button>
       <Show when={failed()}>
