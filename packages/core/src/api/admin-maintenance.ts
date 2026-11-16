@@ -20,9 +20,7 @@ export const createAdminMaintenanceRoutes = (
       return next();
     })
     .use("*", authenticate)
-    .use("*", async (c, next) =>
-      c.req.method === "GET" ? next() : auth.requireOAuthScope("write", "admin")(c, next),
-    )
+    .use("*", async (c, next) => (c.req.method === "GET" ? next() : auth.requireOAuthScope("write", "admin")(c, next)))
     .get(
       "/",
       describeRoute({

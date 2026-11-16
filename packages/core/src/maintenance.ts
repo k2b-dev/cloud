@@ -55,7 +55,7 @@ const view = (state: MaintenanceState | null, apps: MaintenanceStatus["apps"]): 
     : { active: false, apps };
 
 export const createMaintenanceService = ({
-  store = { read: readMaintenanceState, write: writeMaintenanceState, clear: clearMaintenanceState } as Store,
+  store = { read: readMaintenanceState, write: writeMaintenanceState, clear: clearMaintenanceState },
   appsReady = readAppsReady,
   record = audit.record,
   now = Date.now,

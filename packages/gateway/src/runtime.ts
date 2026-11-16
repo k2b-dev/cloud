@@ -18,8 +18,8 @@ import {
   superviseRuntimeTask,
   watchGatewayDomainChanges,
 } from "@k2b/cloud/services";
-import { get } from "@k2b/cloud/services/settings";
 import { maintenanceNeedsRenewal, renewMaintenanceState, watchMaintenanceState } from "@k2b/cloud/services/maintenance-state";
+import { get } from "@k2b/cloud/services/settings";
 import { readEnvSettingsStatus } from "@k2b/cloud/services/settings/env-status";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { appIconKey, availability } from "./availability";

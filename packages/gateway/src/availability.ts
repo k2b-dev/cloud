@@ -56,8 +56,7 @@ const knownApp = (app: AppRegistryEntry, icon: string | undefined): KnownApp => 
 });
 
 /** Version key for an app's generated favicon: refetch only when the app runs another build or restarts. */
-export const appIconKey = (app: AppRegistryEntry): string =>
-  String(app.runtime?.version ?? app.runtime?.release ?? app.startedAt ?? "");
+export const appIconKey = (app: AppRegistryEntry): string => String(app.runtime?.version ?? app.runtime?.release ?? app.startedAt ?? "");
 
 export const createAvailability = ({ now = Date.now }: { now?: () => number } = {}) => {
   let maintenance: ObservedMaintenance | null = null;

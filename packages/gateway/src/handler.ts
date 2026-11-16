@@ -108,7 +108,8 @@ export const createGatewayHandler =
         );
       if (decision.inactive) return respond(new Response("Misdirected Request", { status: 421 }));
       if (availability?.maintenance()) return respond(maintenanceAnswer(req, availability));
-      if (!target) return respond(availability ? appUnavailableAnswer(req, availability, domain.appId, { cloudHost: false }) : unavailable());
+      if (!target)
+        return respond(availability ? appUnavailableAnswer(req, availability, domain.appId, { cloudHost: false }) : unavailable());
       if (websocket) {
         const response = tryUpgradeWebSocket(req, server, dependencies.table(), dependencies.log, client, target);
         if (response) return respond(response);

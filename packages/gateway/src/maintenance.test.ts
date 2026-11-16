@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
-import { type MaintenanceState, MaintenanceProblemSchema } from "@k2b/cloud/contracts/maintenance";
+import { MaintenanceProblemSchema, type MaintenanceState } from "@k2b/cloud/contracts/maintenance";
 import * as services from "@k2b/cloud/services";
 import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
@@ -83,10 +83,14 @@ const fixture = () => {
   const request = async (path: string, init: RequestInit = {}, host = "cloud.test") => {
     const headers = new Headers(init.headers);
     headers.set("Host", host);
-    const response = await handle(new Request(`http://transport.test${path}`, { ...init, headers }), {
-      timeout: () => {},
-      upgrade: () => false,
-    }, null);
+    const response = await handle(
+      new Request(`http://transport.test${path}`, { ...init, headers }),
+      {
+        timeout: () => {},
+        upgrade: () => false,
+      },
+      null,
+    );
     if (!response) throw new Error("Unexpected upgrade");
     return response;
   };
@@ -183,7 +187,13 @@ test("an app that deregistered cleanly is updating; its paths get its page inste
   const api = await f.request("/api/mail/v1/messages");
   expect(api.status).toBe(503);
   expect(api.headers.get("Retry-After")).toBe("5");
-  expect(await api.json()).toEqual({ type: "about:blank", title: "App is unavailable", status: 503, code: "app_unavailable", appId: "mail" });
+  expect(await api.json()).toEqual({
+    type: "about:blank",
+    title: "App is unavailable",
+    status: 503,
+    code: "app_unavailable",
+    appId: "mail",
+  });
   expect((await f.request("/app/mail/vorstand", page)).headers.get("Content-Type")).toBe("text/html; charset=utf-8");
   // Ownership rules still apply to remembered routes: mail never owned /app/other or /pwa.
   expect((await f.request("/pwa")).status).toBe(200);

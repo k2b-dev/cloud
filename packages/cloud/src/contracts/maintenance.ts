@@ -85,7 +85,10 @@ export type MaintenanceStatus = z.infer<typeof MaintenanceStatusSchema>;
 
 export const MaintenanceOnInputSchema = z
   .object({
-    message: z.string().max(MAINTENANCE_MESSAGE_MAX_LENGTH * 2).optional(),
+    message: z
+      .string()
+      .max(MAINTENANCE_MESSAGE_MAX_LENGTH * 2)
+      .optional(),
     until: z.iso.datetime({ offset: true }).optional(),
   })
   .strict();

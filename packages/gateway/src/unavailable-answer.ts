@@ -5,7 +5,7 @@ import {
   type MaintenanceProblem,
 } from "@k2b/cloud/contracts/maintenance";
 import { resolveLocale } from "@k2b/cloud/server/locale.ts";
-import type { Availability, AppUnavailableReason } from "./availability";
+import type { AppUnavailableReason, Availability } from "./availability";
 import { type MaintenancePageModel, renderMaintenancePage } from "./maintenance-page";
 
 /** A browser navigation gets the page; every API, script and socket gets problem JSON. */
@@ -54,7 +54,12 @@ const image = (src: string | undefined) => (src ? { src } : undefined);
 const cloudModel = (availability: Availability, locale: "de" | "en") => {
   const branding = availability.branding();
   const logo = image(branding.logo);
-  return { locale, cloud: { name: branding.name, ...(logo ? { logo } : {}) }, timeZone: branding.timeZone, statusPath: GATEWAY_STATUS_PATH };
+  return {
+    locale,
+    cloud: { name: branding.name, ...(logo ? { logo } : {}) },
+    timeZone: branding.timeZone,
+    statusPath: GATEWAY_STATUS_PATH,
+  };
 };
 
 /** Whole-Cloud maintenance: the same answer on the Cloud host and on app domains, never with person names. */
