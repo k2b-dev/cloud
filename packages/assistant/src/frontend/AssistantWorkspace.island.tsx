@@ -2918,45 +2918,45 @@ export default function AssistantWorkspace(props: Props) {
 
     return (
       <>
-      <Chat.Timeline
-        class="ai-message-list-container h-full"
-        conversationKey={chat.activeConversationId()}
-        items={items()}
-        loading={chat.loadingConversation()}
-        hasMore={chat.hasMoreHistory()}
-        loadingOlder={chat.loadingOlder()}
-        onLoadOlder={chat.loadOlderMessages}
-        emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
-        viewportRef={setTimelineViewport}
-        contentRef={setTimelineContent}
-        scrollToAnchorRef={(scrollToAnchor) => {
-          scrollToMessageAnchor = scrollToAnchor;
-        }}
-        onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
-        navigation={
-          <AiChatTurnNavigator
-            entries={chat.timeline()}
-            loading={chat.timelineLoading()}
-            viewport={timelineViewport}
-            content={timelineContent}
-            loadThrough={chat.loadHistoryThroughSeq}
-          />
-        }
-      />
-      <Show when={quoting() && timelineContent()}>
-        {(root) => (
-          <QuoteSelection
-            root={root()}
-            label={t().quoteSelection}
-            quotes={quotesFor(composerSessionKey())}
-            onChange={(quotes) => {
-              setQuotesFor(composerSessionKey(), quotes);
-              // The answer to the passage is written in the field.
-              focusComposer();
-            }}
-          />
-        )}
-      </Show>
+        <Chat.Timeline
+          class="ai-message-list-container h-full"
+          conversationKey={chat.activeConversationId()}
+          items={items()}
+          loading={chat.loadingConversation()}
+          hasMore={chat.hasMoreHistory()}
+          loadingOlder={chat.loadingOlder()}
+          onLoadOlder={chat.loadOlderMessages}
+          emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
+          viewportRef={setTimelineViewport}
+          contentRef={setTimelineContent}
+          scrollToAnchorRef={(scrollToAnchor) => {
+            scrollToMessageAnchor = scrollToAnchor;
+          }}
+          onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
+          navigation={
+            <AiChatTurnNavigator
+              entries={chat.timeline()}
+              loading={chat.timelineLoading()}
+              viewport={timelineViewport}
+              content={timelineContent}
+              loadThrough={chat.loadHistoryThroughSeq}
+            />
+          }
+        />
+        <Show when={quoting() && timelineContent()}>
+          {(root) => (
+            <QuoteSelection
+              root={root()}
+              label={t().quoteSelection}
+              quotes={quotesFor(composerSessionKey())}
+              onChange={(quotes) => {
+                setQuotesFor(composerSessionKey(), quotes);
+                // The answer to the passage is written in the field.
+                focusComposer();
+              }}
+            />
+          )}
+        </Show>
       </>
     );
   };

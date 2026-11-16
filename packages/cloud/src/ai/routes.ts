@@ -49,6 +49,7 @@ import { watchAiConversation } from "./conversation-watchers";
 import { createCloudAiLocalBashTool, createCloudAiLocalTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
 import { enqueueAiDictation } from "./dictation-runtime";
 import { AiDictationConflict, AiDictationListSchema, AiDictationStartSchema, aiDictations } from "./dictations";
+import { aiDraftPartTurnText } from "./draft-content";
 import { normalizeAiUploadMediaType } from "./file-media-type";
 import { aiProjectFilePathFromMount } from "./file-mount";
 import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, decodeAiFileContent, guessAiMediaType, normalizeAiFilePath } from "./files-store";
@@ -94,7 +95,6 @@ import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-
 import { AiRecentResourceSchema, listAiRecentResources } from "./recent-resources";
 import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
 import { type AiChatRequestContext, resolveAiChatRequestContext as resolveContext } from "./request-context";
-import { aiDraftPartTurnText } from "./draft-content";
 import { isConversationResourceCursor } from "./resource-refs";
 import {
   AiTurnActionSchema,

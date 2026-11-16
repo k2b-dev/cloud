@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation, AiOpenQuestions, AiStoredMessage } from "@k2b/cloud/ai";
-import { aiQuoteMarker } from "../../../cloud/src/ai/quote-markers";
 import type { Browser, Page, Route } from "playwright";
+import { aiQuoteMarker } from "../../../cloud/src/ai/quote-markers";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
 
@@ -118,7 +118,13 @@ const history: AiStoredMessage[] = [
 type State = { locale: Locale; drafts: unknown[] };
 const conversationsOf = (_state: State) => [chat];
 const questionsOf = (_state: State): AiOpenQuestions => ({ items: [], count: 0 });
-const detailOf = (_state: State, _id: ChatId) => ({ conversation: chat, messages: history, hasMoreMessages: false, activeTurn: null, timeline: [] });
+const detailOf = (_state: State, _id: ChatId) => ({
+  conversation: chat,
+  messages: history,
+  hasMoreMessages: false,
+  activeTurn: null,
+  timeline: [],
+});
 
 const propsOf = (state: State, url: URL) => {
   const id = (url.searchParams.get("conversation") ?? "Wart42") as ChatId;
@@ -231,12 +237,7 @@ type View = { name: string; width: number; height: number; touch: boolean; colum
 const desktop: View = { name: "1440", width: 1440, height: 900, touch: false };
 const phone: View = { name: "390", width: 390, height: 844, touch: true };
 
-const open = async (
-
-  view: View,
-  state: State,
-  options: { theme?: "light" | "dark"; path?: string } = {},
-) => {
+const open = async (view: View, state: State, options: { theme?: "light" | "dark"; path?: string } = {}) => {
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     isMobile: view.touch,
@@ -355,7 +356,7 @@ describe("Quoting in Gustav's chat", () => {
       const state: State = { locale: "de", drafts: [] };
       const { page, errors, unrouted, close } = await open(view, state);
       try {
-        const answer = '.ai-turn__text[data-answer]';
+        const answer = ".ai-turn__text[data-answer]";
         await page.locator(answer).first().waitFor();
         await select(page, answer, PASSAGE);
         const quote = page.getByRole("button", { name: "Zitieren" });
@@ -371,7 +372,8 @@ describe("Quoting in Gustav's chat", () => {
         // Set ASSISTANT_SHOTS to a directory to keep a picture of the quote above the field.
         if (process.env.ASSISTANT_SHOTS) await page.screenshot({ path: `${process.env.ASSISTANT_SHOTS}/quote-draft-${view.name}.png` });
         // It is saved with the draft, apart from the text, once the draft's save comes due.
-        const saved = () => (state.drafts.at(-1) as unknown[] | undefined)?.some((part) => JSON.stringify(part) === JSON.stringify(expected));
+        const saved = () =>
+          (state.drafts.at(-1) as unknown[] | undefined)?.some((part) => JSON.stringify(part) === JSON.stringify(expected));
         const expected = { type: "quote", from: "assistant", text: PASSAGE };
         for (let wait = 0; wait < 100 && !saved(); wait++) await page.waitForTimeout(50); // settled: the save is debounced
         expect(saved()).toBe(true);

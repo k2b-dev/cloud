@@ -32,8 +32,8 @@ import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
 import {
-  aiSteerMessageText,
   AiUserMessageQuotes,
+  aiSteerMessageText,
   aiUserMessageAttachments,
   aiUserMessageText,
   createAiSteerMessageActions,

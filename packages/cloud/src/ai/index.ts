@@ -161,7 +161,6 @@ export {
   toAiErrorResponse,
 } from "./http";
 export { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS, AI_TURN_IMAGE_MAX_TOTAL_BYTES } from "./limits";
-export type { AiQuoteMarker } from "./quote-markers";
 export { createAiLiveTranscriptionProvider, getLiveDictationStatus, type LiveDictationStatus } from "./live-dictation-model";
 export { aiDictationRoutes, stopLiveDictationSessions } from "./live-dictation-routes";
 export {
@@ -303,6 +302,7 @@ export {
 } from "./protocol";
 export { createAiProvider } from "./provider";
 export { AiQuotaError } from "./quotas";
+export type { AiQuoteMarker } from "./quote-markers";
 export { isConversationResourceCursor } from "./resource-refs";
 export { describeAiResourceTypeCounts } from "./resource-type-counts";
 export type { AiRoutes } from "./routes";
