@@ -19,22 +19,28 @@ export class CodeChatBudgetError extends Error {
   }
 }
 
-/** Completion includes reasoning. Both ordinary rounds and compaction use the
- * executed profile and share the same sixteen-call allowance. Unknown output
- * ceilings cannot prove a maximum and therefore cannot start a priced turn.
- * Input admission estimates can undershoot on the last round. Reserve one
- * additional authoritative context window for that round; missing/estimated
- * usage consumes a whole window in the shared turn guard. */
-export function codeChatTurnMaximum(
-  profile: Pick<AiModelProfile, "pricing" | "maxOutputTokens" | "outputTokenLimit" | "contextWindow">,
-): string | null {
+/** One output ceiling per call for reservation, resumption checks and the provider guard. */
+export function codeChatCallOutputTokens(profile: Pick<AiModelProfile, "maxOutputTokens" | "outputTokenLimit">): number {
+  return Math.min(profile.maxOutputTokens ?? profile.outputTokenLimit ?? Infinity, AUTOMATION_TURN_BUDGET.maxOutputTokens);
+}
+
+/** The most a turn within AUTOMATION_TURN_BUDGET can cost: its input allowance
+ * plus one representative call for an input estimate that undershoots on the
+ * last call, and its output allowance (completion includes reasoning). Ordinary
+ * rounds and compaction share both. Attempts without reported input usage still
+ * consume a whole context window in the turn guard, so a priced turn needs a
+ * known window. At 2.50/10 USD per million tokens this is 0.68 USD, which
+ * leaves room for a second turn after a typical briefing within 1 USD a day. */
+export function codeChatTurnMaximum(profile: Pick<AiModelProfile, "pricing" | "contextWindow">): string | null {
   if (!hasBillableAiPricing(profile.pricing)) return "0";
-  const output = profile.maxOutputTokens ?? profile.outputTokenLimit;
   const context = profile.contextWindow;
   if (context === undefined || !Number.isSafeInteger(context) || context <= 0) return null;
-  if (output === undefined || !Number.isSafeInteger(output) || output <= 0) return null;
   return aiCostDecimal(
-    aiCostUnits(profile.pricing!, AUTOMATION_TURN_BUDGET.inputTokens + context, output * AUTOMATION_TURN_BUDGET.modelCalls),
+    aiCostUnits(
+      profile.pricing!,
+      AUTOMATION_TURN_BUDGET.inputTokens + AUTOMATION_TURN_BUDGET.reserveInputTokens,
+      AUTOMATION_TURN_BUDGET.outputTokens,
+    ),
   );
 }
 
@@ -58,13 +64,14 @@ type Limits = { code: number; owner: number; timeZone: string };
 export async function reserveCodeChatTurnBudget(input: Admission, db: SQL, limits: Limits): Promise<void> {
   const maximum = codeChatTurnMaximum(input.profile);
   if (maximum === null) throw new CodeChatBudgetError("code_ai_budget_unknown");
-  const output = input.profile.maxOutputTokens ?? input.profile.outputTokenLimit ?? null;
+  const output = codeChatCallOutputTokens(input.profile);
   const install = () =>
     db`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{inferenceBudget}',(${JSON.stringify({
       modelProfileId: input.profile.id,
       pricing: input.profile.pricing,
       contextWindow: input.profile.contextWindow,
-      maxOutputTokens: output ?? undefined,
+      maxOutputTokens: output,
+      outputTokens: AUTOMATION_TURN_BUDGET.outputTokens,
       inputTokens: AUTOMATION_TURN_BUDGET.inputTokens,
       modelCalls: AUTOMATION_TURN_BUDGET.modelCalls,
       unknownInputTokens: input.profile.contextWindow ?? AUTOMATION_TURN_BUDGET.unknownInputTokens,

@@ -88,6 +88,7 @@ export async function beginAiCall(
     if (context.turnId && !turn?.id) throw new AiTurnFailure("not_allowed", "The source turn no longer exists.");
     const budget = turn?.run_config?.inferenceBudget;
     if (turn?.run_config?.codeOrigin && !budget) throw new AiTurnFailure("not_allowed", "Code turn cost admission is missing.");
+    let outputCeiling = budget?.maxOutputTokens;
     if (budget) {
       if (turn?.status !== "running" || !turn.alive) throw new AiTurnFailure("not_allowed", "Turn inference lease is no longer active.");
       if (
@@ -98,11 +99,17 @@ export async function beginAiCall(
           profile.contextWindow !== budget.contextWindow)
       )
         throw new AiTurnFailure("not_allowed", "This model is outside the turn's reserved allowance.");
-      const [usage] = await db<{ calls: number; input: number }[]>`SELECT count(*)::int AS calls,
-        COALESCE(sum(CASE WHEN input IS NULL OR estimated OR input=0 THEN GREATEST(COALESCE(input,0),${budget.unknownInputTokens}) ELSE input END),0)::float8 AS input
+      const [usage] = await db<{ calls: number; input: number; output: number }[]>`SELECT count(*)::int AS calls,
+        COALESCE(sum(CASE WHEN input IS NULL OR estimated OR input=0 THEN GREATEST(COALESCE(input,0),${budget.unknownInputTokens}) ELSE input END),0)::float8 AS input,
+        COALESCE(sum(CASE WHEN output IS NULL OR estimated THEN GREATEST(COALESCE(output,0),${budget.maxOutputTokens ?? 0}) ELSE output END),0)::float8 AS output
         FROM ai.inference_calls WHERE turn_id=${context.turnId ?? null}::uuid`;
       if (usage!.calls >= budget.modelCalls) throw new AiTurnInferenceLimit("model_calls");
       if (usage!.input + inputTokens > budget.inputTokens) throw new AiTurnInferenceLimit("input_tokens");
+      if (budget.outputTokens !== undefined) {
+        if (usage!.output >= budget.outputTokens) throw new AiTurnInferenceLimit("output_tokens");
+        // A turn's output allowance caps each call by what the turn has left.
+        outputCeiling = Math.min(budget.maxOutputTokens ?? Infinity, budget.outputTokens - usage!.output);
+      }
     }
     const config = await aiQuotas.config(db);
     let remaining: bigint | undefined;
@@ -143,8 +150,7 @@ export async function beginAiCall(
         remaining = remaining === undefined || available < remaining ? available : remaining;
       }
     }
-    let maxOutputTokens =
-      budget?.maxOutputTokens === undefined ? requestedOutput : Math.min(requestedOutput ?? budget.maxOutputTokens, budget.maxOutputTokens);
+    let maxOutputTokens = outputCeiling === undefined ? requestedOutput : Math.min(requestedOutput ?? outputCeiling, outputCeiling);
     let reserved = "0";
     if (profile.pricing && remaining !== undefined) {
       const inputCost = aiCostUnits(profile.pricing, inputTokens, 0);

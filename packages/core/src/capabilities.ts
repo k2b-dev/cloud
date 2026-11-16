@@ -290,7 +290,7 @@ const VisibleMessageSchema = z
     role: z.enum(["user", "assistant", "summary"]),
     text: z.string().min(1).max(MAX_MESSAGE_TEXT_CHARS),
     safetyStop: z
-      .object({ reason: z.enum(["model_calls", "input_tokens", "repeated_error"]) })
+      .object({ reason: z.enum(["model_calls", "input_tokens", "output_tokens", "repeated_error"]) })
       .strict()
       .optional(),
     truncated: z.boolean(),

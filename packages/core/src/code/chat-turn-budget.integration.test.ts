@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { aiConversations } from "@k2b/cloud/ai";
+import { AUTOMATION_TURN_BUDGET } from "@k2b/cloud/ai/runtime";
 import { accounts } from "@k2b/cloud/services";
 import { aiModelFixture, beginAiCall, finishAiCall } from "../../../../scripts/fixtures/code-platform";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
@@ -13,7 +14,8 @@ import { codeBundleHash, codeSourceHash } from "./store";
 const owner = "5a000000-0000-4000-8000-000000000001";
 const profile = aiModelFixture({
   id: "turn-budget",
-  pricing: { inputPerMillion: 1, outputPerMillion: 2 },
+  // Maximum (192,000 + 32,000) x 3 + 12,000 x 6 = 0.744 USD: one start fits a 1 USD day, two do not.
+  pricing: { inputPerMillion: 3, outputPerMillion: 6 },
   maxOutputTokens: 1000,
   contextWindow: 128000,
 });
@@ -73,7 +75,7 @@ suiteFor(
     const id = `5a000000-0000-4000-8001-${String(++sequence).padStart(12, "0")}`;
     await sql`INSERT INTO ai.inference_calls(id,user_id,model_profile_id,turn_id,kind,task,provider_model,code_id,pricing,cost,finished_at,lease_expires_at)
       VALUES(${id}::uuid,${owner}::uuid,${profile.id},${turnId}::uuid,${kind},${kind === "chat" ? "chat" : "chat-compaction"},'fixture',${codeId},
-        '{"inputPerMillion":1,"outputPerMillion":2}',${cost}::numeric,'2026-11-15T12:01:00Z','2026-11-15T12:02:00Z')`;
+        '{"inputPerMillion":3,"outputPerMillion":6}',${cost}::numeric,'2026-11-15T12:01:00Z','2026-11-15T12:02:00Z')`;
     return id;
   };
   const reset = async () => {
@@ -153,7 +155,7 @@ suiteFor(
       await db`SELECT singleton FROM ai.cost_config WHERE singleton FOR UPDATE`;
       await db`INSERT INTO ai.inference_calls(id,turn_id,kind,task,provider_model,model_profile_id,pricing,lease_expires_at)
         VALUES(${crypto.randomUUID()}::uuid,${entry.turnId}::uuid,'chat','chat','fixture',${profile.id},
-          '{"inputPerMillion":1,"outputPerMillion":2}',clock_timestamp()+interval '2 minutes')`;
+          '{"inputPerMillion":3,"outputPerMillion":6}',clock_timestamp()+interval '2 minutes')`;
       locked.resolve();
       await release.promise;
     });
@@ -223,7 +225,7 @@ suiteFor(
     await finishAiCall(bounded.id, { input: 10, output: 1 }, "ok");
     const context = { ...entry, kind: "background" as const, task: "view-image" };
     await expect(beginAiCall({ ...profile, id: "unreserved-vision" }, context, 10, 2000)).rejects.toThrow("outside");
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < AUTOMATION_TURN_BUDGET.modelCalls - 2; i++) {
       const call = await beginAiCall(profile, context, 10, 2000);
       expect(call.maxOutputTokens).toBe(1000);
       await finishAiCall(call.id, { input: 10, output: 1 }, "ok");
@@ -231,12 +233,12 @@ suiteFor(
     const final = await Promise.allSettled([beginAiCall(profile, context, 10, 2000), beginAiCall(profile, context, 10, 2000)]);
     expect(final.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     for (const result of final) if (result.status === "fulfilled") await finishAiCall(result.value.id, { input: 10, output: 1 }, "ok");
-    expect(await sql`SELECT 1 FROM ai.inference_calls WHERE turn_id=${entry.turnId}::uuid`).toHaveLength(16);
+    expect(await sql`SELECT 1 FROM ai.inference_calls WHERE turn_id=${entry.turnId}::uuid`).toHaveLength(AUTOMATION_TURN_BUDGET.modelCalls);
     await sql`UPDATE ai.turns SET status='completed',completed_at='2026-11-15T12:03:00Z' WHERE id=${entry.turnId}::uuid`;
     await sql.begin((db) => settleCodeChatTurnBudget(entry.turnId, db));
     expect(
       (await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget`).map((row) => Number(row.cost)),
-    ).toEqual([0.000192, 0.000192]);
+    ).toEqual([0.000432, 0.000432]);
   });
   test("parallel starts cannot overbook either the Code or the shared owner day", async () => {
     for (const codes of [
@@ -252,7 +254,7 @@ suiteFor(
       const counters = await sql<
         { cost: string }[]
       >`SELECT reference_cost::text AS cost FROM code.ai_daily_budget WHERE scope_kind='owner'`;
-      expect(counters.map((row) => Number(row.cost))).toEqual([0.672]);
+      expect(counters.map((row) => Number(row.cost))).toEqual([0.744]);
     }
   });
   test("resumption reuses the reservation and rejects a changed price or output ceiling", async () => {
@@ -291,7 +293,7 @@ suiteFor(
     await sql.begin((db) => settleCodeChatTurnBudget(entry.turnId, db));
     expect(
       (await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget`).map((row) => Number(row.cost)),
-    ).toEqual([0.672, 0.672]);
+    ).toEqual([0.744, 0.744]);
   });
   test("a failed start without inference returns its remainder; a zero limit still disables free inference", async () => {
     await reset();

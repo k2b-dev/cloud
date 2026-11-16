@@ -72,14 +72,18 @@ cannot start such a model. Choose a priced model or obtain the ordinary AI
 authority through an `ai`-classified version or an automatic `ai` rule before retrying. A `send`-only version cannot request that fallback approval. Model names and requested model classes grant no
 exception.
 
-A priced turn must have known context and output ceilings. At start, Cloud atomically
-reserves 512,000 input tokens, one additional model context window for the last
-round’s estimation margin, and sixteen maximum completions against both
-the Code and owner's remaining daily allowance, using the executed profile's
-prices. Reasoning tokens share the completion ceiling. Compaction and attributed tool inference share the
-same call allocation and reservation. Nested inference may use only the reserved
-model and output ceiling; another model fails before dispatch. If the full maximum does not fit, the
-turn fails before inference. The person's configured AI allowance also applies.
+A priced turn must have a known context window. At start, Cloud atomically
+reserves the turn's maximum against both the Code and owner's remaining daily
+allowance, using the executed profile's prices: 192,000 input tokens plus one
+32,000-token call for the last round's estimation margin, and 12,000 output
+tokens. Each call may return at most 4,096 output tokens, and reasoning tokens
+share that ceiling. Compaction and attributed tool inference share the same
+call allocation and reservation. Nested inference may use only the reserved
+model and output ceiling; another model fails before dispatch. If the full
+maximum does not fit, the turn fails before inference. The person's configured
+AI allowance also applies. The default daily limit of 1 USD per Code and per
+owner is hard: at 2.50/10 USD per million tokens a turn reserves 0.68 USD, so a
+second turn still starts after a typical briefing that cost 0.28 USD.
 
 Worker retries and approval resumptions reuse the reservation. A changed price,
 profile or output ceiling stops a resumed turn instead of enlarging its budget.

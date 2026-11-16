@@ -224,9 +224,9 @@ original initiator; missing origin never grants chaining authority.
 Only `ai.generate`, `ai.decide` and `ai.chat.send` count as Code AI operations.
 Chat reads use `read`. A priced Code-started turn uses `ai_chat_you` and
 reserves its whole maximum against the Code and owner daily limits at execution.
-The maximum includes 512,000 input tokens, one model context window for the last
-round's estimation margin, and sixteen maximum completions. Compaction shares
-the allowance. Missing context/output limits refuse a priced turn. Unpriced or
+The maximum includes 192,000 input tokens, one 32,000-token call for the last
+round's estimation margin, and 12,000 output tokens. Compaction shares the
+allowance. A missing context window refuses a priced turn. Unpriced or
 zero-priced models require the ordinary `ai` rule and approval coverage; a pure
 `send` version under the default policy should use a priced model. The Code
 mandate never passes to the target chat's tools.

@@ -10,6 +10,8 @@ export async function installAiTurnInferenceAllocation(input: { turnId: string; 
     COALESCE(run_config->'inferenceBudget',(${JSON.stringify({
       inputTokens: AUTOMATION_TURN_BUDGET.inputTokens,
       modelCalls: AUTOMATION_TURN_BUDGET.modelCalls,
+      maxOutputTokens: AUTOMATION_TURN_BUDGET.maxOutputTokens,
+      outputTokens: AUTOMATION_TURN_BUDGET.outputTokens,
       unknownInputTokens: AUTOMATION_TURN_BUDGET.unknownInputTokens,
     })}::text)::jsonb))
     WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid AND status='running'

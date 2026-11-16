@@ -863,7 +863,7 @@ The Action returns `{ id, chatId, status, reason, origin }` promptly. Status is
 the message in its existing queue, without consuming the person's draft. Read
 one later snapshot with `core.ai.chat.read({ id: "Chat23", message: sent.id })`;
 the Query returns `{ data: { chat, messages, message } }`. An automatic budget
-stop remains in `messages` with `safetyStop.reason` (`model_calls`, `input_tokens` or `repeated_error`)
+stop remains in `messages` with `safetyStop.reason` (`model_calls`, `input_tokens`, `output_tokens` or `repeated_error`)
 and a localized notice in `text`. This also covers Code-authoring stops and
 keeps every returned message text nonempty. Finish the Code run
 when a person must answer; do not poll for approval.
@@ -897,9 +897,9 @@ and a fully reserved turn maximum. Zero-priced and unpriced models still require
 ordinary `ai` authority. See [Code policy](/en/docs/platform/code-policy#ai-in-a-personal-chat).
 Chat reads use `read`. A priced Code-started turn uses `ai_chat_you` and
 reserves its whole maximum against the Code and owner daily limits at execution.
-The maximum includes 512,000 input tokens, one model context window for the last
-round's estimation margin, and sixteen maximum completions. Compaction shares
-the allowance. Missing context/output limits refuse a priced turn. Unpriced or
+The maximum includes 192,000 input tokens, one 32,000-token call for the last
+round's estimation margin, and 12,000 output tokens. Compaction shares the
+allowance. A missing context window refuses a priced turn. Unpriced or
 zero-priced models require the ordinary `ai` rule and approval coverage; a pure
 `send` version under the default policy should use a priced model. The Code
 mandate never passes to the target chat's tools.

@@ -291,11 +291,11 @@ export type AiConversationProjectUpdateResult =
 
 export type AiCodeOrigin = { codeId: string; title: string; runId: string; requestId: string; label: string };
 
-export type AiAutomationTurnStop = { reason: "model_calls" | "input_tokens" };
+export type AiAutomationTurnStop = { reason: "model_calls" | "input_tokens" | "output_tokens" };
 
 /** Receipt-based snapshot at an authoring stop; deliberately contains no source or paths. */
 export type AiCodeAuthoringStop = {
-  reason: "model_calls" | "input_tokens" | "repeated_error";
+  reason: "model_calls" | "input_tokens" | "output_tokens" | "repeated_error";
   completedSteps: number;
   drafts: number;
   unchecked: number;
@@ -731,6 +731,8 @@ export type AiChatTurnRunConfig = {
     pricing?: import("../shared/ai-costs").AiModelPricing;
     contextWindow?: number;
     maxOutputTokens?: number;
+    /** All calls of the turn together; unknown output counts as the per-call ceiling. */
+    outputTokens?: number;
     inputTokens: number;
     modelCalls: number;
     unknownInputTokens: number;

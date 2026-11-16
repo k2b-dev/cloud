@@ -14,7 +14,7 @@ export class AiTurnFailure extends Error {
 
 /** Shared provider admission reached its allocation, including attributed tool calls. */
 export class AiTurnInferenceLimit extends AiTurnFailure {
-  constructor(readonly reason: "model_calls" | "input_tokens") {
+  constructor(readonly reason: "model_calls" | "input_tokens" | "output_tokens") {
     super("automation_turn_limit", "The turn's shared inference allowance is exhausted.");
   }
 }

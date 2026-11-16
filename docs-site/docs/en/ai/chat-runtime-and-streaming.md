@@ -1005,26 +1005,28 @@ tools`, both under `ai:executor` with the conversation and turn IDs.
 
 ### Automatic turn safety budget
 
-Every turn whose immutable trigger is not a person has an independent input
-and call allowance, including turns without a recorded trigger. The initial
-`AUTOMATION_TURN_BUDGET` allows 512,000 cumulative input tokens and 16 model
-attempts, regardless of the model's price. Chat calls, transient provider
-retries and automatic compaction share it. Worker recovery reads the whole
-turn's usage once; a recovered call without usage reserves 64,000 tokens.
-Admission uses the same conservative request estimate as the authoring guard
-and keeps higher reported usage. These are safety estimates, not an exact
-provider invoice ceiling. Steering by a person does not reset the trigger or
-refill the allowance.
+Every turn whose immutable trigger is not a person has an independent input,
+call and output allowance, including turns without a recorded trigger.
+`AUTOMATION_TURN_BUDGET` allows 192,000 cumulative input tokens, 12 model
+attempts and 12,000 output tokens, with at most 4,096 output tokens per call,
+regardless of the model's price. The values come from a measurement of twenty
+briefings and thirty number posts on 16 November 2026: the largest briefing
+read 178,000 input tokens in nine calls. Chat calls, transient provider
+retries and automatic compaction share the allowance. Worker recovery reads
+the whole turn's usage once; a recovered call without usage reserves 64,000
+input tokens and the per-call output ceiling. Admission uses the same
+conservative request estimate as the authoring guard and keeps higher reported
+usage. These are safety estimates, not an exact provider invoice ceiling.
+Steering by a person does not reset the trigger or refill the allowance.
 
 At the limit Cloud persists a localized stop notice without another model
 call. Existing results remain visible. Continuing requires the person's
 explicit follow-up through the normal send path; reload and reconnect do not
-restart the work. To keep long chats usable within this allowance, automatic
-turns ask for early compaction above 64,000 estimated history tokens even when
-the model has a larger context window. Archived messages stay visible, but
-cannot be retried in place. This allocation is provisional until twenty representative
-briefings and thirty number posts in one growing chat, including compaction,
-have been measured. A one-sentence answer does not make a long chat cheap.
+restart the work. A number post reads the whole chat history, so automatic
+turns compact a history above 32,000 estimated tokens even when the model has
+a larger context window. Turns a person starts keep the model's normal
+compaction threshold. Archived messages stay visible, but cannot be retried in
+place.
 
 ### Code authoring safety budget
 
@@ -1220,8 +1222,9 @@ closed. Core uses it for policy and whole-turn daily cost reservations.
 host bookkeeping when a terminal callback was missed, even if the platform sweep
 fails. Callbacks must be idempotent across worker retries and process restarts.
 `AiTurnFailure` carries a stable public turn-error code and a private diagnostic
-message. The exported `AUTOMATION_TURN_BUDGET` defines the shared 512,000-input /
-16-call allocation, including retries and compaction; it grants no authority.
+message. The exported `AUTOMATION_TURN_BUDGET` defines the shared 192,000-input,
+12-call and 12,000-output allocation, including retries and compaction; it grants
+no authority.
 
 The host installs `runConfig.inferenceBudget` in the same fenced transaction as
 its durable cost reservation. Provider admission rereads this snapshot under

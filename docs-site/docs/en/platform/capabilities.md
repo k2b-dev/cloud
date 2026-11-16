@@ -1619,11 +1619,12 @@ or flat charge. Normal per-turn loop and step limits bound each invocation.
 The existing `core.code.ai_daily_budget_usd` and
 `core.code.ai_owner_daily_budget_usd` limits include Code-started chat turns,
 including their background compaction, alongside text AI. Days follow
-`app.timezone`. At start, a priced turn reserves its 512,000-input allocation,
-one extra model context window for the last estimate's possible error, and
-sixteen maximum completions. The reservation is atomic across owner and Code;
-parallel starts cannot reuse it. Known context and output limits are required.
-The output ceiling is forwarded explicitly to ordinary and compaction requests.
+`app.timezone`. At start, a priced turn reserves its 192,000-input allocation,
+one 32,000-token call for the last estimate's possible error, and its 12,000
+output tokens. The reservation is atomic across owner and Code; parallel starts
+cannot reuse it. A known context window is required. Each ordinary and
+compaction request receives an explicit output ceiling of at most 4,096 tokens,
+and never more than the turn has left.
 Missing or estimated usage keeps the maximum spent. Worker suspension and
 resumption reuse it; finalization releases the known unused remainder on its
 original day. A receipt retry starts no inference and adds no cost.

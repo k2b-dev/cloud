@@ -21,14 +21,28 @@ export const CODE_AUTHORING_TURN_BUDGET = {
   identicalErrorRetries: 2,
 } as const;
 
-/** Initial automation allocation: four 128k input windows and sixteen attempts.
- * Shared by chat calls, provider retries and compaction, regardless of pricing.
- * Revisit only after the twenty-briefing measurement protocol has run.
+/** Allocation for a turn that a person did not start (automation, chat chain).
+ * Measured on 16.11.2026 with the R1 default model: 20 morning briefings in
+ * fresh chats used 101k input tokens (median), 173k (p95) and 178k (max) over
+ * 6 (median) to 9 model calls; one call returned at most 2.8k and one turn at
+ * most 5.1k output tokens. A one-sentence number post costs one call and reads
+ * the chat history (57k before, 10k after compaction). The input and call
+ * allowances cover every measured briefing; the output caps give twice the
+ * measured maximum. Chat calls, provider retries and compaction share it.
  */
 export const AUTOMATION_TURN_BUDGET = {
-  inputTokens: 512_000,
-  modelCalls: 16,
+  inputTokens: 192_000,
+  modelCalls: 12,
+  /** Ceiling for a single model call, sent to the provider. */
+  maxOutputTokens: 4096,
+  /** Ceiling for all calls of the turn together. */
+  outputTokens: 12_000,
+  /** One representative call: reserved for an input estimate that undershoots on the last call. */
+  reserveInputTokens: 32_000,
+  /** Charged per attempt that reports no usage, when the model's context window is unknown. */
   unknownInputTokens: 64_000,
+  /** Automatic turns compact a chat history above this size; person turns keep the model's fill threshold. */
+  compactAboveTokens: 32_000,
 } as const;
 
 const authoringNames = new Set([
@@ -131,7 +145,7 @@ export function createCodeAuthoringTurnBudget(input: {
   nonPerson?: boolean;
   /** Priced Code uses the model window for attempts with unknown input usage. */
   inputTokenCeiling?: number;
-  onStop?: (reason: "model_calls" | "input_tokens" | "repeated_error") => void;
+  onStop?: (reason: "model_calls" | "input_tokens" | "output_tokens" | "repeated_error") => void;
 }) {
   let authoring = input.selected;
   const active = () => input.nonPerson || authoring;
@@ -223,7 +237,8 @@ export function createCodeAuthoringTurnBudget(input: {
         if (active() && stopReason(allocation.unknownInputTokens)) return null;
         // Large-window models may reach the turn allowance before their normal
         // fill threshold. Compact history early so a later turn can continue.
-        const largeHistory = active() && estimateTokens(context.entries.map((entry) => entry.message)) > allocation.unknownInputTokens;
+        const threshold = input.nonPerson ? AUTOMATION_TURN_BUDGET.compactAboveTokens : allocation.unknownInputTokens;
+        const largeHistory = active() && estimateTokens(context.entries.map((entry) => entry.message)) > threshold;
         return compact(largeHistory ? { ...context, fillRatio: Math.max(1, context.fillRatio ?? 0) } : context);
       },
     tools: (tools: Tool[]): Tool[] =>
