@@ -71,6 +71,8 @@ export function CloudSurveyBlock(props: {
   args: unknown;
   disabled?: boolean;
   disabledLabel?: string;
+  /** The question can never be answered any more: it keeps its title and says so, without its choices. */
+  unanswered?: boolean;
   onSubmit?: (result: unknown) => void | Promise<void>;
 }) {
   const locale = useLocale();
@@ -130,78 +132,92 @@ export function CloudSurveyBlock(props: {
       <Show when={typeof survey()?.description === "string"}>
         <p class="cloud-blocks__hint">{String(survey()?.description)}</p>
       </Show>
-      <div class="mt-2 space-y-4">
-        <For each={questions()}>
-          {(question, index) => {
-            const id = () => String(question.id ?? "");
-            // The answer key may hold spaces or repeat; the DOM label ID comes from the question's place instead.
-            const labelId = () => `${surveyId}-question-${index()}`;
-            const options = () => (Array.isArray(question.options) ? (question.options as unknown[]).filter(isRecord) : []);
-            const chosen = () => (Array.isArray(answers()[id()]) ? (answers()[id()] as string[]) : []);
-            return (
-              <div class="grid gap-2">
-                <p id={labelId()} class="text-xs font-medium text-primary">
-                  {String(question.label ?? "")}
-                  <Show when={question.required}>
-                    <span class="text-[var(--k2b-danger-text)]"> *</span>
+      <Show
+        when={!props.unanswered}
+        fallback={
+          // What was not answered stays readable; only the choices, which can never be used again, are gone.
+          <For each={questions()}>{(question) => <p class="text-xs font-medium text-primary">{String(question.label ?? "")}</p>}</For>
+        }
+      >
+        <div class="mt-2 space-y-4">
+          <For each={questions()}>
+            {(question, index) => {
+              const id = () => String(question.id ?? "");
+              // The answer key may hold spaces or repeat; the DOM label ID comes from the question's place instead.
+              const labelId = () => `${surveyId}-question-${index()}`;
+              const options = () => (Array.isArray(question.options) ? (question.options as unknown[]).filter(isRecord) : []);
+              const chosen = () => (Array.isArray(answers()[id()]) ? (answers()[id()] as string[]) : []);
+              return (
+                <div class="grid gap-2">
+                  <p id={labelId()} class="text-xs font-medium text-primary">
+                    {String(question.label ?? "")}
+                    <Show when={question.required}>
+                      <span class="text-[var(--k2b-danger-text)]"> *</span>
+                    </Show>
+                  </p>
+                  <Show when={question.type === "single"}>
+                    <ChoiceList
+                      aria-label={String(question.label ?? "") || String(survey()?.title ?? t().surveyKind)}
+                      value={answers()[id()] === undefined ? null : String(answers()[id()])}
+                      disabled={disabled()}
+                      options={options().map((option) => ({
+                        value: String(option.value ?? ""),
+                        label: String(option.label ?? option.value ?? ""),
+                      }))}
+                      onValueChange={(value) =>
+                        setAnswer(id(), options().find((option) => String(option.value ?? "") === value)?.value ?? value)
+                      }
+                    />
                   </Show>
-                </p>
-                <Show when={question.type === "single"}>
-                  <ChoiceList
-                    aria-label={String(question.label ?? "") || String(survey()?.title ?? t().surveyKind)}
-                    value={answers()[id()] === undefined ? null : String(answers()[id()])}
-                    disabled={disabled()}
-                    options={options().map((option) => ({
-                      value: String(option.value ?? ""),
-                      label: String(option.label ?? option.value ?? ""),
-                    }))}
-                    onValueChange={(value) =>
-                      setAnswer(id(), options().find((option) => String(option.value ?? "") === value)?.value ?? value)
-                    }
-                  />
-                </Show>
-                <Show when={question.type === "multiple"}>
-                  <div class="cloud-survey__checks" role="group" aria-labelledby={labelId()}>
-                    <For each={options()}>
-                      {(option) => (
-                        <CheckboxCard
-                          label={String(option.label ?? option.value ?? "")}
-                          value={chosen().includes(String(option.value))}
-                          disabled={disabled()}
-                          onValueChange={(on) => toggleAnswer(id(), String(option.value), on)}
-                        />
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={question.type === "text"}>
-                  <input
-                    class="input h-9 w-full text-sm"
-                    aria-labelledby={labelId()}
-                    disabled={disabled()}
-                    placeholder={typeof question.placeholder === "string" ? question.placeholder : ""}
-                    value={String(answers()[id()] ?? "")}
-                    onInput={(event) => setAnswer(id(), event.currentTarget.value)}
-                  />
-                </Show>
-                <Show when={question.type === "rating"}>
-                  <Slider
-                    aria-label={String(question.label ?? "") || t().surveyKind}
-                    disabled={disabled()}
-                    min={typeof question.min === "number" ? question.min : 1}
-                    max={typeof question.max === "number" ? question.max : 5}
-                    value={() => Number(answers()[id()] ?? question.min ?? 1)}
-                    showValue={false}
-                    onValueChange={(value) => setAnswer(id(), value)}
-                  />
-                </Show>
-              </div>
-            );
-          }}
-        </For>
-      </div>
+                  <Show when={question.type === "multiple"}>
+                    <div class="cloud-survey__checks" role="group" aria-labelledby={labelId()}>
+                      <For each={options()}>
+                        {(option) => (
+                          <CheckboxCard
+                            label={String(option.label ?? option.value ?? "")}
+                            value={chosen().includes(String(option.value))}
+                            disabled={disabled()}
+                            onValueChange={(on) => toggleAnswer(id(), String(option.value), on)}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                  <Show when={question.type === "text"}>
+                    <input
+                      class="input h-9 w-full text-sm"
+                      aria-labelledby={labelId()}
+                      disabled={disabled()}
+                      placeholder={typeof question.placeholder === "string" ? question.placeholder : ""}
+                      value={String(answers()[id()] ?? "")}
+                      onInput={(event) => setAnswer(id(), event.currentTarget.value)}
+                    />
+                  </Show>
+                  <Show when={question.type === "rating"}>
+                    <Slider
+                      aria-label={String(question.label ?? "") || t().surveyKind}
+                      disabled={disabled()}
+                      min={typeof question.min === "number" ? question.min : 1}
+                      max={typeof question.max === "number" ? question.max : 5}
+                      value={() => Number(answers()[id()] ?? question.min ?? 1)}
+                      showValue={false}
+                      onValueChange={(value) => setAnswer(id(), value)}
+                    />
+                  </Show>
+                </div>
+              );
+            }}
+          </For>
+        </div>
+      </Show>
       <div class="cloud-blocks__choice-foot">
         <Switch fallback={<span />}>
+          <Match when={props.unanswered}>
+            <span class="cloud-blocks__choice-state">
+              <i class="ti ti-circle-off" aria-hidden="true" />
+              {t().surveyUnanswered}
+            </span>
+          </Match>
           <Match when={error()}>
             <span class="cloud-blocks__choice-state" role="alert" data-tone="error">
               {error()}
@@ -223,7 +239,7 @@ export function CloudSurveyBlock(props: {
             <span class="cloud-blocks__choice-state">{blockWords(locale()).chosenCount({ count: counted()! })}</span>
           </Match>
         </Switch>
-        <Show when={!props.disabled && !submitted() && props.onSubmit}>
+        <Show when={!props.unanswered && !props.disabled && !submitted() && props.onSubmit}>
           <Button variant="secondary" loading={submission.loading()} loadingLabel={t().answerSubmitting} onClick={() => void submit()}>
             <i class="ti ti-check" aria-hidden="true" />
             {String(survey()?.submitLabel ?? t().surveySubmit)}

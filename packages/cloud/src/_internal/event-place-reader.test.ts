@@ -2,13 +2,12 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { err } from "@k2b/stdlib";
 import { z } from "zod";
 import { adminAuthority } from "../../../../scripts/fixtures/app-status";
-import type { CapabilityAppExecutionContext, CapabilityExecutionContext } from "../contracts/capabilities";
+import type { CapabilityAppExecutionContext, CapabilityDefinitions, CapabilityExecutionContext } from "../contracts/capabilities";
 import * as readers from "../services/identity/resource-readers";
 import * as identity from "../services/identity/runtime-config";
 import { serviceAccounts } from "../services/service-accounts";
 import * as users from "../services/session/user";
 import { compileCapabilities, invokeCompiledCapability } from "./capabilities";
-import { eventPlaceReader } from "./event-place-reader";
 import * as principals from "./resource-principals";
 
 const user = adminAuthority().actor;
@@ -125,37 +124,114 @@ test("an event place without a batch hook uses its ordinary reader and returns o
   expect(seen).toHaveLength(before + 1);
 });
 
-test("a contained event place needs an explicit hook that checks the expected container", () => {
-  expect(
-    eventPlaceReader(
-      {
-        protocolVersion: 2,
-        types: {
-          collection: { title: "Collection", description: "Contained place.", container: "parent", reader: "collection.read" },
-          parent: { title: "Parent", description: "A parent." },
-        },
-        events: {
-          changed: {
-            title: "Changed",
-            description: "Changed place.",
-            version: 1,
-            subject: "collection",
-            place: "collection",
-            schema: z.strictObject({}),
-          },
-        },
-        queries: {
-          "collection.read": {
-            title: "Read",
-            description: "Read a place.",
-            openWorld: false,
-            input: z.strictObject({ id: z.string().describe("ID.") }),
-            data: z.strictObject({}),
-            run: async () => ({ ok: true, data: { data: {} } }),
-          },
-        },
-      },
-      "collection",
+const containedPlace = (
+  run: (input: { id: string }, projected: CapabilityExecutionContext) => Promise<unknown>,
+  access?: { readable: () => [] },
+): CapabilityDefinitions => ({
+  protocolVersion: 2,
+  types: {
+    folder: { title: "Folder", description: "A container." },
+    entry: { title: "Entry", description: "A contained place.", container: "folder", reader: "entry.read", ...(access ? { access } : {}) },
+  },
+  events: {
+    created: {
+      title: "Created",
+      description: "Created in a place.",
+      version: 1,
+      subject: "entry",
+      place: "entry",
+      schema: z.strictObject({}),
+    },
+  },
+  queries: {
+    "entry.read": {
+      title: "Read",
+      description: "Read with ordinary grants.",
+      openWorld: false,
+      input: z.strictObject({ id: z.string().describe("Entry ID.") }),
+      data: z.strictObject({ secret: z.string() }),
+      run: run as never,
+    },
+  },
+});
+
+// #3539: Code binds its registration to the place, never to a container, and asks the place itself.
+test("a contained event place derives a container-free reader that runs as each account and fails closed", async () => {
+  mocks.push(spyOn(principals, "activeResourcePrincipals").mockImplementation(async (input) => input));
+  mocks.push(
+    spyOn(readers, "resolveResourceReaders").mockImplementation(async (input) =>
+      input.map((principal) => ({
+        principal,
+        subject:
+          principal.type === "user"
+            ? { type: "user" as const, userId: principal.userId }
+            : { type: "service_account" as const, serviceAccountId: principal.serviceAccountId },
+        binding: null,
+      })),
     ),
-  ).toBeUndefined();
+  );
+  mocks.push(spyOn(users, "loadCurrentUser").mockResolvedValue(user.user));
+  mocks.push(spyOn(identity, "readIdentityGroupsAdmin").mockResolvedValue([]));
+  mocks.push(
+    spyOn(serviceAccounts, "get").mockResolvedValue({
+      id: accountPrincipal.serviceAccountId,
+      name: "execution account",
+      kind: "code",
+      status: "active",
+      delegatedUserId: null,
+      appId: null,
+      resourceType: null,
+      resourceId: null,
+      createdBy: null,
+      createdAt: "2026-11-01T00:00:00Z",
+    }),
+  );
+  let mode: "account" | "nobody" | "broken" = "account";
+  const seen: CapabilityExecutionContext[] = [];
+  const compiled = compileCapabilities(
+    "provider",
+    containedPlace(async (input, projected) => {
+      expect(input).toEqual({ id: "folder-1" });
+      seen.push(projected);
+      if (mode === "broken") throw new Error("storage unavailable");
+      if (mode === "nobody" || projected.actor.kind === "user")
+        return { ok: false, error: { code: "FORBIDDEN", message: "No", status: 403 } };
+      return { ok: true, data: { data: { secret: "never leaves the provider" } } };
+    }),
+  );
+  const operation = compiled.queries.get("entry.readable");
+  expect(operation?.manifest.appOnly).toBe(true);
+  expect(Object.keys(operation!.manifest.inputSchema.properties as object).sort()).toEqual(["id", "principals"]);
+  const invoke = (input: Record<string, unknown>) =>
+    invokeCompiledCapability({
+      compiled,
+      kind: "query",
+      localId: "entry.readable",
+      expectedSchemaHash: operation!.manifest.schemaHash,
+      input,
+      context,
+    }).catch((error: unknown) => ({ ok: false as const, error }));
+  const place = { id: "folder-1", principals: [userPrincipal, accountPrincipal] };
+  // The account that may read the place is readable; the person who may not read it is left out.
+  expect(await invoke(place)).toEqual({ ok: true, data: { data: { readable: [accountPrincipal] } } });
+  expect(seen.at(-1)?.actor).toMatchObject({ kind: "service_account", serviceAccount: { kind: "code" }, scopes: ["read"] });
+  expect(seen.every((value) => !value.query && !value.idempotencyKey)).toBe(true);
+  mode = "nobody";
+  expect(await invoke(place)).toEqual({ ok: true, data: { data: { readable: [] } } });
+  // An unavailable reader never counts as readable.
+  mode = "broken";
+  expect((await invoke(place)).ok).toBe(false);
+  // A check that names a container is refused rather than answered without it.
+  mode = "account";
+  const calls = seen.length;
+  expect((await invoke({ ...place, container: { type: "provider.folder", id: "parent" } })).ok).toBe(false);
+  expect(seen).toHaveLength(calls);
+});
+
+test("an explicit hook on a contained place keeps requiring the expected container", () => {
+  const compiled = compileCapabilities(
+    "provider",
+    containedPlace(async () => ({ ok: true, data: { data: { secret: "x" } } }), { readable: () => [] }),
+  );
+  expect(compiled.manifest.queries.find((query) => query.localId === "entry.readable")?.inputSchema.required).toContain("container");
 });

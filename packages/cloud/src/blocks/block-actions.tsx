@@ -61,7 +61,9 @@ export function AnswerBlocks(props: { children: JSX.Element }) {
   const [copied, setCopied] = createSignal(false);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => clearTimeout(copiedTimer));
-  const ordered = createMemo(() => entries().toSorted(before));
+  // The order the blocks stand in, read when the Lightbox opens: a block registers while it is built, before its anchor
+  // is in the page, so an order read then is the order the blocks happened to load (in WebKit a late table came last).
+  const ordered = createMemo(() => (shown() ? entries().toSorted(before) : []));
   const answer: Answer = {
     register: (entry) => {
       setEntries((list) => [...list, entry]);

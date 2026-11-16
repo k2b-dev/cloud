@@ -76,7 +76,7 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
-import { discussionsIssues } from "../contracts/discussions";
+import { discussionContainersPageIssues, discussionsIssues } from "../contracts/discussions";
 import { fileProviderIssues } from "../contracts/file-provider";
 import { typeViewIssues } from "../contracts/resource-types";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
@@ -986,19 +986,24 @@ export const compileCapabilities = (
         },
       };
     }
-    const readable = type.access?.readable ?? eventPlaceReader(definitions, localId);
+    const explicit = type.access?.readable;
+    const readable = explicit ?? eventPlaceReader(definitions, localId);
     if (!readable) continue;
     const queryId = `${localId}.readable`;
     if (Object.hasOwn(definitions.queries ?? {}, queryId)) throw new Error(`Generated Query ${queryId} collides with a declared Query`);
     const container = type.container;
-    const input = container
-      ? ResourceReadableInputSchema.extend({
-          container: ResourceReadableInputSchema.shape.container
-            .unwrap()
-            .extend({ type: z.literal(qualifiedId(appId, container)).describe("Declared container type.") })
-            .describe("Expected current container of the resource."),
-        })
-      : ResourceReadableInputSchema;
+    // A derived reader for a contained event place checks the place itself, a question reserved for Code's event-place
+    // check (#3539), so its input has no container; a check that names one is refused instead of answered without it.
+    const input = !container
+      ? ResourceReadableInputSchema
+      : !explicit
+        ? ResourceReadableInputSchema.omit({ container: true })
+        : ResourceReadableInputSchema.extend({
+            container: ResourceReadableInputSchema.shape.container
+              .unwrap()
+              .extend({ type: z.literal(qualifiedId(appId, container)).describe("Declared container type.") })
+              .describe("Expected current container of the resource."),
+          });
     generated[queryId] = {
       title: "Check resource readers",
       description: `Check current principal readability of ${type.title} without granting content access.`,
@@ -2018,6 +2023,26 @@ export const validateCapabilityResult = (
         error: {
           code: CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse,
           message: `Capability returned undeclared resource type ${ref.type}`,
+          status: 500,
+        },
+      };
+    }
+  }
+  if (compiled.manifest.discussions?.containers === operation.manifest.localId) {
+    const issues = discussionContainersPageIssues(parsed.data);
+    if (issues.length > 0) {
+      try {
+        onInvalidResult?.(
+          new Error(`Capability ${operation.manifest.localId} returned a discussion containers page: ${issues.join("; ")}`),
+        );
+      } catch {
+        // Observability must not change the public failure contract.
+      }
+      return {
+        ok: false,
+        error: {
+          code: CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse,
+          message: "Discussion containers must return a page that matches data.next",
           status: 500,
         },
       };

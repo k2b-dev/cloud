@@ -1,5 +1,6 @@
 import { sql } from "@k2b/cloud";
 import { AiChatOriginSchema } from "@k2b/cloud/ai";
+import { isAiQueueRetryableError } from "@k2b/cloud/ai/runtime";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 
@@ -41,8 +42,7 @@ export const chatSendSnapshot = async (conversationId: string, chatId: string, i
         : entry.turn_status === "waiting_for_action"
           ? "waiting"
           : entry.turn_status === "failed" ||
-              (entry.status === "failed" &&
-                (origin.data.kind !== "person" || !["quota_exhausted", "quota_usage_unknown"].includes(entry.error ?? "")))
+              (entry.status === "failed" && (origin.data.kind !== "person" || !isAiQueueRetryableError(entry.error)))
             ? "failed"
             : entry.turn_status === "running"
               ? "running"

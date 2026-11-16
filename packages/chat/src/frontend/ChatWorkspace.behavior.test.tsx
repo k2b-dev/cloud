@@ -85,7 +85,13 @@ class FakeWebSocket {
     this.readyState = 3;
   }
 }
-const settle = () => Bun.sleep(60);
+// Subpages such as the threads page import their code on first open (#2623); the first test in a process to open one
+// pays a cold import that can outlast the pause on a busy runner. Settled means that code arrived, as in the product;
+// the test's own timeout bounds the wait.
+const settle = async () => {
+  await Bun.sleep(60);
+  while (document.querySelector('.chat-deferred-feedback [data-loading="true"]')) await Bun.sleep(10);
+};
 const message = (seq: number, body = `Message ${seq}`) =>
   MessageViewSchema.parse({
     reactions: [],

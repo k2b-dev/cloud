@@ -49,6 +49,15 @@ identity and the workload credential Core issues to the app automatically
 (an explicit `CLOUD_APP_CREDENTIAL` override wins, for apps run on the host).
 `CLOUD_CORE_INTERNAL_ORIGIN` must name Core's direct listener origin. When Core
 rejects the credential before dispatch, the call refreshes it once and retries.
+For a contained Type with an `access.readable` hook, pass the expected
+`container`; without it the call throws. A contained Type whose only reader is
+a derived event-place reader cannot check a container, so a call to it
+returns `not_configured` with `no_readable`, with or without a container. The
+`eventPlace: true` option asks a contained event place itself. It is reserved
+for Code's event-place check by convention. The `event-place-exception`
+repository check rejects any other mention of the word `eventPlace` outside
+tests in this repository; it does not see test files or a key built from
+strings at runtime.
 
 Handle all three outcomes:
 

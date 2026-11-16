@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import {
   assertCapabilityReview,
+  assertDiscussionContainersPage,
   assertResourceOpenLink,
   assertResourceView,
   compileCapabilityManifest,
@@ -1465,9 +1466,12 @@ test("discussion containers preserve authorized list pagination", async () => {
   });
   if (!first.data.data.next) throw new Error("Expected a continuation cursor");
   expect(first.data.page).toEqual({ hasMore: true, nextCursor: first.data.data.next });
+  assertDiscussionContainersPage(first.data);
   const last = await operation.run(operation.input.parse({ limit: 1, cursor: first.data.data.next }), userContext);
-  expect(last.ok && last.data.data.next).toBeNull();
-  expect(last.ok && last.data.page).toEqual({ hasMore: false });
+  if (!last.ok) throw new Error("Expected containers");
+  expect(last.data.data.next).toBeNull();
+  expect(last.data.page).toEqual({ hasMore: false });
+  assertDiscussionContainersPage(last.data);
 });
 
 test("notebook targets reject a note, parent or annotation from another notebook in review and execution", async () => {

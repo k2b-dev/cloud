@@ -4,6 +4,7 @@ import { capabilityReviewRememberScope, capabilityReviewView } from "@k2b/cloud/
 import { capabilityCallFromTool } from "@k2b/cloud/capabilities/server";
 import {
   assertCapabilityReview,
+  assertDiscussionContainersPage,
   assertResourceOpenLink,
   assertResourceView,
   compileCapabilityManifest,
@@ -2941,6 +2942,7 @@ test("discussion containers continue from the same offset when the limit changes
   expect(first.data.data).toEqual({ items: [{ ref: { type: "spaces.space", id: spaceId }, title: space.name }], next: expect.any(String) });
   if (!first.data.data.next) throw new Error("Expected a continuation cursor");
   expect(first.data.page).toEqual({ hasMore: true, nextCursor: first.data.data.next });
+  assertDiscussionContainersPage(first.data);
   const last = await operation.run(operation.input.parse({ query: "Product", limit: 2, cursor: first.data.data.next }), userContext);
   if (!last.ok) throw new Error("Expected containers");
   expect(last.data.page).toEqual({ hasMore: false });
@@ -2951,6 +2953,7 @@ test("discussion containers continue from the same offset when the limit changes
     ],
     next: null,
   });
+  assertDiscussionContainersPage(last.data);
   expect(list).toHaveBeenLastCalledWith(
     expect.objectContaining({ query: "Product", requiredLevel: "read", pagination: { perPage: 2, offset: 1 } }),
   );

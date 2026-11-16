@@ -27,7 +27,8 @@ export type LinkCardProps = {
    * The card as a small overview of one thing, as on "My apps & automations": `aside` stands top right beside the
    * title, such as a strip of the last runs; `body` is a line under the head, such as what it did last; `footer` is
    * the last line, `start` (a state with its sign) and `end` (a quiet time). Any of them stacks the card: head, body,
-   * and footer one below the other, the footer on the card's bottom edge, a 10 px radius, and no chevron. The whole
+   * and footer one below the other, the footer on the card's bottom edge, a 10 px radius, and no chevron. Its title and
+   * description wrap instead of ending in "…". The whole
    * card stays one link, so these places hold text and marks, never links or buttons.
    */
   aside?: JSX.Element;

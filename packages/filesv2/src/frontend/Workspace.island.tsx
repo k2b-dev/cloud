@@ -1,5 +1,6 @@
 import { openCommand } from "@k2b/cloud/browser/commands";
 import { markHintSeen } from "@k2b/cloud/browser/hints";
+import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { layout } from "@k2b/cloud/ssr/layout-runtime";
@@ -40,6 +41,7 @@ import { type ActivityFilters, movedEntry, placeDescriber } from "./history-requ
 import MarkdownDocument from "./MarkdownDocument";
 import { MovedNotice } from "./MissingItemView";
 import { useFilesMessages } from "./messages";
+import { filesPageScope } from "./page-scope";
 import { openShareDialog } from "./ShareDialog";
 import SharesOverview from "./SharesOverview";
 import StorageOverview from "./StorageOverview";
@@ -217,6 +219,11 @@ export default function Workspace(props: {
     return { baseId, path, entry, chain: await loadChain(entry, signal, t().unavailable, path) };
   }
   const snapshot = workspace.snapshot;
+  const [contextSource, setContextSource] = createSignal(props.initial.source);
+  createEffect(() => setContextSource(snapshot().source));
+  createEffect(() => {
+    onCleanup(publishPageContext({ scope: filesPageScope({ ...snapshot(), source: contextSource() }) }));
+  });
   createEffect(() => {
     previousSnapshot = snapshot();
   });
@@ -1135,7 +1142,10 @@ export default function Workspace(props: {
                             detail={snapshot().detail}
                             preferences={props.preferences}
                             issues={snapshot().bases.issues}
-                            onSelectionSource={workspace.rememberSource}
+                            onSelectionSource={(source) => {
+                              workspace.rememberSource(source);
+                              setContextSource(source);
+                            }}
                             onBranchRefreshReady={(refresh) => {
                               refreshBrowserBranches = refresh;
                             }}

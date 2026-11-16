@@ -17,7 +17,10 @@ test("a saved view becomes a portable description after validation against its r
   expect(await loadView("/files/orders", path, summary, abort)).toEqual({
     block: "stats",
     title: "Orders",
-    items: [{ label: "Orders", value: 12, delta: { value: 2, unit: "absolute", better: undefined, format: undefined } }],
+    items: [
+      // Without its own icon a key figure takes the neutral sign before its label (v12 §9).
+      { label: "Orders", value: 12, icon: "ti ti-hash", delta: { value: 2, unit: "absolute", better: undefined, format: undefined } },
+    ],
   });
   // `view=1` asks Cloud to name the view's references for this reader as it reads the file.
   expect(transport).toHaveBeenCalledWith("/files/orders?view=1", { signal: abort });

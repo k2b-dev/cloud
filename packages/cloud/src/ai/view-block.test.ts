@@ -454,11 +454,19 @@ describe("stats views", () => {
     [{ items: [{ ...item, value: " " }] }, "items[0].value"],
     [{ items: [{ ...item, value: "x".repeat(81) }] }, "80"],
     [{ items: [{ ...item, sub: " " }] }, "items[0].sub"],
+    [{ items: [{ ...item, icon: 'ti ti-x" onload' }] }, "items[0].icon"],
     [{ title: " " }, "title"],
     [{ subtitle: "x".repeat(301) }, "subtitle"],
   ])("rejects stats rules: %j", (change, path) => {
     expect(issues({ ...stats, ...change })).toContain(path);
     expect(parseCloudAiView({ ...stats, ...change })).toBeUndefined();
+  });
+  test("every key figure has a small sign before its label: the Tabler icon it names, otherwise the neutral sign", () => {
+    const view = parseCloudAiView({ ...stats, items: [{ ...item, icon: "wallet" }, item] });
+    if (!view || view.view !== "stats") throw new Error("Missing stats");
+    expect(cloudAiViewDescription(view).items.map((entry) => entry.icon)).toEqual(["ti ti-wallet", "ti ti-hash"]);
+    // The sign takes no room of its own in the summary: a tile keeps the height its summary reserved.
+    expect(cloudAiViewSummary(view)).toEqual(cloudAiViewSummary({ ...view, items: [item, item] }));
   });
   test("formats signed deltas and determines improvement without model colors", () => {
     const view = parseCloudAiView({

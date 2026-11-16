@@ -1,4 +1,5 @@
 import { getContext, onContextChange } from "@k2b/cloud/browser/panel";
+import { formatCodeMoment } from "@k2b/cloud/code/schedule";
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import type { CloudResourceRef } from "@k2b/cloud/contracts";
 import { Button, ButtonLink, Skeleton, useLocale } from "@k2b/ui";
@@ -15,7 +16,7 @@ import {
 } from "../code-summary";
 import { resolveAssistantCloudResource } from "./AssistantContextContent";
 import { automationTiming } from "./automation-timing";
-import { browserCodeInvoke, formatCodeNextRun, formatCodeTime } from "./code-client";
+import { browserCodeInvoke } from "./code-client";
 import { CodeStatusBadge, codeRunLine, codeStateLabel } from "./code-status";
 import { assistantMessages } from "./messages";
 
@@ -168,10 +169,10 @@ export default function AssistantCodeBlock(props: {
     if (automation.missingTargets.length > 0) return t().codeAccessRemoved({ targets: targetNames(automation.missingTargets) });
     if (automation.lastRun)
       return t().codeLastRun({
-        when: formatCodeTime(automation.lastRun.endedAt ?? automation.lastRun.createdAt, locale(), props.timeZone),
+        when: formatCodeMoment(automation.lastRun.endedAt ?? automation.lastRun.createdAt, { locale: locale(), timeZone: props.timeZone }),
       });
     return automation.nextRunAt
-      ? t().codeNextRun({ when: formatCodeNextRun(automation.nextRunAt, locale(), props.timeZone) })
+      ? t().codeNextRun({ when: formatCodeMoment(automation.nextRunAt, { locale: locale(), timeZone: props.timeZone }) })
       : t().codeNoRun;
   };
   /** Removed access that no row names: which automation needs it could not be told, so the block says it once. */

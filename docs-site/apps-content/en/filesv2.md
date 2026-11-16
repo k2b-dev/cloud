@@ -5,7 +5,7 @@ section: Work
 order: 150
 description: Browse Cloud and FreeIPA storage, manage directories, and download files directly through Filegate.
 tags: [files, storage, freeipa, filegate]
-updated: 2026-11-11
+updated: 2026-11-15
 ---
 
 # Files
@@ -475,7 +475,6 @@ Files checks your current history access whenever the page loads. Missing or
 inaccessible records disclose no details; a loading failure offers **Try again**.
 Reload opens the same record, and browser Back returns to the preceding Files
 view with its URL filters. Opening the record starts no writes or rechecks.
-
 
 ## Public shares
 
@@ -1277,3 +1276,15 @@ For filters, cancellation and privacy considerations, see
 Administrator history exports include local Cloud areas only. POSIX-only events
 are excluded from counts and downloads; cross-area operations include only
 their local side.
+
+## Discuss a folder or file
+
+Files offers folders and storage roots as discussion containers in Chat.
+Each file has a thread in its current parent folder's discussion. Reading
+requires access to both the file and its folder; posting also requires write
+access to the folder. Moving a file changes its discussion container.
+
+Files reports the folder you are browsing, or the single file open in its
+inspector or editor, as page context for panels. The storage overview,
+Activity, Favorites, shares and trash do not report a resource scope. Sharing
+page context grants no access to a file or folder.

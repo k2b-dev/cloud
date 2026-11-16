@@ -79,12 +79,13 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       digest TEXT NOT NULL CHECK (digest ~ '^[a-f0-9]{64}$'),
       PRIMARY KEY (run_id,digest)
     )`.simple();
-    // The published inter-chat writer changes contract. Drain it on the old release before switching.
+    // The published inter-chat writer is gone. A message it accepted but never delivered fails
+    // visibly with a reason instead of blocking the upgrade; its text stays readable.
     await tx`DO $$ BEGIN
       IF to_regclass('ai.inter_chat_messages') IS NOT NULL THEN
-        IF EXISTS (SELECT 1 FROM ai.inter_chat_messages WHERE status='pending') THEN
-          RAISE EXCEPTION 'Deliver pending inter-chat messages on the previous release before upgrading to ai.chat.send';
-        END IF;
+        UPDATE ai.inter_chat_messages SET status='failed',
+          error='Not delivered: this release replaced chat-to-chat messages with ai.chat.send. Send it again.'
+        WHERE status='pending';
       END IF;
     END $$`.simple();
     await tx`DO $$ BEGIN

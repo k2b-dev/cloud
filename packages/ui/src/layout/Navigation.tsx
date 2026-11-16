@@ -1,4 +1,4 @@
-import { documentNavigate, Link } from "@k2b/ssr/nav";
+import { documentNavigate, Link, swapPage } from "@k2b/ssr/nav";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
 import { Dropdown } from "../actions/Dropdown";
@@ -108,7 +108,9 @@ export default function Navigation(props: NavigationProps) {
                           onNavigate={async (event) => {
                             if (!(await ready())) return;
                             if (item().navigation === "enhanced" && props.navigation.onNavigate) await props.navigation.onNavigate(event);
-                            else event.fallback();
+                            // A plain link swaps the page where the host installed page swaps; otherwise, and outside
+                            // the swap's scope, swapPage() loads the document as before.
+                            else await swapPage(event.url.href, item().scroll === "preserve" ? { scroll: "preserve" } : {});
                           }}
                           onClick={(event) => {
                             if (disabled()) {

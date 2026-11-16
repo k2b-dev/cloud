@@ -2,11 +2,12 @@ import { aiProjects, isAiSettingsError, personalAiModelPolicy, selectAssistantAi
 import { AiQueuedChatStartError, type ValidateQueuedChatStart } from "@k2b/cloud/ai/runtime";
 import { accounts, coreSettings } from "@k2b/cloud/services";
 import { isAccountExpired } from "@k2b/cloud/services/account-model";
+import { openCodeChatWork } from "./ai-chat-send";
 import { checkCodeChatRunBudget } from "./code/ai-budget";
 import { codeSettings } from "./code/settings";
 
 /** The original invocation may be over. Revalidate its durable authority, never an expired session lease. */
-export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db, state) => {
+export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db, state, messageId) => {
   const config = input.runConfig;
   const owner = config.send?.accountId;
   const origin = config.writerOrigin;
@@ -60,6 +61,9 @@ export const validateQueuedChatStart: ValidateQueuedChatStart = async (input, db
         AND c.active_version_id=r.version_id FOR SHARE OF c`;
     if (!code || config.codeOrigin?.codeId !== origin.id || config.codeOrigin.runId !== origin.runId)
       throw new AiQueuedChatStartError("code_inactive");
+    // Until the whole-turn reservation lands, one open message or turn per Code across chats.
+    await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.code:${origin.id}`},0))`;
+    if (await openCodeChatWork(origin.id, db, messageId)) throw new AiQueuedChatStartError("code_busy");
     const refused = await checkCodeChatRunBudget(origin.runId, db, {
       code: await codeSettings.get("core.code.ai_daily_budget_usd", db),
       owner: await codeSettings.get("core.code.ai_owner_daily_budget_usd", db),

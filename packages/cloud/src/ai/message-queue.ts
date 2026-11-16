@@ -7,6 +7,7 @@ import { editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
 import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT } from "./files-store";
 import { aiInputToUserMessage, aiTurnInputToContent } from "./http";
+import { AI_QUEUE_RETRYABLE_ERRORS, isAiQueueRetryableError } from "./queue-waits";
 import { AiQuotaError, aiQuotas } from "./quotas";
 import { aiResourceMarker } from "./resource-markers";
 import { readAiSettingsState } from "./settings";
@@ -23,7 +24,12 @@ export class AiMessageQueueConflict extends Error {}
 
 export type QueuedChatSubmission = Parameters<AiConversationService["submitChatTurn"]>[0];
 type Submission = QueuedChatSubmission;
-export type ValidateQueuedChatStart = (input: Submission, db: SQL, state?: AiSettingsState) => Promise<Submission>;
+export type ValidateQueuedChatStart = (
+  input: Submission,
+  db: SQL,
+  state: AiSettingsState | undefined,
+  messageId: string,
+) => Promise<Submission>;
 export class AiQueuedChatStartError extends Error {
   constructor(readonly code: string) {
     super(code);
@@ -230,7 +236,7 @@ export const drainQueuedMessages = async (
 ) => {
   const chats = await sql<{ conversation_id: string }[]>`
     SELECT q.conversation_id FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
-    WHERE (q.status='pending' OR (q.status='failed' AND q.automation_source IS NULL AND q.error IN ('quota_exhausted','quota_usage_unknown')))
+    WHERE (q.status='pending' OR (q.status='failed' AND q.automation_source IS NULL AND q.error IN ${sql([...AI_QUEUE_RETRYABLE_ERRORS])}))
       AND (${Boolean(validateStart)} OR q.automation_source IS NULL)
       AND (q.automation_source IS NOT NULL OR (c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL))
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages earlier WHERE earlier.conversation_id=q.conversation_id
@@ -262,7 +268,7 @@ export const drainQueuedMessages = async (
           SELECT id,submission,revision::text,status,error,automation_source FROM ai.queued_messages
           WHERE conversation_id=${chat.conversation_id}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL))
           ORDER BY position LIMIT 1 FOR UPDATE`;
-          if (!row || (row.status === "failed" && !["quota_exhausted", "quota_usage_unknown"].includes(row.error ?? ""))) return null;
+          if (!row || (row.status === "failed" && !isAiQueueRetryableError(row.error))) return null;
           if (!row.automation_source && (!conversation || conversation.archived_at || !conversation.created_by_user_id)) return null;
           // Runtime startup/shutdown is not a permanent source refusal. Leave work for the next host sweep.
           if (row.automation_source && !validateStart) return null;
@@ -272,7 +278,7 @@ export const drainQueuedMessages = async (
               let input = row.submission;
               if (row.automation_source && !input.runConfig.send) throw new AiQueuedChatStartError("source_restricted");
               const state = isAssistantChatTurn(input.runConfig) || input.runConfig.send ? await readAiSettingsState(attempt) : undefined;
-              if (validateStart && input.runConfig.send) input = await validateStart(input, attempt, state);
+              if (validateStart && input.runConfig.send) input = await validateStart(input, attempt, state, row.id);
               await attempt`UPDATE ai.queued_messages SET submission=(${JSON.stringify(input)}::text)::jsonb WHERE id=${row.id}::uuid`;
               input = { ...input, queuedMessageId: row.id, queuedMessageRevision: row.revision };
               const quotaSubject = aiChatAccessSubject(input.runConfig.actor);

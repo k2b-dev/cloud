@@ -1598,6 +1598,9 @@ returns `chat_busy`; a Project change during preparation returns `chat_changed`.
 At start, Core rechecks ownership, source authority, enabled Code, model access
 and allowances under the chat lock. A failed automation entry is final, frees
 its place and does not block the next entry.
+One Code has at most one waiting or running message across all chats; another
+send returns `chat_busy` until it finishes. A turn never sends into its own
+chat.
 
 Code classifies `ai.generate` and `ai.decide` as `ai`, `ai.chat.send` as
 `ai_chat_you`, and chat reads as `read`. The executed model needs a positive

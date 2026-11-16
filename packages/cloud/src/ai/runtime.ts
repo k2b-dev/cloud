@@ -36,6 +36,7 @@ export {
   enqueueAutomationChatMessage,
   enqueueChatMessage,
 } from "./message-queue";
+export { AI_QUEUE_RETRYABLE_ERRORS, isAiQueueRetryableError } from "./queue-waits";
 
 import { aiUserPrefs } from "./prefs";
 import { AI_TURN_LEASE_MS } from "./protocol";
