@@ -17,7 +17,7 @@ import { dialogCore } from "../feedback/dialog-core";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { optionDescription } from "../internal/option-description";
 import { LocaleProvider, useLocale } from "../intl/locale";
-import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
+import { withBottomSheet } from "../layout/bottom-sheet-load";
 import { createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
@@ -499,8 +499,11 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
     closeSheet = () => lifetime.abort();
     let after: (() => void) | undefined;
     setSheetOpen(true);
-    void dialogCore
-      .open<void>(
+    let loaded = false;
+    // The sheet's code loads on a phone in the background; a wide screen never needs it.
+    void withBottomSheet(({ default: BottomSheet, bottomSheetOptions }) => {
+      loaded = true;
+      return dialogCore.open<void>(
         (closeDialog, context) => {
           context.dialog.id ||= `${meta.controlId}-sheet`;
           setSheetId(context.dialog.id);
@@ -508,6 +511,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
             <LocaleProvider locale={current}>
               <BottomSheet onDismiss={context.requestDismiss}>
                 <RichSelectSheet
+                  BottomSheet={BottomSheet}
                   props={props}
                   title={title()}
                   value={value}
@@ -532,10 +536,21 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
             return dialog;
           },
         },
+      );
+    })
+      .then(
+        () => {
+          if (!lifetime.signal.aborted) after?.();
+        },
+        (error: unknown) => {
+          if (loaded) throw error;
+          globalThis.reportError(error);
+          // The sheet's code did not load: the same list opens as the popover beside the field, and the next tap tries
+          // the sheet again.
+          setSheetOpen(false);
+          if (!lifetime.signal.aborted && !props.disabled) openPopover();
+        },
       )
-      .then(() => {
-        if (!lifetime.signal.aborted) after?.();
-      })
       .finally(() => {
         closeSheet = undefined;
         setSheetOpen(false);
@@ -789,6 +804,7 @@ export function RichSelect(props: RichSelectProps): JSX.Element {
  * a second level with Back and Choose.
  */
 function RichSelectSheet(sheet: {
+  BottomSheet: typeof import("../layout/BottomSheet")["default"];
   props: RichSelectProps;
   title: string;
   value: () => string | null;
@@ -798,6 +814,7 @@ function RichSelectSheet(sheet: {
 }): JSX.Element {
   const messages = useRichSelectMessages();
   const props = sheet.props;
+  const BottomSheet = sheet.BottomSheet;
   const uid = createUniqueId();
   const [query, setQuery] = createSignal("");
   const [detailValue, setDetailValue] = createSignal<string>();

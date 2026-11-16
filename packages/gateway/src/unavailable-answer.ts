@@ -24,7 +24,7 @@ const pageLocale = (req: Request, operatorDefault: string): "de" | "en" => {
 
 const nonce = (): string => Buffer.from(crypto.getRandomValues(new Uint8Array(18))).toString("base64url");
 
-const contentSecurityPolicy = (value: string): string =>
+export const contentSecurityPolicy = (value: string): string =>
   [
     "default-src 'none'",
     `script-src 'nonce-${value}'`,
@@ -114,9 +114,14 @@ export const appUnavailableAnswer = (
   );
 
 /** `GET|HEAD /_cloud/gateway/status[?app=<id>]`: public, uncached, from memory only. */
-export const statusAnswer = (req: Request, url: URL, availability: Availability): Response => {
+export const statusAnswer = (
+  req: Request,
+  url: URL,
+  availability: Availability,
+  { bypass = false }: { bypass?: boolean } = {},
+): Response => {
   const app = url.searchParams.get("app");
-  return new Response(req.method === "HEAD" ? null : JSON.stringify(availability.status(app)), {
+  return new Response(req.method === "HEAD" ? null : JSON.stringify(availability.status(app, { bypass })), {
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
   });
 };
