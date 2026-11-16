@@ -193,3 +193,51 @@ test("opening without arguments reads the shared shell payload and validates the
     dom.cleanup();
   }
 });
+
+test("with news in any app, the sheet's All apps tab carries the header's dot, so the dot leads to its counts", async () => {
+  const dom = createDomTestHarness();
+  dom.window.innerWidth = 390;
+  const { APPROVAL_COUNTS_PATH } = await import("../contracts/approvals");
+  const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(
+      async (input: string | URL | Request) =>
+        String(input) === APPROVAL_COUNTS_PATH ? Response.json({ total: 0, apps: {} }) : Response.json({ count: 2 }),
+      { preconnect: globalThis.fetch.preconnect },
+    ),
+  );
+  const { watchAppBadges } = await import("./app-badges");
+  const stop = watchAppBadges(["/api/chat/badge"]);
+  const { AppLaunchpadButton } = await import("./app-launchpad");
+  const snapshot = document.createElement("script");
+  snapshot.type = "application/json";
+  snapshot.setAttribute("data-cloud-workspace-navigation", "");
+  snapshot.textContent = JSON.stringify({ label: "Team mailbox", items: [{ id: "inbox", label: "Inbox", href: "/app/mail/inbox" }] });
+  dom.root.append(snapshot);
+  const dispose = render(
+    () =>
+      createComponent(AppLaunchpadButton, {
+        variant: "header",
+        apps: [{ id: "chat", label: "Chat", href: "/app/chat", iconClass: "ti ti-message", badge: "/api/chat/badge" }],
+        legalLinks: [],
+      }),
+    dom.root,
+  );
+  try {
+    for (let attempt = 0; !dom.root.querySelector(".cloud-launchpad-dot") && attempt < 100; attempt++) await Bun.sleep(10);
+    expect(dom.root.querySelector("button")?.getAttribute("aria-label")).toBe("Open apps, new in your apps");
+    dom.root.querySelector<HTMLButtonElement>("button")!.click();
+    for (let attempt = 0; !document.querySelector("dialog .cloud-mobile-menu__apps") && attempt < 100; attempt++) await Bun.sleep(10);
+    const apps = document.querySelector("dialog .cloud-mobile-menu__apps")!;
+    expect(apps.querySelector(".cloud-launchpad-dot")?.getAttribute("aria-hidden")).toBe("true");
+    expect(apps.textContent).toBe("All apps, new in your apps");
+  } finally {
+    window.dispatchEvent(new Event("pagehide"));
+    for (let attempt = 0; document.querySelector("dialog") && attempt < 100; attempt++) await Bun.sleep(10);
+    // The sheet's history cleanup finishes after it closes; the window must still exist then.
+    await Bun.sleep(20);
+    dispose();
+    stop();
+    fetchSpy.mockRestore();
+    dom.cleanup();
+  }
+});

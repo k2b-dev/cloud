@@ -116,6 +116,43 @@ test("the retained rail follows the arriving page's rail preferences", async () 
   }
 });
 
+test("the phone header's app menu shows one dot while any app has a count, live and named for screen readers", async () => {
+  const { default: CloudShell } = await import("./CloudShell.island");
+  const data: ShellData = { apps, rail: settings, legalLinks: [], profile: { name: "Fixture" }, theme: "system", searchLinks: {} };
+  const script = document.createElement("script");
+  script.id = "cloud-shell-data";
+  script.type = "application/json";
+  script.textContent = JSON.stringify(data);
+  // A phone renders the rail too and only hides it; its island reads the counts the header's dot stands for.
+  const rail = document.createElement("div");
+  const header = document.createElement("div");
+  dom.root.append(script, rail, header);
+  const disposeRail = render(() => createComponent(CloudShell, { slot: "rail", currentPath: "/" }), rail);
+  const disposeHeader = render(() => createComponent(CloudShell, { slot: "header", authenticated: true, launchpad: true }), header);
+  const menu = () => header.querySelector<HTMLButtonElement>(".cloud-launchpad-trigger")!;
+  try {
+    // The server and the first browser frame know no counts.
+    expect(menu().querySelector(".cloud-launchpad-dot")).toBeNull();
+    expect(menu().getAttribute("aria-label")).toBe("Open apps");
+    await settle();
+    expect(menu().querySelector(".cloud-launchpad-dot")?.getAttribute("aria-hidden")).toBe("true");
+    expect(menu().getAttribute("aria-label")).toBe("Open apps, new in your apps");
+    responses["/api/chat/badge"] = () => Response.json({ count: 0 });
+    refreshAppBadges();
+    await settle();
+    expect(menu().querySelector(".cloud-launchpad-dot")).toBeNull();
+    expect(menu().getAttribute("aria-label")).toBe("Open apps");
+    // An approval waiting in any app counts like an unread message.
+    responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 1, apps: { mail: 1 } });
+    refreshAppBadges();
+    await settle();
+    expect(menu().querySelector(".cloud-launchpad-dot")).not.toBeNull();
+  } finally {
+    disposeHeader();
+    disposeRail();
+  }
+});
+
 test("the rail reads each declared badge once after hydration and shows only positive counts", async () => {
   const dispose = await mountRail();
   try {

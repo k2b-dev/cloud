@@ -126,6 +126,55 @@ test("phone header actions keep every visible pixel and Home is finger-sized whe
   });
 }, 30_000);
 
+test("the app menu's news dot sits on its icon's corner and moves nothing, in light and dark", async () => {
+  for (const theme of ["light", "dark"] as const) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 664 }, isMobile: true, hasTouch: true, colorScheme: theme });
+    try {
+      await page.setContent(
+        `<!doctype html><html class="${theme}" data-theme="${theme}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+          `<style>${css}</style></head>` +
+          `<body class="k2b-ui">${inCanvas(true)}</body></html>`,
+      );
+      await settled(page);
+      const result = await page.evaluate(() => {
+        const boxes = () =>
+          Array.from(document.querySelectorAll(".layout-header *")).map((element) => {
+            const box = element.getBoundingClientRect();
+            return `${element.className} ${box.x},${box.y},${box.width},${box.height}`;
+          });
+        const before = boxes();
+        const trigger = document.querySelector<HTMLElement>(".cloud-launchpad-trigger")!;
+        // The dot as AppLaunchpadButton renders it once a count arrives.
+        trigger
+          .querySelector(".k2b-button__label")!
+          .insertAdjacentHTML("beforeend", '<span class="cloud-launchpad-dot" aria-hidden="true"></span>');
+        const dot = trigger.querySelector<HTMLElement>(".cloud-launchpad-dot")!;
+        const after = boxes().filter((entry) => !entry.startsWith("cloud-launchpad-dot "));
+        const box = dot.getBoundingClientRect();
+        const target = trigger.getBoundingClientRect();
+        const clipped: string[] = [];
+        for (let parent = dot.parentElement; parent; parent = parent.parentElement) {
+          const style = getComputedStyle(parent);
+          if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+          const frame = parent.getBoundingClientRect();
+          if (box.left < frame.left || box.right > frame.right || box.top < frame.top || box.bottom > frame.bottom)
+            clipped.push(parent.className);
+        }
+        return {
+          moved: before.filter((entry, index) => entry !== after[index]),
+          size: [box.width, box.height],
+          inside: box.left >= target.left && box.right <= target.right && box.top >= target.top && box.bottom <= target.bottom,
+          clipped,
+          painted: getComputedStyle(dot).backgroundColor !== "rgba(0, 0, 0, 0)",
+        };
+      });
+      expect(result, theme).toEqual({ moved: [], size: [8, 8], inside: true, clipped: [], painted: true });
+    } finally {
+      await page.close();
+    }
+  }
+}, 30_000);
+
 test("the signed-out header is the same card with the same controls at every width; only the labels shorten (#2921)", async () => {
   const controls = ["Home", "Open help", "Open apps", "Language: English", "Appearance: Light. Switches to Dark.", "Sign in"];
   for (const [width, language, title, breadcrumbs] of [

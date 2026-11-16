@@ -2,6 +2,7 @@ import { BottomSheet, Navigation, SegmentedControl, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { type AppLaunchpadContext, AppLaunchpadPanel } from "./AppLaunchpadPanel";
 import { appAccentStyle } from "./app-appearance";
+import { anyAppBadge } from "./app-badges";
 import { openMobileMenu } from "./mobile-menu-history";
 import { platformMessages } from "./platform-messages";
 import { readShellData } from "./shell-data";
@@ -49,7 +50,19 @@ function MobileNavigation(props: {
               onValueChange={setTab}
               options={[
                 { value: "app", label: <span class="block k2b-truncate-fade">{workspace()?.label || t().appMenu}</span> },
-                { value: "apps", label: <span class="block k2b-truncate-fade">{t().allApps}</span> },
+                {
+                  value: "apps",
+                  // The header's dot leads here: the counts behind it are in this tab, so it carries the same dot.
+                  label: (
+                    <span class="cloud-mobile-menu__apps">
+                      <span class="block k2b-truncate-fade">{t().allApps}</span>
+                      <Show when={anyAppBadge(props.apps.apps)}>
+                        <span class="cloud-launchpad-dot" aria-hidden="true" />
+                        <span class="sr-only">, {t().newInApps}</span>
+                      </Show>
+                    </span>
+                  ),
+                },
               ]}
             />
           }

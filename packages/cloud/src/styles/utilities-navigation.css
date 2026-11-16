@@ -1074,6 +1074,23 @@
   pointer-events: none;
 }
 
+/* One dot on the phone header's app menu while any app has a count. It is laid over the icon's corner, so it
+   appears and clears without moving anything; the action colour matches the counts it stands for. */
+.cloud-launchpad-trigger {
+  position: relative;
+}
+
+.cloud-launchpad-dot {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--k2b-action-solid);
+  pointer-events: none;
+}
+
 /* On the corner of the rail icon, not of its 44 px target. */
 .rail-item > .cloud-app-badge {
   top: 0.25rem;
@@ -1094,6 +1111,10 @@
   .cloud-app-badge {
     outline: 1px solid CanvasText;
     outline-offset: -1px;
+  }
+
+  .cloud-launchpad-dot {
+    background: CanvasText;
   }
 }
 
