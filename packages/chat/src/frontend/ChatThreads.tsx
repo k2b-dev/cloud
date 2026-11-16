@@ -220,7 +220,8 @@ export function ThreadPicker(
       ]}
     >
       <Dropdown.Trigger
-        appearance="plain"
+        variant="input"
+        size="sm"
         class={
           props.system && props.view !== "all" && props.view !== "general"
             ? "chat-thread-picker chat-thread-picker--item"

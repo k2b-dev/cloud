@@ -1,4 +1,8 @@
 import { SelectionAction, toast } from "@k2b/ui";
+
+// The draft's quote rows share this chunk: a draft has quotes only once it loaded.
+export { ChatComposerQuotes } from "@k2b/ui";
+
 import type { JSX } from "solid-js";
 import { MAX_MESSAGE_REFS, MESSAGE_MAX_CODE_POINTS } from "../service/contracts";
 import type { ChatFeedItem } from "./ChatConversation";

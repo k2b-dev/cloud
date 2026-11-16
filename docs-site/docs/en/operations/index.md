@@ -36,7 +36,9 @@ container ownership.
 2. [Build the application](/en/docs/operations/build-and-deploy).
 3. [Set infrastructure configuration](/en/docs/operations/runtime-configuration).
 4. Configure application values through [Settings](/en/docs/platform/settings).
-5. [Scale and stop services safely](/en/docs/operations/scaling-and-shutdown).
+5. [Scale and stop services safely](/en/docs/operations/scaling-and-shutdown);
+   use [Maintenance mode](/en/docs/operations/maintenance-mode) for updates that
+   need the whole Cloud closed.
 6. Use [Observability](/en/docs/operations/observability) for health and failure.
 7. Use [Troubleshooting](/en/docs/operations/troubleshooting) when the registry,
    gateway, or dependencies disagree.

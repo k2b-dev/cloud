@@ -4,6 +4,7 @@ import {
   Button,
   Chart,
   Chat,
+  ChatComposerQuotes,
   CodeDisplay,
   createDataTableView,
   DataTable,
@@ -1707,14 +1708,14 @@ const MessageQuotesDemo = () => {
       id="message-quotes"
       chip={[
         { kind: "component", name: "SelectionAction", from: "@k2b/ui" },
-        { kind: "component", name: "Chat.Composer", from: "@k2b/ui" },
+        { kind: "component", name: "ChatComposerQuotes", from: "@k2b/ui" },
         { kind: "component", name: "MessageRow", from: "@k2b/ui" },
       ]}
       description="Select words in a message and press Quote, or Tab after a keyboard selection. The passage waits above the field; the sent message shows it above its text, and a click on it jumps back and tints the passage."
       code={`<SelectionAction root={history} label="Quote" icon="ti ti-quote"
   within={(node) => (node instanceof Element ? node : node.parentElement)?.closest(".k2b-message-row__text")}
   onAction={({ text, element }) => addQuote(keyOf(element), text)} />
-<Chat.Composer variant="conversation" quotes={draft.quotes.map((quote) => ({ ...quote, onRemove: () => remove(quote) }))} … />
+<Chat.Composer variant="conversation" accessory={draft.quotes.length ? <ChatComposerQuotes quotes={draft.quotes.map((quote) => ({ ...quote, onRemove: () => remove(quote) }))} /> : undefined} … />
 <MessageRow quotes={message.quotes.map((quote) => ({ ...quote,
   onSelect: () => feed.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }) }))} … />`}
     >
@@ -1748,13 +1749,19 @@ const MessageQuotesDemo = () => {
           onValueChange={setDraft}
           inputLabel="Answer"
           placeholder="Write an answer"
-          quotes={quotes().map((quote) => ({
-            id: quote.key,
-            author: quote.author,
-            text: quote.text,
-            onRemove: () => setQuotes((list) => list.filter((other) => other.key !== quote.key)),
-            onSelect: () => void feed?.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }),
-          }))}
+          accessory={
+            quotes().length ? (
+              <ChatComposerQuotes
+                quotes={quotes().map((quote) => ({
+                  id: quote.key,
+                  author: quote.author,
+                  text: quote.text,
+                  onRemove: () => setQuotes((list) => list.filter((other) => other.key !== quote.key)),
+                  onSelect: () => void feed?.scrollToKey(quote.id, { highlight: true, highlightText: quote.text }),
+                }))}
+              />
+            ) : undefined
+          }
           onSubmit={({ text }) => {
             setEntries((list) => [
               ...list,

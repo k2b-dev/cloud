@@ -31,6 +31,7 @@ export type {
   ChatPasteHandler,
   ChatPersonSuggestion,
 } from "./ChatComposer";
+export { ChatComposerQuotes } from "./ChatComposerQuotes";
 export type {
   ChatDecisionProps,
   ChatMarkProps,

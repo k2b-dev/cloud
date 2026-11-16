@@ -154,7 +154,7 @@ when its original is gone. `onSelect` makes a passage a button. Let it jump to
 the original and tint the passage there with `scrollToKey(key, { highlight:
 true, highlightText: text })`. People select the passages with
 [`SelectionAction`](/en/ui/actions/toolbar#selection-action), and the composer
-holds them as `quotes` until the message is sent.
+holds them in `ChatComposerQuotes` above its field until the message is sent.
 
 `forwarded` adds a "Forwarded" line above the bubble. `edited` ends the last
 paragraph of the text with a quiet "edited", so it takes no line of its own
