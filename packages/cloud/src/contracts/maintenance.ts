@@ -36,8 +36,10 @@ export const APP_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
 const epochMs = z.number().int().positive().max(8.64e15);
 
 /**
- * The stored record. `bypassKey` signs the admin bypass links of this maintenance; it stays in Core, the
- * gateway and NATS. No API, page, log, audit entry or status answer ever exposes it.
+ * The stored record. `bypassKey` signs the admin bypass links of this maintenance. Core and the gateway use it,
+ * but every process with the shared NATS credentials can read the record: the same trust as the app registry and
+ * the shared `APP_SECRET`. The key grants nothing beyond the maintenance wall (no sign-in, no permission). No API,
+ * page, log, audit entry or status answer ever exposes it.
  */
 export const MaintenanceStateSchema = z.object({
   id: z.string().min(1).max(64),

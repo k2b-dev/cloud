@@ -54,6 +54,9 @@ const fixture = ({ development = false }: { development?: boolean } = {}) => {
   let clock = NOW;
   const requests: string[] = [];
   const seen: Array<{ search: string; cookie: string | null; bypass: string | null }> = [];
+  const logs: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+  // The fixture records each upgrade the gateway asks for, then refuses it, so no socket outlives the test.
+  const upgrades: Array<{ path: string; cookie: string | null }> = [];
   const upstream = Bun.serve({
     port: 0,
     fetch: (req) => {
@@ -70,7 +73,10 @@ const fixture = ({ development = false }: { development?: boolean } = {}) => {
   const snapshot: DomainSnapshot = {
     cloudHosts: cloudHostSet("https://cloud.test", ["http://gateway:3000"], false),
     domainsReady: true,
-    domains: new Map([["site.test", { host: "site.test", appId: "site", redirectTo: null, createdAt: "2026-10-30T00:00:00Z" }]]),
+    domains: new Map([
+      ["site.test", { host: "site.test", appId: "site", redirectTo: null, createdAt: "2026-10-30T00:00:00Z" }],
+      ["old.test", { host: "old.test", appId: "site", redirectTo: "site.test", createdAt: "2026-10-30T00:00:00Z" }],
+    ]),
     apps: new Map(),
     development,
   };
@@ -85,7 +91,9 @@ const fixture = ({ development = false }: { development?: boolean } = {}) => {
     snapshot: () => snapshot,
     table: () => table,
     stats: createProxyStats(),
-    log: () => {},
+    log: (message, meta) => {
+      logs.push({ message, ...(meta ? { meta } : {}) });
+    },
     health: () => Response.json({ status: "ok" }),
     storage: async () => new Response("storage"),
     rate: async () => null,
@@ -99,14 +107,17 @@ const fixture = ({ development = false }: { development?: boolean } = {}) => {
       new Request(`http://transport.test${path}`, { ...init, headers }),
       {
         timeout: () => {},
-        upgrade: () => false,
+        upgrade: (req) => {
+          upgrades.push({ path: new URL(req.url).pathname, cookie: req.headers.get("Cookie") });
+          return false;
+        },
       },
-      null,
+      { address: "203.0.113.7", forwardedFor: "203.0.113.7" },
     );
     if (!response) throw new Error("Unexpected upgrade");
     return response;
   };
-  return { availability, request, requests, seen, upstream, tick: (ms: number) => (clock += ms) };
+  return { availability, request, requests, seen, logs, upgrades, upstream, tick: (ms: number) => (clock += ms) };
 };
 
 const page = { headers: { Accept: "text/html,application/xhtml+xml", "Accept-Language": "de-DE,de;q=0.9" } };
@@ -429,12 +440,83 @@ test("parameter and cookie parsing keep every other part byte for byte", () => {
   expect(splitBypassParam("?cloud-maintenance-bypass")).toEqual({ present: true, token: "", rest: "" });
   expect(splitBypassParam("?a=1&b=%E0%A4%A")).toEqual({ present: false, token: null, rest: "?a=1&b=%E0%A4%A" });
   const headers = new Headers({ Cookie: `a=1; ${COOKIE}=x; cloud_maintenance_bypass=y` });
-  expect(takeBypassCookie(headers, false)).toBe("x");
+  expect(takeBypassCookie(headers, false)).toEqual(["x"]);
   expect(headers.get("Cookie")).toBe("a=1");
-  const dev = new Headers({ Cookie: `${COOKIE}=x; cloud_maintenance_bypass=y` });
-  expect(takeBypassCookie(dev, true)).toBe("y");
+  const dev = new Headers({ Cookie: `${COOKIE}=x; cloud_maintenance_bypass=y; cloud_maintenance_bypass=z` });
+  expect(takeBypassCookie(dev, true)).toEqual(["y", "z"]);
   expect(dev.has("Cookie")).toBe(false);
   const untouched = new Headers({ Cookie: "a=1;b=2" });
-  expect(takeBypassCookie(untouched, false)).toBeNull();
+  expect(takeBypassCookie(untouched, false)).toEqual([]);
   expect(untouched.get("Cookie")).toBe("a=1;b=2");
+});
+
+test("setting the bypass cookie logs who, from where and until when, never the token", async () => {
+  const f = fixture();
+  f.availability.setMaintenance({ state, updatedAt: NOW });
+  const token = bypassToken();
+  await f.request(`/?cloud-maintenance-bypass=${token}`, page);
+  expect(f.logs).toEqual([
+    {
+      message: "Maintenance bypass cookie set",
+      meta: { subject: admin, client: "203.0.113.7", expiresAt: new Date(NOW + MAINTENANCE_BYPASS_TTL_MS).toISOString() },
+    },
+  ]);
+  const logged = JSON.stringify(f.logs);
+  for (const part of token.split(".")) expect(logged).not.toContain(part);
+  // No cookie, no line: an invalid link, an app domain, another method.
+  await f.request("/?cloud-maintenance-bypass=garbage", page);
+  await f.request(`/?cloud-maintenance-bypass=${token}`, page, "site.test");
+  await f.request(`/?cloud-maintenance-bypass=${token}`, { method: "POST" });
+  expect(f.logs).toHaveLength(1);
+});
+
+test("a new maintenance counts as a start even without an observed off, so earlier sockets close", () => {
+  const availability = createAvailability({ now: () => NOW });
+  let starts = 0;
+  availability.onMaintenanceStarted(() => starts++);
+  expect(availability.setMaintenance({ state, updatedAt: NOW })).toBe(true);
+  // The same maintenance renewed or changed is no new start.
+  expect(availability.setMaintenance({ state: { ...state, until: NOW + 60 * 60_000 }, updatedAt: NOW + 60_000 })).toBe(false);
+  const next = { ...state, id: "1c2d3e4f-0000-4000-8000-000000000000", bypassKey: "B".repeat(43) };
+  expect(availability.setMaintenance({ state: next, updatedAt: NOW + 120_000 })).toBe(true);
+  expect(starts).toBe(2);
+  expect(availability.setMaintenance(null)).toBe(false);
+  expect(availability.setMaintenance({ state: next, updatedAt: NOW + 180_000 })).toBe(true);
+  expect(starts).toBe(3);
+});
+
+test("in development a shadowing cookie of the same name does not hide a valid one", async () => {
+  const f = fixture({ development: true });
+  f.availability.setMaintenance({ state, updatedAt: NOW });
+  const token = bypassToken();
+  const pass = await f.request("/me", { headers: { Cookie: `cloud_maintenance_bypass=stale; cloud_maintenance_bypass=${token}` } });
+  expect(pass.status).toBe(200);
+  expect(f.seen).toEqual([{ search: "", cookie: null, bypass: "1" }]);
+  const wall = await f.request("/me", { headers: { Cookie: "cloud_maintenance_bypass=stale; cloud_maintenance_bypass=older" } });
+  expect(wall.status).toBe(503);
+});
+
+test("a WebSocket with a valid bypass cookie is upgraded during maintenance, without the cookie", async () => {
+  const f = fixture();
+  f.availability.setMaintenance({ state, updatedAt: NOW });
+  const socket = { Upgrade: "websocket", Connection: "Upgrade" };
+  expect((await f.request("/api/chat/live", { headers: socket })).status).toBe(503);
+  expect(f.upgrades).toEqual([]);
+  await f.request("/api/chat/live", { headers: { ...socket, Cookie: `session_token=abc; ${COOKIE}=${bypassToken()}` } });
+  expect(f.upgrades).toEqual([{ path: "/api/chat/live", cookie: "session_token=abc" }]);
+});
+
+test("on an app domain that redirects, the bypass parameter is answered first and never sent to the other host", async () => {
+  const f = fixture();
+  const token = bypassToken();
+  expect((await f.request("/docs?x=1", page, "old.test")).headers.get("Location")).toBe("https://site.test/docs?x=1");
+  for (const maintenance of [null, { state, updatedAt: NOW }]) {
+    f.availability.setMaintenance(maintenance);
+    const link = await f.request(`/docs?cloud-maintenance-bypass=${token}&x=1`, page, "old.test");
+    expect(link.status).toBe(303);
+    expect(link.headers.get("Location")).toBe("/docs?x=1");
+    expect(link.headers.get("Set-Cookie")).toBeNull();
+    expect((await f.request(`/docs?cloud-maintenance-bypass=${token}`, { method: "POST" }, "old.test")).status).toBe(400);
+  }
+  expect(f.requests).toEqual([]);
 });

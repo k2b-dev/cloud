@@ -103,9 +103,13 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
   return {
     maintenance: (): MaintenanceState | null => maintenance?.state ?? null,
     observedMaintenance: (): ObservedMaintenance | null => maintenance,
-    /** Returns true when maintenance just started; the started listeners (closing open sockets) run once then. */
+    /**
+     * Returns true when maintenance just started; the started listeners (closing open sockets) run once then. A
+     * different maintenance id counts as a start even without an observed "off" in between, so sockets opened under
+     * the old maintenance's bypass close too.
+     */
     setMaintenance: (next: ObservedMaintenance | null): boolean => {
-      const started = !maintenance && !!next;
+      const started = !!next && maintenance?.state.id !== next.state.id;
       maintenance = next;
       if (started) for (const listener of startedListeners) listener();
       return started;

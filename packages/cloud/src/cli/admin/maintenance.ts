@@ -58,7 +58,7 @@ export const maintenanceCommands = [
   command("maintenance bypass", {
     summary: "Print a personal link that shows you the Cloud during the running maintenance; you still sign in as usual",
     description:
-      "The browser that opens the link passes the maintenance page on the Cloud address, not on app domains. The link ends with this maintenance and after 12 hours at the latest; run the command again for a longer maintenance. Keep it to yourself like a password.",
+      "The browser that opens the link passes the maintenance page on the Cloud address, not on app domains. The link ends with this maintenance and after 12 hours at the latest; the output names that time. Run the command again for a longer maintenance; only `off` ends a link early, and it ends all of them. Keep it to yourself like a password.",
     async run({ ctx }) {
       const response = await ctx.fetch(`${MAINTENANCE_ADMIN_API_PATH}/bypass`, { method: "POST" });
       if (response.status === 409) {

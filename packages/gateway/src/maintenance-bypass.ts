@@ -2,6 +2,7 @@ import type { MaintenanceState } from "@k2b/cloud/contracts/maintenance";
 import {
   MAINTENANCE_BYPASS_COOKIE_NAMES,
   MAINTENANCE_BYPASS_PARAM,
+  type MaintenanceBypass,
   maintenanceBypassCookieName,
   verifyMaintenanceBypassToken,
 } from "@k2b/cloud/services/maintenance-bypass";
@@ -48,12 +49,14 @@ export const splitBypassParam = (search: string): { present: boolean; token: str
 };
 
 /**
- * Removes every bypass cookie from `headers` and returns the value of the one this mode uses, if any. Called for
- * every request before any routing decision, so no upstream ever receives it.
+ * Removes every bypass cookie from `headers` and returns the values of the name this mode uses, in header order.
+ * Called for every request before any routing decision, so no upstream ever receives it. `__Host-` makes that one
+ * value in production; the development name can also arrive from a parent domain or another path, so a shadowing
+ * cookie must not hide a valid one.
  */
-export const takeBypassCookie = (headers: Headers, development: boolean): string | null => {
+export const takeBypassCookie = (headers: Headers, development: boolean): string[] => {
   const cookie = headers.get("Cookie");
-  if (cookie === null) return null;
+  if (cookie === null) return [];
   const name = maintenanceBypassCookieName(development);
   const kept: string[] = [];
   const values: string[] = [];
@@ -68,30 +71,31 @@ export const takeBypassCookie = (headers: Headers, development: boolean): string
     removed = true;
     if (key === name) values.push(part.slice(equals + 1).trim());
   }
-  if (!removed) return null;
+  if (!removed) return [];
   if (kept.length) headers.set("Cookie", kept.join("; "));
   else headers.delete("Cookie");
-  return values[0] ?? null;
+  return values;
 };
 
-/** Whether a bypass cookie value is valid for the running maintenance; false when there is none. */
-export const bypassesMaintenance = (token: string | null, state: MaintenanceState | null, now: number): boolean =>
-  token !== null && verifyMaintenanceBypassToken(token, state, now) !== null;
+/** Whether one of the bypass cookie values is valid for the running maintenance; false when there is none. */
+export const bypassesMaintenance = (tokens: readonly string[], state: MaintenanceState | null, now: number): boolean =>
+  tokens.some((token) => verifyMaintenanceBypassToken(token, state, now) !== null);
 
 /** Same path, never protocol-relative: `//evil.test` must stay on this host. */
 const sameHostPath = (pathname: string): string => `/${pathname.replace(/^\/+/, "")}`;
 
 /**
  * The answer to a request that carries the bypass parameter: always a `303` to the same address without it. A
- * valid link for the running maintenance sets the host-only cookie until the link expires; anything else sets
- * nothing. `allowCookie` is false on app domains, which never bypass.
+ * valid link for the running maintenance sets the host-only cookie until the link expires and returns its
+ * `bypass`, so the caller can log the redemption; anything else sets nothing. `allowCookie` is false on app
+ * domains, which never bypass.
  */
 export const bypassLinkAnswer = (
   url: URL,
   token: string | null,
   state: MaintenanceState | null,
   { development, allowCookie, now }: { development: boolean; allowCookie: boolean; now: number },
-): Response => {
+): { response: Response; bypass: MaintenanceBypass | null } => {
   const { rest } = splitBypassParam(url.search);
   const headers = new Headers({
     Location: `${sameHostPath(url.pathname)}${rest}`,
@@ -109,5 +113,5 @@ export const bypassLinkAnswer = (
       `${bypassCookie}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly;${development ? "" : " Secure;"} SameSite=Lax`,
     );
   }
-  return new Response(null, { status: 303, headers });
+  return { response: new Response(null, { status: 303, headers }), bypass: bypass && token ? bypass : null };
 };

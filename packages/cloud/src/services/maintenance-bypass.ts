@@ -30,8 +30,11 @@ export type MaintenanceBypass = { subject: string; expiresAt: number };
 
 const TOKEN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/;
 const SUBJECT_MAX_LENGTH = 200;
-/** Clock skew between Core and the gateway that an expiry may exceed the maximum lifetime by. */
-const SKEW_SECONDS = 60;
+/**
+ * Clock skew between Core and the gateway that an expiry may exceed the maximum lifetime by. A gateway clock behind
+ * Core's would otherwise refuse fresh links without a word; five minutes covers a drifting host without NTP.
+ */
+const SKEW_SECONDS = 5 * 60;
 
 const sign = (key: string, payload: string): Buffer => createHmac("sha256", Buffer.from(key, "base64url")).update(payload).digest();
 
@@ -53,8 +56,10 @@ export const verifyMaintenanceBypassToken = (
   if (!scope || typeof token !== "string" || token.length > MAINTENANCE_BYPASS_MAX_TOKEN_LENGTH || !TOKEN.test(token)) return null;
   const dot = token.indexOf(".");
   const payload = token.slice(0, dot);
-  const signature = Buffer.from(token.slice(dot + 1), "base64url");
-  const expected = sign(scope.bypassKey, payload);
+  // Compare the text with the canonical encoding, so exactly one spelling of the signature verifies: base64url
+  // decoding ignores the unused low bits of the last character, which would let variants of one token pass.
+  const signature = Buffer.from(token.slice(dot + 1));
+  const expected = Buffer.from(sign(scope.bypassKey, payload).toString("base64url"));
   if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) return null;
   let claims: unknown;
   try {
