@@ -64,6 +64,8 @@ beforeAll(async () => {
       if (url.pathname.startsWith("/public/")) return new Response(Bun.file(resolve(publicDir, url.pathname.slice("/public/".length))));
       if (url.pathname === "/ui.css") return new Response(Bun.file(`${ui}dist/styles.css`));
       if (url.pathname === "/app.css") return new Response(css, { headers: { "content-type": "text/css" } });
+      if (url.pathname.endsWith("/files/content") && url.searchParams.get("path") === VIEW_PATH)
+        return Response.json(VIEW, { headers: { "X-Cloud-Ai-File-Origin": "assistant" } });
       if (url.pathname.endsWith("/files/content"))
         return new Response("Lieferung 4471, voraussichtlich 18.11.2026\nMessinggriff 96 mm: 200\nTopfband 110°: 80\n", {
           headers: { "content-type": "text/plain; charset=utf-8" },
@@ -85,6 +87,20 @@ afterAll(async () => {
   if (publicDir) rmSync(publicDir, { recursive: true, force: true });
 });
 
+/** A chart Gustav delivered with `present`, as the file it wrote below /views. */
+const VIEW_PATH = "/views/offene-aufgaben-prioritaet.view.json";
+const VIEW = {
+  view: "chart",
+  kind: "bar",
+  title: "Offene Aufgaben je Priorität",
+  subtitle: "Space Logistik · 156 offene Aufgaben",
+  data: [
+    { label: "Dringend", value: 0 },
+    { label: "Hoch", value: 0 },
+    { label: "Ohne Priorität", value: 156 },
+  ],
+  showValues: true,
+};
 const openPage = async (width = 1440, path = "/") => {
   const page = await browser.newPage({
     viewport: { width, height: width < 768 ? 780 : 900 },
@@ -97,7 +113,7 @@ const openPage = async (width = 1440, path = "/") => {
   await page.locator("#root > *").first().waitFor();
   return { page, errors };
 };
-const open = (page: Page, name: "report" | "table" | "sources" | "web" | "ask") =>
+const open = (page: Page, name: "report" | "table" | "sources" | "web" | "ask" | "view") =>
   page.evaluate((key) => (window as unknown as { open: Record<string, () => void> }).open[key]!(), name);
 const frames = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
 /** The chat's place and size once the page settled. */
@@ -242,6 +258,27 @@ describe(`Tabs beside the chat in ${browserName}`, () => {
       expect(new URL(page.url()).searchParams.get("workspace")).toContain("Lieferavis");
       await page.getByRole("button", { name: "Zum Chat" }).click();
       await page.locator(".harness-chat").waitFor({ state: "visible" });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  test("a chart Gustav delivered opens as a tab drawn as in the chat, named a chart, never as its JSON", async () => {
+    const { page, errors } = await openPage();
+    try {
+      await open(page, "view");
+      const pane = page
+        .locator(".artifact-pane")
+        .filter({ has: page.locator(".artifact-pane__title", { hasText: "Offene Aufgaben je Priorität" }) });
+      await pane.locator(".artifact-pane__body svg").first().waitFor();
+      expect(await pane.locator(".artifact-pane__meta").textContent()).toStartWith("Diagramm · von Gustav erstellt");
+      // The chart, not a list of its keys: no file preview and none of the JSON's names.
+      expect(await pane.locator(".k2b-content-file-view").count()).toBe(0);
+      expect(await pane.locator(".artifact-pane__body").textContent()).not.toContain("showValues");
+      // No download of the JSON at the head; the tab carries the chart's sign.
+      expect(await pane.locator(".artifact-pane__actions a[download]").count()).toBe(0);
+      expect(await page.locator(".artifact-workspace__panes .ti-chart-bar").count()).toBeGreaterThan(0);
+      expect(errors).toEqual([]);
     } finally {
       await page.close();
     }
