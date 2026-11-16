@@ -875,7 +875,7 @@ describe("Gustav", () => {
         await line.scrollIntoViewIfNeeded();
         expect(await line.innerText()).toContain("Jana Probe hat Version 5 freigegeben");
         await shot(h.page, `f-ereigniszeile-vorher-${view.name}-light`);
-        await line.getByRole("button", { name: "Einschalten …" }).click();
+        await line.getByRole("button", { name: "Zur Karte" }).click();
         const main = h.page
           .locator(".assistant-code-version .k2b-chat-decision")
           .getByRole("button", { name: "Version 5 einschalten", exact: true });

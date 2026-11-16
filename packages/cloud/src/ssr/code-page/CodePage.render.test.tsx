@@ -1323,3 +1323,24 @@ test("?tab=code renders the code tab on the server", () => {
   expect(markup).toContain('class="k2b-code-diff__body"');
   expect(markup).toMatch(/class="k2b-code-diff__line"/);
 });
+
+// Rundgang 6, Fable 8: a new week without counted effects says so where the two numbers stand, above the latest results.
+test("a week without counted effects says so in place of the numbers", () => {
+  const data = codePageFixture("overview");
+  if (data.state.kind !== "ready" || !data.state.words?.activity) throw new Error("Expected activity in the overview fixture");
+  data.state.words.activity.counters = { ...data.state.words.activity.counters, items: [] };
+  const page = renderedText(
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    ),
+    " ",
+  );
+  expect(page).toContain("Diese Woche noch nichts gezählt. Darunter stehen die letzten Ergebnisse.");
+  expect(page).toContain("Lieferung Polsterei Weber");
+  expect(page.indexOf("Diese Woche noch nichts gezählt.")).toBeLessThan(page.indexOf("Lieferung Polsterei Weber"));
+});

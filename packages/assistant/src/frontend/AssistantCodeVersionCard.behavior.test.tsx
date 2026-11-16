@@ -144,6 +144,8 @@ test("ready: one approval form with the question, what changes against the runni
   expect(card.getAttribute("data-k2b-primary")).toBe("ai");
   expect(card.getAttribute("data-chat-anchor")).toBe(`code-version-${versionId}`);
   expect(text(card)).toContain("Approval·Code");
+  // The head always says where the version stands (v12 §9): ready, still off.
+  expect(card.querySelector(".k2b-chat-decision__status")?.textContent).toContain("Ready, still off");
   expect(card.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Version 5 of Code of info@ switch on?");
   expect(text(card)).toContain("It may do more than version 4 afterwards.");
   // The label in bold and its context quietly after it, as two parts of the frame.
@@ -392,6 +394,7 @@ test("approved: who approved it and what holds until the person switches it on",
     review: () => ({ json: { data: review({ status: "approved", decidedBy: JANA, decidedAt: "2026-10-01T14:01:00.000Z" }) } }),
   });
   expect(text(dom.root)).toMatch(/Jana Probe approved it on .*\./);
+  expect(dom.root.querySelector(".k2b-chat-decision__status")?.textContent).toContain("Approved");
   expect(text(dom.root)).toContain("Until you switch it on, version 4 stays switched on.");
   expect(button(dom.root, "Switch on version 5")).toBeDefined();
 });

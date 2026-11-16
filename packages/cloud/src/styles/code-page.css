@@ -263,14 +263,15 @@ a.cloud-code__row-main:focus-visible {
   overflow-wrap: anywhere;
 }
 .cloud-code__row-sub a,
-.cloud-code__feed-text a,
 .cloud-code__step-text a {
   color: var(--k2b-action);
 }
-/* In a result only the name is the link, underlined so it reads as one inside the sentence. */
+/* In a result only the name is the link. Link text stays running text; only its underline carries the tint (Leitfaden). */
 .cloud-code__feed-text a {
+  color: inherit;
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-color: var(--k2b-link-accent);
+  text-underline-offset: 3px;
 }
 .cloud-code__row-trail {
   display: flex;
@@ -451,6 +452,13 @@ a.cloud-code__row-main:focus-visible {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 10.5rem));
   gap: 0 1.75rem;
+}
+/* A week without counted effects says so where the numbers stand, at their height, above the latest results. */
+.cloud-code__did-counts-none {
+  margin: 0;
+  color: var(--k2b-text-subtle);
+  font-size: 13px;
+  line-height: 18px;
 }
 .cloud-code__did-counts b {
   display: block;

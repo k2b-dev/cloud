@@ -1647,7 +1647,7 @@ for (const width of [1440, 390])
       await line.waitFor();
       // The activity lends only its place: no second sign, the line fills the row.
       expect(await line.locator(".k2b-chat-activity__leading").isVisible()).toBe(false);
-      const action = line.getByRole("button", { name: "Einschalten …" });
+      const action = line.getByRole("button", { name: "Zur Karte" });
       const look = await action.evaluate((node) => {
         const style = getComputedStyle(node);
         return { border: style.borderTopWidth, background: style.backgroundColor, height: Math.round(node.getBoundingClientRect().height) };
