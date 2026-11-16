@@ -9,24 +9,17 @@
  */
 export const afterExitTransitions = (element: Element, done: () => void): (() => void) => {
   let pending = true;
-  let timer: ReturnType<typeof setTimeout> | undefined;
   const finish = () => {
-    if (!pending) return;
-    pending = false;
-    if (timer !== undefined) clearTimeout(timer);
-    done();
+    if (pending) {
+      pending = false;
+      done();
+    }
   };
-  const running =
-    typeof element.getAnimations === "function" && typeof CSSTransition !== "undefined"
-      ? element.getAnimations().filter((animation) => animation instanceof CSSTransition)
-      : [];
-  if (running.length === 0) {
-    finish();
-    return finish;
-  }
-  void Promise.allSettled(running.map((animation) => animation.finished)).then(finish);
-  // A hidden tab renders no frames, so its transitions never finish; a timer still fires when they would have ended.
-  const end = Math.max(...running.map((animation) => Number(animation.effect?.getComputedTiming().endTime) || 0));
-  timer = setTimeout(finish, end);
+  // When the element's own transitions end (a timer also fires in a hidden tab, which renders no frames).
+  const ends = (element.getAnimations?.() ?? [])
+    .filter((animation) => "transitionProperty" in animation)
+    .map((animation) => Number(animation.effect?.getComputedTiming().endTime) || 0);
+  if (ends.length > 0) setTimeout(finish, Math.max(...ends));
+  else finish();
   return finish;
 };
