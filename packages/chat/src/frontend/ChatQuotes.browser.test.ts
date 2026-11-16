@@ -108,6 +108,20 @@ test("a selected passage goes into the composer as a quote, is sent with the ans
     expect(await draft.innerText()).toContain("Lea Muster");
     await page.waitForFunction(() => document.activeElement?.matches(".k2b-chat-composer textarea") === true);
     expect(await pill(page).count()).toBe(0);
+    // Once its fade has ended, the pill is gone: closed, not drawn, out of the focus order and the accessibility tree.
+    await settled(page);
+    const closed = await page.evaluate(() => {
+      const toolbar = document.querySelector<HTMLElement>(".k2b-selection-toolbar")!;
+      const style = getComputedStyle(toolbar);
+      return {
+        open: toolbar.matches(":popover-open"),
+        display: style.display,
+        opacity: style.opacity,
+        focus: toolbar.contains(document.activeElement),
+      };
+    });
+    expect(closed).toEqual({ open: false, display: "none", opacity: "0", focus: false });
+    expect(await page.getByRole("button", { name: "Quote", exact: true }).count()).toBe(0);
     await shot(page, "02-composer-light-1440");
 
     await page.keyboard.type("Agreed, I review it before noon.");
