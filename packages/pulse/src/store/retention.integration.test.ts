@@ -67,6 +67,27 @@ suite("Pulse per-base retention", () => {
       await cleanupFixtureBase(base);
     }
   }, 60_000);
+  test("fixture rows expire by the fixture clock on any date ClickHouse runs", async () => {
+    const base = await fixtureBase(),
+      store = fixtureStore();
+    try {
+      await createBaseLifecycle(store)(base.id);
+      // Retention is 30 days. A physical TTL merge on the ClickHouse wall clock would
+      // drop both rows once that clock is 30 days past the fixture clock.
+      await store.query(`INSERT INTO ${q(base.database)}._events(id,ts,kind,sensitive,version) VALUES
+        ('11111111-1111-4111-8111-111111111111','2026-09-16 12:00:00.000','expired','private',1),
+        ('22222222-2222-4222-8222-222222222222','2026-10-17 12:00:00.000','current','private',1)`);
+      await store.query(`INSERT INTO ${q(base.database)}._state_changes(id,state_key,variant_key,value,changed_at,version)
+        VALUES('33333333-3333-4333-8333-333333333333','door','door','"open"','2026-10-17 12:00:00.000',1)`);
+      for (const table of ["_events", "_state_changes"]) await store.query(`OPTIMIZE TABLE ${q(base.database)}.${table} FINAL`);
+      expect(await store.query(`SELECT kind,sensitive FROM ${q(base.database)}._events`)).toEqual([
+        { kind: "current", sensitive: "private" },
+      ]);
+      expect(await store.query(`SELECT state_key FROM ${q(base.database)}._state_changes`)).toEqual([{ state_key: "door" }]);
+    } finally {
+      await cleanupFixtureBase(base);
+    }
+  }, 60_000);
   test("sensitive preview counts only nonempty fields before the cutoff and their own size", async () => {
     const base = await fixtureBase(),
       store = fixtureStore();
@@ -253,9 +274,10 @@ suite("Pulse per-base retention", () => {
       settings = settingsFixture();
     try {
       await createBaseLifecycle(store)(base.id);
+      // The fixture store runs TTL on the fixture clock: two days before it, within raw retention.
       // ClickHouse DateTime TTL arithmetic must never use far-future fixture dates (overflow in 2106).
       await store.query(
-        `INSERT INTO ${q(base.database)}._events(id,ts,kind,sensitive,version) SELECT generateUUIDv4(),now64(3)-INTERVAL 2 DAY,'ttl','private fixture',1`,
+        `INSERT INTO ${q(base.database)}._events(id,ts,kind,sensitive,version) VALUES(generateUUIDv4(),'2026-10-15 12:00:00.000','ttl','private fixture',1)`,
       );
       const old = { retention_days: 30, rollup_retention_days: 365, sensitive_retention_hours: 24 };
       const next = { rawRetentionDays: 1, rollupRetentionDays: 1, sensitiveRetentionHours: 1 };
