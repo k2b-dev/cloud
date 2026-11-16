@@ -35,6 +35,8 @@ const controller = createChatWorkspace(location.href, {
   sources: () => controller.open(contextTab(chatId, "sources", "Quellen")),
   web: () => controller.open(webTab(chatId, "https://paketdienst-beispiel.de/versand/frankreich", "Versand nach Frankreich")),
   ask: () => controller.open(webTab(chatId, "https://versicherung-beispiel.de/kunst?wert=2000&ziel=lyon")),
+  // The box opens a result with its title, as Gustav named it.
+  view: () => controller.open({ ...fileTab(chatId, "/views/offene-aufgaben-prioritaet.view.json"), title: "Offene Aufgaben je Priorität" }),
 };
 // What the chat holds: the table is a result Gustav made, the delivery note an upload.
 // real clock: the pane's meta line says "heute" against the browser's own day, as people see it.
@@ -52,6 +54,19 @@ const snapshot = emptySidebarSnapshot({
         size: 2_400,
       }),
       description: null,
+    },
+    {
+      ...fileResult("/views/offene-aufgaben-prioritaet.view.json", {
+        at: today,
+        turn: "t3",
+        seq: 7,
+        mediaType: "application/json",
+        size: 0,
+      }),
+      title: "Offene Aufgaben je Priorität",
+      description: "Balkendiagramm der offenen Aufgaben im Space Logistik.",
+      icon: "ti ti-chart-bar",
+      view: "chart",
     },
     {
       key: "code_present:c9",
