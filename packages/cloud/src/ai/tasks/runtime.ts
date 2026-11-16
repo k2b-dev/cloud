@@ -2,6 +2,7 @@ import { StructuredOutputError } from "@k2b/nessi";
 import { type Job, StoreFullError, type Worker } from "@k2b/sync";
 import { lazySync } from "../../_internal/process-sync";
 import { DEFAULT_WORKFLOW_AI_BUDGET } from "../../config/workflow-ai";
+import { startRuntimeInterval } from "../../services/runtime-lifecycle";
 import { coreSettings } from "../../services/settings/api";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "../inference-calls";
 import { AiQuotaError } from "../quotas";
@@ -170,6 +171,7 @@ export const processWorkflowAiTask = async (
   ctx.signal.addEventListener("abort", abortForShutdown, { once: true });
   if (ctx.signal.aborted) abortForShutdown();
 
+  // runtime-timer: cancellation monitor of one workflow AI task in flight.
   const monitor = setInterval(() => {
     if (checking || controller.signal.aborted) return;
     checking = true;
@@ -236,7 +238,7 @@ export const processWorkflowAiTask = async (
 
 let activeJob: Job<{ taskId: string }> | null = null;
 let activeWorker: Worker | null = null;
-let recoveryTimer: ReturnType<typeof setInterval> | null = null;
+let recoveryInterval: ReturnType<typeof startRuntimeInterval> | null = null;
 let recovery: Promise<void> | null = null;
 let shutdown: AbortController | null = null;
 
@@ -295,9 +297,12 @@ export const startWorkflowAiRuntime = async (input: WorkflowAiRuntimeOptions = {
         console.error("Workflow AI task resubmission failed", { taskId, error });
       }
     }
-    recoveryTimer = setInterval(() => {
-      void recover().catch((error) => console.error("Workflow AI recovery failed", error));
-    }, HEARTBEAT_INTERVAL_MS);
+    recoveryInterval = startRuntimeInterval({
+      run: () => recover(),
+      intervalMs: HEARTBEAT_INTERVAL_MS,
+      runNow: false,
+      onError: (error) => console.error("Workflow AI recovery failed", error),
+    });
   } catch (error) {
     await stopWorkflowAiRuntime();
     throw error;
@@ -323,8 +328,10 @@ export const stopWorkflowAiRuntime = async (): Promise<void> => {
   const worker = activeWorker;
   worker?.stop();
   shutdown?.abort(new Error("Workflow AI runtime stopped"));
-  if (recoveryTimer) clearInterval(recoveryTimer);
-  recoveryTimer = null;
+  // The timer ends now; its recovery in flight settles after the worker drained, as before the interval helper.
+  const interval = recoveryInterval;
+  recoveryInterval = null;
+  const intervalStopped = interval?.stop();
 
   // Sync's existing drain budget bounds settlement; do not exit before DB requeue.
   try {
@@ -332,6 +339,7 @@ export const stopWorkflowAiRuntime = async (): Promise<void> => {
   } finally {
     // The recovery timer already reports its failure. Always allow a later start,
     // including when drain rejects, while preserving the drain error for callers.
+    await intervalStopped;
     await recovery?.catch(() => {});
     activeWorker = null;
     activeJob = null;

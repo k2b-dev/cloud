@@ -96,6 +96,7 @@ import {
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { startLinksRuntime } from "../services/links/runtime";
 import { logger } from "../services/logging";
+import { startMaintenanceQuiesce } from "../services/maintenance-quiesce";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
 import { startPreviewsRuntime } from "../services/previews/runtime";
 import { readRailSnapshot } from "../services/rail-snapshot";
@@ -780,6 +781,9 @@ export const defineApp = <
     // Recovery waits share one allowance; application setup retains its lifecycle.
     const settingsStartupBudget = Math.max(0, Math.floor(DEPENDENCY_STARTUP_BUDGET_MS - (performance.now() - dependencyStart)));
     const cleanup: Array<() => void | Promise<void>> = [() => processSync.stop()];
+    let shutdownPromise: Promise<void> | undefined;
+    // Assigned once the server is built; a failed resume before that only runs cleanup.
+    let shutdown = (): Promise<void> => stopStartedResources();
     let cleanupPromise: Promise<void> | undefined;
     const stopStartedResources = (): Promise<void> =>
       (cleanupPromise ??= (async () => {
@@ -1268,6 +1272,37 @@ export const defineApp = <
       // which reads the Bun server off `c.env`.
       server.all("*", (c) => Promise.resolve(startOpts.fetch(c.req.raw, c.env)));
 
+      // Maintenance stage „Ruhe“: before any background work starts, so it starts quiet when quiesce is on.
+      const quiesce = await startMaintenanceQuiesce({
+        appId: meta.id,
+        instanceId: membership.instanceId,
+        onDrainErrors: (errors) =>
+          log.warn("Background work did not drain completely for maintenance quiesce", {
+            appId: meta.id,
+            errors: errors.map((error) => (error instanceof Error ? error.message : String(error))),
+          }),
+        onResumeFailed: (errors) => {
+          log.error("Background work could not resume after maintenance quiesce; restarting", {
+            appId: meta.id,
+            errors: errors.map((error) => (error instanceof Error ? error.message : String(error))),
+          });
+          void shutdown().finally(() => process.exit(1));
+        },
+        onResumeRetry: ({ error, attempt, retryInMs }) =>
+          log.warn("Background work could not resume after maintenance quiesce; retrying", {
+            appId: meta.id,
+            attempt,
+            retryInMs,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        onReportError: (error) =>
+          log.warn("Maintenance quiesce status unavailable", {
+            appId: meta.id,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+      });
+      cleanup.push(() => quiesce.stop());
+
       // Lifecycle
       const cloudCtx: CloudLifecycleContext = {
         logger,
@@ -1339,8 +1374,7 @@ export const defineApp = <
       log.info(`Registered "${meta.id}"`, { baseUrl });
 
       // Graceful shutdown
-      let shutdownPromise: Promise<void> | undefined;
-      const shutdown = () =>
+      shutdown = () =>
         (shutdownPromise ??= (async () => {
           const drained = http.stop();
           log.info(`Stopping: ${meta.id}`);

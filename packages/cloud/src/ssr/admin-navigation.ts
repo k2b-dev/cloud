@@ -68,6 +68,7 @@ export const buildAdminGroups = (apps: readonly RuntimeContext["apps"][number][]
       links: [
         { href: "/admin/apps", icon: "ti-apps", label: t.apps },
         { href: "/admin/rail", icon: "ti-layout-sidebar", label: t.rail },
+        { href: "/admin/settings/maintenance", icon: "ti-barrier-block", label: t.maintenance },
         ...(observabilityPaths.length > 0
           ? [
               {

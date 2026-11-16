@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, normalize, relative } from "node:path";
 import ts from "@typescript/typescript6";
 import { workspacePackages } from "../workspace";
-import { isTestFile, listFiles, sourceFilePattern } from "./files";
+import { isTestFile, listFiles, parseSource, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const handles = new Set(["appRegistry", "capabilityRegistry", "appInstanceRegistry"]);
@@ -21,8 +21,7 @@ const owners: Record<string, readonly string[]> = {
 export const checkSource = (file: string, source: string): Finding[] => {
   if (isTestFile(file) || /\.test-fixture\.tsx?$/.test(file)) return [];
   if (![...handles].some((name) => source.includes(name)) && !/\bexport\s*\*/.test(source)) return [];
-  const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const findings: Finding[] = [];
+  const { sourceFile: ast, findings } = parseSource(file, source);
   const allowed = owners[file] ?? [];
   const report = (name: string, node: ts.Node) => {
     if (!handles.has(name) || allowed.includes(name)) return;
