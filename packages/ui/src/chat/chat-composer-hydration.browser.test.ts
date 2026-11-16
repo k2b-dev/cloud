@@ -6,7 +6,7 @@ import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
 import solid from "babel-preset-solid";
 import type { Browser, ConsoleMessage } from "playwright";
-import { launchBrowser } from "../../test/browser";
+import { launchBrowser, pageErrors } from "../../test/browser";
 
 // A server-rendered field takes typing before its island hydrates, for example right after opening a chat by its
 // address. What the person typed there stays in the field and reaches the owner's state; nothing is lost.
@@ -95,9 +95,8 @@ test("text typed into the server-rendered field before hydration stays and reach
   const onConsole = (message: ConsoleMessage) => {
     if (message.type() === "error" || /hydrat/i.test(message.text())) errors.push(message.text());
   };
-  const onError = (error: Error) => errors.push(error.message);
+  const thrown = pageErrors(page);
   page.on("console", onConsole);
-  page.on("pageerror", onError);
   try {
     await page.setContent(`<!doctype html><html lang="en"><head><style>${css}
       body { margin:0; padding:16px; }</style></head><body class="k2b-ui" data-theme="light"><div id="app">${empty}</div>${hydrationScript}</body></html>`);
@@ -115,10 +114,9 @@ test("text typed into the server-rendered field before hydration stays and reach
     // Once hydrated, Enter sends what was typed before.
     await field.press("Enter");
     expect(await page.evaluate(() => (window as unknown as { composerSubmits?: string[] }).composerSubmits)).toEqual(["Hallo Gustav"]);
-    expect(errors).toEqual([]);
+    expect([...errors, ...thrown]).toEqual([]);
   } finally {
     page.off("console", onConsole);
-    page.off("pageerror", onError);
     await page.close();
   }
 });
