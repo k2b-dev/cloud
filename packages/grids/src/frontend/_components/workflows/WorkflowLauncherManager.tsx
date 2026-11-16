@@ -128,7 +128,7 @@ function LauncherEditor(props: {
   tables: PublicTable[];
   launcher?: PublicWorkflowLauncher;
   close: () => void;
-  save: (draft: LauncherDraft) => Promise<void>;
+  save: (draft: LauncherDraft) => Promise<boolean>;
   setDismissHandler: (handler: () => void | Promise<void>) => void;
 }) {
   const locale = useLocale();
@@ -304,8 +304,7 @@ function LauncherEditor(props: {
     setSaving(true);
     setSaveError(undefined);
     try {
-      await props.save({ name: name().trim(), enabled: enabled(), config });
-      props.close();
+      if (await props.save({ name: name().trim(), enabled: enabled(), config })) props.close();
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : t().saveRunOptionFailed);
     } finally {
@@ -513,7 +512,7 @@ function LauncherEditor(props: {
 const requestLauncherDraft = (
   workflow: PublicWorkflow,
   tables: PublicTable[],
-  save: (draft: LauncherDraft) => Promise<void>,
+  save: (draft: LauncherDraft) => Promise<boolean>,
   launcher?: PublicWorkflowLauncher,
 ) =>
   dialogCore.open<void>(
@@ -613,7 +612,9 @@ export function WorkflowLauncherManager(props: {
       props.workflow,
       props.tables,
       async (draft) => {
-        if ((await saveMut.mutate({ launcher, draft })) === "error") throw saveMut.error();
+        const outcome = await saveMut.mutate({ launcher, draft });
+        if (outcome === "error") throw saveMut.error();
+        return outcome === "success";
       },
       launcher,
     );

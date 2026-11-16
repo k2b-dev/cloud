@@ -111,11 +111,15 @@ row. Every place that reads one mutation shows the same state, no matter which
 button, menu item, hotkey, or code started the call.
 
 `abort()` cancels the active operation. An aborted fetch calls `onAbort`, not
-`onError`. A call still in `onBefore` ends `aborted` at once, and the mutation
-accepts a new call right after `abort()`.
+`onError`. Both pending and running calls end `aborted` at once, with synchronous
+status, `settledAt()`, `onAbort`, and `onFinally`. Late results are discarded, and
+the mutation accepts a new call right after `abort()`. In `onBefore`, check the
+second argument's `signal.aborted` after every `await` before optimistic changes.
 
 `retry()` repeats the previous variables and context. It does not run
-`onBefore` again. `onError` receives the failed call as its third argument;
+`onBefore` again. If the last accepted call never reached the mutation function,
+`retry()` resolves `"dropped"` instead of repeating an older call. `onError`
+receives the failed call as its third argument;
 `run.retry()` repeats exactly that call, also after other calls ran, which
 suits a "Try again" action in a toast.
 
@@ -132,15 +136,19 @@ second row while the first one runs; give each row its own mutation, or use
 downloads.
 
 `mutate()`, `retry()`, and `run.retry()` resolve with the outcome of this
-call: `"success"`, `"error"`, `"aborted"`, or `"dropped"`. After `await`, read
-the outcome, not `error()` or `data()`, which may describe another call:
+call: `"success"`, `"error"`, `"aborted"`, `"dropped"`, or `"superseded"`.
+`"superseded"` means the function ran, but a newer call replaced it and its result
+was discarded; its server work may still have happened, and `onFinally` runs.
+After `await`, read the outcome, not `error()` or `data()`, which may describe
+another call:
 
 ```ts
 if ((await update.mutate(values)) === "success") close();
 ```
 
-Release a local busy flag set before `mutate()` from the outcome, not only in
-`onFinally`, because a dropped call runs no hook.
+Release a local busy flag set before `mutate()` in `finally` after awaiting the
+call, because a dropped call runs no hook. Errors thrown by abort hooks reject
+the call's Promise; `abort()` itself returns synchronously without throwing them.
 
 To ask before the work starts, call `cancel()` from the second argument of
 `onBefore`. The call ends as `aborted` without `onError` or `onAbort`, and
@@ -157,7 +165,7 @@ different payload.
 return values are not awaited. Put work that defines the command outcome in the
 mutation function. Track post-write reconciliation separately.
 
-`error()` and `onError` report only a failed mutation function. `onSuccess`
+`error()` and `onError` report a failed mutation function or `onBefore` hook. `onSuccess`
 runs after `data()` and `loading()` are updated; an error thrown there, or by a
 component that renders the result, does not count as a failed write. A render
 error reaches the island's boundary

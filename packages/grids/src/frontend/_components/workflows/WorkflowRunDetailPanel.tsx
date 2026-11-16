@@ -241,7 +241,7 @@ export function WorkflowRunDetailPanel(props: {
   });
 
   /** The latest detail read; a read that starts later replaces its result. */
-  let reading: Promise<void> = Promise.resolve();
+  let reading: Promise<unknown> = Promise.resolve();
   const load = (runId: string) => (reading = loadMut.mutate(runId));
   const refresh = (runId = props.runId) => {
     if (!loadMut.loading()) void load(runId);
@@ -254,9 +254,8 @@ export function WorkflowRunDetailPanel(props: {
   const readAgain = async (runId: string) => {
     await reading;
     if (runId !== props.runId) return;
-    await load(runId);
-    const error = loadMut.error();
-    if (error) throw error;
+    const outcome = await load(runId);
+    if (outcome === "error") throw loadMut.error();
   };
 
   createEffect(() => {
