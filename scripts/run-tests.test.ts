@@ -28,7 +28,8 @@ describe("root test orchestration", () => {
     expect(byName.get("@k2b/ui rest")?.command).toEqual(["bun", "run", "test:part:rest"]);
     expect(byName.get("@k2b/cloud-app-pulse")?.command).toEqual(["bun", "run", "test"]);
     expect(byName.get("@k2b/cloud-app-accounts")?.command).toEqual(["bun", "run", "test"]);
-    expect(byName.get("@k2b/cloud-app-tools")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
+    // A package without a test script of its own; the gateway runs no SSR pages and keeps none.
+    expect(byName.get("@k2b/cloud-app-gateway")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
     expect(byName.get("workspace root tests")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
     expect(byName.get("workspace root scripts")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
   });
