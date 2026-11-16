@@ -45,7 +45,7 @@
 }
 
 /* The work line (Gustav chat v12, Feinschliff 4): only ✦, one sentence in 13 px, then on the right the steps and the
-   time in 12 px tabular figures, and the chevron. One line in every state and the same height whether the turn runs or has ended (Bauplan 6b). */
+   time in 12 px tabular figures, and the chevron. The same height whether the turn runs or has ended (Bauplan 6b). */
 .k2b-ui .ai-turn-work {
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
@@ -162,19 +162,22 @@
 
 /* The time follows the sentence and the chevron follows the time, each right beside the other (v12); tabular figures keep
    a ticking clock from shifting the chevron within a unit. */
-/* The time has a fixed column (Feinschliff 2: 56 px, phone 48 px) in the steps' grey, so steps and time end on the same
-   edges in every row. */
 .k2b-ui .ai-turn-work__meta {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+/* The work line's own time has a fixed column (Feinschliff 2: 56 px, phone 48 px) in the steps' grey, so steps and time
+   end on the same edges. Folded rows use the same class for their counts and keep their own width. */
+.k2b-ui .ai-turn-work > .k2b-chat-activity__row > .k2b-chat-activity__trailing > .ai-turn-work__meta {
   width: 3.5rem;
   flex: none;
   color: var(--k2b-text-subtle, var(--k2b-text-muted));
-  font-size: 0.75rem;
-  line-height: 1.25rem;
   text-align: end;
 }
 
 @container k2b-chat (max-width: 39.999rem) {
-  .k2b-ui .ai-turn-work__meta {
+  .k2b-ui .ai-turn-work > .k2b-chat-activity__row > .k2b-chat-activity__trailing > .ai-turn-work__meta {
     width: 3rem;
   }
 }
