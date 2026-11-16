@@ -683,7 +683,9 @@ export const updateWorkflowMetadata = async (params: {
     });
   } catch (error) {
     const result =
-      (error as { code?: string }).code === "23505" ? fail(err.conflict("Workflow name already exists")) : fail(err.internal("Failed to update workflow"));
+      (error as { code?: string }).code === "23505"
+        ? fail(err.conflict("Workflow name already exists"))
+        : fail(err.internal("Failed to update workflow"));
     return recordWorkflowResult({ ...auditBase, result });
   }
 };

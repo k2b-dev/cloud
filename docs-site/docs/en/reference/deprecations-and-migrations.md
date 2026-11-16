@@ -10,7 +10,7 @@ updated: 2026-11-16
 
 # Deprecations and migrations
 
-## `err.conflict` takes the whole sentence
+## Conflict errors take the whole sentence
 
 `err.conflict(message)` from `@k2b/cloud/server` (and `@k2b/stdlib` 0.33.0,
 which it passes through) now uses its argument as the whole message and adds
