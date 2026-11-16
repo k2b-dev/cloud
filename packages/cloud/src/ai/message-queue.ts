@@ -202,7 +202,9 @@ export const drainQueuedMessages = async (
       if (row.submission.runConfig.codeOrigin) {
         // Code without a host check stays queued for the next sweep instead of starting unchecked.
         if (!admitCodeStart) continue;
-        const refused = await admitCodeStart(row.submission, row.id);
+        // A failing host check is not a refusal: the message keeps waiting for the next sweep.
+        const refused = await admitCodeStart(row.submission, row.id).catch(() => undefined);
+        if (refused === undefined) continue;
         if (refused && isAiQueueRetryableError(refused)) {
           await sql`UPDATE ai.queued_messages SET status='failed', error=${refused}, quota_checked_at=clock_timestamp() WHERE id=${row.id}::uuid AND status IN ('pending','failed')`;
           continue;
@@ -225,7 +227,10 @@ export const drainQueuedMessages = async (
       // Another dispatcher may have consumed it or a new foreground turn may have won.
       const reason = error instanceof Error ? error.message : String(error);
       if (reason === "Queued message is no longer ready." || reason.includes("idx_ai_turns_one_active_per_conversation")) continue;
-      await sql`UPDATE ai.queued_messages SET status = 'failed', error = 'dispatch_failed' WHERE id = ${row.id}::uuid AND status = 'pending'`;
+      // A Code message that cannot start is withdrawn with its reason; it never holds the chat or its owner.
+      if (row.submission.runConfig.codeOrigin) await retireQueuedMessage(row.id, "dispatch_failed");
+      else
+        await sql`UPDATE ai.queued_messages SET status = 'failed', error = 'dispatch_failed' WHERE id = ${row.id}::uuid AND status = 'pending'`;
       log.error("Queued message dispatch failed", {
         conversationId: row.conversation_id,
         messageId: row.id,
