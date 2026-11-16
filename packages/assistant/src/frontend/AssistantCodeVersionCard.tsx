@@ -745,6 +745,8 @@ export default function AssistantCodeVersionCard(props: {
     return {
       ...base,
       state: "open",
+      // The head always says where the version stands: approved by an admin, or ready without one (v12 §9).
+      status: approved ? { tone: "done", label: words.statusApproved } : { tone: "waiting", label: words.statusReady, icon: "ti ti-power" },
       sentence: sentence(words.askOn),
       reason: versionReason(false),
       unavailable: blocked,
