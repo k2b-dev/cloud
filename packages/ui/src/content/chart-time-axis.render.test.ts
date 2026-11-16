@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { renderChartSvg } from "../charts/core/render";
 import { chartTimeStep, chartTimeTicks } from "./chart-time-axis";
 import { chartTimeTickBudget } from "./chart-time-calendar";
 
