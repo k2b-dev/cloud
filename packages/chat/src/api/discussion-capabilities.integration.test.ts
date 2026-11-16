@@ -247,51 +247,89 @@ suiteFor(
         },
       }),
     });
-    const source = await postDiscussion({ ref: item, body: "The **quarterly report** is ready." }, context(author, "source"));
+    const source = await postDiscussion(
+      { ref: item, body: "We **disapprove** of this plan, the quarterly report is ready." },
+      context(author, "source"),
+    );
     if (!source.ok) throw new Error("Expected source");
     const [chat] = await sql<
       { short_id: string }[]
     >`SELECT short_id FROM chat.conversations WHERE resource_type = ${owner.type} AND resource_id = ${owner.id}`;
     f.trackChat(chat!.short_id);
     const id = source.data.data.ref.id;
+    // A part of a word quotes the whole word: "approve" is "disapprove" in this message.
+    const quotes = [
+      { message: id, text: "approve of this plan" },
+      { message: id, text: "quarterly  report is" },
+    ];
 
-    // The review shows the passage; the post stores the message's own words.
+    // The review shows the words that will be stored, with their author, exactly as the post then stores them.
     const reviewed = await chatCapabilities.actions["discussion.post"].review(
-      { ref: item, body: "Agreed.", quotes: [{ message: id, text: "quarterly  report is" }] },
+      { ref: item, body: "Agreed.", quotes },
       context(agent, "review"),
     );
-    expect(reviewed.ok && "content" in reviewed.data && reviewed.data.content?.body).toBe("> quarterly report is\n\nAgreed.");
-    const quoted = await postDiscussion(
-      { ref: item, body: "Agreed.", quotes: [{ message: id, text: "quarterly  report is" }] },
-      context(agent, "quote"),
+    expect(reviewed.ok && "content" in reviewed.data && reviewed.data.content?.body).toBe(
+      "> disapprove of this plan — Lea Muster\n> quarterly report is — Lea Muster\n\nAgreed.",
     );
+    const quoted = await postDiscussion({ ref: item, body: "Agreed.", quotes }, context(agent, "quote"));
     if (!quoted.ok) throw new Error("Expected quote");
-    const expected = [{ id, author: { type: "user" as const, id: author.id, name: "Lea Muster" }, text: "quarterly report is" }];
+    const by = { type: "user" as const, id: author.id, name: "Lea Muster" };
+    const expected = [
+      { id, author: by, text: "disapprove of this plan" },
+      { id, author: by, text: "quarterly report is" },
+    ];
     expect(DiscussionMessageDataSchema.parse(quoted.data.data).quotes).toEqual(expected);
     const read = await readDiscussionMessage({ id: quoted.data.data.ref.id }, context(agent, "read"));
     expect(read.ok && read.data.data.quotes).toEqual(expected);
+    // A list page names the quoted messages but carries none of their words.
     const listed = await listDiscussion({ ref: item, limit: 1 }, context(agent, "list"));
-    expect(listed.ok && listed.data.data[0]?.quotes).toEqual(expected);
+    expect(listed.ok && listed.data.data[0]?.quotes).toEqual([{ message: id }, { message: id }]);
+    expect(JSON.stringify(listed)).not.toContain("disapprove of this plan");
 
-    // A retry with other quotes is another request; an invented passage and a message of another discussion are refused.
+    // A retry with other quotes is another request. Markdown marks and invented words are no passage (400); a message
+    // of another discussion lies outside this invocation's authorized item, so it is as unknown as a missing one (404).
     expect(
       await postDiscussion({ ref: item, body: "Agreed.", quotes: [{ message: id, text: "ready" }] }, context(agent, "quote")),
-    ).toMatchObject({
-      ok: false,
-      error: { code: "IDEMPOTENCY_CONFLICT", status: 409 },
-    });
-    expect(
-      await postDiscussion({ ref: item, body: "No.", quotes: [{ message: id, text: "report is late" }] }, context(agent, "invented")),
-    ).toMatchObject({
-      ok: false,
-      error: { status: 400 },
-    });
+    ).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT", status: 409 } });
+    for (const text of ["report is late", "**disapprove**"])
+      expect(
+        await postDiscussion({ ref: item, body: "No.", quotes: [{ message: id, text }] }, context(agent, `bad-${text}`)),
+      ).toMatchObject({
+        ok: false,
+        error: { status: 400 },
+      });
+    const reviewRefused = await chatCapabilities.actions["discussion.post"].review(
+      { ref: item, body: "No.", quotes: [{ message: id, text: "report is late" }] },
+      context(agent, "review-bad"),
+    );
+    expect(reviewRefused).toMatchObject({ ok: false, error: { status: 400 } });
     const anotherItem = { ...item, id: crypto.randomUUID() };
+    const unknown = await postDiscussion(
+      { ref: anotherItem, body: "Elsewhere.", quotes: [{ message: testShortId(10), text: "ready" }] },
+      context(agent, "unknown", anotherItem),
+    );
     const cross = await postDiscussion(
       { ref: anotherItem, body: "Elsewhere.", quotes: [{ message: id, text: "ready" }] },
       context(agent, "cross", anotherItem),
     );
-    expect(cross.ok).toBe(false);
+    if (unknown.ok || cross.ok) throw new Error("Expected refusals");
+    expect(unknown.error.status).toBe(404);
+    expect({ status: cross.error.status, code: cross.error.code, message: cross.error.message }).toEqual({
+      status: unknown.error.status,
+      code: unknown.error.code,
+      message: unknown.error.message,
+    });
+
+    // An edit that takes the words away leaves the quote without them; the quoting message's revision stays.
+    const changed = await changeDiscussionMessage(
+      "edit",
+      { id, revision: source.data.data.revision, body: "We changed our minds." },
+      context(author, "edit-source"),
+    );
+    expect(changed.ok).toBe(true);
+    const after = await readDiscussionMessage({ id: quoted.data.data.ref.id }, context(agent, "read-after"));
+    expect(after.ok && after.data.data.quotes).toEqual([{ deleted: true }, { deleted: true }]);
+    expect(after.ok && after.data.data.revision).toBe(quoted.data.data.revision);
   });
 
   test("concurrent post keys compare their inputs after waiting for the conversation lock", async () => {

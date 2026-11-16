@@ -22,7 +22,7 @@ keep both `entry.read` and `folder.read` available to the incoming authority.
 
 | Operation | Input | Result |
 | --- | --- | --- |
-| `chat.discussion.list` | `ref`, optional `limit` and `cursor` | Newest-first message previews. Listing never creates a conversation or thread. |
+| `chat.discussion.list` | `ref`, optional `limit` and `cursor` | Newest-first message previews, with the messages they quote but not the quoted words. Listing never creates a conversation or thread. |
 | `chat.message.read` | `id` from a `chat.message` ref | Full message body, attachments, shared refs, quoted passages, content revision, and an `open` link. |
 | `chat.discussion.post` | `ref`, `body`, optional `replyTo` message ID, optional `quotes` | The stored message. Creates the item's thread when needed. |
 | `chat.message.edit` | `id`, `revision`, `body` | The updated own message. |
@@ -31,25 +31,31 @@ keep both `entry.read` and `folder.read` available to the incoming authority.
 List pages contain at most 20 messages. Previews contain at most 300 Unicode
 code points; `previewTruncated` tells the caller to use `message.read`. Follow
 `page.nextCursor` while `page.hasMore` is true. Deleted messages have an empty
-preview and a non-null `deletedAt`.
+preview and a non-null `deletedAt`. A preview's `quotes` only names the quoted
+messages, `{ message }` or `{ deleted: true }`, so a page stays small; read a
+message with `message.read` for the quoted words.
 
 Messages accept at most 20,000 Unicode code points and must contain non-whitespace
 text.
 
 `quotes` lists up to 10 passages `{ message, text }` of earlier messages in the
-same item discussion, together at most 20,000 Unicode code points. The words of
-`text` must occur in the message as `message.read` shows it, whitespace aside;
-Chat stores that passage in whole words with the message's own spacing. A passage that does not
-occur returns 400; a message that is missing, deleted or in another discussion
-is refused. These are the same checks as a person's quote in the Chat app. The
-approval review shows each passage as a `> ` line above the text. Quotes are
-part of the request, so a retry with other quotes under the same idempotency
-key returns `IDEMPOTENCY_CONFLICT`.
+same item discussion, together at most 20,000 Unicode code points. `text` holds
+the visible words of the message: what a reader sees, without Markdown marks
+such as `**` or link targets, whitespace aside. Chat stores that passage in
+whole words with the message's own spacing. A passage that does not occur
+returns 400. A message that is missing, deleted, or outside this discussion
+returns 404, the same answer as an unknown ID. These are the same checks as a
+person's quote in the Chat app. The approval review resolves the quotes the
+same way and shows each stored passage and its author as a `> ` line above the
+text. Quotes are part of the request, so a retry with other quotes under the
+same idempotency key returns `IDEMPOTENCY_CONFLICT`.
 
-Every message read and listed carries `quotes`: `{ id, author, text }` as it
-was when quoted, or `{ deleted: true }` once that message was deleted or
-changed so that the quoted words are gone. Such a change gives the quoting
-message a new revision, so readers that follow changes drop the old words. The provider owns item identity: the same ref addresses one discussion. If a
+`message.read` returns `quotes`: `{ id, author, text }` as it was when quoted,
+or `{ deleted: true }` once that message was deleted or changed so that the
+quoted words are gone. The quoting message's capability `revision` stays the
+same; read it again to see `{ deleted: true }`.
+
+The provider owns item identity: the same ref addresses one discussion. If a
 provider returns a series ref, all occurrences share that discussion. Include
 an occurrence date in the text when relevant.
 
@@ -89,7 +95,7 @@ the shared [idempotency contract](/en/docs/platform/capabilities). If Core retur
 deciding on a new action.
 
 For posts to the same item in the same container, reusing a key with a different
-body or `replyTo` returns `IDEMPOTENCY_CONFLICT` (HTTP 409), even after Core's
+body, `replyTo` or quotes returns `IDEMPOTENCY_CONFLICT` (HTTP 409), even after Core's
 claim expires. Use a new key for a new post. After Core's claim expires, an
 identical retry returns the existing message's current state, including later
 edits. Deletion removes the post's input fingerprint; provider-side post

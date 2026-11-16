@@ -57,7 +57,7 @@ export const discussionReview = (
   body: string,
   locale?: string,
   revision?: number,
-  quotes: readonly { text: string }[] = [],
+  quotes: readonly { text: string; author: string }[] = [],
 ): CapabilityActionCallReview => {
   const language = locale?.startsWith("de") ? "de" : "en";
   const label =
@@ -73,7 +73,7 @@ export const discussionReview = (
     content: {
       kind: "page",
       title: label,
-      body: quotes.length ? `${quotes.map((quote) => `> ${quote.text.replace(/\s+/gu, " ").trim()}`).join("\n")}\n\n${body}` : body,
+      body: quotes.length ? `${quotes.map((quote) => `> ${quote.text} — ${quote.author}`).join("\n")}\n\n${body}` : body,
       format: "plain",
       ...(revision === undefined ? {} : { baseRevision: revision }),
     },

@@ -5,10 +5,10 @@ import type { z } from "zod";
 import { DISCUSSION_PREVIEW_LENGTH, type DiscussionItemSchema } from "../capability-contracts";
 import { threadHref } from "../frontend/threads";
 import { actingPrincipal, type ChatContext, messages as catalog, requireConversation } from "./access";
-import type { MessageViewSchema } from "./contracts";
+import type { MessageQuote, MessageViewSchema } from "./contracts";
 import { authorizeDiscussion, checkDiscussionCredentialScope } from "./discussion-access";
 import { type MessageRow, messageViews } from "./message-store";
-import { messages } from "./messages";
+import { messages, resolveSources } from "./messages";
 import { systemChats } from "./system-chats";
 import { threads } from "./threads";
 import type { RateLimited } from "./write-rate";
@@ -27,14 +27,19 @@ export const discussionMessage = (item: Item, message: Message) => ({
   revision: message.contentRevision ?? 0,
   via: message.via ?? null,
   replyTo: message.replyTo && "id" in message.replyTo ? message.replyTo.id : null,
-  quotes: message.quotes ?? [],
 });
 export const discussionPreview = (body: string | null) => {
   const points = Array.from(body ?? "");
   return { preview: points.slice(0, DISCUSSION_PREVIEW_LENGTH).join(""), previewTruncated: points.length > DISCUSSION_PREVIEW_LENGTH };
 };
 const envelope = (item: Item, message: Message) => ({
-  data: { ...discussionMessage(item, message), body: message.body, refs: message.refs, attachments: message.attachments },
+  data: {
+    ...discussionMessage(item, message),
+    body: message.body,
+    refs: message.refs,
+    attachments: message.attachments,
+    quotes: message.quotes ?? [],
+  },
   links: [{ rel: "open" as const, href: threadHref(message.conversationId, message.thread ?? "general", message.id) }],
 });
 
@@ -46,6 +51,24 @@ export const findDiscussion = async (item: Item, container: { type: string; id: 
     WHERE c.kind = 'system' AND c.resource_type = ${container.type} AND c.resource_id = ${container.id}
       AND t.resource_type = ${item.type} AND t.resource_id = ${item.id}`;
   return row;
+};
+
+/**
+ * The passages a post to `item` would quote, resolved exactly as sending resolves them, with the same 404 and 400, so
+ * an Action's review shows the words that will be stored. Without a discussion yet, no message can be quoted.
+ */
+export const reviewQuotes = async (
+  item: Item,
+  quotes: readonly { message: string; text: string }[] | undefined,
+  access: { container: { ref: { type: string; id: string } }; context: ChatContext },
+): Promise<Result<MessageQuote[]>> => {
+  if (!quotes?.length) return ok([]);
+  const location = await findDiscussion(item, access.container.ref);
+  if (!location) return notFound(access.context);
+  const allowed = await requireConversation({ ...access.context, conversationId: location.conversation, required: "read" });
+  if (!allowed.ok) return allowed;
+  const resolved = await resolveSources(sql, allowed.data.id, access.context, { quotes, thread: location.thread });
+  return resolved.ok ? ok(resolved.data.quotes) : resolved;
 };
 
 export const listDiscussion = async (input: { ref: Item; limit: number; cursor?: string }, context: CapabilityExecutionContext) => {
@@ -61,7 +84,11 @@ export const listDiscussion = async (input: { ref: Item; limit: number; cursor?:
   const visible = rows.slice(0, input.limit);
   const views = await messageViews(sql, visible, location.conversation, context.accessSubject, context.locale);
   return ok({
-    data: views.map((message) => ({ ...discussionMessage(input.ref, message), ...discussionPreview(message.body) })),
+    data: views.map((message) => ({
+      ...discussionMessage(input.ref, message),
+      ...discussionPreview(message.body),
+      quotes: (message.quotes ?? []).map((quote) => ("deleted" in quote ? quote : { message: quote.id })),
+    })),
     page: rows.length > input.limit ? { hasMore: true as const, nextCursor: String(visible.at(-1)!.seq) } : { hasMore: false as const },
     links: [{ rel: "open" as const, href: threadHref(location.conversation, location.thread) }],
   });

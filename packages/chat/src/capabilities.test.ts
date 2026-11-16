@@ -104,17 +104,17 @@ test("bounds pages, Unicode content and previews, rejects provenance and occurre
   expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: [{ ...quote, author: "Lea" }] }).success).toBe(false);
 });
 
-test("a post's review shows its quoted passages above the text, also for maximum-size quotes", async () => {
-  const quotes = [{ text: "the quarterly\n report " }, { text: "🦋".repeat(9_999) }];
-  const review = discussionReview("post", item, "Review", "Agreed.", "en", undefined, quotes);
-  expect(CapabilityActionReviewDataSchema.parse(review)).toEqual(review);
-  expect(review.content?.body).toBe(`> the quarterly report\n> ${"🦋".repeat(9_999)}\n\nAgreed.`);
+test("a review shows each stored passage with its author above the text, also for maximum-size quotes", () => {
+  const quotes = [
+    { text: "disapprove of this plan", author: "Lea Muster" },
+    { text: "🦋".repeat(9_999), author: "Ben Schulz" },
+  ];
+  for (const operation of ["post", "edit", "delete"] as const) {
+    const review = discussionReview(operation, item, "Review", "Agreed.", "en", operation === "post" ? undefined : 0, quotes);
+    expect(CapabilityActionReviewDataSchema.parse(review)).toEqual(review);
+    expect(review.content?.body).toBe(`> disapprove of this plan — Lea Muster\n> ${"🦋".repeat(9_999)} — Ben Schulz\n\nAgreed.`);
+  }
   expect(discussionReview("post", item, "Review", "Agreed.").content?.body).toBe("Agreed.");
-  const actual = await chatCapabilities.actions["discussion.post"].review(
-    { ref: item, body: "Agreed.", quotes: [{ message: "AbCdEf1234", text: "the report" }] },
-    context(),
-  );
-  expect(actual.ok && "content" in actual.data && actual.data.content?.body).toBe("> the report\n\nAgreed.");
 });
 
 test("fresh standard item and container readers supply only the exact authorized resources", async () => {

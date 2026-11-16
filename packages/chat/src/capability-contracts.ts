@@ -44,7 +44,7 @@ export const DiscussionPostInputSchema = z.strictObject({
           .min(1)
           .max(MESSAGE_MAX_CODE_POINTS * 2)
           .describe(
-            "Words exactly as the message shows them (from message.read); spacing may differ. The stored quote uses the message's own text.",
+            "The visible words of the message, without Markdown marks such as ** or link targets; spacing may differ. The stored quote is the message's own text in whole words.",
           ),
       }),
     )
@@ -68,17 +68,29 @@ export const DiscussionMessageSchema = z.strictObject({
   revision: z.number().int().nonnegative(),
   via: z.enum(["assistant", "mcp"]).nullable(),
   replyTo: MessageIdSchema.nullable(),
-  quotes: z
-    .array(MessageQuoteSchema)
-    .max(MAX_MESSAGE_REFS)
-    .describe("Passages of earlier messages it quotes, as they were when quoted; { deleted: true } once their message was deleted."),
 });
-export const DiscussionPreviewSchema = DiscussionMessageSchema.extend({ preview: z.string(), previewTruncated: z.boolean() });
+/** A list names what a message quotes but not the words; message.read returns them, so a page keeps its bound. */
+export const DiscussionPreviewSchema = DiscussionMessageSchema.extend({
+  preview: z.string(),
+  previewTruncated: z.boolean(),
+  quotes: z
+    .array(z.union([z.strictObject({ message: MessageIdSchema }), z.strictObject({ deleted: z.literal(true) })]))
+    .max(MAX_MESSAGE_REFS)
+    .describe(
+      "Messages it quotes, without their words; message.read returns the passages. { deleted: true } once a quoted passage is gone.",
+    ),
+});
 export const DiscussionListDataSchema = z.array(DiscussionPreviewSchema).max(DISCUSSION_PAGE_SIZE);
 export const DiscussionMessageDataSchema = DiscussionMessageSchema.extend({
   body: z.string().nullable(),
   refs: z.array(CloudResourceRefSchema).max(10),
   attachments: z.array(AttachmentViewSchema).max(10),
+  quotes: z
+    .array(MessageQuoteSchema)
+    .max(MAX_MESSAGE_REFS)
+    .describe(
+      "Passages of earlier messages it quotes, as they were when quoted; { deleted: true } once their message was deleted or changed so that the words are gone.",
+    ),
 });
 
 /** Ordinary Chat messages share the complete content projection, with their conversation as location. */
