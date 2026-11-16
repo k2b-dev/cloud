@@ -2,7 +2,7 @@ import type { MaintenanceStatus } from "@k2b/cloud/contracts/maintenance";
 import type { DateContext } from "@k2b/stdlib";
 import { Button, DateTimePicker, dialogCore, NoticeCard, PanelDialog, panelDialogOptions } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
-import { maintenanceApi } from "./client";
+import { maintenanceApi, refusedField } from "./client";
 import { maintenanceAdminMessages } from "./messages";
 import { defaultEnd, isFutureEnd, todayKey } from "./time";
 
@@ -31,8 +31,10 @@ export const openMoveEndDialog = (current: string | undefined, dateConfig: DateC
         setFailed(false);
         try {
           close(await maintenanceApi.until(end));
-        } catch {
-          setFailed(true);
+        } catch (error) {
+          // The server refused the time itself (its clock is ahead of this browser's): say so at the field.
+          if (refusedField(error) === "until") setError(t.timePassed);
+          else setFailed(true);
           setSaving(false);
         }
       };

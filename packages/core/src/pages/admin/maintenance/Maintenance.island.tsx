@@ -2,7 +2,7 @@ import { MAINTENANCE_MESSAGE_MAX_LENGTH, type MaintenanceStatus } from "@k2b/clo
 import type { DateContext } from "@k2b/stdlib";
 import { Button, DateTimePicker, DescriptionList, NoticeCard, prompts, Section, StatusBadge, TextInput, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import { enterThroughBypass, maintenanceApi } from "./client";
+import { enterThroughBypass, maintenanceApi, refusedField } from "./client";
 import { maintenanceAdminMessages } from "./messages";
 import { openMoveEndDialog } from "./move-end-dialog";
 import { activeRows } from "./rows";
@@ -34,6 +34,9 @@ export default function Maintenance(props: {
   // A planned end is suggested; clearing the field means none.
   const [until, setUntil] = createSignal<string | null>(props.suggestedEnd);
   const [untilError, setUntilError] = createSignal<string>();
+  const [messageError, setMessageError] = createSignal<string>();
+  /** The running state's rows; focus lands here once starting turns the form into the running state. */
+  let activeState: HTMLDivElement | undefined;
   const [busy, setBusy] = createSignal<Busy>(null);
   const [failure, setFailure] = createSignal<Failure | null>(null);
   const [now, setNow] = createSignal(Date.now());
@@ -86,13 +89,20 @@ export default function Maintenance(props: {
     setUntilError(undefined);
     setFailure(null);
     setBusy("start");
+    setMessageError(undefined);
     try {
       write(await maintenanceApi.on({ ...(message().trim() ? { message: message() } : {}), ...(end ? { until: end } : {}) }));
-    } catch {
-      setFailure({ message: t().startFailed });
+    } catch (error) {
+      // A refused field says why at that field (e.g. this browser's clock is ahead of the server's); anything else is general.
+      const field = refusedField(error);
+      if (field === "until") setUntilError(t().timePassed);
+      else if (field === "message") setMessageError(t().messageTooLong);
+      else setFailure({ message: t().startFailed });
       setBusy(null);
       return;
     }
+    // The start button is gone with the form; keyboard and screen reader users continue at the running state.
+    queueMicrotask(() => activeState?.focus());
     // From here on everyone else sees the maintenance page; the button stays busy until this browser is let in.
     await enter();
   };
@@ -201,8 +211,12 @@ export default function Maintenance(props: {
                 description={t().messageHint}
                 maxLength={MAINTENANCE_MESSAGE_MAX_LENGTH}
                 value={message}
+                error={messageError}
                 disabled={busy() !== null}
-                onValueChange={setMessage}
+                onValueChange={(value) => {
+                  setMessage(value);
+                  setMessageError(undefined);
+                }}
               />
               <DateTimePicker
                 class="sm:max-w-sm"
@@ -223,10 +237,12 @@ export default function Maintenance(props: {
             </>
           }
         >
-          <DescriptionList
-            layout="rows"
-            items={activeRows(status(), { t: t(), locale: locale(), dateConfig: props.dateConfig, appNames: props.appNames, now: now() })}
-          />
+          <div ref={activeState} tabIndex={-1} class="outline-none" data-maintenance-active-state>
+            <DescriptionList
+              layout="rows"
+              items={activeRows(status(), { t: t(), locale: locale(), dateConfig: props.dateConfig, appNames: props.appNames, now: now() })}
+            />
+          </div>
         </Show>
         {failureNotice()}
       </div>

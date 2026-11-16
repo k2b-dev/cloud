@@ -222,6 +222,51 @@ else {
     }
   });
 
+  test("after starting, focus lands on the running state instead of falling to the page", async () => {
+    const dom = createDomTestHarness();
+    const link = deferred<Response>();
+    const fetch = mockFetch((method, path) => {
+      if (method === "POST" && path === "/api/admin/maintenance/on") return Response.json(active);
+      if (method === "POST" && path === "/api/admin/maintenance/bypass") return link.promise;
+      return undefined;
+    });
+    const dispose = mount(dom, off);
+    try {
+      const start = button(dom, "Start maintenance")!;
+      start.focus();
+      start.click();
+      await waitFor(() => Boolean(dom.root.querySelector("[data-maintenance-active-state]")), "running state");
+      await waitFor(() => dom.document.activeElement?.hasAttribute("data-maintenance-active-state") === true, "focus on the state");
+      expect(dom.document.activeElement).not.toBe(dom.document.body);
+    } finally {
+      link.settle(Response.json({ code: "INTERNAL" }, { status: 500 }));
+      dispose();
+      fetch.restore();
+      dom.cleanup();
+    }
+  });
+
+  test("an end the server refuses says why at the field, not as a general failure", async () => {
+    const dom = createDomTestHarness();
+    // This browser's clock is behind the server's: the end it still considers future has passed there.
+    const fetch = mockFetch((method, path) =>
+      method === "POST" && path === "/api/admin/maintenance/on"
+        ? Response.json({ message: "until must be in the future", code: "BAD_INPUT" }, { status: 400 })
+        : undefined,
+    );
+    const dispose = mount(dom, off);
+    try {
+      button(dom, "Start maintenance")!.click();
+      await waitFor(() => (dom.root.textContent ?? "").includes("This time has already passed."), "field error");
+      expect(dom.root.textContent).not.toContain("Maintenance did not start.");
+      expect(button(dom, "Start maintenance")!.disabled).toBe(false);
+    } finally {
+      dispose();
+      fetch.restore();
+      dom.cleanup();
+    }
+  });
+
   test("a cleared end starts maintenance without a planned end", async () => {
     const dom = createDomTestHarness();
     const fetch = mockFetch(() => Response.json({ code: "INTERNAL" }, { status: 500 }));
@@ -403,6 +448,30 @@ else {
       button(dom, "Cancel", "dialog")!.click();
       await waitFor(() => !dom.document.querySelector("[data-move-end-dialog]"), "dialog closed");
       expect(dom.root.textContent).not.toContain("Planned until");
+    } finally {
+      modules!.ui.dialogCore.close();
+      dispose();
+      fetch.restore();
+      dom.cleanup();
+    }
+  });
+
+  test("an end the server refuses in the dialog says why at the field and keeps the dialog open", async () => {
+    const dom = createDomTestHarness();
+    const fetch = mockFetch((method, path) =>
+      method === "POST" && path === "/api/admin/maintenance/until"
+        ? Response.json({ message: "until must be in the future", code: "BAD_INPUT" }, { status: 400 })
+        : undefined,
+    );
+    const dispose = mount(dom, active);
+    try {
+      button(dom, "Move end")!.click();
+      await waitFor(() => Boolean(button(dom, "Save", "dialog")), "end dialog");
+      button(dom, "Save", "dialog")!.click();
+      const dialog = () => dom.document.querySelector("[data-move-end-dialog]");
+      await waitFor(() => (dialog()?.textContent ?? "").includes("This time has already passed."), "field error in dialog");
+      expect(dialog()!.textContent).not.toContain("The end was not moved.");
+      expect(button(dom, "Save", "dialog")!.disabled).toBe(false);
     } finally {
       modules!.ui.dialogCore.close();
       dispose();

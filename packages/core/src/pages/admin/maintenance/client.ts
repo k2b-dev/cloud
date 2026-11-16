@@ -7,6 +7,24 @@ import {
   MaintenanceStatusSchema,
 } from "@k2b/cloud/contracts/maintenance";
 
+/** A refused call with Core's status and its (English, machine-facing) message. */
+export class MaintenanceApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly serverMessage: string,
+  ) {
+    super(`maintenance API answered ${status}${serverMessage ? `: ${serverMessage}` : ""}`);
+  }
+}
+
+/** Which field a `400` refused, so the page can say it at that field in the person's language. */
+export const refusedField = (error: unknown): "until" | "message" | null => {
+  if (!(error instanceof MaintenanceApiError) || error.status !== 400) return null;
+  if (error.serverMessage.startsWith("until")) return "until";
+  if (error.serverMessage.startsWith("message")) return "message";
+  return null;
+};
+
 /** Calls Core's maintenance API (`/api/admin/maintenance`) from the admin page; any failure throws. */
 
 const call = async (path: string, init: { method: "GET" | "POST"; body?: unknown }): Promise<unknown> => {
@@ -16,7 +34,11 @@ const call = async (path: string, init: { method: "GET" | "POST"; body?: unknown
     headers: init.body === undefined ? undefined : { "Content-Type": "application/json" },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
-  if (!response.ok) throw new Error(`maintenance ${path || "/"} answered ${response.status}`);
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const message = body && typeof body === "object" && "message" in body && typeof body.message === "string" ? body.message : "";
+    throw new MaintenanceApiError(response.status, message);
+  }
   return response.json();
 };
 
