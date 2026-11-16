@@ -22,6 +22,7 @@ import {
   cloudAiGroupSchema,
   cloudAiNumberFormatSchema,
 } from "./default-tool-contracts";
+import { TABLER_ICON_NAME } from "./figure-sign";
 
 // Views have their own namespace so model write tools cannot replace computed results.
 export const CLOUD_AI_VIEW_DIRECTORY = "/views";
@@ -86,6 +87,8 @@ const statsViewSchema = () =>
           .strictObject({
             label: z.string().trim().min(1).max(80),
             value: z.union([z.number(), z.string().trim().min(1).max(80)]),
+            /** The small sign before the label: a Tabler icon name such as `wallet`; without it the neutral sign. */
+            icon: z.string().max(60).regex(TABLER_ICON_NAME, "Use a Tabler icon name such as wallet.").optional(),
             format: cloudAiNumberFormatSchema().optional(),
             sub: z.string().trim().min(1).max(80).optional(),
             delta: z
