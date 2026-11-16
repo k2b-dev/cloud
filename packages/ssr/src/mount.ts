@@ -55,13 +55,21 @@ export const islandOf = (owner: Owner): HTMLElement | undefined => {
   }
 };
 
-/** Fields whose typed text an island keeps when it renders over its server markup. */
-const textFields = (root: HTMLElement): (HTMLInputElement | HTMLTextAreaElement)[] =>
-  [...root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("textarea,input")].filter(
-    (field) => field.localName === "textarea" || ["text", "search", "email", "url", "tel"].includes(field.type),
-  );
-const fieldKey = (field: HTMLInputElement | HTMLTextAreaElement): string =>
-  `${field.localName} ${field.type} ${field.name} ${field.getAttribute("aria-label")}`;
+/**
+ * Text fields of an island by identity: tag, type, name and label, numbered among fields of the same identity, so a
+ * field that is gone from the new markup takes no other field's text. Password and file fields never take part.
+ */
+const textFields = (root: HTMLElement): Map<string, HTMLInputElement | HTMLTextAreaElement> => {
+  const fields = new Map<string, HTMLInputElement | HTMLTextAreaElement>();
+  for (const field of root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("textarea,input")) {
+    if (field.localName !== "textarea" && !["text", "search", "email", "url", "tel"].includes(field.type)) continue;
+    const key = `${field.localName} ${field.type} ${field.name} ${field.getAttribute("aria-label")}`;
+    let n = 0;
+    while (fields.has(`${key} ${n}`)) n++;
+    fields.set(`${key} ${n}`, field);
+  }
+  return fields;
+};
 
 const mountElement = <Props extends object>(
   element: HTMLElement,
@@ -78,8 +86,8 @@ const mountElement = <Props extends object>(
       const focused = [...all].indexOf(document.activeElement!);
       // Text typed into a server field before that (right after the page appeared) goes to the same field of the new
       // markup, with an input event, so the island's state has it too.
-      const typed = textFields(element).flatMap((field, index) =>
-        field.value === field.defaultValue ? [] : [{ index, key: fieldKey(field), value: field.value }],
+      const typed = [...textFields(element)].flatMap(([key, field]) =>
+        field.value === field.defaultValue ? [] : [[key, field.value] as const],
       );
       element.innerHTML = "";
       const dispose = render(() => {
@@ -111,10 +119,10 @@ const mountElement = <Props extends object>(
       }, element);
       mounted.set(element, dispose);
       const fields = textFields(element);
-      for (const { index, key, value } of typed) {
-        const field = fields[index];
-        // Only the same field: another one in its place keeps its own value.
-        if (!field || fieldKey(field) !== key || field.value.endsWith(value)) continue;
+      for (const [key, value] of typed) {
+        const field = fields.get(key);
+        // A field that is gone takes its text with it; a field that already shows the text needs no event.
+        if (!field || field.value.endsWith(value)) continue;
         // Text the island put there itself, such as a restored draft, stays in front of what was typed.
         field.value = field.localName === "textarea" && field.value ? `${field.value}\n${value}` : value;
         field.dispatchEvent(new Event("input", { bubbles: true }));

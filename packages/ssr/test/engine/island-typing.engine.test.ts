@@ -16,7 +16,8 @@ let origin: string;
 let islandId: string;
 
 // The island's server markup: a message field and a search field, as the page sends them before the island's script runs.
-const markup = `<form><textarea aria-label="Message" id="message"></textarea><input type="search" aria-label="Search" id="search" value="Lager"></form>`;
+// A note field only the server shows comes first, so the island's fields stand at other places in the new markup.
+const markup = `<form><input type="text" aria-label="Note" id="note"><textarea aria-label="Message" id="message"></textarea><input type="search" aria-label="Search" id="search" value="Lager"><input type="password" aria-label="Password" id="password"></form>`;
 
 beforeAll(async () => {
   root = makeTempRoot(".ssr-typing-engine-");
@@ -28,10 +29,14 @@ beforeAll(async () => {
       const [message, setMessage] = createSignal(window.restoredDraft ?? "");
       const [search, setSearch] = createSignal("Lager");
       onMount(() => { document.documentElement.dataset.mounted = "yes"; });
-      const record = (name, value) => { document.documentElement.dataset[name] = value; };
+      const record = (name, value) => {
+        document.documentElement.dataset[name] = value;
+        document.documentElement.dataset[name + "Events"] = String(Number(document.documentElement.dataset[name + "Events"] ?? 0) + 1);
+      };
       return <form>
         <textarea aria-label="Message" id="message" value={message()} onInput={(event) => { setMessage(event.currentTarget.value); record("message", event.currentTarget.value); }} />
         <input type="search" aria-label="Search" id="search" value={search()} onInput={(event) => { setSearch(event.currentTarget.value); record("search", event.currentTarget.value); }} />
+        <input type="password" aria-label="Password" id="password" onInput={(event) => record("password", event.currentTarget.value)} />
       </form>;
     }`,
   );
@@ -81,7 +86,12 @@ test("text typed into the server markup before the island renders stays in the f
   try {
     await page.goto(`${origin}/`);
     await page.waitForFunction(() => typeof (window as unknown as { mountIsland?: unknown }).mountIsland === "function");
-    // The person types right after the page appeared, before the island's script ran.
+    // The person types right after the page appeared, before the island's script ran: a note the island drops, the
+    // message, and a password.
+    await page.focus("#note");
+    await page.keyboard.insertText("Notiz");
+    await page.focus("#password");
+    await page.keyboard.insertText("geheim");
     await page.focus("#message");
     await page.keyboard.insertText("Hallo Gustav");
     await mountIsland(page);
@@ -89,12 +99,26 @@ test("text typed into the server markup before the island renders stays in the f
       await page.evaluate(() => ({
         field: (document.getElementById("message") as HTMLTextAreaElement).value,
         island: document.documentElement.dataset.message,
-        focused: document.activeElement?.id,
+        // One input event for the field the island controls, not one from the framework and one from a value effect.
+        events: document.documentElement.dataset.messageEvents,
         // The untouched search field keeps the island's own value and reports nothing.
         search: (document.getElementById("search") as HTMLInputElement).value,
         searchEvents: document.documentElement.dataset.search,
+        // A password never moves, and the dropped note is gone without landing in another field.
+        password: (document.getElementById("password") as HTMLInputElement).value,
+        passwordEvents: document.documentElement.dataset.password,
+        note: document.getElementById("note"),
       })),
-    ).toEqual({ field: "Hallo Gustav", island: "Hallo Gustav", focused: "message", search: "Lager", searchEvents: undefined });
+    ).toEqual({
+      field: "Hallo Gustav",
+      island: "Hallo Gustav",
+      events: "1",
+      search: "Lager",
+      searchEvents: undefined,
+      password: "",
+      passwordEvents: undefined,
+      note: null,
+    });
   } finally {
     await page.close();
   }

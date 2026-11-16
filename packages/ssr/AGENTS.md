@@ -119,7 +119,13 @@ Test `transform()` directly in both modes when changing it, including the
 
 `mount()` in `src/mount.ts` gives each wrapper element its own `render()` root
 with a root `ErrorBoundary`; `JSON.parse` and Seroval `fromJSON` parse props
-inside the boundary. Missing or malformed `data-props` throws there. One
+inside the boundary. Rendering replaces the server markup, so the runtime
+carries over what the person did in it meanwhile: focus moves to the element
+at the same place, and text typed into a text field or `<textarea>` moves to
+the field with the same tag, type, `name`, `aria-label`, and position among
+such fields, with one bubbling `input` event. Password, file, and other
+non-text fields never move, a field missing from the new markup drops its
+text, and a field that already ends with the text gets no event. Missing or malformed `data-props` throws there. One
 failing element never stops the loop. The default fallback is plain DOM
 (`role="alert"`, `data-ssr-error`, a **Try again** button calling `reset()`).
 Each caught error dispatches a bubbling, cancelable `ssr:island-error` event
