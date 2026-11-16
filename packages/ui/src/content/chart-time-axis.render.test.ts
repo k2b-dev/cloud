@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { chartTimeStep, chartTimeTicks } from "./chart-time-axis";
+import { chartTimeTickBudget } from "./chart-time-calendar";
 
 // Chart.tsx is Solid; the SSR plugin compiles it like the other chart render tests.
 const root = mkdtempSync(resolve(tmpdir(), "cloud-chart-time-axis-tests-"));
@@ -26,8 +27,33 @@ test("the step follows the span: minutes, hours, days, weeks and months", () => 
   expect(chartTimeStep(2 * hour, 5)).toEqual({ unit: "minute", size: 30 });
   expect(chartTimeStep(day, 5)).toEqual({ unit: "hour", size: 6 });
   expect(chartTimeStep(7 * day, 5)).toEqual({ unit: "day", size: 2 });
+  // Two weeks keep four or five dates at three-day steps, two months at two-week steps, not two at the next step.
+  expect(chartTimeStep(13 * day, 5)).toEqual({ unit: "day", size: 3 });
   expect(chartTimeStep(30 * day, 5)).toEqual({ unit: "week", size: 1 });
+  expect(chartTimeStep(59 * day, 5)).toEqual({ unit: "week", size: 2 });
   expect(chartTimeStep(90 * day, 5)).toEqual({ unit: "month", size: 1 });
+});
+
+test("without a tick count the dates follow the drawing's room: a 480 px line over 15 days shows a date every two days, from its first value on", () => {
+  expect(chartTimeTickBudget(480)).toBe(7);
+  expect(chartTimeTickBudget(200)).toBe(5);
+  expect(chartTimeTickBudget(480, 3)).toBe(5);
+  const day = 86_400_000;
+  const start = Date.UTC(2026, 10, 1);
+  const svg = renderChartSvg(
+    {
+      kind: "line",
+      timeAxis: { timeZone: "UTC", locale: "de" },
+      series: [{ label: "R", data: Array.from({ length: 15 }, (_, index) => ({ x: start + index * day, y: index % 4 })) }],
+    },
+    480,
+    260,
+  );
+  const dates = [...svg.matchAll(/<text class="stdlib-chart-tick-label" x="([\d.]+)" y="242"[^>]*>([^<]*)<\/text>/g)];
+  expect(dates.map((date) => date[2])).toEqual(["1. Nov.", "3. Nov.", "5. Nov.", "7. Nov.", "9. Nov.", "11. Nov.", "13. Nov.", "15. Nov."]);
+  // The first date is never one before the first value: the axis starts at the plotted span.
+  const axisStart = Number(/<line class="stdlib-chart-axis" x1="([\d.]+)" y1="([\d.]+)" x2="[\d.]+" y2="\2"\/>/.exec(svg)?.[1]);
+  expect(Number(dates[0]![1])).toBeGreaterThanOrEqual(axisStart);
 });
 
 test("ticks land on round wall times in the zone, not on decimal millisecond steps", () => {

@@ -1085,6 +1085,52 @@ const SelectViewsDemo = () => {
   );
 };
 
+const marketplaceTag = () => (
+  <Tag color="#e8590c" size="sm">
+    Marketplace
+  </Tag>
+);
+const customerOptions = [
+  { value: "c-104", label: "Anna Berger", description: "Marketplace", descriptionVisual: marketplaceTag },
+  { value: "c-221", label: "Anna Berger", description: "Shop · Leipzig" },
+  { value: "c-318", label: "Jonas Keller", description: "Marketplace", descriptionVisual: marketplaceTag },
+  { value: "c-402", label: "Mira Hoffmann", description: "Shop · Dresden" },
+];
+
+const SelectDescriptionVisualDemo = () => {
+  const [customer, setCustomer] = createSignal<string | null>(null);
+  return (
+    <DemoCard
+      id="select-description-visual"
+      chip={[
+        { kind: "component", name: "Select", from: "@k2b/ui" },
+        { kind: "component", name: "Tag", from: "@k2b/ui" },
+      ]}
+      description="Two customers share a name; where they buy tells them apart. A colored tag stands in place of the grey second line, at the same height. Searching for marketplace still finds them, and screen readers still read the description."
+      code={`const marketplace = () => (
+  <Tag color="#e8590c" size="sm">
+    Marketplace
+  </Tag>
+);
+
+<Select
+  label="Customer"
+  value={customer}
+  onValueChange={setCustomer}
+  searchable
+  options={[
+    { value: "c-104", label: "Anna Berger", description: "Marketplace", descriptionVisual: marketplace },
+    { value: "c-221", label: "Anna Berger", description: "Shop · Leipzig" },
+    { value: "c-318", label: "Jonas Keller", description: "Marketplace", descriptionVisual: marketplace },
+    { value: "c-402", label: "Mira Hoffmann", description: "Shop · Dresden" },
+  ]}
+/>`}
+    >
+      <Select label="Customer" value={customer} onValueChange={setCustomer} options={customerOptions} searchable clearable />
+    </DemoCard>
+  );
+};
+
 const AutocompleteSelectWorkflowDemo = () => {
   const [title, setTitle] = createSignal("");
   const [description, setDescription] = createSignal("");
@@ -2370,6 +2416,7 @@ const demos: DemoSection = {
       <SelectDemo />
       <GroupedSelectDemo />
       <SelectViewsDemo />
+      <SelectDescriptionVisualDemo />
     </DemoGrid>
   ),
   "choice-chips": () => (

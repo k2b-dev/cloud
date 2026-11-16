@@ -57,6 +57,10 @@ export const renderSystemMessage = (system: SystemMessage, authorName: string, l
 // The same Markdown the message renders with, so the preview reads what the message shows.
 const markdown = new Marked({ gfm: true, breaks: true });
 const NAMED_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
+/**
+ * Turns character references in Markdown text into the characters a reader sees. This small one knows the six common
+ * names and numeric references, which is enough for previews; a quote's check passes a complete one (`messagePlainText`).
+ */
 const decodeEntities = (text: string): string =>
   text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, name: string) => {
     if (!name.startsWith("#")) return NAMED_ENTITIES[name.toLowerCase()] ?? match;
@@ -68,30 +72,63 @@ const decodeEntities = (text: string): string =>
  * Visible text of Markdown tokens: emphasis, link and code text, image alt text, list items and table cells. Blocks are
  * joined with a space, inline parts without one, so "a**b**" stays one word.
  */
-const visibleText = (tokens: readonly Token[], separator: "" | " "): string =>
+const visibleText = (tokens: readonly Token[], separator: "" | " ", decode: (text: string) => string): string =>
   tokens
     .map((token): string => {
-      if (token.type === "list") return (token as Tokens.List).items.map((item) => visibleText(item.tokens, " ")).join(" ");
+      if (token.type === "list") return (token as Tokens.List).items.map((item) => visibleText(item.tokens, " ", decode)).join(" ");
       if (token.type === "table") {
         const table = token as Tokens.Table;
-        return [table.header, ...table.rows].map((row) => row.map((cell) => visibleText(cell.tokens, "")).join(" ")).join(" ");
+        return [table.header, ...table.rows].map((row) => row.map((cell) => visibleText(cell.tokens, "", decode)).join(" ")).join(" ");
       }
       if (token.type === "checkbox") return "";
-      if ("tokens" in token && token.tokens) return visibleText(token.tokens, token.type === "blockquote" ? " " : "");
+      if ("tokens" in token && token.tokens) return visibleText(token.tokens, token.type === "blockquote" ? " " : "", decode);
       if (token.type === "br" || token.type === "space" || token.type === "hr") return " ";
-      return "text" in token && typeof token.text === "string" ? token.text : "";
+      if (!("text" in token) || typeof token.text !== "string") return "";
+      // Code and raw HTML show their characters as written; only text turns references like &amp; into characters.
+      return token.type === "code" || token.type === "codespan" || token.type === "html" ? token.text : decode(token.text);
     })
     .join(separator);
 
-/** A message as one line of plain text: what a reader sees, without Markdown marks. */
-export const messagePlainText = (body: string): string => {
+/**
+ * A message as one line of plain text: what a reader sees, without Markdown marks. `decode` turns character references
+ * into characters; pass a complete decoder where the text must match the rendered message exactly.
+ */
+export const messagePlainText = (body: string, decode: (text: string) => string = decodeEntities): string => {
   let text: string;
   try {
-    text = decodeEntities(visibleText(markdown.lexer(body), " "));
+    text = visibleText(markdown.lexer(body), " ", decode);
   } catch {
     text = body;
   }
   return text.replace(/\s+/gu, " ").trim();
+};
+
+const wordCharacter = /[\p{L}\p{N}\p{M}_]/u;
+/**
+ * The passage of a message that a quote names, as the reader sees it: the words of its plain text with the message's
+ * own spaces, widened to whole words, or nothing when the words do not occur there. Whitespace in `text` does not
+ * count, because a selection across paragraphs, list items or table cells joins them differently than the plain text.
+ * So the sender decides neither where words begin or end nor which word a part of one stands for.
+ */
+export const quoteExcerpt = (body: string, text: string, decode: (text: string) => string): string | null => {
+  const plain = messagePlainText(body, decode).normalize("NFC");
+  const needle = text.normalize("NFC").replace(/\s+/gu, "");
+  if (!needle) return null;
+  const places: number[] = [];
+  let compact = "";
+  for (let index = 0; index < plain.length; index++) {
+    if (/\s/u.test(plain[index]!)) continue;
+    compact += plain[index];
+    places.push(index);
+  }
+  const at = compact.indexOf(needle);
+  if (at < 0) return null;
+  let start = places[at]!;
+  let end = places[at + needle.length - 1]! + 1;
+  const word = (index: number) => index >= 0 && index < plain.length && wordCharacter.test(plain[index]!);
+  while (word(start) && word(start - 1)) start--;
+  while (word(end - 1) && word(end)) end++;
+  return plain.slice(start, end);
 };
 
 export const messagePreview = (

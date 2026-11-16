@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs, page trail, back link]
-updated: 2026-11-12
+updated: 2026-11-16
 ---
 
 # Layout and navigation
@@ -249,6 +249,11 @@ createEffect(() => {
   onCleanup(publishPageContext({ scope: currentScope() }));
 });
 ```
+
+Use `publishPageContext({ scope: null })` when navigating to an overview with
+no resource. It clears the server scope while that publication is active;
+disposing it restores the next source or server scope. An omitted scope does
+not override another source.
 
 Each call owns one source. The most recent active source with a scope wins;
 disposing it reveals the next source, then the server scope. Publishers work
@@ -633,6 +638,13 @@ router.get("/api/inventory/badge", async (c) => {
   growing, or clearing moves nothing. In the app bar with names it stands at
   the end of the row and can only shorten the name beside it. Screen readers
   hear it with the app's name, for example "Chat, 3 new".
+- **Phone header:** on a phone the app bar is hidden, so its counts are out of
+  sight. While any app in the menu has a count or an approval waiting, the
+  header's app menu button shows one blue dot instead of a number, and screen
+  readers hear "Open apps, new in your apps". When the menu opens on the
+  current app's own menu, its **All apps** tab carries the same dot, and that
+  tab shows each count. From the `md` breakpoint the app bar shows the counts
+  itself, so no dot appears there.
 - **Fresh after a change:** after the person changed what the badge counts,
   for example by reading a conversation, call `refreshAppBadges()` from
   `@k2b/cloud/browser/app-badges` so the app bar agrees with the page at once.

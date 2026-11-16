@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-07
+updated: 2026-11-16
 ---
 
 # Testing
@@ -392,7 +392,11 @@ draws real `@k2b/ui` surfaces once, so a fresh engine's one-time costs, such as
 WebKit's shader compile in a new Playwright container
 ([#2149](https://github.com/k2b-dev/cloud/issues/2149)), do not fall inside the
 first test's 5 s. It starts its own browser, shares only on-disk caches with the
-suites, and has its own bounded budget. When it fails, no suite runs.
+suites, and has its own bounded budget. When it fails, no suite runs. It also
+fails when even its fastest scene after the first takes half of a test's 5 s,
+against about 1 s on a normal runner: such a runner makes the tests fail one by
+one at their limit, and they read as hangs in the code they cover
+([#3526](https://github.com/k2b-dev/cloud/issues/3526)).
 
 Open each URL state that a test checks in its own page. Navigate a loaded page
 in place only when the test checks navigation itself: reload, Back, Forward,
@@ -768,6 +772,32 @@ branch:
   moving that `play()` to the end of the seek did not measurably make it stall
   less often. Renewed playback can therefore stall in Linux WebKit, so its test
   waits for `ended` in Chromium and only for `playing` in WebKit.
+
+### Test an application's page swaps
+
+Before an application turns on `pageSwap`, it runs the shared contract in
+`scripts/fixtures/page-swap-app.ts` against its real SSR pages
+([Swap stability](/en/docs/frontend/url-state-and-navigation#swap-stability)).
+The test file calls `installSsrTransform()` before it imports the page modules,
+starts the harness with `startPageSwapApp()` in `beforeAll`, and registers
+`pageSwapContract()` with two linked pages, a `ready` check, and optionally a
+page with URL state, a tour through the heaviest pages, and extra regions to
+compare. `packages/tools/src/frontend/page-swap.browser.test.ts` is the
+example. The contract checks:
+
+- links, Back, and Forward without a document load;
+- the server render of a direct visit;
+- one document load with a reported fallback for a failing page;
+- a link to another application as a document load;
+- the same layout after a swap as after a reload, at 390 and 1440 pixels;
+- focus on a visible heading and the sidebar's current item in view;
+- 50 swaps, and three rounds through the tour, without growing listeners,
+  intervals, sockets, workers, or object URLs.
+
+The footprint runs keep below WebKit's history budget of 100 writes per 10
+seconds. They click links without Playwright's actionability wait, which
+lasts several animation frames, and headless WebKit renders only about 30
+frames a second. The links test keeps the full click checks.
 
 ## Replace modules in tests
 

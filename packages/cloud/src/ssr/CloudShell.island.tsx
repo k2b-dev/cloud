@@ -1,5 +1,6 @@
 import { useLocale } from "@k2b/ui";
 import { createEffect } from "solid-js";
+import { anyAppBadge } from "./app-badges";
 import { AppLaunchpadButton, setAppLaunchpadContext } from "./app-launchpad";
 import GlobalSearchTrigger from "./GlobalSearchTrigger";
 import LayoutBreadcrumbs from "./LayoutBreadcrumbs";
@@ -11,6 +12,7 @@ import PrivacyCountdown from "./PrivacyCountdown";
 import ProfilePreferences from "./ProfilePreferences";
 import { platformMessages } from "./platform-messages";
 import RailApps from "./RailApps";
+import { railMessages } from "./rail-messages";
 import { useShellData } from "./shell-data";
 
 type CloudShellProps =
@@ -82,6 +84,7 @@ function HeaderControls(props: {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   if (!data) return null;
+  const news = () => anyAppBadge(data.apps);
   return (
     <>
       <div class="ml-2 flex min-w-0 flex-1 items-center">
@@ -125,22 +128,27 @@ function HeaderControls(props: {
             helpOpen={!!props.panelOpen && data.panel?.provider === "core"}
           />
           {props.launchpad && (
-            <AppLaunchpadButton
-              profile={
-                data.profile
-                  ? {
-                      userId: data.profile.userId,
-                      name: data.profile.name,
-                      theme: data.theme,
-                      ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}),
-                    }
-                  : undefined
-              }
-              apps={data.apps}
-              legalLinks={data.legalLinks}
-              variant="header"
-              label={t().openApps}
-            />
+            // Signed in, the header shows only where the rail is hidden; its apps' counts are then out of sight, so
+            // one dot over the menu's corner says that something waits. Servers render no counts, so no dot either.
+            <span class="cloud-launchpad-news" data-news={news() ? "" : undefined}>
+              <AppLaunchpadButton
+                profile={
+                  data.profile
+                    ? {
+                        userId: data.profile.userId,
+                        name: data.profile.name,
+                        theme: data.theme,
+                        ...(data.profile.appHref ? { appHref: data.profile.appHref } : {}),
+                      }
+                    : undefined
+                }
+                apps={data.apps}
+                legalLinks={data.legalLinks}
+                variant="header"
+                label={news() ? `${t().openApps}, ${railMessages.resolve([locale()]).t.newInApps}` : t().openApps}
+              />
+              <span class="cloud-launchpad-dot" aria-hidden="true" />
+            </span>
           )}
         </div>
         {!props.authenticated && <LayoutPreferences initialTheme={data.theme} />}
