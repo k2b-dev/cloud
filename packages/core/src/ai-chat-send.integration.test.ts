@@ -7,6 +7,8 @@ import { CODE_BOUND_CHAT_ID } from "@k2b/cloud/code";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { coreSettings } from "@k2b/cloud/services";
 import { nestedInvocationLeases } from "@k2b/cloud/services/identity";
+import { Hono } from "hono";
+import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
 import { z } from "zod";
 import { useTestAppRegistry } from "../../../scripts/fixtures/app-registry";
 import {
@@ -23,6 +25,9 @@ import {
   invokeCompiledCapability,
 } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
+import { createCodeCapabilityRoutes } from "../../cloud/src/ai/code-capability-routes";
+import { codeCapabilityOperation } from "../../cloud/src/ai/code-capability-transport";
+import { signInvocationToken, verifyInvocationToken } from "../../cloud/src/services/identity/invocation-token";
 import { aiChatSendAction } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
@@ -133,6 +138,8 @@ suiteFor(
   });
 
   const setup = async () => {
+    // Business keys span runs and callers within an account; each case owns a fresh key space.
+    await sql`DELETE FROM ai.queued_messages`;
     runId = `4f000000-0000-4000-8000-${String(++ordinal).padStart(12, "0")}`;
     await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,state,payload_bytes,calls_limit)
       VALUES(${runId}::uuid,${codeId},${versionId}::uuid,'schedule','morning','running',32768,10)`;
@@ -181,7 +188,7 @@ suiteFor(
     const [entry] = await sql<{ author_user_id: string | null }[]>`SELECT author_user_id FROM ai.queued_messages WHERE id=${sent.id}::uuid`;
     expect(entry?.author_user_id).toBe(owner);
   });
-  test.each(["Gustav", "code_run"])("%s keeps the verified source turn through its invocation lease", async () => {
+  test.each(["Gustav", "code_run"])("%s keeps the verified source turn through its invocation lease", async (sourceKind) => {
     await setup();
     const source = await aiConversations.createConversation({ ownerUserId: owner });
     const submitted = await aiConversations.submitChatTurn({
@@ -212,13 +219,66 @@ suiteFor(
         delegation: { kind: "invocation", credentialKind: "session", callingAppId: "core", invocationId: "source" },
       },
     };
-    expect(await invoke(chat.shortId, context)).toMatchObject({
-      ok: true,
-      data: {
-        data: {
-          origin: { kind: "chat", id: source.shortId, turnId: submitted.turn.shortId },
+    let result: unknown;
+    if (sourceKind === "code_run") {
+      const pair = await generateKeyPair("RS256", { extractable: true });
+      const signer = { kid: "4f000000-0000-4000-8000-000000000099", key: pair.privateKey, signUntil: new Date(Date.now() + 3_600_000) };
+      const issuer = "https://cloud.test";
+      const key = createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), kid: signer.kid, alg: "RS256", use: "sig" }] });
+      const signed = await signInvocationToken({
+        targetAppId: "core",
+        callingAppId: "assistant",
+        operation: codeCapabilityOperation(source.id, submitted.turn.id),
+        schemaHash: null,
+        authority: {
+          sub: owner,
+          principal_type: "user",
+          access_subject_type: "user",
+          access_subject_id: owner,
+          credential_kind: "session",
+          scopes: [],
         },
-      },
+        signer,
+        issuer,
+      });
+      const callback = createCodeCapabilityRoutes({
+        invocation: {
+          getApp: async () => ({ id: "core" }),
+          verify: (value, expected, options) => verifyInvocationToken(value, expected, { ...options, issuer, key }),
+          resolve: async (claims) => ({
+            actor: {
+              kind: "user",
+              user,
+              delegation: { kind: "invocation", callingAppId: "assistant", credentialKind: "session", invocationId: claims.jti },
+            },
+            accessSubject: { type: "user", userId: owner },
+            credentialKind: "invocation",
+            scopes: [],
+          }),
+        },
+        dispatch: async (input) => {
+          expect(input.assistantTurn).toEqual({ conversationId: source.id, turnId: submitted.turn.id });
+          expect(input.origin).toBe("assistant");
+          expect(input.authority.scopes).toEqual([]);
+          expect(input.target).toEqual({ type: "core.ai.chat", id: chat.shortId });
+          return Response.json(await invoke(chat.shortId, context));
+        },
+      });
+      const app = new Hono().route("/code", callback);
+      const response = await app.request(`/code/${source.id}/${submitted.turn.id}/capabilities/v1/actions/core/ai.chat.send`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${signed.token}`, "content-type": "application/json", "idempotency-key": "code-run-send" },
+        body: JSON.stringify({
+          target: { type: "core.ai.chat", id: chat.shortId },
+          input: { text: "Delegate" },
+        }),
+      });
+      expect(response.status).toBe(200);
+      result = await response.json();
+    } else result = await invoke(chat.shortId, context);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { data: { origin: { kind: "chat", id: source.shortId, turnId: submitted.turn.shortId } } },
     });
     for (const kind of ["automation", "chat"] as const) {
       await sql`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{turnTrigger}',${JSON.stringify(
@@ -294,13 +354,17 @@ suiteFor(
     await sql`INSERT INTO ai.inter_chat_messages(short_id,source_conversation_id,source_turn_id,source_call_id,target_conversation_id,actor_user_id,text,idempotency_key)
       VALUES('OldMsg',${chat.id}::uuid,${turn.id}::uuid,'legacy-call',${target.id}::uuid,${owner}::uuid,'Already accepted','legacy-cutover')`;
     await expect(migrateCode()).rejects.toThrow("Deliver pending inter-chat messages");
-    expect(await sql`SELECT to_regclass('code.chat_deliveries')::text AS relation`).toEqual([{ relation: "code.chat_deliveries" }]);
+    expect(await sql<{ relation: string | null }[]>`SELECT to_regclass('code.chat_deliveries')::text AS relation`).toEqual([
+      { relation: "code.chat_deliveries" },
+    ]);
     await sql`UPDATE ai.inter_chat_messages SET status='delivered' WHERE idempotency_key='legacy-cutover'`;
     await migrateCode();
     await migrateCode();
-    expect(await sql`SELECT to_regclass('code.chat_deliveries')::text AS delivery,to_regclass('code.chat_runs')::text AS runs`).toEqual([
-      { delivery: null, runs: null },
-    ]);
+    expect(
+      await sql<
+        { delivery: string | null; runs: string | null }[]
+      >`SELECT to_regclass('code.chat_deliveries')::text AS delivery,to_regclass('code.chat_runs')::text AS runs`,
+    ).toEqual([{ delivery: null, runs: null }]);
     const [message] = await sql<
       { content: unknown; legacy: boolean }[]
     >`SELECT message->'content' AS content,meta ? 'codeDelivery' AS legacy FROM ai.messages WHERE loop_id=${turn.id}`;
@@ -616,7 +680,7 @@ suiteFor(
     chat = await aiConversations.createConversation({ ownerUserId: owner });
     expect(await invoke(chat.shortId, ctx("daily-limit"))).toMatchObject({
       ok: false,
-      error: { code: scope === "code" ? "code_ai_daily_budget_limit" : "code_ai_owner_daily_budget_limit" },
+      error: { code: scope === "code" ? "code_ai_daily_budget_limit" : "code_ai_owner_daily_budget_limit", status: 409 },
     });
     const [run] = await sql<{ cost: string }[]>`SELECT ai_reference_cost::text AS cost FROM code.runs WHERE id=${runId}::uuid`;
     expect(Number(run?.cost)).toBe(0);

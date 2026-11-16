@@ -3,7 +3,6 @@ import { sql } from "@k2b/cloud";
 import {
   AiQuotaError,
   aiConversationFileManifest,
-  aiConversations,
   aiProjects,
   isAiSettingsError,
   listAiConversationFiles,
@@ -210,7 +209,7 @@ export const aiChatSendAction = {
           const current = await chatWriteAuthority(context, db);
           if (!current.ok) return current;
           const refused = await checkCodeChatRunBudget(code.runId, db, limits);
-          if (refused) return fail({ code: refused, message: t.budget, status: 429 as const });
+          if (refused) return fail({ code: refused, message: t.budget, status: 409 as const });
         }
         const currentChat = await ownedActiveChat(owner, chat.short_id, db, { lock: true });
         if (!currentChat) return fail(err.notFound("Chat"));
@@ -225,7 +224,7 @@ export const aiChatSendAction = {
       return result(chat.id, chat.short_id, id);
     } catch (cause) {
       if (cause instanceof AiMessageQueueConflict) return fail({ code: "chat_busy", message: cause.message, status: 409 as const });
-      if (cause instanceof AiQuotaError) return fail({ code: cause.code, message: cause.message, status: 429 as const });
+      if (cause instanceof AiQuotaError) return fail({ code: cause.code, message: cause.message, status: 409 as const });
       if (isAiSettingsError(cause))
         return fail({
           code: cause.aiError.code,
