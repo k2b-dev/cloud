@@ -301,7 +301,7 @@ order:
    blocks carry no start time. While a model call waits for its retry or the stream
    reconnects, the line reads "Reconnecting" without its shimmer, and its clock
    stands. While an approval or answer is pending it says what the turn waits
-   for and since when. Finished,
+   for and since when. Without a confirmed outcome,
    it reads "Worked 3 min" with the step count, and "Worked 1 min · stopped"
    after a stop. A failed turn reads "Worked 4 min" too and says why in a
    notice at its end; a failed turn from an earlier release, which recorded no
@@ -516,6 +516,14 @@ user actions. History uses the loop's durable timing; the live clock stands
 while the turn waits for an approval or an answer and continues from the same
 value afterwards. A tool the browser runs by itself, such as a Chat code run,
 counts as work, live and in history.
+
+After a turn ends, its work sentence names at most two confirmed outcomes.
+Reading an automation does not count as changing it. Example counts come from
+the last test of the current draft, including failed examples; a later change
+replaces that count with "No examples yet". A calculation after reading a file
+reads "Analyzed file". Stored files count once per returned path; presenting
+an existing file does not add one. Step counts, failures and duration stay
+outside the sentence.
 
 Screen readers do not hear the work line's ticking clock or a status while it
 streams: both sit outside the conversation log's live announcements. A status
