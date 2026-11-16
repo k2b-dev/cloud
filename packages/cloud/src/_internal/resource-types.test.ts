@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
 import { z } from "zod";
-import { assertResourceView } from "../capabilities/testing";
+import { assertDiscussionContainersPage, assertResourceView } from "../capabilities/testing";
 import {
   CapabilityCatalogAppSchema,
   CapabilityManifestSchema,
@@ -16,11 +16,12 @@ import {
   DiscussionActivityInputSchema,
   DiscussionContainersDataSchema,
   DiscussionContainersInputSchema,
+  discussionContainersPageIssues,
   discussionsIssues,
   ResourceActivityEventSchema,
 } from "../contracts/discussions";
 import { typeViewIssues } from "../contracts/resource-types";
-import { capabilityHash, compileCapabilities, invokeCompiledCapability } from "./capabilities";
+import { capabilityHash, compileCapabilities, invokeCompiledCapability, validateCapabilityResult } from "./capabilities";
 import { resolveLiveCapabilityRegistryEntry } from "./registry";
 import * as resourcePrincipals from "./resource-principals";
 
@@ -59,7 +60,7 @@ const definitions = defineCapabilities({
       input: DiscussionContainersInputSchema,
       data: DiscussionContainersDataSchema,
       openWorld: false,
-      run: async () => ok({ data: { items: [], next: null } }),
+      run: async () => ok({ data: { items: [], next: null }, page: { hasMore: false as const } }),
     },
     "collection.activity": {
       title: "Activity",
@@ -145,6 +146,25 @@ test("discussion role checks item containment, view, exact shared schemas and st
       ),
     }).some((issue) => issue.code === "stream"),
   ).toBe(true);
+});
+
+test("discussion containers pages carry a page that matches data.next, for every provider", () => {
+  const operation = compiled.queries.get("collection.list")!;
+  const validate = (result: unknown) => validateCapabilityResult(compiled, operation, result);
+  const invalid = { ok: false, error: { code: "INVALID_APP_RESPONSE", status: 500 } };
+  // Without a matching page, generic readers such as agents stop after the first page or never stop.
+  expect(validate({ data: { items: [], next: null } })).toMatchObject(invalid);
+  expect(validate({ data: { items: [], next: "cursor-2" }, page: { hasMore: false } })).toMatchObject(invalid);
+  expect(validate({ data: { items: [], next: "cursor-2" }, page: { hasMore: true, nextCursor: "cursor-3" } })).toMatchObject(invalid);
+  expect(validate({ data: { items: [], next: null }, page: { hasMore: true, nextCursor: "cursor-2" } })).toMatchObject(invalid);
+  const middle = { data: { items: [], next: "cursor-2" }, page: { hasMore: true as const, nextCursor: "cursor-2" } };
+  expect(validate(middle)).toMatchObject({ ok: true, data: { page: { hasMore: true, nextCursor: "cursor-2" } } });
+  expect(validate({ data: { items: [], next: null }, page: { hasMore: false } })).toMatchObject({ ok: true });
+  // The rule belongs to the containers role; other discussion queries keep their own contract.
+  expect(validateCapabilityResult(compiled, compiled.queries.get("collection.activity")!, { data: [] }).ok).toBe(true);
+  assertDiscussionContainersPage(middle);
+  expect(discussionContainersPageIssues({ data: { items: [], next: "cursor-2" } })).toEqual(["page must continue at data.next"]);
+  expect(() => assertDiscussionContainersPage({ data: { items: [], next: null } })).toThrow("page must be final");
 });
 
 test("generated readability requires expected container and only returns active requested principals", async () => {

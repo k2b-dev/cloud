@@ -464,6 +464,13 @@ suite("Files machine storage through actual API tokens", () => {
       const receipt = await fileActions["provider.save"].stream.write(saved.data.stream, new Blob(["xyz"]).stream(), c);
       expect(receipt.data.file?.name).toBe("provider.txt");
       const sourceRef = await entryRef(storage.baseId, { path: "provider.txt" });
+      // Discussion views retain current grants and the credential ceiling for both Types.
+      expect((await service.resourceEntry(machineCall, rootRef, true)).view.permission).toBe("admin");
+      const readCall = testCall({ ...actor, scopes: ["read"], credentialId: readOnly.credential.id });
+      expect((await service.resourceEntry(readCall, rootRef, true)).view.permission).toBe("read");
+      const discussionItem = await service.resourceEntry(readCall, sourceRef);
+      expect(discussionItem.view.permission).toBe("read");
+      expect(discussionItem.view.container?.ref).toEqual({ type: "filesv2.folder", id: rootRef });
       const reading = await fileQueries["content.read"].run({ id: sourceRef }, c);
       if (!reading.ok || !reading.data.stream) throw new Error("Missing provider download stream");
       expect(await (await fileQueries["content.read"].stream.read(reading.data.stream, c)).text()).toBe("xyz");
@@ -505,6 +512,8 @@ suite("Files machine storage through actual API tokens", () => {
       await sql`UPDATE auth.service_account_credentials SET expires_at='2000-01-01T00:00:00Z' WHERE id=${expiringKey.credential.id}::uuid`;
       await denied(await publicRequest(new URL(expiryLease.url).pathname.replace("/share/filesv2", "")));
       await service.revokeStorage(call(), storage.id, adminGrant.id);
+      await expect(service.resourceEntry(machineCall, rootRef, true)).rejects.toMatchObject({ status: 404 });
+      await expect(service.resourceEntry(machineCall, sourceRef)).rejects.toMatchObject({ status: 404 });
       await denied(await request(credential.token, `${base}/entries`));
       await denied(await publicRequest(downloadPath));
       await expect(service.editorFileInfo(editorToken, editorRef, "machine-editor-fixture")).rejects.toMatchObject({ status: 404 });

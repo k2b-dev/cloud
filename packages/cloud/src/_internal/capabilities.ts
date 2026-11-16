@@ -76,7 +76,7 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
-import { discussionsIssues } from "../contracts/discussions";
+import { discussionContainersPageIssues, discussionsIssues } from "../contracts/discussions";
 import { fileProviderIssues } from "../contracts/file-provider";
 import { typeViewIssues } from "../contracts/resource-types";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
@@ -2018,6 +2018,26 @@ export const validateCapabilityResult = (
         error: {
           code: CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse,
           message: `Capability returned undeclared resource type ${ref.type}`,
+          status: 500,
+        },
+      };
+    }
+  }
+  if (compiled.manifest.discussions?.containers === operation.manifest.localId) {
+    const issues = discussionContainersPageIssues(parsed.data);
+    if (issues.length > 0) {
+      try {
+        onInvalidResult?.(
+          new Error(`Capability ${operation.manifest.localId} returned a discussion containers page: ${issues.join("; ")}`),
+        );
+      } catch {
+        // Observability must not change the public failure contract.
+      }
+      return {
+        ok: false,
+        error: {
+          code: CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse,
+          message: "Discussion containers must return a page that matches data.next",
           status: 500,
         },
       };

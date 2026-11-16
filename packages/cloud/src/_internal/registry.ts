@@ -193,6 +193,35 @@ export const watchAppRegistry = async ({ signal, onChange }: { signal: AbortSign
 };
 
 /**
+ * Report each app that leaves the registry, until `signal` aborts: `delete`
+ * when its last instance deregistered on shutdown, `expire` when its lease ran
+ * out. Starts after the current revision, so earlier removals never replay.
+ * The ordinary registry view stays authoritative for routing; this only names
+ * the reason. A failed watch throws for the caller's supervisor to restart.
+ */
+export const watchAppRegistryRemovals = async ({
+  signal,
+  onRemoval,
+}: {
+  signal: AbortSignal;
+  onRemoval: (appId: string, reason: "delete" | "expire") => void;
+}): Promise<void> => {
+  while (!signal.aborted) {
+    const { revision } = await appRegistry().snapshot({ prefix: APP_REGISTRY_PREFIX });
+    let resync = false;
+    for await (const event of appRegistry().watch({ prefix: APP_REGISTRY_PREFIX, after: revision, signal })) {
+      if (signal.aborted) return;
+      if (event.type === "resync_required") {
+        resync = true;
+        break;
+      }
+      if (event.type === "delete" || event.type === "expire") onRemoval(event.key.slice(APP_REGISTRY_PREFIX.length), event.type);
+    }
+    if (!resync) return;
+  }
+};
+
+/**
  * App entry enriched with registry metadata.
  * `createdAt` = process start reported by the app (uptime anchor).
  * `updatedAt` = most recent heartbeat touch; `expiresAt` = `updatedAt` + TTL.
