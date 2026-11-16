@@ -5,6 +5,7 @@ import { appAccentStyle } from "./app-appearance";
 import { anyAppBadge } from "./app-badges";
 import { openMobileMenu } from "./mobile-menu-history";
 import { platformMessages } from "./platform-messages";
+import { railMessages } from "./rail-messages";
 import { readShellData } from "./shell-data";
 import { observeWorkspaceNavigation, readWorkspaceNavigation } from "./workspace-navigation";
 
@@ -12,12 +13,13 @@ import { observeWorkspaceNavigation, readWorkspaceNavigation } from "./workspace
 export function AllAppsLabel(props: { news: boolean }) {
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
+  const rail = () => railMessages.resolve([locale()]).t;
   return (
     <span class="cloud-mobile-menu__apps" data-news={props.news ? "" : undefined}>
       <span class="block k2b-truncate-fade">{t().allApps}</span>
       <span class="cloud-launchpad-dot" aria-hidden="true" />
       <Show when={props.news}>
-        <span class="sr-only">, {t().newInApps}</span>
+        <span class="sr-only">, {rail().newInApps}</span>
       </Show>
     </span>
   );

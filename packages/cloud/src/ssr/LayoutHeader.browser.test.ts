@@ -156,7 +156,7 @@ test("the news dot sits on the app menu's corner and on the All apps tab and mov
       await settled(page);
       const result = await page.evaluate(() => {
         const owners = [
-          document.querySelector<HTMLElement>(".layout-header .cloud-launchpad-trigger")!,
+          document.querySelector<HTMLElement>(".layout-header .cloud-launchpad-news")!,
           document.querySelector<HTMLElement>(".cloud-mobile-menu__apps")!,
         ];
         const boxes = () =>

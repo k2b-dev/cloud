@@ -1076,8 +1076,15 @@
 
 /* One dot on the phone header's app menu while any app has a count. It is laid over the icon's corner, so it
    appears and clears without moving anything; the action colour matches the counts it stands for. */
-.cloud-launchpad-trigger {
+.cloud-launchpad-news {
   position: relative;
+  display: inline-flex;
+}
+
+/* The wrapper makes the menu button its first child; its touch area still stops at the help button beside it, as
+   for every button that follows another. */
+.k2b-ui .cloud-launchpad-news:not(:first-child) > .k2b-button::after {
+  inset-inline-start: 0;
 }
 
 .cloud-launchpad-dot {
@@ -1092,7 +1099,7 @@
 }
 
 /* The dot is always in the markup and shows only while its owner has news. */
-.cloud-launchpad-trigger:not([data-news]) .cloud-launchpad-dot,
+.cloud-launchpad-news:not([data-news]) > .cloud-launchpad-dot,
 .cloud-mobile-menu__apps:not([data-news]) > .cloud-launchpad-dot {
   display: none;
 }

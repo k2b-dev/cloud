@@ -129,29 +129,30 @@ test("the phone header's app menu shows one dot while any app has a count, live 
   dom.root.append(script, rail, header);
   const disposeRail = render(() => createComponent(CloudShell, { slot: "rail", currentPath: "/" }), rail);
   const disposeHeader = render(() => createComponent(CloudShell, { slot: "header", authenticated: true, launchpad: true }), header);
-  const menu = () => header.querySelector<HTMLButtonElement>(".cloud-launchpad-trigger")!;
+  const news = () => header.querySelector<HTMLElement>(".cloud-launchpad-news")!;
+  const menu = () => news().querySelector<HTMLButtonElement>("button")!;
   try {
     await settle();
     // The dot stays in the markup, hidden from screen readers; `data-news` shows it and the name says why.
-    expect(menu().querySelector(".cloud-launchpad-dot")?.getAttribute("aria-hidden")).toBe("true");
-    expect(menu().hasAttribute("data-news")).toBe(true);
+    expect(news().querySelector(".cloud-launchpad-dot")?.getAttribute("aria-hidden")).toBe("true");
+    expect(news().hasAttribute("data-news")).toBe(true);
     expect(menu().getAttribute("aria-label")).toBe("Open apps, new in your apps");
     responses["/api/chat/badge"] = () => Response.json({ count: 0 });
     refreshAppBadges();
     await settle();
-    expect(menu().hasAttribute("data-news")).toBe(false);
+    expect(news().hasAttribute("data-news")).toBe(false);
     expect(menu().getAttribute("aria-label")).toBe("Open apps");
     // An approval waiting in any app of the menu counts like an unread message.
     responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 1, apps: { mail: 1 } });
     refreshAppBadges();
     await settle();
-    expect(menu().hasAttribute("data-news")).toBe(true);
+    expect(news().hasAttribute("data-news")).toBe(true);
     // Leave no counts behind for the next test: the badge signals live as long as the module.
     responses[APPROVAL_COUNTS_PATH] = () => Response.json({ total: 0, apps: {} });
     responses["/api/chat/badge"] = () => Response.json({ count: 0 });
     refreshAppBadges();
     await settle();
-    expect(menu().hasAttribute("data-news")).toBe(false);
+    expect(news().hasAttribute("data-news")).toBe(false);
   } finally {
     disposeHeader();
     disposeRail();

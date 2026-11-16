@@ -206,7 +206,7 @@ test("with news in any app, the sheet's All apps tab carries the header's dot, s
       { preconnect: globalThis.fetch.preconnect },
     ),
   );
-  const { watchAppBadges } = await import("./app-badges");
+  const { anyAppBadge, watchAppBadges } = await import("./app-badges");
   const stop = watchAppBadges(["/api/chat/badge"]);
   const { AppLaunchpadButton } = await import("./app-launchpad");
   const snapshot = document.createElement("script");
@@ -214,31 +214,24 @@ test("with news in any app, the sheet's All apps tab carries the header's dot, s
   snapshot.setAttribute("data-cloud-workspace-navigation", "");
   snapshot.textContent = JSON.stringify({ label: "Team mailbox", items: [{ id: "inbox", label: "Inbox", href: "/app/mail/inbox" }] });
   dom.root.append(snapshot);
-  const dispose = render(
-    () =>
-      createComponent(AppLaunchpadButton, {
-        variant: "header",
-        apps: [{ id: "chat", label: "Chat", href: "/app/chat", iconClass: "ti ti-message", badge: "/api/chat/badge" }],
-        legalLinks: [],
-      }),
-    dom.root,
-  );
+  const apps = [{ id: "chat", label: "Chat", href: "/app/chat", iconClass: "ti ti-message", badge: "/api/chat/badge" }];
+  const dispose = render(() => createComponent(AppLaunchpadButton, { variant: "header", apps, legalLinks: [] }), dom.root);
   try {
-    for (let attempt = 0; !dom.root.querySelector("[data-news]") && attempt < 100; attempt++) await Bun.sleep(10);
-    expect(dom.root.querySelector("button")?.getAttribute("aria-label")).toBe("Open apps, new in your apps");
+    for (let attempt = 0; !anyAppBadge(apps) && attempt < 100; attempt++) await Bun.sleep(10);
+    expect(anyAppBadge(apps)).toBe(true);
     dom.root.querySelector<HTMLButtonElement>("button")!.click();
     for (let attempt = 0; !document.querySelector("dialog .cloud-mobile-menu__apps") && attempt < 100; attempt++) await Bun.sleep(10);
-    const apps = document.querySelector("dialog .cloud-mobile-menu__apps")!;
-    expect(apps.hasAttribute("data-news")).toBe(true);
-    expect(apps.querySelector(".cloud-launchpad-dot")?.getAttribute("aria-hidden")).toBe("true");
-    expect(apps.textContent).toBe("All apps, new in your apps");
+    const tab = document.querySelector("dialog .cloud-mobile-menu__apps")!;
+    expect(tab.hasAttribute("data-news")).toBe(true);
+    expect(tab.querySelector(".cloud-launchpad-dot")?.getAttribute("aria-hidden")).toBe("true");
+    expect(tab.textContent).toBe("All apps, new in your apps");
     // Leave no counts behind: the badge signals live as long as the module.
     count = 0;
     const { refreshAppBadges } = await import("../browser/app-badges");
     refreshAppBadges();
-    for (let attempt = 0; apps.hasAttribute("data-news") && attempt < 100; attempt++) await Bun.sleep(10);
-    expect(apps.hasAttribute("data-news")).toBe(false);
-    expect(apps.textContent).toBe("All apps");
+    for (let attempt = 0; tab.hasAttribute("data-news") && attempt < 100; attempt++) await Bun.sleep(10);
+    expect(tab.hasAttribute("data-news")).toBe(false);
+    expect(tab.textContent).toBe("All apps");
   } finally {
     window.dispatchEvent(new Event("pagehide"));
     for (let attempt = 0; document.querySelector("dialog") && attempt < 100; attempt++) await Bun.sleep(10);

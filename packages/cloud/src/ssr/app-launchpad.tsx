@@ -2,7 +2,6 @@ import { IconButton, useLocale } from "@k2b/ui";
 import { createEffect } from "solid-js";
 import { importOnDemand } from "../browser/reload";
 import type { AppLaunchpadApp, AppLaunchpadContext, AppLaunchpadLegalLink } from "./AppLaunchpadPanel";
-import { anyAppBadge } from "./app-badges";
 import { createBusyAction } from "./busy-action";
 import { platformMessages } from "./platform-messages";
 import { RailItemHint } from "./RailItemHint";
@@ -125,21 +124,10 @@ export function AppLaunchpadButton(props: AppLaunchpadContext & { variant: "rail
     );
   }
 
-  // Signed in, the header shows only where the rail is hidden; its apps' counts are then out of sight, so one dot
-  // says that something waits. The grid it opens shows each count. Servers render no counts, so no dot either.
   if (props.variant === "header") {
-    const news = () => anyAppBadge(props.apps);
-    const label = () => props.label ?? t().openApps;
     return (
-      <IconButton
-        class="cloud-launchpad-trigger"
-        data-news={news() ? "" : undefined}
-        label={news() ? `${label()}, ${t().newInApps}` : label()}
-        onClick={open}
-        aria-busy={action.busy() ? "true" : undefined}
-      >
+      <IconButton label={props.label ?? t().openApps} onClick={open} aria-busy={action.busy() ? "true" : undefined}>
         <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-grid-dots"} text-lg`} />
-        <span class="cloud-launchpad-dot" aria-hidden="true" />
       </IconButton>
     );
   }
