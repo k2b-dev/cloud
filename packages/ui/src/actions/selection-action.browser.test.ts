@@ -89,7 +89,7 @@ const state = (page: Page) =>
       side: pill.dataset.side,
       text: pill.textContent,
       focused: pill.contains(document.activeElement),
-      active: document.activeElement?.id ?? null,
+      active: document.activeElement?.id || document.activeElement?.tagName || null,
       pill: { top: box.top, bottom: box.bottom, center: box.left + box.width / 2 },
       first: first && { top: first.top, center: first.left + first.width / 2 },
       last: last && { bottom: last.bottom },
@@ -170,7 +170,8 @@ describe("SelectionAction", () => {
       expect((await state(page)).open).toBe(true);
       await page.keyboard.press("Tab");
       await settled(page);
-      expect((await state(page)).focused).toBe(true);
+      // The whole state on failure: which element had the focus, and whether the pill was open.
+      expect(await state(page)).toMatchObject({ open: true, focused: true });
       await page.keyboard.press("Escape");
       await settled(page);
       const closed = await state(page);

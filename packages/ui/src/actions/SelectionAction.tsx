@@ -134,7 +134,7 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
       // Keys belong to the pill only while the focus is on the page, in the root or in the pill: a dialog or a
       // field elsewhere keeps its own Tab and Escape.
       const active = document.activeElement;
-      if (!inside && active && active !== document.body && !props.root.contains(active)) return;
+      if (!inside && active && active !== document.body && active !== document.documentElement && !props.root.contains(active)) return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();

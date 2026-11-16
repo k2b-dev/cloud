@@ -149,6 +149,7 @@ test("Escape closes the pill without leaving the chat, and a deleted original le
 
     await select(page, "slides are in the same folder");
     await pill(page).getByRole("button", { name: "Quote", exact: true }).click();
+    await page.locator(".k2b-chat-composer__quote").waitFor();
     await page.keyboard.type("Moved them.");
     await page.keyboard.press("Enter");
     const sent = page.locator(".k2b-message-row[data-own]", { hasText: "Moved them." });

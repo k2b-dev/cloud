@@ -14,8 +14,8 @@ import {
   Show,
   untrack,
 } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
-import { MessageQuote } from "../content/MessageQuote";
 import { dialogHistorySettled, holdDialogHistory } from "../feedback/dialog-core";
 import { Tooltip } from "../feedback/Tooltip";
 import { createDictation } from "../inputs/dictation/create-dictation";
@@ -1355,6 +1355,12 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   };
 
   const focus = () => textareaRef?.focus();
+  // The quote rows load with a draft's first quote, so composers that never quote carry none of their code.
+  const [quotesView, setQuotesView] = createSignal<typeof import("./ChatComposerQuotes")["default"]>();
+  createEffect(() => {
+    if (!props.quotes?.length || quotesView()) return;
+    void import("./ChatComposerQuotes").then((module) => setQuotesView(() => module.default));
+  });
 
   onMount(() => {
     autoResize();
@@ -2854,23 +2860,16 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             </div>
           )}
         </Show>
-        <For each={props.quotes}>
-          {(quote) => (
-            <div class="k2b-chat-composer__quote">
-              <MessageQuote quote={quote} label={chatMessages().quoteFrom} />
-              <button
-                type="button"
-                class="k2b-chat-composer__icon-action k2b-chat-composer__quote-remove"
-                aria-label={chatMessages().removeQuote}
-                title={chatMessages().removeQuote}
-                onMouseDown={keepFieldFocus}
-                onClick={() => quote.onRemove()}
-              >
-                <i class="ti ti-x" aria-hidden="true" />
-              </button>
-            </div>
+        <Show when={props.quotes?.length ? quotesView() : undefined}>
+          {(view) => (
+            <Dynamic
+              component={view()}
+              quotes={props.quotes ?? []}
+              label={chatMessages().quoteFrom}
+              removeLabel={chatMessages().removeQuote}
+            />
           )}
-        </For>
+        </Show>
         <Show when={attachments().length > 0}>
           <div class="k2b-chat-composer__attachments" role="list" aria-label={chatMessages().attachments} tabIndex={0}>
             <For each={attachments()}>
