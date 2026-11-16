@@ -22,6 +22,21 @@ export const browserName: "chromium" | "webkit" = (() => {
   return name;
 })();
 
+// Bun's default test timeout; most browser tests keep it.
+const defaultTestMs = 5000;
+
+/**
+ * Names a runner too slow for browser tests, from the warm-up scenes after the first, which pays the engine's one-time costs.
+ * A warm scene opens a page, draws real `@k2b/ui` surfaces and works one dialog, like the steps of one test, and takes about
+ * 1 s on a normal runner. When even the fastest takes half of a test's 5 s, the tests fail one by one at their limit and read
+ * as hangs in the code they cover (#3526).
+ */
+export const slowRunnerError = (warmSceneMs: number[]): string | undefined => {
+  const fastest = Math.min(...warmSceneMs);
+  if (!warmSceneMs.length || fastest < defaultTestMs / 2) return undefined;
+  return `${browserName} needed at least ${Math.round(fastest)} ms for each warm-up scene after the first, half of a test's ${defaultTestMs / 1000} s or more; a normal runner needs about 1 s. This runner is too slow for browser tests, so no suite runs.`;
+};
+
 // Bun's default hook timeout is 5 s, and most afterAll hooks keep it. Graceful close and kill each get 2 s,
 // which leaves 1 s for the rest of the hook; a launch still pending after 4 s reports before the hook fails (#1473).
 const gracefulCloseMs = 2000;
