@@ -1,6 +1,7 @@
 import { dates } from "@k2b/stdlib";
 import { Section, useLocale } from "@k2b/ui";
 import { createMemo, type JSX, Show } from "solid-js";
+import { formatCodeMoment } from "../../code/schedule";
 import type { CodeReadModelRow, CodeRunReadModel } from "../../contracts/code-read-model";
 import type { CodePageData, CodePageRun, CodePageTarget, CodePageVersion } from "./data";
 import { type CodePageMessages, codePageMessages } from "./messages";
@@ -37,20 +38,16 @@ export function usePageText(data: () => CodePageData) {
   /** "28.10." or "10/28": a day this year, short. */
   const day = (iso: string) =>
     new Intl.DateTimeFormat(locale(), { timeZone: timeZone(), day: "2-digit", month: "2-digit" }).format(new Date(iso));
-  /** "Mon., 16.11., 07:00": a day this week or later, with weekday and time. */
-  const dayTime = (iso: string) =>
-    `${new Intl.DateTimeFormat(locale(), { timeZone: timeZone(), weekday: "short" }).format(new Date(iso))}, ${day(iso)}, ${time(iso)}`;
   /**
-   * A moment as people say it: "in 11 min", "4 min ago", "3 hr ago", "today, 13:45", else the day with its time. The
-   * page's clock is the server's, so the server and the first browser render agree.
+   * A moment as people say it: "in 11 min", "4 min ago", "3 hr ago", else as every Code surface writes it ("today,
+   * 13:45", "Sun, 11/15, 15:28"). The page's clock is the server's, so the server and the first browser render agree.
    */
   const moment = (iso: string) => {
     const diff = new Date(iso).getTime() - now().getTime();
     const minutes = Math.round(diff / 60_000);
     if (Math.abs(minutes) < 60) return rtf().format(minutes, "minute");
     if (diff < 0 && minutes > -12 * 60) return rtf().format(Math.round(minutes / 60), "hour");
-    if (today(iso)) return `${word("today")}, ${time(iso)}`;
-    return dayTime(iso);
+    return formatCodeMoment(iso, { locale: locale(), timeZone: timeZone(), now: now() });
   };
   /** "today, 13:58" or "28.10.", for lists of versions and secrets. */
   const short = (iso: string) => (today(iso) ? `${word("today")}, ${time(iso)}` : day(iso));

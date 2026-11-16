@@ -18,6 +18,7 @@ const fakeLive = resolve(import.meta.dir, "AssistantGustav.browser-live.ts");
 const entrySource = `
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
+import { default as RevisionDecision, AssistantCodeReviewStartLine as RevisionStart } from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeDecisionLine.tsx"))};
 import AssistantCodeVersionCard from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeVersionCard.tsx"))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
 import { AssistantCodeDecisionEntry } from ${JSON.stringify(resolve(import.meta.dir, "code-decision-deferred.tsx"))};
@@ -30,7 +31,13 @@ window.harnessLive = live;
 render(
   () => (
     <LocaleProvider locale={window.harness.locale}>
-      {window.harness.card ? (
+      {window.harness.revising ? (
+        // Requested changes that Gustav revises by himself: the decision line and, below it, the start of his turn.
+        <div style="width:100%;padding:1rem;display:grid;align-content:start;gap:0.5rem">
+          <RevisionDecision decision={window.harness.revising} at={window.harness.revisingAt} timeZone="Europe/Berlin" automatic />
+          <RevisionStart number={window.harness.revising.number} />
+        </div>
+      ) : window.harness.card ? (
         <div style="width:100%;padding:1rem">
           <AssistantLiveProvider value={live}>
             <AssistantCodeVersionCard
@@ -138,6 +145,10 @@ const MINE = [
   code("c_stoff1", "Stoffpreise prüfen", "active"),
   code("c_angeb1", "Angebote nachfassen", "paused"),
 ];
+/** A card whose title and schedule are longer than one line of a card. */
+const LONG = { id: "c_rueck1", title: "Wochenabschluss Wareneingang (freitags 14 Uhr) mit Rückfragen an die Lieferanten" };
+const mineOf = (scenario: Scenario) =>
+  scenario.longNames ? MINE.map((item) => (item.id === LONG.id ? { ...item, title: LONG.title } : item)) : MINE;
 // A place owns at most one Code.
 const MAILBOX = [code("c_info01", "Anfragen sortieren", "paused")];
 /** The summary carries Core's list under the names the block reads. */
@@ -153,7 +164,8 @@ const automation = (entrypoint: string, cron: string | null, patch: Record<strin
 });
 const logistik = { type: "spaces.space", id: "sp_2lg8", title: "Logistik", typeTitle: "Space" };
 /** The running version's automations, as Core lists them; each owner's answer also names targets refused in the last run. */
-const automationsOf = (codeId: string, accessMissing = false) => {
+const automationsOf = (codeId: string, accessMissing = false, longNames = false) => {
+  if (longNames && codeId === LONG.id) return { items: [automation("lagerbestand", "*/15 7-19 * * *")], removedTargets: [] };
   if (codeId === "c_woche1")
     return { items: [automation("wochenbericht", "0 7 * * 1", { nextRunAt: "2026-11-02T06:00:00.000Z" })], removedTargets: [] };
   if (codeId !== "c_info01") return { items: [], removedTargets: [] };
@@ -219,6 +231,10 @@ type Scenario = {
   detail?: boolean;
   /** Waiting for you, with one chat question and Code of a place that needs the person. */
   waiting?: boolean;
+  /** One card of My apps has a title and a schedule longer than one line. */
+  longNames?: boolean;
+  /** Requested changes that Gustav revises by himself: the decision line and the start line below it. */
+  revising?: boolean;
 };
 const approval = {
   id: "33333333-3333-4333-8333-333333333333",
@@ -291,7 +307,9 @@ const propsOf = (scenario: Scenario, url: URL) => ({
           page: scenario.listFails
             ? null
             : {
-                items: MINE.map((item) => ({ ...item, lastRun: runOf(item.id), ...automationsOf(item.id) })).map(summaryOf),
+                items: mineOf(scenario)
+                  .map((item) => ({ ...item, lastRun: runOf(item.id), ...automationsOf(item.id, false, scenario.longNames) }))
+                  .map(summaryOf),
                 nextCursor: null,
               },
           today: { runs: 9, failed: 1 },
@@ -467,6 +485,19 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
               decisionAt: at(1),
             }
           : {}),
+        ...(scenario.revising
+          ? {
+              revising: {
+                codeId: "c_info01",
+                versionId: cardVersionId,
+                number: 1,
+                outcome: "changes_requested",
+                person: { id: "u-jana", name: "Jana Probe" },
+                anchor: `code-version-${cardVersionId}`,
+              },
+              revisingAt: at(1),
+            }
+          : {}),
       };
       const outer = view.column ? "display:flex;justify-content:flex-end;height:100vh" : "display:flex;height:100vh";
       const inner = view.column
@@ -506,11 +537,13 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       if (capabilityId === "code.list") {
         if (state.listFails)
           return route.fulfill({ status: 503, json: { error: { code: "APP_UNAVAILABLE", message: "Core is unavailable" } } });
-        return route.fulfill({ json: { data: { items: input.owner?.kind === "resource" ? MAILBOX : MINE, nextCursor: null } } });
+        return route.fulfill({
+          json: { data: { items: input.owner?.kind === "resource" ? MAILBOX : mineOf(scenario), nextCursor: null } },
+        });
       }
       if (capabilityId === "code.run.list") return route.fulfill({ json: { data: { items: [runOf(input.codeId!)], nextCursor: null } } });
       if (capabilityId === "code.automation.list")
-        return route.fulfill({ json: { data: { codeId: input.codeId, ...automationsOf(input.codeId!) } } });
+        return route.fulfill({ json: { data: { codeId: input.codeId, ...automationsOf(input.codeId!, false, scenario.longNames) } } });
       if (capabilityId === "code.run.count") return route.fulfill({ json: { data: { runs: 9, failed: 1 } } });
       if (capabilityId === "code.activity.words") return route.fulfill({ json: { data: activityOf(input.codeId!) } });
       if (capabilityId === "code.run.words")
@@ -694,6 +727,41 @@ describe("Gustav", () => {
     }
   }, 120_000);
 
+  test("a long title and schedule wrap in their card instead of ending in an ellipsis, so the end time stays visible", async () => {
+    for (const view of [desktop, phone]) {
+      const h = await open(view, { codeOpen: true, longNames: true });
+      try {
+        const list = h.page.locator("section.assistant-apps");
+        const card = list.locator("a.k2b-link-card").filter({ hasText: LONG.title });
+        await card.getByText("Alle 15 Minuten von 7:00 bis 19:59 Uhr").waitFor();
+        await settled(h.page);
+        for (const selector of [".k2b-link-card__title", ".k2b-link-card__description"]) {
+          const box = await card.locator(selector).evaluate((element) => {
+            const style = getComputedStyle(element);
+            const own = element.getBoundingClientRect();
+            const outer = element.closest("a")!.getBoundingClientRect();
+            return {
+              ellipsis: style.textOverflow === "ellipsis",
+              cut: element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1,
+              inside: own.left >= outer.left && own.right <= outer.right + 0.5,
+              lines: Math.round(own.height / Number.parseFloat(style.lineHeight)),
+            };
+          });
+          expect(box.ellipsis).toBe(false);
+          expect(box.cut).toBe(false);
+          expect(box.inside).toBe(true);
+          // At this length the title needs more than one line in every width: it wraps instead of being cut.
+          if (selector === ".k2b-link-card__title") expect(box.lines).toBeGreaterThan(1);
+        }
+        expect(await card.locator(".k2b-link-card__title").textContent()).toBe(LONG.title);
+        expect(h.errors).toEqual([]);
+        await shot(h.page, `a-meine-apps-lang-${view.name}-light`);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 120_000);
+
   test("a failed list keeps its place, says the Code keeps running, and recovers on retry", async () => {
     const h = await open(desktop, { codeOpen: true, listFails: true });
     try {
@@ -866,6 +934,28 @@ describe("Gustav", () => {
         }
       }
   }, 240_000);
+
+  test("requested changes that Gustav revises by himself say so once, in the start line below the decision", async () => {
+    for (const view of [desktop, phone]) {
+      const h = await open(view, { revising: true }, { path: "/app/assistant/panel" });
+      try {
+        const lines = h.page.locator(".assistant-code-decision");
+        await lines.nth(1).waitFor();
+        await settled(h.page);
+        const texts = (await lines.allInnerTexts()).map((line) => line.replace(/\s+/g, " ").trim());
+        expect(texts).toHaveLength(2);
+        expect(texts[0]).toContain("Jana Probe");
+        expect(texts[1]).toBe("Gustav überarbeitet Version 1 jetzt, einmal von selbst.");
+        // N3: the decision line carries no second mark that says the same.
+        expect(texts.join(" ").match(/von selbst/g)).toHaveLength(1);
+        expect(await lines.first().getByRole("button").count()).toBe(0);
+        expect(h.errors).toEqual([]);
+        await shot(h.page, `f-ueberarbeitet-selbst-${view.name}-light`);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 120_000);
 
   test("the event line at the end jumps up to the card and puts the focus on switching on", async () => {
     for (const view of [desktop, phone]) {

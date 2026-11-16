@@ -83,3 +83,62 @@ export const describeCodeTiming = (automation: { cron?: string | null; at?: stri
   }
   return automation.cron ? describeCodeSchedule(automation.cron, locale) : null;
 };
+
+const dayKey = (date: Date, timeZone: string) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+
+type CodeMomentOptions = { locale: string; timeZone: string; now?: Date };
+
+/** The parts every Code moment is written from: whether it is today, its time, and its weekday with its day. */
+const momentParts = (iso: string, options: CodeMomentOptions) => {
+  const date = new Date(iso);
+  const now = options.now ?? new Date();
+  let timeZone = options.timeZone;
+  try {
+    dayKey(date, timeZone);
+  } catch {
+    timeZone = "UTC";
+  }
+  const lang = options.locale.toLowerCase().startsWith("de") ? "de" : "en";
+  const time = new Intl.DateTimeFormat(options.locale, { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+  const otherYear = dayKey(date, timeZone).slice(0, 4) !== dayKey(now, timeZone).slice(0, 4);
+  // Fixed weekday words: Intl writes a short weekday alone as "So" but inside a date as "So.", so surfaces that format
+  // the day differently disagree. One fixed word per day keeps every Code surface alike.
+  const index = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
+    new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(date),
+  );
+  const numeric = new Intl.DateTimeFormat(options.locale, {
+    timeZone,
+    day: "2-digit",
+    month: "2-digit",
+    ...(otherYear ? { year: "numeric" } : {}),
+  }).format(date);
+  return {
+    today: dayKey(date, timeZone) === dayKey(now, timeZone),
+    todayWord: lang === "de" ? "heute" : "today",
+    time,
+    day: `${DAYS[lang].short[index] ?? ""}, ${numeric}`,
+  };
+};
+
+/**
+ * A moment of a Code as every Code surface writes it: "today, 15:28" on its day, "Sun, 11/15, 15:28" in the current
+ * year, and with the year only in another one ("Sat, 11/15/2025, 15:28"). German reads "heute, 15:28",
+ * "So, 15.11., 15:28" and "Sa, 15.11.2025, 15:28". The Code page, the chat's version card and event line, and
+ * Gustav's Code blocks use it, so one instant reads the same everywhere. `now` is the clock that decides "today" and
+ * "this year": pass the server's on the server and in the first browser render, so both show the same text.
+ */
+export const formatCodeMoment = (iso: string, options: CodeMomentOptions): string => {
+  const parts = momentParts(iso, options);
+  return parts.today ? `${parts.todayWord}, ${parts.time}` : `${parts.day}, ${parts.time}`;
+};
+
+/**
+ * The day of a Code moment without its time, written like `formatCodeMoment`: "today", "Mon, 11/16", or with the year
+ * outside the current one. German reads "heute", "Mo, 16.11." and "Mo, 16.11.2025". For lists that name only the day,
+ * such as a card's next run.
+ */
+export const formatCodeDay = (iso: string, options: CodeMomentOptions): string => {
+  const parts = momentParts(iso, options);
+  return parts.today ? parts.todayWord : parts.day;
+};
