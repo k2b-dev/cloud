@@ -1,3 +1,4 @@
+import type { ActivityEntry } from "@k2b/ui";
 import type { MailActivityEvent } from "../../service/collaboration";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 
@@ -39,7 +40,9 @@ const collaborationPresentation = (event: MailActivityEvent, locale: string): { 
     changes.push(after.snoozedUntil ? t.activitySnoozed : t.activityUnsnoozed);
     icon = "ti-alarm-snooze";
   }
-  return { label: changes.join(t.activityAnd) || t.activityUpdated, icon };
+  const label = changes.join(t.activityAnd) || t.activityUpdated;
+  // The parts read inside one sentence; the sentence starts with a capital.
+  return { label: label.charAt(0).toUpperCase() + label.slice(1), icon };
 };
 
 export const mailActivityLabel = (event: MailActivityEvent, locale = "en"): string => {
@@ -99,24 +102,17 @@ export const mailActivityActorLabel = (event: MailActivityEvent, locale = "en"):
     : event.actor.displayName;
 };
 
-export type PresentedMailActivity = MailActivityEvent & {
-  actorLabel: string;
-  label: string;
-  icon: string;
-  count: number;
-};
-
-export const presentMailActivity = (events: MailActivityEvent[], locale = "en"): PresentedMailActivity[] => {
-  const presented: PresentedMailActivity[] = [];
-  for (const event of events) {
-    const label = mailActivityLabel(event, locale);
-    const actorLabel = mailActivityActorLabel(event, locale);
-    const previous = presented.at(-1);
-    if (previous && previous.actor.id === event.actor.id && previous.actor.kind === event.actor.kind && previous.label === label) {
-      previous.count += 1;
-      continue;
-    }
-    presented.push({ ...event, actorLabel, label, icon: mailActivityIcon(event), count: 1 });
-  }
-  return presented;
+/** One row of the activity timeline: the sentence, its icon, and who did it; the timeline bundles repeats of a day. */
+export const mailActivityEntry = (event: MailActivityEvent, locale = "en"): ActivityEntry => {
+  const t = mailConversationUiMessages.resolve([locale]).t;
+  const label = mailActivityLabel(event, locale);
+  const failed = event.outcome === "failed";
+  return {
+    at: event.createdAt,
+    icon: `ti ${failed ? "ti-alert-circle" : mailActivityIcon(event)}`,
+    tone: failed ? "danger" : "neutral",
+    text: label,
+    actor: mailActivityActorLabel(event, locale),
+    bundle: { key: `${event.actor.kind}:${event.actor.id ?? ""}:${label}`, text: (count) => t.activityRepeated({ label, count }) },
+  };
 };

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MailActivityEvent } from "../../service/collaboration";
-import { mailActivityIcon, mailActivityLabel, presentMailActivity } from "./mail-activity-presentation";
+import { mailActivityActorLabel, mailActivityEntry, mailActivityIcon, mailActivityLabel } from "./mail-activity-presentation";
 
 const event = (metadata: Record<string, unknown> = {}): MailActivityEvent => ({
   id: crypto.randomUUID(),
@@ -19,40 +19,50 @@ const event = (metadata: Record<string, unknown> = {}): MailActivityEvent => ({
 describe("mail activity presentation", () => {
   test("describes collaboration changes from audit metadata", () => {
     expect(mailActivityLabel(event({ before: { workStatus: "needs_action" }, after: { workStatus: "waiting" } }))).toBe(
-      "marked it Waiting for reply",
+      "Marked Waiting for reply",
     );
   });
 
   test("describes assignee changes, also from activity recorded with a single assignee", () => {
     expect(mailActivityLabel(event({ before: { assigneeUserIds: [] }, after: { assigneeUserIds: ["a", "b"] } }))).toBe(
-      "assigned the conversation",
+      "Conversation assigned",
     );
     expect(mailActivityLabel(event({ before: { assigneeUserIds: ["a", "b"] }, after: { assigneeUserIds: ["a"] } }))).toBe(
-      "removed an assignee",
+      "An assignee removed",
     );
     expect(mailActivityLabel(event({ before: { assigneeUserIds: ["a"] }, after: { assigneeUserIds: [] } }), "de")).toBe(
-      "hat alle Zuweisungen entfernt",
+      "Alle Zuweisungen entfernt",
     );
-    expect(mailActivityLabel(event({ before: { assigneeUserId: null }, after: { assigneeUserId: "a" } }))).toBe(
-      "assigned the conversation",
-    );
+    expect(mailActivityLabel(event({ before: { assigneeUserId: null }, after: { assigneeUserId: "a" } }))).toBe("Conversation assigned");
     expect(mailActivityLabel(event({ before: { assigneeUserIds: ["a"] }, after: { assigneeUserIds: ["a"] } }))).toBe(
-      "updated the conversation",
+      "Conversation updated",
     );
+    // Several changes read as one sentence.
+    expect(
+      mailActivityLabel(
+        event({ before: { assigneeUserIds: [], workStatus: "needs_action" }, after: { assigneeUserIds: ["a"], workStatus: "done" } }),
+        "de",
+      ),
+    ).toBe("Unterhaltung zugewiesen und als „Erledigt“ markiert");
   });
 
   test("localizes stable activity actions for regional German locales", () => {
     const tagged = event();
     tagged.action = "conversation.local_tag_added";
-    expect(mailActivityLabel(tagged, "de-CH")).toBe("hat einen Tag hinzugefügt");
+    expect(mailActivityLabel(tagged, "de-CH")).toBe("Tag hinzugefügt");
     expect(mailActivityLabel(event({ before: { workStatus: "needs_action" }, after: { workStatus: "waiting" } }), "de-CH")).toBe(
-      "hat den Status auf „Wartet auf Antwort“ gesetzt",
+      "Als „Wartet auf Antwort“ markiert",
     );
   });
 
-  test("collapses consecutive duplicate events", () => {
-    expect(presentMailActivity([event(), event()])).toHaveLength(1);
-    expect(presentMailActivity([event(), event()])[0]?.count).toBe(2);
+  test("an event is one timeline entry that bundles with its repeats by the same person", () => {
+    const entry = mailActivityEntry(event({ before: { workStatus: "needs_action" }, after: { workStatus: "done" } }), "de");
+    expect(entry).toMatchObject({ at: "2026-07-22T10:00:00.000Z", icon: "ti ti-circle-check", tone: "neutral", actor: "Ada" });
+    expect(entry.text).toBe("Als „Erledigt“ markiert");
+    expect(entry.bundle?.text(3, [])).toBe("Als „Erledigt“ markiert (3-mal)");
+    expect(mailActivityEntry(event(), "en").bundle?.key).toBe(mailActivityEntry(event(), "en").bundle?.key);
+    expect(mailActivityEntry({ ...event(), outcome: "failed" }).icon).toBe("ti ti-alert-circle");
+    expect(mailActivityEntry({ ...event(), outcome: "failed" }).tone).toBe("danger");
   });
 
   test("uses quiet semantic icons and names workflows explicitly", () => {
@@ -61,7 +71,7 @@ describe("mail activity presentation", () => {
     workflowEvent.action = "conversation.local_tag_added";
 
     expect(mailActivityIcon(workflowEvent)).toBe("ti-tag");
-    expect(presentMailActivity([workflowEvent])[0]?.actorLabel).toBe("Workflow Invoice triage");
+    expect(mailActivityActorLabel(workflowEvent)).toBe("Workflow Invoice triage");
   });
 
   test("names who started and stopped keeping a conversation", () => {
@@ -69,12 +79,12 @@ describe("mail activity presentation", () => {
     const released = { ...event(), action: "conversation.keep_released" };
     expect(mailActivityIcon(kept)).toBe("ti-lock");
     expect(mailActivityIcon(released)).toBe("ti-lock-open");
-    expect(mailActivityLabel(kept)).toBe("started keeping the conversation");
-    expect(mailActivityLabel(released, "de")).toBe("hat die Aufbewahrung aufgehoben");
+    expect(mailActivityLabel(kept)).toBe("Keeping started");
+    expect(mailActivityLabel(released, "de")).toBe("Aufbewahrung aufgehoben");
     const carried = { ...kept, metadata: { carriedFrom: "conversation-1" } };
-    expect(mailActivityLabel(carried)).toBe("moved kept messages here, so this conversation is kept too");
+    expect(mailActivityLabel(carried)).toBe("Kept messages moved here, so this conversation is kept too");
     expect(mailActivityLabel(carried, "de")).toBe(
-      "hat aufbewahrte Nachrichten hierher verschoben, daher wird auch diese Unterhaltung aufbewahrt",
+      "Aufbewahrte Nachrichten hierher verschoben, daher wird auch diese Unterhaltung aufbewahrt",
     );
     expect(mailActivityIcon(carried)).toBe("ti-lock");
   });
@@ -86,7 +96,7 @@ test("F6 removals appear in the activity with localized consolidation text", () 
     action: "draft.discarded",
     actor: { kind: "system", id: null, displayName: "Mail", avatarHash: null },
   };
-  expect(mailActivityLabel(removed)).toBe("removed a reply draft during consolidation");
+  expect(mailActivityLabel(removed)).toBe("Reply draft removed during consolidation");
   expect(mailActivityLabel(removed, "de")).toContain("Antwortentwurf");
-  expect(presentMailActivity([removed, { ...removed, id: "next" }])[0]?.count).toBe(2);
+  expect(mailActivityEntry(removed).actor).toBe("Mail");
 });
