@@ -174,6 +174,7 @@ export const app = defineApp({
     "/api/admin/account-lifecycle",
     "/api/admin/core",
     "/api/admin/apps",
+    "/api/admin/maintenance",
     "/api/openapi.json",
     "/.well-known/cloud-session-jwks.json",
     "/.well-known/cloud-invocation-jwks.json",

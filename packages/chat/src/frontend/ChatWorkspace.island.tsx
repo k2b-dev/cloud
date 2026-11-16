@@ -2268,6 +2268,9 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       live.dispose();
     });
     if (props.embedded) {
+      // Following the host page's place loads with the panel, outside the first bundle. A chat opened since then
+      // means the reader left the panel's start.
+      const opensAtMount = openToken;
       // Following the host page's place loads with the panel, outside the first bundle.
       let stopFollowing: (() => void) | undefined;
       onCleanup(() => stopFollowing?.());
@@ -2278,6 +2281,12 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
           resourceChat,
           setResourceChat,
           atResource,
+          atStart: () => {
+            const current = route();
+            return (
+              !current.chatId && !current.channels && !current.forYou && !current.resource && !archived() && openToken === opensAtMount
+            );
+          },
           opens: () => openToken,
           open,
           routeHref: (target) => viewHref(routeAddress(target, basePath)),
@@ -2870,16 +2879,18 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   };
   const discoverButton = () => (
     <>
-      <IconButton
-        size="xs"
-        variant="ghost"
-        label={t().browseChannels}
-        aria-haspopup="dialog"
-        aria-expanded={catalogAnchor() ? "true" : "false"}
-        onClick={(event) => void toggleCatalog(event.currentTarget)}
-      >
-        <i class="ti ti-info-circle text-xs" aria-hidden="true" />
-      </IconButton>
+      <AppWorkspace.SidebarSectionAction visibility="always">
+        <IconButton
+          size="xs"
+          variant="ghost"
+          label={t().browseChannels}
+          aria-haspopup="dialog"
+          aria-expanded={catalogAnchor() ? "true" : "false"}
+          onClick={(event) => void toggleCatalog(event.currentTarget)}
+        >
+          <i class="ti ti-info-circle text-xs" aria-hidden="true" />
+        </IconButton>
+      </AppWorkspace.SidebarSectionAction>
     </>
   );
   // Section actions render once per sidebar form; the catalog lives once, beside the workspace.
