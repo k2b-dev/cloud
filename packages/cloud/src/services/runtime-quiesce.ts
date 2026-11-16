@@ -442,7 +442,23 @@ const awaitOlderGenerations = async (lineage: WorkerLineage, controller: Quiesce
       lineage.waitingSince = undefined;
       return;
     }
-    if (stop()) return;
+    if (stop()) {
+      // This waiter is gone; a later one measures its own wait.
+      lineage.waitingSince = undefined;
+      return;
+    }
+    // A generation ended by `stop()` alone was never drained, so its handlers never got their abort: drain it now,
+    // so the wait below judges handlers that ignore the abort, not ones that were never told.
+    for (const entry of lineage.retired) {
+      if (entry.drained !== undefined) continue;
+      entry.settled = false;
+      entry.drained = entry.worker
+        .drain({ timeoutMs: controller.timeoutMs })
+        .catch(() => undefined)
+        .finally(() => {
+          entry.settled = true;
+        });
+    }
     lineage.waitingSince ??= Date.now();
     const waitedMs = Date.now() - lineage.waitingSince;
     if (waitedMs >= budgetMs) {
@@ -532,9 +548,14 @@ export const quiesceWorker = async (
   /** Never two generations at once: waits for the old handlers of the lineage first. Starts in the same tick when there are none. */
   const startNext = async (): Promise<void> => {
     pruneRetired(lineage.retired);
-    if (lineage.retired.size > 0) {
+    if (lineage.retired.size === 0) {
+      // The old handlers ended: an earlier stuck verdict no longer applies to this lineage.
+      lineage.waitingSince = undefined;
+    } else {
       await awaitOlderGenerations(lineage, controller, ended);
-      if (ended() || controller.quiesced || current || starting) return;
+      // An earlier resume attempt that waited too launched meanwhile: this attempt shares its start and its failure.
+      if (starting) return starting;
+      if (ended() || controller.quiesced || current) return;
     }
     await launch();
   };

@@ -3,6 +3,7 @@ import type { Sync, Worker } from "@k2b/sync";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, stopRuntimeJobs, superviseRuntimeTask } from "./runtime-lifecycle";
 import {
   createQuiesceController,
+  createWorkerLineage,
   type QuiesceController,
   quiesceWorker,
   type ResumeRetry,
@@ -625,6 +626,75 @@ describe("old generations", () => {
     expect(created).toHaveLength(1);
     // The status still names the handler that runs.
     expect(controller.inFlight()).toBe(1);
+  });
+
+  test("a stuck verdict ends with the old handlers: a later overlap on the same primitive waits again instead of failing at once", async () => {
+    // Step budget 40 ms, wait budget 80 ms; nothing is quiesced, as outside maintenance.
+    const controller = createQuiesceController({ timeoutMs: 20, retryMs: 1 });
+    const lineage = createWorkerLineage("deliveries");
+    const { created, start } = starter();
+    const first = await quiesceWorker(start, { controller, lineage });
+    const releaseFirst = created[0]!.hold();
+    first.stop();
+    await expect(quiesceWorker(start, { controller, lineage })).rejects.toBeInstanceOf(StuckWorkerError);
+    releaseFirst();
+    const third = await quiesceWorker(start, { controller, lineage });
+    expect(created).toHaveLength(2);
+    // Hours later: a handler that needs a moment more than its drain.
+    const releaseThird = created[1]!.hold();
+    third.stop();
+    setTimeout(releaseThird, 30);
+    const fourth = await quiesceWorker(start, { controller, lineage });
+    expect(created).toHaveLength(3);
+    expect(fourth.capacity).toBe(4);
+  });
+
+  test("a start that fails after a wait shared by two resume attempts is retried, not lost", async () => {
+    // Step budget 400 ms, wait budget 800 ms; the waits poll every 100 ms.
+    const controller = createQuiesceController({ timeoutMs: 200, retryMs: 1 });
+    const created: FakeWorker[] = [];
+    let starts = 0;
+    const start = async () => {
+      starts += 1;
+      // The start after the old handler ended fails slowly, like a NATS timeout.
+      if (starts === 2) {
+        await Bun.sleep(300);
+        throw new Error("consumer creation timed out");
+      }
+      const worker = fakeWorker();
+      created.push(worker);
+      return worker;
+    };
+    const handle = await quiesceWorker(start, { controller });
+    const release = created[0]!.hold();
+    await controller.quiesce();
+    // Attempt 1 outlives its step budget at 400 ms and keeps waiting; attempt 2 waits too. The old handler ends at
+    // 550 ms, so attempt 1's wait (polling at 600 ms) launches before attempt 2's (at about 602 ms).
+    setTimeout(release, 550);
+    expect(await controller.resume()).toEqual([]);
+    await Bun.sleep(400);
+    expect(starts).toBe(3);
+    expect(handle.capacity).toBe(4);
+  });
+
+  test("a generation ended by stop() alone is drained by the next process(), so its handlers hear the abort", async () => {
+    const controller = createQuiesceController({ timeoutMs: 20, retryMs: 1 });
+    const lineage = createWorkerLineage("deliveries");
+    const { created, start } = starter();
+    const first = await quiesceWorker(start, { controller, lineage });
+    const worker = created[0]!;
+    // A handler that honours its abort: it ends when the drain aborts it.
+    const release = worker.hold();
+    const drain = worker.drain.bind(worker);
+    worker.drain = async (options) => {
+      release();
+      await drain(options);
+    };
+    first.stop();
+    const next = await quiesceWorker(start, { controller, lineage });
+    expect(worker.drains).toEqual([20]);
+    expect(created).toHaveLength(2);
+    expect(next.capacity).toBe(4);
   });
 
   test("a supervised worker whose old handler never ends is reported after the resume, not retried forever", async () => {

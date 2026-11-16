@@ -164,6 +164,8 @@ export const startRuntimeInterval = ({
       return;
     }
     if (active) return;
+    // This pass covers what was missed: a regular tick between resume and the listener must not run a second pass.
+    missed = false;
     active = tasks.run(async () => {
       try {
         await run(abort.signal);
