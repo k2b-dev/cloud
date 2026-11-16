@@ -21,6 +21,8 @@
  *                         Read only: a Linux session without either cannot open a browser.
  *   GH_TOKEN / GITHUB_TOKEN
  *                         Optional GitHub token for release metadata requests (lifts the anonymous API rate limit); never sent to asset downloads.
+ *   NO_COLOR / FORCE_COLOR / TERM
+ *                         Read only: whether text output may carry colour (https://no-color.org).
  *   CLD_OUTPUT_DIR        Build only: output directory for the standalone binaries.
  *   CLD_VERSION           Build only: version embedded into the binaries.
  *   CLD_COMMIT            Build only: commit embedded into the binaries.
@@ -56,6 +58,13 @@ export const posixLocale = (env: Readonly<Record<string, string | undefined>> = 
     return undefined;
   }
 };
+
+/** The colour switches of the terminal environment; `cliColorEnabled` decides with the stream. */
+export const envColor = (): { NO_COLOR?: string; FORCE_COLOR?: string; TERM?: string } => ({
+  NO_COLOR: read("NO_COLOR"),
+  FORCE_COLOR: read("FORCE_COLOR"),
+  TERM: read("TERM"),
+});
 
 export const envReleaseBase = (): string | undefined => read("CLD_RELEASE_BASE");
 export const envReleaseApiBase = (): string | undefined => read("CLD_RELEASE_API_BASE");

@@ -12,9 +12,12 @@ export const MAINTENANCE_EXIT_CODE = 75;
 const ORANGE = "\u001b[38;5;208m";
 const RESET = "\u001b[39m";
 
-/** Colour only for a terminal that wants it; the words carry the meaning without colour. */
-export const cliColorEnabled = (stream: { isTTY?: boolean } = process.stdout): boolean =>
-  !process.env.NO_COLOR && (!!process.env.FORCE_COLOR || (!!stream.isTTY && process.env.TERM !== "dumb"));
+/**
+ * Colour only for a terminal that wants it (`NO_COLOR`, `FORCE_COLOR`, `TERM=dumb`); the words carry the meaning
+ * without colour. The host passes its environment, so this module reads no process state itself.
+ */
+export const cliColorEnabled = (stream: { isTTY?: boolean }, env: { NO_COLOR?: string; FORCE_COLOR?: string; TERM?: string }): boolean =>
+  !env.NO_COLOR && (!!env.FORCE_COLOR || (!!stream.isTTY && env.TERM !== "dumb"));
 
 /** „Wartungsmodus“ / "Maintenance mode" in orange, the mode's sign where a terminal cannot show its icon. */
 export const markMaintenanceWord = (text: string, color: boolean): string =>

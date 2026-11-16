@@ -318,10 +318,13 @@ export const renderMaintenancePage = (model: MaintenancePageModel, options: { no
   const tx = TEXT[model.locale];
   const zone = validZone(model.timeZone);
   const format = timeFormat(model.locale);
-  const part = (options: Intl.DateTimeFormatOptions, ms: number) => new Intl.DateTimeFormat(model.locale, { timeZone: zone, ...options }).format(ms);
+  const part = (options: Intl.DateTimeFormatOptions, ms: number) =>
+    new Intl.DateTimeFormat(model.locale, { timeZone: zone, ...options }).format(ms);
   // A time on another day names that day, so an end after midnight is not read as today.
   const fmt = (ms: number) =>
-    part(format.options, ms) + format.suffix + (part(DAY_KEY, ms) === part(DAY_KEY, now) ? "" : format.day.prefix + part(format.day.options, ms));
+    part(format.options, ms) +
+    format.suffix +
+    (part(DAY_KEY, ms) === part(DAY_KEY, now) ? "" : format.day.prefix + part(format.day.options, ms));
   const nonce = esc(options.nonce);
 
   let first: View;
