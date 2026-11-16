@@ -33,7 +33,14 @@ beforeAll(() => setSystemTime(new Date("2026-11-01T12:10:00.000Z")));
 afterAll(() => setSystemTime());
 
 type State = Parameters<typeof codeFixtureData>[0];
-const render = (query: Record<string, string>, state: State = "normal", locale = "de", counts?: { approvals: number; reports: number }) =>
+type AreaData = ReturnType<typeof codeFixtureData>;
+const render = (
+  query: Record<string, string>,
+  state: State = "normal",
+  locale = "de",
+  counts?: { approvals: number; reports: number },
+  edit: (area: AreaData) => AreaData = (area) => area,
+) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -46,7 +53,7 @@ const render = (query: Record<string, string>, state: State = "normal", locale =
           data:
             state === "noperm"
               ? null
-              : { ...codeFixtureData(state, query, locale), ...(counts ? { summary: { ...data.fixtureSummary(), ...counts } } : {}) },
+              : edit({ ...codeFixtureData(state, query, locale), ...(counts ? { summary: { ...data.fixtureSummary(), ...counts } } : {}) }),
           noPermission: state === "noperm",
           retryHref: "/admin/code",
           viewerId: data.FIXTURE_PEOPLE.jana,
@@ -103,6 +110,21 @@ test("the area without a section opens on the approvals instead of two empty col
   const empty = renderedText(render({}, "empty"), " ");
   expect(empty).toContain("Keine Version wartet auf dich.");
   expect(render({}, "empty").match(/data-workspace-main-region="/g)?.length).toBe(2);
+});
+
+test("an approval names its author once when the author owns the Code personally, and both when they differ", () => {
+  const open = renderedText(render({ sec: "approvals" }), " ").replace(/\s+/g, " ");
+  // Lea submits her own personal Code; Tom his.
+  expect(open).toContain("Lea Muster, persönlich");
+  expect(open).not.toContain("Lea Muster Lea Muster");
+  expect(open).toContain("Tom Beispiel, persönlich");
+  expect(open).not.toContain("Tom Beispiel Tom Beispiel");
+  // Another owner keeps the author's name beside it.
+  expect(open).toContain("Lea Muster Postfach info@moebel-beispiel.de");
+  const decided = renderedText(render({ sec: "approvals", tab: "decided" }), " ").replace(/\s+/g, " ");
+  // Tom submitted Lea's personal Code: two people, two names.
+  expect(decided).toContain("Tom Beispiel Lea Muster, persönlich");
+  expect(decided).not.toContain("Lea Muster Lea Muster");
 });
 
 test("approvals are a page: a list with who, owner, main change and reason, and states", () => {
@@ -393,6 +415,31 @@ for (const locale of ["de", "en"]) {
     expect(button(sole)).not.toMatch(/\sdisabled(?:=""|\s|>)/);
   });
 }
+
+test("a decided version keeps the left column: its stored description, or a line that there is none beside the button", () => {
+  const described = renderedText(render(review, "approved"), " ").replaceAll(/\s+/g, " ");
+  expect(described).toContain("Was sie damit tut");
+  expect(described).toContain("Legt werktags um 8 Uhr");
+  expect(described).not.toContain("Noch keine Beschreibung.");
+  const withoutText = (area: AreaData): AreaData => {
+    const approval = area.approval;
+    if (!approval || approval === "failed" || approval === "missing" || !approval.readModel) return area;
+    return {
+      ...area,
+      approval: {
+        ...approval,
+        explanation: null,
+        readModel: { ...approval.readModel, description: { ...approval.readModel.description, state: "missing", text: null } },
+      },
+    };
+  };
+  const empty = renderedText(render(review, "approved", "de", undefined, withoutText), " ").replaceAll(/\s+/g, " ");
+  expect(empty).toContain("Was sie damit tut");
+  // The way to an explanation stays: the empty line stands beside the button.
+  expect(empty).toContain("Noch keine Beschreibung. Diese Version erklären lassen");
+  const english = renderedText(render(review, "approved", "en", undefined, withoutText), " ").replaceAll(/\s+/g, " ");
+  expect(english).toContain("No description yet. Explain this version");
+});
 
 for (const locale of ["de", "en"]) {
   test(`after deciding their own version the author is addressed directly, not told about a notice to themselves (${locale})`, () => {
