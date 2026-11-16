@@ -71,6 +71,8 @@ export function CloudSurveyBlock(props: {
   args: unknown;
   disabled?: boolean;
   disabledLabel?: string;
+  /** The question can never be answered any more: it keeps its title and says so, without its choices. */
+  unanswered?: boolean;
   onSubmit?: (result: unknown) => void | Promise<void>;
 }) {
   const locale = useLocale();
@@ -130,6 +132,7 @@ export function CloudSurveyBlock(props: {
       <Show when={typeof survey()?.description === "string"}>
         <p class="cloud-blocks__hint">{String(survey()?.description)}</p>
       </Show>
+      <Show when={!props.unanswered}>
       <div class="mt-2 space-y-4">
         <For each={questions()}>
           {(question, index) => {
@@ -200,8 +203,15 @@ export function CloudSurveyBlock(props: {
           }}
         </For>
       </div>
+      </Show>
       <div class="cloud-blocks__choice-foot">
         <Switch fallback={<span />}>
+          <Match when={props.unanswered}>
+            <span class="cloud-blocks__choice-state">
+              <i class="ti ti-circle-off" aria-hidden="true" />
+              {t().surveyUnanswered}
+            </span>
+          </Match>
           <Match when={error()}>
             <span class="cloud-blocks__choice-state" role="alert" data-tone="error">
               {error()}
@@ -223,7 +233,7 @@ export function CloudSurveyBlock(props: {
             <span class="cloud-blocks__choice-state">{blockWords(locale()).chosenCount({ count: counted()! })}</span>
           </Match>
         </Switch>
-        <Show when={!props.disabled && !submitted() && props.onSubmit}>
+        <Show when={!props.unanswered && !props.disabled && !submitted() && props.onSubmit}>
           <Button variant="secondary" loading={submission.loading()} loadingLabel={t().answerSubmitting} onClick={() => void submit()}>
             <i class="ti ti-check" aria-hidden="true" />
             {String(survey()?.submitLabel ?? t().surveySubmit)}

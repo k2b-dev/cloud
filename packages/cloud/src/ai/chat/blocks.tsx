@@ -287,14 +287,6 @@ export function SurveyToolView(props: { turnId: string; block: ToolBlock; active
     props.block.status === "completed" && isRecord(props.block.result) && props.block.result.submitted === true ? props.block.result : null;
   return (
     <Switch fallback={<CloudSurveyBlock args={props.block.args} disabled />}>
-      <Match when={props.block.status === "awaiting_client"}>
-        <CloudSurveyBlock
-          args={props.block.args}
-          disabled={!submit || actions.actionDisabled?.()}
-          disabledLabel={actions.actionDisabled?.() ? aiChatMessages(locale()).stoppingResponse : undefined}
-          onSubmit={submit ? (result) => submit(request(), result) : undefined}
-        />
-      </Match>
       <Match when={submittedResult()}>
         {(result) => (
           // biome-ignore lint/a11y/useValidAriaRole: Chat.Message uses a conversation role, not an ARIA role.
@@ -302,6 +294,19 @@ export function SurveyToolView(props: { turnId: string; block: ToolBlock; active
             <CloudSurveyResultBlock args={props.block.args} result={result()} />
           </Chat.Message>
         )}
+      </Match>
+      {/* The turn ended without an answer: the question can never be answered here again, so its choices are gone and
+          one sentence says so. Why the turn ended stands in its notice below. */}
+      <Match when={!props.active}>
+        <CloudSurveyBlock args={props.block.args} unanswered />
+      </Match>
+      <Match when={props.block.status === "awaiting_client"}>
+        <CloudSurveyBlock
+          args={props.block.args}
+          disabled={!submit || actions.actionDisabled?.()}
+          disabledLabel={actions.actionDisabled?.() ? aiChatMessages(locale()).stoppingResponse : undefined}
+          onSubmit={submit ? (result) => submit(request(), result) : undefined}
+        />
       </Match>
     </Switch>
   );

@@ -1613,7 +1613,7 @@ describe("text editor presentation", () => {
     expect(activeHtml).toContain('class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70');
     expect(activeHtml).toContain("Hello **Ada**");
     expect(activeHtml).not.toContain("<strong>Ada</strong>");
-    expect(activeHtml).not.toContain("Waiting for the assistant to continue");
+    expect(activeHtml).not.toContain("Waiting for Gustav to continue");
     expect(historicalHtml).toContain("Review mail · submitted");
   });
 
