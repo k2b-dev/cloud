@@ -1592,8 +1592,12 @@ or quota admission would now refuse a new one. The dispatcher can replay an
 admission response; the read Query gives current state. Different text, context
 or destination under that key returns `IDEMPOTENCY_CONFLICT`. A full queue
 returns `chat_busy`; a Project change during preparation returns `chat_changed`.
-This slice uses the existing shared capacity. Separate automation receipts and
-capacity follow with the automation queue.
+One Code has at most one waiting or running message per chat; a second send
+returns `chat_busy` until the first finishes. A Code message starts only while
+the Code and owner daily AI limits still have room; otherwise it waits with
+`code_ai_daily_budget_limit` or `code_ai_owner_daily_budget_limit` and starts
+after the limit resets. A turn never sends into its own chat. Separate
+automation receipts and capacity follow with the automation queue.
 
 Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.
 Chat reads are `read`; send retains the `ai` version-approval rule until the
