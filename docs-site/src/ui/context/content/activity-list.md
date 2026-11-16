@@ -10,10 +10,14 @@ week ago".
 and, when there are more rows than fit, "All N" at the end of the heading.
 "All N" opens the full history as a dialog with a filter by kind.
 
-Use it for every history of an object or a place: changes, sent messages,
-approvals, comments. Use `Timeline` for planned time (a calendar as a
-filmstrip), `Discussion` for comments people write, and `ChangeList` for
-changes that wait to be saved.
+## Use ActivityList and ActivityCard
+
+Use them for every history of an object or a place: changes, sent messages,
+approvals, comments. Put `ActivityCard` on a detail page, `ActivityList` in a
+side column or on a page of its own, and `openActivityDialog` behind a menu
+entry. Use `Timeline` for planned time (a calendar as a filmstrip),
+`Discussion` for comments people write, and `ChangeList` for changes that
+wait to be saved.
 
 ## Import
 
@@ -121,3 +125,37 @@ as its tooltip. An icon with a meaning the sentence does not say takes
 `iconLabel`. A clickable row renders its sentence as a button, with
 `aria-expanded` for `details`. The loading state is a `role="status"`, the
 error a `role="alert"`.
+
+## Runtime
+
+The server renders the list, the card, and "All N" from `now`, so the first
+browser render shows the same rows and dividers. In the browser the clock
+moves on every minute. The dialog opens through `prompts.dialog` and needs a
+browser; it reads `entries()` when it opens.
+
+## Example
+
+```tsx
+const entries = (): ActivityEntry[] =>
+  data.events.map((event) => ({
+    at: event.at,
+    icon: event.kind === "mail" ? "ti ti-mail" : "ti ti-pencil",
+    text: event.kind === "mail" ? "Sent by email" : "Draft changed",
+    bundle: event.kind === "mail" ? undefined : { key: "draft", text: (count) => `Draft changed ${count} times` },
+    actor: event.person,
+    kind: event.kind,
+  }));
+
+<ActivityCard
+  entries={entries()}
+  now={data.now}
+  timeZone={data.timeZone}
+  subtitle={data.project.name}
+  kinds={[
+    { key: "mail", label: "Emails" },
+    { key: "change", label: "Changes" },
+  ]}
+  error={failed()}
+  onReload={reload}
+/>;
+```

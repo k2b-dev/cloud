@@ -54,7 +54,8 @@ afterAll(async () => {
 });
 
 const load = async (width = 720) => {
-  const context = await browser.newContext({ viewport: { width, height: 900 } });
+  // Not about motion: without reduced motion, the button colour fading back after the dialog keeps settled() busy.
+  const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
   // Only Date stands at the mockup's "now", so the browser's own reading of the clock changes nothing; timers stay real.
   await context.addInitScript((now: number) => {
     const Real = Date;
