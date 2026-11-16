@@ -403,7 +403,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
                       </span>
                       <span class="k2b-dropdown__copy">
                         <span>{option.label}</span>
-                        {optionDescription(option.description, option.descriptionVisual)}
+                        {optionDescription(option)}
                       </span>
                       <i class="ti ti-check k2b-dropdown__check" data-hidden={current() ? undefined : "true"} aria-hidden="true" />
                     </a>

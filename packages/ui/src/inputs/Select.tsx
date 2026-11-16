@@ -440,7 +440,7 @@ export function Select(props: SelectProps): JSX.Element {
                     </Show>
                     <span>
                       <strong>{option.label}</strong>
-                      {optionDescription(option.description, option.descriptionVisual)}
+                      {optionDescription(option)}
                     </span>
                   </button>
                 )}

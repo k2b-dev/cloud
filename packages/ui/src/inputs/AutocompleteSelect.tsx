@@ -491,7 +491,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
                   </Show>
                   <span>
                     <strong>{option.label}</strong>
-                    {optionDescription(option.description, option.descriptionVisual)}
+                    {optionDescription(option)}
                   </span>
                 </button>
               )}

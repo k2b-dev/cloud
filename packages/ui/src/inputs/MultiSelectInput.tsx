@@ -477,7 +477,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                       fallback={
                         <>
                           <strong>{option.label}</strong>
-                          {optionDescription(option.description, option.descriptionVisual)}
+                          {optionDescription(option)}
                         </>
                       }
                     >
