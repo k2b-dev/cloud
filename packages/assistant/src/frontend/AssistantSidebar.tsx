@@ -1,4 +1,5 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
+import type { AssistantArchiveBlocker } from "./archive-blocker";
 import { ApprovalsNavStatus, approvalNavCount } from "@k2b/cloud/approvals/ui";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
@@ -67,7 +68,8 @@ type AssistantSidebarProps = {
   onCreateProject?: () => void | Promise<void>;
   onOpenProject?: (projectId: string) => Promise<boolean>;
   onOpenConversation?: (conversationId: string) => Promise<boolean>;
-  canArchiveConversation?: (conversation: AiConversation) => boolean;
+  /** What keeps a chat from being archived; the editor says it instead of offering a request that fails. */
+  archiveBlocker?: (conversation: AiConversation) => AssistantArchiveBlocker;
   onConversationUpdated?: (conversation: AiConversation) => void;
   onConversationArchived?: (conversation: AiConversation) => void;
   /** Open approvals the page rendered with; the Approvals row shows while this or the live count is above zero. */
@@ -442,10 +444,10 @@ export default function AssistantSidebar(props: AssistantSidebarProps) {
   };
 
   const openEditor = async (conversation: AiConversation) => {
-    const canArchive = props.canArchiveConversation?.(conversation) ?? true;
+    const blocker = props.archiveBlocker?.(conversation) ?? null;
     const result = await openAssistantConversationEditor(conversation, {
-      archiveDisabled: !canArchive,
-      archiveDisabledReason: canArchive ? undefined : t().stopBeforeArchive,
+      archiveDisabled: blocker !== null,
+      archiveDisabledReason: blocker === "waiting" ? t().decideBeforeArchive : blocker === "running" ? t().stopBeforeArchive : undefined,
     });
     if (!result) return;
     if (result.action === "save") props.onConversationUpdated?.(result.conversation);

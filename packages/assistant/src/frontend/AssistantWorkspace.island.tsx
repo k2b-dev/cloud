@@ -157,6 +157,7 @@ import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
+import { assistantArchiveBlocker } from "./archive-blocker";
 import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
 import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
@@ -2846,7 +2847,9 @@ export default function AssistantWorkspace(props: Props) {
           }}
           onOpenProject={openProject}
           onOpenConversation={openAndFocusConversation}
-          canArchiveConversation={(conversation) => conversation.id !== chat.activeConversationId() || !chat.activeTurn()}
+          archiveBlocker={(conversation) =>
+            assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null)
+          }
           onConversationUpdated={updateConversation}
           onConversationArchived={archiveConversation}
           pendingApprovals={props.approvals.page.count}

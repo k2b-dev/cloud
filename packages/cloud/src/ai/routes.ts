@@ -922,8 +922,19 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        if (await aiConversations.getActiveTurn({ conversationId: conversation.id })) {
-          return respond(c, fail(err.conflict("Stop the current response before archiving this chat.")));
+        const active = await aiConversations.getActiveTurn({ conversationId: conversation.id });
+        if (active) {
+          // Say what holds the chat: a turn that waits for a decision needs an answer, not a stop of a running response.
+          return respond(
+            c,
+            fail(
+              err.conflict(
+                active.turn.status === "waiting_for_action"
+                  ? "This chat waits for a decision. Answer or stop it, then archive the chat."
+                  : "Stop the current response before archiving this chat.",
+              ),
+            ),
+          );
         }
         const archived = await aiConversations.archiveConversation({
           conversationId: conversation.id,

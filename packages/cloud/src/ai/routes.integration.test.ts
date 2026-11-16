@@ -221,6 +221,32 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
+  test("archiving a chat that holds a turn says what holds it: a running response or a decision", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}` };
+    try {
+      const [turn] = await sql<{ id: string }[]>`INSERT INTO ai.turns(short_id, conversation_id, status)
+        VALUES (${`archive-${crypto.randomUUID()}`}, ${chat.id}::uuid, 'running') RETURNING id`;
+      const archive = async () => {
+        const response = await aiRoutes.request(`/conversations/${chat.shortId}/archive`, { method: "POST", headers });
+        return { status: response.status, message: ((await response.json()) as { message?: string }).message };
+      };
+      expect(await archive()).toEqual({ status: 409, message: "Stop the current response before archiving this chat." });
+      // A turn the queue started after a stop and that now waits for an approval holds the chat too (#108).
+      await sql`UPDATE ai.turns SET status = 'waiting_for_action' WHERE id = ${turn!.id}::uuid`;
+      expect(await archive()).toEqual({
+        status: 409,
+        message: "This chat waits for a decision. Answer or stop it, then archive the chat.",
+      });
+      await sql`UPDATE ai.turns SET status = 'aborted', completed_at = now() WHERE id = ${turn!.id}::uuid`;
+      expect((await archive()).status).toBe(200);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("archive and restore routes pause and resume the chat's routines", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
