@@ -3,7 +3,7 @@ import { type MaintenanceState, MaintenanceStatusSchema } from "@k2b/cloud/contr
 import type { AuthContext } from "@k2b/cloud/server";
 import type { ObservedMaintenance } from "@k2b/cloud/services/maintenance-state";
 import type { MiddlewareHandler } from "hono";
-import { createMaintenanceService } from "../maintenance";
+import { createMaintenanceService, summarizeQuiet } from "../maintenance";
 import { createAdminMaintenanceRoutes } from "./admin-maintenance";
 
 const NOW = Date.UTC(2026, 10, 16, 13, 2);
@@ -32,6 +32,7 @@ const setup = (roles: AuthContext["Variables"]["user"]["roles"] = ["admin"]) => 
   let stored: ObservedMaintenance | null = null;
   const writes: MaintenanceState[] = [];
   const audits: string[] = [];
+  const auditMetadata: Record<string, unknown>[] = [];
   const service = createMaintenanceService({
     store: {
       read: async () => stored,
@@ -44,8 +45,10 @@ const setup = (roles: AuthContext["Variables"]["user"]["roles"] = ["admin"]) => 
       },
     },
     appsReady: async () => ({ ready: 9, total: 11, starting: ["files", "mail"] }),
-    record: async ({ action }) => {
+    quietReady: async () => ({ quiet: 8, total: 9, busy: [{ id: "mail", name: "Mail", inFlight: 2, unreported: 0 }] }),
+    record: async ({ action, metadata }) => {
       audits.push(action);
+      auditMetadata.push(metadata ?? {});
     },
     now: () => NOW,
   });
@@ -61,7 +64,7 @@ const setup = (roles: AuthContext["Variables"]["user"]["roles"] = ["admin"]) => 
       headers: { "Content-Type": "application/json" },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
-  return { call, writes, audits, stored: () => stored };
+  return { call, writes, audits, auditMetadata, stored: () => stored };
 };
 
 test("people without the administrator role cannot read or switch maintenance, even past the route guard", async () => {
@@ -87,6 +90,7 @@ test("on, until and off keep one maintenance identity and never expose the bypas
     startedBy: { id: person([]).id, label: "Lea Muster" },
     message: "Wir spielen Version 2.4 ein.",
     until,
+    quiesce: false,
     apps: { ready: 9, total: 11, starting: ["files", "mail"] },
   });
   expect(JSON.stringify(body)).not.toContain(writes[0]!.bypassKey);
@@ -118,4 +122,53 @@ test("a past end, an oversized message, or a new end without maintenance is refu
   expect((await call("/on", { bypassKey: "nope" })).status).toBe(400);
   expect((await call("/until", { until: new Date(NOW + 60_000).toISOString() })).status).toBe(409);
   expect(writes).toEqual([]);
+});
+
+test("stage Ruhe switches on with maintenance or later, stays until switched off, and reports quiet apps", async () => {
+  const { call, writes, auditMetadata } = setup();
+  const started = MaintenanceStatusSchema.parse(await (await call("/on", { quiesce: true })).json());
+  expect(writes[0]!.quiesce).toBe(true);
+  expect(started.quiesce).toBe(true);
+  expect(started.quiet).toEqual({ quiet: 8, total: 9, busy: [{ id: "mail", name: "Mail", inFlight: 2, unreported: 0 }] });
+  expect(auditMetadata[0]).toMatchObject({ quiesce: true });
+
+  // Omitted keeps the stage; false resumes background work while maintenance stays.
+  await call("/on", { message: "Datenbank wird migriert." });
+  expect(writes[1]!.quiesce).toBe(true);
+  const resumed = MaintenanceStatusSchema.parse(await (await call("/on", { quiesce: false })).json());
+  expect(writes[2]!.quiesce).toBe(false);
+  expect(writes[2]!.id).toBe(writes[0]!.id);
+  expect(resumed.quiet).toBeUndefined();
+  expect((await call("/on", { quiesce: "yes" })).status).toBe(400);
+});
+
+test("an app is quiet only when every running instance reports nothing in flight", () => {
+  const apps = [
+    { id: "mail", name: "Mail", instances: [{ instanceId: "m1" }, { instanceId: "m2" }] },
+    { id: "files", name: "Dateien", instances: [{ instanceId: "f1" }] },
+    { id: "core", name: "Core", instances: [{ instanceId: "c1" }] },
+    { id: "legacy", name: "Legacy" },
+  ];
+  expect(
+    summarizeQuiet(apps, [
+      { appId: "mail", instanceId: "m1", inFlight: 2 },
+      { appId: "mail", instanceId: "m2", inFlight: 0 },
+      { appId: "core", instanceId: "c1", inFlight: 0 },
+      { appId: "legacy", instanceId: "l1", inFlight: 0 },
+      // A report under another app's instance id never counts.
+      { appId: "mail", instanceId: "f1", inFlight: 0 },
+    ]),
+  ).toEqual({
+    quiet: 2,
+    total: 4,
+    busy: [
+      { id: "files", name: "Dateien", inFlight: 0, unreported: 1 },
+      { id: "mail", name: "Mail", inFlight: 2, unreported: 0 },
+    ],
+  });
+  expect(summarizeQuiet([{ id: "legacy", name: "Legacy" }], [])).toEqual({
+    quiet: 0,
+    total: 1,
+    busy: [{ id: "legacy", name: "Legacy", inFlight: 0, unreported: 1 }],
+  });
 });
