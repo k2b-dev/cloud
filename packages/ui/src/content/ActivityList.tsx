@@ -8,7 +8,7 @@ import { useDateConfigLocale } from "../intl/locale";
 import { Section } from "../surfaces/Section";
 import { Skeleton } from "../surfaces/Skeleton";
 import { resolveActivityMessages, useActivityMessages } from "./activity-messages";
-import { type ActivityGroup, activityAgo, activityDayLabel, activityInstant, activityRows, activityWhen } from "./activity-timeline";
+import { type ActivityGroup, type ActivityRow, activityAgo, activityDayLabel, activityInstant, activityRows, activityWhen } from "./activity-timeline";
 
 /** Only the icon carries a tone: grey by default, green for a completion, amber for a notice, red only while an action is needed. */
 export type ActivityTone = "neutral" | "success" | "warning" | "danger";
@@ -27,6 +27,12 @@ export type ActivityAction = {
 };
 
 export type ActivityEntry = {
+  /**
+   * Stable key of the entry, such as its record id; unique within the list. With it a row keeps its node, folded-out
+   * details, and focus when the caller rebuilds the entries, such as after a refresh. Without it the entry object is
+   * the key.
+   */
+  id?: string;
   /** ISO instant. */
   at: string;
   /** Icon class of the kind, such as `ti ti-mail`; one fixed icon per kind. */
@@ -49,6 +55,12 @@ export type ActivityEntry = {
   action?: ActivityAction | null;
   /** A click on the entry opens it, such as its dialog. */
   onOpen?: () => void;
+  /**
+   * The entry's object as a link: the sentence becomes the link, a click anywhere on the row follows it, and a middle
+   * click or a click with Ctrl, Cmd, or Shift opens it in a new tab. Takes the place of `onOpen`; ignored with
+   * `details`.
+   */
+  href?: string;
   /** A click on the entry folds out its details below it; for a bundle with all of its entries. */
   details?: (all: readonly ActivityEntry[]) => JSX.Element;
   /** Kind for the filter in the "All N" dialog. */
@@ -108,6 +120,18 @@ const useActivityContext = (props: ActivityTimeProps) => {
   };
 };
 
+/** The key a row hangs on: the entry's `id`, or the entry object itself. */
+const rowKey = (entry: ActivityEntry): string | ActivityEntry => entry.id ?? entry;
+
+/** Two bundles are the same when they hold the same entries in the same order. */
+const sameEntries = (a: readonly ActivityEntry[], b: readonly ActivityEntry[]): boolean =>
+  a.length === b.length && a.every((entry, index) => entry === b[index]);
+
+/** A click that must not act on the row: on a control inside it, inside folded-out details, or the end of a text selection. */
+const ignoresRowClick = (event: MouseEvent): boolean =>
+  Boolean((event.target as Element | null)?.closest("a, button, input, textarea, select, label, [role=button], .k2b-activity__details")) ||
+  window.getSelection()?.isCollapsed === false;
+
 /** Text of a detail line when it is only text; JSX cannot be compared. */
 const detailText = (detail: JSX.Element | undefined): string | null => (typeof detail === "string" ? detail : null);
 
@@ -120,7 +144,8 @@ const TONES: Record<ActivityTone, string | undefined> = { neutral: undefined, su
  * A row: the icon of the kind (20 px, grey, without a circle; only the icon carries a tone), one sentence, and the
  * meta line "time · distance · person" ("automatic" without a person). Rarely a detail line below, and at most one
  * action. Equal entries after each other on the same day become one row with a count (`bundle`). Every row hangs on
- * the object of its newest entry: the minute clock changes only times and dividers, folded-out details and focus stay.
+ * its newest entry (its `id`, or the object): the minute clock changes only times and dividers, folded-out details,
+ * bundle sentences, and focus stay.
  */
 function ActivityListRoot(props: ActivityListProps): JSX.Element {
   const t = useActivityMessages();
@@ -130,8 +155,8 @@ function ActivityListRoot(props: ActivityListProps): JSX.Element {
   const list = createMemo(() => props.entries);
   const allRows = createMemo(() => activityRows(list(), { now: now(), timeZone: context.timeZone(), key: activityBundleKey }));
   const rows = createMemo(() => (props.limit ? allRows().slice(0, props.limit) : allRows()));
-  const rowOf = createMemo(() => new Map(rows().map((row) => [row.entry, row] as const)));
-  const heads = createMemo(() => rows().map((row) => row.entry));
+  const rowOf = createMemo(() => new Map(rows().map((row) => [rowKey(row.entry), row] as const)));
+  const keys = createMemo(() => rows().map((row) => rowKey(row.entry)));
   const fades = () => props.more === true || (props.limit !== undefined && allRows().length > props.limit);
   const divider = (group: ActivityGroup) =>
     group.kind === "today"
@@ -147,13 +172,21 @@ function ActivityListRoot(props: ActivityListProps): JSX.Element {
       data-density={props.density ?? "compact"}
       aria-label={props.label ?? t().activityTitle}
     >
-      <For each={heads()}>
-        {(head, index) => {
-          const row = () => rowOf().get(head);
+      <For each={keys()}>
+        {(key, index) => {
+          // `keys` and `rowOf` come from the same rows, so the key has its row; while a removed key is disposed the
+          // row keeps its last value.
+          const initial = rowOf().get(key);
+          if (!initial) throw new Error("ActivityList: a row key without its row.");
+          const row = createMemo((previous: ActivityRow<ActivityEntry>) => rowOf().get(key) ?? previous, initial);
+          // The clock rebuilds the rows every minute; the entry and its bundle change only when their entries do, so a
+          // bundle sentence and folded-out details keep their nodes.
+          const entry = createMemo(() => row().entry);
+          const all = createMemo(() => row().all, undefined, { equals: sameEntries });
           const last = () => index() === rows().length - 1;
           return (
             <>
-              <Show when={row()?.divider}>
+              <Show when={row().divider}>
                 {(group) => (
                   <li class="k2b-activity__day" aria-hidden="true">
                     <span class="k2b-activity__day-line" />
@@ -162,8 +195,8 @@ function ActivityListRoot(props: ActivityListProps): JSX.Element {
                 )}
               </Show>
               <ActivityRowItem
-                entry={head}
-                all={row()?.all ?? [head]}
+                entry={entry()}
+                all={all()}
                 now={now()}
                 first={index() === 0}
                 end={last() ? (fades() ? "more" : "last") : undefined}
@@ -203,15 +236,22 @@ function ActivityRowItem(props: {
     count() === 1 || props.all.every((entry) => detailText(entry.detail) !== null && detailText(entry.detail) === detailText(e().detail))
       ? e().detail
       : undefined;
-  const clickable = () => Boolean(e().onOpen || e().details);
+  const href = () => (e().details ? undefined : e().href);
+  const clickable = () => Boolean(e().onOpen || e().details || href());
+  // Folds out the details, or opens the entry.
   const trigger = () => {
     if (e().details) setOpen(!open());
     else e().onOpen?.();
   };
-  // A click anywhere on the row acts like the sentence, but not on links and buttons inside it.
+  let link: HTMLAnchorElement | undefined;
+  // A click anywhere on the row acts like the sentence, but not on controls, inside folded-out details, or after
+  // selecting text. A linked row follows its link; with a modifier or the middle button in a new tab, as the link would.
   const onRowClick = (event: MouseEvent) => {
-    if (!clickable() || (event.target as Element | null)?.closest("a, button, input, textarea, select, [role=button]")) return;
-    trigger();
+    if (!clickable() || ignoresRowClick(event)) return;
+    const target = href();
+    if (!target) return trigger();
+    if (event.button === 1 || event.ctrlKey || event.metaKey || event.shiftKey) window.open(target, "_blank", "noopener");
+    else link?.click();
   };
   const meta = () => (
     <div class="k2b-activity__meta">
@@ -268,6 +308,9 @@ function ActivityRowItem(props: {
       data-clickable={clickable() ? "" : undefined}
       data-count={count() > 1 ? count() : undefined}
       onClick={onRowClick}
+      onAuxClick={(event) => {
+        if (event.button === 1 && href()) onRowClick(event);
+      }}
     >
       <span class="k2b-activity__icon" data-tone={TONES[e().tone ?? "neutral"]}>
         {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: with a label the icon is an image (`role="img"`), which takes a name. */}
@@ -282,17 +325,28 @@ function ActivityRowItem(props: {
       <div class="k2b-activity__body">
         <div class="k2b-activity__text">
           <Show when={clickable()} fallback={text()}>
-            <button
-              type="button"
-              class="k2b-activity__text-button"
-              aria-expanded={e().details ? open() : undefined}
-              onClick={(event) => {
-                event.stopPropagation();
-                trigger();
-              }}
+            <Show
+              when={href()}
+              fallback={
+                <button
+                  type="button"
+                  class="k2b-activity__text-button"
+                  aria-expanded={e().details ? open() : undefined}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    trigger();
+                  }}
+                >
+                  {text()}
+                </button>
+              }
             >
-              {text()}
-            </button>
+              {(target) => (
+                <a ref={link} class="k2b-activity__text-link" href={target()}>
+                  {text()}
+                </a>
+              )}
+            </Show>
           </Show>
         </div>
         <Show when={detail()}>
@@ -419,6 +473,8 @@ export type ActivityCardProps = ActivityTimeProps & {
   emptyText?: JSX.Element;
   /** Defaults to "History". */
   title?: string;
+  /** Heading level of the title; 2 by default, 3 for a card under a section heading of the page. */
+  level?: 2 | 3;
   /** Second line in the "All N" dialog, such as "Invoice RE-2610-00042 · Lindner". */
   subtitle?: string;
   /** Filter by kind in the dialog; only kinds with entries appear. */
@@ -466,7 +522,7 @@ export function ActivityCard(props: ActivityCardProps): JSX.Element {
   return (
     <Section
       size="md"
-      level={2}
+      level={props.level ?? 2}
       class="k2b-activity-card"
       title={props.title ?? t().activityTitle}
       icon="ti ti-history"
