@@ -5,7 +5,7 @@ section: Automation
 order: 610
 description: Start and stop simple background work with the application process.
 tags: [lifecycle, background, shutdown]
-updated: 2026-09-02
+updated: 2026-11-16
 ---
 
 # Lifecycle background work
@@ -28,43 +28,88 @@ covers the background-work pattern.
 ## Start and stop the runtime
 
 ```ts
-let timer: ReturnType<typeof setInterval> | null = null;
-let running: Promise<void> | null = null;
+import { startRuntimeInterval } from "@k2b/cloud/services";
+
+let refresh: ReturnType<typeof startRuntimeInterval> | undefined;
 
 await app.start({
   fetch: router.fetch,
   lifecycle: {
-    start: async () => {
-      timer = setInterval(() => {
-        if (running) return;
-        running = refreshInventory()
-          .catch((error) => log.error("Refresh failed", { error }))
-          .finally(() => {
-            running = null;
-          });
-      }, 30_000);
+    start: async (ctx) => {
+      refresh = startRuntimeInterval({
+        run: (signal) => refreshInventory(signal),
+        intervalMs: 30_000,
+        onError: (error) => ctx.logger("inventory").error("Refresh failed", { error }),
+      });
     },
     stop: async () => {
-      if (timer) clearInterval(timer);
-      timer = null;
-      await running;
+      await refresh?.stop();
+      refresh = undefined;
     },
   },
 });
 ```
 
 Return from `start` after creating the runtime. In `stop`, prevent new work and
-await the current operation.
+await the current operation. `startRuntimeInterval()` runs once at start
+(`runNow: false` skips that), then every `intervalMs`. `stop()` clears the
+timer, aborts `signal`, and waits for the run in flight.
 
 ## Prevent overlapping work
 
-An interval can fire before its previous callback finishes. Keep an in-process
-guard when overlap would be wrong.
+`startRuntimeInterval()` runs one pass at a time: a tick that arrives while the
+previous pass still runs is skipped.
 
 This guard protects only one process. Use a
 [mutex](/en/docs/automation/coordination-primitives#use-a-distributed-mutex) or
 [scheduler](/en/docs/automation/schedulers) when several app instances must
 coordinate.
+
+## Pause for maintenance
+
+An operator can put the whole Cloud into maintenance stage „Ruhe“
+(`cld admin maintenance on --quiesce`, see
+[Maintenance mode](/en/docs/operations/maintenance-mode#quiet-background-work-stage-ruhe)).
+Then every app process stops taking new background work and lets the work in
+flight finish, without exiting. Requests keep working. You get this without
+any code of your own when the work runs through the platform:
+
+| You use | While quiet | On resume |
+| --- | --- | --- |
+| `process()` of a job, queue, topic, scheduler or pump declared with `lazySync()` or `app.sync` | The worker stops pulling and drains (30 s). Messages wait in NATS. | A new worker starts with the same arguments. Your handle stays valid. |
+| `createRuntimeTaskTracker()` | `run()` returns `null`, as when closed; accepted tasks drain. | `run()` accepts tasks again. |
+| `createRuntimeLifecycle()` | A started runtime is stopped. `start()` only marks it to start later. | The runtime starts again. |
+| `startRuntimeInterval()` | Ticks are skipped; the pass in flight finishes. | Missed ticks run once. |
+
+Submissions and publications continue while quiet. A job or queue whose
+stream reaches its retention limit rejects further submissions with
+`StoreFullError`, so size `retention` for the longest pause you expect.
+
+A scheduler's missed ticks also run once, because schedules default to
+`misfire: "latest"`. With `misfire: "all"` every missed tick runs.
+
+Your `lifecycle.start` and `lifecycle.stop` hooks are not called for
+maintenance; they still run only at process start and shutdown. Do not keep
+background state that only `start` can rebuild.
+
+For a loop that none of these fit, such as a long-lived connection to an
+external service, follow the platform signal:
+
+```ts
+import { backgroundWork } from "@k2b/cloud/services";
+
+const off = backgroundWork.onChange((paused) => {
+  if (paused) void connection.close();
+  else connection.open();
+});
+if (!backgroundWork.paused()) connection.open();
+```
+
+`backgroundWork.paused()` is true while the Cloud is quiet. Stop before you
+start new work, not in the middle of an operation. The repository check
+`background-work` flags a raw `setInterval()` in built-in app server code; a
+timer that must keep running while quiet, such as the lease heartbeat of work
+in flight, carries `// runtime-timer: <reason>` on the line above.
 
 ## Handle shutdown
 

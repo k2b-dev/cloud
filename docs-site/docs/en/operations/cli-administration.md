@@ -38,7 +38,9 @@ using its commands: `cld admin reference` and `cld pulse reference`.
 ## Switch maintenance mode
 
 `cld admin maintenance on|until|off|status` switches the whole Cloud into
-maintenance and back; see [Maintenance mode](/en/docs/operations/maintenance-mode).
+maintenance and back; `on --quiesce` also lets background work in every app go
+quiet, and `on --no-quiesce` resumes it while maintenance stays; see
+[Maintenance mode](/en/docs/operations/maintenance-mode).
 While it is on, other `cld` commands print one sentence and exit with code
 `75`.
 

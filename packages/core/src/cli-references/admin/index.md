@@ -238,10 +238,12 @@ Webhook changes affect health notifications. Test a webhook with `cld admin webh
 cld admin maintenance on --message "Wir spielen Version 2.4 ein." --until 14:30
 cld admin maintenance status --json
 cld admin maintenance until 15:00
+cld admin maintenance on --quiesce
+cld admin maintenance on --no-quiesce
 cld admin maintenance off
 ```
 
-While maintenance is on, the gateway shows a maintenance page and answers every other request with `503` problem JSON (code `maintenance`). These four commands still reach Core. Maintenance never ends by itself. Any other `cld` command prints one sentence and exits with code `75` while maintenance is on, so scripts can wait and retry. Details: [Maintenance mode](/en/docs/operations/maintenance-mode).
+While maintenance is on, the gateway shows a maintenance page and answers every other request with `503` problem JSON (code `maintenance`). These four commands still reach Core. Maintenance never ends by itself. Any other `cld` command prints one sentence and exits with code `75` while maintenance is on, so scripts can wait and retry. `--quiesce` adds stage „Ruhe“: every app stops taking background work and drains it; `status` then reports `quiet: { quiet, total, busy }`. Wait until `quiet` equals `total` before work that needs a still Cloud. `--no-quiesce` or `off` resumes the work; missed schedule ticks run once. Details: [Maintenance mode](/en/docs/operations/maintenance-mode).
 
 ## Complete command catalogue
 

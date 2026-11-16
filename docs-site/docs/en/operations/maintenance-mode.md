@@ -40,7 +40,8 @@ cld admin maintenance off
   stays. Only the message or end you give changes; `--message ""` removes the
   message.
 - `status` shows when it started, the planned end, the message and
-  `Apps bereit: 9 von 11 (mail, files starten)`. The total counts the apps
+  `Apps bereit: 9 von 11 (mail, files starten)`; in stage „Ruhe“ also how
+  many apps are quiet (see below). The total counts the apps
   that Core has seen and that you did not remove from the Apps listing. The
   ready count is the apps that are registered right now.
 
@@ -49,6 +50,62 @@ While maintenance is on, the gateway passes only
 OAuth app, so `cld` can still renew its token and switch maintenance off. Core
 checks the administrator role on every call. Every change is in the audit log
 (`maintenance.start`, `maintenance.update`, `maintenance.end`).
+
+## Quiet background work (stage Ruhe)
+
+Maintenance mode alone only closes the Cloud to people. Background work keeps
+running: mail is fetched and sent, notifications go out, schedules and
+workflows run. For a database migration or a backup that needs a still Cloud,
+add stage „Ruhe“:
+
+```bash
+cld admin maintenance on --quiesce
+cld admin maintenance status
+cld admin maintenance on --no-quiesce   # background work runs again, maintenance stays
+cld admin maintenance off               # ends maintenance and resumes everything
+```
+
+`--quiesce` works when you switch maintenance on and while it is already on.
+`on` without either flag keeps the current stage.
+
+In every app instance (Core included, the gateway excluded), then:
+
+- every Sync worker (jobs, queues, topic consumers, schedulers, pumps) stops
+  taking new work and finishes the work in flight. After 30 seconds, work
+  that is still running is cancelled and returns to NATS for later;
+- outbox publishers, recovery scans, retention sweeps, outgoing mail, mail
+  fetching including IMAP push, notifications, automations and workflows
+  start nothing new;
+- requests keep working, the processes keep running, and their registry
+  entries stay.
+
+New work that arrives while quiet waits in NATS or Postgres. A job whose
+stream reaches its retention limit rejects further submissions, so keep the
+stage as short as the work needs.
+
+When you run `--no-quiesce` or `off`, each instance starts its workers again.
+A schedule that missed ticks runs once, not once per missed tick. Periodic
+sweeps also run once. An instance that cannot start its background work again
+restarts itself.
+
+`status` adds one line while the stage is on:
+
+```text
+Ruhe: 8 von 9 Apps ruhig, Mail: 2 Jobs laufen noch
+Quiet: 8 of 9 apps quiet, Mail: 2 jobs still running
+```
+
+An app counts as quiet when every running instance reports no work in
+flight. `noch keine Rückmeldung` / `no report yet` means an instance has not
+reported yet. It may have just started, or it cannot reach NATS. At most three
+apps are named; the rest are counted. `--json` returns `quiesce` and
+`quiet: { quiet, total, busy: [{ id, name, inFlight, unreported }] }`.
+
+Each instance reports to the Sync ephemeral `cloud-quiesce` (owner `cloud`,
+one key per instance, at most 1024, each kept for 45 seconds and renewed
+every 15 seconds while quiet). Core reads one snapshot of it for `status`
+and no database. Turning the stage on or off is in the audit log as
+`maintenance.start` or `maintenance.update` with `quiesce` in its metadata.
 
 ## What people and programs see
 
@@ -108,7 +165,9 @@ The page polls this endpoint. It reports no other details.
 ## How the state is kept
 
 The state is one record on the Sync ephemeral `cloud-maintenance` (owner
-`cloud`, key `state`), next to the app registry. Core writes it. Every gateway
+`cloud`, key `state`), next to the app registry. Core writes it. Every app
+instance watches it for stage „Ruhe“ and keeps its last known stage when NATS
+is briefly unreachable. Every gateway
 watches it and keeps the last known state in memory when NATS is briefly
 unreachable. The record has a 7-day lease, which the gateway renews while
 maintenance is on when less than half of it remains. If every gateway is
