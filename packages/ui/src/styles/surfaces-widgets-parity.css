@@ -1345,7 +1345,7 @@
 }
 .k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] .k2b-stat-cell__value[data-size="sm"] { font-size: 1.25rem; line-height: 1.75rem; }
 .k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] .k2b-stat-cell__value[data-size="lg"] { font-size: 2.25rem; letter-spacing: -0.02em; line-height: 2.75rem; }
-.k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] .k2b-stat-cell__value small { color: var(--k2b-text-muted); font-size: 0.875rem; font-weight: 400; letter-spacing: 0; }
+.k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] .k2b-stat-cell__value small { color: var(--k2b-text-muted); font-size: 0.875rem; font-weight: 400; letter-spacing: 0; line-height: 1.25rem; }
 .k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] > .k2b-stat-cell__support,
 .k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"][data-size] > .k2b-stat-cell__support {
   height: auto;
