@@ -55,23 +55,23 @@ export const takeBypassCookie = (headers: Headers, development: boolean): string
   const cookie = headers.get("Cookie");
   if (cookie === null) return null;
   const name = maintenanceBypassCookieName(development);
-  let value: string | null = null;
+  const kept: string[] = [];
+  const values: string[] = [];
   let removed = false;
-  const kept = cookie
-    .split(";")
-    .map((part) => part.trim())
-    .filter((part) => {
-      const equals = part.indexOf("=");
-      const key = equals < 0 ? "" : part.slice(0, equals).trim();
-      if (!MAINTENANCE_BYPASS_COOKIE_NAMES.includes(key)) return true;
-      if (key === name && value === null) value = part.slice(equals + 1).trim();
-      removed = true;
-      return false;
-    });
+  for (const part of cookie.split(";").map((value) => value.trim())) {
+    const equals = part.indexOf("=");
+    const key = equals < 0 ? "" : part.slice(0, equals).trim();
+    if (!MAINTENANCE_BYPASS_COOKIE_NAMES.includes(key)) {
+      if (part) kept.push(part);
+      continue;
+    }
+    removed = true;
+    if (key === name) values.push(part.slice(equals + 1).trim());
+  }
   if (!removed) return null;
   if (kept.length) headers.set("Cookie", kept.join("; "));
   else headers.delete("Cookie");
-  return value;
+  return values[0] ?? null;
 };
 
 /** Whether a bypass cookie value is valid for the running maintenance; false when there is none. */
