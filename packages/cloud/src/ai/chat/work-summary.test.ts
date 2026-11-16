@@ -186,7 +186,9 @@ describe("work summary from confirmed outcomes", () => {
     expect(workSummary([tool("read_file"), tool("code_run", { status: "completed" })], "de")).toBe("Datei ausgewertet");
     expect(workSummary([tool("list_files"), tool("code_run", { status: "completed" })], "de")).toBe("Gerechnet");
     expect(workSummary([tool("code_run", { status: "completed" }), tool("read_file")], "de")).toBe("Gerechnet");
-    expect(workSummary([tool("read_file", "denied", {}, { isError: true }), tool("code_run", { status: "completed" })], "de")).toBe("Gerechnet");
+    expect(workSummary([tool("read_file", "denied", {}, { isError: true }), tool("code_run", { status: "completed" })], "de")).toBe(
+      "Gerechnet",
+    );
   });
 
   test("unique stored paths count files; append and present do not add files", () => {
@@ -223,16 +225,10 @@ describe("work summary from confirmed outcomes", () => {
   });
 });
 
-test("Code's own steps never name the code, and Cloud's own capabilities never name Core", () => {
+test("Code's own steps never name the code", () => {
   const rework = [tool("code_pull"), tool("code_write"), tool("code_check"), tool("code_submit")];
   expect(workSummary(rework, "de")).not.toMatch(/\bCode\b/);
   expect(workSummary(rework, "en")).not.toMatch(/\bcode\b/i);
-  const capability = (appId: string, appName: string): AiTurnBlock => ({
-    ...tool(`${appId}.find`),
-    presentation: { kind: "capability", appId, appName, appIcon: "ti ti-notebook", title: "Suchen", capabilityKind: "query" },
-  });
-  expect(workSummary([capability("notebooks", "Notizbücher"), capability("core", "Core")], "de")).toBe("In Notizbücher nachgesehen");
-  expect(workSummary([capability("core", "Core")], "de")).toBe("");
 });
 
 test("an effect and its counted examples read as one finding; other parts join with a comma (Feinschliff F5)", () => {
@@ -240,9 +236,12 @@ test("an effect and its counted examples read as one finding; other parts join w
     "Automation vorbereitet · 3 von 3 Beispielen erfolgreich",
   );
   expect(workSummary([init(), write()], "de")).toBe("Automation vorbereitet, noch ohne Beispiele");
-  expect(workSummary([tool("read_file"), tool("code_run", { status: "completed" }), tool("write_file", { path: "/t.csv", mediaType: "text/csv" })], "de")).toBe(
-    "Datei ausgewertet, 1 Tabelle abgelegt",
-  );
+  expect(
+    workSummary(
+      [tool("read_file"), tool("code_run", { status: "completed" }), tool("write_file", { path: "/t.csv", mediaType: "text/csv" })],
+      "de",
+    ),
+  ).toBe("Datei ausgewertet, 1 Tabelle abgelegt");
 });
 
 test("what did not go through carries its tone for the meta column", () => {

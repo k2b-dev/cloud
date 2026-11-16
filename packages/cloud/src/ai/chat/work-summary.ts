@@ -96,7 +96,9 @@ const automationPhrases = (calls: ToolBlock[], t: ReturnType<typeof aiChatMessag
   const drafts = new Map<string, AutomationWork>();
   let current: AutomationWork | undefined;
   for (const tool of calls) {
-    if (!["code_init", "code_pull", "code_read", "code_write", "code_check", "code_test", "code_simulate", "code_submit"].includes(tool.name))
+    if (
+      !["code_init", "code_pull", "code_read", "code_write", "code_check", "code_test", "code_simulate", "code_submit"].includes(tool.name)
+    )
       continue;
     const args = isRecord(tool.args) ? tool.args : {};
     const result = isRecord(tool.result) ? tool.result : {};
@@ -182,8 +184,6 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
   for (const tool of calls) {
     if (tool.status !== "completed" || isFailedTool(tool)) continue;
     const presentation = tool.presentation;
-    // Cloud's own capabilities belong to no app the person knows by name; the sentence names only catalog apps.
-    if (presentation?.kind === "capability" && presentation.appId === "core") continue;
     if (presentation?.kind === "capability") {
       const names = presentation.capabilityKind === "action" ? changed : looked;
       if (!names.includes(presentation.appName)) names.push(presentation.appName);

@@ -2093,7 +2093,9 @@ describe("turn places in the reader's language", () => {
     expect(english).toMatch(/ai-turn-work__meta[^>]*>(?:<!--[^>]*-->)*4 min/);
     expect(english).toContain('aria-label="Worked 4 minutes, interrupted, 1 step"');
     expect(english).not.toContain("Now I build the dashboard.");
-    expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Abgebrochen</);
+    expect(renderPlaces(blocks, { phase: "failed", workedMs: 240_000, locale: "de" })).toMatch(
+      /ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Abgebrochen</,
+    );
     expect(renderPlaces(blocks, { phase: "stopped", workedMs: 240_000 })).toMatch(/ai-turn-work__sentence[^>]*>(?:<!--[^>]*-->)*Stopped</);
     expect(renderPlaces(blocks, { workedMs: 240_000 })).not.toMatch(/interrupted|stopped/);
   });

@@ -529,8 +529,7 @@ replaces that count with "No examples yet". A calculation after reading a file
 reads "Analyzed a file". Stored files count once per returned path; presenting
 an existing file does not add one. An automation's effect and its counted
 examples read as one finding, such as "Prepared the automation · 3 of 3
-examples succeeded"; other parts join with a comma. Cloud's own capabilities
-are not named as an app. Step counts, failures and duration stay outside the
+examples succeeded"; other parts join with a comma. Step counts, failures and duration stay outside the
 sentence. The sentence is never cut mid-word: on a phone the line is 44 px
 high and the sentence may take two lines, and the step count gives way only
 where what did not go through stands beside it. The full sentence is also in

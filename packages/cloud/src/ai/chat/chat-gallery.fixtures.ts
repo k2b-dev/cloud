@@ -285,9 +285,19 @@ const automationChat = (): AiStoredMessage[] => {
     ...turn(
       "turn-automation",
       [
-        { id: "code-init", name: "code_init", args: { title: "Lieferavise sortieren" }, result: { config: { codeId, baseVersionId: null } } },
+        {
+          id: "code-init",
+          name: "code_init",
+          args: { title: "Lieferavise sortieren" },
+          result: { config: { codeId, baseVersionId: null } },
+        },
         { id: "code-write", name: "code_write", args: { codeId }, result: { version: 1, draft: { codeId, baseVersionId: null } } },
-        { id: "code-check", name: "code_check", args: { codeId }, result: { words: { mayDo: [{ text: "Mail im Postfach info@ lesen und verschieben", isNew: true }] } } },
+        {
+          id: "code-check",
+          name: "code_check",
+          args: { codeId },
+          result: { words: { mayDo: [{ text: "Mail im Postfach info@ lesen und verschieben", isNew: true }] } },
+        },
         { id: "code-test", name: "code_test", args: { codeId }, result: { ok: true, words: { notices: [], examples } } },
       ],
       "Die Automation ist fertig und wartet auf deine Freigabe. Sie verschiebt nur Mails, die ein Lieferavis sind.",
