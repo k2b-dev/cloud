@@ -477,7 +477,10 @@ export function CommandList(props: {
                         {/* One line: the label, then quietly the reason it is unavailable, or what it does. */}
                         <span class="k2b-dropdown__copy k2b-command-list__text">
                           <span>{entry.item.label}</span>
-                          {optionDescription(entry.item, "k2b-command-list__description", undefined, () => entry.item.disabled)}
+                          {optionDescription(
+                            entry.item.disabled ? { description: entry.item.disabled } : entry.item,
+                            "k2b-command-list__description",
+                          )}
                         </span>
                         <Show when={entry.item.hint}>
                           {(hint) => (

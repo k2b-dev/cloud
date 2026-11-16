@@ -295,8 +295,7 @@ describe("@k2b/ui Cloud feedback parity", () => {
 
     const resultsRule = feedbackCss.match(/\.k2b-ui \.k2b-prompt-search__results \{([^}]*)\}/)?.[1] ?? "";
     expect(resultsRule).toContain("padding: 0.5rem");
-    // A result with a visual in place of its description takes the same two-line row.
-    expect(promptsSource).toContain('data-has-description={item().desc || item().descriptionVisual ? "true" : undefined}');
+    expect(promptsSource).toContain('data-has-description={item().desc ? "true" : undefined}');
     expect(feedbackCss).toContain('button[data-has-description="true"]');
   });
 

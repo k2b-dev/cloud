@@ -12,7 +12,7 @@ export type ChoiceListOption<T extends string = string> = {
   description?: string;
   /**
    * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
-   * `description` stays the text that search and screen readers use, so set it too.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
    */
   descriptionVisual?: () => JSX.Element;
   /** A quiet tag after the label, such as "Default" for the choice that applies without one. */
@@ -124,7 +124,7 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
                         </Show>
                       </span>
                     </span>
-                    {optionDescription(option, "k2b-choice-list__description", () => descriptionId)}
+                    {optionDescription(option, "k2b-choice-list__description", descriptionId)}
                   </span>
                 </button>
                 <Show when={checked() && props.details}>

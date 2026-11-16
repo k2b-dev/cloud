@@ -117,9 +117,9 @@ Every option list takes the same field and draws it the same way: `Select`,
 choices, `CommandList` items, the workspace sidebar switcher, and the results
 of `prompts.search`, where the text field is `desc`.
 
-- Keep `description` set. Search, filtering, and typeahead match its text, and
-  screen readers read it; the visual is hidden from them. Without a
-  `description` the row has a visual only for sighted people.
+- The visual shows only with a `description`. Search, filtering, and
+  typeahead match its text, and screen readers read it; the visual is hidden
+  from them, so every row with a visual still says the same in words.
 - The visual is exactly one line of the text it replaces tall, so a row with a
   visual is as tall as a row with text and nothing shifts. Use a small `Tag`
   (`size="sm"`), an icon, or a short run of them.

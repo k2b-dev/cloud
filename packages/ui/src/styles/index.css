@@ -9700,7 +9700,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-wrap: anywhere;
 }
 
-.k2b-ui .k2b-rich-select__line[data-reason="true"] {
+/* The reason of an unavailable row. */
+.k2b-ui [aria-disabled="true"] .k2b-rich-select__line {
   color: var(--k2b-warning-text);
 }
 

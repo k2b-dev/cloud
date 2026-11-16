@@ -23,7 +23,7 @@ export type CommandItem = {
   description?: string;
   /**
    * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
-   * `description` stays the text that search and screen readers use, so set it too.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
    */
   descriptionVisual?: () => JSX.Element;
   /** Quiet text at the end of the row, such as what a person can type: `/telefonat`. It is searched, too. */

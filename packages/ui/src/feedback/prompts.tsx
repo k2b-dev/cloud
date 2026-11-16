@@ -55,8 +55,8 @@ export type PromptSearchItem<T = unknown> = {
   label: string;
   desc?: string;
   /**
-   * Shown in place of `desc`, such as a colored `Tag`. A function, so each place gets its own element. `desc` stays
-   * the text that screen readers use, so set it too.
+   * Shown in place of `desc`, such as a colored `Tag`. A function, so each place gets its own element. It shows only
+   * with a `desc`, which stays the text that screen readers use.
    */
   descriptionVisual?: () => JSX.Element;
   icon?: string;
@@ -630,7 +630,7 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
                           role="option"
                           aria-selected={activeIndex() === index()}
                           data-active={activeIndex() === index() ? "true" : undefined}
-                          data-has-description={item().desc || item().descriptionVisual ? "true" : undefined}
+                          data-has-description={item().desc ? "true" : undefined}
                           onMouseEnter={() => setActiveIndex(index())}
                           onClick={() => execute(item())}
                         >

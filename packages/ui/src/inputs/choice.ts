@@ -7,7 +7,7 @@ export type ChoiceOption<T extends string = string> = {
   description?: string;
   /**
    * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
-   * `description` stays the text that search and screen readers use, so set it too.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
    */
   descriptionVisual?: () => JSX.Element;
   icon?: string;

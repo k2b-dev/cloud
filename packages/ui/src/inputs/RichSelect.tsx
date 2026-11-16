@@ -33,7 +33,7 @@ export type RichSelectItem = {
   description?: string;
   /**
    * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
-   * `description` stays the text that search and screen readers use, so set it too.
+   * It shows only with a `description`, which stays the text that search and screen readers use.
    */
   descriptionVisual?: () => JSX.Element;
   /** Icon class shown before the name. */
@@ -138,11 +138,11 @@ function RichSelectRowText(props: { item: RichSelectItem; labelId: string; lineI
       <span id={props.labelId} class="k2b-rich-select__label">
         {props.item.label}
       </span>
+      {/* The reason of an unavailable row takes the place of its description and visual. */}
       {optionDescription(
-        () => props.item,
+        () => (props.item.disabledReason ? { description: props.item.disabledReason } : props.item),
         "k2b-rich-select__line",
-        () => props.lineId,
-        () => props.item.disabledReason,
+        props.lineId,
       )}
     </span>
   );

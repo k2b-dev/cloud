@@ -1,42 +1,36 @@
-import { type JSX, Show } from "solid-js";
+import { createMemo, type JSX } from "solid-js";
 
 type OptionLine = { description?: string; descriptionVisual?: () => JSX.Element };
 
 /**
- * The second line of an option row, as a `<small>`, or nothing without text
- * or visual. With a `descriptionVisual`, such as a colored `Tag`, the visual
+ * The second line of an option row, as a `<small>`, or nothing without a
+ * description. With a `descriptionVisual`, such as a colored `Tag`, the visual
  * shows in place of the description. The text stays in the row, hidden from
  * view, so search, the accessible name, and the description a screen reader
- * reads do not change. The visual keeps the line's height. A `reason`, why the
- * option is unavailable, always shows as text in place of both.
+ * reads do not change. The visual keeps the line's height.
  *
  * Every option list calls this one function, so each call stays small in the
- * islands that ship several lists. It reads the option only inside its own
- * `Show`: a host that rebuilds equal options, such as a menu whose entries
- * come and go while someone types, keeps the line's element and only its text
- * follows.
+ * islands that ship several lists. Only whether the line exists decides when
+ * its element is made: a host that rebuilds equal options, such as a menu
+ * whose entries come and go while someone types, keeps the element, and only
+ * its content follows.
  */
-export const optionDescription = (
-  option: OptionLine | (() => OptionLine),
-  className?: string,
-  id?: () => string,
-  reason?: () => string | undefined,
-): JSX.Element => {
+export const optionDescription = (option: OptionLine | (() => OptionLine), className?: string, id?: string): JSX.Element => {
   const line = () => (typeof option === "function" ? option() : option);
-  const text = () => reason?.() || line().description;
-  const visual = () => !reason?.() && line().descriptionVisual;
+  const shown = createMemo(() => !!line().description);
+  // Read here, inside the caller's insert: it re-runs only when the line comes or goes.
   return (
-    <Show when={text() || visual()}>
-      <small class={className} id={id?.()} data-reason={reason?.() ? "true" : undefined}>
-        <Show when={visual()} fallback={text()}>
-          {(shown) => [
-            <span class="k2b-option-visual" aria-hidden="true">
-              {shown()()}
-            </span>,
-            <span class="k2b-sr-only">{text()}</span>,
-          ]}
-        </Show>
+    shown() && (
+      <small class={className} id={id}>
+        {line().descriptionVisual
+          ? [
+              <span class="k2b-option-visual" aria-hidden="true">
+                {line().descriptionVisual?.()}
+              </span>,
+              <span class="k2b-sr-only">{line().description}</span>,
+            ]
+          : line().description}
       </small>
-    </Show>
+    )
   );
 };
