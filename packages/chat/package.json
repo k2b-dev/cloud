@@ -15,6 +15,7 @@
     "@k2b/ssr": "workspace:*",
     "@k2b/stdlib": "catalog:",
     "@k2b/ui": "workspace:*",
+    "entities": "8.0.0",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
     "marked": "18.1.3",

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAINTENANCE_PROBLEM_CODES } from "./maintenance-signals";
 
 /**
  * Maintenance mode: the contract Core, the gateway and `cld` share.
@@ -9,11 +10,22 @@ import { z } from "zod";
  * reaches Core so `cld admin maintenance off` keeps working.
  */
 
-/** Public, unauthenticated gateway status that the maintenance page polls; answered from gateway memory. */
-export const GATEWAY_STATUS_PATH = "/_cloud/gateway/status";
-
-/** Core's admin API for the switch. The gateway passes exactly this path and its subpaths to Core during maintenance. */
-export const MAINTENANCE_ADMIN_API_PATH = "/api/admin/maintenance";
+export {
+  type AppUnavailableReason,
+  formatUnavailableHeader,
+  GATEWAY_STATUS_PATH,
+  type GatewayStatus,
+  MAINTENANCE_ADMIN_API_PATH,
+  MAINTENANCE_BYPASS_HEADER,
+  MAINTENANCE_POLL_STEPS,
+  MAINTENANCE_PROBLEM_CODES,
+  type MaintenancePollKind,
+  type MaintenanceProblemCode,
+  maintenancePollDelay,
+  parseUnavailableHeader,
+  UNAVAILABLE_HEADER,
+  type UnavailableSignal,
+} from "./maintenance-signals";
 
 export const MAINTENANCE_MESSAGE_MAX_LENGTH = 500;
 
@@ -21,15 +33,13 @@ export const MAINTENANCE_MESSAGE_MAX_LENGTH = 500;
 export const MAINTENANCE_RETRY_AFTER_SECONDS = 30;
 export const APP_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
 
-/** Stable problem codes; `cld` and other machine clients branch on these, never on the title. */
-export const MAINTENANCE_PROBLEM_CODES = ["maintenance", "app_unavailable"] as const;
-export type MaintenanceProblemCode = (typeof MAINTENANCE_PROBLEM_CODES)[number];
-
 const epochMs = z.number().int().positive().max(8.64e15);
 
 /**
- * The stored record. `bypassKey` belongs to the gateway alone (admin bypass link, a later step);
- * no API, page, log or status answer ever exposes it.
+ * The stored record. `bypassKey` signs the admin bypass links of this maintenance. Core and the gateway use it,
+ * but every process with the shared NATS credentials can read the record: the same trust as the app registry and
+ * the shared `APP_SECRET`. The key grants nothing beyond the maintenance wall (no sign-in, no permission). No API,
+ * page, log, audit entry or status answer ever exposes it.
  */
 export const MaintenanceStateSchema = z.object({
   id: z.string().min(1).max(64),
@@ -62,14 +72,12 @@ export const MaintenanceProblemSchema = z.object({
   code: z.enum(MAINTENANCE_PROBLEM_CODES),
   until: z.iso.datetime().optional(),
   appId: z.string().optional(),
+  /** `app_unavailable` only: the app's name in the request's language, when the gateway knows it. */
+  appName: z.string().optional(),
+  /** `app_unavailable` only: "updating" after a clean deregistration, "unavailable" for anything else. */
+  reason: z.enum(["updating", "unavailable"]).optional(),
 });
 export type MaintenanceProblem = z.infer<typeof MaintenanceProblemSchema>;
-
-/** `GET /_cloud/gateway/status[?app=<id>]`. */
-export type GatewayStatus = {
-  maintenance: { active: true; until: string | null } | null;
-  app?: { available: boolean };
-};
 
 /** What Core's admin API reports. Person names appear only here, never on the public page. */
 export const MaintenanceStatusSchema = z.object({
@@ -82,6 +90,10 @@ export const MaintenanceStatusSchema = z.object({
   apps: z.object({ ready: z.number().int(), total: z.number().int(), starting: z.array(z.string()) }),
 });
 export type MaintenanceStatus = z.infer<typeof MaintenanceStatusSchema>;
+
+/** `POST /api/admin/maintenance/bypass`: a personal link that passes the maintenance wall until `expiresAt`. */
+export const MaintenanceBypassSchema = z.object({ url: z.url(), expiresAt: z.iso.datetime() });
+export type MaintenanceBypassLink = z.infer<typeof MaintenanceBypassSchema>;
 
 export const MaintenanceOnInputSchema = z
   .object({

@@ -188,7 +188,7 @@ export async function observabilityAreaBrowserFixture(options: { port?: number }
       c.req.raw.headers.set("x-cloud-locale", locale);
       c.set("runtime", {
         apps: [
-          { id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] },
+          { id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] },
           {
             id: "gateway-ops",
             name: "Gateway",

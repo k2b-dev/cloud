@@ -35,6 +35,7 @@ Further fields:
 | --- | --- |
 | `group` | Heading above the entry. Entries of one group stand together, in the order the groups first appear; entries keep their order. |
 | `description` | What the entry does, quiet on the same line after the label, such as "Preis zur Artikelnummer im Text". It is searched. |
+| `descriptionVisual` | Shown in place of the description text, such as a colored `Tag`; the text stays searched and read by screen readers. See [Select](../input/select#show-a-visual-in-place-of-the-description). |
 | `icon` | Tabler icon class, such as `ti ti-phone`. |
 | `image` | An image at icon size in place of the icon, such as a service's logo: a URL, or `{ light, dark }` when the logo needs a light variant on dark surfaces. It is decorative. |
 | `leading` | `() => JSX.Element` in place of the icon, such as an avatar or a tag color. A function, so each row gets its own element. |

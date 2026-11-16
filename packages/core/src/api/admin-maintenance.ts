@@ -43,6 +43,14 @@ export const createAdminMaintenanceRoutes = (
       (c) => respond(c, () => service.setUntil(c.get("user"), c.req.valid("json").until)),
     )
     .post(
+      "/bypass",
+      middleware.openapi({
+        tags: ["Maintenance"],
+        summary: "Get a personal link that lets you past the running maintenance on the Cloud host; you still sign in as usual",
+      }),
+      (c) => respond(c, () => service.bypass(c.get("user"))),
+    )
+    .post(
       "/off",
       middleware.openapi({ tags: ["Maintenance"], summary: "Switch maintenance mode off; open maintenance pages reload" }),
       (c) => respond(c, () => service.off(c.get("user"))),

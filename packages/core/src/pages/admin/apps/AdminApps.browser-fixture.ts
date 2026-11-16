@@ -347,7 +347,7 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
                     appNames: new Map([
                       ["contacts", "Kontakte"],
                       ["files", "Dateien"],
-                      ["core", "Core"],
+                      ["core", "Cloud"],
                     ]),
                   }
                 : null,

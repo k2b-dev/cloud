@@ -23,14 +23,13 @@ const mount = async (view: (lib: typeof import("../src/content/ActivityList")) =
   dom.document.documentElement.lang = "en";
   const lib = await import("../src/content/ActivityList");
   const minutes: Array<() => void> = [];
-  const realSetInterval = globalThis.setInterval;
-  const interval = spyOn(globalThis, "setInterval").mockImplementation((handler) => {
-    if (typeof handler === "function") minutes.push(() => handler());
-    return realSetInterval(() => {}, 2 ** 30);
-  });
+  const interval = spyOn(globalThis, "setInterval");
   let dispose: () => void;
   try {
     dispose = render(view(lib), dom.root);
+    for (const [handler] of interval.mock.calls) {
+      if (typeof handler === "function") minutes.push(() => handler());
+    }
   } finally {
     interval.mockRestore();
   }
