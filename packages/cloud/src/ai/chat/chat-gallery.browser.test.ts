@@ -273,7 +273,10 @@ for (const width of [1440, 390])
       await denied.getByRole("button", { name: /^Details: / }).hover();
       const card = page.locator(".k2b-hover-card:popover-open");
       await card.waitFor();
-      expect((await card.innerText()).replace(/\s+/g, " ")).toContain("Kein Zugriff. Folge: Ohne dieses Ergebnis weitergearbeitet.");
+      const said = (await card.innerText()).replace(/\s+/g, " ");
+      expect(said).toContain("Folge: Ohne dieses Ergebnis weitergearbeitet.");
+      // The outcome stands once, in the card's second line.
+      expect(said.split("Kein Zugriff").length - 1).toBe(1);
       expect(await rows()).toEqual(before);
       await page.keyboard.press("Escape");
       await card.waitFor({ state: "detached" }).catch(() => undefined);

@@ -175,8 +175,12 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
       return [
         check()?.state === "done" ? t().stepCheckedDone : check()?.state === "not_done" ? t().stepCheckedNotDone : t().stepUnclearDetail,
       ];
+    // "No access" already stands in the card's second line; any other failure says why first.
     if (kind)
-      return [failureReason(props.block, t()), work.followed(props.block.id) ? t().stepConsequence({ consequence: t().stepWentOn }) : ""];
+      return [
+        kind === "denied" ? "" : failureReason(props.block, t()),
+        work.followed(props.block.id) ? t().stepConsequence({ consequence: t().stepWentOn }) : "",
+      ];
     return [
       props.block.status === "running" ? (props.block.progress ?? "") : "",
       props.block.status === "completed" ? resultSummary(props.block) : "",
