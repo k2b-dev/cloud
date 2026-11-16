@@ -46,6 +46,7 @@ postgresTest("integer powers match numeric SQL without losing large integer digi
     ["-2", "3"],
     ["-2", "4"],
     ["2", "-3"],
+    ["5.769230769230769", "-2"],
     ["10", "1000"],
     ["0.1", "1001"],
     ["1e-1001", "1"],
@@ -66,5 +67,26 @@ postgresTest("integer powers match numeric SQL without losing large integer digi
     const [row] = await sql<Array<{ value: string }>>`SELECT trim_scale(${compiled.expression.sql})::text AS value`;
     const result = MATH_FORMULA_FUNCTIONS.POW!([input, exponent], {});
     expect(String(result) === row?.value, `${base} ^ ${exponent}`).toBe(true);
+  }
+});
+
+postgresTest("integer powers round to frozen values at the normalized base scale", async () => {
+  const cases = [
+    ["5.769230769230769", "-2", "0.0300444444444444"],
+    ["5.76923076923076900000", "-2", "0.0300444444444444"],
+    ["-5.769230769230769", "-2", "0.0300444444444444"],
+    ["-5.769230769230769", "-3", "-0.0052077037037037"],
+    ["2", "-17", "0.0000076293945313"],
+    ["-2", "-17", "-0.0000076293945313"],
+    ["5.76923076923076923076923076923077", "-2", "0.03004444444444444444444444444444"],
+    [`1.${"0".repeat(999)}1`, "-2", `0.${"9".repeat(999)}8`],
+  ] as const;
+  for (const [base, exponent, expected] of cases) {
+    const expression = `POW('${base}', '${exponent}')`;
+    const compiled = compileFormulaSourceToSql(expression, { fields: [] });
+    if (!compiled.ok) throw new Error(compiled.error);
+    const [row] = await sql<Array<{ value: string }>>`SELECT trim_scale(${compiled.expression.sql})::text AS value`;
+    expect(row?.value, expression).toBe(expected);
+    expect(MATH_FORMULA_FUNCTIONS.POW!([base, exponent], {}), expression).toBe(expected);
   }
 });
