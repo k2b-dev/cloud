@@ -96,14 +96,16 @@ plus one second. A runtime that takes longer is logged and keeps counting as
 running, and the next runtime goes on meanwhile; its own start waits behind
 its stop.
 
-A worker or runtime that fails to start again is retried five times within
-about a minute; then the process restarts. A worker created inside
+A worker or runtime that fails to start again is retried up to five times,
+each attempt bounded by the step budget; then the process restarts. Fast
+failures end within about a minute, attempts that hang take a few minutes. A worker created inside
 `superviseRuntimeTask()` retries without a limit, as the supervisor does.
 
 No worker of the same job, queue, topic consumer, scheduler or pump starts
 while handlers of an earlier one still run in the process, also when the
-earlier handle was stopped. A handler that ignores its abort signal is the
-only way to stall this: when old handlers still run twice the step budget
+earlier handle was stopped. An earlier handle ended with `stop()` alone is
+drained first, so its handlers hear their abort. A handler that ignores its
+abort signal is then the only way to stall this: when old handlers still run twice the step budget
 (about a minute) after the new worker began to wait, the process restarts,
 supervised workers included.
 

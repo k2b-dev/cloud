@@ -96,8 +96,9 @@ a minute after the restart began waiting makes the instance restart itself,
 which ends it. A schedule that missed ticks runs once, not once
 per missed tick. Periodic sweeps also run once.
 
-An instance that cannot start part of its background work again tries five
-times within about a minute and logs each retry. If it still fails, the
+An instance that cannot start part of its background work again tries up to
+five times and logs each retry; fast failures end within about a minute,
+attempts that hang take a few minutes. If it still fails, the
 instance restarts itself. The AI chat and dictation workers keep trying
 without a restart.
 
