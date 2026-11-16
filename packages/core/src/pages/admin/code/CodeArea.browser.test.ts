@@ -65,6 +65,39 @@ const boxes = (selectors: string[]) =>
   );
 const tab = (name: string) => page.getByRole("tab", { name: new RegExp(`^${name}\\b`) });
 
+test("an approval keeps its version in one line next to a long title, on a wide screen and a phone", async () => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 780 },
+  ]) {
+    await goto("sec=approvals&state=long", viewport);
+    await settled(page);
+    const versions = await page.locator(".core-code-approvals__version").evaluateAll((elements) =>
+      elements.map((element) => {
+        const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight);
+        return { text: element.textContent, lines: Math.round(element.getBoundingClientRect().height / lineHeight) };
+      }),
+    );
+    expect(versions.length).toBeGreaterThan(0);
+    for (const version of versions)
+      expect({ ...version, viewport: viewport.width }).toEqual({ ...version, lines: 1, viewport: viewport.width });
+  }
+});
+
+test("the area without a section shows the approvals next to the area column, and only the area on a phone", async () => {
+  await goto("");
+  expect(await page.getByRole("heading", { name: "Freigaben" }).first().isVisible()).toBe(true);
+  expect(await page.locator(".core-code-approvals__row").first().isVisible()).toBe(true);
+  await goto("", { width: 390, height: 780 });
+  expect(await page.locator(".core-code-approvals__row").first().isVisible()).toBe(false);
+  expect(
+    await page
+      .getByRole("link", { name: /Freigaben/ })
+      .first()
+      .isVisible(),
+  ).toBe(true);
+});
+
 test("a review opens at its head with one row of tabs, and the approval with three decisions in view", async () => {
   for (const viewport of [
     { width: 1440, height: 900 },
