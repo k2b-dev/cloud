@@ -474,7 +474,32 @@ describe("Approval scenes", () => {
     }
   });
 
-  test("Maximize opens the Lightbox on that block with its name and origin, steps through the answer, and gives the focus back", async () => {
+  test("the Lightbox steps through an answer's blocks in the order they stand, also when the first one arrives last", async () => {
+    const page = await open("baustein&late", 1440);
+    try {
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+      await page.locator(".cloud-block-figures").waitFor();
+      await settled(page);
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame").first().getByRole("button", { name: "Maximieren" }).click();
+      const lightbox = page.locator(".k2b-lightbox[open]");
+      await lightbox.locator(".k2b-lightbox__name", { hasText: "PayPal-Buchungen im November" }).waitFor();
+      // The film strip names the blocks as they stand: figures, table, chart; never in the order they arrived.
+      const strip = await lightbox
+        .locator("button[aria-label]")
+        .evaluateAll((buttons) =>
+          buttons.map((button) => button.getAttribute("aria-label") ?? "").filter((label) => /Kennzahlen|PayPal-/.test(label)),
+        );
+      expect(strip).toEqual(["Kennzahlen", "PayPal-Buchungen im November, aktuell", "PayPal-Umsatz"]);
+      await lightbox.locator(".k2b-lightbox__stage").focus();
+      await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-lightbox__stage") === true);
+      await page.keyboard.press("ArrowLeft");
+      await lightbox.locator(".k2b-lightbox__name", { hasText: "Kennzahlen" }).waitFor();
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("Maximize opens the Lightbox on that block with its name and origin and steps through the answer", async () => {
     const page = await open("baustein", 1440);
     try {
       await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
@@ -486,8 +511,11 @@ describe("Approval scenes", () => {
       const name = () => lightbox.locator(".k2b-lightbox__name").textContent();
       expect(await name()).toContain("PayPal-Buchungen im November");
       expect(await name()).toContain("Mail · Tabelle · Stand");
-      await settled(page);
-      if (process.env.CAPBLOCKS_SHOTS) await page.screenshot({ path: resolve(process.env.CAPBLOCKS_SHOTS, "5-lightbox-light-1440.png") });
+      // Only a picture needs the Lightbox at rest: under its blur a frame takes about two seconds in WebKit without a GPU.
+      if (process.env.CAPBLOCKS_SHOTS) {
+        await settled(page);
+        await page.screenshot({ path: resolve(process.env.CAPBLOCKS_SHOTS, "5-lightbox-light-1440.png") });
+      }
       // Typing in the table's search belongs to the field: the arrows move the caret, never to the next block.
       const search = lightbox.locator(".k2b-lightbox__view").getByRole("searchbox");
       await search.fill("Holz");
@@ -506,7 +534,20 @@ describe("Approval scenes", () => {
       await shows("PayPal-Buchungen im November");
       await page.keyboard.press("ArrowLeft");
       await shows("Kennzahlen");
-      // Copy in the Lightbox answers in place, as in the block's head: its sign turns into a check, its width stays.
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("Copy in the Lightbox answers in place, there is no zoom pill, and Escape gives the focus back to Maximize", async () => {
+    const page = await open("baustein", 1440);
+    try {
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+      const opener = page.locator(".cloud-capability-view .k2b-dashboard-frame").first().getByRole("button", { name: "Maximieren" });
+      await opener.click();
+      const lightbox = page.locator(".k2b-lightbox[open]");
+      await lightbox.locator(".k2b-lightbox__name", { hasText: "PayPal-Buchungen im November" }).waitFor();
+      // As in the block's head: its sign turns into a check, its width stays.
       await useClipboard(page);
       const copy = lightbox.locator(".k2b-lightbox__action", { hasText: "Kopieren" });
       await settled(page);
