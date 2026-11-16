@@ -503,22 +503,41 @@ export async function readCodeRunnerMetrics(
     COALESCE(EXTRACT(epoch FROM clock_timestamp()-MIN(created_at) FILTER(WHERE state='queued'))*1000,0)::float8 AS oldest
     FROM code.runs WHERE state IN ('queued','running')`;
   const freshnessMs = (await codeSettings.get("core.code.runner_poll_ms")) + CODE_RUN_LEASE_MS;
+  // Places of the whole fleet: free slots plus the runs and authoring jobs fresh instances hold now.
   const [fleet] = await sql<
-    { instances: number; free_slots: number }[]
-  >`SELECT count(*)::int AS instances,COALESCE(sum(free_slots),0)::int AS free_slots
-    FROM code.runner_instances WHERE last_seen_at>clock_timestamp()-${freshnessMs}*interval '1 millisecond'`;
+    { instances: number; free_slots: number; busy: number }[]
+  >`WITH fresh AS (SELECT instance_id,free_slots FROM code.runner_instances
+      WHERE last_seen_at>clock_timestamp()-${freshnessMs}*interval '1 millisecond')
+    SELECT (SELECT count(*)::int FROM fresh) AS instances,(SELECT COALESCE(sum(free_slots),0)::int FROM fresh) AS free_slots,
+      ((SELECT count(*) FROM code.runs WHERE state='running' AND runner_instance_id IN (SELECT instance_id FROM fresh))
+        +(SELECT count(*) FROM code.jobs WHERE state='running' AND runner_instance_id IN (SELECT instance_id FROM fresh)))::int AS busy`;
   const runners = await sql<{ instance_id: string; free_slots: number; last_seen_at: Date }[]>`SELECT * FROM code.runner_instances
     WHERE last_seen_at>clock_timestamp()-${freshnessMs}*interval '1 millisecond'
     AND (${page.cursor ?? null}::uuid IS NULL OR instance_id>${page.cursor ?? null}::uuid) ORDER BY instance_id LIMIT ${limit + 1}`;
+  const shown = runners.slice(0, limit);
+  // One grouped count for the page: the places a runner holds are its running runs and authoring jobs.
+  const ids = shown.map((r) => r.instance_id);
+  const busy = shown.length
+    ? await sql<{ instance_id: string; busy: number }[]>`SELECT instance_id,count(*)::int AS busy FROM (
+        SELECT runner_instance_id AS instance_id FROM code.runs
+          WHERE state='running' AND runner_instance_id=ANY(${sql.array(ids, "uuid")})
+        UNION ALL SELECT runner_instance_id FROM code.jobs
+          WHERE state='running' AND runner_instance_id=ANY(${sql.array(ids, "uuid")})) held GROUP BY instance_id`
+    : [];
+  const busyOf = new Map(busy.map((row) => [row.instance_id, row.busy]));
   return {
     queued: counts?.queued ?? 0,
     running: counts?.running ?? 0,
     oldestWaitingMs: Math.max(0, counts?.oldest ?? 0),
     instances: fleet?.instances ?? 0,
     freeSlots: fleet?.free_slots ?? 0,
-    runners: runners
-      .slice(0, limit)
-      .map((r) => ({ instanceId: r.instance_id, freeSlots: r.free_slots, lastSeenAt: r.last_seen_at.toISOString() })),
+    slots: (fleet?.free_slots ?? 0) + (fleet?.busy ?? 0),
+    runners: shown.map((r) => ({
+      instanceId: r.instance_id,
+      freeSlots: r.free_slots,
+      busySlots: busyOf.get(r.instance_id) ?? 0,
+      lastSeenAt: r.last_seen_at.toISOString(),
+    })),
     nextCursor: runners.length > limit ? runners[limit - 1]!.instance_id : null,
   };
 }

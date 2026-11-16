@@ -97,8 +97,11 @@ const firecrawlPost = async (input: {
   const apiKey = await resolveApiKey(input.apiKey);
   const fetcher = input.fetch ?? fetch;
   return withNetworkDeadline(FIRECRAWL_TIMEOUT_MS, input.signal, new Error("Firecrawl request timed out."), async (signal) => {
+    // Hosted Firecrawl fetches the page. A self-hosted service or direct Cloud fetch must first check every
+    // resolved IP, bind the connection to a checked address, and validate each redirect.
     const response = await fetcher(`${FIRECRAWL_BASE_URL}${input.path}`, {
       method: "POST",
+      redirect: "error",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -136,6 +139,8 @@ export const assertPublicHttpUrl = (rawUrl: string): string => {
     throw new Error("URL must be valid.");
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("URL must use http or https.");
+
+  if (parsed.username || parsed.password) throw new Error("URL must not contain credentials.");
 
   const hostname = parsed.hostname.toLowerCase();
   if (isUnsafeNetworkHostname(hostname)) {
@@ -210,7 +215,8 @@ export const runCloudAiWebExtract = async (
   const maxChars = config.maxChars ?? WEB_EXTRACT_MAX_CONTENT_CHARS;
   const data = body.data;
   const metadata = isRecord(data.metadata) ? data.metadata : {};
-  const normalizedUrl = asString(data.url) || asString(metadata.url) || asString(metadata.sourceURL) || url;
+  // Validate the returned address before exposing content; Firecrawl has already followed any page redirects.
+  const normalizedUrl = assertPublicHttpUrl(asString(data.url) || asString(metadata.url) || asString(metadata.sourceURL) || url);
   const content = asString(data.markdown);
   const truncated = truncate(content, maxChars);
 

@@ -21,6 +21,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { AiReaderTimeZoneProvider } = await import("./action-sentences");
 const { AiTurnBlockView } = await import("./blocks");
 const { capabilityResultView } = await import("../result-view");
+const { cardToolResult, chartToolResult } = await import("../gustav-views");
 const { AiChatActionsProvider } = await import("./message-actions");
 const { createAiChatTimeline } = await import("./presentation");
 const { AiTurnView } = await import("./turn-view");
@@ -79,6 +80,46 @@ const block = (status: "running" | "awaiting_approval" | "completed" | "failed")
     title: "List contacts",
     capabilityKind: "query",
   },
+});
+
+describe("Gustav's own charts", () => {
+  const revenue = {
+    kind: "bar",
+    title: "Revenue per month",
+    subtitle: "EUR, 2026",
+    data: [
+      { label: "Jan", value: 1200 },
+      { label: "Feb", value: 980 },
+    ],
+  };
+  const chartBlock = (result: unknown): AiTurnBlock => ({
+    id: "tool-chart",
+    kind: "tool",
+    callId: "chart-1",
+    name: "chart",
+    args: revenue,
+    status: "completed",
+    result,
+    view: capabilityResultView(result) ?? undefined,
+  });
+  test("a chart whose result carries its view stands under Cloud's head with Gustav as its origin", () => {
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: chartBlock(chartToolResult(revenue)), turnId: "turn-1" }));
+    expect(html).toContain('class="cloud-capability-view"');
+    expect(html).toContain("<strong>Gustav</strong>");
+    // The head names the kind of view; the chart's own title stands in its island, once.
+    expect(html).toContain("· Chart");
+    expect(html.split("Revenue per month").length - 1).toBeGreaterThan(0);
+    expect(html).toContain('aria-label="Open large"');
+    expect(html).toContain('aria-label="Show data"');
+    expect(html).toContain('data-kind="Chart"');
+    // No step row of its own above the view.
+    expect(html).not.toContain("k2b-chat-activity");
+  });
+  test("an older stored chart without a view keeps its own drawing", () => {
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: chartBlock({ displayed: true }), turnId: "turn-1" }));
+    expect(html).not.toContain("cloud-capability-view");
+    expect(html).toContain("Revenue per month");
+  });
 });
 
 describe("capability tool presentation", () => {
@@ -1903,6 +1944,82 @@ describe("turn places in the reader's language", () => {
     expect(renderPlaces([mail(result)], { locale: "en" })).toContain(">Open</span>");
   });
 
+  test("Gustav's key figures stand flat in one row under one head, his chart as an island; older ones keep their drawing", () => {
+    const card = (id: string, args: Record<string, unknown>, stored = true): AiTurnBlock => {
+      const result = stored ? cardToolResult(args) : { displayed: true };
+      return {
+        id,
+        kind: "tool",
+        callId: id,
+        name: "card",
+        args,
+        status: "completed",
+        result,
+        view: capabilityResultView(result) ?? undefined,
+      };
+    };
+    const figures = [
+      card("c1", { title: "Girokonto", value: "2.481,20 €", trendValue: "+312,00 €", trendLabel: "seit 01.11." }),
+      card("c2", { title: "Tagesgeld", value: "12.050,00 €", caption: "2,1 % Zins" }),
+      card("c3", { title: "Kreditkarte", value: "−312,45 €", caption: "Abbuchung 28.11." }),
+    ];
+    const chartArgs = {
+      kind: "bar",
+      title: "Ausgaben",
+      data: [
+        { label: "Okt", value: 3 },
+        { label: "Nov", value: 4 },
+      ],
+    };
+    const chartResult = chartToolResult(chartArgs);
+    const chart: AiTurnBlock = {
+      id: "g1",
+      kind: "tool",
+      callId: "g1",
+      name: "chart",
+      args: chartArgs,
+      status: "completed",
+      result: chartResult,
+      view: capabilityResultView(chartResult) ?? undefined,
+    };
+    const html = renderPlaces([...figures, chart], { locale: "de" });
+    // One head for the three figures and one for the chart, both Gustav's; the figures are one flat row.
+    expect(html.split("<strong>Gustav</strong>").length - 1).toBe(2);
+    expect(html).toContain("· Kennzahlen");
+    expect(html.split('data-kind="Stats"').length - 1).toBe(1);
+    // The tiles' code loads after the first frame, like an app's key figures: the labels stand, the figures wait in place.
+    for (const label of ["Girokonto", "Tagesgeld", "Kreditkarte"]) expect(html).toContain(`>${label}</span>`);
+    expect(html).toContain('data-kind="Chart"');
+    expect(html).not.toContain("ti ti-mood");
+    // The head reads its time in the reader's zone, as every time in the chat does: 10:47 UTC is 11:47 in Berlin.
+    const berlin = renderPlaces([{ ...chart, at: "2026-11-15T10:47:00.000Z" }], { locale: "de", timeZone: "Europe/Berlin" });
+    expect(berlin).toContain("Stand 15.11., 11:47");
+    expect(berlin).not.toContain("10:47");
+    // An older stored card or chart without a view keeps the tool's own drawing.
+    const old = renderPlaces([card("o1", { title: "Girokonto", value: "2.481,20 €" }, false)], { locale: "de" });
+    expect(old).not.toContain("cloud-capability-view");
+    expect(old).toContain("2.481,20 €");
+    // Key figures asked for as `stat` charts stand as the same flat row under the head "Kennzahlen", not as islands.
+    const statArgs = {
+      title: "Logistik – Kennzahlen",
+      layout: "grid",
+      charts: [
+        { kind: "stat", title: "Offene Aufgaben", value: 1366 },
+        { kind: "stat", title: "Diese Woche fällig", value: 3, subtitle: "15. – 21.11." },
+        { kind: "stat", title: "Ohne Fälligkeit", value: 1363 },
+      ],
+    };
+    const statResult = chartToolResult(statArgs);
+    const stats = renderPlaces(
+      [{ ...chart, id: "s1", callId: "s1", args: statArgs, result: statResult, view: capabilityResultView(statResult) ?? undefined }],
+      { locale: "de" },
+    );
+    expect(stats).toContain("· Kennzahlen");
+    expect(stats.split('data-kind="Stats"').length - 1).toBe(1);
+    expect(stats).not.toContain('data-kind="Chart"');
+    for (const label of ["Offene Aufgaben", "Diese Woche fällig", "Ohne Fälligkeit"]) expect(stats).toContain(`>${label}</span>`);
+  });
+
   test("a query's table stands under Cloud's head, and an action's table shows its summary and links once", () => {
     const query: AiTurnBlock = {
       id: "tool-query",
@@ -2308,6 +2425,35 @@ test("a presented explorer reserves its title, control rows and 18rem viewport b
     }
     expect(html).not.toContain("data-chart-datum");
   }
+});
+
+test("a view file stands under Gustav's head like an app's result, and still loads on demand", () => {
+  const path = "/views/orders-12345678.view.json";
+  const block: AiTurnBlock = {
+    id: "view",
+    kind: "tool",
+    name: "present",
+    callId: "view",
+    args: { path },
+    status: "completed",
+    result: { path, view: { view: "table", title: "Orders", rows: 3, columns: 2, footer: false } },
+  };
+  const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
+  expect(html).toContain('class="cloud-capability-view"');
+  expect(html).toContain("<strong>Gustav</strong>");
+  expect(html).toContain("· Table");
+  expect(html).toContain('aria-label="Open large"');
+  expect(html).toContain(`data-view-path="${path}"`);
+  expect(html).toContain("Loading");
+  // A table or chart from a file is an island like an app's (v12 section 9).
+  expect(html).toMatch(/class="k2b-paper k2b-dashboard-frame\s*"[^>]*><div data-view-path/);
+  const chart = renderToString(() =>
+    createComponent(AiTurnBlockView, {
+      block: { ...block, result: { path, view: { view: "chart", kind: "line", title: "Orders" } } },
+      turnId: "turn",
+    }),
+  );
+  expect(chart).toMatch(/class="k2b-paper k2b-dashboard-frame\s*"[^>]*><div data-view-path/);
 });
 
 test("present without a valid view reference stays a file chip", () => {

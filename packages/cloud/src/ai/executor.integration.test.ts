@@ -44,6 +44,7 @@ import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./p
 import { createAiProvider } from "./provider";
 import { withProviderErrors } from "./provider-errors";
 import { AiQuotaError } from "./quotas";
+import { capabilityResultView, modelCapabilityResult } from "./result-view";
 import { readReviewContent } from "./review-content";
 import { listPendingAiTurnActions } from "./runtime";
 import * as settings from "./settings";
@@ -1202,11 +1203,22 @@ suite("AI executor integration", () => {
           linkedApprovals: new Map(),
         });
         expect(suspended).toBe(false);
-        expect(pushed).toEqual([{ type: "tool_result", callId: "chart-1", result: { displayed: true } }]);
+        // The loop keeps the view, so the stored message draws the chart again after a reload; the model reads it at
+        // the provider boundary like any view: `displayed` and a short summary, never the blocks.
+        expect(pushed).toEqual([{ type: "tool_result", callId: "chart-1", result: expect.objectContaining({ displayed: true }) }]);
+        const pushedResult = (pushed[0] as Extract<InboundEvent, { type: "tool_result" }>).result;
+        expect(capabilityResultView(pushedResult)?.blocks[0]?.kind).toBe("Chart");
+        expect(modelCapabilityResult(pushedResult)).toEqual({ displayed: true, data: {}, viewSummary: expect.any(String) });
         // From running straight to completed: an awaiting_client in between would read as an open request.
         expect(statuses).toEqual(["running", "completed"]);
         expect(pipeline.blocks.find((block) => block.kind === "tool")).toMatchObject({ status: "completed", args });
+        // People see the chart as the same block an app's result uses; the model above reads only `displayed`.
+        const stored = pipeline.blocks.find((block) => block.kind === "tool");
+        expect(stored?.kind === "tool" ? stored.view?.blocks[0]?.kind : undefined).toBe("Chart");
         expect(await listPendingAiTurnActions({ conversationId: conversation.id, turnId: turn.id })).toHaveLength(0);
+        // The chart is a result of the chat: the box lists it and jumps to it.
+        const results = await aiConversations.listConversationSources({ conversationId: conversation.id, kinds: ["result"] });
+        expect(results.sources).toEqual([expect.objectContaining({ key: "view:chart-1", title: "Orders", path: null })]);
         await pipeline.flush();
       } finally {
         await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;

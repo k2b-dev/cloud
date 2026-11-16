@@ -60,6 +60,7 @@ import {
   CodeDiff,
   type CodeDiffFile,
   type CodeDiffLine,
+  type CodeDiffLineAction,
   type CodeDiffLineKind,
   type CodeDiffLocation,
   type CodeDiffProps,
@@ -108,5 +109,49 @@ The code is a labelled region ("Code difference, read only · index.ts"). Screen
     { kind: "add", text: "await message.reply({ text });" },
   ] }]}
   mark={{ path: "reply.ts", line: 2 }}
+/>
+```
+
+### Line actions and content below a line
+
+A review that comments on lines gives `CodeDiff` one action per line and a place below a line. The component knows
+nothing about comments: the host decides what the action does and what the place shows.
+
+```ts
+type CodeDiffLineAction = {
+  label: (location: CodeDiffLocation) => string; // "Comment on line 3": name and tooltip
+  onSelect: (location: CodeDiffLocation) => void;
+};
+
+// Further CodeDiffProps
+lineAction?: CodeDiffLineAction;
+slotLines?: readonly CodeDiffLocation[]; // lines of the new version with content below them
+lineSlot?: (location: CodeDiffLocation) => JSX.Element;
+```
+
+- **Place:** with `lineAction` or `lineSlot`, every line gets a fixed place between the line number and the code
+  (in a difference: old number, new number, place, sign, code). The place is always there, so nothing moves when the
+  action shows. Locations passed to the host use the line number of the new version with `side: "new"`. Removed lines
+  have no action and no place for content.
+- **Action:** a small filled `+` appears while the pointer is over the line or the action has focus, with the label
+  as tooltip. On touch (`pointer: coarse`) lines are 30 px high and the action is 32 × 28 px and always visible, without
+  a tooltip.
+- **Content below a line:** a line in `slotLines` shows `lineSlot(location)` directly below it, at the width of the
+  view and flush with the place of the action, at most 40rem wide; it stays in view while long lines scroll sideways.
+  The line keeps a small mark in the place of the action and a light tint. Such a line never folds away, and its
+  page renders. `lineSlot` runs once while the line stays listed, outside any tracking scope: the content keeps its
+  own state, such as an open reply field, and reads its own data. Adding content moves only the rows below it.
+- **Unchanged file:** a file without changes but with listed lines shows "This file is unchanged. The commented lines
+  follow." and only those lines with their content, so nothing listed disappears in any view.
+- **Keyboard:** the code is one tab stop. Tab reaches the action of one line; ↑, ↓, Home and End move the real focus
+  from line to line and skip removed lines; ← and → scroll long lines; Enter or Space selects. Each action carries
+  `data-action-line` with its line number, so a host returns the focus to it after closing its content.
+
+```tsx
+<CodeDiff
+  files={files}
+  lineAction={{ label: ({ line }) => `Comment on line ${line}`, onSelect: (location) => openThread(location) }}
+  slotLines={threadLines()}
+  lineSlot={(location) => <LineThread location={location} />}
 />
 ```

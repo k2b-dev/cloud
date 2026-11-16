@@ -239,6 +239,8 @@ export function StatCell(props: StatCellProps): JSX.Element {
   const gridSize = useStatGridSize();
   const size = () => props.size ?? gridSize;
   const surface = useStatGridSurface();
+  // A figure without change, comparison or trend waits for nothing beside it; flat rows then reserve no room for one.
+  const plain = () => !props.delta && !props.compare && !(props.trend?.length ?? 0);
   return (
     <Show
       // A tile that offers a retry is no link: the button must not sit inside it.
@@ -249,6 +251,7 @@ export function StatCell(props: StatCellProps): JSX.Element {
           data-size={size()}
           data-surface={surface}
           data-wrap={props.wrap || undefined}
+          data-plain={plain() || undefined}
           data-delta-placement={props.deltaPlacement}
           data-status={props.status}
           aria-busy={props.status === "loading" || undefined}
@@ -263,6 +266,7 @@ export function StatCell(props: StatCellProps): JSX.Element {
         data-size={size()}
         data-surface={surface}
         data-wrap={props.wrap || undefined}
+        data-plain={plain() || undefined}
         data-delta-placement={props.deltaPlacement}
       >
         <i class="ti ti-external-link k2b-stat-cell__link-icon" aria-hidden="true" />

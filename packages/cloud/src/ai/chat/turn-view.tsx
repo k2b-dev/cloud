@@ -24,7 +24,7 @@ import { toolSubject, useReaderTimeZone } from "./action-sentences";
 import { AiAnswerSources, AiAppTile, answerSources } from "./answer-sources";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { hasCapabilityView } from "./capability-result";
-import { CapabilityViewBlock } from "./capability-view";
+import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, isKeyFigureView, keyFigureGroup } from "./capability-view";
 import { codeStepWords } from "./code-step-words";
 import { CodeStepResult } from "./code-steps";
 import { PresentToolBlock } from "./file-tools";
@@ -34,11 +34,19 @@ import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isFeatCod
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import type { AiStopNotice } from "./stop-notice";
+import { aiThinkingMessages, aiThinkingWordRound, aiThinkingWords } from "./thinking-words";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, useAiToolDisclosure } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
 import { aiTurnErrorCanContinue } from "./turn-error";
-import { type AiTurnAction, type AiTurnLayout, type AiTurnPhase, type AiTurnResult, submittedCodeVersion } from "./turn-layout";
+import {
+  type AiTurnAction,
+  type AiTurnLayout,
+  type AiTurnPhase,
+  type AiTurnResult,
+  isKeyFigureResult,
+  submittedCodeVersion,
+} from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 import { AiThoughtStep, AiWorkFollowedContext, AiWorkStep, keepsStepDetail } from "./work-steps";
 import { AI_WORK_APP_TILES, workApps, workStepLine, workStepParts, workSummary } from "./work-summary";
@@ -209,6 +217,10 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const phase = segment().phase;
     return phase === "stopped" ? "stopped" : phase === "failed" && !segment().error ? "failed" : null;
   };
+  // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1).
+  const thinkingPhase = () =>
+    working() && stepPhrase(layout().current, t(), false) === t().stepThinking ? `${segment().id}:${currentStep() ?? "start"}` : null;
+  const thinkingWords = (phase: string) => aiThinkingWordRound(phase, aiThinkingWords(locale()));
   const sentence = () => {
     if (reconnecting()) return t().reconnecting;
     if (working()) return liveStepLabel(layout().current, t(), stepMs());
@@ -261,7 +273,18 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
       class="ai-turn-work"
       label={
         <span class="ai-turn-work__text">
-          <span class="ai-turn-work__sentence k2b-truncate-fade">{sentence()}</span>
+          <span class="ai-turn-work__sentence k2b-truncate-fade">
+            <Show when={thinkingPhase()} keyed fallback={sentence()}>
+              {(phase) => (
+                <Chat.Activity.Words
+                  first={t().thinking}
+                  words={thinkingWords(phase)}
+                  elapsedMs={stepMs()}
+                  announce={aiThinkingMessages(locale()).announcement({ assistant: t().assistant })}
+                />
+              )}
+            </Show>
+          </span>
           <Show when={stepParts()}>
             {(parts) => (
               <span class="ai-turn-work__steps" data-issues={parts().issues ? "" : undefined}>
@@ -287,7 +310,10 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
       busy={working()}
       trailing={
         <Show when={time()}>
-          <span class="ai-turn-work__meta">{time()}</span>
+          {/* While the turn runs the seconds stay silent; the line announces its activity once. */}
+          <span class="ai-turn-work__meta" aria-hidden={isLive(segment().phase) ? "true" : undefined}>
+            {time()}
+          </span>
         </Show>
       }
       bodyInset={false}
@@ -595,11 +621,38 @@ function AiTurnResultView(props: {
   live: boolean;
 }) {
   const actions = useAiChatActions();
+  const locale = useLocale();
   const block = () => props.result()?.block;
   return (
     <Show when={block()}>
       {(current) => (
         <Switch>
+          {/* Gustav's own chart and key figures stand under Cloud's head like an app's result; older ones without a
+              view keep their own drawing below. */}
+          <Match when={isChartToolName(current().name) && gustavViewBlock(current())}>
+            {(shown) => (
+              <CapabilityViewBlock
+                block={shown()}
+                turnId={props.turnId}
+                live={props.live}
+                {...gustavOrigin(current(), locale(), isKeyFigureView(shown().view) ? aiChatMessages(locale()).keyFigures : undefined)}
+              />
+            )}
+          </Match>
+          <Match when={isKeyFigureResult(current())}>
+            <CapabilityViewBlock
+              block={keyFigureGroup(
+                (props.result()?.group ?? [current()]).flatMap((entry) => {
+                  const shown = gustavViewBlock(entry);
+                  return shown ? [shown] : [];
+                }),
+              )}
+              turnId={props.turnId}
+              live={props.live}
+              {...gustavOrigin(current(), locale(), aiChatMessages(locale()).keyFigures)}
+              data={(props.result()?.group ?? [current()]).map((entry) => entry.args)}
+            />
+          </Match>
           <Match when={current().name === "map"}>
             <AiMapToolBlock block={current()} />
           </Match>
@@ -712,7 +765,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
  * Output-limit notices use the established multiline message surface, so their explanation stays readable on phones.
  * Continue sends a visible follow-up through the host's normal send path, only while the newest turn is idle.
  */
-function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean }) {
+function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean; answerAgain?: () => void | Promise<void> }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const actions = useAiChatActions();
@@ -742,22 +795,40 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
           ? t().outputLimitReached
           : props.notice.kind === "code_authoring"
             ? t().authoringTurnStopped
-            : t().turnErrorTitle
+            : props.notice.kind === "no_answer"
+              ? t().noAnswerTitle
+              : t().turnErrorTitle
       }
-      detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : t().keptSoFar}
+      detail={
+        props.notice.kind === "output_limit" && props.notice.reasoning
+          ? t().outputLimitReasoning
+          : props.notice.kind === "no_answer"
+            ? t().noAnswerDetail
+            : t().keptSoFar
+      }
       actions={
-        <Show when={props.continuable && actions.onContinueTurn}>
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={continuing()}
-            disabled={actions.actionDisabled?.()}
-            onClick={() => void continueAnswer()}
-          >
-            <i class="ti ti-player-play" aria-hidden="true" />
-            {t().continueAnswer}
-          </Button>
-        </Show>
+        <>
+          <Show when={props.continuable && actions.onContinueTurn}>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={continuing()}
+              disabled={actions.actionDisabled?.()}
+              onClick={() => void continueAnswer()}
+            >
+              <i class="ti ti-player-play" aria-hidden="true" />
+              {props.notice.kind === "no_answer" ? t().continueTurn : t().continueAnswer}
+            </Button>
+          </Show>
+          <Show when={props.notice.kind === "no_answer" && props.answerAgain}>
+            {(again) => (
+              <Button variant="secondary" size="sm" disabled={actions.actionDisabled?.()} onClick={() => void again()()}>
+                <i class="ti ti-refresh" aria-hidden="true" />
+                {t().actionAnswerAgain}
+              </Button>
+            )}
+          </Show>
+        </>
       }
     >
       <Show when={failed()}>
@@ -1063,7 +1134,13 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           {(notice) => (
             <Show
               when={notice().kind === "code_authoring" && hostActions.renderCodeAuthoringStop}
-              fallback={<AiTurnStopNotice notice={notice()} continuable={props.segment().continuable === true} />}
+              fallback={
+                <AiTurnStopNotice
+                  notice={notice()}
+                  continuable={props.segment().continuable === true}
+                  answerAgain={props.segment().answerAgain}
+                />
+              }
             >
               {untrack(() => {
                 const current = notice();

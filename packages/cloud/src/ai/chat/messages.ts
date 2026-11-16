@@ -76,6 +76,8 @@ const messages = /* @__PURE__ */ i18n.define({
       continueTurn: "Continue",
       continueTurnMessage: "Continue where you left off.",
       outputLimitReached: "The answer was cut off because the output limit was reached.",
+      noAnswerTitle: "The answer ended without any text.",
+      noAnswerDetail: "The steps above stay. Continue, or have the message answered again.",
       outputLimitReasoning: "Reasoning used most of the available output.",
       continueAnswer: "Continue writing",
       continueAnswerFailed: "The request could not be sent. Try again.",
@@ -266,6 +268,9 @@ const messages = /* @__PURE__ */ i18n.define({
       textEditorWaiting: "waiting",
       textEditorSubmitted: "submitted",
       cardFallback: "Card",
+      keyFigures: "Key figures",
+      viewKind: ({ view }: { view: "chart" | "table" | "group" | "stats" | "details" | "explorer" }) =>
+        ({ chart: "Chart", table: "Table", group: "Charts", stats: "Key figures", details: "Details", explorer: "Analysis" })[view],
       preparingTextEditor: "Preparing text editor",
       memory: "Memory",
       usingMemory: "Using memory",
@@ -474,6 +479,8 @@ const messages = /* @__PURE__ */ i18n.define({
       continueTurn: "Weiterarbeiten",
       continueTurnMessage: "Mach an der Stelle weiter, an der du aufgehört hast.",
       outputLimitReached: "Die Antwort wurde abgeschnitten, weil die Ausgabelänge erreicht wurde.",
+      noAnswerTitle: "Die Antwort endete ohne Text.",
+      noAnswerDetail: "Die Schritte oben bleiben. Arbeite weiter oder lass die Nachricht neu beantworten.",
       outputLimitReasoning: "Das Nachdenken hat den größten Teil davon verbraucht.",
       continueAnswer: "Weiterschreiben",
       continueAnswerFailed: "Die Anfrage konnte nicht gesendet werden. Versuche es erneut.",
@@ -667,6 +674,11 @@ const messages = /* @__PURE__ */ i18n.define({
       textEditorWaiting: "wartet",
       textEditorSubmitted: "gesendet",
       cardFallback: "Karte",
+      keyFigures: "Kennzahlen",
+      viewKind: ({ view }) =>
+        ({ chart: "Diagramm", table: "Tabelle", group: "Diagramme", stats: "Kennzahlen", details: "Details", explorer: "Auswertung" })[
+          view
+        ],
       preparingTextEditor: "Texteditor wird vorbereitet",
       memory: "Personalisierung",
       usingMemory: "Personalisierung wird verwendet",

@@ -192,6 +192,7 @@ export const generatedFilePresentation = {
       "chart.xAxis.format.date": "Datumsgenauigkeit: Tag, Minute oder Sekunde.",
       "chart.area": "Fläche unter der Linie füllen.",
       "chart.smooth": "Linienverlauf glätten.",
+      "chart.points": "Jeden Wert als hohlen Punkt zeigen.",
       "chart.step": "Werte als Stufenverlauf verbinden.",
       "chart.zero": "Null im Wertebereich berücksichtigen.",
       "chart.legendValues": "Werte in der Legende anzeigen.",

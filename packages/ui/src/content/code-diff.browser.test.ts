@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type axeCore from "axe-core";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
 
 // Fold and mark geometry, sideways scrolling inside the component's own width, focus after revealing rows, and contrast are results
 // of layout and paint, so a real engine renders the shipped stylesheet. Fixtures are fictional.
@@ -365,4 +365,192 @@ describe("CodeDiff in a browser", () => {
       }
     }, 30_000);
   }
+});
+
+// Line actions and content below a line: one tab stop over every action, focus that the host can hand back, a slot
+// that moves only the rows below it, and the larger touch targets. Fixtures are fictional.
+const annotatedEntry = resolve(import.meta.dir, "code-diff-annotated.fixture.ts");
+const annotatedFixture = `
+import { createSignal } from "solid-js";
+import { createComponent, render } from "solid-js/web";
+import { CodeDiff } from ${JSON.stringify(resolve(ui, "dist/browser/code-diff.js"))};
+
+const same = (text) => ({ kind: "same", text });
+const add = (text) => ({ kind: "add", text });
+const del = (text) => ({ kind: "del", text });
+const files = [
+  { path: "code.ts", lines: [same("import { app } from '@sdk';"), same(""), same("app.schedule({ cron: '0 8 * * 1-5' }, async () => {"), del("  await draft.create();"), add("  await task.create();"), add("  await tag.set();"), same("});")] },
+];
+const [slotLines, setSlotLines] = createSignal([]);
+window.selected = [];
+window.setSlotLines = setSlotLines;
+render(
+  () =>
+    createComponent(CodeDiff, {
+      files,
+      lineAction: { label: ({ line }) => "Comment on line " + line, onSelect: (location) => window.selected.push(location.line) },
+      get slotLines() {
+        return slotLines();
+      },
+      lineSlot: ({ line }) => {
+        const box = document.createElement("div");
+        box.className = "thread";
+        box.style.height = "48px";
+        box.textContent = "Thread on line " + line;
+        return box;
+      },
+    }),
+  document.getElementById("app"),
+);
+`;
+const annotatedBuild = await Bun.build({
+  entrypoints: [annotatedEntry],
+  files: { [annotatedEntry]: annotatedFixture },
+  target: "browser",
+  conditions: ["browser"],
+  format: "iife",
+});
+if (!annotatedBuild.success) throw new AggregateError(annotatedBuild.logs, "Could not bundle the annotated CodeDiff fixture.");
+const annotatedScript = await annotatedBuild.outputs[0]!.text();
+
+type Annotated = {
+  selected: number[];
+  setSlotLines: (lines: { path: string; line: number }[]) => void;
+};
+
+const openAnnotated = async (touch = false): Promise<Page> => {
+  const context = await browser.newContext({
+    viewport: { width: 640, height: 700 },
+    reducedMotion: "reduce",
+    ...(touch ? { isMobile: true, hasTouch: true } : {}),
+  });
+  const page = await context.newPage();
+  await page.route(`${assets}**`, (route) =>
+    route.fulfill({ path: resolve(ui, "dist", new URL(route.request().url()).pathname.slice(1)) }),
+  );
+  const html =
+    '<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>CodeDiff</title>' +
+    `<style>${css}</style><style>${fonts}</style></head>` +
+    '<body class="k2b-ui" style="margin:0;background:var(--k2b-surface)">' +
+    '<main style="padding:24px"><button id="before">Before</button><div id="app" style="width:560px"></div><button id="after">After</button></main></body></html>';
+  await page.route(`${assets}page`, (route) => route.fulfill({ contentType: "text/html; charset=utf-8", body: html }));
+  await page.goto(`${assets}page`);
+  await page.evaluate(() =>
+    Promise.all(["400 13px 'IBM Plex Mono'", "400 15px 'IBM Plex Sans'", "16px tabler-icons"].map((font) => document.fonts.load(font))),
+  );
+  await page.addScriptTag({ content: annotatedScript });
+  await settled(page);
+  return page;
+};
+const focusedAction = (page: Page) =>
+  page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.actionRow ?? document.activeElement?.id ?? null);
+const box = (page: Page, selector: string) =>
+  page.evaluate((value) => {
+    const found = document.querySelector(value)!.getBoundingClientRect();
+    return { top: found.top, left: found.left, width: found.width, height: found.height };
+  }, selector);
+
+describe("CodeDiff line actions in a browser", () => {
+  test("the code is one tab stop; arrow keys, Home and End move the real focus and skip removed lines", async () => {
+    const page = await openAnnotated();
+    try {
+      await page.focus("#before");
+      await page.keyboard.press("Tab");
+      expect(await focusedAction(page)).toBe("0");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      // Row 3 is the removed line: it has no action.
+      expect(await focusedAction(page)).toBe("4");
+      await page.keyboard.press("ArrowUp");
+      expect(await focusedAction(page)).toBe("2");
+      await page.keyboard.press("End");
+      expect(await focusedAction(page)).toBe("6");
+      await page.keyboard.press("Home");
+      expect(await focusedAction(page)).toBe("0");
+      await page.keyboard.press("End");
+      // Tab leaves the code, Shift+Tab returns to the line it left.
+      await page.keyboard.press("Tab");
+      expect(await focusedAction(page)).toBe("after");
+      await page.keyboard.press("Shift+Tab");
+      expect(await focusedAction(page)).toBe("6");
+      // The focused action shows itself and its name.
+      await settled(page);
+      expect(await page.evaluate(() => getComputedStyle(document.activeElement!).opacity)).toBe("1");
+      expect(await page.evaluate(() => document.activeElement!.getAttribute("aria-label"))).toBe("Comment on line 6");
+      await page.keyboard.press("Enter");
+      expect(await page.evaluate(() => (window as unknown as Annotated).selected)).toEqual([6]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("hover shows the action in its fixed place; content below a line moves only the rows below; focus comes back", async () => {
+    const page = await openAnnotated();
+    try {
+      const row = await box(page, '[data-row="2"]');
+      const below = await box(page, '[data-row="4"]');
+      const code = await box(page, '[data-row="2"] code');
+      expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-action-row="2"]')!).opacity)).toBe("0");
+      await hoverInPlace(page.locator('[data-row="2"] code'));
+      await settled(page);
+      expect(await page.evaluate(() => getComputedStyle(document.querySelector('[data-action-row="2"]')!).opacity)).toBe("1");
+      expect(await box(page, '[data-row="2"]')).toEqual(row);
+      expect(await box(page, '[data-row="2"] code')).toEqual(code);
+
+      await page.evaluate(() => (window as unknown as Annotated).setSlotLines([{ path: "code.ts", line: 3 }]));
+      await settled(page);
+      expect(await box(page, '[data-row="2"]')).toEqual(row);
+      expect(await box(page, '[data-row="2"] code')).toEqual(code);
+      const slot = await box(page, ".k2b-code-diff__slot");
+      expect(Math.round(slot.top)).toBe(Math.round(row.top + row.height));
+      expect(Math.round((await box(page, '[data-row="4"]')).top)).toBe(Math.round(below.top + slot.height));
+      expect(await page.locator('[data-row="2"] .k2b-code-diff__noted').count()).toBe(1);
+
+      // The host hands the focus back after closing its content: each action names its line.
+      await page.evaluate(() => (window as unknown as Annotated).setSlotLines([]));
+      await page.evaluate(() => document.querySelector<HTMLElement>('[data-action-line="3"]')!.focus());
+      await page.waitForFunction(() => (document.activeElement as HTMLElement | null)?.dataset.actionRow === "2");
+      expect(await box(page, '[data-row="4"]')).toEqual(below);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("on touch, lines are 30 px high and the action is 32 × 28 px, always visible and quiet", async () => {
+    const page = await openAnnotated(true);
+    try {
+      expect(Math.round((await box(page, '[data-row="2"]')).height)).toBe(30);
+      const action = await box(page, '[data-action-row="2"]');
+      expect([Math.round(action.width), Math.round(action.height)]).toEqual([32, 28]);
+      // Visible without hover, but a grey sign without a fill, so it never reads as a column of buttons.
+      const look = await page.evaluate(() => {
+        const style = getComputedStyle(document.querySelector('[data-action-row="2"]')!);
+        return { opacity: Number(style.opacity), fill: style.backgroundColor };
+      });
+      expect(look.opacity).toBeGreaterThanOrEqual(0.5);
+      expect(look.fill).toBe("rgba(0, 0, 0, 0)");
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("passes axe with actions, a marked line and content below it", async () => {
+    const page = await openAnnotated();
+    try {
+      await page.evaluate(() => (window as unknown as Annotated).setSlotLines([{ path: "code.ts", line: 5 }]));
+      await settled(page);
+      await page.addScriptTag({ content: axeSource });
+      const violations = await page.evaluate(async () => {
+        const result = await window.axe!.run(document, {
+          runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] },
+          resultTypes: ["violations"],
+        });
+        return result.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(" ")).join(", ")}`);
+      });
+      expect(violations).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 });
