@@ -155,7 +155,7 @@ test("the first browser render shows the server's rows, times, and dividers in a
   const page = await context.newPage();
   const errors: string[] = [];
   const hydrationMessages: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
   page.on("console", (message) => {
     if ((message.type() === "error" || message.type() === "warning") && /hydrat/i.test(message.text()))
       hydrationMessages.push(message.text());
@@ -184,6 +184,7 @@ test("the first browser render shows the server's rows, times, and dividers in a
     expect(server).toContain("Gestern");
     await page.evaluate(() => Reflect.set(window, "serverRow", document.querySelector(".k2b-activity__entry")));
     await page.addScriptTag({ url: `${origin}/client.js` });
+    expect(errors).toEqual([]);
     await page.waitForSelector('body[data-ready="true"]');
     await settled(page);
     expect(await markup()).toBe(server);
