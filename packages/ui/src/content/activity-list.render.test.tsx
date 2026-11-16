@@ -143,6 +143,32 @@ test("a clickable entry renders its sentence as a button that says whether detai
   expect(html).not.toContain("An team@stadtpark.example");
 });
 
+test("a row with href renders its sentence as a link, never inside a button; details win over href", () => {
+  const html = (entry: Partial<Entry>) =>
+    german(() =>
+      createComponent(ActivityList, {
+        entries: [{ at: NOW, icon: "ti ti-check", text: "Aufgabe erledigt", ...entry }],
+        now: NOW,
+        timeZone: ZONE,
+      }),
+    );
+  const linked = html({ href: "/app/spaces/s1?item=i1" });
+  expect(linked).toContain("data-clickable");
+  expect(linked).toMatch(/<a class="k2b-activity__text-link" href="\/app\/spaces\/s1\?item=i1">Aufgabe erledigt<\/a>/);
+  expect(linked).not.toContain("k2b-activity__text-button");
+  const folding = html({ href: "/app/spaces/s1", details: () => "Betreff" });
+  expect(folding).toContain('class="k2b-activity__text-button" aria-expanded="false"');
+  expect(folding).not.toContain("k2b-activity__text-link");
+});
+
+test("the card's title is a second-level heading unless the page asks for the third", () => {
+  const card = (level?: 2 | 3) => german(() => createComponent(ActivityCard, { entries: entries(), now: NOW, timeZone: ZONE, level }));
+  expect(card()).toContain("<h2");
+  expect(card()).not.toContain("<h3");
+  expect(card(3)).toContain("<h3");
+  expect(card(3)).not.toContain("<h2");
+});
+
 test("loading, empty, and error states", () => {
   const loading = german(() => createComponent(ActivityList.Loading, {}));
   expect(loading).toContain('role="status"');

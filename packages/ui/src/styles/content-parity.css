@@ -7655,10 +7655,10 @@
  * ActivityList: the history as a vertical timeline, taken 1:1 from the Warenfluss building block "Verlauf". One grid
  * for both densities: icon 20 px, 12 px gap, the text column. Two type sizes: the sentence 14 px, everything else
  * 13 px. The rail is a vertical 2 px line through the middle of the icons; it starts at the newest entry and ends at
- * the oldest, and with `data-end="more"` it fades out. Dividers are dashed.
+ * the oldest, and with `data-end="more"` it fades out. It pauses behind each icon instead of being covered, so no
+ * surface has to match the one the list stands on. Dividers are dashed.
  */
 .k2b-ui .k2b-activity {
-  container-type: inline-size;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -7709,26 +7709,36 @@
 }
 .k2b-ui .k2b-activity__entry:hover { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-activity__entry[data-clickable] { cursor: pointer; }
-.k2b-ui .k2b-activity > li.k2b-activity__entry::before { left: 17px; }
-.k2b-ui .k2b-activity > li.k2b-activity__entry[data-first]::before { top: 16px; }
-.k2b-ui .k2b-activity > li.k2b-activity__entry[data-end="last"]::before { bottom: auto; height: 16px; }
-.k2b-ui .k2b-activity > li.k2b-activity__entry[data-first][data-end="last"]::before { display: none; }
-.k2b-ui .k2b-activity > li.k2b-activity__entry[data-end="more"]::before {
+/* An entry's rail: above its icon (`::before`, 0 to 6 px) and below it (`::after`, from 26 px), so the icon box
+   (6 to 26 px) stays free. The first row has no rail above, the last none below. */
+.k2b-ui .k2b-activity > li.k2b-activity__entry::before {
+  bottom: auto;
+  left: 17px;
+  height: 6px;
+}
+.k2b-ui .k2b-activity > li.k2b-activity__entry::after {
+  content: "";
+  position: absolute;
+  top: 26px;
+  bottom: 0;
+  left: 17px;
+  width: 2px;
+  background: var(--k2b-border);
+}
+.k2b-ui .k2b-activity > li.k2b-activity__entry[data-first]::before,
+.k2b-ui .k2b-activity > li.k2b-activity__entry[data-end="last"]::after { display: none; }
+.k2b-ui .k2b-activity > li.k2b-activity__entry[data-end="more"]::after {
   bottom: -12px;
   background: linear-gradient(var(--k2b-border) 30%, transparent);
 }
 
-/* The icon covers the rail with the surface it stands on; a card and a dialog name theirs. */
 .k2b-ui .k2b-activity__icon {
-  position: relative;
-  z-index: 1;
   display: grid;
   width: 20px;
   height: 20px;
   place-items: center;
   border-radius: 50%;
   color: var(--k2b-text-muted);
-  background: var(--k2b-activity-surface, var(--k2b-surface));
   font-size: 15px;
 }
 /* The glyph fills the icon's box, so the row's ink starts on the column edge like the section title. */
@@ -7736,7 +7746,6 @@
   width: 100%;
   text-align: center;
 }
-.k2b-ui .k2b-activity__entry:hover .k2b-activity__icon { background: var(--k2b-surface-muted); }
 .k2b-ui .k2b-activity__icon[data-tone="success"] { color: var(--k2b-success-text); }
 .k2b-ui .k2b-activity__icon[data-tone="warning"] { color: var(--k2b-warning-text); }
 .k2b-ui .k2b-activity__icon[data-tone="danger"] { color: var(--k2b-danger-text); }
@@ -7765,11 +7774,11 @@
   color: var(--k2b-text-muted);
   font-variant-numeric: tabular-nums;
 }
-.k2b-ui .k2b-activity :where(a:not(.k2b-activity__action)) {
+.k2b-ui .k2b-activity :where(a:not(.k2b-activity__action, .k2b-activity__text-link)) {
   color: var(--k2b-action);
   text-decoration: none;
 }
-.k2b-ui .k2b-activity :where(a:not(.k2b-activity__action)):hover { color: var(--k2b-action-hover); }
+.k2b-ui .k2b-activity :where(a:not(.k2b-activity__action, .k2b-activity__text-link)):hover { color: var(--k2b-action-hover); }
 .k2b-ui .k2b-activity__action {
   display: inline-flex;
   align-items: center;
@@ -7803,17 +7812,28 @@
   text-align: left;
   cursor: pointer;
 }
+/* A linked sentence reads as the sentence; hovering its row shows that it leads somewhere. */
+.k2b-ui .k2b-activity__text-link {
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+.k2b-ui .k2b-activity__entry:hover .k2b-activity__text-link { color: var(--k2b-action-hover); }
 .k2b-ui .k2b-activity__details {
   margin-top: 6px;
   cursor: auto;
 }
-.k2b-ui :is(.k2b-activity__action, .k2b-activity__text-button, .k2b-activity__reload):focus-visible {
+.k2b-ui :is(.k2b-activity__action, .k2b-activity__text-button, .k2b-activity__text-link, .k2b-activity__reload):focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
   outline-offset: var(--k2b-focus-offset);
 }
 
-/* Wide: the same row, the meta line on the right of the first line; on large screens no wider than 80rem. */
-.k2b-ui .k2b-activity[data-density="wide"] { max-width: 80rem; }
+/* Wide: the same row, the meta line on the right of the first line; on large screens no wider than 80rem. Only the
+   wide list measures its own width: a compact list in a container sized by its content (a popover) keeps its width. */
+.k2b-ui .k2b-activity[data-density="wide"] {
+  container-type: inline-size;
+  max-width: 80rem;
+}
 .k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__entry { grid-template-columns: 20px minmax(0, 1fr) auto; }
 .k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__meta {
   margin-top: 0;
@@ -7873,7 +7893,6 @@
 .k2b-ui .k2b-activity__reload:hover { color: var(--k2b-action-hover); }
 
 /* ActivityCard: the history as a section; "All N" at the end of its heading. */
-.k2b-ui .k2b-activity-card { --k2b-activity-surface: var(--k2b-island-surface); }
 .k2b-ui .k2b-activity-card__body {
   display: flex;
   min-width: 0;
@@ -7891,7 +7910,6 @@
 
 /* The "All N" dialog: the object under the title, the filter, the list in the wide density. */
 .k2b-ui .k2b-activity-dialog {
-  --k2b-activity-surface: var(--k2b-surface-elevated);
   display: flex;
   min-width: 0;
   flex-direction: column;
