@@ -428,8 +428,9 @@ in the same chat. Together the texts hold at most 20,000 Unicode code points;
 the same passage of the same message counts once. A quoted message that is
 missing, deleted, not a text message, or in a thread the sender cannot read
 returns 404. The quoted messages and a `replyTo` must share one thread, and the
-new message goes to that thread; a different `thread` or quotes from several
-threads return 400. The words of `text` must occur in the message as a reader
+new message goes to that thread. Sources from several threads also return 404,
+before any read check, so one send checks read access at most once; a different
+`thread` returns 400. The words of `text` must occur in the message as a reader
 sees it (its plain text without Markdown marks), whitespace aside; otherwise
 the request returns 400. Chat stores that passage of the message with the
 message's own spacing, not the sent `text`.

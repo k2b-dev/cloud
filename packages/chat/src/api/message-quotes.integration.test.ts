@@ -52,6 +52,7 @@ suiteFor(
     const answer = await send(ben, chat, { quotes: [{ message: inThread.id, text: "Slides for Friday" }] });
     expect(answer.thread).toBe(planning);
     expect((await post(ben, chat, { thread: planning, quotes: [{ message: inThread.id, text: "done" }] })).status).toBe(201);
+    // Sources from several threads can never form one message: the answer of a missing message, before any read check.
     expect(
       (
         await post(ben, chat, {
@@ -61,8 +62,8 @@ suiteFor(
           ],
         })
       ).status,
-    ).toBe(400);
-    expect((await post(ben, chat, { replyTo: source.id, quotes: [{ message: inThread.id, text: "done" }] })).status).toBe(400);
+    ).toBe(404);
+    expect((await post(ben, chat, { replyTo: source.id, quotes: [{ message: inThread.id, text: "done" }] })).status).toBe(404);
     const other = await thread(lea, chat, "Budget");
     expect((await post(ben, chat, { thread: other, quotes: [{ message: inThread.id, text: "done" }] })).status).toBe(400);
 
@@ -187,6 +188,32 @@ suiteFor(
       );
       // The same statements in the same order: the sources come with the answered message, nothing more.
       expect(quoted).toEqual(reply);
+    } finally {
+      await meter.close();
+    }
+  });
+
+  test("sources from several threads are refused before any read check, like a missing message (DATA-13)", async () => {
+    const lea = await f.person("Lea Muster");
+    const ben = await f.person("Ben Schulz");
+    const chat = (await f.fixture(lea, [{ person: ben, permission: "write" }])).shortId;
+    const quotes: { message: string; text: string }[] = [];
+    for (const name of ["Planning", "Budget", "Travel"]) {
+      const id = await thread(lea, chat, name);
+      const message = await send(lea, chat, { thread: id, body: `${name} notes are ready.` });
+      quotes.push({ message: message.id, text: "notes are ready" });
+    }
+    const missing = [{ message: "ZZZZZZZZZZ", text: "notes are ready" }];
+    // Warm both paths, so caches and prepared statements match.
+    expect((await post(ben, chat, { quotes })).status).toBe(404);
+    expect((await post(ben, chat, { quotes: missing })).status).toBe(404);
+    const meter = await meterSql();
+    const statements = (log: string[]) => log.filter((statement) => !/^(LISTEN|UNLISTEN|NOTIFY)/i.test(statement));
+    try {
+      const mixed = await meter.during(async () => expect((await post(ben, chat, { quotes })).status).toBe(404));
+      const unknown = await meter.during(async () => expect((await post(ben, chat, { quotes: missing })).status).toBe(404));
+      // No thread lookup or provider read for any source: the same statements as for a message that does not exist.
+      expect(statements(mixed)).toEqual(statements(unknown));
     } finally {
       await meter.close();
     }

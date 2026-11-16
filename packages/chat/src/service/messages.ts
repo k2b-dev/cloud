@@ -76,10 +76,14 @@ export const resolveSources = async (
   if (quoted.some(({ row }) => !row || row.deleted_at || row.kind !== "text"))
     return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
   const sourceThreads = new Set([...(data.replyTo ? [threadId] : []), ...quoted.map(({ row }) => row!.thread_id)]);
+  // A message lives in one thread, so sources from several threads can never form one; they get the answer of a
+  // missing message before any read check, which says nothing about threads the sender cannot read and leaves at
+  // most one read check for every send (DATA-13).
+  if (sourceThreads.size > 1) return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
   // A message in a thread the sender cannot read looks like a missing one, and says nothing about its thread.
-  for (const thread of sourceThreads)
-    if (!(await canReadThread(db, input, thread))) return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
-  if (sourceThreads.size > 1) return fail(err.badInput(catalog(input).invalidInput));
+  const [sourceThread] = sourceThreads;
+  if (sourceThreads.size && !(await canReadThread(db, input, sourceThread ?? null)))
+    return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
   if (quoted.length) threadId = quoted[0]!.row!.thread_id;
   if (data.thread) {
     const thread = await findThread(db, conversationId, data.thread, input);
