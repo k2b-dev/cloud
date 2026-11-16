@@ -96,6 +96,7 @@ import {
 import { normalizeInvocationRequestId } from "../services/identity/invocation-token";
 import { startLinksRuntime } from "../services/links/runtime";
 import { logger } from "../services/logging";
+import { startMaintenanceQuiesce } from "../services/maintenance-quiesce";
 import { startNotificationDefinitionRegistration } from "../services/notifications/catalog";
 import { startPreviewsRuntime } from "../services/previews/runtime";
 import { readRailSnapshot } from "../services/rail-snapshot";
@@ -129,7 +130,6 @@ import { readPwaStaticAssets } from "./pwa-assets";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry, getApp } from "./registry";
 import { canonicalRoute, isOwnAppPath, validateAppRegistryEntry } from "./registry-validation";
-import { startMaintenanceQuiesce } from "../services/maintenance-quiesce";
 import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
 import { runSetupExclusively } from "./setup-lock";
 import { publicFileVersion, servePublicAsset, sharedStylesheetVersion, versionedPublicHref } from "./static-assets";

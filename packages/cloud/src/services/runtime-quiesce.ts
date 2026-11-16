@@ -154,9 +154,21 @@ export const quiesceWorker = async (
     return drained;
   };
 
+  /** Start a worker; one that arrives after a quiesce or an end is drained at once instead of kept. */
+  const launch = (): Promise<void> => {
+    starting = (async () => {
+      const worker = await start();
+      if (ended() || controller.quiesced) await retire(worker, QUIESCE_DRAIN_TIMEOUT_MS);
+      else current = worker;
+    })().finally(() => {
+      starting = undefined;
+    });
+    return starting;
+  };
+
   const participant: QuiesceParticipant = {
     quiesce: async (timeoutMs) => {
-      await starting;
+      await starting?.catch(() => undefined);
       const worker = current;
       current = undefined;
       if (worker) await retire(worker, timeoutMs);
@@ -165,20 +177,21 @@ export const quiesceWorker = async (
       // The previous drain is bounded by its timeout; never run two generations at once.
       await retired;
       if (ended() || controller.quiesced || current || starting) return;
-      starting = (async () => {
-        const worker = await start();
-        if (ended() || controller.quiesced) await retire(worker, QUIESCE_DRAIN_TIMEOUT_MS);
-        else current = worker;
-      })().finally(() => {
-        starting = undefined;
-      });
-      await starting;
+      await launch();
     },
     inFlight: () => (current?.active ?? 0) + (retiring?.active ?? 0),
   };
 
-  if (!controller.quiesced) current = await start();
+  // Registered before the first start, so a quiesce during that start still reaches the worker.
   const unregister = controller.register(participant);
+  if (!controller.quiesced) {
+    try {
+      await launch();
+    } catch (error) {
+      unregister();
+      throw error;
+    }
+  }
 
   const end = () => {
     closed = true;

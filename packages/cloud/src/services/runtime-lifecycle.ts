@@ -1,5 +1,5 @@
 import type { Worker } from "@k2b/sync";
-import { type QuiesceController, type QuiesceParticipant, processQuiesce } from "./runtime-quiesce";
+import { processQuiesce, type QuiesceController, type QuiesceParticipant } from "./runtime-quiesce";
 
 export type RuntimeTaskTracker = ReturnType<typeof createRuntimeTaskTracker>;
 

@@ -35,7 +35,7 @@ const defaults: Dependencies = {
  *
  * Reads the current state before it returns, so workers that start after
  * this already start quiet. When NATS is unreachable the last known state
- * stays. A resume that fails calls `onResumeFailed`; `app.start()` then
+ * stays; at start, an unreadable state counts as off until the watch reads it. A resume that fails calls `onResumeFailed`; `app.start()` then
  * restarts the process like a failed start.
  */
 export const startMaintenanceQuiesce = async ({
@@ -104,7 +104,8 @@ export const startMaintenanceQuiesce = async ({
     });
   };
 
-  apply(await dependencies.read());
+  // An unreadable state does not block the start; the watcher below applies it once NATS answers.
+  apply(await dependencies.read().catch((error: unknown) => (onReportError(error), null)));
   void superviseRuntimeTask({
     name: "Maintenance quiesce watcher",
     signal: watching.signal,
