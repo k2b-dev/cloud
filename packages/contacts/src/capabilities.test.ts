@@ -1213,8 +1213,9 @@ describe("Contacts discussion provider", () => {
     expect(query.data.safeParse(first.data.data).success).toBeTrue();
     expect(first.data.data.items).toEqual([{ ref: { type: "contacts.book", id: publicBookId }, title: book.name }]);
     expect(first.data.data.next).toBeString();
+    expect(first.data.page).toEqual({ hasMore: true, nextCursor: first.data.data.next });
     const last = await query.run(query.input.parse({ query: "Test", limit: 3, cursor: first.data.data.next }), context);
-    expect(last).toMatchObject({ ok: true, data: { data: { next: null } } });
+    expect(last).toMatchObject({ ok: true, data: { data: { next: null }, page: { hasMore: false } } });
     expect(list).toHaveBeenLastCalledWith(
       expect.objectContaining({
         subject: context.accessSubject,
