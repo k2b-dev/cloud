@@ -125,7 +125,7 @@ describe("Spaces overview", () => {
     expect(html).toContain("spaces-overview-work-row");
     // Activity is the shared timeline: the sentence links to the item, the person stands in the meta line.
     expect(html).toContain('class="k2b-activity"');
-    expect(html).toContain('href="/app/spaces/Space1?item=Item01"');
+    expect(html).toContain('class="k2b-activity__text-link" href="/app/spaces/Space1?item=Item01"');
     expect(textOf(html)).toContain("12:00 · 2 hr. ago · Sofie");
     expect(html).not.toContain("spaces-overview-space-list");
     expect(html).toContain("Ship overview");
@@ -136,7 +136,7 @@ describe("Spaces overview", () => {
 
   test("keeps activity errors distinct from an empty feed, above the entries that are still there", () => {
     const html = render("Activity unavailable");
-    expect(html).toContain("Activity unavailable");
+    expect(textOf(html)).toContain("Could not load activity: Activity unavailable");
     expect(html).toContain("Reload");
     expect(html).not.toContain("Space and item changes will appear here.");
     expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf('class="k2b-activity"'));

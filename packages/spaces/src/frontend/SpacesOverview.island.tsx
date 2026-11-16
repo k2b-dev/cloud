@@ -171,7 +171,20 @@ export default function SpacesOverview(props: Props) {
     getNextCursor: (page) => page.nextCursor,
   });
   const activityItems = createMemo(() => activity.pages().flatMap((page) => page.data));
-  const activityError = () => activity.error()?.message ?? initialActivityError();
+  // A failed older page keeps the loaded rows and says so at the list's end, where "Load more" was; any other failure
+  // stands above the list (or alone without rows) with "Reload".
+  const [failedPage, setFailedPage] = createSignal<Error | null>(null);
+  const loadMoreActivity = async () => {
+    const before = activity.error();
+    await activity.loadMore();
+    const after = activity.error();
+    setFailedPage(after !== before ? after : null);
+  };
+  const pageError = () => {
+    const failed = activity.error();
+    return failed && failed === failedPage() ? failed.message : null;
+  };
+  const activityError = () => (pageError() ? null : (activity.error()?.message ?? initialActivityError()));
 
   const workViewOptions = () =>
     (["mine", "today", "upcoming"] as const).map((id) => ({
@@ -232,10 +245,12 @@ export default function SpacesOverview(props: Props) {
   const activityEntries = (): ActivityEntry[] =>
     activityItems().map(
       (entry): ActivityEntry => ({
+        id: entry.id,
         at: entry.lastOccurredAt,
         icon: activityIcon(entry.action),
         tone: entry.action.endsWith(".completed") ? "success" : "neutral",
-        text: <a href={activityHref(entry)}>{activityDescription(entry)}</a>,
+        text: activityDescription(entry),
+        href: activityHref(entry),
         actor: entry.actor.kind === "system" ? null : entry.actor.displayName,
       }),
     );
@@ -255,14 +270,14 @@ export default function SpacesOverview(props: Props) {
             </Show>
           }
         >
-          {(message) => <ActivityList.Error text={message()} onReload={reloadActivity} />}
+          {(message) => <ActivityList.Error text={`${t.couldNotLoadActivity}: ${message()}`} onReload={reloadActivity} />}
         </Show>
       }
     >
       <Show when={activityError()}>
         {(message) => (
           <div class="spaces-overview-activity-alert">
-            <ActivityList.Error text={message()} onReload={reloadActivity} />
+            <ActivityList.Error text={`${t.couldNotLoadActivity}: ${message()}`} onReload={reloadActivity} />
           </div>
         )}
       </Show>
@@ -275,8 +290,10 @@ export default function SpacesOverview(props: Props) {
       />
       <LoadMore
         hasMore={activity.hasMore()}
-        onLoadMore={() => activity.loadMore()}
+        onLoadMore={loadMoreActivity}
+        auto={false}
         loading={activity.loadingMore()}
+        error={pageError()}
         label={t.loadMore}
         loadingLabel={t.loadingMoreActivity}
       />

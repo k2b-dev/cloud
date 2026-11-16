@@ -195,3 +195,74 @@ test.skipIf(isServer)("overview keeps SSR work and ignores superseded tab reques
     dom.cleanup();
   }
 });
+
+test.skipIf(isServer)("a failed older page keeps the rows and says so where Load more was; Try again loads it", async () => {
+  const dom = createDomTestHarness();
+  setSystemTime(new Date("2026-08-20T12:00:00.000Z"));
+  const originalFetch = globalThis.fetch;
+  const pages: string[] = [];
+  let failNext = true;
+  const entry = (id: string, title: string) => ({
+    id,
+    space: { id: "Space1", name: "Example", color: "#3b82f6" },
+    item: { id: `Item${id}`, title },
+    actor: { kind: "system" as const, id: null, displayName: "System", avatarHash: null },
+    action: "task.created",
+    metadata: {},
+    occurrenceCount: 1,
+    createdAt: "2026-08-20T10:00:00.000Z",
+    lastOccurredAt: "2026-08-20T10:00:00.000Z",
+  });
+  globalThis.fetch = Object.assign(
+    async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://localhost");
+      if (!url.pathname.endsWith("/overview/activity")) throw new Error(`Unexpected request: ${url.pathname}`);
+      pages.push(url.searchParams.get("cursor") ?? "");
+      if (failNext) {
+        failNext = false;
+        return Response.json({ message: "Older activity is unavailable" }, { status: 503 });
+      }
+      return Response.json({ data: [entry("02", "older task")], nextCursor: null });
+    },
+    { preconnect: originalFetch.preconnect },
+  );
+  const { default: SpacesOverview } = await import("./SpacesOverview.island");
+  const dispose = render(
+    () =>
+      createComponent(SpacesOverview, {
+        spaces: [],
+        initialView: "mine",
+        initialWork: snapshot("mine"),
+        initialPinnedSpaceIds: [],
+        initialActivity: { items: [entry("01", "newer task")], nextCursor: "next" },
+        initialActivityError: null,
+        dateConfig: { locale: "en", timeZone: "UTC" },
+        now: "2026-08-20T12:00:00.000Z",
+      }),
+    dom.root,
+  );
+  try {
+    const edge = () => dom.root.querySelector<HTMLElement>(".k2b-load-more")!;
+    // The edge waits for the reader instead of loading by itself.
+    await Bun.sleep(30);
+    expect(pages).toEqual([]);
+    edge().querySelector("button")!.click();
+    await Bun.sleep(30);
+    expect(pages).toEqual(["next"]);
+    expect(edge().dataset.state).toBe("error");
+    expect(edge().textContent).toContain("Older activity is unavailable");
+    expect(dom.root.querySelector(".spaces-overview-activity-alert")).toBeNull();
+    expect(dom.root.querySelector(".k2b-activity")?.textContent).toContain("newer task");
+
+    edge().querySelector("button")!.click();
+    await Bun.sleep(30);
+    expect(pages).toEqual(["next", "next"]);
+    expect(dom.root.querySelector(".k2b-activity")?.textContent).toContain("older task");
+    expect(edge().dataset.state).toBe("done");
+  } finally {
+    dispose();
+    globalThis.fetch = originalFetch;
+    setSystemTime();
+    dom.cleanup();
+  }
+});
