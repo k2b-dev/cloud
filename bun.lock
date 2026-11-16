@@ -418,6 +418,7 @@
         "@types/bun": "catalog:",
         "@typescript/typescript6": "catalog:",
         "hono": "catalog:",
+        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },

@@ -2,6 +2,7 @@ import type { Provider, ProviderEvent, ToolCallBlock } from "@k2b/nessi";
 import { z } from "zod";
 import { logger } from "../services/logging";
 import { saveAiNextMessage } from "./next-message-store";
+import { aiNextMessageText } from "./next-message-text";
 import type { AiUserPrefs } from "./prefs";
 import { defineAiTool } from "./tools";
 import type { AiChatTurnRunConfig } from "./types";
@@ -20,9 +21,8 @@ export const normalizeAiNextMessage = (text: string) =>
 
 /** Invalid suggestions mean absence, never a failed chat turn. Count Unicode characters. */
 export const validateAiNextMessage = (value: unknown, lastUserMessage: string): string | null => {
-  if (typeof value !== "string" || /[\r\n\u2028\u2029\p{Cc}\p{Cf}]/u.test(value)) return null;
-  const text = value.trim();
-  if (!text || [...text].length > 200) return null;
+  const text = aiNextMessageText(value);
+  if (!text) return null;
   if (/(?:\b[a-z][a-z\d+.-]*:\S|www\.|\b[\p{L}\d-]+\.[a-z]{2,}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b|\blocalhost[:/]|(?:^|\s)\/\S|@)/iu.test(text))
     return null;
   if (/[`*_\[\]<>]|!\[|^\s*(?:#{1,6}\s|[-+>]\s|\d+[.)]\s)|~~/u.test(text)) return null;

@@ -2,10 +2,28 @@ import { BottomSheet, Navigation, SegmentedControl, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { type AppLaunchpadContext, AppLaunchpadPanel } from "./AppLaunchpadPanel";
 import { appAccentStyle } from "./app-appearance";
+import { anyAppBadge } from "./app-badges";
 import { openMobileMenu } from "./mobile-menu-history";
 import { platformMessages } from "./platform-messages";
+import { railMessages } from "./rail-messages";
 import { readShellData } from "./shell-data";
 import { observeWorkspaceNavigation, readWorkspaceNavigation } from "./workspace-navigation";
+
+/** The sheet's "All apps" tab name, with the header's news dot while any app has a count. */
+export function AllAppsLabel(props: { news: boolean }) {
+  const locale = useLocale();
+  const t = () => platformMessages.resolve([locale()]).t;
+  const rail = () => railMessages.resolve([locale()]).t;
+  return (
+    <span class="cloud-mobile-menu__apps" data-news={props.news ? "" : undefined}>
+      <span class="block k2b-truncate-fade">{t().allApps}</span>
+      <span class="cloud-launchpad-dot" aria-hidden="true" />
+      <Show when={props.news}>
+        <span class="sr-only">, {rail().newInApps}</span>
+      </Show>
+    </span>
+  );
+}
 
 export function openCloudMobileMenu(apps: AppLaunchpadContext) {
   return openMobileMenu((beforeSelect) => (close, context) => (
@@ -49,7 +67,11 @@ function MobileNavigation(props: {
               onValueChange={setTab}
               options={[
                 { value: "app", label: <span class="block k2b-truncate-fade">{workspace()?.label || t().appMenu}</span> },
-                { value: "apps", label: <span class="block k2b-truncate-fade">{t().allApps}</span> },
+                {
+                  value: "apps",
+                  // The header's dot leads here: the counts behind it are in this tab, so it carries the same dot.
+                  label: <AllAppsLabel news={anyAppBadge(props.apps.apps)} />,
+                },
               ]}
             />
           }

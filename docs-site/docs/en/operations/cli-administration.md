@@ -40,7 +40,8 @@ using its commands: `cld admin reference` and `cld pulse reference`.
 `cld admin maintenance on|until|off|status` switches the whole Cloud into
 maintenance and back; see [Maintenance mode](/en/docs/operations/maintenance-mode).
 While it is on, other `cld` commands print one sentence and exit with code
-`75`.
+`75`. `cld admin maintenance bypass` prints a personal link that shows you
+the Cloud during the maintenance.
 
 ## Discover and configure settings
 

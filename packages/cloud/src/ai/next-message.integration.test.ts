@@ -169,6 +169,17 @@ databaseSuite()("next message storage and projections", () => {
     expect((await loadAiStreamState(f.conversation)).messages[0]?.suggestedNextMessage).toBeUndefined();
   });
 
+  test("a suggestion stored as a placeholder or shorter than six characters never reaches the composer", async () => {
+    for (const text of ["null", "ok"]) {
+      const f = await fixture();
+      // Saved before the rules held: the read applies them again.
+      await saveAiNextMessage({ ...f.input, text });
+      await f.complete();
+      expect((await f.read())[0]?.suggestedNextMessage).toBeUndefined();
+      expect((await loadAiStreamState(f.conversation, f.userId)).messages[0]?.suggestedNextMessage).toBeUndefined();
+    }
+  });
+
   test("dismiss is personal, idempotent and survives a reload", async () => {
     const f = await fixture();
     await saveAiNextMessage(f.input);
