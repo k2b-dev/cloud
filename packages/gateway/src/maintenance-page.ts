@@ -43,8 +43,9 @@ export const APP_LONG_AFTER_MS = 120_000;
 
 /** Delay before the next status check, `elapsedMs` after the page loaded; `random` in [0, 1). */
 export const pollDelay = (kind: Kind, elapsedMs: number, random: number): number => {
-  const step = POLL_STEPS[kind].filter(([from]) => elapsedMs >= from).at(-1) ?? POLL_STEPS[kind][0];
-  return step[1] * (0.8 + 0.4 * random);
+  let delay = 0;
+  for (const [from, ms] of POLL_STEPS[kind]) if (elapsedMs >= from || delay === 0) delay = ms;
+  return delay * (0.8 + 0.4 * random);
 };
 
 const esc = (value: string): string =>
@@ -338,10 +339,13 @@ export const renderMaintenancePage = (model: MaintenancePageModel, options: { no
   const tx = TEXT[model.locale];
   const zone = validZone(model.timeZone);
   const format = timeFormat(model.locale);
-  const part = (options: Intl.DateTimeFormatOptions, ms: number) => new Intl.DateTimeFormat(model.locale, { timeZone: zone, ...options }).format(ms);
+  const part = (options: Intl.DateTimeFormatOptions, ms: number) =>
+    new Intl.DateTimeFormat(model.locale, { timeZone: zone, ...options }).format(ms);
   // A time on another day names that day, so an end after midnight is not read as today.
   const fmt = (ms: number) =>
-    part(format.options, ms) + format.suffix + (part(DAY_KEY, ms) === part(DAY_KEY, now) ? "" : format.day.prefix + part(format.day.options, ms));
+    part(format.options, ms) +
+    format.suffix +
+    (part(DAY_KEY, ms) === part(DAY_KEY, now) ? "" : format.day.prefix + part(format.day.options, ms));
   const nonce = esc(options.nonce);
 
   let first: View;

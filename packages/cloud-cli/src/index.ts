@@ -27,7 +27,7 @@ import {
 import { i18n } from "@k2b/stdlib";
 import type { Hono } from "hono";
 import { hc } from "hono/client";
-import { configPath, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
+import { configPath, envColor, envLacksLocalBrowser, envLocale, envServer, envToken, posixLocale } from "./config";
 import { loginPageResponse } from "./login-page";
 import {
   collectAbandonedPluginDownloads,
@@ -1047,7 +1047,7 @@ const createContext = (
     // The gateway's maintenance answer is a state, not an error: one sentence and an exit code scripts can wait on.
     const maintenance = await maintenanceProblemSentence(response);
     if (maintenance) {
-      const color = options.output === "text" && cliColorEnabled(process.stderr);
+      const color = options.output === "text" && cliColorEnabled(process.stderr, envColor());
       throw new CliError(markMaintenanceWord(maintenance.en, color), MAINTENANCE_EXIT_CODE, markMaintenanceWord(maintenance.de, color));
     }
     return response;
@@ -1094,6 +1094,7 @@ const createContext = (
     print: (value = "") => {
       printLine(value);
     },
+    color: options.output === "text" && cliColorEnabled(process.stdout, envColor()),
     write: (value) =>
       new Promise<void>((resolve, reject) => {
         process.stdout.write(value, (error) => (error ? reject(error) : resolve()));

@@ -254,7 +254,7 @@ test("a generated app favicon takes the app accent; other SVGs and invalid accen
   expect(tintAppIcon(generated, "#c2410c")).toContain('stroke="#c2410c"');
   expect(tintAppIcon(generated, "red")).toBe(generated);
   expect(tintAppIcon(generated, undefined)).toBe(generated);
-  expect(tintAppIcon("<svg><path stroke=\"#000\"/></svg>", "#c2410c")).toBe("<svg><path stroke=\"#000\"/></svg>");
+  expect(tintAppIcon('<svg><path stroke="#000"/></svg>', "#c2410c")).toBe('<svg><path stroke="#000"/></svg>');
 });
 
 // ─── Admin bypass link ───────────────────────────────────────────────────────
