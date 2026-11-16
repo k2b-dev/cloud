@@ -613,11 +613,20 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     };
     const why = (): { text: string; icon: string } => {
       if (pendingUnknown) return { text: t().unknownWhy, icon: "ti ti-alert-triangle" };
-      if (decision?.outcome === "approved") return { text: t().afterApproved({ who: props.recipient }), icon: "ti ti-bell" };
+      // The author reading their own decided version is addressed directly, not told about a notification to themselves.
+      const self = props.own;
+      if (decision?.outcome === "approved")
+        return self
+          ? { text: t().afterApprovedSelf, icon: "ti ti-info-circle" }
+          : { text: t().afterApproved({ who: props.recipient }), icon: "ti ti-bell" };
       if (decision?.outcome === "changes_requested")
-        return { text: t().afterChanges({ who: props.recipient, keep: keep() }), icon: "ti ti-bell" };
+        return self
+          ? { text: t().afterChangesSelf({ keep: keep() }), icon: "ti ti-info-circle" }
+          : { text: t().afterChanges({ who: props.recipient, keep: keep() }), icon: "ti ti-bell" };
       if (decision?.outcome === "rejected")
-        return { text: t().afterRejected({ who: props.recipient, n: props.number, keep: keep() }), icon: "ti ti-bell" };
+        return self
+          ? { text: t().afterRejectedSelf({ n: props.number, keep: keep() }), icon: "ti ti-info-circle" }
+          : { text: t().afterRejected({ who: props.recipient, n: props.number, keep: keep() }), icon: "ti ti-bell" };
       return { text: props.status === "withdrawn" ? keep() : t().closedWhy, icon: "ti ti-info-circle" };
     };
     const message = (): { label: string; text: string; who: string; avatar: string; avatarId: string | null; at: string | null } | null => {
