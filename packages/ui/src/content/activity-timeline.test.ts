@@ -33,6 +33,33 @@ describe("dividers", () => {
   });
 });
 
+describe("summer time changes", () => {
+  test("autumn: days and distances count across the 25-hour day", () => {
+    // Berlin left summer time on 25 Oct 2026 at 03:00 (UTC+2 → UTC+1). Now: 12:00 on 25 Oct, after the change.
+    const after = new Date("2026-10-25T11:00:00Z");
+    // 00:30 on 25 Oct, still summer time: today, 12 hours and a half ago (11 by the wall clock).
+    expect(activityGroup("2026-10-24T22:30:00Z", after, ZONE)).toEqual({ kind: "today", day: "2026-10-25" });
+    expect(activityWhen("2026-10-24T22:30:00Z", after, "de", ZONE)).toBe("00:30");
+    expect(activityAgo("2026-10-24T22:30:00Z", after, "de", ZONE)).toBe("vor 12 Std.");
+    // 23:50 on 24 Oct: yesterday; the week before still counts in calendar days.
+    expect(activityGroup("2026-10-24T21:50:00Z", after, ZONE)).toEqual({ kind: "yesterday", day: "2026-10-24" });
+    expect(activityGroup("2026-10-18T09:00:00Z", after, ZONE)).toEqual({ kind: "day", day: "2026-10-18" });
+    expect(activityGroup("2026-10-17T21:59:00Z", after, ZONE).kind).toBe("older");
+  });
+
+  test("spring: days and distances count across the 23-hour day", () => {
+    // Berlin began summer time on 29 Mar 2026 at 02:00 (UTC+1 → UTC+2). Now: 12:00 on 29 Mar, after the change.
+    const after = new Date("2026-03-29T10:00:00Z");
+    // 00:30 on 29 Mar, still winter time: today, 10 hours and a half ago (11 by the wall clock).
+    expect(activityGroup("2026-03-28T23:30:00Z", after, ZONE)).toEqual({ kind: "today", day: "2026-03-29" });
+    expect(activityWhen("2026-03-28T23:30:00Z", after, "de", ZONE)).toBe("00:30");
+    expect(activityAgo("2026-03-28T23:30:00Z", after, "de", ZONE)).toBe("vor 10 Std.");
+    // 23:59 on 28 Mar: yesterday and one day ago, not "today" by a 24-hour count.
+    expect(activityGroup("2026-03-28T22:59:00Z", after, ZONE)).toEqual({ kind: "yesterday", day: "2026-03-28" });
+    expect(activityAgo("2026-03-28T22:59:00Z", after, "de", ZONE)).toBe("vor 1 Tag");
+  });
+});
+
 describe("meta line", () => {
   test("time and distance as in the approved mockup", () => {
     const line = (local: string) => `${activityWhen(berlin(local), NOW, "de", ZONE)} · ${activityAgo(berlin(local), NOW, "de", ZONE)}`;
