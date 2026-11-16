@@ -1082,6 +1082,8 @@ export const aiCapabilities = defineCapabilities({
             },
             refs: [chatReference(chat)],
             links: [{ rel: "open" as const, href: chatHref(chat.shortId) }],
+            // The send status shows the turn's latest messages; it has no further page.
+            page: capabilityPage(),
           });
         }
         const beforeSeq = input.cursor === undefined ? undefined : Number(input.cursor);

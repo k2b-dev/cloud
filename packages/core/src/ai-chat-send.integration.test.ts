@@ -258,7 +258,7 @@ suiteFor(
         dispatch: async (input) => {
           expect(input.assistantTurn).toEqual({ conversationId: source.id, turnId: submitted.turn.id });
           expect(input.origin).toBe("assistant");
-          expect(input.authority.scopes).toEqual([]);
+          expect(input.authority?.scopes).toEqual([]);
           expect(input.target).toEqual({ type: "core.ai.chat", id: chat.shortId });
           return Response.json(await invoke(chat.shortId, context));
         },
