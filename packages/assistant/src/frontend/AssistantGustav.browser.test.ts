@@ -708,7 +708,7 @@ describe("Gustav", () => {
         const card = list.locator("a.k2b-link-card").filter({ hasText: LONG.title });
         await card.getByText("Alle 15 Minuten von 7:00 bis 19:59 Uhr").waitFor();
         await settled(h.page);
-        for (const selector of [".assistant-apps__card-title", ".assistant-apps__card-schedule"]) {
+        for (const selector of [".k2b-link-card__title", ".k2b-link-card__description"]) {
           const box = await card.locator(selector).evaluate((element) => {
             const style = getComputedStyle(element);
             const own = element.getBoundingClientRect();
@@ -724,9 +724,9 @@ describe("Gustav", () => {
           expect(box.cut).toBe(false);
           expect(box.inside).toBe(true);
           // At this length the title needs more than one line in every width: it wraps instead of being cut.
-          if (selector === ".assistant-apps__card-title") expect(box.lines).toBeGreaterThan(1);
+          if (selector === ".k2b-link-card__title") expect(box.lines).toBeGreaterThan(1);
         }
-        expect(await card.locator(".assistant-apps__card-title").textContent()).toBe(LONG.title);
+        expect(await card.locator(".k2b-link-card__title").textContent()).toBe(LONG.title);
         expect(h.errors).toEqual([]);
         await shot(h.page, `a-meine-apps-lang-${view.name}-light`);
       } finally {
