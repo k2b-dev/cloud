@@ -51,7 +51,7 @@ const app = {
         input: DiscussionContainersInputSchema,
         data: DiscussionContainersDataSchema,
         openWorld: false,
-        run: async () => ({ ok: true, data: { data: { items: [], next: null } } }),
+        run: async () => ({ ok: true, data: { data: { items: [], next: null }, page: { hasMore: false as const } } }),
       },
     },
   }),

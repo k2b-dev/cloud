@@ -5,7 +5,7 @@ section: Operations
 tags: [chat, permissions, operations]
 order: 1600
 description: Access, dependencies, and API behavior for Chat conversations attached to resource providers.
-updated: 2026-11-15
+updated: 2026-11-16
 ---
 
 # Chat system conversations
@@ -91,6 +91,9 @@ Responses contain `{ items, cursors, skipped }`. Items include `ref`, `name`,
 returned cursors unchanged for the next page. An empty cursor means that
 provider is exhausted; position objects also preserve work for skipped providers.
 `skipped` identifies providers with unavailable lists, container readers or item summaries.
+A provider whose containers page returns no `page` matching its `next` cursor
+is skipped too: the platform answers that call as an invalid app response.
+Update such a third-party provider to return `page: capabilityPage(next)`.
 Each unfinished position is an object with an optional provider `cursor` (at
 most 2,048 characters) and an optional container-page `offset` (0–100). For
 example, `{ "inventory.collection": { "cursor": "next-page" } }` resumes a
