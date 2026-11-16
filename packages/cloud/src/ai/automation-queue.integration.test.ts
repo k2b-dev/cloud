@@ -74,7 +74,7 @@ suiteFor(
     const input = submission(chat.id, "Original");
     const id = crypto.randomUUID();
     await enqueueChatMessage(id, input, [{ type: "text", text: "Original" }]);
-    expect(await editQueuedMessage(chat.id, id, "Latest edit")).toBeTrue();
+    expect(await editQueuedMessage(chat.id, id, "Latest edit", { signedInSession: true })).toBeTrue();
     await expect(aiConversations.submitChatTurn({ ...input, queuedMessageId: id, queuedMessageRevision: "0" })).rejects.toThrow(
       "Queued message is no longer ready.",
     );
