@@ -207,6 +207,8 @@ describe("Grids discussion provider", () => {
     if (!first.ok || !first.data.data.next) throw new Error("Expected continuation after the denied candidate");
     expect(first.data.data.items).toEqual([]);
     expect(first.data.data.next).not.toBe("1");
+    // A paginated Query's page mirrors its continuation cursor.
+    expect(first.data.page).toEqual({ hasMore: true, nextCursor: first.data.data.next });
     listVisible.mockResolvedValueOnce({
       items: [
         { ...base, shortId: "BASE02" },
@@ -219,6 +221,7 @@ describe("Grids discussion provider", () => {
     expect(listVisible).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 1, limit: 2 }));
     expect(second.data.data.items.map((item) => item.ref.id)).toEqual(["BASE02", "BASE03"]);
     expect(second.data.data.next).toBeNull();
+    expect(second.data.page).toEqual({ hasMore: false });
     capabilityResultSchema(gridsCapabilities.queries["base.containers"].data).parse(second.data);
   });
 
