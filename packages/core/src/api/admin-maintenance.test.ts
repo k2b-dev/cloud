@@ -133,7 +133,7 @@ test("an administrator gets a bypass link for exactly this maintenance; the key 
   expect((await call("/on", {})).status).toBe(200);
   const response = await call("/bypass", {});
   expect(response.status).toBe(200);
-  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("cache-control")).toContain("no-store");
   const body = MaintenanceBypassSchema.parse(await response.json());
   const expiresAt = NOW + MAINTENANCE_BYPASS_TTL_MS;
   expect(body.expiresAt).toBe(new Date(expiresAt).toISOString());

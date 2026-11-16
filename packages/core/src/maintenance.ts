@@ -10,11 +10,7 @@ import {
 import { hasRole, type User } from "@k2b/cloud/contracts/shared";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { audit, coreSettings } from "@k2b/cloud/services";
-import {
-  issueMaintenanceBypassToken,
-  MAINTENANCE_BYPASS_PARAM,
-  MAINTENANCE_BYPASS_TTL_MS,
-} from "@k2b/cloud/services/maintenance-bypass";
+import { issueMaintenanceBypassToken, MAINTENANCE_BYPASS_PARAM, MAINTENANCE_BYPASS_TTL_MS } from "@k2b/cloud/services/maintenance-bypass";
 import {
   clearMaintenanceState,
   type ObservedMaintenance,
