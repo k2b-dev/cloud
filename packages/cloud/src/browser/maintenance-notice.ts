@@ -47,8 +47,10 @@ export type MaintenanceNoticeOptions = {
 
 const BARRIER = "ti-barrier-block";
 /**
- * Distinct addresses that may wait at once per page. A page loads a few dozen reads at most; more means a loop, and
- * at the end each page sends the gateway at most this many requests at once.
+ * Distinct addresses that may wait at once per page. No public contract or client constant bounds a page's reads, so
+ * this is an operational budget: a Cloud page (shell, rail, one app view) loads a few dozen distinct reads at most, 64
+ * doubles that, and it caps the burst each open tab sends the gateway when maintenance ends. The 65th address is not
+ * held: it gets its `503` with the reason at once, and the notice stays.
  */
 export const MAX_WAITING_READS = 64;
 /** A status check that hangs counts as a failed one; the next check follows the schedule. */

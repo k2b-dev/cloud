@@ -235,7 +235,7 @@ else {
     expect(calls).toEqual(["GET /api/mail/threads", "GET /_cloud/gateway/status", "GET /api/mail/threads"]);
   });
 
-  test("at most MAX_WAITING_READS addresses wait; a further read is answered like an action", async () => {
+  test("at most MAX_WAITING_READS addresses wait; the next one gets its 503 with the reason at once and the notice stays", async () => {
     const { MAX_WAITING_READS } = await import("./maintenance-notice");
     const paths = Array.from({ length: MAX_WAITING_READS + 1 }, (_, index) => `/api/mail/threads/t${index}`);
     const { calls, state, check } = page(Object.fromEntries(paths.map((path) => [`GET ${path}`, [maintenance, ok]])));
@@ -248,6 +248,9 @@ else {
       message: "Wartungsmodus aktiv. Das geht wieder, sobald die Wartung beendet ist.",
     });
     expect(notices()).toHaveLength(1);
+    expect(notices()[0]).toContain("Wartungsmodus aktiv");
+    // The 65th address does not join the wait: it was sent once and nothing of it is held.
+    expect(calls.filter((call) => call === `GET ${paths.at(-1)}`)).toHaveLength(1);
 
     state.status = { maintenance: null };
     await check();

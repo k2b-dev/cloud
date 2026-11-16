@@ -160,7 +160,8 @@ floats, so nothing on the page moves.
   over. The page shows no error for them. Reads of the same address wait as
   one: a query that polls sends nothing more while it waits, and at the end
   one request answers all of them. At most 64 different addresses wait per
-  page; a further read is answered like an action.
+  page; a further read gets its `503` with the reason at once, like an
+  action, and the notice stays.
 - **Actions** (every other method, such as sending, booking or deleting) are
   never held and never repeated. They return the gateway's `503` with a
   `message` that names the reason, for example "Wartungsmodus aktiv. Das geht
