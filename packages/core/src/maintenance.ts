@@ -1,6 +1,7 @@
 import { readAppRegistrySnapshot } from "@k2b/cloud";
 import {
   MAINTENANCE_MESSAGE_MAX_LENGTH,
+  type MaintenanceBypassLink,
   type MaintenanceOnInput,
   type MaintenanceState,
   type MaintenanceStatus,
@@ -8,13 +9,19 @@ import {
 } from "@k2b/cloud/contracts/maintenance";
 import { hasRole, type User } from "@k2b/cloud/contracts/shared";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
-import { audit } from "@k2b/cloud/services";
+import { audit, coreSettings } from "@k2b/cloud/services";
+import {
+  issueMaintenanceBypassToken,
+  MAINTENANCE_BYPASS_PARAM,
+  MAINTENANCE_BYPASS_TTL_MS,
+} from "@k2b/cloud/services/maintenance-bypass";
 import {
   clearMaintenanceState,
   type ObservedMaintenance,
   readMaintenanceState,
   writeMaintenanceState,
 } from "@k2b/cloud/services/maintenance-state";
+import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { listKnownApps } from "./known-apps";
 
 /**
@@ -54,16 +61,21 @@ const view = (state: MaintenanceState | null, apps: MaintenanceStatus["apps"]): 
       }
     : { active: false, apps };
 
+const readCloudOrigin = async (): Promise<string> => publicCloudOrigin(await coreSettings.get<string>("app.url"));
+
 export const createMaintenanceService = ({
   store = { read: readMaintenanceState, write: writeMaintenanceState, clear: clearMaintenanceState },
   appsReady = readAppsReady,
   record = audit.record,
   now = Date.now,
+  cloudOrigin = readCloudOrigin,
 }: {
   store?: Store;
   appsReady?: () => Promise<MaintenanceStatus["apps"]>;
   record?: typeof audit.record;
   now?: () => number;
+  /** Public origin of the Cloud host (`app.url`); the bypass link points there, never to an app domain. */
+  cloudOrigin?: () => Promise<string>;
 } = {}) => {
   const requireAdmin = (actor: User | undefined): actor is User => !!actor && hasRole(actor, "admin");
 
@@ -135,6 +147,30 @@ export const createMaintenanceService = ({
         metadata: { until: iso(state.until) ?? null },
       });
       return status(actor);
+    },
+
+    /**
+     * A personal link that lets the calling administrator past the maintenance wall on the Cloud host. It is
+     * signed with this maintenance's key, so it ends with the maintenance, and after 12 hours at the latest.
+     */
+    bypass: async (actor: User | undefined): Promise<Result<MaintenanceBypassLink>> => {
+      if (!requireAdmin(actor)) return fail(err.forbidden("Administrator access required"));
+      const current = (await store.read())?.state;
+      if (!current) return fail({ code: "CONFLICT", status: 409, message: "Maintenance mode is not active" });
+      // Whole seconds, as the token carries them.
+      const expiresAt = Math.floor((now() + MAINTENANCE_BYPASS_TTL_MS) / 1000) * 1000;
+      const token = issueMaintenanceBypassToken(current, actor.id, expiresAt);
+      const url = new URL("/", await cloudOrigin());
+      url.searchParams.set(MAINTENANCE_BYPASS_PARAM, token);
+      // The token itself is a credential: the audit entry names who asked and until when, never the link.
+      await record({
+        action: "maintenance.bypass",
+        outcome: "allowed",
+        actor: { userId: actor.id, uid: actor.uid, provider: actor.provider, roles: actor.roles },
+        target: { type: "maintenance", id: current.id },
+        metadata: { expiresAt: iso(expiresAt) },
+      });
+      return ok({ url: url.href, expiresAt: new Date(expiresAt).toISOString() });
     },
 
     off: async (actor: User | undefined): Promise<Result<MaintenanceStatus>> => {

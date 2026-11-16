@@ -1,4 +1,9 @@
-import { MaintenanceOnInputSchema, MaintenanceStatusSchema, MaintenanceUntilInputSchema } from "@k2b/cloud/contracts/maintenance";
+import {
+  MaintenanceBypassSchema,
+  MaintenanceOnInputSchema,
+  MaintenanceStatusSchema,
+  MaintenanceUntilInputSchema,
+} from "@k2b/cloud/contracts/maintenance";
 import { type AuthContext, auth, jsonResponse, middleware, requiresAdmin, respond, v } from "@k2b/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -54,6 +59,19 @@ export const createAdminMaintenanceRoutes = (
       bodyLimit({ maxSize: 1024 }),
       v("json", MaintenanceUntilInputSchema),
       (c) => respond(c, () => service.setUntil(c.get("user"), c.req.valid("json").until)),
+    )
+    .post(
+      "/bypass",
+      describeRoute({
+        tags: ["Maintenance"],
+        summary: "Get a personal link that lets you past the running maintenance on the Cloud host; you still sign in as usual",
+        ...requiresAdmin,
+        responses: {
+          200: jsonResponse(MaintenanceBypassSchema, "Link and its expiry"),
+          409: { description: "Maintenance is not active" },
+        },
+      }),
+      (c) => respond(c, () => service.bypass(c.get("user"))),
     )
     .post(
       "/off",
