@@ -107,6 +107,9 @@ const zoomable = (kind: Kind) => kind === "image" || kind === "pdf" || kind === 
 const interactive = (target: EventTarget | null) =>
   target instanceof Element &&
   Boolean(target.closest("button, a[href], input, textarea, select, video, audio, [contenteditable=''], [contenteditable=true]"));
+/** A field keeps every key but Escape: typing in a view's search never steps to the next item or zooms. */
+const field = (target: EventTarget | null) =>
+  target instanceof Element && Boolean(target.closest("input, textarea, select, [contenteditable=''], [contenteditable=true]"));
 /** A focused video or audio file keeps its keys: the arrows seek there instead of stepping to the next file. */
 const media = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("video, audio"));
 const bytes = (content: FileViewContent) =>
@@ -178,6 +181,7 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
       (target === document.body && Array.from(document.querySelectorAll("dialog[open]")).every((open) => open === dialog)));
   const keys = (event: KeyboardEvent) => {
     if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || !ownsKey(event.target)) return;
+    if (event.key !== "Escape" && field(event.target)) return;
     const handled = (() => {
       switch (event.key) {
         case "Escape":

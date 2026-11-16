@@ -1,6 +1,8 @@
 import { DescriptionList, StatCell, StatGrid, type StatGridColumns, useLocale } from "@k2b/ui";
 import { type Accessor, createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { CloudChartGroupView, CloudChartView, CloudExplorerView } from "#chat-charts";
+import { BlockActions } from "../../blocks/block-actions";
+import { figuresCopy } from "../../blocks/block-copy";
 import { importOnDemand } from "../../browser/reload";
 import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
@@ -95,6 +97,24 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescrip
         id={id}
         title={props.input?.title ?? props.summary.title}
         subtitle={props.input ? props.input.subtitle : props.summary.subtitle}
+        actions={
+          <BlockActions
+            kind="figures"
+            quiet
+            name={props.input?.title ?? props.summary.title}
+            copy={(root) =>
+              figuresCopy(
+                Array.from(root?.querySelectorAll(".k2b-stat-cell") ?? [])
+                  .filter((cell) => !cell.closest('[aria-hidden="true"]'))
+                  .map((cell) => ({
+                    label: cell.querySelector(".k2b-stat-cell__label")?.textContent?.trim() ?? "",
+                    value: cell.querySelector(".k2b-stat-cell__value")?.textContent?.trim() ?? "",
+                  })),
+              )
+            }
+            content={() => <CloudStatsView {...props} />}
+          />
+        }
       />
       <Show
         when={ready()}
