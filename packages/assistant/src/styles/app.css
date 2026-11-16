@@ -925,8 +925,9 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .assistant-apps__tile,
 .assistant-waiting-page__tile { display: grid; flex: none; place-items: center; width: 1.625rem; height: 1.625rem; border-radius: 7px; background: var(--k2b-surface-muted); color: var(--k2b-text); }
 .assistant-apps__card-copy { display: flex; flex: 1; flex-direction: column; gap: 0.125rem; min-width: 0; }
-.assistant-apps__card-title { overflow: hidden; color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.assistant-apps__card-schedule { overflow: hidden; color: var(--k2b-text-subtle); font-size: 0.8125rem; text-overflow: ellipsis; white-space: nowrap; }
+/* Title and schedule wrap instead of ending in "…": a schedule's end time and a title's last words always stay visible. */
+.assistant-apps__card-title { color: var(--k2b-text); font-size: 0.875rem; font-weight: 600; line-height: 1.25rem; overflow-wrap: anywhere; }
+.assistant-apps__card-schedule { color: var(--k2b-text-subtle); font-size: 0.8125rem; line-height: 1.1875rem; overflow-wrap: anywhere; }
 .assistant-apps__bars { flex: none; margin-top: 3px; }
 /* "Last: …" holds two lines in every state, so cards of a row keep one height while their words arrive. */
 .assistant-apps__card-last { display: flex; align-items: flex-start; gap: 0.375rem; min-height: 2.375rem; color: var(--k2b-text-secondary); font-size: 0.8125rem; line-height: 1.1875rem; }
@@ -1054,18 +1055,6 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .assistant-code-decision__when {
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
-}
-.assistant-code-decision__tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0 0.375rem;
-  border-radius: 999px;
-  background: var(--k2b-ai-surface);
-  color: var(--k2b-ai-accent);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.25rem;
 }
 .assistant-code-decision__missing {
   grid-column: 2 / -1;

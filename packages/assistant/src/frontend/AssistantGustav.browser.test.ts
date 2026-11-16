@@ -133,6 +133,10 @@ const MINE = [
   code("c_stoff1", "Stoffpreise prüfen", "active"),
   code("c_angeb1", "Angebote nachfassen", "paused"),
 ];
+/** A card whose title and schedule are longer than one line of a card. */
+const LONG = { id: "c_rueck1", title: "Wochenabschluss Wareneingang (freitags 14 Uhr) mit Rückfragen an die Lieferanten" };
+const mineOf = (scenario: Scenario) =>
+  scenario.longNames ? MINE.map((item) => (item.id === LONG.id ? { ...item, title: LONG.title } : item)) : MINE;
 // A place owns at most one Code.
 const MAILBOX = [code("c_info01", "Anfragen sortieren", "paused")];
 /** The summary carries Core's list under the names the block reads. */
@@ -148,7 +152,8 @@ const automation = (entrypoint: string, cron: string | null, patch: Record<strin
 });
 const logistik = { type: "spaces.space", id: "sp_2lg8", title: "Logistik", typeTitle: "Space" };
 /** The running version's automations, as Core lists them; each owner's answer also names targets refused in the last run. */
-const automationsOf = (codeId: string, accessMissing = false) => {
+const automationsOf = (codeId: string, accessMissing = false, longNames = false) => {
+  if (longNames && codeId === LONG.id) return { items: [automation("lagerbestand", "*/15 7-19 * * *")], removedTargets: [] };
   if (codeId === "c_woche1")
     return { items: [automation("wochenbericht", "0 7 * * 1", { nextRunAt: "2026-11-02T06:00:00.000Z" })], removedTargets: [] };
   if (codeId !== "c_info01") return { items: [], removedTargets: [] };
@@ -214,6 +219,8 @@ type Scenario = {
   detail?: boolean;
   /** Waiting for you, with one chat question and Code of a place that needs the person. */
   waiting?: boolean;
+  /** One card of My apps has a title and a schedule longer than one line. */
+  longNames?: boolean;
 };
 const approval = {
   id: "33333333-3333-4333-8333-333333333333",
@@ -286,7 +293,9 @@ const propsOf = (scenario: Scenario, url: URL) => ({
           page: scenario.listFails
             ? null
             : {
-                items: MINE.map((item) => ({ ...item, lastRun: runOf(item.id), ...automationsOf(item.id) })).map(summaryOf),
+                items: mineOf(scenario)
+                  .map((item) => ({ ...item, lastRun: runOf(item.id), ...automationsOf(item.id, false, scenario.longNames) }))
+                  .map(summaryOf),
                 nextCursor: null,
               },
           today: { runs: 9, failed: 1 },
@@ -501,11 +510,13 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
       if (capabilityId === "code.list") {
         if (state.listFails)
           return route.fulfill({ status: 503, json: { error: { code: "APP_UNAVAILABLE", message: "Core is unavailable" } } });
-        return route.fulfill({ json: { data: { items: input.owner?.kind === "resource" ? MAILBOX : MINE, nextCursor: null } } });
+        return route.fulfill({
+          json: { data: { items: input.owner?.kind === "resource" ? MAILBOX : mineOf(scenario), nextCursor: null } },
+        });
       }
       if (capabilityId === "code.run.list") return route.fulfill({ json: { data: { items: [runOf(input.codeId!)], nextCursor: null } } });
       if (capabilityId === "code.automation.list")
-        return route.fulfill({ json: { data: { codeId: input.codeId, ...automationsOf(input.codeId!) } } });
+        return route.fulfill({ json: { data: { codeId: input.codeId, ...automationsOf(input.codeId!, false, scenario.longNames) } } });
       if (capabilityId === "code.run.count") return route.fulfill({ json: { data: { runs: 9, failed: 1 } } });
       if (capabilityId === "code.activity.words") return route.fulfill({ json: { data: activityOf(input.codeId!) } });
       if (capabilityId === "code.run.words")
@@ -683,6 +694,41 @@ describe("Gustav", () => {
         }
         await shot(h.page, `a-meine-apps-${view.name}-${theme}`);
         expect(h.errors).toEqual([]);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 120_000);
+
+  test("a long title and schedule wrap in their card instead of ending in an ellipsis, so the end time stays visible", async () => {
+    for (const view of [desktop, phone]) {
+      const h = await open(view, { codeOpen: true, longNames: true });
+      try {
+        const list = h.page.locator("section.assistant-apps");
+        const card = list.locator("a.k2b-link-card").filter({ hasText: LONG.title });
+        await card.getByText("Alle 15 Minuten von 7:00 bis 19:59 Uhr").waitFor();
+        await settled(h.page);
+        for (const selector of [".assistant-apps__card-title", ".assistant-apps__card-schedule"]) {
+          const box = await card.locator(selector).evaluate((element) => {
+            const style = getComputedStyle(element);
+            const own = element.getBoundingClientRect();
+            const outer = element.closest("a")!.getBoundingClientRect();
+            return {
+              ellipsis: style.textOverflow === "ellipsis",
+              cut: element.scrollWidth > element.clientWidth + 1 || element.scrollHeight > element.clientHeight + 1,
+              inside: own.left >= outer.left && own.right <= outer.right + 0.5,
+              lines: Math.round(own.height / Number.parseFloat(style.lineHeight)),
+            };
+          });
+          expect(box.ellipsis).toBe(false);
+          expect(box.cut).toBe(false);
+          expect(box.inside).toBe(true);
+          // At this length the title needs more than one line in every width: it wraps instead of being cut.
+          if (selector === ".assistant-apps__card-title") expect(box.lines).toBeGreaterThan(1);
+        }
+        expect(await card.locator(".assistant-apps__card-title").textContent()).toBe(LONG.title);
+        expect(h.errors).toEqual([]);
+        await shot(h.page, `a-meine-apps-lang-${view.name}-light`);
       } finally {
         await h.close();
       }

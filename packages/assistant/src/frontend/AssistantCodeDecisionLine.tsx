@@ -60,7 +60,7 @@ export default function AssistantCodeDecisionLine(props: {
   onReveal?: (anchor: string) => Promise<boolean>;
   /** A later line already says what the person did about this version: this one stays as history, without action. */
   settled?: boolean;
-  /** Gustav revises by himself after these changes: the line says so and has no action; his turn follows below. */
+  /** Gustav revises by himself after these changes: the line has no action; the start line below says that he does. */
   automatic?: boolean;
 }): JSX.Element {
   const locale = useLocale();
@@ -134,13 +134,6 @@ export default function AssistantCodeDecisionLine(props: {
           {when()}
           <Show when={nextRun()}>{(text) => ` · ${text()}`}</Show>
         </span>
-        <Show when={props.automatic}>
-          {" "}
-          <span class="assistant-code-decision__tag">
-            <i class="ti ti-sparkles" aria-hidden="true" />
-            {t().eventAutomatic}
-          </span>
-        </Show>
       </p>
       <Show when={action()}>
         {(label) => (
