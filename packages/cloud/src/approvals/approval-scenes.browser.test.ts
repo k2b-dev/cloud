@@ -216,12 +216,14 @@ describe("Approval scenes", () => {
           charts: document.querySelectorAll('.cloud-blocks__cell[data-kind="Chart"]').length,
           cells: document.querySelectorAll(".k2b-stat-cell").length,
           signs: document.querySelectorAll(".k2b-stat-cell__head > .k2b-stat-cell__icon").length,
+          neutral: document.querySelectorAll(".k2b-stat-cell__head > .k2b-stat-cell__icon .ti-hash").length,
         }));
         await shot(page, `78-kennzahlen-light-${width}`);
         expect(look.heads).toHaveLength(2);
         for (const head of look.heads) expect(head).toContain("Kennzahlen");
         // Both rows carry the sign before each name (v12), the stat charts through their icon like the cards.
-        expect(look).toMatchObject({ rows: 2, charts: 0, cells: 6, signs: 6 });
+        // A figure that names no icon has the neutral sign: every key figure has one.
+        expect(look).toMatchObject({ rows: 2, charts: 0, cells: 6, signs: 6, neutral: 1 });
       } finally {
         await page.close();
       }

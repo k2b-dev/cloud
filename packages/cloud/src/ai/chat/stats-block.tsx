@@ -14,6 +14,8 @@ export function CloudStatsTiles(props: { input: CloudStatsDescription; columns: 
         {(tile, index) => (
           <StatCell
             label={tile().label}
+            // The small sign before the name: its own icon or the neutral sign (`figure-sign.ts`).
+            icon={props.input.items[index]?.icon}
             deltaPlacement="below"
             value={tile().value}
             title={tile().value}

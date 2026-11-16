@@ -2,6 +2,7 @@ import { DescriptionList, StatCell, StatGrid, type StatGridColumns, useLocale } 
 import { type Accessor, createMemo, createSignal, createUniqueId, Index, Match, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { CloudChartGroupView, CloudChartView, CloudExplorerView } from "#chat-charts";
 import { importOnDemand } from "../../browser/reload";
+import { NEUTRAL_FIGURE_SIGN } from "../figure-sign";
 import {
   CLOUD_AI_DETAILS_VIEWPORT_ITEMS,
   type CloudAiView,
@@ -106,6 +107,8 @@ function CloudStatsView(props: { summary: StatsSummary; input: CloudStatsDescrip
                   {(item) => (
                     <StatCell
                       label={item().label}
+                      // Every key figure has its sign, so the reserve holds its place whichever sign arrives.
+                      icon={NEUTRAL_FIGURE_SIGN}
                       deltaPlacement="below"
                       value="0"
                       trend={item().sparkline ? [0, 1] : undefined}
