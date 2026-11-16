@@ -1359,6 +1359,9 @@
   line-height: 1.25rem;
 }
 .k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] .k2b-stat-cell__sub { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A stale note gives way to "Reload" and ends in an ellipsis instead of a hard cut. */
+.k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] .k2b-stat-cell__stale { display: block; min-width: 0; flex: 0 1 auto; text-overflow: ellipsis; }
+.k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] .k2b-stat-cell__stale i { vertical-align: -0.125em; }
 /* The change and an accent read as words on the third line: icon and text in their colour, no pill. */
 .k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"] :is(.k2b-stat-cell__delta, .k2b-stat-cell__accent) {
   height: auto;
