@@ -16736,6 +16736,20 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   margin-inline: auto;
 }
 
+/* While the composer's reserved hint line is empty, the quotes move down over it and the shell's gap, so they stand as
+   close above the field (or a reply) as a reply does. A transform moves nothing else; a visible hint or dictation
+   status keeps them in place, so nothing is covered. Above the composer, so their buttons take the presses. */
+.k2b-ui
+  .k2b-chat-composer-shell:has(
+    > .k2b-chat-composer[data-variant="conversation"] > .k2b-chat-composer__hint > .k2b-chat-composer__hint-text:empty
+  )
+  > .k2b-chat-composer-slot
+  .k2b-chat-composer__quotes {
+  position: relative;
+  z-index: 1;
+  transform: translateY(1.75rem);
+}
+
 .k2b-ui .k2b-chat-composer__quote > .k2b-message-quote {
   max-width: none;
   flex: 1 1 0;
