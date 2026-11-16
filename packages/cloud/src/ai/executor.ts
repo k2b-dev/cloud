@@ -129,6 +129,7 @@ import type {
 } from "./types";
 import { isAiImageMediaType } from "./types";
 import { validateAiTurnRequest } from "./validate";
+import { CLOUD_AI_VIEW_ICONS, CloudAiViewSummarySchema } from "./view-block";
 
 const log = logger("ai:executor");
 
@@ -230,12 +231,14 @@ const indexConversationToolSource = async (input: {
       source = { kind: "activity", key, title: query || "Web search", preview: "Searched the web", icon: "ti ti-world" };
     } else if (input.name === "present" && text(result.path)) {
       const path = text(result.path);
+      // A view records what it shows, so lists name it ("Chart") with its sign instead of a file size.
+      const view = CloudAiViewSummarySchema.safeParse(result.view);
       source = {
         kind: "result",
         key: path,
         title: text(args.title) || path.slice(path.lastIndexOf("/") + 1),
         preview: text(args.description) || undefined,
-        icon: "ti ti-file",
+        icon: view.success ? CLOUD_AI_VIEW_ICONS[view.data.view] : "ti ti-file",
       };
     } else if (["chart", "card", "cloud_card"].includes(input.name) && result.view) {
       // Gustav's own chart or key figure is a result of the chat like a presented file; the box jumps to it.

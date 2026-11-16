@@ -623,7 +623,8 @@ Conversation file paths are not website URLs; agents deliver files with `present
 Assistant shows what a chat holds in the box **In this chat**: a small island
 of about 300 px at the top right beside the chat, with at most ten rows of
 28 px. Its head holds the title, a fixed place for **New · n**, and **Open as
-tab**. Below come the three newest **Results** with their time or size, then
+tab**. Below come the three newest **Results** with their time or size (a view
+file names what it shows instead, such as Chart or Table, with its sign), then
 any further group the chat snapshot carries (`groups` on
 `AssistantChatContextSnapshot`: each row a sign, a title, one state word in its
 tone, and an optional ring when it waits for the viewer; at most three rows,
@@ -665,7 +666,10 @@ sentence the assistant gave a result), at most two actions, and **…** with
 **Show in chat**, **Ask Gustav about it**, **Copy link**, and per kind
 **Download**, **Save to Files**, **Delete from the chat**, **Open in your own
 browser**, then **Pin** (kept by **Close others**), **Close**, and **Close
-others**. A tab's content is made once and moves between panes, so switching
+others**. A view file the assistant delivered (chart, table, key figures …)
+opens drawn as in the chat by `CloudViewFile` from `@k2b/cloud/ai/ui`, never as
+its JSON; its meta line names what it shows instead of an extension and size.
+A tab's content is made once and moves between panes, so switching
 and arranging keep a run or an editor. Which tabs are open, how they are
 arranged, and which is in front belong to the chat and the person: Assistant
 keeps them through `GET` and `PUT

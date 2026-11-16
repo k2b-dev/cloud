@@ -12,6 +12,7 @@ import {
   StatGrid,
   StatusBadge,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import {
   type Accessor,
@@ -30,10 +31,13 @@ import {
 import { CloudChartBlock } from "#chat-charts";
 import { importOnDemand } from "../browser/reload";
 import { type DescriptionObject, descriptionObject, descriptionTable } from "../descriptions/description-table";
+import { BlockActions, useBlockFrame } from "./block-actions";
+import { blockFileName, figuresCopy, saveBlob, tableCopy, tableCsv, wholeTable } from "./block-copy";
 import { BLOCK_PANEL_HEIGHTS, blockChartHeight, blockDescription, blockJson } from "./description";
 import { blockWords } from "./messages";
 import { blockDataAtPath } from "./path";
 import type { Block } from "./schema";
+import { SearchToggle } from "./search-toggle";
 
 /**
  * Draws checked, bound blocks with shared components: a capability result in the conversation, the details of an
@@ -487,12 +491,64 @@ function StatsLeaf(props: { spec: DescriptionObject }) {
 }
 
 /**
+ * Key figures stay flat, without a frame or a head (v12). In a chat answer Copy and Maximize stand at the end of their
+ * row, quiet until pointed at or focused on a computer, always on touch; their room is always kept.
+ */
+function FiguresRow(props: { spec: DescriptionObject }) {
+  const frame = useBlockFrame();
+  const locale = useLocale();
+  let row: HTMLDivElement | undefined;
+  // What the reader sees: each figure's name and its shown value.
+  const figures = () =>
+    Array.from(row?.querySelectorAll(".k2b-stat-cell") ?? []).map((cell) => ({
+      label: cell.querySelector(".k2b-stat-cell__label")?.textContent?.trim() ?? "",
+      value: cell.querySelector(".k2b-stat-cell__value")?.textContent?.trim() ?? "",
+    }));
+  return (
+    <Show when={frame} fallback={<StatsLeaf spec={props.spec} />}>
+      <div ref={row} class="cloud-block-figures">
+        <StatsLeaf spec={props.spec} />
+        <BlockActions
+          kind="figures"
+          quiet
+          name={blockWords(locale()).kindFigures}
+          copy={() => figuresCopy(figures())}
+          content={() => <FiguresRow spec={props.spec} />}
+        />
+      </div>
+    </Show>
+  );
+}
+
+/**
  * A table: its search, sorting and grouping load on demand, as Gustav's tables do. Until then, and when the code cannot
  * load, the same frame holds the same room, with a hidden copy of every row, so the table arrives without moving
  * anything.
  */
 function TableLeaf(props: { block: Leaf<"Table">; spec: DescriptionObject; locale: string }) {
   const words = () => blockWords(props.locale);
+  // In a chat answer the head carries Copy and Maximize; a page outside a chat keeps its head as it was.
+  const frame = useBlockFrame();
+  const actions = () =>
+    frame ? (
+      <BlockActions
+        kind="table"
+        name={props.block.title}
+        copy={(root) => {
+          const shown = wholeTable(root);
+          return tableCopy(shown.columns, shown.rows);
+        }}
+        download={(root) => {
+          const shown = wholeTable(root);
+          saveBlob(tableCsv(shown.columns, shown.rows), blockFileName(props.block.title, "csv"));
+        }}
+        content={() => <TableLeaf {...props} />}
+      />
+    ) : undefined;
+  // A searchable table in a chat answer says under it what the search finds, and its search folds into a sign on a phone.
+  const counted = () => frame !== undefined && props.block.search === true;
+  const footer = (counts: { query: string; shown: number; total: number }) =>
+    counts.query ? words().matches({ count: counts.shown }) : words().rowCount({ count: counts.total });
   const [code, load] = useTableCode();
   const height = () => (items(props.block.rows).length > 8 ? BLOCK_PANEL_HEIGHTS.md : 0);
   // The contract checked every row target: a path of the answering app, a Cloud open link, or https.
@@ -513,10 +569,26 @@ function TableLeaf(props: { block: Leaf<"Table">; spec: DescriptionObject; local
           state={code() === null ? "error" : "loading"}
           onRetry={code() === null ? load : undefined}
           height={height() ? `${height()}px` : undefined}
+          footer={counted() ? footer({ query: "", shown: 0, total: items(props.block.rows).length }) : undefined}
+          class={counted() ? "cloud-table-frame" : undefined}
           tools={
-            <Show when={props.block.search}>
-              <TextInput type="search" icon="ti ti-search" aria-label={props.block.title} placeholder={words().search} value="" disabled />
-            </Show>
+            <>
+              <Show when={props.block.search}>
+                <Show when={counted()}>
+                  <SearchToggle label={words().searchIn({ title: props.block.title })} disabled />
+                </Show>
+                <TextInput
+                  class={counted() ? "cloud-table-search" : undefined}
+                  type="search"
+                  icon="ti ti-search"
+                  aria-label={props.block.title}
+                  placeholder={words().search}
+                  value=""
+                  disabled
+                />
+              </Show>
+              {actions()}
+            </>
           }
           reserve={
             <DataTable
@@ -542,6 +614,8 @@ function TableLeaf(props: { block: Leaf<"Table">; spec: DescriptionObject; local
             headingLevel={4}
             empty={props.block.empty}
             rowLinks={links()}
+            actions={actions()}
+            {...(counted() ? { footer, compactSearch: true } : {})}
           />
         );
       }}
@@ -652,7 +726,7 @@ function Leaf(props: { block: Block; host: Host; locale: string; timeZone: strin
     case "Draft":
       return <DraftBlock block={block} draft={props.draft} />;
     case "Stats":
-      return <StatsLeaf spec={descriptionSpec(blockDescription(block, words(), props.timeZone))} />;
+      return <FiguresRow spec={descriptionSpec(blockDescription(block, words(), props.timeZone))} />;
     case "Table":
       return <TableLeaf block={block} spec={descriptionSpec(blockDescription(block, words(), props.timeZone))} locale={props.locale} />;
     case "Chart":

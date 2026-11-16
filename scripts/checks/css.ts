@@ -267,6 +267,7 @@ export const rule: Rule = {
       "--spaces-calendar-color", // Spaces calendar EventDetail.tsx and AgendaList.tsx: the color of each item's calendar
       "--annotation-color", // Notebooks lib/editor/annotations.ts and NotePreview: the person color of a commented passage
       "--ai-code-live-lines", // ai/chat/code-steps.tsx: the lines a Code file Gustav still writes will show once written
+      "--cloud-search-end", // blocks/search-toggle.tsx: how far an opened table search may reach from the head's end
     ]);
     for (const [property, consumers] of customPropertyReferences) {
       if (customPropertyOwners.has(property) || uiCustomProperties.has(property)) continue;
