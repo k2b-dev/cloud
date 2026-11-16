@@ -66,7 +66,7 @@
   overflow-wrap: anywhere;
 }
 .pulse-overview__section-title { margin: 26px 0 8px; color: var(--k2b-text-muted); font-size: 13px; font-weight: 600; line-height: 1.45; }
-.pulse-overview__attention,
+.pulse-overview__attention { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .pulse-overview__activity { min-width: 0; }
 .pulse-overview__attention:not(:empty) { margin-top: 12px; }
 .pulse-overview__attention-row {
@@ -80,7 +80,7 @@
 }
 .pulse-overview__attention-row[data-tone="danger"] { background: var(--k2b-danger-surface); }
 .pulse-overview__attention-row[data-tone="warning"] { background: var(--k2b-warning-surface); }
-.pulse-overview__attention-copy,
+.pulse-overview__attention-copy { min-width: 0; overflow-wrap: anywhere; }
 .pulse-overview__attention-icon { font-size: 18px; }
 .pulse-overview__attention-title { font-size: 14.5px; font-weight: 600; }
 .pulse-overview__level { display: inline; margin-left: 6px; font-size: 12px; font-weight: 500; }

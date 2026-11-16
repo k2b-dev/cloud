@@ -345,6 +345,7 @@ const activityEntry = (item: OverviewActivity, t: Messages): ActivityEntry => {
       });
   const stale = item.kind === "source_freshness" ? item.data.stale : undefined;
   return {
+    id: item.id,
     at: item.at,
     icon:
       stale === true ? "ti ti-clock-exclamation" : stale === false ? "ti ti-clock-check" : (ACTIVITY_ICONS[item.kind] ?? "ti ti-activity"),

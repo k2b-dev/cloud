@@ -566,6 +566,18 @@ describe("Pulse base overview", () => {
           };
         });
       expect(await rows.count()).toBe(1);
+      // The hint list is a bare column and its text keeps the row's size and wraps: a stray selector list in app.css
+      // once gave the list bullets and the text the icon's 18 px.
+      const look = await tab.evaluate(() => {
+        const list = getComputedStyle(document.querySelector(".pulse-overview__attention")!);
+        const row = getComputedStyle(document.querySelector(".pulse-overview__attention-row")!);
+        const copy = getComputedStyle(document.querySelector(".pulse-overview__attention-copy")!);
+        return {
+          list: [list.display, list.listStyleType, list.paddingLeft],
+          copy: [copy.fontSize === row.fontSize, copy.minWidth, copy.overflowWrap],
+        };
+      });
+      expect(look).toEqual({ list: ["flex", "none", "0px"], copy: [true, "0px", "anywhere"] });
       const before = await layout();
       await tab.clock.runFor(60_000);
       await rows.getByText("Speicher", { exact: true }).waitFor();
