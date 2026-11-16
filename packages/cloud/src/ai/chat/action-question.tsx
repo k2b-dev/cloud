@@ -196,6 +196,15 @@ export function ActionDetails(props: { card: ActionCard; draft?: BlockDraftState
 export type ActionLine = Omit<ChatOutcomeLine, "text" | "detail"> & { text: ActionText; detail?: JSX.Element };
 
 /**
+ * The line's sentence, closed with a full stop when a detail follows it: a short form such as "Not run: Create note" ends
+ * without one, so the detail would read as part of it.
+ */
+const closedSentence = (text: ActionText): ActionText => {
+  const last = text.at(-1);
+  return last?.kind === "text" && /[.!?…]["“”»«]?\s*$/.test(last.text) ? text : [...text, { kind: "text", text: "." }];
+};
+
+/**
  * The outcome line of one call. Pass every line one flow can reach (running and done, or the lines of a check): they
  * share one cell, so switching between them moves nothing.
  */
@@ -210,7 +219,10 @@ export function ActionReceipt(props: {
     Object.fromEntries(
       Object.entries(props.lines).map(([key, line]) => [
         key,
-        { ...line, text: <ActionTextView text={line.text} accent={props.card.app.accent} /> } satisfies ChatOutcomeLine,
+        {
+          ...line,
+          text: <ActionTextView text={line.detail ? closedSentence(line.text) : line.text} accent={props.card.app.accent} />,
+        } satisfies ChatOutcomeLine,
       ]),
     ),
   );

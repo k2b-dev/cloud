@@ -96,4 +96,6 @@ trigger when the window resizes or scrolls, so it stays inside the window.
 
 Faces and the list content render on the server. Opening the list and selecting
 a person require browser code. Below 48rem the list opens in a bottom sheet;
-otherwise it uses a popover beside the trigger.
+otherwise it uses a popover beside the trigger. The sheet's code loads only on
+phones; if it cannot load, the popover opens instead and the error goes to
+`reportError`.

@@ -8,11 +8,14 @@ import {
   CreateConversationSchema,
   ForResourceSchema,
   LeaveSchema,
+  MAX_MESSAGE_REFS,
+  MESSAGE_MAX_CODE_POINTS,
   MemberPageSchema,
   MemberPreviewSchema,
   MemberQuerySchema,
   PeopleQuerySchema,
   ReadAllSchema,
+  SendMessageSchema,
   SummaryQuerySchema,
   SystemChatParamSchema,
   ThreadQuerySchema,
@@ -347,4 +350,36 @@ test("discussion cursor maps bound keys, individual values and serialized input"
   const tooMany = Object.fromEntries(Array.from({ length: SYSTEM_CHAT_PROVIDER_LIMIT + 1 }, (_, i) => [`inventory${i}.collection`, ""]));
   expect(SystemChatQuerySchema.safeParse({ cursors: JSON.stringify(tooMany) }).success).toBeFalse();
   expect(SystemChatQuerySchema.safeParse({ cursors: " ".repeat(SYSTEM_CHAT_CURSORS_LIMIT + 1) }).success).toBeFalse();
+});
+
+test("a send quotes at most ten passages of together at most one message's length, each with text", () => {
+  const send = (quotes: { message: string; text: string }[]) => SendMessageSchema.safeParse({ clientId: "c1", body: "Answer", quotes });
+  const parsed = send([{ message: "AbCdEf1234", text: "  the  report\n is ready " }]);
+  expect(parsed.success && parsed.data.quotes).toEqual([{ message: "AbCdEf1234", text: "the report is ready" }]);
+  expect(send(Array.from({ length: MAX_MESSAGE_REFS }, () => ({ message: "AbCdEf1234", text: "ok" }))).success).toBe(true);
+  expect(send(Array.from({ length: MAX_MESSAGE_REFS + 1 }, () => ({ message: "AbCdEf1234", text: "ok" }))).success).toBe(false);
+  const half = "😀".repeat(MESSAGE_MAX_CODE_POINTS / 2);
+  expect(
+    send([
+      { message: "AbCdEf1234", text: half },
+      { message: "AbCdEf1234", text: half },
+    ]).success,
+  ).toBe(true);
+  expect(
+    send([
+      { message: "AbCdEf1234", text: half },
+      { message: "AbCdEf1234", text: `${half}x` },
+    ]).success,
+  ).toBe(false);
+  for (const text of ["", "   ", "a\u0000b", "\uD800"]) expect(send([{ message: "AbCdEf1234", text }]).success).toBe(false);
+  expect(send([{ message: "not-an-id", text: "ok" }]).success).toBe(false);
+  const twice = send([
+    { message: "AbCdEf1234", text: "ok" },
+    { message: "AbCdEf1234", text: " ok " },
+    { message: "AbCdEf1234", text: "fine" },
+  ]);
+  expect(twice.success && twice.data.quotes).toEqual([
+    { message: "AbCdEf1234", text: "ok" },
+    { message: "AbCdEf1234", text: "fine" },
+  ]);
 });

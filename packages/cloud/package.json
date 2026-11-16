@@ -134,6 +134,7 @@
     "./contracts/geo-snapshot": "./src/contracts/geo-snapshot.ts",
     "./contracts/notifications": "./src/contracts/notification-types.ts",
     "./contracts/*": "./src/contracts/*",
+    "./maintenance-game": "./src/maintenance-game/index.ts",
     "./events/testing": "./src/events/testing.ts",
     "./events": "./src/events/index.ts",
     "./workflows": "./src/workflows/index.ts",

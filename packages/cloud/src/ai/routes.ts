@@ -281,9 +281,9 @@ const rememberLastUsedModel = (actor: RequestActor, model: import("../shared/ai-
   void aiUserPrefs.update(userId, { selection: model }).catch(() => undefined);
 };
 
-const conversationDetail = async (conversation: AiConversation, subject: AiResourceContext) => {
+const conversationDetail = async (conversation: AiConversation, subject: AiResourceContext, locale: string) => {
   const [state, timeline, publicView] = await Promise.all([
-    loadAiStreamState(conversation, subject.actor?.kind === "user" ? subject.actor.user.id : null),
+    loadAiStreamState(conversation, subject.actor?.kind === "user" ? subject.actor.user.id : null, locale),
     aiConversations.listConversationTimeline({ conversationId: conversation.id }),
     publicConversationFor(conversation, subject),
   ]);
@@ -762,7 +762,7 @@ export const aiRoutes = (() => {
         if (ctx instanceof Response) return ctx;
         const conversation = await loadConversation(c, ctx);
         if (!conversation) return notFound(c);
-        return respond(c, ok(await conversationDetail(conversation, resourceContext(c))));
+        return respond(c, ok(await conversationDetail(conversation, resourceContext(c), getLocale(c))));
       })
       .get(
         "/conversations/:conversationId/submission/:draftRevision",
@@ -797,7 +797,12 @@ export const aiRoutes = (() => {
           c,
           ok({
             ...page,
-            messages: await publicAiStoredMessages(page.messages, conversation, ctx.actor.kind === "user" ? ctx.actor.user.id : null),
+            messages: await publicAiStoredMessages(
+              page.messages,
+              conversation,
+              ctx.actor.kind === "user" ? ctx.actor.user.id : null,
+              getLocale(c),
+            ),
           }),
         );
       })
@@ -813,7 +818,7 @@ export const aiRoutes = (() => {
           beforeSeq: query.before,
           limit: query.limit ?? 50,
         });
-        return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation) }));
+        return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation, null, getLocale(c)) }));
       })
       .delete("/conversations/:conversationId/messages/:messageId/suggested-next-message", async (c) => {
         const ctx = await resolveContext(c);
@@ -1298,7 +1303,7 @@ export const aiRoutes = (() => {
           ownerUserId: ctx.ownerUserId,
           title: body.title ?? conversation.title,
         });
-        return respond(c, ok(await conversationDetail(forked, resourceContext(c))));
+        return respond(c, ok(await conversationDetail(forked, resourceContext(c), getLocale(c))));
       })
       .get("/conversations/:conversationId/enrichment", async (c) => {
         const ctx = await resolveContext(c);
@@ -1553,6 +1558,7 @@ export const aiRoutes = (() => {
         c.set("appAccessGuard", { eventOnly: true });
         return createAiConversationStreamResponse({
           viewerUserId: ctx.actor.kind === "user" ? ctx.actor.user.id : null,
+          locale: getLocale(c),
           conversation,
           signal: c.req.raw.signal,
           ...(expiresAt !== undefined ? { expiresAt } : {}),
