@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
 import type { AppRegistryEntry } from "@k2b/cloud/contracts";
+import { isCloudCredentialCookie } from "@k2b/cloud/contracts/app-domains";
 import { MaintenanceProblemSchema, type MaintenanceState } from "@k2b/cloud/contracts/maintenance";
 import * as services from "@k2b/cloud/services";
-import { issueMaintenanceBypassToken, MAINTENANCE_BYPASS_TTL_MS } from "@k2b/cloud/services/maintenance-bypass";
+import {
+  issueMaintenanceBypassToken,
+  MAINTENANCE_BYPASS_TTL_MS,
+  maintenanceBypassCookieName,
+} from "@k2b/cloud/services/maintenance-bypass";
 import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
 import { createAvailability, MAX_VANISHED_APPS, tintAppIcon, UPSTREAM_FAILURE_MS, VANISHED_APP_MS } from "./availability";
@@ -265,6 +270,12 @@ const admin = "0b6f2e3c-6f0e-4d8e-9a77-3f1c2b9d4e51";
 const bypassToken = (scope: Pick<MaintenanceState, "id" | "bypassKey"> = state, expiresAt = NOW + MAINTENANCE_BYPASS_TTL_MS) =>
   issueMaintenanceBypassToken(scope, admin, expiresAt);
 const COOKIE = "__Host-cloud_maintenance_bypass";
+
+test("the literal bypass cookie names match the platform's names and count as Cloud credentials", () => {
+  expect(maintenanceBypassCookieName(false)).toBe(COOKIE);
+  expect(maintenanceBypassCookieName(true)).toBe("cloud_maintenance_bypass");
+  expect(isCloudCredentialCookie(COOKIE) && isCloudCredentialCookie("cloud_maintenance_bypass")).toBe(true);
+});
 
 test("a valid bypass link sets a host-only cookie and redirects to the same address without the token", async () => {
   const f = fixture();

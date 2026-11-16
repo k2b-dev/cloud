@@ -102,9 +102,11 @@ export const bypassLinkAnswer = (
   const bypass = allowCookie ? verifyMaintenanceBypassToken(token, state, now) : null;
   if (bypass && token) {
     const maxAge = Math.max(1, Math.floor((bypass.expiresAt - now) / 1000));
+    // Literal names, so the credential-cookie guard can read them; a test pins them to maintenanceBypassCookieName().
+    const bypassCookie = development ? "cloud_maintenance_bypass" : "__Host-cloud_maintenance_bypass";
     headers.set(
       "Set-Cookie",
-      `${maintenanceBypassCookieName(development)}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly;${development ? "" : " Secure;"} SameSite=Lax`,
+      `${bypassCookie}=${token}; Path=/; Max-Age=${maxAge}; HttpOnly;${development ? "" : " Secure;"} SameSite=Lax`,
     );
   }
   return new Response(null, { status: 303, headers });
