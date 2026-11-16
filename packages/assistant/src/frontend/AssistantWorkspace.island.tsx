@@ -1188,6 +1188,7 @@ export default function AssistantWorkspace(props: Props) {
     const text = composerDraft(key);
     const files = composerAttachmentsFor(key);
     mentionsFor(key);
+    quotesFor(key);
     if (!session(key).dirty || session(key).conflict) return;
     if (!chat.activeConversationId() && !text && !files.length) return;
     // At a place, typing creates nothing: the first sent message creates the chat (O2). The draft stays local until then,
