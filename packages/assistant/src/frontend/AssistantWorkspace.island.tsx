@@ -2633,7 +2633,7 @@ export default function AssistantWorkspace(props: Props) {
               ? undefined
               : {
                   // Nothing sent yet, such as on the start page: the ring stands empty in its place (v12 §9).
-                  usage: usageSnapshot()?.request ?? (chat.messages().length === 0 && !chat.activeTurn() ? NOTHING_USED : null),
+                  usage: usageSnapshot()?.request ?? (emptyChat() ? NOTHING_USED : null),
                   loopUsage: usageSnapshot()?.loop ?? null,
                   contextWindow: usageModel()?.contextWindow,
                   modelLabel: usageModel()?.label,
