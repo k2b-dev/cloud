@@ -214,5 +214,5 @@ Do not return an async render function. The render function is called by `render
 - importing server-only modules into islands or client components can break browser bundling
 - a nested island/client build error means shared code belongs in a plain `.tsx` module; lazy-load that module instead of an island
 - named exports for islands/clients are not supported
-- islands are re-rendered, not hydrated: mounting replaces the server HTML inside an island, so typed input and scroll there are lost (focus moves to the element at the same place in the new markup), and markup that differs between server and client shifts the page
+- islands are re-rendered, not hydrated: mounting replaces the server HTML inside an island, so scroll there is lost; focus moves to the element at the same place in the new markup, and text typed into a text field or textarea moves to the same field with an `input` event; markup that differs between server and client shifts the page
 - calling `reset()` inside an `ssr:island-error` listener retries immediately, so a component that keeps failing loops; keep `reset` for a user action or a bounded, delayed retry

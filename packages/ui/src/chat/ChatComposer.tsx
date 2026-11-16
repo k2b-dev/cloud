@@ -12,7 +12,6 @@ import {
   onCleanup,
   onMount,
   Show,
-  sharedConfig,
   untrack,
 } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
@@ -464,7 +463,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   let shellRef: HTMLDivElement | undefined;
   let composerRef: HTMLElement | undefined;
   let textareaRef: HTMLTextAreaElement | undefined;
-  let typedBeforeHydration: string | undefined;
   let fileInputRef: HTMLInputElement | undefined;
   let measureRef: HTMLTextAreaElement | undefined;
   let fieldToolsRef: HTMLDivElement | undefined;
@@ -2331,12 +2329,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       </Show>
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: popup attributes are conditional with the combobox role */}
       <textarea
-        ref={(element) => {
-          textareaRef = element;
-          // The server's field takes typing before the island hydrates; the owner's value does not know that text yet.
-          // The server shows its initial text, so only a difference from it is typing.
-          if (sharedConfig.context && element.value !== element.defaultValue) typedBeforeHydration = element.value;
-        }}
+        ref={textareaRef}
         classList={{ "k2b-chat-composer__textarea--highlighted": mentions().length > 0 || Boolean(dictationView()) }}
         rows={1}
         value={props.value}
@@ -2475,27 +2468,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   // A press on a row remembers its command. The host can rebuild the list, or the whole menu, between press and release;
   // the browser then sends the click to a common ancestor (#2140). A release on the same command's new row runs it.
   let pressedCommand: { key: string; row: HTMLElement } | undefined;
-  // Keep what the person typed into the server-rendered field before hydration, as if typed now.
-  // A draft the owner restored meanwhile stays; the typed text follows it.
-  onMount(() => {
-    const typed = typedBeforeHydration;
-    typedBeforeHydration = undefined;
-    const current = props.value;
-    // A server-rendered textarea ignores its `value` attribute, and hydration keeps the empty field: show the value.
-    if (typed === undefined || editBlocked()) {
-      if (textareaRef && textareaRef.value !== current) {
-        textareaRef.value = current;
-        autoResize();
-      }
-      return;
-    }
-    const next = !current || typed.startsWith(current) ? typed : current.endsWith(typed) ? current : `${current}\n${typed}`;
-    if (next === current) return;
-    edit(next);
-    autoResize();
-    textareaRef?.setSelectionRange(next.length, next.length);
-    syncCaret();
-  });
   onMount(() => {
     const release = (event: PointerEvent | FocusEvent) => {
       const pressed = pressedCommand;

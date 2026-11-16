@@ -18,10 +18,13 @@ server writes as Seroval JSON data. Props are never evaluated, so pages work
 under a Content Security Policy without `'unsafe-eval'`. Two consequences of
 re-rendering follow:
 
-- state that exists only in the server HTML inside an island, such as a typed
-  input value or a scroll position, is replaced on mount. Focus is kept: an
-  element focused before the island mounted passes its focus to the element
-  at the same place in the new markup, which hears the focus like any other;
+- state that exists only in the server HTML inside an island, such as a scroll
+  position, is replaced on mount. Focus and typed text are kept: an element
+  focused before the island mounted passes its focus to the element at the
+  same place in the new markup, which hears the focus like any other. Text
+  typed into a text field or `<textarea>` moves to the same field (same tag,
+  type, name, and `aria-label`) with an `input` event, so the island's state
+  has it; text the island put into a `<textarea>` itself stays in front of it;
 - server and client must render the same markup from the same props, or the
   page shifts when the island mounts.
 

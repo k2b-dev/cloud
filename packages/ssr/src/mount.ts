@@ -55,6 +55,14 @@ export const islandOf = (owner: Owner): HTMLElement | undefined => {
   }
 };
 
+/** Fields whose typed text an island keeps when it renders over its server markup. */
+const textFields = (root: HTMLElement): (HTMLInputElement | HTMLTextAreaElement)[] =>
+  [...root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("textarea,input")].filter(
+    (field) => field.localName === "textarea" || ["text", "search", "email", "url", "tel"].includes(field.type),
+  );
+const fieldKey = (field: HTMLInputElement | HTMLTextAreaElement): string =>
+  `${field.localName} ${field.type} ${field.name} ${field.getAttribute("aria-label")}`;
+
 const mountElement = <Props extends object>(
   element: HTMLElement,
   Component: Component<Props>,
@@ -68,6 +76,11 @@ const mountElement = <Props extends object>(
       // test that is faster than the island's script) moves to the same element of the new markup instead of the body.
       const all = element.getElementsByTagName("*");
       const focused = [...all].indexOf(document.activeElement!);
+      // Text typed into a server field before that (right after the page appeared) goes to the same field of the new
+      // markup, with an input event, so the island's state has it too.
+      const typed = textFields(element).flatMap((field, index) =>
+        field.value === field.defaultValue ? [] : [{ index, key: fieldKey(field), value: field.value }],
+      );
       element.innerHTML = "";
       const dispose = render(() => {
         const owner = getOwner();
@@ -97,6 +110,15 @@ const mountElement = <Props extends object>(
         });
       }, element);
       mounted.set(element, dispose);
+      const fields = textFields(element);
+      for (const { index, key, value } of typed) {
+        const field = fields[index];
+        // Only the same field: another one in its place keeps its own value.
+        if (!field || fieldKey(field) !== key || field.value.endsWith(value)) continue;
+        // Text the island put there itself, such as a restored draft, stays in front of what was typed.
+        field.value = field.localName === "textarea" && field.value ? `${field.value}\n${value}` : value;
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      }
       // The same markup puts the same element at that place, so focusing it scrolls nothing; -1 finds none.
       const node = all[focused];
       if (node instanceof HTMLElement) node.focus();
