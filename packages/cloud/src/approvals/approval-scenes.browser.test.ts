@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../ui/test/browser";
 import { FIXTURE_AT } from "../ai/chat/action-question.fixtures";
 
 // The approval in each of its states and places, painted by a real layout engine at desktop and phone width.
@@ -104,6 +104,34 @@ const open = async (scene: string, width: number, theme: "light" | "dark" = "lig
   await page.locator(".k2b-chat-decision, .cloud-blocks__choice, .cloud-capability-view").first().waitFor();
   await settled(page);
   return page;
+};
+
+/**
+ * A clipboard the page writes and the test reads. Chromium grants the real one. WebKit's Playwright knows no clipboard
+ * permission, so there, as in the help panel and message row tests, a recorder takes the page's writes: `writeText`,
+ * and `write` with the text of its item, which Copy writes beside the HTML table.
+ */
+const useClipboard = async (page: Page) => {
+  if (browserName === "chromium") {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    return;
+  }
+  await page.evaluate(() => {
+    let text = "";
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          text = value;
+        },
+        write: async (items: ClipboardItem[]) => {
+          const item = items[0];
+          text = item?.types.includes("text/plain") ? await (await item.getType("text/plain")).text() : "";
+        },
+        readText: async () => text,
+      },
+    });
+  });
 };
 
 const shot = async (page: Page, name: string) => {
@@ -291,7 +319,7 @@ describe("Approval scenes", () => {
   test("Copy puts the table on the clipboard, shows a check in place for 1.5 s and moves nothing", async () => {
     const page = await open("baustein", 1440);
     try {
-      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await useClipboard(page);
       await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
       await settled(page);
       const button = page.getByRole("button", { name: "Tabelle kopieren" });
@@ -315,7 +343,7 @@ describe("Approval scenes", () => {
   test("a refused clipboard shows a toast with Try again, and trying again copies the table", async () => {
     const page = await open("baustein", 1440);
     try {
-      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await useClipboard(page);
       await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
       await settled(page);
       // The clipboard refuses the first write, as a browser does without permission, and takes the next one.
@@ -356,7 +384,7 @@ describe("Approval scenes", () => {
   test("Copy takes the whole table even while a search narrows what the reader sees", async () => {
     const page = await open("baustein", 1440);
     try {
-      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await useClipboard(page);
       await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
       await settled(page);
       const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
@@ -470,7 +498,7 @@ describe("Approval scenes", () => {
       await page.keyboard.press("ArrowLeft");
       expect(await name()).toContain("Kennzahlen");
       // Copy in the Lightbox answers in place, as in the block's head: its sign turns into a check, its width stays.
-      await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+      await useClipboard(page);
       const copy = lightbox.locator(".k2b-lightbox__action", { hasText: "Kopieren" });
       await settled(page);
       const before = await copy.boundingBox();
