@@ -203,6 +203,10 @@ export type ChatConversationProps = {
  * load offers a reload instead of opening nothing silently.
  */
 const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./chat-quote-selection"))) ?? { default: () => null });
+// A draft has quotes only after the module that adds them loaded, so its rows are always there to show them.
+const ComposerQuotes = lazy(async () => ({
+  default: (await importOnDemand(() => import("./chat-quote-selection")))?.ChatComposerQuotes ?? (() => null),
+}));
 const Lightbox = lazy(async () => (await importOnDemand(() => import("./chat-lightbox"))) ?? { default: () => null });
 const ROW_ESTIMATE = 60;
 const SYSTEM_ESTIMATE = 36;
@@ -859,9 +863,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             }
             draftKey={props.draftKey ?? props.chatId}
             reply={props.reply}
-            quotes={props.quotes}
-            // Such as quotes that could not be shown and left the draft; the text stays in the field.
-            onError={() => toast.error(t().composerFailed)}
+            above={props.quotes?.length ? <ComposerQuotes quotes={props.quotes} /> : undefined}
             focusToken={quoted()}
             formatting
             emoji={{ onOpen: setEmojiTarget, onPick: remember }}

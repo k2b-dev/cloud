@@ -14,7 +14,6 @@ import {
   Show,
   untrack,
 } from "solid-js";
-import { Dynamic } from "solid-js/web";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { dialogHistorySettled, holdDialogHistory } from "../feedback/dialog-core";
 import { Tooltip } from "../feedback/Tooltip";
@@ -356,10 +355,10 @@ export type ChatComposerProps = {
    */
   reply?: ChatComposerReply;
   /**
-   * Passages the draft quotes, each above the field with the quote icon, at most two lines, its author, and a button
-   * that removes it; below `reply` when both are there. The application owns the list and sends it with the message.
+   * Content inside the composer above the field, below `reply`, such as the passages the draft quotes in
+   * `ChatComposerQuotes`. It renders only what it is given, so composers without it carry no code for it.
    */
-  quotes?: readonly ChatComposerQuote[];
+  above?: JSX.Element;
   /** A suggested next message in the empty field; see `ChatComposerSuggestion`. */
   suggestion?: ChatComposerSuggestion;
 };
@@ -1266,8 +1265,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       !busy() &&
       !props.submitDisabled &&
       hasDraft() &&
-      // Quotes go out only once the person can see them.
-      !(props.quotes?.length && !quotesView()) &&
       !(props.dictation && liveDictation.active()) &&
       !(running() && runningSubmitIntent() === "steer" && mentions().length),
   );
@@ -1357,19 +1354,6 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   };
 
   const focus = () => textareaRef?.focus();
-  // The quote rows load with a draft's first quote, so composers that never quote carry none of their code.
-  const [quotesView, setQuotesView] = createSignal<typeof import("./ChatComposerQuotes")["default"]>();
-  createEffect(() => {
-    if (!props.quotes?.length || quotesView()) return;
-    // Quotes that cannot be shown are not sent unseen: they leave the draft, and `onError` says why. The text stays.
-    void import("./ChatComposerQuotes").then(
-      (module) => setQuotesView(() => module.default),
-      (error) => {
-        for (const quote of props.quotes ?? []) quote.onRemove();
-        props.onError?.(error);
-      },
-    );
-  });
 
   onMount(() => {
     autoResize();
@@ -2869,9 +2853,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
             </div>
           )}
         </Show>
-        <Show when={props.quotes?.length ? quotesView() : undefined}>
-          {(view) => <Dynamic component={view()} quotes={props.quotes ?? []} />}
-        </Show>
+        {props.above}
         <Show when={attachments().length > 0}>
           <div class="k2b-chat-composer__attachments" role="list" aria-label={chatMessages().attachments} tabIndex={0}>
             <For each={attachments()}>
