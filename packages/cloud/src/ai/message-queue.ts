@@ -38,7 +38,11 @@ const originForQueueActor = (
   return { kind: "person", id: conversation.created_by_user_id };
 };
 
-export const migrateAiMessageQueue = async () => {
+/**
+ * The table, its columns and indexes. Schema-only fixtures call this too, so a
+ * hand-kept copy of the columns cannot drift from the migration.
+ */
+export const migrateAiQueuedMessagesTable = async () => {
   await sql`CREATE TABLE IF NOT EXISTS ai.queued_messages (
     id uuid PRIMARY KEY, conversation_id uuid NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
     position bigint GENERATED ALWAYS AS IDENTITY, submission jsonb NOT NULL, content jsonb NOT NULL,
@@ -64,6 +68,10 @@ export const migrateAiMessageQueue = async () => {
   // Turn deletes (ON DELETE SET NULL), completion and the sweep look entries up by turn.
   await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_interrupted_turn ON ai.queued_messages(interrupted_turn_id) WHERE interrupted_turn_id IS NOT NULL`.simple();
   await sql`CREATE INDEX IF NOT EXISTS ai_queued_messages_submitted_turn ON ai.queued_messages(submitted_turn_id) WHERE submitted_turn_id IS NOT NULL`.simple();
+};
+
+export const migrateAiMessageQueue = async () => {
+  await migrateAiQueuedMessagesTable();
   await sql`CREATE TABLE IF NOT EXISTS ai.queued_message_files (
     message_id uuid NOT NULL REFERENCES ai.queued_messages(id) ON DELETE CASCADE,
     path text NOT NULL, bytes bytea NOT NULL, media_type text NOT NULL, size bigint NOT NULL,
