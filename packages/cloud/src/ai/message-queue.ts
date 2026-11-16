@@ -154,7 +154,7 @@ export const requestQueuedMessageSendNow = async (conversationId: string, id: st
       : [];
     await tx`UPDATE ai.queued_messages SET send_requested_at=clock_timestamp(), interrupted_turn_id=${active?.id ?? null}::uuid,
     interruption_deadline=${client?.deadline ?? null}, interruption_client_calls=${toPgTextArray(client?.call_ids)}::text[],
-    interruption_steps=${JSON.stringify(steps.map((step) => ({ callId: step.call_id, name: step.tool_name, started: step.started })))}::jsonb,
+    interruption_steps=${JSON.stringify(steps.map((step) => ({ callId: step.call_id, name: step.tool_name, started: step.started })))}::text::jsonb,
     status='pending', error=NULL WHERE id=${id}::uuid`;
     return { interrupt: active && interrupt ? { turnId: active.id, request: interrupt, waitingForClient: Boolean(client) } : null };
   });

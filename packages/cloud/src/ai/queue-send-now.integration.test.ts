@@ -97,7 +97,7 @@ integration("the personal queue limit retains legacy entries above the limit", a
     await expect(f.add("Overflow")).rejects.toThrow(`full (${AI_MESSAGE_QUEUE_LIMIT} messages)`);
     const legacy = crypto.randomUUID();
     await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,origin,author_user_id)
-      VALUES (${legacy}::uuid,${f.chat.id}::uuid,${JSON.stringify(f.input("Legacy"))}::jsonb,'[]'::jsonb,NULL,NULL)`;
+      VALUES (${legacy}::uuid,${f.chat.id}::uuid,${JSON.stringify(f.input("Legacy"))}::text::jsonb,'[]'::jsonb,NULL,NULL)`;
     await migrateAiMessageQueue();
     expect(await listQueuedMessages(f.chat.id)).toHaveLength(AI_MESSAGE_QUEUE_LIMIT + 1);
     await expect(f.add("Still full")).rejects.toThrow("full");
@@ -188,8 +188,11 @@ integration("send now is idempotent, keeps other positions, and supplies interru
     await Promise.all([drainQueuedMessages(push, f.chat.id), drainQueuedMessages(push, f.chat.id)]);
     expect(jobs).toHaveLength(1);
     const next = await aiConversations.getTurnRunConfig({ conversationId: f.chat.id, turnId: jobs[0]!.turnId });
-    expect(next?.kind !== "compact" ? next?.systemPrompt : null).toContain(`"interruptedTurnId":"${turn.shortId}"`);
-    expect(next?.kind !== "compact" ? next?.systemPrompt : null).toContain(`"messageOrigin":{"kind":"person","id":"${f.userId}"}`);
+    const prompt = next?.kind !== "compact" ? (next?.systemPrompt ?? "") : "";
+    expect(JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1))).toMatchObject({
+      interruptedTurnId: turn.shortId,
+      messageOrigin: { kind: "person", id: f.userId },
+    });
     expect((await listQueuedMessages(f.chat.id)).map(({ id }) => id)).toEqual([first, last]);
     await requestQueuedMessageSendNow(f.chat.id, now);
     await drainQueuedMessages(push, f.chat.id);
