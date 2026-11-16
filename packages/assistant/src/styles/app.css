@@ -980,7 +980,8 @@
 .k2b-ui .assistant-queue__row:hover { background: var(--k2b-edge-hover-bg); }
 /* A fixed place of 94 px for three 30 px sign buttons: showing and hiding them changes paint only. */
 .k2b-ui .assistant-queue__actions { display: inline-flex; flex: none; align-items: center; justify-content: flex-end; gap: .125rem; inline-size: 5.875rem; }
-.k2b-ui .assistant-queue__actions > :is(.k2b-icon-button, .assistant-queue__slot, .assistant-queue__busy) { flex: none; inline-size: 1.875rem; block-size: 1.875rem; min-block-size: 1.875rem; }
+/* One step more specific than the shared small icon button (28 px), so every place is the same 30 px wide. */
+.k2b-ui .assistant-queue__row .assistant-queue__actions > :is(.k2b-icon-button, .assistant-queue__slot, .assistant-queue__busy) { flex: none; inline-size: 1.875rem; block-size: 1.875rem; min-block-size: 1.875rem; }
 .k2b-ui .assistant-queue__actions .k2b-icon-button { color: var(--k2b-text-muted); font-size: .9375rem; }
 /* What informs stays without a pointer: the ring while "Send now" runs. */
 .k2b-ui .assistant-queue__actions[data-pinned] { opacity: 1; }
@@ -1002,7 +1003,9 @@
   .k2b-ui .assistant-queue__chip > span:not(.assistant-queue__count) { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
 @media (max-width: 640px) {
-  .k2b-ui .assistant-queue[data-layout="line"] :is(.assistant-queue__origin, .assistant-queue__state) { display: none; }
+  /* Only the row above the field drops them; the list keeps every source. */
+  .k2b-ui .assistant-queue[data-layout="line"] > .assistant-queue__next .assistant-queue__origin,
+  .k2b-ui .assistant-queue[data-layout="line"] > .assistant-queue__state { display: none; }
 }
 @media (any-pointer: coarse) {
   .k2b-ui :is(.assistant-queue__all, .assistant-queue__chip) { position: relative; }
