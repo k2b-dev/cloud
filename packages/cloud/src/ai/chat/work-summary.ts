@@ -6,38 +6,11 @@ import { isFailedTool } from "./tool-groups";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
-/** An app a turn worked in, for the small tiles in its work line. */
-export type AiWorkApp = { key: string; name: string; icon: string; accent?: string };
-
-/** The work line shows at most this many app tiles; more apps still count in its sentence. */
-export const AI_WORK_APP_TILES = 3;
-
 const WEB_TOOLS = new Set(["web_search", "web_fetch", "web_extract", "fetch_file"]);
 const FILE_READ_TOOLS = new Set(["read_file", "list_files", "view_image"]);
 const FILE_WRITE_TOOLS = new Set(["write_file", "markdown_to_pdf", "html_to_pdf", "code_export"]);
 
-/** Cloud's own tools for building an automation (Code) belong to no app; their tile is Code's. */
-const isCodeTool = (name: string) => name.startsWith("code_");
-
 const tools = (blocks: AiTurnBlock[]): ToolBlock[] => blocks.filter((block): block is ToolBlock => block.kind === "tool");
-
-/** The apps a turn worked in, in order of first use: an app's own tile, or the web's for web tools. */
-export const workApps = (blocks: AiTurnBlock[]): AiWorkApp[] => {
-  const apps = new Map<string, AiWorkApp>();
-  // An app shows once a call there runs or went through; one waiting for a decision, refused, or failed is named in the
-  // steps instead.
-  for (const tool of tools(blocks).filter(
-    (block) => (block.status === "running" || block.status === "completed") && !isFailedTool(block),
-  )) {
-    const presentation = tool.presentation;
-    if (presentation?.kind === "capability") {
-      const key = `app:${presentation.appId}`;
-      if (!apps.has(key)) apps.set(key, { key, name: presentation.appName, icon: presentation.appIcon, accent: presentation.appAccent });
-    } else if (WEB_TOOLS.has(tool.name) && !apps.has("web")) apps.set("web", { key: "web", name: "Web", icon: "ti ti-world" });
-    else if (isCodeTool(tool.name) && !apps.has("code")) apps.set("code", { key: "code", name: "Code", icon: "ti ti-code" });
-  }
-  return [...apps.values()];
-};
 
 /** The error code of a failed call: `CODE: message` as persisted, or `code` in a structured error result. */
 const failureCode = (tool: ToolBlock): string | null => {
@@ -118,7 +91,8 @@ const testedExamples = (tool: ToolBlock): AutomationWork["examples"] => {
 };
 
 /** Keep evidence with its automation and draft. A pull resets the draft; a write invalidates earlier checks. */
-const automationPhrases = (calls: ToolBlock[], t: ReturnType<typeof aiChatMessages>): string[] => {
+/** The automation's outcomes; `result` when they are its effect and its counted examples, one finding (F5). */
+const automationPhrases = (calls: ToolBlock[], t: ReturnType<typeof aiChatMessages>): { parts: string[]; result: boolean } => {
   const drafts = new Map<string, AutomationWork>();
   let current: AutomationWork | undefined;
   for (const tool of calls) {
@@ -153,7 +127,8 @@ const automationPhrases = (calls: ToolBlock[], t: ReturnType<typeof aiChatMessag
     if (tool.name === "code_write" || replaced) {
       if (state.submitted) state.prepared = false;
       // A draft without a saved version underneath is a new automation; one with a base changes an existing one.
-      const base = draft.baseVersionId ?? config.baseVersionId;
+      // `null` is evidence here (no saved version), so it must not fall through to the next source.
+      const base = "baseVersionId" in draft ? draft.baseVersionId : config.baseVersionId;
       if (base !== undefined) state.prepared = base === null;
       state.changed = true;
       state.checked = false;
@@ -174,13 +149,17 @@ const automationPhrases = (calls: ToolBlock[], t: ReturnType<typeof aiChatMessag
     }
     if (tool.name === "code_submit") state.submitted = true;
   }
-  if (!current) return [];
+  if (!current) return { parts: [], result: false };
   const examples = current.examples ? t.workAutomationExamples(current.examples) : current.changed ? t.workAutomationNoExamples : "";
-  if (current.submitted) return [examples, t.workAutomationSubmitted].filter(Boolean);
-  if (current.changed) return [current.prepared ? t.workAutomationPrepared : t.workAutomationChanged, examples];
-  return [
-    examples || (current.permissions ? t.workAutomationPermissions : current.checked ? t.workAutomationChecked : t.workAutomationRead),
-  ];
+  if (current.submitted) return { parts: [examples, t.workAutomationSubmitted].filter(Boolean), result: false };
+  if (current.changed)
+    return { parts: [current.prepared ? t.workAutomationPrepared : t.workAutomationChanged, examples], result: current.examples !== null };
+  return {
+    parts: [
+      examples || (current.permissions ? t.workAutomationPermissions : current.checked ? t.workAutomationChecked : t.workAutomationRead),
+    ],
+    result: false,
+  };
 };
 
 /**
@@ -203,6 +182,8 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
   for (const tool of calls) {
     if (tool.status !== "completed" || isFailedTool(tool)) continue;
     const presentation = tool.presentation;
+    // Cloud's own capabilities belong to no app the person knows by name; the sentence names only catalog apps.
+    if (presentation?.kind === "capability" && presentation.appId === "core") continue;
     if (presentation?.kind === "capability") {
       const names = presentation.capabilityKind === "action" ? changed : looked;
       if (!names.includes(presentation.appName)) names.push(presentation.appName);
@@ -221,8 +202,9 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
       else uncountedFiles = true;
     }
   }
+  const automation = automationPhrases(calls, t);
   const phrases = [
-    ...automationPhrases(calls, t),
+    ...automation.parts,
     calculated ? (analyzedFile ? t.workAnalyzedFile : t.workCalculated) : "",
     uncountedFiles
       ? t.workCreatedFiles
@@ -236,8 +218,10 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
     web ? t.workSearchedWeb : "",
     readFiles && !calculated ? t.workReadFiles : "",
   ].filter(Boolean);
-  // The catalog words its parts as they read inside a sentence; only the sentence's first letter becomes capital.
-  const sentence = phrases.slice(0, 2).join(", ");
+  // The catalog words its parts as they read inside a sentence; only the sentence's first letter becomes capital. An
+  // effect and its tested result read "Automation vorbereitet · 3 von 3 Beispielen erfolgreich" (Feinschliff F5).
+  const [first = "", second] = phrases;
+  const sentence = second === undefined ? first : `${first}${automation.result ? " · " : ", "}${second}`;
   return sentence ? sentence.charAt(0).toLocaleUpperCase(locale) + sentence.slice(1) : "";
 };
 
@@ -245,7 +229,10 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
  * The step line after the sentence: how many steps, and what did not go through. Thinking counts as a step, like in the
  * opened list. `issues` stays visible where the count gives way to the sentence.
  */
-export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: string): { count: string; issues: string[] } => {
+/** What did not go through, with the tone its meta word takes (Feinschliff 2): failed in red, no access as a warning. */
+export type AiWorkIssue = { text: string; tone: "danger" | "warning" | "neutral" };
+
+export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: string): { count: string; issues: AiWorkIssue[] } => {
   const t = aiChatMessages(locale);
   const thoughts = blocks.filter((block) => block.kind === "thinking" && block.text.trim()).length;
   const calls = tools(blocks);
@@ -255,14 +242,14 @@ export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: stri
   return {
     count: t.steps({ count: steps + thoughts }),
     issues: [
-      denied ? t.workNoAccess({ count: denied }) : "",
-      failed ? t.workFailed({ count: failed }) : "",
-      rejected ? t.workRejected({ count: rejected }) : "",
-    ].filter(Boolean),
+      denied ? { text: t.workNoAccess({ count: denied }), tone: "warning" as const } : null,
+      failed ? { text: t.workFailed({ count: failed }), tone: "danger" as const } : null,
+      rejected ? { text: t.workRejected({ count: rejected }), tone: "neutral" as const } : null,
+    ].filter((issue) => issue !== null),
   };
 };
 
 export const workStepLine = (blocks: AiTurnBlock[], steps: number, locale: string): string => {
   const parts = workStepParts(blocks, steps, locale);
-  return [parts.count, ...parts.issues].join(", ");
+  return [parts.count, ...parts.issues.map((issue) => issue.text)].join(", ");
 };

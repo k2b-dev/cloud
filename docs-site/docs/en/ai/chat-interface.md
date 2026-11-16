@@ -301,11 +301,13 @@ order:
    blocks carry no start time. While a model call waits for its retry or the stream
    reconnects, the line reads "Reconnecting" without its shimmer, and its clock
    stands. While an approval or answer is pending it says what the turn waits
-   for and since when. Without a confirmed outcome,
-   it reads "Worked 3 min" with the step count, and "Worked 1 min · stopped"
-   after a stop. A failed turn reads "Worked 4 min" too and says why in a
-   notice at its end; a failed turn from an earlier release, which recorded no
-   reason, reads "Worked 4 min · interrupted". Expanding it shows work at the
+   for and since when. Once the turn ends, the line leads with ✦ alone and no
+   app icons. The step count, what did not go through ("1 failed" in red, "1
+   without access" in the warning colour) and the work time stand right of the
+   sentence in their own columns, never in it. Without a confirmed outcome the
+   sentence reads "Worked", or "Stopped" after a stop. A failed turn reads
+   "Worked" too and says why in a notice at its end; a failed turn from an
+   earlier release, which recorded no reason, reads "Interrupted". Expanding it shows work at the
    same left edge as the line: intermediate texts as quiet paragraphs, each
    limited to three lines with a chevron for the rest like a quiet status, and
    the steps between them directly, each with its input and output on demand in
@@ -525,8 +527,12 @@ Reading an automation does not count as changing it. Example counts come from
 the last test of the current draft, including failed examples; a later change
 replaces that count with "No examples yet". A calculation after reading a file
 reads "Analyzed a file". Stored files count once per returned path; presenting
-an existing file does not add one. Step counts, failures and duration stay
-outside the sentence.
+an existing file does not add one. An automation's effect and its counted
+examples read as one finding, such as "Prepared the automation · 3 of 3
+examples succeeded"; other parts join with a comma. Cloud's own capabilities
+are not named as an app. Step counts, failures and duration stay outside the
+sentence. A desktop chat shows the whole sentence; on a phone it fades at its
+end, and the full sentence is in its title.
 
 Screen readers do not hear the work line's ticking clock or a status while it
 streams: both sit outside the conversation log's live announcements. A status

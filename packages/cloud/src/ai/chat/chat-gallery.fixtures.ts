@@ -263,6 +263,38 @@ const stepsChat = (): AiStoredMessage[] => {
   ];
 };
 
+/** `#summe/neu` (Feinschliff 4): Gustav prepares a new automation and tries it on three examples. Fictional data. */
+const automationChat = (): AiStoredMessage[] => {
+  seq = 0;
+  const codeId = "lieferavise";
+  const examples = {
+    passed: 3,
+    total: 3,
+    summary: "3 von 3 Beispielen erfolgreich",
+    explanation: "Erfolgreich heißt: Die Automation hat getan, was Gustav für den Fall erwartet hat.",
+    items: ["Lieferavis von Holzhandel Nord", "Rechnung von Lackfabrik Süd", "Lieferavis ohne Nummer"].map((name) => ({
+      name,
+      state: "succeeded",
+      status: "Erfolgreich",
+      sentence: "Wie erwartet einsortiert",
+      differences: [],
+    })),
+  };
+  return [
+    user("Sortiere neue Lieferavise im Postfach info@ automatisch in den Ordner „Wareneingang“."),
+    ...turn(
+      "turn-automation",
+      [
+        { id: "code-init", name: "code_init", args: { title: "Lieferavise sortieren" }, result: { config: { codeId, baseVersionId: null } } },
+        { id: "code-write", name: "code_write", args: { codeId }, result: { version: 1, draft: { codeId, baseVersionId: null } } },
+        { id: "code-check", name: "code_check", args: { codeId }, result: { words: { mayDo: [{ text: "Mail im Postfach info@ lesen und verschieben", isNew: true }] } } },
+        { id: "code-test", name: "code_test", args: { codeId }, result: { ok: true, words: { notices: [], examples } } },
+      ],
+      "Die Automation ist fertig und wartet auf deine Freigabe. Sie verschiebt nur Mails, die ein Lieferavis sind.",
+    ),
+  ];
+};
+
 export const galleryScenes = {
   /** Opened work with folded rows (housekeeping, a file read in parts). */
   schritte: () => ({ messages: stepsChat() }),
@@ -274,6 +306,8 @@ export const galleryScenes = {
   anhaenge: () => ({ messages: attachmentChat() }),
   antwort: () => ({ messages: answerChat() }),
   routine: () => ({ messages: routineChat() }),
+  /** `#summe/neu`: the work line names a prepared automation and its examples. */
+  automation: () => ({ messages: automationChat() }),
   /** `#g-antwort/denkt`: the turn started and Gustav thinks. */
   denkt: () => {
     seq = 0;

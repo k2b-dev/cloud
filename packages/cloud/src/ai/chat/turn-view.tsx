@@ -21,7 +21,7 @@ import { markdown } from "../../shared";
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
-import { AiAnswerSources, AiAppTile, answerSources } from "./answer-sources";
+import { AiAnswerSources, answerSources } from "./answer-sources";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { hasCapabilityView } from "./capability-result";
 import { CapabilityViewBlock, gustavOrigin, gustavViewBlock, isKeyFigureView, keyFigureGroup } from "./capability-view";
@@ -49,7 +49,7 @@ import {
 } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
 import { AiThoughtStep, AiWorkFollowedContext, AiWorkStep, keepsStepDetail } from "./work-steps";
-import { AI_WORK_APP_TILES, workApps, workStepLine, workStepParts, workSummary } from "./work-summary";
+import { type AiWorkIssue, workStepLine, workStepParts, workSummary } from "./work-summary";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type Messages = ReturnType<typeof aiChatMessages>;
@@ -211,7 +211,6 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const duration = segment().duration();
     return !segment().earlier && duration && duration.workedMs > 0 ? duration.workedMs : null;
   };
-  const apps = createMemo(() => workApps(layout().work));
   const summary = createMemo(() => (isLive(segment().phase) ? "" : workSummary(layout().work, locale())));
   const ending = () => {
     const phase = segment().phase;
@@ -226,19 +225,21 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     if (working()) return liveStepLabel(layout().current, t(), stepMs());
     if (waiting()) return layout().waitingFor === "approval" ? t().waitingForApproval : t().waitingForAnswer;
     if (summary()) return summary();
-    const duration = worked();
-    const short = duration === null ? "" : formatWorkDuration(duration, t());
-    if (ending() === "stopped") return t().workedStopped({ duration: short });
-    // A failed turn with a stored reason says it in its notice; the line then reads like any finished turn.
-    if (ending() === "failed") return t().workedInterrupted({ duration: short });
-    return short ? t().workedFor({ duration: short }) : t().worked;
+    // The time stands right in its own column (Feinschliff 4); without a confirmed outcome the sentence says only how the
+    // turn ended. A failed turn with a stored reason says it in its notice; the line then reads like any finished turn.
+    if (ending() === "stopped") return t().workedStopped({ duration: "" });
+    if (ending() === "failed") return t().workedInterrupted({ duration: "" });
+    return t().worked;
   };
-  /** After a finished turn's sentence: its steps, what did not go through, and how it ended. */
+  /** Right of a finished turn's sentence, in its own column: its steps, what did not go through, and how it ended. */
   const stepParts = () => {
     if (isLive(segment().phase) || (!layout().steps && !summary())) return null;
     const parts = workStepParts(layout().work, layout().steps, locale());
-    const ended = summary() && ending() ? (ending() === "stopped" ? t().workEndedStopped : t().workEndedInterrupted) : "";
-    return { count: parts.count, issues: [...parts.issues, ended].filter(Boolean).join(", ") };
+    const ended: AiWorkIssue[] =
+      summary() && ending()
+        ? [ending() === "stopped" ? { text: t().workEndedStopped, tone: "neutral" } : { text: t().workEndedInterrupted, tone: "danger" }]
+        : [];
+    return { count: parts.count, issues: [...parts.issues, ...ended] };
   };
   const ariaLabel = () => {
     if (isLive(segment().phase)) return undefined;
@@ -265,14 +266,14 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     if (waiting() && duration?.waitingMs !== null && duration?.waitingMs !== undefined)
       return t().waitingSince({ duration: formatWorkDuration(duration.waitingMs, t()) });
     const total = worked();
-    return summary() && total !== null ? formatWorkDuration(total, t()) : "";
+    return total !== null ? formatWorkDuration(total, t()) : "";
   };
   return (
     <AiToolActivity
       blockId={`work:${segment().id}`}
       class="ai-turn-work"
       label={
-        <span class="ai-turn-work__text">
+        <span class="ai-turn-work__text" title={summary() || undefined}>
           <span class="ai-turn-work__sentence k2b-truncate-fade">
             <Show when={thinkingPhase()} keyed fallback={sentence()}>
               {(phase) => (
@@ -285,35 +286,43 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
               )}
             </Show>
           </span>
-          <Show when={stepParts()}>
-            {(parts) => (
-              <span class="ai-turn-work__steps" data-issues={parts().issues ? "" : undefined}>
-                {" · "}
-                <span class="ai-turn-work__count">{parts().count}</span>
-                <Show when={parts().issues}>
-                  <span class="ai-turn-work__count">, </span>
-                  <span>{parts().issues}</span>
-                </Show>
-              </span>
-            )}
-          </Show>
         </span>
       }
       ariaLabel={ariaLabel()}
       leading={
         <span class="ai-turn-work__lead">
           <i class={waiting() ? "ti ti-hand-stop" : "ti ti-sparkles"} />
-          <For each={apps().slice(0, AI_WORK_APP_TILES)}>{(app) => <AiAppTile icon={app.icon} accent={app.accent} />}</For>
         </span>
       }
       tone="ai"
       busy={working()}
       trailing={
-        <Show when={time()}>
+        <Show when={stepParts() || time()}>
+          {/* Steps and what did not go through stand right in their own column, never in the sentence (Feinschliff 4). */}
+          <Show when={stepParts()}>
+            {(parts) => (
+              <span class="ai-turn-work__steps" data-issues={parts().issues.length ? "" : undefined}>
+                <span class="ai-turn-work__count">
+                  {parts().count}
+                  <Show when={parts().issues.length}>{" · "}</Show>
+                </span>
+                <For each={parts().issues}>
+                  {(issue, index) => (
+                    <span data-issue={issue.tone}>
+                      {index() ? ", " : ""}
+                      {issue.text}
+                    </span>
+                  )}
+                </For>
+              </span>
+            )}
+          </Show>
           {/* While the turn runs the seconds stay silent; the line announces its activity once. */}
-          <span class="ai-turn-work__meta" aria-hidden={isLive(segment().phase) ? "true" : undefined}>
-            {time()}
-          </span>
+          <Show when={time()}>
+            <span class="ai-turn-work__meta" aria-hidden={isLive(segment().phase) ? "true" : undefined}>
+              {time()}
+            </span>
+          </Show>
         </Show>
       }
       bodyInset={false}

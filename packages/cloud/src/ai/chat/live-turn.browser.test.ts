@@ -443,18 +443,20 @@ for (const view of [
           await page.evaluate(() => document.querySelector(".ai-turn")?.lastElementChild === document.querySelector(".ai-turn__notice")),
         ).toBe(true);
         expect(await page.getByRole("button", { name: de ? "Weiterarbeiten" : "Continue", exact: true }).isVisible()).toBe(true);
-        // The line says what the turn did, how many steps, and how long it worked. A turn whose only read failed did
-        // nothing to name, so it says how long it worked and that a step failed.
-        if (failureCode === "tool_failed")
-          expect(await page.locator(".ai-turn-work .ai-turn-work__text").textContent()).toContain(
-            de ? "4 Min. gearbeitet · 2 Schritte, 1 fehlgeschlagen" : "Worked 4 min · 2 steps, 1 failed",
-          );
-        else {
-          expect(await page.locator(".ai-turn-work .ai-turn-work__text").textContent()).toContain(
-            de ? "Dateien gelesen · 2 Schritte" : "Read files · 2 steps",
-          );
-          expect(await page.locator(".ai-turn-work .ai-turn-work__meta").innerText()).toBe(de ? "4 Min." : "4 min");
+        // The line says what the turn did; its steps and how long it worked stand right in their own column. A turn whose
+        // only read failed did nothing to name, so its sentence says only that it worked, and the step that failed is red.
+        const workText = (await page.locator(".ai-turn-work .ai-turn-work__text").textContent())?.trim();
+        const workSteps = (await page.locator(".ai-turn-work .ai-turn-work__steps").innerText()).replace(/\s+/g, " ").trim();
+        if (failureCode === "tool_failed") {
+          expect(workText).toBe(de ? "Gearbeitet" : "Worked");
+          // A phone leaves out the plain count; what did not go through stays.
+          const failed = de ? "1 fehlgeschlagen" : "1 failed";
+          expect(workSteps).toBe(view.name === "phone" ? failed : `${de ? "2 Schritte" : "2 steps"} · ${failed}`);
+        } else {
+          expect(workText).toBe(de ? "Dateien gelesen" : "Read files");
+          expect(workSteps).toBe(de ? "2 Schritte" : "2 steps");
         }
+        expect(await page.locator(".ai-turn-work .ai-turn-work__meta").innerText()).toBe(de ? "4 Min." : "4 min");
         if (failedStep) expect(await page.locator(".k2b-chat-timeline__content").innerText()).not.toContain("Now I build the report.");
         else expect(await page.locator(".ai-turn__text").innerText()).toContain("Now I build the report.");
         expect(

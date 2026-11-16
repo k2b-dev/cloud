@@ -77,4 +77,11 @@ test("the rendered summary uses evidence, never result wording or the forbidden 
   const html = render([tool("code_test", testResult)]);
   expect(sentence(html)).toBe("0 von 1 Beispielen erfolgreich");
   expect(html).toContain("1 fehlgeschlagen");
+  // Only ✦ leads the line; the steps and what did not go through stand in the right column, never in the sentence.
+  expect(html).not.toContain("ai-app-tile");
+  const trailing = html.indexOf("k2b-chat-activity__trailing");
+  expect(trailing).toBeGreaterThan(html.indexOf("ai-turn-work__sentence"));
+  expect(html.indexOf("ai-turn-work__steps")).toBeGreaterThan(trailing);
+  expect(html).toMatch(/data-issue="danger"[^>]*>(?:<!--[^>]*-->)*1 fehlgeschlagen/);
+  expect(html).toContain('title="0 von 1 Beispielen erfolgreich"');
 });

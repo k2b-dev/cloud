@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AiTurnBlock } from "../protocol";
-import { workApps, workStepLine, workSummary } from "./work-summary";
+import { workStepLine, workStepParts, workSummary } from "./work-summary";
 
 type Tool = Extract<AiTurnBlock, { kind: "tool" }>;
 const tool = (name: string, result: unknown = {}, args: unknown = { codeId: "automation-a" }, extra: Partial<Tool> = {}): Tool => ({
@@ -53,14 +53,14 @@ describe("work summary from confirmed outcomes", () => {
   for (const passed of [3, 2, 0]) {
     test(`${passed} of 3 examples count failed examples too`, () => {
       expect(workSummary([init(), write(), tool("code_test", examples(passed, 3))], "de")).toBe(
-        `Automation vorbereitet, ${passed} von 3 Beispielen erfolgreich`,
+        `Automation vorbereitet · ${passed} von 3 Beispielen erfolgreich`,
       );
     });
   }
 
   test("only the last test of the latest draft supplies numbers", () => {
     expect(workSummary([write(), tool("code_test", examples(3, 3)), tool("code_test", examples(0, 2))], "de")).toBe(
-      "Automation geändert, 0 von 2 Beispielen erfolgreich",
+      "Automation geändert · 0 von 2 Beispielen erfolgreich",
     );
     expect(workSummary([write(), tool("code_test", examples(3, 3)), write()], "de")).toBe("Automation geändert, noch ohne Beispiele");
     expect(workSummary([write(), tool("code_test", examples(3, 3)), tool("code_pull")], "de")).toBe("Automation gelesen");
@@ -74,7 +74,7 @@ describe("work summary from confirmed outcomes", () => {
         { name: "zwei", ok: false },
       ],
     };
-    expect(workSummary([write(), tool("code_test", result)], "de")).toBe("Automation geändert, 1 von 2 Beispielen erfolgreich");
+    expect(workSummary([write(), tool("code_test", result)], "de")).toBe("Automation geändert · 1 von 2 Beispielen erfolgreich");
   });
 
   test("another automation cannot inherit examples or the prepared wording", () => {
@@ -143,7 +143,7 @@ describe("work summary from confirmed outcomes", () => {
         [write(), tool("code_test", examples(3, 3)), tool("code_test", "Connection lost", undefined, { status: "failed" })],
         "de",
       ),
-    ).toBe("Automation geändert, 3 von 3 Beispielen erfolgreich");
+    ).toBe("Automation geändert · 3 von 3 Beispielen erfolgreich");
   });
 
   test("a draft without a saved version is a new automation, even when it was started in an earlier answer", () => {
@@ -161,7 +161,7 @@ describe("work summary from confirmed outcomes", () => {
     expect(workSummary([...blocks, tool("code_simulate", {}, { ...tested, files: { "a.ts": "b" } })], "de")).toBe(
       "Automation geändert, noch ohne Beispiele",
     );
-    expect(workSummary([...blocks, tool("code_simulate", {}, tested)], "de")).toBe("Automation geändert, 3 von 3 Beispielen erfolgreich");
+    expect(workSummary([...blocks, tool("code_simulate", {}, tested)], "de")).toBe("Automation geändert · 3 von 3 Beispielen erfolgreich");
     expect(workSummary([tool("code_simulate")], "de")).toBe("");
   });
 
@@ -223,10 +223,36 @@ describe("work summary from confirmed outcomes", () => {
   });
 });
 
-test("Code's own steps show Code's tile, while the sentence names the automation, not the code", () => {
+test("Code's own steps never name the code, and Cloud's own capabilities never name Core", () => {
   const rework = [tool("code_pull"), tool("code_write"), tool("code_check"), tool("code_submit")];
-  expect(workApps(rework)).toEqual([{ key: "code", name: "Code", icon: "ti ti-code" }]);
-  expect(workApps([tool("web_search"), ...rework]).map((app) => app.key)).toEqual(["web", "code"]);
   expect(workSummary(rework, "de")).not.toMatch(/\bCode\b/);
   expect(workSummary(rework, "en")).not.toMatch(/\bcode\b/i);
+  const capability = (appId: string, appName: string): AiTurnBlock => ({
+    ...tool(`${appId}.find`),
+    presentation: { kind: "capability", appId, appName, appIcon: "ti ti-notebook", title: "Suchen", capabilityKind: "query" },
+  });
+  expect(workSummary([capability("notebooks", "Notizbücher"), capability("core", "Core")], "de")).toBe("In Notizbücher nachgesehen");
+  expect(workSummary([capability("core", "Core")], "de")).toBe("");
+});
+
+test("an effect and its counted examples read as one finding; other parts join with a comma (Feinschliff F5)", () => {
+  expect(workSummary([init(), write(), tool("code_test", examples(3, 3))], "de")).toBe(
+    "Automation vorbereitet · 3 von 3 Beispielen erfolgreich",
+  );
+  expect(workSummary([init(), write()], "de")).toBe("Automation vorbereitet, noch ohne Beispiele");
+  expect(workSummary([tool("read_file"), tool("code_run", { status: "completed" }), tool("write_file", { path: "/t.csv", mediaType: "text/csv" })], "de")).toBe(
+    "Datei ausgewertet, 1 Tabelle abgelegt",
+  );
+});
+
+test("what did not go through carries its tone for the meta column", () => {
+  const denied = tool("mail.read", { error: { code: "FORBIDDEN" } }, {}, { isError: true });
+  const failed = tool("write_file", "TIMEOUT", {}, { status: "failed" });
+  expect(workStepParts([denied, failed], 4, "de")).toEqual({
+    count: "4 Schritte",
+    issues: [
+      { text: "1 ohne Zugriff", tone: "warning" },
+      { text: "1 fehlgeschlagen", tone: "danger" },
+    ],
+  });
 });

@@ -83,7 +83,6 @@ const messages = /* @__PURE__ */ i18n.define({
       continueAnswerFailed: "The request could not be sent. Try again.",
       byteRange: ({ start, end }: { start: string; end: string }) => `Bytes ${start}–${end}`,
       worked: "Worked",
-      workedFor: ({ duration }: { duration: string }) => `Worked ${duration}`,
       workedStopped: ({ duration }: { duration: string }) => (duration ? `Worked ${duration} · stopped` : "Stopped"),
       workedInterrupted: ({ duration }: { duration: string }) => (duration ? `Worked ${duration} · interrupted` : "Interrupted"),
       workedLabel: ({ duration, steps, ending }: { duration: string; steps: string; ending: "stopped" | "failed" | null }) =>
@@ -493,7 +492,6 @@ const messages = /* @__PURE__ */ i18n.define({
       continueAnswerFailed: "Die Anfrage konnte nicht gesendet werden. Versuche es erneut.",
       byteRange: ({ start, end }) => `Bytes ${start}–${end}`,
       worked: "Gearbeitet",
-      workedFor: ({ duration }) => `${duration} gearbeitet`,
       workedStopped: ({ duration }) => (duration ? `${duration} gearbeitet · gestoppt` : "Gestoppt"),
       workedInterrupted: ({ duration }) => (duration ? `${duration} gearbeitet · abgebrochen` : "Abgebrochen"),
       workedLabel: ({ duration, steps, ending }) =>

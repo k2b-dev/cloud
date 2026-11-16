@@ -44,8 +44,8 @@
   white-space: nowrap;
 }
 
-/* The work line (Gustav chat v12): ✦ and the app tiles, one sentence in 13 px, the time in 12 px tabular figures, and
-   the chevron. One line in every state and the same height whether the turn runs or has ended (Bauplan 6b). */
+/* The work line (Gustav chat v12, Feinschliff 4): only ✦, one sentence in 13 px, then on the right the steps and the
+   time in 12 px tabular figures, and the chevron. One line in every state and the same height whether the turn runs or has ended (Bauplan 6b). */
 .k2b-ui .ai-turn-work {
   color: var(--k2b-text-muted);
   font-size: 0.8125rem;
@@ -81,7 +81,8 @@
   white-space: nowrap;
 }
 
-/* The sentence gives way first: it fades at its end, while the step count and what did not go through stay whole. */
+/* The sentence gives way first: it fades at its end (its whole text in the title), while the steps on the right stay
+   whole. */
 .k2b-ui .ai-turn-work__text {
   display: flex;
   min-width: 0;
@@ -94,7 +95,18 @@
 
 .k2b-ui .ai-turn-work__steps {
   flex: none;
+  color: var(--k2b-text-subtle, var(--k2b-text-muted));
+  font-size: 0.75rem;
+  line-height: 1.25rem;
   white-space: pre;
+}
+
+.k2b-ui .ai-turn-work__steps [data-issue="danger"] {
+  color: var(--k2b-danger-text);
+}
+
+.k2b-ui .ai-turn-work__steps [data-issue="warning"] {
+  color: var(--k2b-warning-text);
 }
 
 /* On a narrow chat the sentence needs the room: the plain step count gives way, what did not go through stays. */
@@ -126,14 +138,26 @@
 }
 
 .k2b-ui .ai-turn-work .k2b-chat-activity__trailing {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
   margin-inline-start: auto;
 }
 
 /* The time follows the sentence and the chevron follows the time, each right beside the other (v12); tabular figures keep
    a ticking clock from shifting the chevron within a unit. */
 .k2b-ui .ai-turn-work__meta {
+  min-width: 3.5rem;
   font-size: 0.75rem;
   line-height: 1.25rem;
+  text-align: end;
+}
+
+/* The time has a fixed column (Feinschliff 2: 56 px, phone 48 px), so steps and time end on the same edges in every row. */
+@container k2b-chat (max-width: 39.999rem) {
+  .k2b-ui .ai-turn-work__meta {
+    min-width: 3rem;
+  }
 }
 
 /* Only the sentence shimmers while Gustav works: a plum light runs over it every 2.2 s, on the sentence itself so its
