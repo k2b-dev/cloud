@@ -58,8 +58,21 @@
   outline: none;
 }
 
+/* The floating stack over the field of Gustav's chat, in named layers: "Waiting for you" lies on the timeline's free end,
+   and "To the newest message" always stands at a fixed place above the row's slot, whether a row shows or not. So it
+   never jumps and never covers a chip (a deliberate deviation from v12, where the pill covers the row, finding 81). The
+   place derives from the row: its height and its offset from the field, plus the pill's own 8 px. */
+.k2b-ui .assistant-chat-layout {
+  --assistant-layer-waiting: 2;
+  --assistant-layer-to-latest: 3;
+  --assistant-waiting-height: 2rem;
+  --assistant-waiting-offset: 0.375rem;
+  --assistant-to-latest-above-waiting: calc(var(--assistant-waiting-height) + var(--assistant-waiting-offset));
+}
 .k2b-ui .assistant-chat-layout .k2b-chat-timeline__latest {
   left: calc((100% - var(--assistant-chat-context-width)) / 2);
+  bottom: calc(max(0.5rem, env(safe-area-inset-bottom)) + var(--assistant-to-latest-above-waiting));
+  z-index: var(--assistant-layer-to-latest);
 }
 
 /* Measure the chat pane, including its sidebar column, independently of the
@@ -844,15 +857,15 @@
   display: flex;
   align-items: center;
   gap: .5rem;
-  block-size: 2rem;
+  block-size: var(--assistant-waiting-height, 2rem);
   min-inline-size: 0;
   font-size: .8125rem;
 }
 .k2b-ui .assistant-chat-composer__column > .assistant-waiting {
   position: absolute;
-  z-index: 2;
+  z-index: var(--assistant-layer-waiting);
   inset-inline: 0;
-  inset-block-end: calc(100% + .375rem);
+  inset-block-end: calc(100% + var(--assistant-waiting-offset));
   /* Text that scrolls under the row fades into the page, never behind a hard edge. */
   background: linear-gradient(to bottom, transparent, var(--k2b-surface) 55%);
 }
