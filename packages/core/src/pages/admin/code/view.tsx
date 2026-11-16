@@ -372,7 +372,10 @@ export function CodeAreaView(props: Props) {
             <span class="core-code-approvals__version">{entry.version}</span>
           </span>
           <span class="core-code-approvals__who">
-            <span>{entry.author.name ?? t.unknownAuthor}</span>
+            {/* Someone who submits their own personal Code is named once, in the owner. */}
+            <Show when={!(entry.owner?.kind === "person" && entry.owner.userId === entry.author.id)}>
+              <span>{entry.author.name ?? t.unknownAuthor}</span>
+            </Show>
             <Show when={entry.owner}>
               {(owner) => (
                 <span class="core-code-approvals__owner">

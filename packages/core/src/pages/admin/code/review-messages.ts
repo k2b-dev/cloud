@@ -151,6 +151,7 @@ export const codeReviewMessages = i18n.define({
       previousComments: ({ n }: N) => (n === 1 ? "1 comment on it" : `${n} comments on it`),
       // Overview
       whatItDoes: "What it does",
+      noDescription: "No description yet.",
       aiMark: "AI explanation, not checked by Cloud",
       explain: "Explain this version",
       explainFailed: "No explanation right now. Everything else here is unaffected.",
@@ -313,6 +314,7 @@ export const codeReviewMessages = i18n.define({
       previousTitle: ({ n }) => `Du hattest bei Version ${n} Änderungen angefordert`,
       previousComments: ({ n }) => (n === 1 ? "1 Kommentar dazu" : `${n} Kommentare dazu`),
       whatItDoes: "Was sie damit tut",
+      noDescription: "Noch keine Beschreibung.",
       aiMark: "KI-Erklärung, nicht von Cloud geprüft",
       explain: "Diese Version erklären lassen",
       explainFailed: "Gerade keine Erklärung. Alles andere hier ist davon nicht betroffen.",

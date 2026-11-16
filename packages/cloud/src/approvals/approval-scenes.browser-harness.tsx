@@ -1,5 +1,5 @@
 import { ButtonLink, ChangeList, Chat, type ChatDecisionState, LocaleProvider } from "@k2b/ui";
-import type { JSX } from "solid-js";
+import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import type { ActionCard, ActionText } from "../ai/chat/action-card";
 import { toolActionCard } from "../ai/chat/action-card";
@@ -366,6 +366,11 @@ const scenes: Record<string, () => JSX.Element> = {
       tool("g1", "chart", chartArgs, chartToolResult(chartArgs)),
       { id: "t1", kind: "text", text: "Im November bleibt ein Plus von **741,92 €**." },
     ];
+    // `&late`: the key figures, which stand first, arrive after the table and the chart, as a block does whose code
+    // loads later; the Lightbox still steps through the blocks in the order they stand.
+    const late = new URL(location.href).searchParams.has("late");
+    const [figures, setFigures] = createSignal(!late);
+    if (late) setTimeout(() => setFigures(true), 100);
     return (
       <>
         <Label>Eine Antwort, drei Bausteine</Label>
@@ -374,7 +379,7 @@ const scenes: Record<string, () => JSX.Element> = {
             id: "ai-turn:turn-1:start",
             turnId: "turn-1",
             phase: "completed",
-            layout: layoutAiTurn(blocks, { phase: "completed" }),
+            layout: layoutAiTurn(figures() ? blocks : blocks.slice(2), { phase: "completed" }),
             earlier: false,
             duration: () => null,
           })}
