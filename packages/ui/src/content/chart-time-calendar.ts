@@ -12,16 +12,18 @@ export type ChartTimeAxis = {
 export type ChartTimeUnit = "minute" | "hour" | "day" | "week" | "month" | "year";
 export type ChartTimeStep = { unit: ChartTimeUnit; size: number };
 
-const STEPS: readonly ChartTimeStep[] = [
-  ...[1, 2, 5, 10, 15, 30].map((size) => ({ unit: "minute" as const, size })),
-  ...[1, 2, 3, 6, 12].map((size) => ({ unit: "hour" as const, size })),
-  // Three days and two weeks keep a span of one or two weeks, or of one or two months, at four or five dates instead
-  // of falling to two at the next coarser step.
-  ...[1, 2, 3].map((size) => ({ unit: "day" as const, size })),
-  ...[1, 2].map((size) => ({ unit: "week" as const, size })),
-  ...[1, 3, 6].map((size) => ({ unit: "month" as const, size })),
-  { unit: "year", size: 1 },
-];
+// Three days and two weeks keep a span of one or two weeks, or of one or two months, at four or five dates instead of
+// falling to two at the next coarser step. One table, as the artifact prelude carries this file.
+const STEPS: readonly ChartTimeStep[] = (
+  [
+    ["minute", [1, 2, 5, 10, 15, 30]],
+    ["hour", [1, 2, 3, 6, 12]],
+    ["day", [1, 2, 3]],
+    ["week", [1, 2]],
+    ["month", [1, 3, 6]],
+    ["year", [1]],
+  ] as const
+).flatMap(([unit, sizes]) => sizes.map((size) => ({ unit, size })));
 const UNIT_MS: Record<ChartTimeUnit, number> = {
   minute: 60_000,
   hour: 3_600_000,
