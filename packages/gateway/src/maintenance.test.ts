@@ -4,7 +4,7 @@ import { MaintenanceProblemSchema, type MaintenanceState } from "@k2b/cloud/cont
 import * as services from "@k2b/cloud/services";
 import { useUnitClients } from "../../../scripts/fixtures/unit-clients";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
-import { createAvailability, MAX_VANISHED_APPS, VANISHED_APP_MS } from "./availability";
+import { createAvailability, MAX_VANISHED_APPS, tintAppIcon, UPSTREAM_FAILURE_MS, VANISHED_APP_MS } from "./availability";
 import { createGatewayHandler } from "./handler";
 import { createProxyStats } from "./proxy";
 import { buildRouteTable } from "./trie";
@@ -218,6 +218,14 @@ test("an expired lease or a failing upstream is unavailable, never updating", as
   expect(failing.status).toBe(503);
   expect(await failing.json()).toMatchObject({ code: "app_unavailable", appId: "files" });
   expect(failing.headers.get("Retry-After")).toBe("5");
+  // Its lease still lives, but open pages must not reload into the same error.
+  const status = async () => (await (await f.request("/_cloud/gateway/status?app=files")).json()) as { app: { available: boolean } };
+  expect((await status()).app.available).toBe(false);
+  f.tick(UPSTREAM_FAILURE_MS + 1);
+  expect((await status()).app.available).toBe(true);
+  f.availability.upstreamFailed("files");
+  f.availability.upstreamAnswered("files");
+  expect((await status()).app.available).toBe(true);
 });
 
 test("a returned app wins again, and the remembered set stays bounded", () => {
@@ -234,4 +242,12 @@ test("a returned app wins again, and the remembered set stays bounded", () => {
   expect(availability.vanishedOwner(`/api/app${MAX_VANISHED_APPS + 4}/x`, null)).toBeNull();
   // A live match with an equal or longer prefix keeps routing.
   expect(availability.vanishedOwner("/api/app10/x", "/api/app10")).toBeNull();
+});
+
+test("a generated app favicon takes the app accent; other SVGs and invalid accents stay as served", () => {
+  const generated = '<svg><g fill="none" stroke="url(#cloud-icon)" stroke-width="2"><path d="M1 1"/></g></svg>';
+  expect(tintAppIcon(generated, "#c2410c")).toContain('stroke="#c2410c"');
+  expect(tintAppIcon(generated, "red")).toBe(generated);
+  expect(tintAppIcon(generated, undefined)).toBe(generated);
+  expect(tintAppIcon("<svg><path stroke=\"#000\"/></svg>", "#c2410c")).toBe("<svg><path stroke=\"#000\"/></svg>");
 });

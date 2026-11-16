@@ -141,8 +141,19 @@ const TEXT = {
 /** Time of day in the Cloud's zone. The client uses the same options for times it learns later. */
 const timeFormat = (locale: "de" | "en") =>
   locale === "de"
-    ? { options: { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const, suffix: " Uhr" }
-    : { options: { hour: "numeric", minute: "2-digit" } as const, suffix: "" };
+    ? {
+        options: { hour: "2-digit", minute: "2-digit", hourCycle: "h23" } as const,
+        suffix: " Uhr",
+        day: { prefix: " am ", options: { day: "numeric", month: "numeric" } as const },
+      }
+    : {
+        options: { hour: "numeric", minute: "2-digit" } as const,
+        suffix: "",
+        day: { prefix: " on ", options: { month: "short", day: "numeric" } as const },
+      };
+
+/** Calendar day in `zone`, to name the day of a time that is not today. */
+const DAY_KEY = { year: "numeric", month: "2-digit", day: "2-digit" } as const;
 
 type Live = "ring" | "pause" | "check";
 type View = {
@@ -200,7 +211,8 @@ h1{font-size:26px;line-height:1.2;letter-spacing:-.02em;font-weight:650;margin:0
 const CLIENT = `(c)=>{const v=document.getElementById("v"),a=document.getElementById("a"),t0=Date.now(),skew=c.now-t0;
 let until=c.until,cur=c.state,shown=c.time,ok=true,long=false,last=t0,busy=false,done=false,timer=0,lateTimer=0;
 const now=()=>Date.now()+skew,esc=s=>s.replace(/[&<>"']/g,ch=>"&#"+ch.charCodeAt(0)+";"),
-fmt=ms=>new Intl.DateTimeFormat(c.locale,Object.assign({timeZone:c.zone},c.options)).format(ms)+c.suffix,
+part=(o,ms)=>new Intl.DateTimeFormat(c.locale,Object.assign({timeZone:c.zone},o)).format(ms),
+fmt=ms=>part(c.options,ms)+c.suffix+(part(c.dayKey,ms)===part(c.dayKey,now())?"":c.day.prefix+part(c.day.options,ms)),
 delay=e=>{let d=c.steps[0][1];for(const s of c.steps)if(e>=s[0])d=s[1];return d*(0.8+0.4*Math.random())},
 show=(k,t)=>{if(k===cur&&t===shown)return;const f=c.views[k],el=document.activeElement,refocus=!!el&&v.contains(el)&&el.classList.contains("btn");
 v.innerHTML=f.html.split("<span data-t></span>").join("<span data-t>"+esc(t)+"</span>");if(k!==cur)a.textContent=f.say;cur=k;shown=t;
@@ -326,7 +338,10 @@ export const renderMaintenancePage = (model: MaintenancePageModel, options: { no
   const tx = TEXT[model.locale];
   const zone = validZone(model.timeZone);
   const format = timeFormat(model.locale);
-  const fmt = (ms: number) => new Intl.DateTimeFormat(model.locale, { timeZone: zone, ...format.options }).format(ms) + format.suffix;
+  const part = (options: Intl.DateTimeFormatOptions, ms: number) => new Intl.DateTimeFormat(model.locale, { timeZone: zone, ...options }).format(ms);
+  // A time on another day names that day, so an end after midnight is not read as today.
+  const fmt = (ms: number) =>
+    part(format.options, ms) + format.suffix + (part(DAY_KEY, ms) === part(DAY_KEY, now) ? "" : format.day.prefix + part(format.day.options, ms));
   const nonce = esc(options.nonce);
 
   let first: View;
@@ -363,6 +378,8 @@ export const renderMaintenancePage = (model: MaintenancePageModel, options: { no
     zone,
     options: format.options,
     suffix: format.suffix,
+    day: format.day,
+    dayKey: DAY_KEY,
     now,
     until,
     untilText: time,

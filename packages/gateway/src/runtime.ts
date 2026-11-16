@@ -22,7 +22,7 @@ import { maintenanceNeedsRenewal, renewMaintenanceState, watchMaintenanceState }
 import { get } from "@k2b/cloud/services/settings";
 import { readEnvSettingsStatus } from "@k2b/cloud/services/settings/env-status";
 import { cloudHostSet, type DomainSnapshot } from "./app-domains";
-import { appIconKey, availability } from "./availability";
+import { appIconKey, availability, tintAppIcon } from "./availability";
 import { gatewayRouter } from "./config";
 import { type AppRouteWarning, buildAppRoutesDetailed } from "./routes";
 import { getRouteTable, setRouteTable, stats } from "./stats";
@@ -187,7 +187,7 @@ const MAX_CLOUD_LOGO_CHARS = 512 * 1024;
 const ICON_FETCH_TIMEOUT_MS = 3_000;
 const BRANDING_IMAGE = /^data:image\/(?:png|jpeg|gif|webp|svg\+xml);base64,[A-Za-z0-9+/]+=*$/;
 
-const fetchAppIcon = async (baseUrl: string, appId: string): Promise<string | undefined> => {
+const fetchAppIcon = async (baseUrl: string, appId: string, accent: string | undefined): Promise<string | undefined> => {
   const url = new URL(`/public/${encodeURIComponent(appId)}/favicon.svg`, baseUrl);
   const response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(ICON_FETCH_TIMEOUT_MS) });
   if (!response.ok || !(response.headers.get("Content-Type") ?? "").startsWith("image/svg+xml")) {
@@ -206,7 +206,9 @@ const fetchAppIcon = async (baseUrl: string, appId: string): Promise<string | un
     if (size > MAX_APP_ICON_BYTES) return undefined;
     chunks.push(chunk);
   }
-  return size > 0 ? `data:image/svg+xml;base64,${Buffer.concat(chunks).toString("base64")}` : undefined;
+  if (size === 0) return undefined;
+  const svg = tintAppIcon(Buffer.concat(chunks).toString("utf8"), accent);
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 };
 
 let iconTask: Promise<void> | null = null;
@@ -217,7 +219,7 @@ const refreshIcons = (): void => {
     for (const app of availability.iconsDue()) {
       let src: string | undefined;
       try {
-        src = await fetchAppIcon(app.baseUrl, app.id);
+        src = await fetchAppIcon(app.baseUrl, app.id, app.appearance?.accent);
       } catch {
         src = undefined;
       }

@@ -126,6 +126,8 @@ export const createGatewayHandler =
       }
       const publicAvailability: ProxyAvailability | undefined = availability && {
         vanishedOwner: () => null,
+        upstreamFailed: availability.upstreamFailed,
+        upstreamAnswered: availability.upstreamAnswered,
         answer: (req, appId, reason) => {
           const response = appUnavailableAnswer(req, availability, appId, { reason, cloudHost: false });
           publicResponseHeaders(response.headers);
@@ -154,6 +156,8 @@ export const createGatewayHandler =
     }
     const cloudAvailability: ProxyAvailability | undefined = availability && {
       vanishedOwner: availability.vanishedOwner,
+      upstreamFailed: availability.upstreamFailed,
+      upstreamAnswered: availability.upstreamAnswered,
       answer: (req, appId, reason) => appUnavailableAnswer(req, availability, appId, { reason, cloudHost: true }),
     };
     if (/^https?:\/\/[^/]+\/public\/storage(?:\/|[?#]|$)/.test(req.url)) return dependencies.storage(req, client?.address ?? "unknown");

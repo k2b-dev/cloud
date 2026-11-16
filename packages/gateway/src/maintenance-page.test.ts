@@ -66,6 +66,14 @@ test("an end already in the past is served as taking longer than planned", () =>
   expect(html).toContain("Die Seite prüft weiter und lädt von selbst neu.");
 });
 
+test("an end on another day names that day, so an end after midnight is not read as today", () => {
+  const tomorrow = Date.parse("2026-11-17T08:00:00+01:00");
+  expect(visible(render({ ...base, kind: "cloud", until: tomorrow }))).toContain(
+    "Voraussichtlich fertig um <span data-t>08:00 Uhr am 17.11.</span>.",
+  );
+  expect(visible(render({ ...base, locale: "en", kind: "cloud", until: tomorrow }))).toMatch(/8:00\sAM on Nov 17/);
+});
+
 test("English pages use calm English and a 12-hour time", () => {
   const html = visible(render({ ...base, locale: "en", kind: "cloud", message: MESSAGE, until: at("14:30") }));
   expect(html).toContain('<html lang="en">');

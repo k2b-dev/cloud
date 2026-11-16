@@ -106,6 +106,9 @@ export type ProxyAvailability = {
   /** The recently vanished app that owned a longer prefix of the path than the live match, if any. */
   vanishedOwner: (pathname: string, matchedPrefix: string | null) => { appId: string; reason: AppUnavailableReason } | null;
   answer: (req: Request, appId: string, reason?: AppUnavailableReason) => Response;
+  /** Upstream outcome per app, so the status endpoint does not call a crashed app available. */
+  upstreamFailed: (appId: string) => void;
+  upstreamAnswered: (appId: string) => void;
 };
 
 /** Whether a request path lies in the mobile app's scope, segment-wise like the route trie. */
@@ -250,6 +253,7 @@ export const proxyRequest = async (
 
     const ms = performance.now() - start;
     appStats.totalMs += ms;
+    availability?.upstreamAnswered(match.appId);
     // The app reports the route it matched; fall back to deriving one for
     // apps that don't run the platform middleware (or don't run Hono).
     const reportedTemplate = proxyRes.headers.get(ROUTE_TEMPLATE_HEADER);
@@ -318,7 +322,10 @@ export const proxyRequest = async (
       });
     }
 
-    if (availability) return availability.answer(req, match.appId, "unavailable");
+    if (availability) {
+      availability.upstreamFailed(match.appId);
+      return availability.answer(req, match.appId, "unavailable");
+    }
     const headers = new Headers({ "Retry-After": "3" });
     if (publicTarget) publicResponseHeaders(headers);
     return new Response("Bad Gateway — upstream unavailable", { status: publicTarget ? 503 : 502, headers });

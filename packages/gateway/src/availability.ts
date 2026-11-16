@@ -19,6 +19,11 @@ export const MAX_VANISHED_APPS = 32;
 /** A clean deregistration and the registry refresh that drops the app arrive separately; pair them within this window. */
 const REMOVAL_PAIRING_MS = 60_000;
 const ICON_RETRY_MS = 5 * 60 * 1000;
+/**
+ * A crashed app keeps its registry lease for minutes. While its last proxied request failed within this window,
+ * the status endpoint calls it unavailable, so open pages do not reload into the same error again and again.
+ */
+export const UPSTREAM_FAILURE_MS = 15_000;
 
 export type CloudBranding = {
   name: string;
@@ -55,6 +60,14 @@ const knownApp = (app: AppRegistryEntry, icon: string | undefined): KnownApp => 
   prefixes: buildAppRoutes([app]).map((route) => segments(route.prefix)),
 });
 
+/**
+ * The generated favicon strokes the glyph with a blue gradient (packages/cloud/scripts/app-favicon.ts). On the
+ * page it sits in a tile tinted with the app's accent, and an `<img>` cannot inherit a colour, so the stroke takes
+ * the accent here. Any other SVG stays as the app served it.
+ */
+export const tintAppIcon = (svg: string, accent: string | undefined): string =>
+  accent && /^#[0-9a-f]{6}$/i.test(accent) ? svg.replace('stroke="url(#cloud-icon)"', `stroke="${accent}"`) : svg;
+
 /** Version key for an app's generated favicon: refetch only when the app runs another build or restarts. */
 export const appIconKey = (app: AppRegistryEntry): string => String(app.runtime?.version ?? app.runtime?.release ?? app.startedAt ?? "");
 
@@ -65,6 +78,7 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
   const icons = new Map<string, { key: string; src?: string; at: number }>();
   const vanished = new Map<string, VanishedApp>();
   const cleanRemovals = new Map<string, number>();
+  const upstreamFailures = new Map<string, number>();
 
   const prune = () => {
     const cutoff = now() - VANISHED_APP_MS;
@@ -76,6 +90,13 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
       vanished.delete(id);
     }
     for (const id of icons.keys()) if (!live.has(id) && !vanished.has(id)) icons.delete(id);
+    for (const [id, at] of upstreamFailures) if (!live.has(id) || at <= now() - UPSTREAM_FAILURE_MS) upstreamFailures.delete(id);
+  };
+
+  const available = (appId: string): boolean => {
+    if (!live.has(appId)) return false;
+    const failedAt = upstreamFailures.get(appId);
+    return failedAt === undefined || failedAt <= now() - UPSTREAM_FAILURE_MS;
   };
 
   return {
@@ -131,6 +152,14 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
       icons.set(appId, { key, ...(src ? { src } : {}), at: now() });
     },
 
+    /** The proxy could not reach a registered app; a later answer from it clears this at once. */
+    upstreamFailed: (appId: string) => {
+      if (live.has(appId)) upstreamFailures.set(appId, now());
+    },
+    upstreamAnswered: (appId: string) => {
+      if (upstreamFailures.size > 0) upstreamFailures.delete(appId);
+    },
+
     /** Registered right now. Unknown or malformed ids are simply not available. */
     isLive: (appId: string): boolean => live.has(appId),
 
@@ -170,7 +199,7 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
       const state = maintenance?.state;
       return {
         maintenance: state ? { active: true, until: state.until ? new Date(state.until).toISOString() : null } : null,
-        ...(appId !== null ? { app: { available: live.has(appId) } } : {}),
+        ...(appId !== null ? { app: { available: available(appId) } } : {}),
       };
     },
   };

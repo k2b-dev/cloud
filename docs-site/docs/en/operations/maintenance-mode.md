@@ -101,8 +101,9 @@ works on the Cloud host and on app domains:
 ```
 
 `{"maintenance": null}` means off. With `?app=<id>` the answer also has
-`"app": { "available": true }` while that app is registered; an unknown id is
-`false`. The page polls this endpoint. It reports no other details.
+`"app": { "available": true }` while that app is registered and its last
+proxied request did not fail in the past 15 seconds; an unknown id is `false`.
+The page polls this endpoint. It reports no other details.
 
 ## How the state is kept
 
