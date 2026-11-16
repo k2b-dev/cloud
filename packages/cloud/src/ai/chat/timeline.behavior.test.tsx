@@ -614,6 +614,62 @@ const renderTimeline = async (
   }
 });
 
+(isServer ? test.skip : test)("thinking that runs on across blocks changes its word after 3 s of the whole phase", async () => {
+  jest.useFakeTimers();
+  setSystemTime(new Date("2026-11-16T09:00:00.000Z"));
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider actions={{}}>
+        {(() => {
+          const items = createAiChatTimeline({ messages: createMemo(() => visibleMessages(state)), activeTurn: () => state.activeTurn });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const word = () => dom.root.querySelector(".ai-turn-work .k2b-chat-activity__word")?.textContent?.trim();
+  const label = () => visibleText(dom.root.querySelector(".ai-turn-work .k2b-chat-activity__copy strong"));
+  const load = { id: "tool-load", kind: "tool" as const, callId: "load", name: "load_tools", args: {} };
+  try {
+    // The line says "Thinking" all along: before the first block, in a thinking block, after a finished call, and in
+    // the next thinking block. Each change of block arrives within a second, as in the Preview (finding 90).
+    let seq = 1;
+    emit({ ...base, seq: seq++, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+    const steps: (() => void)[] = [
+      () => emit({ ...base, seq: seq++, type: "block_delta", blockId: "think-1", blockKind: "thinking", delta: "Which tools" }),
+      () => emit({ ...base, seq: seq++, type: "block_set", block: { ...load, status: "completed", result: {} } }),
+      () => emit({ ...base, seq: seq++, type: "block_delta", blockId: "think-2", blockKind: "thinking", delta: "Now the notes" }),
+      () => emit({ ...base, seq: seq++, type: "block_delta", blockId: "think-3", blockKind: "thinking", delta: "And the tasks" }),
+    ];
+    // The words load when the phase begins; their module is in the cache once this import settles.
+    await import("./thinking-words");
+    for (let flush = 0; flush < 5; flush++) await Promise.resolve();
+    for (const step of steps) {
+      jest.advanceTimersByTime(700);
+      step();
+      expect(label()).toBe("Thinking");
+    }
+    // 3.4 s into the phase: past its first 3 s, the word has changed, once the old one faded out.
+    jest.advanceTimersByTime(600);
+    expect(word()).toBeDefined();
+    expect(word()).not.toBe("Thinking");
+    // Screen readers heard once that Gustav thinks, by name.
+    expect(document.querySelector("[data-k2b-live]")?.textContent).toContain("Gustav is thinking");
+  } finally {
+    dispose();
+    dom.cleanup();
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});
+
 (isServer ? test.skip : test)("a step that starts right after a model retry times only itself", async () => {
   jest.useFakeTimers();
   const dom = createDomTestHarness();

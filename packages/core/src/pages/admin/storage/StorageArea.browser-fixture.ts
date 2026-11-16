@@ -325,7 +325,7 @@ export async function storageAreaBrowserFixture(options: { port?: number } = {})
     const scenario = Object.entries(STORAGE_SCENARIOS).find(([name]) => name === c.req.query("state"));
     if (scenario) items = scenario[1]();
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: locale === "de" ? "Speicher" : "Storage", theme });
