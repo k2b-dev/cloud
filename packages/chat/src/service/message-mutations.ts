@@ -68,7 +68,7 @@ export const mutateMessage =
       edited_at = ${operation === "edit" ? db`clock_timestamp()` : db`edited_at`},
       deleted_at = ${operation === "delete" ? db`clock_timestamp()` : db`NULL`},
       refs = ${operation === "delete" ? db`'[]'::jsonb` : db`refs`},
-      quotes = ${operation === "delete" ? db`'[]'::jsonb` : db`quotes`}
+      quotes = CASE WHEN ${operation === "delete"} THEN '[]'::jsonb ELSE quotes END
       WHERE id = ${row.id}::uuid RETURNING *`;
       // Invalidate every previous recipient before removing the old mention offsets.
       await publishForYou(db, input, row.short_id, input.conversationId);
