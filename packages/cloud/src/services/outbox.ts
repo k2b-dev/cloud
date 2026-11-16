@@ -2,6 +2,7 @@ import { notifyPgOutbox, pgOutboxKey, subscribeWorkWake } from "../_internal/wor
 import { sql } from "../runtime/clients";
 
 import { logger } from "./logging";
+import { createRuntimeTaskTracker } from "./runtime-lifecycle";
 
 /**
  * PostgreSQL transactional-outbox dispatcher.
@@ -101,6 +102,8 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
 
   let running = false;
   let timer: ReturnType<typeof setInterval> | null = null;
+  // Publishing passes go through a tracker, so maintenance quiesce stops them; rows wait in the table.
+  const tasks = createRuntimeTaskTracker();
   let dueTimer: ReturnType<typeof setTimeout> | undefined;
   let dueDeadline = Infinity;
   let unsubscribe: (() => void) | undefined;
@@ -268,9 +271,11 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   };
 
   const run = async () => {
-    await reconcile().catch((error) => {
-      log.warn("Outbox reconcile failed", { error: error instanceof Error ? error.message : String(error) });
-    });
+    await tasks.run(() =>
+      reconcile().catch((error) => {
+        log.warn("Outbox reconcile failed", { error: error instanceof Error ? error.message : String(error) });
+      }),
+    );
   };
 
   const notify: PgOutbox<Row>["notify"] = async () => {
@@ -282,6 +287,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
   const start: PgOutbox<Row>["start"] = () => {
     if (running) return;
     running = true;
+    tasks.open();
     try {
       unsubscribe = subscribeWorkWake(claimLock, () => {
         if (running) void run();
@@ -289,6 +295,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
     } catch (error) {
       log.warn("Outbox wake subscription failed; safety scan will recover", { error: String(error) });
     }
+    // runtime-timer: run() goes through the task tracker, which quiesce gates; the next tick after resume publishes.
     timer = setInterval(() => {
       if (running) void run();
     }, config.reconcileIntervalMs);
@@ -298,6 +305,7 @@ export const createPgOutbox = <Row extends OutboxRow>(config: PgOutboxConfig<Row
 
   const stop: PgOutbox<Row>["stop"] = async () => {
     running = false;
+    tasks.close();
     if (timer) clearInterval(timer);
     timer = null;
     clearTimeout(dueTimer);

@@ -2,6 +2,7 @@ import type { SQL } from "bun";
 import { sql } from "../../runtime/clients";
 import { logger } from "../../services/logging";
 import { toPgUuidArray } from "../../services/postgres";
+import { startRuntimeInterval } from "../../services/runtime-lifecycle";
 import { withTransaction } from "./transaction";
 
 /**
@@ -132,29 +133,29 @@ export const expireWorkflowEventPayloads = async (
 };
 
 const RETENTION_INTERVAL_MS = 6 * 60 * 60 * 1000;
-let retentionTimer: ReturnType<typeof setInterval> | null = null;
-let retentionRunning = false;
+let retention: ReturnType<typeof startRuntimeInterval> | null = null;
 
-/** Core owns this scheduler; SKIP LOCKED makes multiple replicas safe. */
+/** Core owns this scheduler; SKIP LOCKED makes multiple replicas safe. Skipped while quiesced, once on resume. */
 export const startWorkflowEventRetention = (): (() => void) => {
-  if (retentionTimer) return () => undefined;
-  const abort = new AbortController();
-  const expire = async (): Promise<void> => {
-    if (retentionRunning) return;
-    retentionRunning = true;
-    try {
+  if (retention) return () => undefined;
+  const interval = startRuntimeInterval({
+    run: async (signal) => {
       if (!(await ensureWorkflowEventRetentionIndexes())) {
         log.info("Skipped workflow event retention sweep until its indexes are valid");
         return;
       }
-      const expired = await expireWorkflowEventPayloads({ signal: abort.signal });
+      const expired = await expireWorkflowEventPayloads({ signal });
       if (expired > 0) log.info("Expired workflow event payloads", { expired });
-    } catch (error) {
-      log.error("Workflow event retention sweep failed", { error: error instanceof Error ? error.message : String(error) });
-    } finally {
-      retentionRunning = false;
-    }
+    },
+    intervalMs: RETENTION_INTERVAL_MS,
+    onError: (error) => log.error("Workflow event retention sweep failed", { error: error instanceof Error ? error.message : String(error) }),
+  });
+  retention = interval;
+  return () => {
+    if (retention === interval) retention = null;
+    void interval.stop();
   };
+};
   void expire();
   retentionTimer = setInterval(() => void expire(), RETENTION_INTERVAL_MS);
   retentionTimer.unref?.();

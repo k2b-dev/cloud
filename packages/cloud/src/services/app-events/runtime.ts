@@ -1,3 +1,5 @@
+import { createRuntimeTaskTracker } from "../runtime-lifecycle";
+
 /** Core delivery passes coalesce hints, including hints received during a pass. */
 export const startEventDispatcher = (
   broker: {
@@ -11,10 +13,13 @@ export const startEventDispatcher = (
   let requested = false;
   let active: Promise<void> | undefined;
   let maintenanceAt = Date.now() + 60_000;
+  // Passes go through a tracker, so maintenance quiesce stops them; the first tick after resume catches up.
+  const tasks = createRuntimeTaskTracker();
+  tasks.open();
   const wake = () => {
     if (stopping) return;
     requested = true;
-    active ??= Promise.resolve().then(async () => {
+    active ??= tasks.run(async () => {
       try {
         do {
           requested = false;
@@ -31,8 +36,9 @@ export const startEventDispatcher = (
       } finally {
         active = undefined;
       }
-    });
+    }) ?? undefined;
   };
+  // runtime-timer: wake() runs passes through the task tracker, which quiesce gates.
   const timer = setInterval(wake, 5_000);
   timer.unref();
   wake();
@@ -40,6 +46,7 @@ export const startEventDispatcher = (
     wake,
     stop: async () => {
       stopping = true;
+      tasks.close();
       clearInterval(timer);
       await active;
     },

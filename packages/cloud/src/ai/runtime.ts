@@ -6,7 +6,7 @@ import { lazySync } from "../_internal/process-sync";
 import type { RequestActor } from "../server";
 import { type ApprovalDecisionChannel, approvals } from "../services/approvals";
 import { logger } from "../services/logging";
-import { superviseRuntimeTask } from "../services/runtime-lifecycle";
+import { startRuntimeInterval, superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { coreSettings } from "../services/settings/api";
 import type { AiModelRequest } from "../shared/ai-models";
 import {
@@ -648,13 +648,13 @@ export const startAiRuntime = (
       }),
   });
 
-  const runSweep = () =>
-    void sweepAiRuntime(dispatchTurnFinalized).catch((error) =>
-      log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
-    );
-  runSweep();
-  const sweepTimer = setInterval(runSweep, AI_SWEEP_INTERVAL_MS);
-  if (typeof sweepTimer === "object" && "unref" in sweepTimer) sweepTimer.unref();
+  const sweep = startRuntimeInterval({
+    run: async () => {
+      await sweepAiRuntime(dispatchTurnFinalized);
+    },
+    intervalMs: AI_SWEEP_INTERVAL_MS,
+    onError: (error) => log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
+  });
 
   const stopDictations = startAiDictationRuntime();
   const state: AiRuntimeState = {
@@ -664,7 +664,7 @@ export const startAiRuntime = (
       if (running !== state) return;
       controller.abort();
       stopDictations();
-      clearInterval(sweepTimer);
+      void sweep.stop();
       listeners.clear();
       approvalListeners.clear();
       running = null;

@@ -2,7 +2,7 @@ import { lazySync } from "../_internal/process-sync";
 import { sql } from "../runtime/clients";
 import { get as getUser } from "../services/accounts/users";
 import { logger, trace } from "../services/logging";
-import { superviseRuntimeTask } from "../services/runtime-lifecycle";
+import { startRuntimeInterval, superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { aiModelAccess } from "./model-access";
 import { aiProjects } from "./projects";
 import { AiTranscriptionError, describeTranscriptionFailure, type RunAiTranscriptionInput, runAiTranscription } from "./transcription";
@@ -154,22 +154,13 @@ export const startAiDictationRuntime = (): (() => void) => {
     },
     onError: () => log.warn("Dictation worker unavailable; retrying"),
   });
-  let sweeping = false;
-  const sweep = async () => {
-    if (sweeping || controller.signal.aborted) return;
-    sweeping = true;
-    try {
-      await sweepAiDictations();
-    } catch {
-      log.warn("Dictation recovery unavailable; retrying");
-    } finally {
-      sweeping = false;
-    }
-  };
-  void sweep();
-  const timer = setInterval(() => void sweep(), 15_000);
+  const sweep = startRuntimeInterval({
+    run: () => sweepAiDictations(),
+    intervalMs: 15_000,
+    onError: () => log.warn("Dictation recovery unavailable; retrying"),
+  });
   return () => {
     controller.abort();
-    clearInterval(timer);
+    void sweep.stop();
   };
 };
