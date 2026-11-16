@@ -198,6 +198,7 @@ test("a quiet report of an earlier stage Ruhe does not count after quiesce went 
     total: 1,
     busy: [{ id: "mail", name: "Mail", inFlight: 0, unreported: 1 }],
   });
+});
 
 test("an administrator gets a bypass link for exactly this maintenance; the key and token stay out of the audit", async () => {
   const { call, writes, audits, entries } = setup();
