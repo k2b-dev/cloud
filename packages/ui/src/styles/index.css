@@ -10907,6 +10907,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   gap: 0.25rem;
 }
 
+/* TimeInput: digits keep their width, so 11:11 and 08:08 line up in a column of times. */
+.k2b-ui .k2b-time-input .k2b-input {
+  font-variant-numeric: tabular-nums;
+}
+
 .k2b-ui .k2b-date-time {
   display: grid;
   min-width: 0;

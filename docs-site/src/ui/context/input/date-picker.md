@@ -9,7 +9,11 @@ Use `DatePicker` for a calendar date such as a birthday or due date.
 Use `DateTimePicker` for one date and time. Set `optionalTime` when the
 date alone is the normal case and a time is the exception, such as a task's
 due date. Use `DateRangePicker` for a start and end, with `withTime` when both
-endpoints include time.
+endpoints include time. Use [`TimeInput`](/en/ui/input/time-input) for a clock
+time without a date, such as an opening hour.
+
+The time field in the panel of `DateTimePicker` and a `DateRangePicker` with
+`withTime` reads short input as `TimeInput` does: `9:30` and `930` are 09:30.
 
 ## Type a date or pick one
 

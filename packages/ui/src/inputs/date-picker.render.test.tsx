@@ -38,10 +38,14 @@ const uiCss = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).te
 
 describe("@k2b/ui complete date picker migration", () => {
   test("normalizes time input without accepting impossible clock values", () => {
-    expect(filterTimeInput("1a2345")).toBe("12:34");
+    expect(filterTimeInput("1a2345")).toBe("1234");
     expect(filterTimeInput("09:3")).toBe("09:3");
     expect(normalizeTimeInput("25:90")).toBe("23:59");
     expect(normalizeTimeInput("7")).toBe("07:00");
+    // The panel reads a time as the public TimeInput does: "9:30" used to become 23:00.
+    expect(normalizeTimeInput(filterTimeInput("9:30"))).toBe("09:30");
+    expect(normalizeTimeInput("1234")).toBe("12:34");
+    expect(normalizeTimeInput("24:00")).toBe("23:00");
     expect(isCompleteTime("09:30")).toBe(true);
     expect(isCompleteTime("24:00")).toBe(false);
     expect(isCompleteTime("09:60")).toBe(false);
