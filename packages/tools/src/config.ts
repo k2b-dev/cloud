@@ -97,6 +97,8 @@ export const app = defineApp({
   openapi: "/tools/api/openapi.json",
   // Top-level `/tools` (no `/app/tools` for the legacy short URL).
   routes: ["/tools", "/public/tools"],
+  // Moving between the catalog and a tool replaces only the content column.
+  pageSwap: true,
 });
 
 export const { ssr, plugin } = app;

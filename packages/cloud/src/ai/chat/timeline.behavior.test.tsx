@@ -604,6 +604,83 @@ const renderTimeline = async (
   }
 });
 
+(isServer ? test.skip : test)("a survey left open when the answer breaks off says only that it was not answered", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    "de",
+    () => {},
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const args = {
+    title: "Neue Aufgabe: Inventur",
+    questions: [
+      {
+        id: "where",
+        type: "single",
+        label: "Wohin soll die Aufgabe?",
+        required: true,
+        options: [
+          { label: "Space Logistik", value: "space" },
+          { label: "Meine persönlichen Aufgaben", value: "mine" },
+        ],
+      },
+    ],
+  };
+  const survey = {
+    id: "tool-survey",
+    kind: "tool" as const,
+    callId: "survey",
+    name: "cloud_survey",
+    args,
+    frontendMode: "client_interaction" as const,
+  };
+  const card = () => dom.root.querySelector(".cloud-blocks__choice");
+  try {
+    let seq = 0;
+    emit({ ...base, seq: ++seq, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: ++seq, type: "block_set", block: { ...survey, status: "awaiting_client" } });
+    await tick();
+    // While Gustav waits for it, the question shows its choices.
+    expect(card()?.querySelectorAll('[role="radio"]').length).toBe(2);
+
+    // The answer did not come in time: the turn breaks off. One state: the card says it was not answered, its notice says
+    // why. No locked choices, and nothing waits for Gustav to continue.
+    const history: AiStoredMessage[] = [
+      storedMessage(10, { role: "user", content: [{ type: "text", text: "Leg mir eine Aufgabe an" }] }),
+      storedMessage(
+        11,
+        { role: "assistant", content: [{ type: "tool_call", id: "survey", name: "cloud_survey", args }] },
+        { loopDoneReason: "error" },
+      ),
+    ];
+    history.at(-1)!.meta = { turnError: { code: "wait_expired" } };
+    emit({
+      ...base,
+      seq: ++seq,
+      type: "turn_finished",
+      status: "failed",
+      error: "Die Freigabe oder Antwort kam nicht rechtzeitig.",
+      messages: history,
+    });
+    await tick();
+    expect(dom.root.querySelector(".ai-turn__notice")?.textContent).toContain("Die Antwort wurde unterbrochen");
+    expect(card()?.textContent).toContain("Neue Aufgabe: Inventur");
+    expect(card()?.textContent).toContain("Nicht beantwortet.");
+    // What was not answered stays readable.
+    expect(card()?.textContent).toContain("Wohin soll die Aufgabe?");
+    expect(card()?.querySelectorAll('[role="radio"]').length).toBe(0);
+    expect(dom.root.textContent).not.toContain("weitermacht");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
 (isServer ? test.skip : test)("a step that starts right after a model retry times only itself", async () => {
   jest.useFakeTimers();
   const dom = createDomTestHarness();

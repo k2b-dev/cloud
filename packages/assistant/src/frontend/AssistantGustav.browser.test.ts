@@ -21,7 +21,7 @@ import { render } from "solid-js/web";
 import { default as RevisionDecision, AssistantCodeReviewStartLine as RevisionStart } from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeDecisionLine.tsx"))};
 import AssistantCodeVersionCard from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeVersionCard.tsx"))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
-import AssistantCodeDecisionLine from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeDecisionLine.tsx"))};
+import { AssistantCodeDecisionEntry } from ${JSON.stringify(resolve(import.meta.dir, "code-decision-deferred.tsx"))};
 import { AssistantLiveProvider, createAssistantLiveHub } from ${JSON.stringify(resolve(import.meta.dir, "assistant-live.tsx"))};
 
 // The person's AI live channel, as the workspace provides it; a test hands it the updates Core would send.
@@ -48,7 +48,12 @@ render(
             {window.harness.decision ? (
               <div style="height:140vh" data-history>
                 <div style="position:absolute;bottom:2rem;left:1rem;right:1rem">
-                  <AssistantCodeDecisionLine decision={window.harness.decision} at={window.harness.decisionAt} timeZone="Europe/Berlin" />
+                  {/* The line as the chat draws it: from its stored message, through the entry that decides whether it acts. */}
+                  <AssistantCodeDecisionEntry
+                    entry={{ id: "m-decision", createdAt: window.harness.decisionAt, meta: { codeDecision: window.harness.decision } }}
+                    messages={() => []}
+                    timeZone="Europe/Berlin"
+                  />
                 </div>
               </div>
             ) : null}
@@ -975,6 +980,33 @@ describe("Gustav", () => {
         expect(box && box.y >= 0 && box.y < view.height).toBe(true);
         expect(h.errors).toEqual([]);
         await shot(h.page, `f-ereigniszeile-nachher-${view.name}-light`);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 120_000);
+
+  test("an approved version that a newer one replaced keeps its event line as history, without an action", async () => {
+    for (const view of [desktop, phone]) {
+      const h = await open(
+        view,
+        {
+          cardPreview: cardPreview({ latest: 6 }),
+          cardReview: { status: "approved", decidedBy: JANA, decidedAt: at(5) },
+          decision: true,
+        },
+        { path: "/app/assistant/panel" },
+      );
+      try {
+        const line = h.page.locator(".assistant-code-decision");
+        await line.locator(".assistant-code-decision__text").waitFor();
+        await h.page.locator(".assistant-code-version").getByText("Version 5 wurde durch Version 6 ersetzt.").waitFor();
+        await settled(h.page);
+        expect(await line.innerText()).toContain("Jana Probe hat Version 5 freigegeben");
+        expect(await line.getByRole("button").count()).toBe(0);
+        expect(h.errors).toEqual([]);
+        await line.scrollIntoViewIfNeeded();
+        await shot(h.page, `f-ereigniszeile-ersetzt-${view.name}-light`);
       } finally {
         await h.close();
       }

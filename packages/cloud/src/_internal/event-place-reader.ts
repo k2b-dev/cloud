@@ -13,11 +13,11 @@ import { serviceAccounts } from "../services/service-accounts";
 import { loadCurrentUser } from "../services/session/user";
 
 /** An event place already has an ordinary permission-aware reader. Project its success,
- * never its content, through the existing app-only readability contract. */
+ * never its content, through the existing app-only readability contract. A contained place is checked as itself,
+ * without a container: its generated input has none, a question reserved for Code's event-place check (#3539). */
 export function eventPlaceReader(definitions: CapabilityDefinitions, localType: string) {
   if (!Object.values(definitions.events ?? {}).some((event) => event.place === localType)) return undefined;
   const type = definitions.types?.[localType];
-  if (type?.container) return undefined;
   const query = type?.reader && definitions.queries?.[type.reader];
   if (!query || query.stream || !query.run) return undefined;
   return async (input: ResourceReadableInput, context: CapabilityAppExecutionContext) => {

@@ -17,11 +17,12 @@ import { filesCapabilityMessages } from "./capability-messages";
 import { filesCapabilityPresentation } from "./capability-presentation";
 import { type DirectoryResult, SEARCH_WORD_LIMIT, type SearchResult } from "./contracts";
 import { entryRef } from "./data/references";
+import { discussionQueries } from "./discussion-capabilities";
 import { markdownRevision } from "./document-assets";
 import { fileActions, fileQueries } from "./file-capabilities";
 import { capabilityCall } from "./files-call";
 import { filesUrl } from "./frontend/urls";
-import { ENTRY_TYPE } from "./resource-ref";
+import { ENTRY_TYPE, FOLDER_TYPE } from "./resource-ref";
 import { FilesError, filesService } from "./service";
 import { templateService } from "./service/templates";
 
@@ -39,6 +40,7 @@ const EntryDataSchema = z.object({
   modified: z.string(),
   revision: z.string().optional(),
   href: z.string(),
+  view: CloudResourceReaderViewSchema.required({ container: true }),
 });
 /** Global search fans out over every accessible base; the count of bases is the user's own membership, not user input. */
 const SEARCH_BASE_LIMIT = 10;
@@ -75,15 +77,23 @@ export const filesCapabilities = defineCapabilities({
       reader: "template.read",
       access: { managers: (input) => listFilesManagers(input, "template") },
     },
+    folder: {
+      title: "Folder",
+      description: "A folder or storage root whose discussion contains its entries’ threads.",
+      icon: "ti ti-folder",
+      reader: "folder.read",
+    },
     entry: {
       title: "File or folder",
       description: "One file or folder in an accessible Cloud or FreeIPA storage base.",
       icon: "ti ti-folders",
       color: "blue",
       reader: "entry.read",
+      container: "folder",
       pages: ["/app/filesv2/ref/:id"],
     },
   },
+  discussions: { item: "entry", containers: "folder.containers" },
   actions: fileActions,
   queries: {
     "storage.read": {
@@ -124,6 +134,31 @@ export const filesCapabilities = defineCapabilities({
         }
       },
     },
+    ...discussionQueries,
+    "folder.read": {
+      title: "Read discussion folder",
+      description: "Read one folder or storage root with its current permission.",
+      input: EntryReadInputSchema,
+      data: z.object({ view: CloudResourceReaderViewSchema }),
+      openWorld: false,
+      run: async (input, context) => {
+        try {
+          const result = await filesService.resourceEntry(capabilityCall(context), input.id, true, context.signal);
+          return ok({
+            data: { view: result.view },
+            refs: [{ type: FOLDER_TYPE, id: input.id, title: result.view.title }],
+            links: [{ rel: "open", href: `/app/filesv2/ref/${encodeURIComponent(input.id)}` }],
+          });
+        } catch (error) {
+          if (!(error instanceof FilesError || error instanceof FilegateError)) throw error;
+          const { code, status } = apiError(error);
+          const message = errorMessage(code, context.locale);
+          if (status === 404 || code === "not_directory") return fail({ ...err.notFound("Folder"), message });
+          if (status === 403) return fail(err.forbidden(message));
+          throw { code, message, status };
+        }
+      },
+    },
     ...fileQueries,
     ...activityQueries,
     "entry.read": {
@@ -134,7 +169,7 @@ export const filesCapabilities = defineCapabilities({
       openWorld: false,
       run: async (input, context) => {
         try {
-          const result = await filesService.entryById(capabilityCall(context), input.id);
+          const result = await filesService.resourceEntry(capabilityCall(context), input.id, false, context.signal);
           const folder = parent(result.entry.path).split("/").at(-1) || result.base.name;
           const t = filesCapabilityMessages(context.locale);
           const resourceContext = result.entry.directory ? t.folderInFolder({ folder }) : t.fileInFolder({ folder });
@@ -176,6 +211,10 @@ export const filesCapabilities = defineCapabilities({
               ...result.entry,
               revision: markdownRevision(result.entry),
               href: entryHref(result.base.id, result.entry.path, result.entry.directory),
+              view: CloudResourceReaderViewSchema.required({ container: true }).parse({
+                ...result.view,
+                context: resourceContext.replace(/\s+/g, " ").trim().slice(0, 200),
+              }),
             },
           });
         } catch (error) {

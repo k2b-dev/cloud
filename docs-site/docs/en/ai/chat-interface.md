@@ -381,7 +381,8 @@ order:
    not shown, and its trend stays neutral because a card does not say whether
    up is better. A presented `/views/*.view.json` file renders inline
    as a chart, group, table, stats, details or explorer. Stats show 1..6 comparable key
-   figures above charts, with optional scope text, sparkline and change;
+   figures above charts, each with a small sign before its name (its `icon`,
+   otherwise a neutral sign) and optional scope text, sparkline and change;
    use them instead of several cards or stat charts for computed figures.
    Details show one record's 1..100 exact fields, such as a checked invoice,
    as read-only rows. Table ref columns and details ref fields show Cloud
