@@ -494,14 +494,18 @@ describe("Approval scenes", () => {
       await search.press("ArrowRight");
       await search.press("ArrowLeft");
       expect(await name()).toContain("PayPal-Buchungen im November");
-      // From the stage the arrows step through the blocks of this answer: figures, table, chart.
+      // From the stage the arrows step through the blocks of this answer: figures, table, chart. WebKit delivers a key
+      // to the page after `press` returns, so each step waits for the name it shows, and the keys wait for the focus.
       await lightbox.locator(".k2b-lightbox__stage").focus();
+      await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-lightbox__stage") === true);
+      const shows = (text: string) => lightbox.locator(".k2b-lightbox__name", { hasText: text }).waitFor();
       await page.keyboard.press("ArrowRight");
-      expect(await name()).toContain("PayPal-Umsatz");
+      await shows("PayPal-Umsatz");
       expect(await name()).toContain("Gustav · Diagramm");
       await page.keyboard.press("ArrowLeft");
+      await shows("PayPal-Buchungen im November");
       await page.keyboard.press("ArrowLeft");
-      expect(await name()).toContain("Kennzahlen");
+      await shows("Kennzahlen");
       // Copy in the Lightbox answers in place, as in the block's head: its sign turns into a check, its width stays.
       await useClipboard(page);
       const copy = lightbox.locator(".k2b-lightbox__action", { hasText: "Kopieren" });

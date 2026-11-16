@@ -54,7 +54,7 @@ const action = (root: Element) => root.querySelector<HTMLButtonElement>(".assist
 
 test("each outcome says who decided what about which version, with at most one action", () => {
   const cases = [
-    ["approved", "Jana Probe hat Version 5 freigegeben", "Einschalten …"],
+    ["approved", "Jana Probe hat Version 5 freigegeben", "Zur Karte"],
     ["changes_requested", "Jana Probe hat Änderungen an Version 5 angefordert", "Ansehen"],
     ["rejected", "Jana Probe hat Version 5 abgelehnt", "Begründung ansehen"],
     ["activated", "Du hast Version 5 eingeschaltet", null],

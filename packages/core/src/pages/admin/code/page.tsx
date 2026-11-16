@@ -50,7 +50,8 @@ export default ssr<AuthContext>(async (c) => {
   if (allowed) {
     try {
       const summary = await attempt(() => readCodeAdminSummary(context, c.get("adminCodeCounts")));
-      const sec = query.sec;
+      // Without a section the area opens on the approvals (see the view).
+      const sec = query.sec ?? "approvals";
       const limitKeys = [
         ...CODE_LIMIT_KEYS,
         ...Object.keys(CODE_SETTINGS).filter((key) => !CODE_LIMIT_KEYS.some((limit) => limit === key)),

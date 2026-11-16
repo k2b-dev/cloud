@@ -33,7 +33,8 @@ const validateCronItem = (item: string, field: (typeof CRON_FIELDS)[number]): nu
   }
 
   let start: number = field.min;
-  let end: number = field.max;
+  // `*` in day-of-week is Sunday to Saturday. Its upper bound 7 is Sunday again and would wrap the range to Sunday alone.
+  let end: number = field.name === "day-of-week" && base === "*" ? 6 : field.max;
   if (base !== "*") {
     const [startText = "", endText] = rangeParts;
     start = cronNumber(startText, field);

@@ -112,7 +112,14 @@ function fixture(ipa = false) {
         });
       }
       if (url.pathname.includes("acl"))
-        return Response.json({ entries: [{ tag: "owner", permissions: path !== binding.path && leafMode === "0000" ? "---" : "rwx" }] });
+        return Response.json({
+          entries: [
+            {
+              tag: "owner",
+              permissions: path === binding.path ? "rwx" : leafMode === "0000" ? "---" : leafMode === "0400" ? "r--" : "rw-",
+            },
+          ],
+        });
       throw new Error(`Unexpected request ${url.pathname}`);
     },
     { preconnect: fetch.preconnect },
@@ -436,4 +443,36 @@ test("item-share listing uses read-only authorization and the actual current sta
   } finally {
     list.mockRestore();
   }
+});
+
+test("discussion readers use current membership, leaf access and folder authority without history writes", async () => {
+  const f = fixture();
+  const result = await f.service.resourceEntry(testCall(actor), pathRef);
+  expect(result.view).toEqual({
+    title: "file.txt",
+    permission: "write",
+    container: { ref: { type: "filesv2.folder", id: await referencesModule.persistedEntryRefId(f.baseId, "") }, title: "alice" },
+  });
+  const root = await f.service.resourceEntry(testCall(actor), await referencesModule.persistedEntryRefId(f.baseId, ""), true);
+  expect(root.view).toEqual({ title: "alice", permission: "write" });
+  await expect(f.service.resourceEntry(testCall(actor), pathRef, true)).rejects.toMatchObject({ code: "not_directory" });
+  f.member = false;
+  await expect(f.service.resourceEntry(testCall(actor), pathRef)).rejects.toMatchObject({ code: "not_found", status: 404 });
+  expect(provisions).toBe(0);
+});
+
+test("FreeIPA discussion readers distinguish read and write and reject unreadable or missing paths", async () => {
+  const f = fixture(true);
+  f.leafMode = "0400";
+  expect((await f.service.resourceEntry(testCall(actor), pathRef)).view.permission).toBe("read");
+  f.leafMode = "0600";
+  expect((await f.service.resourceEntry(testCall(actor), pathRef)).view.permission).toBe("write");
+  f.leafMode = "0000";
+  await expect(f.service.resourceEntry(testCall(actor), pathRef)).rejects.toMatchObject({ status: 403 });
+  f.leafMode = "0600";
+  f.denyAncestor = true;
+  await expect(f.service.resourceEntry(testCall(actor), pathRef)).rejects.toMatchObject({ status: 403 });
+  f.denyAncestor = false;
+  f.statFailures.set("users/alice/file.txt", 404);
+  await expect(f.service.resourceEntry(testCall(actor), pathRef)).rejects.toMatchObject({ status: 404 });
 });
