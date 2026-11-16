@@ -751,7 +751,9 @@ for the current step on a white highlight that glides to the next row, a check
 and grey text for done work, and a cross with struck-through text for dropped
 work. Long text wraps; about six rows show, then the list scrolls inside
 itself and keeps the current row in view. Dropped work does not count towards
-the ring. Each status is read out as its word; folded rows leave the tab order.
+the ring. While `paused`, the current step's ring stands still and the header's
+progress ring turns grey, so nothing reads as running work. Each status is read
+out as its word; folded rows leave the tab order.
 
 `Chat.TaskList` shows the same rows still, without header, ring, or fold, on
 its container's text edge: use it for a plan that stopped, such as a notice
