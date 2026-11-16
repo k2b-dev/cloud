@@ -109,7 +109,7 @@ test("a card not on the page is revealed by the host first; if that fails, the l
   expect(line.querySelector(".assistant-code-decision__missing")?.textContent).toContain("weiter oben in diesem Chat");
 });
 
-test("changes that Gustav revises by himself carry the mark and no action; a settled approval stays as history", () => {
+test("changes that Gustav revises by himself have no action and leave saying so to the start line; a settled approval stays as history", () => {
   const { AssistantCodeReviewStartLine } = lines;
   // The next run is counted from now: the clock stands at the decision's time.
   setSystemTime(new Date(at));
@@ -133,7 +133,9 @@ test("changes that Gustav revises by himself carry the mark and no action; a set
   );
   restore.push(dispose);
   const rows = [...dom.root.querySelectorAll(".assistant-code-decision")];
-  expect(rows[0]!.textContent).toContain("Gustav startet von selbst, einmal");
+  // One sentence says that Gustav revises by himself: the start line, never also a mark on the decision line (N3).
+  expect(rows[0]!.textContent).not.toContain("von selbst");
+  expect(rows[0]!.querySelector(".ti-sparkles")).toBeNull();
   expect(rows[0]!.querySelectorAll("button").length).toBe(0);
   expect(rows[1]!.querySelectorAll("button").length).toBe(0);
   expect(rows[2]!.textContent).toContain("Du hast Version 5 eingeschaltet");

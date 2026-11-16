@@ -194,6 +194,22 @@ describe("the Code event-place exception (#3539)", () => {
     expect(invoke.mock.calls[0]?.[0].input).toEqual({ id: "item-1", container, principals: [principal] });
   });
 
+  test("a readable query whose input schema has no readable properties answers neither check", async () => {
+    const derived = contained();
+    for (const properties of [undefined, null, [], "container"]) {
+      const queries = derived.queries.map((query) =>
+        query.localId === "item.readable" ? { ...query, inputSchema: { ...query.inputSchema, properties } } : query,
+      );
+      lookup.mockResolvedValue({ ...entry, manifest: { ...derived, queries } });
+      expect(await readResourcePrincipals({ ...input, eventPlace: true })).toEqual({ state: "not_configured", reason: "no_readable" });
+      expect(await readResourcePrincipals({ ...input, container: { type: "inventory.collection", id: "collection-1" } })).toEqual({
+        state: "not_configured",
+        reason: "no_readable",
+      });
+    }
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   test("an explicit hook that expects a container, a missing reader, or an unknown type refuses the event-place check", async () => {
     lookup.mockResolvedValue({ ...entry, manifest: contained({ readable: () => [] }) });
     expect(await readResourcePrincipals({ ...input, eventPlace: true })).toEqual({ state: "not_configured", reason: "no_readable" });

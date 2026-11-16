@@ -1,6 +1,6 @@
+import { formatCodeMoment } from "@k2b/cloud/code/schedule";
 import { StatusBadge, type StatusTone, useLocale } from "@k2b/ui";
 import { type CodeStatusKey, type CodeStatusTone, type CodeSummary, codeStatus } from "../code-summary";
-import { formatCodeTime } from "./code-client";
 import { assistantMessages } from "./messages";
 
 // The status words and run lines that the Code list and the panel's Code block share. The list loads when it opens,
@@ -32,7 +32,7 @@ export const codeRunTime = (code: CodeSummary, locale: string, timeZone: string)
   const t = assistantMessages.resolve([locale]).t;
   const run = code.lastRun;
   if (run === undefined) return t.codeRunUnknown;
-  return run ? formatCodeTime(run.endedAt ?? run.createdAt, locale, timeZone) : t.codeNoRun;
+  return run ? formatCodeMoment(run.endedAt ?? run.createdAt, { locale, timeZone }) : t.codeNoRun;
 };
 
 /** The line under a Code's name in the panel block: its newest run. */
