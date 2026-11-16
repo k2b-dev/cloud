@@ -281,7 +281,13 @@ export function CodeAreaView(props: Props) {
 
   // ---------- Column 1: the area ----------
   const item = (section: CodeAreaSection, label: string, extra: { meta?: JSX.Element; title?: string } = {}) => (
-    <AppWorkspace.SidebarItem href={codeAreaHref({ sec: section })} active={query.sec === section} meta={extra.meta} title={extra.title}>
+    // Without a section the approvals are open beside the area, so their row is the chosen one.
+    <AppWorkspace.SidebarItem
+      href={codeAreaHref({ sec: section })}
+      active={(query.sec ?? "approvals") === section}
+      meta={extra.meta}
+      title={extra.title}
+    >
       {/* The list of all Code carries the feat/code sign; the other sections keep their own icons. */}
       {section === "code" ? (
         <AppWorkspace.SidebarItemIcon>

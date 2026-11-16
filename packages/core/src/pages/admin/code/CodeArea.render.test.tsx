@@ -92,9 +92,15 @@ test("the area without a section opens on the approvals instead of two empty col
   expect(text).toContain("Rückruf bestätigen");
   // Only the area column and one page: no section or detail column that repeats the area's name over a hint.
   expect(html.match(/data-workspace-main-region="/g)?.length).toBe(2);
+  // The open page and the chosen row agree.
+  expect(html).toMatch(/<a[^>]*href="\/admin\/code\?sec=approvals"[^>]*aria-current="page"|<a[^>]*aria-current="page"[^>]*href="\/admin\/code\?sec=approvals"/);
   expect(text).not.toMatch(/Code Alles, was als Code in Cloud läuft Code Alles, was als Code in Cloud läuft/);
   const english = renderedText(render({}, "normal", "en"), " ");
   expect(english).toContain("Approvals");
+  // Nothing waits: the area opens on the approvals' empty state, not on an empty column.
+  const empty = renderedText(render({}, "empty"), " ");
+  expect(empty).toContain("Keine Version wartet auf dich.");
+  expect(render({}, "empty").match(/data-workspace-main-region="/g)?.length).toBe(2);
 });
 
 test("approvals are a page: a list with who, owner, main change and reason, and states", () => {
