@@ -133,9 +133,16 @@ test("cld admin maintenance calls Core's maintenance API and prints the sentence
 });
 
 test("cld admin maintenance bypass prints the sentence and the link on its own line, or one sentence when off", async () => {
-  const link = { url: "https://cloud.musterverein.test/?cloud-maintenance-bypass=abc.def", expiresAt: "2026-11-17T01:02:00.000Z" };
-  expect(maintenanceBypassLines(link, { locale: "de-DE" })).toEqual(["Link für dich, gilt bis zum Ende dieser Wartung:", link.url]);
-  expect(maintenanceBypassLines(link, { locale: "en" })).toEqual(["Your link, valid until this maintenance ends:", link.url]);
+  const link = { url: "https://cloud.musterverein.test/?cloud-maintenance-bypass=abc.def", expiresAt: at(2, 2, 17) };
+  // The link ends with the maintenance, but never later than Core's cap; the sentence names that time.
+  expect(maintenanceBypassLines(link, { locale: "de-DE", now })).toEqual([
+    "Link für dich, gilt bis zum Ende dieser Wartung, längstens bis 17.11., 02:02 Uhr:",
+    link.url,
+  ]);
+  expect(maintenanceBypassLines({ ...link, expiresAt: at(23, 30) }, { locale: "en", now })).toEqual([
+    "Your link, valid until this maintenance ends, at the latest until 23:30:",
+    link.url,
+  ]);
   expect(maintenanceBypassOffSentence({ locale: "de" })).toBe("Kein Link nötig: Der Wartungsmodus ist aus.");
   expect(maintenanceBypassOffSentence({ locale: "en" })).toBe("No link needed: maintenance mode is off.");
 
@@ -168,7 +175,9 @@ test("cld admin maintenance bypass prints the sentence and the link on its own l
     });
   await invoke(Response.json(link));
   expect(calls).toEqual([{ path: "/api/admin/maintenance/bypass", method: "POST" }]);
-  expect(printed).toEqual(["Link für dich, gilt bis zum Ende dieser Wartung:", link.url]);
+  expect(printed).toEqual(maintenanceBypassLines(link, { locale: "de" }));
+  expect(printed[1]).toBe(link.url);
+  expect(printed[0] ?? "").toStartWith("Link für dich, gilt bis zum Ende dieser Wartung, längstens bis ");
   await expect(invoke(Response.json({ error: "Maintenance mode is not active" }, { status: 409 }))).rejects.toThrow(
     "Kein Link nötig: Der Wartungsmodus ist aus.",
   );

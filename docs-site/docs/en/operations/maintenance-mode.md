@@ -85,7 +85,7 @@ cld admin maintenance bypass
 ```
 
 ```text
-Link für dich, gilt bis zum Ende dieser Wartung:
+Link für dich, gilt bis zum Ende dieser Wartung, längstens bis 02:02 Uhr:
 https://cloud.example.org/?cloud-maintenance-bypass=…
 ```
 
@@ -97,12 +97,20 @@ maintenance off.
   sign-in: you sign in as usual, and every permission check stays the same.
 - It works on the Cloud address only. App domains show the maintenance page
   to everyone.
-- It ends with this maintenance, and after 12 hours at the latest. For a
-  longer maintenance, run the command again. A new maintenance needs a new
-  link.
+- It ends with this maintenance, and after 12 hours at the latest; the
+  command prints that latest time. For a longer maintenance, run the command
+  again. A new maintenance needs a new link.
 - Treat it like a password until it ends. Anyone who opens it gets past the
   maintenance page in their own browser. The audit log records who asked for
   a link and until when, never the link itself.
+- You cannot revoke one link on its own. To end every link at once, switch
+  maintenance off; a maintenance you start after that has a new key, so no
+  older link works for it.
+- The link carries its secret in the query string. A reverse proxy or load
+  balancer in front of the gateway may write it to its access log: do not log
+  the `cloud-maintenance-bypass` parameter there, or keep such logs as
+  private as the link itself. The gateway logs one line when it sets the
+  cookie (who, from which address, until when), never the link.
 - Outside maintenance the command prints one sentence and exits with code
   `1`.
 
@@ -115,8 +123,11 @@ without the link. Pages, API calls and WebSockets from that browser then pass.
 The gateway checks the cookie on every request from memory, with a key that
 belongs to this maintenance alone, and removes the cookie and the link
 parameter from every request before it reaches an app, also outside
-maintenance. Open sockets are closed when maintenance starts; a bypassed socket
-that opened later stays open until it closes by itself.
+maintenance. A request with the link parameter and a method other than `GET`
+or `HEAD` gets `400` on every host and never reaches an app. Open sockets are
+closed when maintenance starts, also when a new maintenance replaces the
+running one; a bypassed socket that opened later stays open until it closes
+by itself or the next maintenance starts.
 
 ## What people and programs see
 

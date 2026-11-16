@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { type CapabilityManifest, CapabilitySemanticLinkSchema, CloudResourceRefSchema } from "./capabilities";
+import {
+  type CapabilityManifest,
+  CapabilityPageSchema,
+  CapabilitySemanticLinkSchema,
+  CloudResourceRefSchema,
+  capabilityPage,
+} from "./capabilities";
 import { type CapabilityContractIssue, capabilityContractIssues } from "./capability-compatibility";
 import { typeViewIssues } from "./resource-types";
 
@@ -66,6 +72,23 @@ const DiscussionActivityWireSchema = z
   )
   .max(DISCUSSION_PAGE_LIMIT);
 export type DiscussionContainer = z.infer<typeof DiscussionContainerSchema>;
+
+const DiscussionContainersPageResultSchema = z
+  .object({ data: DiscussionContainersDataSchema, page: CapabilityPageSchema.optional() })
+  .loose();
+/**
+ * A containers page names its continuation twice: discussion readers follow `data.next`, generic readers such as
+ * agents follow `page`. Both must agree, or one of them stops early or never ends.
+ */
+export const discussionContainersPageIssues = (result: unknown): string[] => {
+  const parsed = DiscussionContainersPageResultSchema.safeParse(result);
+  if (!parsed.success) return ["result must carry discussion containers data and a valid page"];
+  const { data, page } = parsed.data;
+  const expected = capabilityPage(data.next);
+  if (!page || page.hasMore !== expected.hasMore || (page.hasMore && expected.hasMore && page.nextCursor !== expected.nextCursor))
+    return [data.next === null ? "page must be final when data.next is null" : "page must continue at data.next"];
+  return [];
+};
 
 /** Startup/registry check: discovery is never permission to read content. */
 export const discussionsIssues = (manifest: CapabilityManifest): CapabilityContractIssue[] => {

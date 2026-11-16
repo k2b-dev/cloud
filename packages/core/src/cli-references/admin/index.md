@@ -242,7 +242,7 @@ cld admin maintenance bypass
 cld admin maintenance off
 ```
 
-While maintenance is on, the gateway shows a maintenance page and answers every other request with `503` problem JSON (code `maintenance`). These five commands still reach Core. `bypass` prints a personal link: the browser that opens it sees the Cloud address as usual (sign-in still required) until the maintenance ends, for at most 12 hours. Treat the link like a password; outside maintenance the command prints one sentence and exits with code `1`. Maintenance never ends by itself. Any other `cld` command prints one sentence and exits with code `75` while maintenance is on, so scripts can wait and retry. Details: [Maintenance mode](/en/docs/operations/maintenance-mode).
+While maintenance is on, the gateway shows a maintenance page and answers every other request with `503` problem JSON (code `maintenance`). These five commands still reach Core. `bypass` prints a personal link and its latest expiry: the browser that opens it sees the Cloud address as usual (sign-in still required) until the maintenance ends, for at most 12 hours. Only `off` ends a link early, and it ends all of them. Treat the link like a password; outside maintenance the command prints one sentence and exits with code `1`. Maintenance never ends by itself. Any other `cld` command prints one sentence and exits with code `75` while maintenance is on, so scripts can wait and retry. Details: [Maintenance mode](/en/docs/operations/maintenance-mode).
 
 ## Complete command catalogue
 
