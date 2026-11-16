@@ -262,6 +262,39 @@ suiteFor(
     await finishAiCall(last.id, { input: 10, output: 400 }, "ok");
     await expect(beginAiCall(profile, context, 10, 2000)).rejects.toMatchObject({ reason: "output_tokens" });
   });
+  test("a turn a person starts keeps the model's own output ceiling, even for a priced model without one", async () => {
+    await reset();
+    const chat = await aiConversations.createConversation({ ownerUserId: owner });
+    const { turn } = await aiConversations.submitChatTurn({
+      conversationId: chat.id,
+      modelId: profile.id,
+      userMessage: { role: "user", content: [{ type: "text", text: "Mine" }] },
+      runConfig: { kind: "chat", input: "Mine", turnTrigger: { kind: "person", id: owner } },
+    });
+    const claim = await aiConversations.claimTurn({
+      conversationId: chat.id,
+      turnId: turn.id,
+      leaseOwner: "person-output",
+      leaseMs: 30000,
+      from: "queue",
+      maxAttempts: 5,
+      runBudgetMs: 30000,
+    });
+    expect(claim).not.toBeNull();
+    const context = { kind: "chat" as const, task: "chat", subject: { type: "user" as const, userId: owner }, turnId: turn.id };
+    // No automatic allowance: the requested ceiling passes through unchanged.
+    const large = await beginAiCall(
+      { ...profile, maxOutputTokens: 20_000 },
+      context,
+      10,
+      AUTOMATION_TURN_BUDGET.maxOutputTokens * 5,
+    );
+    expect(large.maxOutputTokens).toBe(AUTOMATION_TURN_BUDGET.maxOutputTokens * 5);
+    await finishAiCall(large.id, { input: 10, output: 1 }, "ok");
+    const unbounded = await beginAiCall({ ...profile, maxOutputTokens: undefined, outputTokenLimit: undefined }, context, 10);
+    expect(unbounded.maxOutputTokens).toBeUndefined();
+    await finishAiCall(unbounded.id, { input: 10, output: 1 }, "ok");
+  });
   test("parallel starts cannot overbook either the Code or the shared owner day", async () => {
     for (const codes of [
       ["c_parallel", "c_parallel"],
