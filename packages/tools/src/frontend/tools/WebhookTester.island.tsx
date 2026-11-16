@@ -1,4 +1,4 @@
-import { navigate } from "@k2b/ssr/nav";
+import { listenPopState, navigate } from "@k2b/ssr/nav";
 import { mutation, timed } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
@@ -249,14 +249,14 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     navigate(buildHref(next), { replace: options.replace ?? true, scroll: "preserve" });
   };
 
-  onMount(() => {
-    const onPopState = () => {
-      routeRevision += 1;
-      setRouteState(parseWebhookTesterState(new URL(window.location.href)));
-    };
-    window.addEventListener("popstate", onPopState);
-    onCleanup(() => window.removeEventListener("popstate", onPopState));
-  });
+  onMount(() =>
+    onCleanup(
+      listenPopState(({ url }) => {
+        routeRevision += 1;
+        setRouteState(parseWebhookTesterState(url));
+      }),
+    ),
+  );
 
   const createEndpointMutation = mutation.create<Endpoint, { name: string }>({
     mutation: async ({ name }, { abortSignal }) => {

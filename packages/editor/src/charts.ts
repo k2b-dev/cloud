@@ -619,13 +619,22 @@ export function chartBaseRenderOptions(
         ...(input.kind === "line" ? { lineStyle: input.series[index]?.style ?? (entry.role === "reference" ? "dashed" : undefined) } : {}),
       }));
       const points = series.flatMap((entry) => entry.data);
+      // Every line over dates takes the time axis: ticks on round days, weeks or months inside the plotted span, so the
+      // first date is never one before the first value. A number axis would round the span out to whole milliseconds.
       const calendarLine =
         input.kind === "line" &&
-        lineDetailsEnabled(input) &&
         (input.series.some((entry) => entry.data.some((point) => typeof point.x === "string")) ||
           (input.xAxis?.format && "date" in input.xAxis.format));
-      // The detailed time renderer includes references without rounding their domain to decimal milliseconds.
-      const xAxis = calendarLine ? input.xAxis : referencedAxis(input, "x");
+      // A time axis spans the plotted dates; an x reference outside them widens it to exactly that date, not to a
+      // rounded millisecond step.
+      const xValues = points.map((point) => point.x).filter(Number.isFinite);
+      const xSpan = [...xValues, ...chartReferenceValues(input, "x").filter(Number.isFinite)];
+      const widened = xValues.length > 0 && (Math.min(...xSpan) < Math.min(...xValues) || Math.max(...xSpan) > Math.max(...xValues));
+      const xAxis = calendarLine
+        ? input.xAxis?.domain || !widened
+          ? input.xAxis
+          : { ...input.xAxis, domain: [Math.min(...xSpan), Math.max(...xSpan)] }
+        : referencedAxis(input, "x");
       const yAxis = referencedAxis(input, "y");
       const candidates = tickCandidates([...points.map((point) => point.x), ...chartReferenceValues(input, "x")], xAxis).filter(
         Number.isFinite,

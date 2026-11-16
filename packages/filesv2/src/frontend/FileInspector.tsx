@@ -1,4 +1,5 @@
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
+import { publishPageContext } from "@k2b/cloud/browser/panel";
 import { query } from "@k2b/stdlib/solid";
 import {
   Avatar,
@@ -25,7 +26,7 @@ import { createEffect, createMemo, createSignal, createUniqueId, For, Match, onC
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import type { BaseSummary, EntryResult, FileEntry, FileVersion, SharePage, ShareView } from "../contracts";
-import { ENTRY_TYPE, entryRefId } from "../resource-ref";
+import { ENTRY_TYPE, entryRefId, FOLDER_TYPE } from "../resource-ref";
 import { activityVersion } from "./activity-versions";
 import type { InspectorHistory } from "./Browser";
 import { baseLabel } from "./base-label";
@@ -133,6 +134,12 @@ export default function FileInspector(props: {
     const id = item.resourceId ?? details.data()?.result.resourceId ?? entryRefId(props.base.id, item.path);
     return id ? { type: ENTRY_TYPE, id } : null;
   };
+  createEffect(() => {
+    const item = entry();
+    if (!item) return;
+    const ref = entryRef(item);
+    if (ref) onCleanup(publishPageContext({ scope: { ...ref, type: item.directory ? FOLDER_TYPE : ENTRY_TYPE } }));
+  });
   const openInTab = async (item: FileEntry) => {
     // A PDF opens at the preview's page address, so its tab reloads and signs an expired session in again.
     if (previewKind(item) === "pdf") return void window.open(inlinePdfHref(props.base.id, item.path), "_blank", "noopener");

@@ -192,7 +192,8 @@ test("background work never extends the session; the warning's Keep working does
     // Two clear ways and nothing else: the focus is on Keep working, there is no close button, and Escape,
     // real or by script, neither closes the question nor keeps the session.
     const keepWorking = warning(page).getByRole("button", { name: "Keep working" });
-    expect(await keepWorking.evaluate((button) => button === document.activeElement)).toBe(true);
+    // The dialog shows first and takes the focus a frame later, so the test waits for the focus instead of reading it once.
+    await page.waitForFunction((button) => button === document.activeElement, await keepWorking.elementHandle(), { polling: 50 });
     expect((await warning(page).getByRole("button").allTextContents()).map((text) => text.trim())).toEqual(["Sign out", "Keep working"]);
     await page.keyboard.press("Escape");
     await page.evaluate(() => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));

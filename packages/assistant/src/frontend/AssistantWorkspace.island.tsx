@@ -159,7 +159,7 @@ import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
 import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
-import { finishedPlanShown, type TaskHostChoice, taskHostOpen } from "./task-host";
+import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
 
@@ -224,6 +224,9 @@ type ProjectViewState = {
 
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
 const ArtifactWorkspace = lazy(() => import("../artifacts/Workspace").then((module) => ({ default: module.ArtifactWorkspace })));
+
+/** The usage of a chat that has sent nothing yet. */
+const NOTHING_USED = { input: 0, output: 0, total: 0 };
 
 export default function AssistantWorkspace(props: Props) {
   const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
@@ -2331,7 +2334,7 @@ export default function AssistantWorkspace(props: Props) {
             <>
               <Show when={!projectComposer() && (hasOpenTodos() || completedPlanShown())}>
                 <Chat.Tasks
-                  items={todoItems()}
+                  items={shownTasks(todoItems(), chat.activeTurn()?.status)}
                   open={todoOpen()}
                   onOpenChange={setTodoOpen}
                   label={todoLabel()}
@@ -2610,7 +2613,7 @@ export default function AssistantWorkspace(props: Props) {
               : []
           }
           contextPopupAction={
-            // An empty chat has nothing to summarize; the usage control appears with the first message.
+            // An empty chat has nothing to summarize; the action to do so appears with the first message.
             !projectComposer() && activeConversation() && chat.messages().length > 0
               ? {
                   id: "compact-context",
@@ -2629,7 +2632,8 @@ export default function AssistantWorkspace(props: Props) {
             projectComposer()
               ? undefined
               : {
-                  usage: usageSnapshot()?.request ?? null,
+                  // Nothing sent yet, such as on the start page: the ring stands empty in its place (v12 §9).
+                  usage: usageSnapshot()?.request ?? (emptyChat() ? NOTHING_USED : null),
                   loopUsage: usageSnapshot()?.loop ?? null,
                   contextWindow: usageModel()?.contextWindow,
                   modelLabel: usageModel()?.label,

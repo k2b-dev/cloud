@@ -38,6 +38,8 @@ const VISIBLE_TOLERANCE = 1;
 const MEASURE_PASSES = 4;
 const ANNOUNCE_MS = 1_000;
 const HIGHLIGHT_MS = 1_600;
+/** The name of the CSS highlight that tints a passage found by `scrollToKey`'s `highlightText`. */
+const PASSAGE_HIGHLIGHT = "k2b-virtual-feed-passage";
 /** In engines without `scrollend`, the reader's scroll has ended after this long without moving. */
 const QUIET_MS = 300;
 /**
@@ -53,6 +55,12 @@ export type VirtualFeedScrollOptions = {
   align?: "start" | "center";
   /** Tints the item briefly so the reader finds it. */
   highlight?: boolean;
+  /**
+   * With `highlight`, tints only this passage of the item's text, such as a quoted part, where the browser supports
+   * the CSS Custom Highlight API and the item holds the passage (whitespace does not count). Otherwise the whole item
+   * is tinted.
+   */
+  highlightText?: string;
 };
 
 export type VirtualFeedController = {
@@ -1052,6 +1060,28 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     restore(true);
   };
 
+  /** Removes the tinted passage, also one whose search is still loading. */
+  let clearPassage = () => {};
+  /**
+   * Tints one passage of a placed item, or the whole item where that is not possible. The search loads with the first
+   * passage, so feeds that never jump to one carry none of its code.
+   */
+  const highlightPassage = (key: string, text: string) => {
+    let current = true;
+    clearPassage = () => {
+      current = false;
+    };
+    const item = viewport.querySelector(`.k2b-virtual-feed__item[data-key="${CSS.escape(key)}"]`);
+    void (item ? import("./find-text") : Promise.reject())
+      .then(({ highlightTextPassage }) => highlightTextPassage(item!, text, PASSAGE_HIGHLIGHT))
+      .catch(() => null)
+      .then((clear) => {
+        if (!current) clear?.();
+        else if (clear) clearPassage = clear;
+        else setHighlighted(key);
+      });
+  };
+
   const scrollToKey = (key: string, options: VirtualFeedScrollOptions = {}) => {
     const index = keys.indexOf(key);
     if (index < 0) return false;
@@ -1070,8 +1100,13 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
     if (reachesEnd(logicalTop())) setStick(true);
     if (options.highlight) {
       clearTimeout(highlightTimer);
-      setHighlighted(key);
-      highlightTimer = setTimeout(() => setHighlighted(undefined), HIGHLIGHT_MS);
+      clearPassage();
+      setHighlighted(options.highlightText ? undefined : key);
+      if (options.highlightText) highlightPassage(key, options.highlightText);
+      highlightTimer = setTimeout(() => {
+        setHighlighted(undefined);
+        clearPassage();
+      }, HIGHLIGHT_MS);
     }
     return true;
   };
@@ -1283,6 +1318,7 @@ export function VirtualFeed<T>(props: VirtualFeedProps<T>): JSX.Element {
       clearTimeout(endTimer);
       clearTimeout(announceTimer);
       clearTimeout(highlightTimer);
+      clearPassage();
       for (const row of rows.values()) row.dispose();
       rows.clear();
     });

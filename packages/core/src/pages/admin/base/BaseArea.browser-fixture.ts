@@ -189,7 +189,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
     const state = (url.searchParams.get("state") ?? "normal") as BaseFixtureState;
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: "Base settings", theme: "light" });
@@ -204,7 +204,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     const url = new URL(c.req.url);
     const locale = url.searchParams.get("locale") === "en" ? "en" : "de";
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: "Sign-in & security", theme: "light" });

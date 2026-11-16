@@ -226,11 +226,11 @@ export default function ChatList(props: {
                   {/* Its rows show below it; from a 1800 px window they move into their own column and the row reads
                     like any other chat again. */}
                   <Show when={expanded()}>
-                    <span class="chat-list__preview chat-list__members">
+                    <span class="chat-list__preview chat-list__members k2b-truncate-fade">
                       {row().kind === "system" ? t().systemMembers : t().members({ count: row().memberCount })}
                     </span>
                   </Show>
-                  <span class="chat-list__preview" data-collapsed-only={expanded() ? "" : undefined}>
+                  <span class="chat-list__preview k2b-truncate-fade" data-collapsed-only={expanded() ? "" : undefined}>
                     {row().kind === "system" && !row().lastMessage
                       ? t().systemMembers
                       : row().channel
