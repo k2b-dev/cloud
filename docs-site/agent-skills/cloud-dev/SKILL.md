@@ -94,10 +94,7 @@ Import `sql`, `redis`, `lazySync` and `storage` from `@k2b/cloud`; never import 
 
 Declare Sync handles with `lazySync()`, use them after `app.start()`, start
 workers in lifecycle startup, and drain them before releasing dependencies.
-Run periodic work with `startRuntimeInterval()` and other process work through
-`createRuntimeTaskTracker()` or `createRuntimeLifecycle()` (`@k2b/cloud/services`):
-maintenance stage „Ruhe“ then pauses and resumes it without app code; an own
-long-lived loop follows `backgroundWork` (**Lifecycle background work**).
+Run periodic and process work through `startRuntimeInterval()`, `createRuntimeTaskTracker()` or `createRuntimeLifecycle()` (`@k2b/cloud/services`), so maintenance „Ruhe“ pauses it without app code; own loops follow `backgroundWork` (**Lifecycle background work**).
 Shared resources need one owner and identical settings. Never declare one per
 entity: JetStream reserves each stream's bytes, so per-entity logs share one
 topic keyed by `tenantId` with watermark cursors (Topics and live events); collaborative text uses `@k2b/cloud/shared-text` (Shared text documents).
