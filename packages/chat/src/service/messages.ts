@@ -1,13 +1,16 @@
 import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
+import { decodeHTML } from "entities";
 import type { z } from "zod";
 import { wakeChatEvents } from "../app-events";
+import { quoteExcerpt } from "../system-messages";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
 import {
   CHANGES_PAGE_SIZE,
   ChangesQuerySchema,
   type ChatSnapshotSchema,
+  MESSAGE_MAX_CODE_POINTS,
   MESSAGE_PAGE_SIZE,
   MessageIdSchema,
   MessageQuerySchema,
@@ -72,23 +75,48 @@ const send = async (input: Input & { input: unknown; replayHash?: string }): Pro
         created: false,
       });
 
+    // The answered message and every quoted one come in one statement; they all lie in the new message's thread.
+    const sourceIds = [...new Set([...(data.replyTo ? [data.replyTo] : []), ...(data.quotes ?? []).map((quote) => quote.message)])];
+    const sources = sourceIds.length
+      ? await db<MessageRow[]>`SELECT * FROM chat.messages
+          WHERE conversation_id = ${current.data.id}::uuid AND short_id = ANY(${toPgTextArray(sourceIds)}::text[])`
+      : [];
+    const source = new Map(sources.map((row) => [row.short_id, row]));
     let threadId: string | null = null;
     let replyToSeq: string | bigint | undefined;
     if (data.replyTo) {
-      const [original] = await db<
-        MessageRow[]
-      >`SELECT * FROM chat.messages WHERE conversation_id = ${current.data.id}::uuid AND short_id = ${data.replyTo}`;
+      const original = source.get(data.replyTo);
       if (!original || original.deleted_at) return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
       threadId = original.thread_id;
       replyToSeq = original.seq;
     }
+    const quoted = (data.quotes ?? []).map((quote) => ({ quote, row: source.get(quote.message) }));
+    if (quoted.some(({ row }) => !row || row.deleted_at || row.kind !== "text"))
+      return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
+    const sourceThreads = new Set([...(data.replyTo ? [threadId] : []), ...quoted.map(({ row }) => row!.thread_id)]);
+    // A message in a thread the sender cannot read looks like a missing one, and says nothing about its thread.
+    for (const thread of sourceThreads)
+      if (!(await canReadThread(db, input, thread)))
+        return fail({ code: "NOT_FOUND", status: 404, message: catalog(input).messageNotFound });
+    if (sourceThreads.size > 1) return fail(err.badInput(catalog(input).invalidInput));
+    if (quoted.length) threadId = quoted[0]!.row!.thread_id;
     if (data.thread) {
       const thread = await findThread(db, current.data.id, data.thread, input);
       if (!thread) return threadNotFound(input);
-      if (data.replyTo && thread.id !== threadId) return fail(err.badInput(catalog(input).invalidInput));
+      if (sourceThreads.size && thread.id !== threadId) return fail(err.badInput(catalog(input).invalidInput));
       threadId = thread.id;
     }
-    if (!(await canReadThread(db, input, threadId))) return threadNotFound(input);
+    if (!sourceThreads.size && !(await canReadThread(db, input, threadId))) return threadNotFound(input);
+    // Only a reader of the thread learns whether a passage occurs in its message. The stored passage is the
+    // message's own text, so its words and spaces are the author's, not the sender's.
+    const found = quoted.map(({ quote, row }) => ({ row: row!, text: quoteExcerpt(row!.body_md ?? "", quote.text, decodeHTML) }));
+    if (found.some(({ text }) => text === null)) return fail(err.badInput(catalog(input).quoteNotFound));
+    // The stored passages, once each, within one message's length: what the limits promise is what is stored.
+    const excerpts = found.filter(
+      ({ row, text }, index) => found.findIndex((other) => other.row.short_id === row.short_id && other.text === text) === index,
+    );
+    if (excerpts.reduce((sum, { text }) => sum + [...text!].length, 0) > MESSAGE_MAX_CODE_POINTS)
+      return fail(err.badInput(catalog(input).invalidInput));
     if (threadId) {
       const [thread] = await db<
         { archived_at: Date | null }[]
@@ -116,6 +144,11 @@ const send = async (input: Input & { input: unknown; replayHash?: string }): Pro
       attachments: data.attachments,
       threadId: threadId ?? undefined,
       replyToSeq,
+      quotes: excerpts.map(({ row, text }) => ({
+        id: row.short_id,
+        author: { type: row.author_type, id: row.author_id, name: row.author_name },
+        text: text!,
+      })),
     });
     return ok({ message: (await messageViews(db, [row], input.conversationId, input.accessSubject, input.locale))[0]!, created: true });
   });

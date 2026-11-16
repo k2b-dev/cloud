@@ -35,6 +35,10 @@ export const approvalCount = (appId?: string): number => liveApprovalCount(appId
 export const appBadgeCount = (input: { endpoint?: string; appId?: string }): number =>
   (input.endpoint ? (counts().get(input.endpoint) ?? 0) : 0) + (input.appId ? approvalCount(input.appId) : 0);
 
+/** Whether any of these apps has a count; the phone header's app menu shows one dot for all of them. */
+export const anyAppBadge = (apps: readonly { id: string; badge?: string }[]): boolean =>
+  apps.some((app) => appBadgeCount({ endpoint: app.badge, appId: app.id }) > 0);
+
 /** A positive safe integer from an `AppNavBadge` body, else 0. */
 export const parseAppBadge = (body: unknown): number => {
   if (typeof body !== "object" || body === null || !("count" in body)) return 0;

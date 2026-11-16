@@ -140,6 +140,14 @@ service's intentional existence-hiding `404`; do not add a lookup to tell
 missing and inaccessible resources apart. Other HTTP error statuses are
 preserved and receive generic failure copy. This does not catch exceptions.
 
+The generic `404` and `5xx` pages, without your own `title`, `description`, or
+`action` and outside `/admin` and `"pwa"`, show the waiting game of the
+maintenance page below the home link: a robot on a road that starts a round
+with Space or a tap, never on its own. Its space is part of the first paint, and
+its code loads right after the page. Pages with your own copy never show it,
+and neither do `403` and other client errors: there the person has a problem to
+solve.
+
 The optional third argument accepts `title`, `description`,
 `action: { label, href, icon? }`, and `layout: "cloud" | "minimal" | "pwa"`
 (default `"cloud"`). Supply only safe, localized application copy, never

@@ -617,6 +617,9 @@ type ChatComposerProps = {
   reply?: ChatComposerReply; suggestion?: ChatComposerSuggestion;
 };
 
+type ChatComposerQuote = { id: string; author: string; text: string; onRemove: () => void; onSelect?: () => void };
+// <ChatComposerQuotes quotes={readonly ChatComposerQuote[]} /> renders them, for `accessory`.
+
 type ChatComposerSuggestion = { text: string; onAccept: () => void; onDismiss: () => void };
 
 type ChatDictationState = "listening" | "refining" | "refined" | "unrefined" | "interrupted";
@@ -943,6 +946,16 @@ command list and its search field instead; offer file selection as an
   lines. Its × button calls `onCancel`; `onSelect` makes the quote a button,
   for example to jump to the original. The application decides where the reply
   goes and clears `reply` after sending.
+- **Quotes:** pass `<ChatComposerQuotes quotes={…} />` as `accessory` for the
+  passages a draft quotes. Each row has the quote icon, the passage in at
+  most two lines, its author, and an × button that calls `onRemove`;
+  `onSelect` makes the passage a button, for example to jump to it, and `id`
+  keeps a row stable. Several scroll in their own area above three rows. Load
+  `ChatComposerQuotes` in the same code as what adds the first quote, so a
+  draft never holds quotes it cannot show. The application owns the list,
+  decides where the message goes (all quotes of one message should come from
+  one place), sends the passages with it, and clears the list after sending.
+  A message shows them through `MessageRow`'s `quotes`.
 - **Hint line:** one line of fixed height above the field, always reserved,
   so a hint never moves the field. Pass `hint` for short application notes,
   such as what people without access see after a reference was attached.
