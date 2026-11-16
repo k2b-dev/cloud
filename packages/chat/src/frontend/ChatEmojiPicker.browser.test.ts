@@ -33,9 +33,13 @@ const load = async () => {
   await page.evaluate(() => {
     const log: string[] = [];
     (window as unknown as { toggles: string[] }).toggles = log;
-    document.addEventListener("toggle", (event) => {
-      if ((event.target as Element).matches(".k2b-emoji-picker-popover")) log.push((event as ToggleEvent).newState);
-    }, true);
+    document.addEventListener(
+      "toggle",
+      (event) => {
+        if ((event.target as Element).matches(".k2b-emoji-picker-popover")) log.push((event as ToggleEvent).newState);
+      },
+      true,
+    );
   });
   return { page, errors };
 };
@@ -59,9 +63,11 @@ const opened = async (page: Page) => {
   });
 };
 
-test("a click opens the picker the first time without flicker, beside the emoji button, with the focus in its search", async () => {
+test("a click opens the picker the first time without flicker, beside the emoji button, with the focus in its search and back after Escape", async () => {
   const { page, errors } = await load();
   try {
+    // A press on the emoji button keeps the focus where it was, such as in the field; Escape returns it there.
+    const before = await page.evaluateHandle(() => document.activeElement);
     await button(page).click();
     const first = await opened(page);
     expect(first.toggles).toEqual(["open"]);
@@ -70,10 +76,7 @@ test("a click opens the picker the first time without flicker, beside the emoji 
     expect(first.gap).toBeLessThan(16);
     expect(first.end).toBeLessThan(1);
     await page.keyboard.press("Escape");
-    await button(page).evaluate((element) => new Promise<void>((resolve) => {
-      const check = () => (document.activeElement === element ? resolve() : requestAnimationFrame(check));
-      check();
-    }));
+    await page.waitForFunction((element) => document.activeElement === element, before);
     expect(await button(page).getAttribute("aria-expanded")).not.toBe("true");
     expect(errors).toEqual([]);
   } finally {
@@ -91,10 +94,7 @@ test("the keyboard opens the picker the first time and Escape returns the focus 
     expect(first.gap).toBeGreaterThanOrEqual(0);
     expect(first.end).toBeLessThan(1);
     await page.keyboard.press("Escape");
-    await button(page).evaluate((element) => new Promise<void>((resolve) => {
-      const check = () => (document.activeElement === element ? resolve() : requestAnimationFrame(check));
-      check();
-    }));
+    await page.waitForFunction((element) => document.activeElement === element, await button(page).elementHandle());
     // The second opening, with the code loaded, lands in the same place.
     await page.keyboard.press("Enter");
     const second = await opened(page);
