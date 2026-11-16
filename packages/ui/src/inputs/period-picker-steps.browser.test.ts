@@ -124,9 +124,11 @@ describe("PeriodPicker steps", () => {
   test("a free range moves by its own length; All time does not step", async () => {
     const page = await load(1280, { value: { start: "2026-10-28", end: "2026-11-06" } });
     try {
+      // Ten days that end before today: the way back leads to the ten days that hold today.
+      expect(await home(page).innerText()).toBe("Aktueller Zeitraum");
       await next(page).click();
       expect((await commits(page)).at(-1)).toEqual({ start: "2026-11-07", end: "2026-11-16" });
-      expect(await home(page).innerText()).toBe("Aktueller Zeitraum");
+      expect(await home(page).isVisible()).toBe(false);
     } finally {
       await page.close();
     }
@@ -145,15 +147,17 @@ describe("PeriodPicker steps", () => {
     try {
       expect(await next(page).getAttribute("aria-disabled")).toBe("true");
       expect(await next(page).getAttribute("aria-label")).toBe("Nächster Zeitraum: nichts nach dem 30.11.2026");
-      expect(await next(page).isDisabled()).toBe(false);
-      await next(page).click();
+      // Not natively disabled: it keeps focus, and Enter on it does nothing.
+      expect(await next(page).evaluate((button) => (button as HTMLButtonElement).disabled)).toBe(false);
+      await next(page).focus();
+      await page.keyboard.press("Enter");
       expect(await commits(page)).toEqual([]);
       // October still holds days after min, so it is reachable; September is not.
       expect(await previous(page).getAttribute("aria-disabled")).toBeNull();
       await previous(page).click();
       expect(await previous(page).getAttribute("aria-disabled")).toBe("true");
       expect(await previous(page).getAttribute("aria-label")).toBe("Vorheriger Zeitraum: nichts vor dem 15.10.2026");
-      await next(page).focus();
+      await previous(page).focus();
       expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-period-picker__step"))).toBe(true);
     } finally {
       await page.close();
