@@ -14887,8 +14887,11 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   display: none;
 }
 
-.k2b-ui summary.k2b-chat-activity__row:hover {
-  --k2b-chat-activity-hover: var(--k2b-edge-hover-bg);
+/* Only a real pointer hovers; a tap on a phone leaves no lit row behind. */
+@media (hover: hover) {
+  .k2b-ui summary.k2b-chat-activity__row:hover {
+    --k2b-chat-activity-hover: var(--k2b-edge-hover-bg);
+  }
 }
 
 /* A row's text and icons re-render while it streams. Presses land on the summary itself, so a node replaced under the
@@ -14986,6 +14989,22 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   color: var(--k2b-ai-accent);
 }
 
+/* A running step in an app keeps its app colour, also with reduced motion, where the busy colour paints the icon. */
+.k2b-ui
+  .k2b-chat-activity[data-busy="true"][data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading {
+  --k2b-chat-activity-busy-color: color-mix(in srgb, var(--k2b-chat-activity-accent) 78%, black);
+}
+
+.k2b-ui[data-theme="dark"]
+  .k2b-chat-activity[data-busy="true"][data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
+.k2b-ui.k2b-dark
+  .k2b-chat-activity[data-busy="true"][data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading,
+.dark
+  .k2b-ui
+  .k2b-chat-activity[data-busy="true"][data-accent="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading {
+  --k2b-chat-activity-busy-color: color-mix(in srgb, var(--k2b-chat-activity-accent) 58%, white);
+}
+
 /* A spinning icon cannot be painted through the text shimmer, so it turns solid on its own. */
 .k2b-ui
   .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"]) > .k2b-chat-activity__row > .k2b-chat-activity__leading:has(.k2b-spin) {
@@ -15003,9 +15022,10 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* A step's target continues its sentence in the same grey: one text style per row. */
 .k2b-ui .k2b-chat-activity__copy small {
   flex: none;
-  color: var(--k2b-text-subtle);
+  color: inherit;
   font-size: inherit;
 }
 
