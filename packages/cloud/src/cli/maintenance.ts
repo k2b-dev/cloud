@@ -1,4 +1,4 @@
-import { MaintenanceProblemSchema, type MaintenanceStatus } from "../contracts/maintenance";
+import type { MaintenanceStatus } from "../contracts/maintenance";
 import { cloudCliLanguage } from "./locale";
 
 /**
@@ -103,14 +103,18 @@ export const maintenanceProblemSentence = async (
   { now }: { now?: Date } = {},
 ): Promise<{ code: "maintenance" | "app_unavailable"; en: string; de: string } | null> => {
   if (response.status !== 503 || !(response.headers.get("Content-Type") ?? "").startsWith("application/problem+json")) return null;
-  let problem: ReturnType<typeof MaintenanceProblemSchema.safeParse>;
+  // A plain check instead of the zod schema: every cld command runs this, and host commands load no contract module.
+  let body: unknown;
   try {
-    problem = MaintenanceProblemSchema.safeParse(await response.clone().json());
+    body = await response.clone().json();
   } catch {
     return null;
   }
-  if (!problem.success) return null;
-  const { code, until, appId } = problem.data;
+  if (!body || typeof body !== "object") return null;
+  const { code, until: rawUntil, appId: rawAppId } = body as Record<string, unknown>;
+  if (code !== "maintenance" && code !== "app_unavailable") return null;
+  const until = typeof rawUntil === "string" && Number.isFinite(Date.parse(rawUntil)) ? rawUntil : undefined;
+  const appId = typeof rawAppId === "string" && /^[a-z0-9][a-z0-9-]{0,62}$/.test(rawAppId) ? rawAppId : undefined;
   if (code === "maintenance") {
     const time = (language: string) => (until ? formatMaintenanceTime(until, language, now) : null);
     return {

@@ -17,11 +17,15 @@ import { createIngressHandler } from "./ingress";
 import { gatewayRuntime, getDomainSnapshot, getIngressCertResolver } from "./runtime";
 import { getRouteTable, stats } from "./stats";
 import { loadTrustedProxies } from "./trusted-proxies";
-import { websocketHandlers } from "./ws-proxy";
+import { closeProxiedSockets, websocketHandlers } from "./ws-proxy";
 
 const log = logger("gateway");
 
 gatewayRouter.trustedProxies = await loadTrustedProxies();
+// Open sockets end with 1012 ("service restart") once when whole-Cloud maintenance starts.
+availability.onMaintenanceStarted(() =>
+  log.info("Closed proxied sockets for maintenance", { closed: closeProxiedSockets(1012, "maintenance") }),
+);
 await gatewayRuntime.setup();
 await gatewayRuntime.start();
 
