@@ -98,7 +98,7 @@ const message = (id: string, seq: number, role: "user" | "assistant", texts: str
   usage: null,
   stopReason: null,
   loopAggregate: null,
-  loopDoneReason: role === "assistant" ? "completed" : null,
+  loopDoneReason: role === "assistant" ? "stop" : null,
   compactedAt: null,
   meta: null,
   createdAt: at(minutesAgo),

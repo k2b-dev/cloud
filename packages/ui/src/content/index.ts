@@ -141,6 +141,7 @@ export type {
   MessageRowThread,
   MessageSystemRowProps,
 } from "./MessageRow";
+export { MessageQuote } from "./MessageQuote";
 export { MessageEventGroup, MessageEventRow, MessageRow, MessageSystemRow, startsMessageGroup } from "./MessageRow";
 export { type GeoNavigationPlatform, geoNavigationHref, geoNavigationPlatform } from "./map-navigation";
 export { type MapPaletteColors, type MapTheme, mapPalette } from "./map-palette";
