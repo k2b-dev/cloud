@@ -772,7 +772,7 @@ branch:
 ### Test an application's page swaps
 
 Before an application turns on `pageSwap`, it runs the shared contract in
-`packages/cloud/test/page-swap-app.ts` against its real SSR pages
+`scripts/fixtures/page-swap-app.ts` against its real SSR pages
 ([Swap stability](/en/docs/frontend/url-state-and-navigation#swap-stability)).
 The test file calls `installSsrTransform()` before it imports the page modules,
 starts the harness with `startPageSwapApp()` in `beforeAll`, and registers

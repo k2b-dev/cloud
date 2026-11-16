@@ -8,7 +8,7 @@ import {
   type PageSwapEnvironment,
   pageSwapContract,
   startPageSwapApp,
-} from "../../../cloud/test/page-swap-app";
+} from "../../../../scripts/fixtures/page-swap-app";
 
 setDefaultTimeout(60_000);
 const appRoot = resolve(import.meta.dir, "../..");

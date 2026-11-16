@@ -17,26 +17,26 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
-import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
-import type { Browser, Page } from "playwright";
-import { buildIslands } from "../../ssr/src/build";
-import { launchBrowser } from "../../ui/test/browser";
-import type { RuntimeAppMeta } from "../src/contracts/app";
-import type { User } from "../src/contracts/shared";
-import type { AuthContext } from "../src/server/middleware/auth";
-import type { RuntimeContext } from "../src/ssr/runtime";
+import type { RuntimeAppMeta } from "../../packages/cloud/src/contracts/app";
+import type { User } from "../../packages/cloud/src/contracts/shared";
+import type { AuthContext } from "../../packages/cloud/src/server/middleware/auth";
+import type { RuntimeContext } from "../../packages/cloud/src/ssr/runtime";
+import { buildIslands } from "../../packages/ssr/src/build";
+import { createConfig } from "../../packages/ssr/src/index";
+import { launchBrowser } from "../../packages/ui/test/browser";
 
-const cloudRoot = resolve(import.meta.dir, "..");
+const cloudRoot = resolve(import.meta.dir, "../../packages/cloud");
+// Resolved from the Cloud package, which depends on these; the repository root does not.
+const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", cloudRoot))).default;
+type Browser = Awaited<ReturnType<typeof launchBrowser>>;
+export type Page = Awaited<ReturnType<Browser["newPage"]>>;
 
 /** Transforms island wrappers of pages imported afterwards, with the ids the harness build uses. */
 export const installSsrTransform = (appRoot: string): void => {
   const { plugin } = createConfig({ dev: true, rootDir: appRoot, componentRoots: [] });
   Bun.plugin(plugin());
 };
-
-export type { Page };
 
 export type PageSwapEnvironment = { Variables: AuthContext["Variables"] & { runtime: RuntimeContext } };
 
@@ -75,13 +75,13 @@ const otherApp: RuntimeAppMeta = {
 };
 
 export async function startPageSwapApp(options: PageSwapAppOptions): Promise<PageSwapApp> {
-  const rail = await import("../src/services/rail-snapshot");
-  const settings = await import("../src/server/middleware/settings");
-  const help = await import("../src/ssr/help");
-  const consent = await import("../src/ssr/panel-consent");
-  const { session } = await import("../src/services/session");
-  const { person } = await import("../src/_internal/define-app.test-fixture");
-  const { defaultRailPreferences } = await import("../src/contracts/rail-preferences");
+  const rail = await import("../../packages/cloud/src/services/rail-snapshot");
+  const settings = await import("../../packages/cloud/src/server/middleware/settings");
+  const help = await import("../../packages/cloud/src/ssr/help");
+  const consent = await import("../../packages/cloud/src/ssr/panel-consent");
+  const { session } = await import("../../packages/cloud/src/services/session");
+  const { person } = await import("../../packages/cloud/src/_internal/define-app.test-fixture");
+  const { defaultRailPreferences } = await import("../../packages/cloud/src/contracts/rail-preferences");
   const spies = [
     spyOn(rail, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
     spyOn(settings, "preloadLayoutAnnouncements").mockResolvedValue(undefined),

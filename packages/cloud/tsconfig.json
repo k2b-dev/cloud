@@ -6,7 +6,6 @@
     "./src/types/**/*.d.ts",
     "./scripts/**/*.ts",
     "./test/integration/**/*.ts",
-    "./test/page-swap-app.ts",
     "./test/charts/**/*.tsx",
     "./test/island-errors/**/*.ts",
     "./test/island-errors/**/*.tsx",
