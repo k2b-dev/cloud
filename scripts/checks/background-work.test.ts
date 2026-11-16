@@ -89,6 +89,57 @@ test("a one-shot timeout, a deadline and a callback declared elsewhere are not l
   expect(backgroundWorkFindings(source)).toEqual([]);
 });
 
+test("global, block-bodied, async, multi-line, method and chained timeout loops are reported", () => {
+  const source = [
+    "const poll = () => {",
+    "  globalThis.setTimeout(poll, 1_000);",
+    "};",
+    "const refresh = async () => {",
+    "  timer = setTimeout(async () => {",
+    "    await check();",
+    "    await refresh();",
+    "  }, 5_000);",
+    "};",
+    "const schedule = (",
+    "  delayMs: number,",
+    ") => {",
+    "  timer = setTimeout(",
+    "    () => {",
+    "      void refreshOnce().finally(schedule);",
+    "    },",
+    "    delayMs,",
+    "  );",
+    "};",
+    "class Snapshots {",
+    "  private async save(): Promise<void> {",
+    "    this.timer ??= setTimeout(() => void this.save(), 50);",
+    "  }",
+    "}",
+    "const tick = () => setTimeout(tick, 10);",
+  ].join("\n");
+  expect(backgroundWorkFindings(source)).toEqual([
+    { line: 2, kind: "timer" },
+    { line: 5, kind: "timer" },
+    { line: 13, kind: "timer" },
+    { line: 22, kind: "timer" },
+    { line: 25, kind: "timer" },
+  ]);
+});
+
+test("timers in strings, comments and regular expressions, and a function that only ends near a timeout, are not loops", () => {
+  const source = [
+    'const help = "setInterval(scan, 1_000)";',
+    "/* setInterval(() => scan()) */",
+    "const quote = /[\"'(]/;",
+    "const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));",
+    "const later = () => wait(5);",
+    "setTimeout(() => later(), 10);",
+    "const handler = (value: number) => value + 1",
+    "const once = setTimeout(() => handler(1), 10);",
+  ].join("\n");
+  expect(backgroundWorkFindings(source)).toEqual([]);
+});
+
 test("only server code of quiescing packages is in scope", async () => {
   const timer = "setInterval(() => void scan(), 1_000);\n";
   expect(

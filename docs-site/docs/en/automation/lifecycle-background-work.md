@@ -79,20 +79,33 @@ own when the work runs through the platform:
 
 | You use | While quiet | On resume |
 | --- | --- | --- |
-| `process()` of a job, queue, topic, scheduler or pump declared with `lazySync()` or `app.sync` | The worker stops pulling and drains (30 s, then handler signals abort). Messages wait in NATS. A handler that ignores its signal still counts as running. | A new worker starts with the same arguments once the old handlers ended. Your handle stays valid. |
+| `process()` of a job, queue, topic, scheduler or pump declared with `lazySync()` or `app.sync` | The worker stops pulling and drains (30 s, then handler signals abort). Messages wait in NATS. A handler that ignores its signal still counts as running. | A new worker starts with the same arguments once the old handlers ended, also when your runtime calls `process()` again. Your handle stays valid. |
 | `createRuntimeTaskTracker()` | `run()` returns `null`, as when closed; accepted tasks drain. | `run()` accepts tasks again. |
 | `createRuntimeLifecycle()` | A started runtime is stopped. `start()` only marks it to start later. | The runtime starts again. |
-| `startRuntimeInterval()` | Ticks are skipped; the pass in flight finishes. | Missed ticks run once. |
+| `startRuntimeInterval()` | Ticks are skipped; the pass in flight finishes. | Missed ticks run once, after a pass that is still running ended. |
 
 Workers drain first, all at once. Then runtime lifecycles stop one at a time,
 the last one started first. On resume, runtimes start in their original order
-before workers take work again. A runtime that another runtime starts inside
-its own `start` therefore stops before it and starts after it. Start runtimes
-that depend on each other in that order.
+before workers take work again; `backgroundWork.onChange()` hears the resume
+once the runtimes run. A runtime that another runtime starts inside its own
+`start` therefore stops before it and starts after it. Start runtimes that
+depend on each other in that order.
+
+Each runtime stop and each attempt to start one again gets the drain budget
+plus one second. A runtime that takes longer is logged and keeps counting as
+running, and the next runtime goes on meanwhile; its own start waits behind
+its stop.
 
 A worker or runtime that fails to start again is retried five times within
 about a minute; then the process restarts. A worker created inside
 `superviseRuntimeTask()` retries without a limit, as the supervisor does.
+
+No worker of the same job, queue, topic consumer, scheduler or pump starts
+while handlers of an earlier one still run in the process, also when the
+earlier handle was stopped. A handler that ignores its abort signal is the
+only way to stall this: when old handlers still run twice the step budget
+(about a minute) after the new worker began to wait, the process restarts,
+supervised workers included.
 
 Request-side resources do not belong in a runtime lifecycle: quiesce would
 stop them while requests still use them. Close a connection pool that
@@ -125,8 +138,10 @@ if (!backgroundWork.paused()) connection.open();
 `backgroundWork.paused()` is true while the Cloud is quiet. Stop before you
 start new work, not in the middle of an operation. The repository check
 `background-work` flags, in built-in app server code (`.ts`), a raw
-`setInterval()`, a function that schedules itself again with `setTimeout()`,
-and `superviseRuntimeTask()`. One that must keep running while quiet, such as
+`setInterval()`, a function that schedules itself again with `setTimeout()`
+(directly, from a block or async callback, or chained as in
+`.finally(schedule)`), and `superviseRuntimeTask()`. It reads the code, not
+its behavior: a loop through another function or a variable escapes it. One that must keep running while quiet, such as
 the lease heartbeat of work in flight or a registry watcher, carries
 `// runtime-timer: <reason>` on the line above.
 

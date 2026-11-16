@@ -3,7 +3,7 @@ import type { MaintenanceState, QuietReport } from "../contracts/maintenance";
 import { startMaintenanceQuiesce } from "./maintenance-quiesce";
 import type { ObservedMaintenance } from "./maintenance-state";
 import { createRuntimeLifecycle } from "./runtime-lifecycle";
-import { createQuiesceController } from "./runtime-quiesce";
+import { createQuiesceController, quiesceWorker } from "./runtime-quiesce";
 
 const state = (quiesce: boolean, quiesceEpoch?: number): ObservedMaintenance => ({
   updatedAt: Date.UTC(2026, 10, 16, 13, 0),
@@ -17,20 +17,35 @@ const state = (quiesce: boolean, quiesceEpoch?: number): ObservedMaintenance => 
   } satisfies MaintenanceState,
 });
 
-/** A maintenance record the test changes by hand, and what the instance reported. */
+/**
+ * A maintenance record the test changes by hand, and what the instance reported. Like the real watch, the watch
+ * loop itself delivers each change, so `onChange` runs in the watcher's own context (inside `superviseRuntimeTask`).
+ */
 const harness = (initial: ObservedMaintenance | null) => {
-  let emit: (observed: ObservedMaintenance | null) => void = () => {};
+  const changes: Array<ObservedMaintenance | null> = [];
+  let wake = () => {};
   const reports: QuietReport[] = [];
   const cleared: string[] = [];
   return {
     reports,
     cleared,
-    change: (observed: ObservedMaintenance | null) => emit(observed),
+    change: (observed: ObservedMaintenance | null) => {
+      changes.push(observed);
+      wake();
+    },
     dependencies: {
       read: async () => initial,
       watch: async ({ signal, onChange }: { signal: AbortSignal; onChange: (observed: ObservedMaintenance | null) => void }) => {
-        emit = onChange;
-        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+        while (!signal.aborted) {
+          if (changes.length > 0) {
+            onChange(changes.shift() ?? null);
+            continue;
+          }
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+            signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+        }
       },
       publish: async (report: QuietReport) => void reports.push(report),
       clear: async (instanceId: string) => void cleared.push(instanceId),
@@ -143,4 +158,44 @@ test("a resume that still fails after its retries is handed to the app, which re
   expect(resumeRetries).toEqual([1, 2, 3, 4]);
   expect(resumeFailures.flat().map((error) => (error instanceof Error ? error.message : String(error)))).toEqual(["database unavailable"]);
   await quiesce.stop();
+});
+
+test("a worker that a runtime creates during a resume of the watcher is not supervised: its failure restarts the process", async () => {
+  const controller = createQuiesceController({ retryMs: 1 });
+  let failing = false;
+  let worker: Promise<unknown> | undefined;
+  const runtime = createRuntimeLifecycle(
+    {
+      start: async () => {
+        worker ??= quiesceWorker(
+          async () => {
+            if (failing) throw new Error("consumer unavailable");
+            return { active: 0, capacity: 1, stop: () => {}, drain: async () => {}, [Symbol.asyncDispose]: async () => {} };
+          },
+          { controller },
+        );
+        await worker;
+      },
+      stop: async () => {},
+    },
+    { controller },
+  );
+  // The instance starts during stage Ruhe: the runtime and its worker start with the resume the watcher triggers.
+  const maintenance = harness(state(true));
+  const { started, resumeFailures } = start(controller, maintenance.dependencies);
+  const quiesce = await started;
+  await runtime.start();
+  maintenance.change(state(false));
+  while (!worker) await Bun.sleep(1);
+  await worker;
+  await settle();
+
+  maintenance.change(state(true));
+  await settle();
+  failing = true;
+  maintenance.change(state(false));
+  while (resumeFailures.length === 0) await Bun.sleep(1);
+  expect(resumeFailures.flat().map((error) => (error instanceof Error ? error.message : String(error)))).toEqual(["consumer unavailable"]);
+  await quiesce.stop();
+  await runtime.stop();
 });

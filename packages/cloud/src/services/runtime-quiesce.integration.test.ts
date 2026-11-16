@@ -2,18 +2,16 @@ import { expect } from "bun:test";
 import { createSync } from "@k2b/sync";
 import type { NatsConnection } from "@nats-io/transport-node";
 import { connectTestNats, testFor, testSyncNamespace } from "../../../../scripts/fixtures/test-infra";
-import { withSyncBudgets } from "../_internal/sync-budget";
-import { createQuiesceController, type QuiesceController, withQuiesce } from "./runtime-quiesce";
+import { wrapProcessSync } from "../_internal/process-sync";
+import { createQuiesceController, type QuiesceController } from "./runtime-quiesce";
 
 const integration = testFor("nats");
 
-/** The process Sync as `process-sync.ts` builds it: quiesce over the stream budgets over Sync. */
+/** The process Sync as `process-sync.ts` builds it, through the same helper. */
 const processSync = (connection: NatsConnection, namespace: string, controller: QuiesceController) =>
-  withQuiesce(
-    withSyncBudgets(createSync({ connection, namespace, application: "quiesce-test", defaults: { replicas: 1 } }), {
-      connection,
-      namespace,
-    }),
+  wrapProcessSync(
+    createSync({ connection, namespace, application: "quiesce-test", defaults: { replicas: 1 } }),
+    { connection, namespace },
     controller,
   );
 
@@ -97,8 +95,9 @@ integration(
   async () => {
     const connection = await connectTestNats({ ignoreClusterUpdates: true });
     const namespace = testSyncNamespace("quiesce-race");
-    // A short budget: Sync aborts the handler, which ignores it and keeps running.
-    const controller = createQuiesceController({ timeoutMs: 300 });
+    // A short budget: Sync aborts the handler, which ignores it and keeps running. The next generation then
+    // waits up to twice the step budget (2 × 2.5 s) for it before the process would restart.
+    const controller = createQuiesceController({ timeoutMs: 1_500, retryMs: 100 });
     const sync = processSync(connection, namespace, controller);
     try {
       const job = sync.job<{ n: number }>({ id: "work" });
@@ -128,7 +127,7 @@ integration(
       await job.submit({ key: "two", input: { n: 2 } });
       expect((await quiet).length).toBe(1);
       // The drain ended, but the first generation still runs its handler: the second must not start yet.
-      expect(await within(second.promise, 2_500)).toBe(false);
+      expect(await within(second.promise, 1_500)).toBe(false);
       expect(controller.inFlight()).toBe(1);
       release.resolve();
       expect(await resumed).toEqual([]);

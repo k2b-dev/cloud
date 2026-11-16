@@ -13,7 +13,9 @@ import type { Finding, Rule } from "./rule";
  * These shapes escape them and are flagged:
  *
  * - a raw `setInterval(` (also `globalThis.setInterval(`), a self-scheduling
- *   `setTimeout` loop (a function that passes itself to `setTimeout`), and
+ *   `setTimeout` loop (also `globalThis.setTimeout`: the timeout's arguments
+ *   name a function whose declaration encloses it, directly, in a block or
+ *   async callback, or chained as in `.finally(schedule)`), and
  *   `superviseRuntimeTask(` in server code. One that must keep running while
  *   quiet (a lease heartbeat of work in flight, a live connection or watcher,
  *   a timer whose callback already goes through a tracker) carries
@@ -39,10 +41,145 @@ const CREATE_SYNC_ALLOWED = new Map<string, string>([
 
 const MARKER = /\/\/\s*runtime-timer:\s*(.*)$/;
 const MIN_REASON_LENGTH = 8;
-const timerCall = /(?:(?<![.\w])|(?<![\w$])globalThis\.)(?:setInterval|superviseRuntimeTask)\(/;
-/** `setTimeout(name` or `setTimeout(() => name(` / `setTimeout(() => void name(`: the callback's name. */
-const timeoutCallback = /(?<![.\w])setTimeout\(\s*(?:\(\)\s*=>\s*(?:void\s+)?)?([A-Za-z_$][\w$]*)\s*[,(]/;
-const createSyncCall = /(?<![.\w])createSync\(/;
+const timerCall = /(?:(?<![.\w$])|(?<![\w$])globalThis\.)(?:setInterval|superviseRuntimeTask)\(/g;
+const timeoutCall = /(?:(?<![.\w$])|(?<![\w$])globalThis\.)setTimeout\(/g;
+const createSyncCall = /(?<![.\w$])createSync\(/g;
+const IDENTIFIER = "[A-Za-z_$][\\w$]*";
+/** `function name(`, `const name = (…) =>`, `const name = async x =>`, `let name = function`. */
+const declaration = new RegExp(
+  `(?<![\\w$])(?:function\\s*\\*?\\s*(${IDENTIFIER})\\s*[(<]|(?:const|let|var)\\s+(${IDENTIFIER})\\s*(?::[^=;]+)?=\\s*(?:async\\b\\s*)?(?:function\\b|\\(|<|${IDENTIFIER}\\s*=>))`,
+  "g",
+);
+/** A class or object method: `name(…) {`, `private async name(…): T {` at the start of a line. */
+const method = new RegExp(
+  `^[ \\t]*(?:(?:private|protected|public|static|async|override|readonly)\\s+)*(${IDENTIFIER})\\s*(?:<[^>]*>)?\\(`,
+  "gm",
+);
+const KEYWORDS = new Set(["if", "for", "while", "switch", "catch", "return", "function", "await", "typeof", "new", "super", "else", "do"]);
+/** A line that ends like this continues the statement on the next line. */
+const CONTINUES = /(?:=>|[=(,?:&|+[{]|\?\?)\s*$/;
+
+/**
+ * `source` with comments, strings, template literals and regular expressions blanked out (newlines and
+ * offsets kept), so the scan below sees only code. Template substitutions are blanked too; good enough
+ * for a heuristic.
+ */
+export const codeOnly = (source: string): string => {
+  const out = source.split("");
+  const blank = (from: number, to: number) => {
+    for (let at = from; at < to; at += 1) if (out[at] !== "\n") out[at] = " ";
+  };
+  let lastCode = "";
+  for (let at = 0; at < source.length; ) {
+    const char = source[at] ?? "";
+    const next = source[at + 1] ?? "";
+    if (char === "/" && next === "/") {
+      const end = source.indexOf("\n", at);
+      const stop = end === -1 ? source.length : end;
+      blank(at, stop);
+      at = stop;
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      const end = source.indexOf("*/", at + 2);
+      const stop = end === -1 ? source.length : end + 2;
+      blank(at, stop);
+      at = stop;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      let end = at + 1;
+      while (end < source.length && source[end] !== char) {
+        if (source[end] === "\\") end += 1;
+        else if (char !== "`" && source[end] === "\n") break;
+        end += 1;
+      }
+      blank(at + 1, end);
+      at = end + 1;
+      lastCode = char;
+      continue;
+    }
+    if (char === "/" && (lastCode === "" || "(,=:[!&|?{};".includes(lastCode))) {
+      let end = at + 1;
+      let inClass = false;
+      while (end < source.length && source[end] !== "\n" && (inClass || source[end] !== "/")) {
+        if (source[end] === "\\") end += 1;
+        else if (source[end] === "[") inClass = true;
+        else if (source[end] === "]") inClass = false;
+        end += 1;
+      }
+      blank(at + 1, end);
+      at = end + 1;
+      lastCode = "/";
+      continue;
+    }
+    if (!/\s/.test(char)) lastCode = char;
+    at += 1;
+  }
+  return out.join("");
+};
+
+/**
+ * Where the statement that starts at `from` (a function declaration) ends: at the first point where
+ * its brackets are balanced again and the line goes on with nothing that continues it (`;`, `,`, a
+ * closing bracket, or the end of a line that does not continue).
+ */
+const statementEnd = (code: string, from: number): number => {
+  let depth = 0;
+  let opened = false;
+  for (let at = from; at < code.length; at += 1) {
+    const char = code[at];
+    if (char === "(" || char === "{" || char === "[") {
+      depth += 1;
+      opened = true;
+    } else if (char === ")" || char === "}" || char === "]") {
+      depth -= 1;
+      if (depth < 0) return at;
+      if (depth === 0 && opened) {
+        const lineEnd = code.indexOf("\n", at);
+        const rest = code.slice(at + 1, lineEnd === -1 ? code.length : lineEnd).trim();
+        if (rest === "" || /^[;,)\]}]/.test(rest)) {
+          if (rest !== "" || !CONTINUES.test(code.slice(code.lastIndexOf("\n", at) + 1, at + 1))) return at;
+        }
+      }
+    } else if (char === "\n" && depth === 0 && opened) {
+      const line = code.slice(code.lastIndexOf("\n", at - 1) + 1, at);
+      if (!CONTINUES.test(line)) return at;
+    }
+  }
+  return code.length;
+};
+
+/** Named functions of `code` with the range of their declaration. */
+const functionSpans = (code: string): { name: string; start: number; end: number }[] => {
+  const spans: { name: string; start: number; end: number }[] = [];
+  for (const match of code.matchAll(declaration)) {
+    const name = match[1] ?? match[2];
+    if (name) spans.push({ name, start: match.index, end: statementEnd(code, match.index) });
+  }
+  for (const match of code.matchAll(method)) {
+    const name = match[1];
+    if (!name || KEYWORDS.has(name)) continue;
+    const start = match.index;
+    const end = statementEnd(code, start);
+    // A method has a body; a call statement such as `name(…);` does not.
+    if (/\)\s*(?::[^{;]+)?\{/.test(code.slice(start, Math.min(end, code.indexOf("{", start) + 1)))) spans.push({ name, start, end });
+  }
+  return spans;
+};
+
+/** The arguments of the call whose opening parenthesis is at `open`. */
+const callArguments = (code: string, open: number): string => {
+  let depth = 0;
+  for (let at = open; at < code.length; at += 1) {
+    if (code[at] === "(" || code[at] === "{" || code[at] === "[") depth += 1;
+    else if (code[at] === ")" || code[at] === "}" || code[at] === "]") {
+      depth -= 1;
+      if (depth === 0) return code.slice(open + 1, at);
+    }
+  }
+  return code.slice(open + 1);
+};
 
 const isComment = (line: string): boolean => /^\s*(?:\/\/|\/\*|\*)/.test(line);
 
@@ -50,47 +187,41 @@ const isComment = (line: string): boolean => /^\s*(?:\/\/|\/\*|\*)/.test(line);
 const marked = (lines: readonly string[], index: number): boolean =>
   [lines[index], lines[index - 1]].some((line) => (line?.match(MARKER)?.[1]?.trim().length ?? 0) >= MIN_REASON_LENGTH);
 
-/**
- * Whether line `index` lies inside the body of a function named `name` that
- * is declared above it (`function name`, `const name =`, `let name =`) and
- * opens its body on that line. Braces are counted from the declaration;
- * braces in strings can confuse it, which only costs a marker.
- */
-const insideOwnBody = (lines: readonly string[], index: number, name: string): boolean => {
-  const declaration = new RegExp(`(?:function\\s+${name}\\b|(?:const|let)\\s+${name}\\s*=)`);
-  for (let start = index; start >= 0; start -= 1) {
-    if (!declaration.test(lines[start] ?? "")) continue;
-    // A body opens on its declaration line; a one-line arrow without braces never loops.
-    if (!lines[start]?.includes("{")) return false;
-    let depth = 0;
-    let opened = false;
-    for (let at = start; at <= index; at += 1) {
-      const line = lines[at] ?? "";
-      for (const char of at === index ? line.slice(0, line.search(/setTimeout\(/)) : line) {
-        if (char === "{") {
-          depth += 1;
-          opened = true;
-        } else if (char === "}") depth -= 1;
-      }
-      if (opened && depth <= 0 && at < index) return false;
-    }
-    return opened && depth > 0;
-  }
-  return false;
+const lineOf = (code: string, offset: number): number => {
+  let line = 0;
+  for (let at = code.indexOf("\n"); at !== -1 && at < offset; at = code.indexOf("\n", at + 1)) line += 1;
+  return line;
 };
 
-/** 1-based lines of unmarked timers, self-scheduling loops and supervised tasks, and of `createSync(` calls in `source`. */
+/**
+ * 1-based lines of unmarked timers, self-scheduling loops and supervised tasks, and of `createSync(` calls in
+ * `source`. A `setTimeout` is a loop when its arguments name a function whose declaration encloses the call:
+ * `setTimeout(poll)`, `setTimeout(() => { … poll() })`, `setTimeout(() => work().finally(poll))`. It is a
+ * heuristic over these shapes; a loop through another function or a variable is not seen.
+ */
 export const backgroundWorkFindings = (source: string, { allowCreateSync = false } = {}): { line: number; kind: "timer" | "sync" }[] => {
   const lines = source.split("\n");
-  const found: { line: number; kind: "timer" | "sync" }[] = [];
-  for (const [index, line] of lines.entries()) {
-    if (isComment(line)) continue;
-    const callback = line.match(timeoutCallback)?.[1];
-    const loop = callback !== undefined && insideOwnBody(lines, index, callback);
-    if ((timerCall.test(line) || loop) && !marked(lines, index)) found.push({ line: index + 1, kind: "timer" });
-    if (!allowCreateSync && createSyncCall.test(line)) found.push({ line: index + 1, kind: "sync" });
+  const code = codeOnly(source);
+  const spans = functionSpans(code);
+  const found = new Map<string, { line: number; kind: "timer" | "sync" }>();
+  const add = (offset: number, kind: "timer" | "sync") => {
+    const index = lineOf(code, offset);
+    // A comment line whose block opened in another snippet (a fragment) counts as a comment too.
+    if (isComment(lines[index] ?? "") || (kind === "timer" && marked(lines, index))) return;
+    found.set(`${index}:${kind}`, { line: index + 1, kind });
+  };
+  for (const match of code.matchAll(timerCall)) add(match.index, "timer");
+  for (const match of code.matchAll(timeoutCall)) {
+    const at = match.index;
+    const args = callArguments(code, at + match[0].length - 1);
+    const loops = spans.some(
+      ({ name, start, end }) =>
+        start < at && at < end && new RegExp(`(?:(?<![\\w$.])|(?<=\\bthis\\.))${name.replace(/\$/g, "\\$")}(?![\\w$])`).test(args),
+    );
+    if (loops) add(at, "timer");
   }
-  return found;
+  if (!allowCreateSync) for (const match of code.matchAll(createSyncCall)) add(match.index, "sync");
+  return [...found.values()].sort((a, b) => a.line - b.line || a.kind.localeCompare(b.kind));
 };
 
 const inScope = (path: string): boolean =>

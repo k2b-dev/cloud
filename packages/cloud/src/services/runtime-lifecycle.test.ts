@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
@@ -7,7 +7,7 @@ import {
   stopRuntimeResources,
   superviseRuntimeTask,
 } from "./runtime-lifecycle";
-import { createQuiesceController } from "./runtime-quiesce";
+import { createQuiesceController, QuiesceTimeoutError } from "./runtime-quiesce";
 
 describe("runtime lifecycle", () => {
   test("restarts failed and unexpectedly completed tasks", async () => {
@@ -529,7 +529,7 @@ describe("maintenance quiesce", () => {
     expect(events).toEqual(["start", "stop"]);
   });
 
-  test("a lifecycle whose stop failed during quiesce starts on resume without stopping again", async () => {
+  test("a lifecycle whose stop timed out during quiesce starts on resume without stopping again", async () => {
     const controller = createQuiesceController();
     const events: string[] = [];
     let failStop = false;
@@ -538,17 +538,42 @@ describe("maintenance quiesce", () => {
         start: async () => void events.push("start"),
         stop: async () => {
           events.push("stop");
-          if (failStop) throw new Error("drain timed out");
+          if (failStop) throw new QuiesceTimeoutError("Runtime tasks did not drain within 30000ms");
         },
       },
       { controller },
     );
     await lifecycle.start();
     failStop = true;
-    expect((await controller.quiesce()).map((error) => (error as Error).message)).toEqual(["drain timed out"]);
+    expect((await controller.quiesce()).map((error) => (error as Error).message)).toEqual(["Runtime tasks did not drain within 30000ms"]);
     // A second stop would time out the same way and fail the resume.
     expect(await controller.resume()).toEqual([]);
     expect(events).toEqual(["start", "stop", "start"]);
+  });
+
+  test("a lifecycle whose stop failed for another reason during quiesce stops again before it starts on resume", async () => {
+    const controller = createQuiesceController();
+    const events: string[] = [];
+    let failStop = false;
+    const lifecycle = createRuntimeLifecycle(
+      {
+        start: async () => void events.push("start"),
+        stop: async () => {
+          events.push("stop");
+          if (failStop) {
+            failStop = false;
+            throw new Error("connection close failed");
+          }
+        },
+      },
+      { controller },
+    );
+    await lifecycle.start();
+    failStop = true;
+    expect((await controller.quiesce()).map((error) => (error as Error).message)).toEqual(["connection close failed"]);
+    expect(await controller.resume()).toEqual([]);
+    expect(events).toEqual(["start", "stop", "stop", "start"]);
+    await lifecycle.stop();
   });
 
   test("a lifecycle that cannot start again is reported by resume after its retries", async () => {
@@ -614,6 +639,41 @@ describe("maintenance quiesce", () => {
     await quiet.stop();
     expect(runs).toBe(2);
     await interval.stop();
+  });
+
+  test("a runtime interval catches up once after resume, also when its pass outlived the drain", async () => {
+    const controller = createQuiesceController({ timeoutMs: 5 });
+    let tickNow: () => void = () => {};
+    // The interval's own timer never fires; the test ticks by hand.
+    const timers = spyOn(globalThis, "setInterval").mockImplementation(((handler: () => void) => {
+      tickNow = handler;
+      return 0;
+    }) as unknown as typeof setInterval);
+    try {
+      let runs = 0;
+      const first = Promise.withResolvers<void>();
+      const interval = startRuntimeInterval({
+        run: async () => {
+          runs += 1;
+          if (runs === 1) await first.promise;
+        },
+        intervalMs: 60_000,
+        onError: () => {},
+        controller,
+      });
+      // The first pass ignores the drain and keeps running.
+      expect((await controller.quiesce()).length).toBe(1);
+      tickNow();
+      await controller.resume();
+      expect(runs).toBe(1);
+      first.resolve();
+      while (runs < 2) await Bun.sleep(1);
+      await Bun.sleep(5);
+      expect(runs).toBe(2);
+      await interval.stop();
+    } finally {
+      timers.mockRestore();
+    }
   });
 
   test("a runtime interval started while quiet without runNow does not run at once on resume", async () => {

@@ -1,7 +1,15 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import type { Sync, Worker } from "@k2b/sync";
 import { createRuntimeLifecycle, createRuntimeTaskTracker, stopRuntimeJobs, superviseRuntimeTask } from "./runtime-lifecycle";
-import { createQuiesceController, type QuiesceController, quiesceWorker, type ResumeRetry, withQuiesce } from "./runtime-quiesce";
+import {
+  createQuiesceController,
+  type QuiesceController,
+  quiesceWorker,
+  type ResumeRetry,
+  runSupervised,
+  StuckWorkerError,
+  withQuiesce,
+} from "./runtime-quiesce";
 
 type FakeWorker = Worker & { stopped: boolean; drains: Array<number | undefined>; hold(): () => void };
 
@@ -107,13 +115,16 @@ describe("quiesce controller", () => {
   });
 
   test("a drain that times out with handlers still running is a drain error; they keep counting and resume waits for them", async () => {
-    const controller = createQuiesceController({ timeoutMs: 5 });
+    // Step budget 100 ms, so the wait for the old handler may last 200 ms.
+    const controller = createQuiesceController({ timeoutMs: 50, retryMs: 1 });
     const { created, start } = starter();
     await quiesceWorker(start, { controller });
     const release = created[0]!.hold();
 
     const errors = await controller.quiesce();
-    expect(messages(errors)).toEqual(["A worker still runs 1 handler(s) 5ms after its drain began; it counts as in flight until they end"]);
+    expect(messages(errors)).toEqual([
+      "A worker still runs 1 handler(s) 50ms after its drain began; it counts as in flight until they end",
+    ]);
     expect(controller.inFlight()).toBe(1);
 
     let resumed = false;
@@ -358,7 +369,8 @@ describe("quiesce order", () => {
   });
 
   test("a tracker closed by a lifecycle stop that timed out keeps counting its task, and resume does not stop again", async () => {
-    const controller = createQuiesceController({ timeoutMs: 5 });
+    // The lifecycle's own drain budget (5 ms) ends before the controller's step budget (40 ms) for its stop.
+    const controller = createQuiesceController({ timeoutMs: 20 });
     const events: string[] = [];
     const tracker = createRuntimeTaskTracker({ controller });
     const unfinished = Promise.withResolvers<void>();
@@ -379,7 +391,7 @@ describe("quiesce order", () => {
     tracker.run(() => unfinished.promise);
     // The tracker's own drain times out first, then the lifecycle's stop closes it and times out too.
     expect(messages(await controller.quiesce())).toEqual([
-      "Runtime tasks did not drain within 5ms",
+      "Runtime tasks did not drain within 20ms",
       "Runtime tasks did not drain within 5ms",
     ]);
     expect(controller.inFlight()).toBe(1);
@@ -545,4 +557,178 @@ test("withQuiesce keeps the process Sync and its primitives observable: a spy on
   await job.submit({ input: { id: "1" } } as never);
   expect(submitSpy).toHaveBeenCalledTimes(1);
   expect(submits).toBe(1);
+});
+
+describe("old generations", () => {
+  /** A process Sync with one job whose `process()` creates fake workers, wrapped like the real one. */
+  const syncWithJob = (controller: QuiesceController) => {
+    const { created, start } = starter();
+    const sync = { job: () => ({ process: (..._args: unknown[]) => start() }) } as unknown as Sync;
+    return { created, job: withQuiesce(sync, controller).job<{ id: string }>({ id: "deliveries" }) };
+  };
+
+  test("a worker that a runtime creates again on resume waits for the handler its earlier handle left running", async () => {
+    // Step budget 200 ms: the new generation waits up to 400 ms for the old handler.
+    const controller = createQuiesceController({ timeoutMs: 100, retryMs: 1 });
+    const { created, job } = syncWithJob(controller);
+    const tracker = createRuntimeTaskTracker({ controller });
+    let worker: Worker | undefined;
+    // Owns its worker like the notification runtime: stop ends the handle, start calls process() again.
+    const runtime = createRuntimeLifecycle(
+      {
+        start: async () => {
+          tracker.open();
+          worker = await job.process({}, async () => {});
+        },
+        stop: async () => {
+          await stopRuntimeJobs(tracker, worker ? [worker] : [], { timeoutMs: 100 });
+          worker = undefined;
+        },
+      },
+      { controller },
+    );
+    await runtime.start();
+    // The handler ignores the abort of the drain.
+    const release = created[0]!.hold();
+    expect(messages(await controller.quiesce())).toEqual([
+      "A worker still runs 1 handler(s) 100ms after its drain began; it counts as in flight until they end",
+    ]);
+
+    const resumed = controller.resume();
+    await Bun.sleep(50);
+    // The runtime asked for a new handle, but no second generation runs beside the old handler.
+    expect(created).toHaveLength(1);
+    expect(controller.inFlight()).toBe(1);
+
+    release();
+    expect(await resumed).toEqual([]);
+    expect(created).toHaveLength(2);
+    expect(controller.inFlight()).toBe(0);
+    await runtime.stop();
+  });
+
+  test("a new generation reports its wait and fails once old handlers outlive twice the step budget", async () => {
+    // Step budget 40 ms, wait budget 80 ms.
+    const controller = createQuiesceController({ timeoutMs: 20, retryMs: 1 });
+    const { created, start } = starter();
+    await quiesceWorker(start, { controller });
+    // Ignores every abort: only a restart ends it.
+    created[0]!.hold();
+    await controller.quiesce();
+
+    const retries: ResumeRetry[] = [];
+    const failures = await controller.resume({ onRetry: (retry) => retries.push(retry) });
+    expect(messages(retries.map((retry) => retry.error))[0]).toBe("Background work did not start again within 40ms");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toBeInstanceOf(StuckWorkerError);
+    expect(messages(failures)[0]).toStartWith("A worker of a primitive still runs 1 handler(s) of an earlier generation");
+    expect(created).toHaveLength(1);
+    // The status still names the handler that runs.
+    expect(controller.inFlight()).toBe(1);
+  });
+
+  test("a supervised worker whose old handler never ends is reported after the resume, not retried forever", async () => {
+    const controller = createQuiesceController({ timeoutMs: 20, retryMs: 1 });
+    const { created, start } = starter();
+    await runSupervised(() => quiesceWorker(start, { controller }));
+    created[0]!.hold();
+    await controller.quiesce();
+    const late = Promise.withResolvers<unknown>();
+    expect(await controller.resume({ onLateFailure: (failure) => late.resolve(failure) })).toEqual([]);
+    expect(await late.promise).toBeInstanceOf(StuckWorkerError);
+    expect(created).toHaveLength(1);
+  });
+});
+
+describe("transition budgets", () => {
+  test("a runtime stop past its budget is reported, the earlier runtimes still stop, and resume is not held up", async () => {
+    // Step budget 40 ms.
+    const controller = createQuiesceController({ timeoutMs: 20, retryMs: 1 });
+    const events: string[] = [];
+    const hung = Promise.withResolvers<void>();
+    let hang = false;
+    const first = createRuntimeLifecycle(
+      { start: async () => void events.push("start first"), stop: async () => void events.push("stop first") },
+      { controller },
+    );
+    const second = createRuntimeLifecycle(
+      {
+        start: async () => void events.push("start second"),
+        stop: async () => {
+          events.push("stop second");
+          // A long workflow step that its stop waits for.
+          if (hang) await hung.promise;
+        },
+      },
+      { controller },
+    );
+    await first.start();
+    await second.start();
+    hang = true;
+    events.length = 0;
+
+    expect(messages(await controller.quiesce())).toEqual(["A runtime did not stop within 40ms; it counts as in flight until it has"]);
+    expect(events).toEqual(["stop second", "stop first"]);
+    expect(controller.inFlight()).toBe(1);
+
+    events.length = 0;
+    // Each attempt for the runtime still stopping ends after its budget; the resume ends after the retries.
+    expect(messages(await controller.resume())).toEqual(["Background work did not start again within 40ms"]);
+    expect(events).toEqual(["start first"]);
+
+    // Its own lifecycle starts it once the stop ended.
+    hung.resolve();
+    await until(() => events.includes("start second"));
+    expect(controller.inFlight()).toBe(0);
+    await first.stop();
+    await second.stop();
+  });
+
+  test("listeners hear the resume once the runtimes run", async () => {
+    const controller = createQuiesceController();
+    const events: string[] = [];
+    const runtime = createRuntimeLifecycle(
+      { start: async () => void events.push("start"), stop: async () => void events.push("stop") },
+      { controller },
+    );
+    controller.onChange((quiesced) => events.push(`heard ${quiesced}`));
+    await runtime.start();
+    events.length = 0;
+    await controller.quiesce();
+    await controller.resume();
+    expect(events).toEqual(["heard true", "stop", "start", "heard false"]);
+    await runtime.stop();
+  });
+
+  test("a resume started inside superviseRuntimeTask does not make the workers it creates supervised", async () => {
+    const controller = createQuiesceController({ retryMs: 1 });
+    let failing = false;
+    let worker: Promise<Worker> | undefined;
+    // Started while quiet, so its first start (and its worker) comes from the resume.
+    const runtime = createRuntimeLifecycle(
+      {
+        start: async () => {
+          worker ??= quiesceWorker(
+            async () => {
+              if (failing) throw new Error("consumer unavailable");
+              return fakeWorker();
+            },
+            { controller },
+          );
+          await worker;
+        },
+        stop: async () => {},
+      },
+      { controller },
+    );
+    await controller.quiesce();
+    await runtime.start();
+    // The maintenance watcher runs inside superviseRuntimeTask and resumes from there.
+    expect(await runSupervised(() => controller.resume())).toEqual([]);
+    await controller.quiesce();
+    failing = true;
+    // Not supervised: the worker gets five attempts and the resume reports it.
+    expect(messages(await runSupervised(() => controller.resume()))).toEqual(["consumer unavailable"]);
+    await runtime.stop();
+  });
 });

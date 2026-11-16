@@ -15,7 +15,7 @@ import { connections } from "../runtime/connections";
 import { DEPENDENCY_STARTUP_BUDGET_MS } from "../runtime/startup-budget";
 import { logger } from "../services/logging";
 import { flushSyncTraceEvents, observeSyncEvent } from "../services/logging/trace";
-import { withQuiesce } from "../services/runtime-quiesce";
+import { processQuiesce, type QuiesceController, withQuiesce } from "../services/runtime-quiesce";
 import { connectNats } from "./nats-connection";
 import { withSyncBudgets } from "./sync-budget";
 
@@ -132,23 +132,31 @@ export const waitForNats = async <T>(
   }
 };
 
+/**
+ * The process Sync around a fresh Sync instance: its workers follow maintenance quiesce
+ * (`services/runtime-quiesce.ts`) over the stream byte limits (`sync-budget.ts`), without the
+ * application opting in. Integration tests build their process Sync with it, so they cannot drift.
+ */
+export const wrapProcessSync = (
+  sync: Sync,
+  streams: { connection: NatsConnection; namespace: string },
+  controller: QuiesceController = processQuiesce,
+): Sync => withQuiesce(withSyncBudgets(sync, streams), controller);
+
 /** One start attempt: connect, bind a new Sync instance, and wait for `ready()`; release both when it fails. */
 const connectReadySync = async (application: string): Promise<{ sync: Sync; connection: NatsConnection }> => {
   const connection = await connectNats({ name: `${application}@${hostname()}` });
   let sync: Sync | undefined;
   try {
-    // Workers follow maintenance quiesce (`services/runtime-quiesce.ts`) without the application opting in.
-    sync = withQuiesce(
-      withSyncBudgets(
-        createSync({
-          connection,
-          namespace: connections().nats.namespace,
-          application,
-          defaults: { replicas: connections().nats.replicas },
-          observe: (event) => observeSyncEvent(event, application),
-        }),
-        { connection, namespace: connections().nats.namespace },
-      ),
+    sync = wrapProcessSync(
+      createSync({
+        connection,
+        namespace: connections().nats.namespace,
+        application,
+        defaults: { replicas: connections().nats.replicas },
+        observe: (event) => observeSyncEvent(event, application),
+      }),
+      { connection, namespace: connections().nats.namespace },
     );
     processNats = connection;
     bindProcessSync(sync);

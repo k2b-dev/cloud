@@ -2535,6 +2535,7 @@ class StreamPipeline {
     if (!this.snapshotDirty) return;
     const wait = AI_LIVE_SNAPSHOT_INTERVAL_MS - (Date.now() - this.lastSnapshotAt);
     if (wait > 0) {
+      // runtime-timer: saves the live state of a turn in flight; it ends with the turn.
       this.snapshotTimer ??= setTimeout(() => {
         this.snapshotTimer = undefined;
         void this.maybeSnapshot();

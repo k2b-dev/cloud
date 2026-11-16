@@ -36,9 +36,11 @@ const defaults: Dependencies = {
  * Reads the current state before it returns, so workers that start after
  * this already start quiet. When NATS is unreachable the last known state
  * stays; at start, an unreadable state counts as off until the watch reads it.
- * Resume retries what fails to start (`onResumeRetry` hears each retry); what
- * still fails goes to `onResumeFailed`, and `app.start()` then restarts the
- * process like a failed start. Each report names the stage „Ruhe“ it answers
+ * Resume retries what fails to start or runs past its step budget
+ * (`onResumeRetry` hears each retry, also while a worker waits for old
+ * handlers); what still fails goes to `onResumeFailed`, and `app.start()` then
+ * restarts the process like a failed start. The controller runs each
+ * transition outside the supervised context of this watcher. Each report names the stage „Ruhe“ it answers
  * (`quietGeneration`), so Core never counts a report of an earlier one.
  * `stop()` leaves the controller not quiet: nothing stays quiet behind a
  * watcher that no longer follows the record.
@@ -122,7 +124,8 @@ export const startMaintenanceQuiesce = async ({
     stopReporting();
     generation = undefined;
     reporting = reporting.then(() => dependencies.clear(instanceId)).catch(onReportError);
-    void controller.resume({ onRetry: onResumeRetry }).then((failures) => {
+    // A supervised worker whose old handlers never end fails after the resume resolved; it restarts the process too.
+    void controller.resume({ onRetry: onResumeRetry, onLateFailure: (failure) => onResumeFailed([failure]) }).then((failures) => {
       if (failures.length) onResumeFailed(failures);
     });
   };

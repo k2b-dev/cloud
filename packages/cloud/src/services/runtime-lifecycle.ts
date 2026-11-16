@@ -1,5 +1,13 @@
 import type { Worker } from "@k2b/sync";
-import { processQuiesce, type QuiesceController, type QuiesceParticipant, runSupervised } from "./runtime-quiesce";
+import {
+  isQuiesceTimeout,
+  processQuiesce,
+  type QuiesceController,
+  type QuiesceParticipant,
+  QuiesceTimeoutError,
+  runSupervised,
+  withDeadline,
+} from "./runtime-quiesce";
 
 export type RuntimeTaskTracker = ReturnType<typeof createRuntimeTaskTracker>;
 
@@ -118,20 +126,6 @@ export const createRuntimeTaskTracker = ({ controller = processQuiesce }: { cont
   };
 };
 
-const withDeadline = async (work: Promise<void>, timeoutMs: number, message: string): Promise<void> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
-};
-
 const isAbort = (error: unknown, signal: AbortSignal): boolean =>
   error === signal.reason || (error instanceof Error && error.name === "AbortError");
 
@@ -164,11 +158,12 @@ export const startRuntimeInterval = ({
   tasks.open();
 
   const tick = () => {
-    if (abort.signal.aborted || active) return;
+    if (abort.signal.aborted) return;
     if (controller.quiesced) {
       missed = true;
       return;
     }
+    if (active) return;
     active = tasks.run(async () => {
       try {
         await run(abort.signal);
@@ -185,16 +180,23 @@ export const startRuntimeInterval = ({
     });
     void active?.finally(() => {
       active = null;
+      // A catch-up that resume asked for while this pass still ran.
+      if (missed && !controller.quiesced) catchUp();
     });
+  };
+
+  const catchUp = () => {
+    // The pass still running (one that outlived its drain) ends first; it then catches up.
+    if (active) return;
+    missed = false;
+    tick();
   };
 
   // runtime-timer: the platform interval itself; skips ticks while quiesced.
   const timer = setInterval(tick, intervalMs);
   if (typeof timer === "object" && "unref" in timer) timer.unref();
   const offChange = controller.onChange((quiesced) => {
-    if (quiesced || !missed) return;
-    missed = false;
-    tick();
+    if (!quiesced && missed) catchUp();
   });
   // Without runNow, the first run is the first tick, also when the interval starts while quiet.
   if (runNow) tick();
@@ -230,7 +232,7 @@ export const stopRuntimeJobs = async (
   const tracked = Promise.race([
     tracker.drain(),
     new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`Runtime tasks did not drain within ${timeoutMs}ms`)), timeoutMs);
+      timer = setTimeout(() => reject(new QuiesceTimeoutError(`Runtime tasks did not drain within ${timeoutMs}ms`)), timeoutMs);
     }),
   ]);
   try {
@@ -309,9 +311,10 @@ export const createRuntimeLifecycle = (
         try {
           await runStop();
         } catch (error) {
-          // The stop ran; what it left running (a timed-out drain) stays counted by its tracker or
-          // workers. Resume starts again without a second stop that could fail the same way.
-          state = "stopped";
+          // A stop that only timed out ran; what it left running stays counted by its tracker or
+          // workers, and resume starts again without a second stop that would time out the same way.
+          // Any other failure leaves cleanup required: resume stops again before it starts.
+          if (isQuiesceTimeout(error)) state = "stopped";
           throw error;
         }
       }),

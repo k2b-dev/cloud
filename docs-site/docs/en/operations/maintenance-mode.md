@@ -77,7 +77,9 @@ In every app instance (Core included, the gateway excluded), then:
 - outbox publishers, recovery scans, retention sweeps, outgoing mail, mail
   fetching including IMAP push, notifications, automations and workflows
   start nothing new. They stop after the workers have finished, one after
-  another, so no running job meets a runtime that has already stopped;
+  another, so no running job meets a runtime that has already stopped. One
+  that takes longer than the drain time plus a second is logged and keeps
+  counting as running while the next one stops;
 - the processes keep running and their registry entries stay. Requests are
   still answered, but a request that waits for background work waits until
   the stage ends: an AI chat turn, a file preview, or saving a shared text.
@@ -89,7 +91,9 @@ stage as short as the work needs.
 When you run `--no-quiesce` or `off`, each instance starts its runtimes
 again in their original order and then its workers. A worker whose old work
 still runs starts again only after that work ended, so the same work never
-runs twice in one instance. A schedule that missed ticks runs once, not once
+runs twice in one instance. Work that ignores its cancel and still runs about
+a minute after the restart began waiting makes the instance restart itself,
+which ends it. A schedule that missed ticks runs once, not once
 per missed tick. Periodic sweeps also run once.
 
 An instance that cannot start part of its background work again tries five
