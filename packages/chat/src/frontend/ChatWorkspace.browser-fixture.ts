@@ -222,6 +222,7 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
   let nextAccess = 0;
   let nextPerson = 0;
   let failing = 0;
+  let refusingQuotes = 0;
   // While set, a send waits to be stored and delivered live, then waits again before the server answers it.
   let heldSends: { stored: Promise<void>; answered: Promise<void> } | null = null;
   let failingReactions = 0;
@@ -1825,6 +1826,12 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
             return Response.json({ code: "THREAD_ARCHIVED", message: "Restore this thread before sending a message." }, { status: 409 });
           const held = heldSends;
           await held?.stored;
+          // As the server refuses a quote whose message changed or went: a final 400, not a failure to retry.
+          if (refusingQuotes > 0 && input.quotes?.length) {
+            refusingQuotes -= 1;
+            await held?.answered;
+            return Response.json({ code: "BAD_INPUT", message: "A quote is not in its message." }, { status: 400 });
+          }
           const message = append(id!, viewer, input.body, now(), "text", {
             clientId: input.clientId,
             thread: input.thread ?? null,
@@ -2225,6 +2232,10 @@ export const startChatHarness = async (options: { autoMount?: boolean; renderPag
     /** The viewer's state of a thread for assertions. */
     thread: (chat: string, id: string) => chats.get(chat)?.threads.find((entry) => entry.id === id),
     /** Makes the next `count` "mark unread" requests fail with 503. */
+    /** Refuses the next `count` sends that carry quotes with 400, as when the quoted message changed. */
+    refuseQuotes: (count = 1) => {
+      refusingQuotes = count;
+    },
     failUnread: (count = 1) => {
       failingUnread = count;
     },

@@ -1266,6 +1266,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       !busy() &&
       !props.submitDisabled &&
       hasDraft() &&
+      // Quotes go out only once the person can see them.
+      !(props.quotes?.length && !quotesView()) &&
       !(props.dictation && liveDictation.active()) &&
       !(running() && runningSubmitIntent() === "steer" && mentions().length),
   );
@@ -1357,9 +1359,18 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const focus = () => textareaRef?.focus();
   // The quote rows load with a draft's first quote, so composers that never quote carry none of their code.
   const [quotesView, setQuotesView] = createSignal<typeof import("./ChatComposerQuotes")["default"]>();
+  const [quotesFailed, setQuotesFailed] = createSignal(false);
   createEffect(() => {
     if (!props.quotes?.length || quotesView()) return;
-    void import("./ChatComposerQuotes").then((module) => setQuotesView(() => module.default));
+    // A changed list tries again; until the rows show, a notice says why sending waits and removes the quotes.
+    void import("./ChatComposerQuotes").then(
+      (module) =>
+        batch(() => {
+          setQuotesView(() => module.default);
+          setQuotesFailed(false);
+        }),
+      () => setQuotesFailed(true),
+    );
   });
 
   onMount(() => {
@@ -2859,6 +2870,23 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               </button>
             </div>
           )}
+        </Show>
+        <Show when={quotesFailed() && props.quotes?.length && !quotesView()}>
+          <div class="k2b-chat-composer__quote" role="alert">
+            <div class="k2b-message-quote">{chatMessages().quotesUnavailable}</div>
+            <button
+              type="button"
+              class="k2b-chat-composer__icon-action k2b-chat-composer__quote-remove"
+              aria-label={chatMessages().removeQuote}
+              title={chatMessages().removeQuote}
+              onMouseDown={keepFieldFocus}
+              onClick={() => {
+                for (const quote of props.quotes ?? []) quote.onRemove();
+              }}
+            >
+              <i class="ti ti-x" aria-hidden="true" />
+            </button>
+          </div>
         </Show>
         <Show when={props.quotes?.length ? quotesView() : undefined}>
           {(view) => (

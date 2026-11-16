@@ -147,6 +147,30 @@ describe("SelectionAction", () => {
     }
   });
 
+  test("a triple click selects one part up to the next block and still offers the action for that part", async () => {
+    const page = await load();
+    try {
+      await page.locator(".part[data-part='a']").click({ clickCount: 3 });
+      await settled(page);
+      // The engine's selection ends outside the paragraph, at the start of what follows it.
+      const end = await page.evaluate(() => {
+        const range = getSelection()!.getRangeAt(0);
+        const node = range.endContainer instanceof Element ? range.endContainer : range.endContainer.parentElement;
+        return node?.closest(".part")?.getAttribute("data-part") ?? null;
+      });
+      expect(end).not.toBe("a");
+      const shown = await state(page);
+      expect(shown.open).toBe(true);
+      await page.locator(".k2b-selection-toolbar button").click();
+      await settled(page);
+      expect((await state(page)).calls).toEqual([
+        { text: "Lea Muster wrote that the quarterly report is ready for review today.", part: "a" },
+      ]);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("offers nothing for a selection across two parts", async () => {
     const page = await load();
     try {

@@ -9,6 +9,12 @@ export type ChatSendReply = { id: string; author: string; text: string };
 /** A quoted passage of the message `id`, shown until the stored message replaces the send. */
 export type ChatSendQuote = { id: string; author: string; text: string };
 export type ChatSendInput = z.input<typeof SendMessageSchema>;
+/** A send the server answered with an error status. */
+export class ChatSendError extends Error {
+  constructor(readonly status: number) {
+    super(`Chat request failed (${status})`);
+  }
+}
 export type ChatSend = {
   clientId: string;
   conversationId: string;
@@ -26,11 +32,18 @@ export type ChatSend = {
   attachments: readonly AttachmentView[];
   createdAt: string;
   status: "pending" | "sent" | "failed";
+  /** The server refused its quotes for good: it stays failed without Try again and holds back no later send. */
+  refused?: boolean;
   /** The stored message once the server accepted it. */
   message: z.infer<typeof MessageViewSchema> | null;
 };
 export const createChatSends = (dependencies: {
   post: (conversationId: string, input: ChatSendInput) => Promise<z.infer<typeof MessageViewSchema>>;
+  /**
+   * The server refused a send with quotes for good, such as because a quoted message was changed or deleted. The send
+   * stays failed without Try again and the later ones go out; the application may give its text back and forget it.
+   */
+  onRejected?: (send: ChatSend) => void;
   newClientId?: () => string;
   now?: () => Date;
 }) => {
@@ -45,7 +58,9 @@ export const createChatSends = (dependencies: {
   const posting = new Set<string>();
   const next = (conversationId: string) => {
     if (disposed || posting.has(conversationId)) return;
-    const head = [...entries.values()].find((entry) => entry.conversationId === conversationId && entry.status !== "sent");
+    const head = [...entries.values()].find(
+      (entry) => entry.conversationId === conversationId && entry.status !== "sent" && !entry.refused,
+    );
     if (head?.status !== "pending") return;
     posting.add(conversationId);
     void post(head);
@@ -71,9 +86,19 @@ export const createChatSends = (dependencies: {
       if (disposed || entries.get(entry.clientId) !== entry) return;
       entry.status = "sent";
       entry.message = message;
-    } catch {
+    } catch (error) {
       if (disposed || entries.get(entry.clientId) !== entry) return;
+      // Trying again cannot help a send whose quotes the server refused; a busy or slow server stays retryable.
+      const refused =
+        error instanceof ChatSendError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429;
       entry.status = "failed";
+      if (refused && entry.quotes.length) {
+        entry.refused = true;
+        // After notify in finally: the application then sees it failed and may forget it.
+        queueMicrotask(() => {
+          if (!disposed && entries.get(entry.clientId) === entry) dependencies.onRejected?.(entry);
+        });
+      }
     } finally {
       posting.delete(entry.conversationId);
       if (!disposed && entries.get(entry.clientId) === entry) notify();
@@ -120,7 +145,7 @@ export const createChatSends = (dependencies: {
     },
     retry: (clientId: string) => {
       const entry = entries.get(clientId);
-      if (disposed || !entry || entry.status !== "failed") return;
+      if (disposed || !entry || entry.status !== "failed" || entry.refused) return;
       entry.status = "pending";
       notify();
       next(entry.conversationId);
@@ -155,7 +180,7 @@ export const createChatSendsApi = () => {
       { param: { conversation: conversationId }, json: input },
       { init: { signal } },
     );
-    if (!response.ok) throw new Error(`Chat request failed (${response.status})`);
+    if (!response.ok) throw new ChatSendError(response.status);
     return MessageViewSchema.parse(await response.json());
   };
 };

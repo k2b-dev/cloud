@@ -1,9 +1,18 @@
 import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
-import { toPgTextArray } from "@k2b/cloud/services";
+import { toPgTextArray, toPgUuidArray } from "@k2b/cloud/services";
+import { decodeHTML } from "entities";
 import type { z } from "zod";
+import { quoteExcerpt } from "../system-messages";
 import { type ChatContext, messages as catalog, requireConversation, subjectPrincipal } from "./access";
-import { DeleteMessageSchema, EditMessageSchema, MessageIdSchema, type MessageViewSchema, withinMessageMutationWindow } from "./contracts";
+import {
+  DeleteMessageSchema,
+  EditMessageSchema,
+  MessageIdSchema,
+  type MessageQuote,
+  type MessageViewSchema,
+  withinMessageMutationWindow,
+} from "./contracts";
 import { chatLive } from "./live";
 import { mentionViews, publishForYou, storeMentions } from "./mention-store";
 import { extractMessageLinks } from "./message-links";
@@ -12,6 +21,36 @@ import { canReadThread } from "./thread-access";
 import { checkWriteRate, type RateLimited } from "./write-rate";
 
 type Input = ChatContext & { conversationId: string; messageId: string; input: unknown };
+
+type QuotingRow = { id: string; quotes: MessageQuote[] };
+/**
+ * Turns the quotes of `source` into `{ deleted: true }` where its new text no longer holds their words (`body`), or
+ * all of them when it is deleted (`null`). Each changed message gets its own new revision, so every reader that follows
+ * the change feed loses the old words, agents and API clients as much as the app; distinct revisions keep feed pages
+ * exact.
+ */
+const retireQuotes = async (db: typeof sql, conversationId: string, source: MessageRow, body: string | null) => {
+  const quoting = await db<QuotingRow[]>`SELECT id, quotes FROM chat.messages
+    WHERE conversation_id = ${conversationId}::uuid AND seq > ${source.seq} AND quotes <> '[]'::jsonb
+      AND quotes @> ${JSON.stringify([{ id: source.short_id }])}::text::jsonb ORDER BY seq`;
+  const kept = (text: string) => body !== null && quoteExcerpt(body, text, decodeHTML) === text;
+  const changed = quoting.flatMap((message) => {
+    const quotes = message.quotes.map((quote) =>
+      "id" in quote && quote.id === source.short_id && !kept(quote.text) ? { deleted: true as const } : quote,
+    );
+    return quotes.some((quote, index) => quote !== message.quotes[index]) ? [{ id: message.id, quotes }] : [];
+  });
+  if (!changed.length) return;
+  await db`WITH head AS (
+      UPDATE chat.conversations SET rev = rev + ${changed.length} WHERE id = ${conversationId}::uuid
+      RETURNING rev - ${changed.length} AS base),
+    next AS (
+      SELECT id, quotes, position FROM unnest(${toPgUuidArray(changed.map((message) => message.id))}::uuid[],
+        ${toPgTextArray(changed.map((message) => JSON.stringify(message.quotes)))}::text[]) WITH ORDINALITY AS entry(id, quotes, position))
+    UPDATE chat.messages m SET rev = (SELECT base FROM head) + next.position, quotes = next.quotes::jsonb
+    FROM next WHERE m.id = next.id`;
+};
+
 /** Shared by HTTP and capability actions; the conversation lock serializes access changes and competing edits. */
 export const mutateMessage =
   (operation: "edit" | "delete") =>
@@ -83,13 +122,10 @@ export const mutateMessage =
           mentions.filter(({ start, end }) => before.slice(start, end) === after.slice(start, end)),
         );
       }
+      // A quote keeps the words it quoted only while they are still in the message: after an edit that removes them or
+      // after deletion, the quote keeps no text.
+      await retireQuotes(db, current.data.id, row, operation === "delete" ? null : body);
       if (operation === "delete") {
-        // Quotes of it keep no text. Readers with the quoting messages loaded learn it from this message's change.
-        await db`UPDATE chat.messages SET quotes = (
-            SELECT jsonb_agg(CASE WHEN quote->>'id' = ${row.short_id} THEN '{"deleted":true}'::jsonb ELSE quote END ORDER BY position)
-            FROM jsonb_array_elements(quotes) WITH ORDINALITY AS entry(quote, position))
-          WHERE conversation_id = ${current.data.id}::uuid AND seq > ${row.seq} AND quotes <> '[]'::jsonb
-            AND quotes @> ${JSON.stringify([{ id: row.short_id }])}::text::jsonb`;
         await db`DELETE FROM chat.message_reactions WHERE message_id = ${row.id}::uuid`;
         await db`DELETE FROM chat.attachments WHERE message_id = ${row.id}::uuid`;
       }
