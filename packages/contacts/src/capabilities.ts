@@ -1252,14 +1252,17 @@ export const contactsCapabilities = defineCapabilities({
         if (!result.ok) return withCollectionAccessMessage(result);
         const books = await projectBooks(result.data.items);
         const nextOffset = offset + books.length;
+        const next =
+          result.data.hasNext && books.length > 0
+            ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url")
+            : null;
+        // The page mirrors `next`, as every paginated Query's result does.
         return ok({
           data: {
             items: books.map((book) => ({ ref: { type: "contacts.book", id: book.id }, title: book.name.slice(0, 500) })),
-            next:
-              result.data.hasNext && books.length > 0
-                ? Buffer.from(JSON.stringify({ v: 1, offset: nextOffset }), "utf8").toString("base64url")
-                : null,
+            next,
           },
+          page: capabilityPage(next),
         });
       },
     },

@@ -15,7 +15,7 @@ const renderHistory = (messages: AiStoredMessage[], activeTurn: AiActiveTurn | n
       locale: "de",
       get children() {
         return createComponent(AiChatActionsProvider, {
-          actions: { onContinueTurn: () => {} },
+          actions: { onContinueTurn: () => {}, onRetryMessage: () => {} },
           get children() {
             const timeline = createAiChatTimeline({ messages: () => messages, activeTurn: () => activeTurn });
             return createComponent(Chat.Timeline, {
@@ -94,4 +94,33 @@ test("a turn the person stopped shows only the quiet stopped line, never the abo
   expect(stopped).not.toContain("Weiterschreiben");
   // Cloud's own end of an answer keeps its notice: here the output limit, with continuing as a button.
   expect(renderHistory([truncatedAnswer])).toContain("Weiterschreiben");
+});
+
+test("a stopped automatic review cannot offer to answer an earlier personal message again", () => {
+  const prompt: AiStoredMessage = {
+    ...truncatedAnswer,
+    id: "previous-question",
+    loopId: "previous-turn",
+    seq: 1,
+    message: { role: "user", content: ["Prüfe meine Version."] },
+    meta: { turnError: { code: "model_unavailable" } },
+  };
+  const start: AiStoredMessage = {
+    ...truncatedAnswer,
+    id: "review-start",
+    seq: 2,
+    message: { role: "user", content: ["Gustav überarbeitet jetzt Version 5."] },
+    meta: { codeReviewStart: { codeId: "c_review", versionId: "11111111-1111-4111-8111-111111111111" } },
+  };
+  const stopped: AiStoredMessage = {
+    ...truncatedAnswer,
+    seq: 3,
+    message: { role: "assistant", content: [{ type: "text", text: "Ich prüfe die Version." }], stopReason: "interrupted" },
+    stopReason: "interrupted",
+    loopDoneReason: "aborted",
+  };
+  expect(renderHistory([prompt, { ...stopped, loopId: prompt.loopId }])).toContain("Neu antworten");
+  const review = renderHistory([prompt, start, stopped]);
+  expect(review).toContain("Du hast gestoppt");
+  expect(review).not.toContain("Neu antworten");
 });
