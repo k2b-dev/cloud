@@ -3,7 +3,7 @@ import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Sho
 import { isServer } from "solid-js/web";
 import { dropdownPosition } from "../actions/Dropdown";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
-import { OptionDescription } from "../internal/option-description";
+import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
 import { SidebarRailHint } from "./SidebarRailHint";
 
@@ -403,7 +403,7 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
                       </span>
                       <span class="k2b-dropdown__copy">
                         <span>{option.label}</span>
-                        <OptionDescription text={option.description} visual={option.descriptionVisual} />
+                        {optionDescription(option.description, option.descriptionVisual)}
                       </span>
                       <i class="ti ti-check k2b-dropdown__check" data-hidden={current() ? undefined : "true"} aria-hidden="true" />
                     </a>

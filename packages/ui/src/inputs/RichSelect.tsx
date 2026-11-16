@@ -15,7 +15,7 @@ import {
 import { Button } from "../actions/Button";
 import { dialogCore } from "../feedback/dialog-core";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
-import { OptionDescription } from "../internal/option-description";
+import { optionDescription } from "../internal/option-description";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
 import { createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
@@ -138,13 +138,13 @@ function RichSelectRowText(props: { item: RichSelectItem; labelId: string; lineI
       <span id={props.labelId} class="k2b-rich-select__label">
         {props.item.label}
       </span>
-      <OptionDescription
-        id={props.lineId}
-        class="k2b-rich-select__line"
-        text={props.item.disabledReason ?? props.item.description}
-        visual={props.item.descriptionVisual}
-        reason={Boolean(props.item.disabledReason)}
-      />
+      {optionDescription(
+        props.item.disabledReason ?? props.item.description,
+        props.item.descriptionVisual,
+        "k2b-rich-select__line",
+        props.lineId,
+        Boolean(props.item.disabledReason),
+      )}
     </span>
   );
 }

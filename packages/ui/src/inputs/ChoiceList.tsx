@@ -1,6 +1,6 @@
 import { Index, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldDescribedBy } from "../internal/field";
-import { OptionDescription } from "../internal/option-description";
+import { optionDescription } from "../internal/option-description";
 import { radioKeyTarget } from "../internal/radio-keys";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
@@ -124,12 +124,7 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
                         </Show>
                       </span>
                     </span>
-                    <OptionDescription
-                      id={descriptionId}
-                      class="k2b-choice-list__description"
-                      text={option().description}
-                      visual={option().descriptionVisual}
-                    />
+                    {optionDescription(option().description, option().descriptionVisual, "k2b-choice-list__description", descriptionId)}
                   </span>
                 </button>
                 <Show when={checked() && props.details}>

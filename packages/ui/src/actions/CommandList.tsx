@@ -1,5 +1,5 @@
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, onCleanup, Show, untrack } from "solid-js";
-import { OptionDescription } from "../internal/option-description";
+import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
 import {
   type CommandContext,
@@ -477,12 +477,13 @@ export function CommandList(props: {
                         {/* One line: the label, then quietly the reason it is unavailable, or what it does. */}
                         <span class="k2b-dropdown__copy k2b-command-list__text">
                           <span>{entry.item.label}</span>
-                          <OptionDescription
-                            class="k2b-command-list__description"
-                            text={entry.item.disabled ?? entry.item.description}
-                            visual={entry.item.descriptionVisual}
-                            reason={Boolean(entry.item.disabled)}
-                          />
+                          {optionDescription(
+                            entry.item.disabled ?? entry.item.description,
+                            entry.item.descriptionVisual,
+                            "k2b-command-list__description",
+                            undefined,
+                            Boolean(entry.item.disabled),
+                          )}
                         </span>
                         <Show when={entry.item.hint}>
                           {(hint) => (

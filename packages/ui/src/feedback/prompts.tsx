@@ -11,7 +11,7 @@ import { resolveSelectMessages } from "../inputs/select-messages";
 import { TagsInput } from "../inputs/TagsInput";
 import { TextInput } from "../inputs/TextInput";
 import { KeyedFor } from "../internal/keyed-for";
-import { OptionDescription } from "../internal/option-description";
+import { optionDescription } from "../internal/option-description";
 import { resolveUiMessages } from "../intl/messages";
 import { type DialogRender, dialogCore, type OpenDialogOptions } from "./dialog-core";
 import { DialogHeader, type PromptContent, promptButtonVariant, promptTone, sharedPrompts } from "./prompt-confirm";
@@ -648,7 +648,7 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
                           </Show>
                           <span class="k2b-prompt-search__copy">
                             <strong>{item().label}</strong>
-                            <OptionDescription text={item().desc} visual={item().descriptionVisual} />
+                            {optionDescription(item().desc, item().descriptionVisual)}
                           </span>
                         </button>
                       )}

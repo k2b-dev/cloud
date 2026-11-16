@@ -1,34 +1,32 @@
-import { type JSX, Show } from "solid-js";
+import type { JSX } from "solid-js";
 
 /**
  * The second line of an option row, as a `<small>`, or nothing without text
  * or visual. With a `visual`, such as a colored `Tag`, the visual shows in
  * place of the text. The text stays in the row, hidden from view, so search,
  * the accessible name, and the description a screen reader reads do not
- * change. The visual keeps the line's height.
+ * change. The visual keeps the line's height. A `reason`, why the option is
+ * unavailable, always shows as text.
+ *
+ * A plain function, not a component: every option list calls it, and each
+ * call stays small in the islands that ship several lists.
  */
-export function OptionDescription(props: {
-  text?: string;
-  visual?: () => JSX.Element;
-  class?: string;
-  id?: string;
-  /** The text is why the option is unavailable: it shows as text, never as the visual. */
-  reason?: boolean;
-}): JSX.Element {
-  return (
-    <Show when={props.text || props.visual}>
-      <small class={props.class} id={props.id} data-reason={props.reason ? "true" : undefined}>
-        <Show when={!props.reason && props.visual} fallback={props.text}>
-          {(visual) => (
-            <>
-              <span class="k2b-option-visual" aria-hidden="true">
-                {visual()()}
-              </span>
-              <span class="k2b-sr-only">{props.text}</span>
-            </>
-          )}
-        </Show>
-      </small>
-    </Show>
+export const optionDescription = (
+  text: string | undefined,
+  visual: (() => JSX.Element) | undefined,
+  className?: string,
+  id?: string,
+  reason?: boolean,
+): JSX.Element =>
+  (text || visual) && (
+    <small class={className} id={id} data-reason={reason ? "true" : undefined}>
+      {visual && !reason
+        ? [
+            <span class="k2b-option-visual" aria-hidden="true">
+              {visual()}
+            </span>,
+            <span class="k2b-sr-only">{text}</span>,
+          ]
+        : text}
+    </small>
   );
-}

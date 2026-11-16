@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { colorTintStyle, normalizeHexColor } from "../internal/color";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
-import { OptionDescription } from "../internal/option-description";
+import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
 import {
@@ -477,7 +477,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                       fallback={
                         <>
                           <strong>{option.label}</strong>
-                          <OptionDescription text={option.description} visual={option.descriptionVisual} />
+                          {optionDescription(option.description, option.descriptionVisual)}
                         </>
                       }
                     >

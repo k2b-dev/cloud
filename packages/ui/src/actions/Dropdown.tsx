@@ -16,7 +16,7 @@ import { Dynamic } from "solid-js/web";
 import { Tooltip, type TooltipPlacement, useLabelTooltip } from "../feedback/Tooltip";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { KeyedFor } from "../internal/keyed-for";
-import { OptionDescription } from "../internal/option-description";
+import { optionDescription } from "../internal/option-description";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant, iconTitle } from "./Button";
@@ -317,7 +317,7 @@ const itemContent = (props: {
     </Show>
     <span class="k2b-dropdown__copy">
       <span>{props.children}</span>
-      <OptionDescription text={props.description} visual={props.descriptionVisual} />
+      {optionDescription(props.description, props.descriptionVisual)}
     </span>
     {props.trailing}
   </>
@@ -473,7 +473,7 @@ function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
       </Show>
       <span class="k2b-dropdown__copy">
         <span>{props.label}</span>
-        <OptionDescription text={props.description} visual={props.descriptionVisual} />
+        {optionDescription(props.description, props.descriptionVisual)}
       </span>
       {props.trailing}
       {/* Always present for radios, so selecting the widest entry cannot widen a content-sized menu. */}

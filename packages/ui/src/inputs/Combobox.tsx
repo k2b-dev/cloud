@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, on, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
-import { OptionDescription } from "../internal/option-description";
+import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
 import type { FieldProps, MaybeAccessor } from "./field-contract";
@@ -115,13 +115,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
   const select = (option: ChoiceOption<string>) => {
     if (props.disabled || props.readOnly || option.disabled) return;
     popover.hide();
-    props.onSelect({
-      id: option.value,
-      label: option.label,
-      description: option.description,
-      descriptionVisual: option.descriptionVisual,
-      icon: option.icon,
-    });
+    props.onSelect({ id: option.value, label: option.label, description: option.description, icon: option.icon });
     if (props.freeText) {
       loader.cancel();
       focus(-1);
@@ -268,7 +262,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                     <Show when={option().icon}>{(icon) => <i class={iconClass(icon())} aria-hidden="true" />}</Show>
                     <span>
                       <strong>{option().label}</strong>
-                      <OptionDescription text={option().description} visual={option().descriptionVisual} />
+                      {optionDescription(option().description, option().descriptionVisual)}
                     </span>
                   </button>
                 );
