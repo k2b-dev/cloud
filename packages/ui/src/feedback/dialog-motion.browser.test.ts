@@ -74,7 +74,7 @@ const load = async (options: BrowserContextOptions = desktop, reducedAttribute =
   await page.setContent(
     `<!doctype html><html${reducedAttribute ? ' data-k2b-motion="reduced"' : ""}><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui"><button id="opener" type="button">Open</button>` +
-      `<button id="behind" type="button" onclick="window.behind = (window.behind ?? 0) + 1">Behind</button></body></html>`,
+      `<button id="behind" type="button" onclick="window.behindClicks = (window.behindClicks ?? 0) + 1">Behind</button></body></html>`,
   );
   await page.addScriptTag({ content: script });
   return page;
@@ -209,7 +209,7 @@ describe(`${browserName} dialog entrance and exit`, () => {
       await page.keyboard.press("Enter");
       // The page behind the fading veil takes a click at once.
       await page.mouse.click(behind!.x + behind!.width / 2, behind!.y + behind!.height / 2);
-      expect(await page.evaluate(() => (window as unknown as { behind?: number }).behind)).toBe(1);
+      expect(await page.evaluate(() => (window as unknown as { behindClicks?: number }).behindClicks)).toBe(1);
       const state = await page.evaluate(() => {
         const dialog = document.querySelector("dialog");
         const motion = window as unknown as MotionWindow;
