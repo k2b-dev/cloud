@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { startErrorPageServer } from "./server";
 
 let server: Awaited<ReturnType<typeof startErrorPageServer>>;
@@ -45,8 +45,7 @@ const open = async (viewport: (typeof viewports)[number], path: string, javaScri
     javaScriptEnabled,
   });
   const page = await context.newPage();
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto(server.url + path);
   return { page, errors };
 };
@@ -56,6 +55,8 @@ describe(`generic error page in ${browserName}`, () => {
     for (const path of ["missing", "missing?as=lea", "broken"])
       test(`${path} on ${viewport.name}: the first paint already holds the scene's place`, async () => {
         const plain = await open(viewport, path, false);
+        await plain.page.evaluate(() => document.fonts.ready.then(() => undefined));
+        // settled: the first paint without scripts is the subject; a page without scripts draws no frames to wait for.
         const before = await places(plain.page);
         await plain.page.context().close();
 
@@ -64,6 +65,7 @@ describe(`generic error page in ${browserName}`, () => {
           // The game draws into the reserved place once its code has arrived.
           await page.locator("[data-waiting-game] .lauf canvas").waitFor({ state: "attached" });
           await page.waitForFunction(() => document.documentElement.dataset.lauf === "wait");
+          await settled(page);
           expect(await places(page)).toEqual(before);
           expect(before.scroll).toBe(true);
           expect(errors).toEqual([]);
@@ -76,16 +78,21 @@ describe(`generic error page in ${browserName}`, () => {
     const { page, errors } = await open(viewports[0], "missing");
     try {
       await page.locator("[data-waiting-game] .lauf canvas").waitFor({ state: "attached" });
+      await settled(page);
       await page.locator("h1").click();
       await page.keyboard.press("Tab");
       expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Go to home page");
       expect(await page.locator("[data-waiting-game-start]").getAttribute("tabindex")).toBe("-1");
 
+      await settled(page);
       const height = (await places(page)).page.height;
       await page.locator("[data-waiting-game-start]").click();
       await page.waitForFunction(() => document.documentElement.dataset.lauf === "run");
       // The symbol and the sentence fold away inside the block; the page around it keeps its size.
       await page.waitForFunction(() => document.querySelector("h1")!.getBoundingClientRect().top < 120);
+      // The block moves up under the resting pointer; park it beside the road so no hover starts.
+      await page.mouse.move(1400, 400);
+      await settled(page);
       expect((await places(page)).page.height).toBe(height);
       await page.keyboard.press("Escape");
       await page.waitForFunction(() => document.documentElement.dataset.lauf === "wait");
