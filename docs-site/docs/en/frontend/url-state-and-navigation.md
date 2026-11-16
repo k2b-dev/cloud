@@ -251,8 +251,11 @@ swaps emit no event. A listener error does not trigger a document load.
 
 ## Cloud page swaps
 
-Opt in with `defineApp({ pageSwap: true, ... })`. The default is off.
-Before you opt in, move every `beforeunload` guard of the app's pages to
+Opt in with `defineApp({ pageSwap: true, ... })`. The default is off. A list
+of paths, such as `pageSwap: ["/app/inventory/:itemId/history"]`, limits swaps
+to pages under one of them and to links within the matched path; see
+[Define an app](/en/docs/build/define-app#keep-the-shell-during-page-navigation).
+Before you opt in, move every `beforeunload` guard of the swapped pages to
 [`protectUnsavedInput()`](#protect-unsaved-input) and give the app the
 browser tests described in [Swap stability](#swap-stability).
 Cloud keeps the rail, panel slot, and provider document. Links in the app menu
