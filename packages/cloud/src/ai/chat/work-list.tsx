@@ -84,7 +84,8 @@ function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry
     <AiToolActivity
       blockId={`repeat:${props.id}`}
       label={first().presentation?.title ?? displayToolName(first().name, locale())}
-      description={props.target}
+      // The file of a path; a row never shows a path.
+      description={props.target.slice(props.target.lastIndexOf("/") + 1) || props.target}
       meta={aiChatMessages(locale()).repeatCount({ count: tools().length })}
       icon={aiToolIcon(first().name, first().presentation?.appIcon)}
       accent={first().presentation?.appAccent}

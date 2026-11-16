@@ -1491,7 +1491,7 @@ for (const view of [
         const counts = await page.evaluate(() =>
           Array.from(document.querySelectorAll(".ai-turn-work .ai-turn-steps > details > summary")).flatMap((summary) => {
             const count = summary.querySelector(".k2b-chat-activity__meta");
-            const target = summary.querySelector(".k2b-chat-activity__copy small");
+            const target = summary.querySelector(".k2b-chat-activity__copy");
             if (!count) return [];
             const row = summary.getBoundingClientRect();
             const box = count.getBoundingClientRect();
@@ -1520,9 +1520,12 @@ for (const view of [
         // The row grows downwards only: its own top, left, and width and every row above it stay.
         const top = (rows: typeof live.rows) => rows.slice(0, 3).map(({ box }) => box.slice(0, 3));
         expect(top(opened.rows)).toEqual(top(live.rows));
-        const parts = opened.rows.filter(({ text }) => text.includes(path)).slice(1);
+        // Rows name the file, never its path; the reads start on the group's text edge, a level below it.
+        const file = path.slice(path.lastIndexOf("/") + 1);
+        expect(opened.rows.some(({ text }) => text.includes(path))).toBe(false);
+        const parts = opened.rows.filter(({ text }) => text.includes(file)).slice(1);
         expect(parts).toHaveLength(3);
-        expect(parts.map(({ left }) => left)).toEqual([live.line, live.line, live.line]);
+        expect(parts.map(({ left }) => left)).toEqual([live.line + 26, live.line + 26, live.line + 26]);
         expect(opened.overflowX).toBeLessThanOrEqual(0);
         await page.screenshot({ path: `/tmp/ai-work-repeat-open-${view.name}-${theme}.png` });
         await repeatSummary.click();
@@ -1898,7 +1901,7 @@ test("a long list opens on its newest six steps, and while it is open a new step
     await page.waitForFunction(() => document.querySelectorAll(".ai-turn-steps__earlier .k2b-chat-activity").length === 3);
     // The next opening shows the newest six again.
     await page.locator(".ai-turn-work > summary").click();
-    await page.locator(".ai-turn-steps").waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.querySelector(".ai-turn-steps") === null);
     await page.locator(".ai-turn-work > summary").click();
     await page.locator(".ai-turn-steps").first().waitFor();
     expect(await earlier.innerText()).toBe("Show 4 earlier steps");
