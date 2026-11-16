@@ -10,6 +10,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import { blockWords } from "../blocks/messages";
 import { SearchToggle } from "../blocks/search-toggle";
 import {
   type DescriptionObject,
@@ -121,7 +122,7 @@ export function TableBlock(props: TableBlockProps): JSX.Element {
           <Show when={props.spec.search === true}>
             <Show when={props.compactSearch}>
               <SearchToggle
-                label={t().searchIn({ title: props.title })}
+                label={blockWords(locale()).searchTable}
                 disabled={!descriptionWithContent(props.state)}
                 onOpen={() => setSearching(true)}
               />

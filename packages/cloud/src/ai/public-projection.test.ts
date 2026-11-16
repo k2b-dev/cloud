@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
+import type { AppRegistryEntry } from "../contracts/registry";
 import { visibleMessages } from "./client/projection";
 import { buildBlocksFromMessages } from "./protocol";
-import { projectPublicAiStoredMessages } from "./public-projection";
+import { projectPublicAiStoredMessages, withCurrentAppNames } from "./public-projection";
 import type { AiStoredMessage } from "./types";
 
 const stored = (id: string, role: Extract<Message["role"], "user" | "assistant">, loopId: string | null): AiStoredMessage => ({
@@ -77,4 +78,50 @@ test("public message reads deliver the same bound blocks as live tool blocks whi
   expect(block).toMatchObject({ kind: "tool", view: { version: 1, blocks: [{ kind: "Table", rows: raw.data.rows }] } });
   expect(result.meta).toBeNull();
   expect(result.message.role === "tool_result" ? result.message.result : null).toEqual(raw);
+});
+
+describe("app names of stored steps", () => {
+  type CatalogApp = Pick<AppRegistryEntry, "name" | "description" | "presentation">;
+  const platform: CatalogApp = {
+    name: "Cloud",
+    description: "Platform",
+    presentation: { baseLocale: "en", translations: { de: { name: "Cloud", description: "Plattform" } } },
+  };
+  const notes: CatalogApp = {
+    name: "Notebooks",
+    description: "Notes",
+    presentation: { baseLocale: "en", translations: { de: { name: "Notizbücher" } } },
+  };
+  const step = (appId: string, appName: string) => ({
+    kind: "capability" as const,
+    appId,
+    appName,
+    appIcon: "ti ti-app",
+    title: "Find",
+    capabilityKind: "query" as const,
+  });
+  const turn: AiStoredMessage = {
+    ...stored("assistant-1", "assistant", "internal-turn"),
+    meta: { toolPresentations: { a: step("core", "Core"), b: step("notebooks", "Notizbücher"), c: step("gone", "Old app") } },
+  };
+  const catalog = new Map<string, CatalogApp>([
+    ["core", platform],
+    ["notebooks", notes],
+  ]);
+  const registry = async (appId: string) => catalog.get(appId) ?? null;
+
+  test("a renamed app reads as the catalog names it now, in the reader's language; an unknown app keeps its stored name", async () => {
+    const [named] = await withCurrentAppNames([turn], "de", registry);
+    const names = Object.values(named!.meta!.toolPresentations!).map((presentation) => presentation.appName);
+    expect(names).toEqual(["Cloud", "Notizbücher", "Old app"]);
+    const [english] = await withCurrentAppNames([turn], "en", registry);
+    expect(english!.meta!.toolPresentations!.b!.appName).toBe("Notebooks");
+  });
+
+  test("a registry that cannot answer leaves every stored name as it was", async () => {
+    const [named] = await withCurrentAppNames([turn], "de", async () => {
+      throw new Error("registry unavailable");
+    });
+    expect(named).toEqual(turn);
+  });
 });

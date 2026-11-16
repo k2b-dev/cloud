@@ -57,3 +57,32 @@ for (const variant of ["rail", "header", "menu"] as const) {
     });
   }
 }
+
+test("an opener that still loads its own code keeps the action busy until it shows, so a second press opens nothing", async () => {
+  const { createBusyAction } = await import("./busy-action");
+  const action = createBusyAction();
+  let opens = 0;
+  let shown: () => void = () => {};
+  const showing = new Promise<void>((resolve) => {
+    shown = resolve;
+  });
+  const first = action.run(
+    async () => "help",
+    () => {
+      opens += 1;
+      return showing;
+    },
+  );
+  await Bun.sleep(0);
+  expect(action.busy()).toBe(true);
+  await action.run(
+    async () => "help",
+    () => {
+      opens += 1;
+    },
+  );
+  expect(opens).toBe(1);
+  shown();
+  await first;
+  expect(action.busy()).toBe(false);
+});

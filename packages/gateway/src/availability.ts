@@ -103,9 +103,13 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
   return {
     maintenance: (): MaintenanceState | null => maintenance?.state ?? null,
     observedMaintenance: (): ObservedMaintenance | null => maintenance,
-    /** Returns true when maintenance just started; the started listeners (closing open sockets) run once then. */
+    /**
+     * Returns true when maintenance just started; the started listeners (closing open sockets) run once then. A
+     * different maintenance id counts as a start even without an observed "off" in between, so sockets opened under
+     * the old maintenance's bypass close too.
+     */
     setMaintenance: (next: ObservedMaintenance | null): boolean => {
-      const started = !maintenance && !!next;
+      const started = !!next && maintenance?.state.id !== next.state.id;
       maintenance = next;
       if (started) for (const listener of startedListeners) listener();
       return started;
@@ -200,10 +204,13 @@ export const createAvailability = ({ now = Date.now }: { now?: () => number } = 
     /** Why a known app is away right now: a clean deregistration says "updating"; everything else "unavailable". */
     reasonFor: (appId: string): AppUnavailableReason => (!live.has(appId) && vanished.get(appId)?.reason) || "unavailable",
 
-    status: (appId: string | null): GatewayStatus => {
+    /** `bypass`: the request carries a valid admin bypass cookie for the running maintenance (Cloud host only). */
+    status: (appId: string | null, { bypass = false }: { bypass?: boolean } = {}): GatewayStatus => {
       const state = maintenance?.state;
       return {
-        maintenance: state ? { active: true, until: state.until ? new Date(state.until).toISOString() : null } : null,
+        maintenance: state
+          ? { active: true, until: state.until ? new Date(state.until).toISOString() : null, ...(bypass ? { bypass: true as const } : {}) }
+          : null,
         ...(appId !== null ? { app: { available: available(appId) } } : {}),
       };
     },

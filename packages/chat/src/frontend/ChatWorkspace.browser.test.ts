@@ -1137,6 +1137,7 @@ describe("ChatWorkspace browser read state", () => {
           expect.stringContaining("Edit message"),
           expect.stringContaining("Delete message"),
           expect.stringContaining("Reply"),
+          expect.stringContaining("Quote"),
           expect.stringContaining("Add reaction"),
           expect.stringContaining("Copy text"),
         ]);

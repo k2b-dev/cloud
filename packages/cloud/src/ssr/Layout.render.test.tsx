@@ -172,7 +172,7 @@ const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
           routes: ["/accent", "/admin/accent"],
           ...(accent === undefined ? {} : { appearance: { accent, primary: c.req.query("primary") === "ai" ? "ai" : undefined } }),
         },
-        { id: "core", name: "Core", icon: "ti ti-cloud", description: "Help host", routes: ["/help"], appearance: { accent: "#2563eb" } },
+        { id: "core", name: "Cloud", icon: "ti ti-cloud", description: "Help host", routes: ["/help"], appearance: { accent: "#2563eb" } },
       ],
     });
     await next();
