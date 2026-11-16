@@ -393,6 +393,12 @@ const portableSections = [
         "The edge of a list that loads more by itself, with a button, the busy state, and Try again in one steady row.",
       ),
       page(
+        "activity-list",
+        "ActivityList",
+        "ti ti-history",
+        "What happened to an object as a timeline with day dividers, bundles, a card with All N, and a filter by kind.",
+      ),
+      page(
         "message-rows",
         "Message rows",
         "ti ti-message-2",

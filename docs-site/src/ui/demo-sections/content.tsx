@@ -1,4 +1,7 @@
 import {
+  ActivityCard,
+  type ActivityEntry,
+  ActivityList,
   announce,
   BalanceSummary,
   Button,
@@ -62,6 +65,7 @@ import {
   panelDialogOptions,
   ReactionBar,
   reactionPeople,
+  SegmentedControl,
   StatusBadge,
   Steps,
   StructuredDataPreview,
@@ -947,6 +951,159 @@ const LoadMoreDemo = () => {
     </DemoCard>
   );
 };
+
+// The history of a project in the approved mockup, with a fixed "now" so the server and the browser agree.
+const ACTIVITY_NOW = "2026-11-12T15:31:00Z";
+const activityKinds = [
+  { key: "mail", label: "Emails" },
+  { key: "change", label: "Changes" },
+  { key: "file", label: "Files" },
+];
+const activityDraft = (minute: string): ActivityEntry => ({
+  at: `2026-10-27T10:${minute}:00+01:00`,
+  icon: "ti ti-pencil",
+  text: "Draft changed",
+  bundle: { key: "draft", text: (count) => `Draft changed ${count} times` },
+  actor: "Elif Kaya",
+  kind: "change",
+});
+const activityEntries = (): ActivityEntry[] => [
+  {
+    at: "2026-11-12T08:31:00+01:00",
+    icon: "ti ti-mail-x",
+    tone: "danger",
+    text: "Invitation not delivered",
+    detail: "team@stadtpark.example · Mailbox full",
+    action: { icon: "ti ti-send", label: "Send the invitation again", onClick: () => toast.success("Invitation sent again") },
+    kind: "mail",
+  },
+  {
+    at: "2026-11-12T08:30:00+01:00",
+    icon: "ti ti-bell-ringing",
+    tone: "warning",
+    text: "Reminder sent",
+    detail: (
+      <>
+        New deadline Nov 20 · <a href="#activity-list">Letter</a>
+      </>
+    ),
+    actor: "Mira Lang",
+    kind: "mail",
+  },
+  {
+    at: "2026-11-10T14:05:00+01:00",
+    icon: "ti ti-circle-check",
+    tone: "success",
+    text: "Approved",
+    detail: <ActivityList.Change term="State" before="In review" now="Approved" />,
+    actor: "Jonas Weber",
+    kind: "change",
+  },
+  { at: "2026-10-28T08:14:00+01:00", icon: "ti ti-eye", text: "Opened through the link", actor: "Guest" },
+  {
+    at: "2026-10-27T11:02:00+01:00",
+    icon: "ti ti-mail",
+    text: "Sent by email",
+    actor: "Mira Lang",
+    kind: "mail",
+    details: () => "To team@stadtpark.example · Subject “Invitation to the summer party”",
+  },
+  { at: "2026-10-27T10:38:00+01:00", icon: "ti ti-lock-open", text: "Shared with the team", actor: "Mira Lang" },
+  {
+    at: "2026-10-27T10:36:00+01:00",
+    icon: "ti ti-paperclip",
+    text: (
+      <>
+        File <a href="#activity-list">Schedule.pdf</a> added
+      </>
+    ),
+    actor: "Elif Kaya",
+    kind: "file",
+  },
+  activityDraft("35"),
+  activityDraft("30"),
+  activityDraft("24"),
+  activityDraft("20"),
+  {
+    at: "2026-10-27T10:12:00+01:00",
+    icon: "ti ti-table-import",
+    text: "38 tasks taken over from a file",
+    actor: "Elif Kaya",
+    kind: "file",
+  },
+  {
+    at: "2026-10-27T10:05:00+01:00",
+    icon: "ti ti-plus",
+    text: (
+      <>
+        Created from the template <a href="#activity-list">Event</a>
+      </>
+    ),
+    actor: "Tom Reiter",
+    kind: "change",
+  },
+];
+
+type ActivityDemoState = "filled" | "loading" | "empty" | "error" | "reload-error";
+const ActivityListDemo = () => {
+  const [state, setState] = createSignal<ActivityDemoState>("filled");
+  const entries = () => (state() === "loading" || state() === "error" ? null : state() === "empty" ? [] : activityEntries());
+  return (
+    <DemoCard
+      id="activity-list"
+      chip={[
+        { kind: "component", name: "ActivityCard", from: "@k2b/ui" },
+        { kind: "component", name: "ActivityList", from: "@k2b/ui" },
+      ]}
+      description="The history of a project as a card: six rows, dashed day dividers, four drafts bundled into one row, and All 10 for the dialog with the filter by kind. Switch the state to see loading, empty, and both errors."
+      code={`<ActivityCard
+  entries={entries()}
+  now={data.now}
+  timeZone="Europe/Berlin"
+  subtitle="Summer party"
+  kinds={[{ key: "mail", label: "Emails" }, { key: "change", label: "Changes" }, { key: "file", label: "Files" }]}
+  error={failed()}
+  onReload={reload}
+/>`}
+    >
+      <div style={{ display: "flex", "flex-direction": "column", gap: "0.75rem", "max-width": "40rem" }}>
+        <SegmentedControl
+          ariaLabel="State"
+          value={state()}
+          onValueChange={setState}
+          options={[
+            { value: "filled", label: "Filled" },
+            { value: "loading", label: "Loading" },
+            { value: "empty", label: "Empty" },
+            { value: "error", label: "Error" },
+            { value: "reload-error", label: "Error on reload" },
+          ]}
+        />
+        <ActivityCard
+          entries={entries()}
+          now={ACTIVITY_NOW}
+          timeZone="Europe/Berlin"
+          subtitle="Summer party"
+          kinds={activityKinds}
+          loading={state() === "loading"}
+          error={state() === "error" || state() === "reload-error"}
+          onReload={() => setState("filled")}
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
+const ActivityWideDemo = () => (
+  <DemoCard
+    id="activity-list-wide"
+    chip={{ kind: "component", name: "ActivityList", from: "@k2b/ui" }}
+    description="The wide density of the dialog: the meta line on the right of the first line, at most 80rem wide. Narrower than 34rem it goes under the sentence again."
+    code={`<ActivityList entries={entries()} density="wide" now={data.now} timeZone="Europe/Berlin" />`}
+  >
+    <ActivityList entries={activityEntries()} density="wide" now={ACTIVITY_NOW} timeZone="Europe/Berlin" />
+  </DemoCard>
+);
 
 // A week of a product team around today, in UTC so the server and the browser agree. Every week repeats the same
 // days: a busy today, a train ride, an empty day, a dense day with more overlaps than lanes, and a quiet one.
@@ -2531,6 +2688,12 @@ const demos: DemoSection = {
   "load-more": () => (
     <DemoGrid columns="one">
       <LoadMoreDemo />
+    </DemoGrid>
+  ),
+  "activity-list": () => (
+    <DemoGrid columns="one">
+      <ActivityListDemo />
+      <ActivityWideDemo />
     </DemoGrid>
   ),
   "message-rows": () => (
