@@ -133,7 +133,7 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).not.toContain('input.intent === "steer"');
     expect(workspace).not.toContain("chat.steer(");
     expect(workspace).not.toContain("onRetrySteer");
-    expect(workspace).toContain('lazy(() => import("./AssistantQueue"))');
+    expect(workspace).toContain('lazy(() => import("./AssistantQueueConnected"))');
     expect(workspace).toContain("chat.queueMessage");
     expect(workspace).not.toContain("queueMicrotask(() => void sendQueuedMessage");
     expect(workspace).toContain("message: t().reconnecting");

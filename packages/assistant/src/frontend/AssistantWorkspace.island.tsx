@@ -98,6 +98,7 @@ import AssistantPanelContext from "./AssistantPanelContext";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import type { AssistantQueueEntry } from "./AssistantQueue";
+import type { AssistantQueueHost } from "./AssistantQueueConnected";
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
@@ -157,7 +158,6 @@ import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
-import { sendQueuedEntryNow } from "./queue-send";
 import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
 import { finishedPlanShown, type TaskHostChoice, taskHostOpen } from "./task-host";
@@ -225,7 +225,7 @@ type ProjectViewState = {
 
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
 /** Loaded once a chat has queued messages; most chats never need it. */
-const AssistantQueue = lazy(() => import("./AssistantQueue"));
+const AssistantQueue = lazy(() => import("./AssistantQueueConnected"));
 const ArtifactWorkspace = lazy(() => import("../artifacts/Workspace").then((module) => ({ default: module.ArtifactWorkspace })));
 
 export default function AssistantWorkspace(props: Props) {
@@ -1438,67 +1438,26 @@ export default function AssistantWorkspace(props: Props) {
       setComposerSubmitting(false);
     }
   };
-  const markQueueFailed = (id: string, failed: boolean) =>
-    setQueueFailed((current) => {
-      const next = new Set(current);
-      if (failed) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  /** "Send now" stops the running turn and starts one with this entry; see `sendQueuedEntryNow` for an unclear answer. */
-  const sendQueuedNow = async (entry: AssistantQueueEntry) => {
-    const conversationId = chat.activeConversationId();
-    if (!conversationId || queueSendingId() || queueBusy()) return;
-    markQueueFailed(entry.id, false);
-    setQueueSendingId(entry.id);
-    try {
-      const outcome = await sendQueuedEntryNow({
-        send: () => assistantApi.sendQueuedMessageNow(conversationId, entry.id),
-        receipt: () => assistantApi.queuedMessageSendReceipt(conversationId, entry.id),
-        reload: () => queuedMessages.refresh(),
-      });
-      markQueueFailed(entry.id, outcome === "not-sent");
-    } finally {
-      setQueueSendingId(null);
-    }
-  };
-  const removeQueued = async (entry: AssistantQueueEntry) => {
-    const conversationId = chat.activeConversationId();
-    if (!conversationId || queueSendingId() || queueBusy()) return;
-    setQueueBusy(true);
-    try {
-      await assistantApi.cancelQueuedMessage(conversationId, entry.id);
-      markQueueFailed(entry.id, false);
-      await queuedMessages.refresh();
-    } catch (error) {
-      chat.setError(error instanceof Error ? error.message : t().chatActionFailed);
-    } finally {
-      setQueueBusy(false);
-    }
-  };
-  /** "Edit" takes one's own entry out of the queue and puts it into the field, after asking before it replaces a draft. */
-  const editQueued = async (entry: AssistantQueueEntry) => {
-    const conversationId = chat.activeConversationId();
-    const message = queuedMessages.data()?.find((candidate) => candidate.id === entry.id);
-    if (!conversationId || !message || queueSendingId() || queueBusy()) return;
-    const hasDraft = composerDraft(conversationId).trim().length > 0 || composerAttachmentsFor(conversationId).length > 0;
-    if (hasDraft && !(await prompts.confirm(t().replaceDraft, { title: t().edit, confirmText: t().edit }))) return;
-    setQueueBusy(true);
-    try {
-      await assistantApi.cancelQueuedMessage(conversationId, entry.id);
-      if (chat.activeConversationId() === conversationId) {
-        const restored = aiComposerDraft(message.content);
-        setComposerAttachmentsFor(conversationId, restored.attachments);
-        setComposerDrafts((current) => ({ ...current, [conversationId]: restored.text }));
-        setMentionsFor(conversationId, restored.mentions);
-        setComposerFocusToken((token) => token + 1);
-      }
-      await queuedMessages.refresh();
-    } catch (error) {
-      chat.setError(error instanceof Error ? error.message : t().chatActionFailed);
-    } finally {
-      setQueueBusy(false);
-    }
+  /** What the queue, loaded on first use, needs from the chat; its actions live in that module. */
+  const queueHost: AssistantQueueHost = {
+    conversationId: chat.activeConversationId,
+    content: (id) => queuedMessages.data()?.find((message) => message.id === id)?.content,
+    reload: () => queuedMessages.refresh(),
+    hasDraft: (id) => composerDraft(id).trim().length > 0 || composerAttachmentsFor(id).length > 0,
+    putIntoField: (id, content) => {
+      const restored = aiComposerDraft(content);
+      setComposerAttachmentsFor(id, restored.attachments);
+      setComposerDrafts((current) => ({ ...current, [id]: restored.text }));
+      setMentionsFor(id, restored.mentions);
+      setComposerFocusToken((token) => token + 1);
+    },
+    fail: chat.setError,
+    sendingId: queueSendingId,
+    setSendingId: setQueueSendingId,
+    failedIds: queueFailed,
+    setFailedIds: setQueueFailed,
+    busy: queueBusy,
+    setBusy: setQueueBusy,
   };
 
   const activeConversation = () =>
@@ -2074,16 +2033,7 @@ export default function AssistantWorkspace(props: Props) {
 
   const QueuePart = (partProps: { layout: "line" | "chip" }) => (
     <Suspense>
-      <AssistantQueue
-        entries={queueEntries()}
-        layout={partProps.layout}
-        sendingId={queueSendingId()}
-        failedIds={queueFailed()}
-        busy={queueBusy()}
-        onSendNow={(entry) => void sendQueuedNow(entry)}
-        onEdit={(entry) => void editQueued(entry)}
-        onRemove={(entry) => void removeQueued(entry)}
-      />
+      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} />
     </Suspense>
   );
   /**
