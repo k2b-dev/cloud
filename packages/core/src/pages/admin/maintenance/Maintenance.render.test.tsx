@@ -33,7 +33,11 @@ const html = (initial: MaintenanceStatus, locale = "de") =>
     }),
   );
 
-const text = (markup: string) => markup.replace(/<!--[^>]*-->/g, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+const text = (markup: string) =>
+  markup
+    .replace(/<!--[^>]*-->/g, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ");
 
 test("off: the switch with its note, a suggested end with its date and the cld way out, and no start-time choice", () => {
   const page = text(html({ active: false, apps: { ready: 11, total: 11, starting: [] } }));

@@ -161,13 +161,7 @@ export default function Maintenance(props: {
             </>
           }
         >
-          <Button
-            type="button"
-            variant="secondary"
-            class="ms-auto"
-            disabled={busy() !== null}
-            onClick={() => void moveEnd()}
-          >
+          <Button type="button" variant="secondary" class="ms-auto" disabled={busy() !== null} onClick={() => void moveEnd()}>
             {t().moveEnd}
           </Button>
           <Button
