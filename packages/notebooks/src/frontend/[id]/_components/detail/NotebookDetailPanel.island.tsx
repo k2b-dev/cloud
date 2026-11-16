@@ -948,30 +948,41 @@ export default function NotebookDetailPanel(props: Props) {
     );
   };
 
+  /** Every entry is loaded and shown, so the timeline reaches its start: the note's creation. */
+  const activityComplete = () => !noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0);
   /**
-   * The note's timeline: the newest entries, then its creation as the start of the rail. A change links to the
-   * versions; a comment reveals itself in the comments.
+   * The note's timeline: the newest entries, and its creation as the start of the rail once nothing older is left to
+   * show; until then the rail fades out above "Show more" and "Load older". A change links to the versions; a comment
+   * reveals itself in the comments.
    */
   const activityEntries = (): ActivityEntry[] => [
     ...visibleActivity().map((item): ActivityEntry => {
       const href = activityHref(item);
-      const sentence = `${describeNoteActivityEntry(item.action, locale())}${item.occurrenceCount > 1 ? ` ${t().times({ count: item.occurrenceCount })}` : ""}`;
       return {
+        id: item.id,
         at: item.lastOccurredAt,
         icon: notebookActivityIcon(item.action),
-        text: href ? <a href={href}>{sentence}</a> : sentence,
+        text: `${describeNoteActivityEntry(item.action, locale())}${item.occurrenceCount > 1 ? ` ${t().times({ count: item.occurrenceCount })}` : ""}`,
+        href,
         onOpen: href ? undefined : () => revealComment(item),
         actor: item.actor.kind === "system" ? null : actorName(item.actor),
         attrs: { "data-activity-id": item.id },
       };
     }),
-    {
-      at: createdAt(),
-      icon: notebookActivityIcon("note.created"),
-      text: <a href={buildVersionsUrl(props.notebookId, noteId())}>{t().createdNote}</a>,
-      actor: authors().createdBy ? actorName(authors().createdBy) : null,
-    },
+    ...(activityComplete()
+      ? [
+          {
+            id: "note.created",
+            at: createdAt(),
+            icon: notebookActivityIcon("note.created"),
+            text: t().createdNote,
+            href: buildVersionsUrl(props.notebookId, noteId()),
+            actor: authors().createdBy ? actorName(authors().createdBy) : null,
+          },
+        ]
+      : []),
   ];
+  const retryActivity = () => void (activityRead === "older" ? noteActivity.loadMore() : noteActivity.refresh());
 
   return (
     <AppWorkspace.Detail
@@ -1258,19 +1269,29 @@ export default function NotebookDetailPanel(props: Props) {
             />
             <Section title={t().activity} icon="ti ti-activity" class="notebook-activity" collapsible summary={activitySummary()}>
               <div class="notebook-panel-rows" aria-busy={noteActivity.loading() ? "true" : undefined}>
-                <Show when={noteActivity.error()}>
+                {/* Without rows the error is all there is; with rows it stands where "Load older" was. */}
+                <Show when={noteActivity.error() && activityItems().length === 0}>
                   <div class="notebook-activity-alert">
-                    <ActivityList.Error
-                      text={t().activityLoadShort}
-                      onReload={() => void (activityRead === "older" ? noteActivity.loadMore() : noteActivity.refresh())}
-                    />
+                    <ActivityList.Error text={t().activityLoadShort} onReload={retryActivity} />
                   </div>
                 </Show>
                 <Show
                   when={!noteActivity.loading() || activityItems().length > 0 || noteActivity.error()}
                   fallback={<ActivityList.Loading label={t().loadingActivity} />}
                 >
-                  <ActivityList entries={activityEntries()} now={props.now} dateConfig={props.dateConfig} label={t().activity} />
+                  <ActivityList
+                    entries={activityEntries()}
+                    now={props.now}
+                    dateConfig={props.dateConfig}
+                    label={t().activity}
+                    more={!activityComplete()}
+                  />
+                </Show>
+                {/* An older page that failed keeps the loaded rows and says so where "Load older" was. */}
+                <Show when={noteActivity.error() && activityItems().length > 0}>
+                  <div class="notebook-activity-alert">
+                    <ActivityList.Error text={t().activityLoadShort} onReload={retryActivity} />
+                  </div>
                 </Show>
                 {/* Older pages stay reachable even when the loaded rows all fit, for example after a sparse page. */}
                 <Show when={!noteActivity.error() && noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0)}>

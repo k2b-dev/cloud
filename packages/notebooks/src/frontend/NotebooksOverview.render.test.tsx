@@ -107,6 +107,7 @@ describe("Notebooks overview", () => {
     // Activity is the shared timeline: the sentence links to the note, the person stands in the meta line.
     expect(html).toContain('class="k2b-activity"');
     expect(html).toContain('<i class="ti ti-pencil"');
+    expect(html).toMatch(/<a class="k2b-activity__text-link" href="\/app\/notebooks\/[^"]+">/);
     expect(textOf(html)).toContain("12:00 · 2 hr. ago · Sofie");
     expect(html).toContain('datetime="2026-08-20T10:00:00.000Z"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
@@ -115,7 +116,7 @@ describe("Notebooks overview", () => {
 
   test("distinguishes an activity failure from an empty history", () => {
     const html = renderOverview("Activity service unavailable");
-    expect(html).toContain("Activity service unavailable");
+    expect(textOf(html)).toContain("Could not load activity: Activity service unavailable");
     expect(html).toContain("Reload");
     expect(html).not.toContain("Notebook and note changes will appear here.");
     // The entries that are there stay below the error.

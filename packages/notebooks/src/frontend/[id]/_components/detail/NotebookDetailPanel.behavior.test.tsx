@@ -101,6 +101,10 @@ describe("Notebook detail panel recovery and pagination", () => {
   };
   const button = (label: string) =>
     [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === label);
+  const rows = () => [...dom.root.querySelectorAll<HTMLElement>(".notebook-activity .k2b-activity__entry")];
+  const lastRow = () => rows().at(-1);
+  // The note's own creation row is the only row without a log id.
+  const created = () => rows().find((row) => !row.hasAttribute("data-activity-id")) ?? null;
   // The person of each logged row stands last in its meta line; the note's own creation row has no log id.
   const authors = () =>
     [...dom.root.querySelectorAll(".notebook-activity [data-activity-id] .k2b-activity__meta")].map((meta) =>
@@ -370,18 +374,30 @@ describe("Notebook detail panel recovery and pagination", () => {
     const dispose = await renderPanel();
     try {
       await until(() => authors().length === 4);
+      // Until every entry is loaded and shown, the timeline has no start: no creation row, the rail fades out.
+      expect(created()).toBeNull();
+      expect(lastRow()?.dataset.end).toBe("more");
       button("1 weitere anzeigen")!.click();
       expect(authors()).toEqual(["Author 0", "Author 1", "Author 2", "Author 3", "Author 4"]);
+      expect(created()).toBeNull();
       button("Ältere laden")!.click();
       await until(() => Boolean(dom.root.querySelector('[role="alert"]')));
       expect(authors()).toEqual(["Author 0", "Author 1", "Author 2", "Author 3", "Author 4"]);
-      expect(dom.root.querySelector('[role="alert"]')?.textContent).toContain("Neue Einträge laden nicht.");
+      const alert = dom.root.querySelector('[role="alert"]')!;
+      expect(alert.textContent).toContain("Neue Einträge laden nicht.");
+      // The failure stands where "Load older" was: after the loaded rows.
+      expect(dom.root.querySelector(".notebook-activity .k2b-activity")!.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
       expect(button("Ältere laden")).toBeUndefined();
       button("Neu laden")!.click();
       await until(() => authors().length === 6);
       expect(requests.map((url) => url.searchParams.get("cursor"))).toEqual([null, "older", "older"]);
       expect(authors()).toEqual(["Author 0", "Author 1", "Author 2", "Author 3", "Author 4", "Author 5"]);
       expect(dom.root.querySelector('[role="alert"]')).toBeNull();
+      // Everything is there: the note's creation closes the timeline as its last row.
+      expect(lastRow()).toBe(created());
+      expect(lastRow()?.dataset.end).toBe("last");
     } finally {
       dispose();
     }

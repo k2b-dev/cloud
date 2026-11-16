@@ -146,7 +146,20 @@ export default function NotebooksOverview(props: Props) {
     getNextCursor: (page) => page.nextCursor,
   });
   const activityItems = createMemo(() => activityResults.pages().flatMap((page) => page.items));
-  const activityError = () => activityResults.error()?.message ?? initialActivityError();
+  // A failed older page keeps the loaded rows and says so at the list's end, where "Load more" was; any other failure
+  // stands above the list (or alone without rows) with "Reload".
+  const [failedPage, setFailedPage] = createSignal<Error | null>(null);
+  const loadMoreActivity = async () => {
+    const before = activityResults.error();
+    await activityResults.loadMore();
+    const after = activityResults.error();
+    setFailedPage(after !== before ? after : null);
+  };
+  const pageError = () => {
+    const failed = activityResults.error();
+    return failed && failed === failedPage() ? failed.message : null;
+  };
+  const activityError = () => (pageError() ? null : (activityResults.error()?.message ?? initialActivityError()));
 
   const openNotebook = (notebook: CreatedNotebook) => navigateTo(`/app/notebooks/${notebook.id}`);
 
@@ -204,12 +217,14 @@ export default function NotebooksOverview(props: Props) {
     },
   ];
 
-  // The sentence links to the note or notebook; the person stands in the meta line, "automatic" for the system.
+  // The row links to the note or notebook; the person stands in the meta line, "automatic" for the system.
   const activityEntries = (): ActivityEntry[] =>
     activityItems().map((item) => ({
+      id: item.id,
       at: item.lastOccurredAt,
       icon: notebookActivityIcon(item.action),
-      text: <a href={activityHref(item)}>{activityDescription(item, locale())}</a>,
+      text: activityDescription(item, locale()),
+      href: activityHref(item),
       actor: item.actor.kind === "system" ? null : item.actor.displayName,
     }));
   const reloadActivity = () => {
@@ -228,14 +243,14 @@ export default function NotebooksOverview(props: Props) {
             </Show>
           }
         >
-          {(message) => <ActivityList.Error text={message()} onReload={reloadActivity} />}
+          {(message) => <ActivityList.Error text={`${t().couldNotLoadActivity}: ${message()}`} onReload={reloadActivity} />}
         </Show>
       }
     >
       <Show when={activityError()}>
         {(message) => (
           <div class="notebooks-overview-activity-alert">
-            <ActivityList.Error text={message()} onReload={reloadActivity} />
+            <ActivityList.Error text={`${t().couldNotLoadActivity}: ${message()}`} onReload={reloadActivity} />
           </div>
         )}
       </Show>
@@ -248,8 +263,10 @@ export default function NotebooksOverview(props: Props) {
       />
       <LoadMore
         hasMore={activityResults.hasMore()}
-        onLoadMore={() => activityResults.loadMore()}
+        onLoadMore={loadMoreActivity}
+        auto={false}
         loading={activityResults.loadingMore()}
+        error={pageError()}
         label={t().loadMore}
         loadingLabel={t().loadingMoreActivity}
       />
