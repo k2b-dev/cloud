@@ -60,8 +60,9 @@ export function CapabilityTablePreview(props: { result: unknown; label: string }
                   )}
                 </For>
               ) : (
-                <span class="block max-w-80 truncate" title={String(cell)}>
-                  {String(cell)}
+                // An empty cell stays empty: null or undefined never reads as the word "null".
+                <span class="block max-w-80 truncate" title={cell == null ? undefined : String(cell)}>
+                  {cell == null ? "" : String(cell)}
                 </span>
               )
             }
