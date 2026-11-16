@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../../ui/test/browser";
 import { MAINTENANCE_FIXTURE_NOW, maintenanceBrowserFixture, pinPageClock } from "./Maintenance.browser-fixture";
 
 let browser: Browser;
@@ -20,8 +20,7 @@ const views = [
 ] as const;
 const open = async (view: { width: number; height: number }, query: string) => {
   const page = await browser.newPage({ viewport: view, reducedMotion: "reduce", isMobile: view.width < 600, hasTouch: view.width < 600 });
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.addInitScript(pinPageClock, MAINTENANCE_FIXTURE_NOW.getTime());
   await page.goto(`${fixture.url}?${query}`);
   await page.locator('#maintenance-fixture[data-ready="true"]').waitFor();
