@@ -678,6 +678,7 @@ main > .code-page-host {
    counts keep their room, so nothing moves when one is added. */
 /* A page level: its content starts at the title's edge. */
 .core-code-approvals {
+  container: code-approvals / inline-size;
   display: grid;
   align-content: start;
   gap: 0.75rem;
@@ -716,6 +717,24 @@ main > .code-page-host {
   color: inherit;
   text-decoration: none;
 }
+/* Wide list: every row shares one set of columns, each as wide as its content needs. When both do not fit, the shorter
+   one is whole and the longer one wraps; the time takes the rest and stays at the right. The list's own width decides,
+   not the window's: beside the two navigation columns it is far narrower. */
+@container code-approvals (min-width: 44rem) {
+  .core-code-approvals__list {
+    grid-template-columns: auto minmax(0, max-content) minmax(0, max-content) minmax(5.5rem, 1fr) auto;
+  }
+  .core-code-approvals__list > li,
+  .core-code-approvals__row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+  .core-code-approvals__change {
+    padding-inline-start: 0.75rem;
+  }
+}
+
 .core-code-approvals__row:hover {
   background: var(--k2b-app-workspace-hover);
 }
@@ -788,7 +807,8 @@ main > .code-page-host {
   align-items: center;
   gap: 0.25rem;
 }
-@media (max-width: 47.99rem) {
+/* A narrow list stacks the change under the title. */
+@container code-approvals (max-width: 43.99rem) {
   .core-code-approvals__row {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas: "avatar what when" "avatar change change";
@@ -809,6 +829,8 @@ main > .code-page-host {
   .core-code-approvals__go {
     display: none;
   }
+}
+@media (max-width: 47.99rem) {
   /* On a phone the head's back arrow closes; the count and arrows keep their room. */
   .core-code-approvals__close {
     display: none;

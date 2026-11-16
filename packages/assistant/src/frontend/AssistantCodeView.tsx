@@ -1,3 +1,4 @@
+import { formatCodeDay } from "@k2b/cloud/code/schedule";
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 import { followCodeRuns } from "@k2b/cloud/ssr/code-live";
 import {
@@ -68,15 +69,10 @@ const clock = (iso: string, locale: string, timeZone: string) => {
     return new Intl.DateTimeFormat(locale, options).format(new Date(iso));
   }
 };
-/** "today, 06:30" for the person's day, else the short weekday and date: "Mo., 16.11." */
+/** "today, 06:30" for the person's day, else the day as every Code surface writes it: "Mo, 16.11." */
 const dayOrTime = (iso: string, t: Messages, locale: string, timeZone: string, now: Date) => {
   if (localDay(timeZone, new Date(iso)) === localDay(timeZone, now)) return t.appsTodayAt({ time: clock(iso, locale, timeZone) });
-  const options = { weekday: "short", day: "numeric", month: "numeric" } as const;
-  try {
-    return new Intl.DateTimeFormat(locale, { ...options, timeZone }).format(new Date(iso));
-  } catch {
-    return new Intl.DateTimeFormat(locale, options).format(new Date(iso));
-  }
+  return formatCodeDay(iso, { locale, timeZone, now });
 };
 /** How long a run has been running: seconds and minutes as a span, longer as its start time. */
 const runningFor = (iso: string, locale: string, timeZone: string, now: Date) => {
