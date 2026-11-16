@@ -15,7 +15,6 @@ import {
 } from "solid-js";
 import { Button, ButtonLink, IconButton, IconButtonLink } from "../actions/Button";
 import { Toolbar } from "../actions/Toolbar";
-import { afterExitTransitions } from "../internal/exit-motion";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { showTruncatedTitle } from "../internal/truncated-title";
 import { createDelayedLoading } from "../surfaces/Skeleton";
@@ -160,23 +159,12 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
         : [...ZOOM_STEPS].reverse().find((candidate) => candidate < value - 0.001);
     if (next !== undefined) setZoom(next);
   };
-  let closing = false;
-  let mounted = true;
-  onCleanup(() => {
-    mounted = false;
-  });
-  // Focus returns at once and the page is usable; the veil fades out, and the owner unmounts the Lightbox after it.
+  // The owner mounts and removes the Lightbox, so it learns at once and can open the next file right away. It fades in
+  // like every large surface; it leaves without a fade, because a fade would keep the owner's state open meanwhile.
   const close = () => {
-    if (closing) return;
-    closing = true;
     if (dialog.open) dialog.close();
-    // From now on it no longer acts as open: no input and out of the accessibility tree; only its picture fades.
-    dialog.inert = true;
-    dialog.setAttribute("aria-hidden", "true");
     returnFocus(opener, openerRing);
-    afterExitTransitions(dialog, () => {
-      if (mounted) props.onClose();
-    });
+    props.onClose();
   };
 
   // A key belongs to the Lightbox while focus is inside it, or on the page with no other dialog open above it.

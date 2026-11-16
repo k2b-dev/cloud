@@ -662,7 +662,9 @@ export const createDialogCore = () => {
         popTop(result);
       };
 
-      // A dialog that a reload brings back is there from the first frame, without an entrance.
+      // A dialog that a reload or a shared link brings up with the page is there from the first frame, without an
+      // entrance: its own address is already the page's address when it opens.
+      const atOwnAddress = options.historyUrl !== undefined && new URL(options.historyUrl, location.href).href === location.href;
       const resumed = options.history ? pushHistory(entry, options.historyUrl) : false;
       state.stack.push(entry);
       try {
@@ -705,7 +707,7 @@ export const createDialogCore = () => {
           // opened, with a ring of the browser's choosing. Opening from a
           // blurred document leaves the return to popTop and its opener ring.
           if (activeElement instanceof HTMLElement) activeElement.blur();
-          if (resumed) {
+          if (resumed || atOwnAddress) {
             dialog.dataset.noEnter = "";
             // Two frames: the first frame's style still has to see the attribute.
             schedule(() => schedule(() => delete dialog.dataset.noEnter));

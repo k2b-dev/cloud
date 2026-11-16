@@ -74,9 +74,13 @@ Dialogs are the one surface that also leaves visibly, after state and focus
 already apply. A dialog rises by `--k2b-shift-in` and fades in over
 `--k2b-motion-base`; when it closes, its result resolves, focus returns to the
 opener, and the page is usable at once, while the frame sinks by
-`--k2b-shift-out` and fades out over `--k2b-motion-fast`. Large surfaces, such
-as a workspace dialog or the `Lightbox`, only fade. A dialog that a reload
-brings back has no entrance.
+`--k2b-shift-out` and fades out over `--k2b-motion-fast`; from that moment it is
+inert, out of the accessibility tree, and takes no clicks. Large surfaces, such
+as a workspace dialog, only fade; the `Lightbox` fades in and leaves at once,
+because its owner removes it. A dialog that a reload or a shared link brings up
+with the page has no entrance. Engines without CSS `overlay` close at once.
+A dialog's content is disposed after its exit, so its cleanup runs after the
+caller has its result.
 
 ## Keep an interaction within its motion budget
 

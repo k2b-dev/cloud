@@ -133,9 +133,11 @@ describe("@k2b/ui motion contract", () => {
         expect(closed.get("translate")).toEqual(["0 var(--k2b-dialog-shift-out)"]);
         for (const property of ["opacity", "translate"])
           expect(transition(closed)).toContain(`${property} var(--k2b-motion-fast) var(--k2b-ease-out)`);
-        // Without these the frame leaves the top layer and disappears before the fade.
+        // The exit keeps the frame in the top layer only where the engine has `overlay`; elsewhere it closes at once.
+        expect(transition(closed)).not.toContain("overlay");
+        const exit = rule(frame, [context, "@supports (overlay: auto)"].filter(Boolean).join(" > "));
         for (const property of ["overlay", "display"])
-          expect(transition(closed)).toContain(`${property} var(--k2b-motion-fast) allow-discrete`);
+          expect(transition(exit)).toContain(`${property} var(--k2b-motion-fast) allow-discrete`);
         const open = rule(`${frame}[open]`, context);
         expect(open.get("opacity")).toEqual(["1"]);
         expect(open.get("translate")).toEqual(["0 0"]);
@@ -148,14 +150,19 @@ describe("@k2b/ui motion contract", () => {
       });
     }
 
+    test("a closing frame and its veil take no clicks", () => {
+      for (const selector of [".k2b-ui .k2b-dialog:not([open])", ".k2b-ui .k2b-dialog:not([open])::backdrop"])
+        expect(rule(selector).get("pointer-events")).toEqual(["none"]);
+    });
+
     test("large surfaces only fade", () => {
       const large = rule(".k2b-ui .k2b-dialog:is(.k2b-dialog--full, .is-workspace)");
       expect(large.get("--k2b-dialog-shift-in")).toEqual(["0px"]);
       expect(large.get("--k2b-dialog-shift-out")).toEqual(["0px"]);
-      const lightbox = rule(".k2b-ui .k2b-lightbox");
-      expect(lightbox.get("opacity")).toEqual(["0"]);
+      // The Lightbox fades in only: its owner removes it the moment it closes.
+      const lightbox = rule(".k2b-ui .k2b-lightbox[open]");
+      expect(transition(lightbox)).toBe("opacity var(--k2b-motion-base) var(--k2b-ease-out)");
       expect(lightbox.has("translate")).toBe(false);
-      expect(rule(".k2b-ui .k2b-lightbox[open]").get("transition-duration")).toEqual(["var(--k2b-motion-base)"]);
     });
 
     test("a phone sheet keeps its own motion and an adaptive dialog has no second entrance", () => {

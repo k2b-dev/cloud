@@ -73,7 +73,8 @@ const load = async (options: BrowserContextOptions = desktop, reducedAttribute =
   page.setDefaultTimeout(10_000);
   await page.setContent(
     `<!doctype html><html${reducedAttribute ? ' data-k2b-motion="reduced"' : ""}><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-      `<body class="k2b-ui"><button id="opener" type="button">Open</button></body></html>`,
+      `<body class="k2b-ui"><button id="opener" type="button">Open</button>` +
+      `<button id="behind" type="button" onclick="window.behind = (window.behind ?? 0) + 1">Behind</button></body></html>`,
   );
   await page.addScriptTag({ content: script });
   return page;
@@ -198,6 +199,7 @@ describe(`${browserName} dialog entrance and exit`, () => {
       await openFromButton(page);
       await transitionsDone(page);
       const done = await page.getByRole("button", { name: "Done" }).boundingBox();
+      const behind = await page.locator("#behind").boundingBox();
       await page.evaluate(() => (window as unknown as MotionWindow).closeDialog());
       // Still fading where the engine keeps it in the top layer, but neither found nor usable.
       expect(await page.getByRole("dialog").count()).toBe(0);
@@ -205,6 +207,9 @@ describe(`${browserName} dialog entrance and exit`, () => {
       expect(await page.getByRole("button", { name: "Done" }).count()).toBe(0);
       await page.mouse.click(done!.x + done!.width / 2, done!.y + done!.height / 2);
       await page.keyboard.press("Enter");
+      // The page behind the fading veil takes a click at once.
+      await page.mouse.click(behind!.x + behind!.width / 2, behind!.y + behind!.height / 2);
+      expect(await page.evaluate(() => (window as unknown as { behind?: number }).behind)).toBe(1);
       const state = await page.evaluate(() => {
         const dialog = document.querySelector("dialog");
         const motion = window as unknown as MotionWindow;
@@ -285,6 +290,23 @@ describe(`${browserName} dialog entrance and exit`, () => {
     }
   });
 
+  test("a dialog that a shared link opens with the page has no entrance", async () => {
+    const page = await load();
+    try {
+      const opened = await page.evaluate(() => {
+        (window as unknown as MotionWindow).openDialog("Linked", { history: true, historyUrl: location.href });
+        const dialog = document.querySelector("dialog")!;
+        return {
+          marked: dialog.hasAttribute("data-no-enter"),
+          transitions: dialog.getAnimations().filter((animation) => animation instanceof CSSTransition).length,
+        };
+      });
+      expect(opened).toEqual({ marked: true, transitions: 0 });
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("a dialog that a reload brings back has no entrance", async () => {
     const page = await load();
     try {
@@ -321,7 +343,7 @@ describe(`${browserName} dialog entrance and exit`, () => {
     }
   });
 
-  test("the Lightbox fades in and out, and calls onClose after the fade", async () => {
+  test("the Lightbox fades in, and on closing calls onClose and returns focus at once", async () => {
     const page = await load();
     try {
       await page.evaluate(() => {
@@ -343,9 +365,8 @@ describe(`${browserName} dialog entrance and exit`, () => {
         open: document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox")?.open,
         focusOnOpener: document.activeElement === document.querySelector("#opener"),
       }));
-      if (await exitFades(page)) expect(closing).toEqual({ closed: 0, open: false, focusOnOpener: true });
-      else expect({ closed: closing.closed, focusOnOpener: closing.focusOnOpener }).toEqual({ closed: 1, focusOnOpener: true });
-      await page.waitForFunction(() => (window as unknown as MotionWindow).lightboxClosed === 1);
+      // The owner learns at once, so it could open the next file right away.
+      expect({ closed: closing.closed, focusOnOpener: closing.focusOnOpener }).toEqual({ closed: 1, focusOnOpener: true });
       expect(await page.evaluate(() => document.querySelector("dialog.k2b-lightbox"))).toBeNull();
     } finally {
       await page.context().close();

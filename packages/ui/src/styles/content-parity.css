@@ -4915,20 +4915,12 @@
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
-/* A large surface: it only fades, in over the base time and out over the fast time, with its veil. Closing returns
-   focus at once; the component calls `onClose` after the fade. A pull follows the finger without a transition. */
-.k2b-ui .k2b-lightbox,
-.k2b-ui .k2b-lightbox::backdrop {
-  opacity: 0;
-  transition:
-    opacity var(--k2b-motion-fast) var(--k2b-ease-out),
-    overlay var(--k2b-motion-fast) allow-discrete,
-    display var(--k2b-motion-fast) allow-discrete;
-}
+/* A large surface: it only fades in, with its veil, over the base time. It leaves at once: its owner removes it the
+   moment it closes, so the owner can open the next file right away. A pull follows the finger without a transition. */
 .k2b-ui .k2b-lightbox[open],
 .k2b-ui .k2b-lightbox[open]::backdrop {
   opacity: 1;
-  transition-duration: var(--k2b-motion-base);
+  transition: opacity var(--k2b-motion-base) var(--k2b-ease-out);
 }
 @starting-style {
   .k2b-ui .k2b-lightbox[open],

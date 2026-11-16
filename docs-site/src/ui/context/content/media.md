@@ -37,7 +37,7 @@ import {
 
 ## Lightbox
 
-Pass `items`, the shown `index`, `onIndexChange`, and `onClose`; the caller owns the index, so it can follow a selection behind the Lightbox, and removes the component on close. The Lightbox fades in and out without moving; on close, focus returns to the opener at once and `onClose` runs once the fade has ended (at once with reduced motion). Each `LightboxItem` has a `name` (it never wraps; the pill gives way with an ellipsis) and gives what the file has:
+Pass `items`, the shown `index`, `onIndexChange`, and `onClose`; the caller owns the index, so it can follow a selection behind the Lightbox, and removes the component on close. The Lightbox fades in without moving. On close, focus returns to the opener and `onClose` runs at once, so the owner can open the next file right away; the Lightbox leaves without a fade. Each `LightboxItem` has a `name` (it never wraps; the pill gives way with an ellipsis) and gives what the file has:
 
 - `src`: an address on this site the browser reads directly, for an image, a video, an audio file, or a PDF; a function resolves it when the file is shown, such as a short-lived signed address, and **Try again** asks it for a fresh one;
 - `load`: text, Markdown, code, or a PDF's bytes, drawn by the `FileView` renderers;
