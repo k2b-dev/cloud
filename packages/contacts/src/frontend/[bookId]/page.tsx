@@ -150,6 +150,11 @@ export default ssr<AuthContext>(async (c) => {
     <Layout
       c={c}
       fullWidth
+      context={{
+        scope: selectedPublicContact
+          ? { type: "contacts.contact", id: selectedPublicContact.id }
+          : { type: "contacts.book", id: currentBook.id },
+      }}
       title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbContacts, href: "/app/contacts" }, { title: currentBook.name }]}
     >
       <ContactsLiveEvents scope={{ kind: "book", bookId: publicBookId }} initialCursor={initialLiveCursor} />

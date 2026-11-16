@@ -9,6 +9,8 @@ export type Route = {
   channels?: boolean;
   /** The page with mentions of and replies to the reader. */
   forYou?: boolean;
+  /** In the panel: the ready discussion about the host page's resource while nobody has written there. */
+  resource?: boolean;
   query?: string;
   chatId: string | null;
   view: ThreadView;
@@ -33,12 +35,15 @@ export const threadsPageHref = (chatId: string, basePath = "/app/chat") => `${ba
 
 /** The address of a whole route, so the phone's thread page keeps its place when Info opens or closes on it. */
 export const routeAddress = (route: Route, basePath = "/app/chat"): string => {
+  if (route.resource) return `${basePath}/resource`;
   if (!route.chatId) return basePath;
   if (route.threads) return `${threadsPageHref(route.chatId, basePath)}${route.panel === "info" ? "?panel=info" : ""}`;
   return panelHref(route.chatId, route.panel, route.messageId, route.view, basePath);
 };
 
 export const parseRoute = (url: URL): Route | null => {
+  if (/^\/app\/chat\/panel\/resource\/?$/.test(url.pathname))
+    return { chatId: null, view: "all", threads: false, messageId: null, panel: null, resource: true };
   if (/^\/app\/chat(?:\/panel)?\/for-you\/?$/.test(url.pathname))
     return { chatId: null, view: "all", threads: false, messageId: null, panel: null, forYou: true };
   if (/^\/(?:app\/chat(?:\/panel)?|pwa\/chat)\/channels\/?$/.test(url.pathname))

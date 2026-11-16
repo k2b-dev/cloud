@@ -904,6 +904,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       activeTurn: chat.activeTurn,
       reconnecting: () => chat.streamStatus() === "reconnecting",
       timeZone: props.timeZone,
+      renderedAt: props.renderedAt,
     });
     return (
       <Chat.Timeline
