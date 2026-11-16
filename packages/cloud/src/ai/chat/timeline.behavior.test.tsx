@@ -647,6 +647,8 @@ const renderTimeline = async (
     jest.advanceTimersByTime(600);
     expect(word()).toBeDefined();
     expect(word()).not.toBe("Thinking");
+    // Screen readers heard once that Gustav thinks, by name.
+    expect(document.querySelector("[data-k2b-live]")?.textContent).toContain("Gustav is thinking");
   } finally {
     dispose();
     dom.cleanup();

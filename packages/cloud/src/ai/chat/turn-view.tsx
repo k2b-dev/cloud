@@ -267,7 +267,8 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
                   first={t().thinking}
                   words={thinkingWords(phase)}
                   elapsedMs={thinkingMs()}
-                  announce={aiThinkingMessages(locale()).announcement({ assistant: t().assistant })}
+                  // The chat speaks for Gustav, as its views do (Feinschliff v3: "Gustav denkt nach").
+                  announce={aiThinkingMessages(locale()).announcement({ assistant: "Gustav" })}
                 />
               )}
             </Show>
