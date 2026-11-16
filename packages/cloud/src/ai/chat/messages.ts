@@ -7,6 +7,8 @@ const messages = /* @__PURE__ */ i18n.define({
   messages: {
     en: {
       backgroundRun: "Background run",
+      /** The title of a chat nobody named yet; automatic naming replaces it after the first answer. */
+      newChat: "New chat",
       tableLinks: "Links",
       tableOpen: "Open",
       tableEmpty: "No matching rows.",
@@ -381,6 +383,7 @@ const messages = /* @__PURE__ */ i18n.define({
     },
     de: {
       backgroundRun: "Hintergrundlauf",
+      newChat: "Neuer Chat",
       tableLinks: "Links",
       tableOpen: "Öffnen",
       tableEmpty: "Keine passenden Zeilen.",
