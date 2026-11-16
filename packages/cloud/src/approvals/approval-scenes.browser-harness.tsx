@@ -404,7 +404,8 @@ const scenes: Record<string, () => JSX.Element> = {
       charts: [
         { kind: "stat", title: "Offene Aufgaben", value: 1366, subtitle: "Momentaufnahme", icon: "list-check" },
         { kind: "stat", title: "Diese Woche fällig", value: 3, subtitle: "15. – 21.11.", icon: "calendar-due" },
-        { kind: "stat", title: "Ohne Fälligkeit", value: 1363, subtitle: "Überwiegend Automation-Duplikate", icon: "calendar-off" },
+        // Names no icon, as Gustav's code runs often do: it takes the neutral sign like every key figure without one.
+        { kind: "stat", title: "Ohne Fälligkeit", value: 1363, subtitle: "Überwiegend Automation-Duplikate" },
       ],
     };
     const card = (id: string, args: Record<string, unknown>) => tool(id, "card", args, cardToolResult(args));
