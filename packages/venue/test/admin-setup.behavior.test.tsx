@@ -231,7 +231,9 @@ describe("Venue setup behavior", () => {
       expect(dom.root.textContent).toContain("The end must be after the start.");
       expect(saved).toEqual([]);
 
+      // A click leaves the field first, which commits the typed time.
       type(end!, "18:00");
+      end!.dispatchEvent(new Event("blur"));
       await flush();
       buttonNamed(dom.root, "Add 5 shifts").click();
       await flush();
