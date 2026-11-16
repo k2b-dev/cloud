@@ -676,8 +676,9 @@ readable principal subset leaves the provider. An existing hook remains the
 provider's batch implementation. A contained event-place Type without a hook
 gets the same derived reader, and its input has no `container`: Code binds a
 registration to the place, not to a container, so its event-place check asks
-the place itself, as event delivery does. Every other check of a contained Type
-still names its expected container, and a hook on a contained Type still
+the place itself, as event delivery does. That container-free question is
+reserved for Code's event-place check by convention; a check that names a
+container finds no derived reader, and a hook on a contained Type still
 requires one. Apps declare events and permission-aware readers through the
 generic platform contract.
 

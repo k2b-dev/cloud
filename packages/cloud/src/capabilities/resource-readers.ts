@@ -33,7 +33,8 @@ export const readResourcePrincipals = async (
     requestId?: string;
   } & (
     | { container?: { type: string; id: string }; eventPlace?: undefined }
-    /** Only Core's Code event-place check (`packages/core/src/code/event-access.ts`) sets this; see #3539 below. */
+    /** Reserved for Code's event-place check (`packages/core/src/code/event-access.ts`); see #3539 below and the
+     * `event-place-exception` repository check. */
     | { container?: never; eventPlace: true }
   ),
 ): Promise<ResourceReadersResult> => {
@@ -54,16 +55,18 @@ export const readResourcePrincipals = async (
   const query = entry.manifest.queries.find((query) => query.localId === `${localType}.readable` && query.appOnly);
   if (!model?.readable || !query) return { state: "not_configured", reason: "no_readable" };
   const input = ResourceReadableInputSchema.parse({ id: ref.id, container: options.container, principals: options.principals });
-  if (model.container && options.eventPlace) {
+  if (model.container) {
     // #3539: the one exception to the container rule. A Code event place is bound to the place, not to a container, so
-    // the check asks the place itself. Only the provider's derived event-place reader accepts that: it runs the type's
-    // ordinary reader as each principal, as event delivery already authorizes every resource event
-    // (packages/cloud/src/services/app-events/deliver.ts:172). An explicit hook expects a container and stays unasked.
+    // the check asks the place itself. Only the provider's derived event-place reader answers that: its input has no
+    // container, and it runs the type's ordinary reader as each principal, as event delivery already authorizes every
+    // resource event (packages/cloud/src/services/app-events/deliver.ts:172). An explicit hook expects a container and
+    // answers every other caller; a derived reader cannot check a container, so such a caller finds no reader.
     const properties = query.inputSchema.properties;
-    if (typeof properties !== "object" || properties === null || "container" in properties)
-      return { state: "not_configured", reason: "no_readable" };
-  } else if (model.container && input.container?.type !== `${appId}.${model.container}`)
-    throw new Error("Reader check requires a reference to the declared container type");
+    const takesContainer = typeof properties === "object" && properties !== null && "container" in properties;
+    if (takesContainer === Boolean(options.eventPlace)) return { state: "not_configured", reason: "no_readable" };
+    if (!options.eventPlace && input.container?.type !== `${appId}.${model.container}`)
+      throw new Error("Reader check requires a reference to the declared container type");
+  }
   const result = await invokeCapabilityWithDataSchema(
     { appId, capabilityId: `${localType}.readable`, kind: "query", input },
     ResourceReadableDataSchema,

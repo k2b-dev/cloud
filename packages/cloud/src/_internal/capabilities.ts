@@ -992,7 +992,7 @@ export const compileCapabilities = (
     const queryId = `${localId}.readable`;
     if (Object.hasOwn(definitions.queries ?? {}, queryId)) throw new Error(`Generated Query ${queryId} collides with a declared Query`);
     const container = type.container;
-    // A derived reader for a contained event place checks the place itself and answers only Core's Code event-place
+    // A derived reader for a contained event place checks the place itself, a question reserved for Code's event-place
     // check (#3539), so its input has no container; a check that names one is refused instead of answered without it.
     const input = !container
       ? ResourceReadableInputSchema

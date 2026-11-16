@@ -169,11 +169,15 @@ describe("the Code event-place exception (#3539)", () => {
     });
 
   test("only the event-place check asks a contained place without a container; every other caller still fails", async () => {
-    lookup.mockResolvedValue({ ...entry, manifest: contained() });
+    lookup.mockResolvedValue({ ...entry, manifest: contained({ readable: () => [] }) });
     await expect(readResourcePrincipals(input)).rejects.toThrow("requires a reference to the declared container type");
     await expect(readResourcePrincipals({ ...input, container: { type: "inventory.other", id: "collection-1" } })).rejects.toThrow(
       "requires a reference to the declared container type",
     );
+    // A derived reader cannot check a container: callers that name one, even the right one, find no reader as before.
+    lookup.mockResolvedValue({ ...entry, manifest: contained() });
+    for (const container of [undefined, { type: "inventory.other", id: "c" }, { type: "inventory.collection", id: "collection-1" }])
+      expect(await readResourcePrincipals({ ...input, container })).toEqual({ state: "not_configured", reason: "no_readable" });
     expect(invoke).not.toHaveBeenCalled();
     expect(await readResourcePrincipals({ ...input, eventPlace: true })).toEqual({ state: "checked", readable: [] });
     expect(invoke).toHaveBeenCalledWith(
@@ -181,6 +185,13 @@ describe("the Code event-place exception (#3539)", () => {
       expect.anything(),
       expect.objectContaining({ workload: { appId: "consumer" } }),
     );
+  });
+
+  test("a hook on a contained type keeps answering callers with the right container", async () => {
+    lookup.mockResolvedValue({ ...entry, manifest: contained({ readable: () => [] }) });
+    const container = { type: "inventory.collection", id: "collection-1" };
+    expect(await readResourcePrincipals({ ...input, container })).toEqual({ state: "checked", readable: [] });
+    expect(invoke.mock.calls[0]?.[0].input).toEqual({ id: "item-1", container, principals: [principal] });
   });
 
   test("an explicit hook that expects a container, a missing reader, or an unknown type refuses the event-place check", async () => {
@@ -198,20 +209,5 @@ describe("the Code event-place exception (#3539)", () => {
     expect(invoke).not.toHaveBeenCalled();
     invoke.mockResolvedValue({ ok: false, error: { code: "APP_UNAVAILABLE", message: "Try later", status: 503 } });
     await expect(readResourcePrincipals({ ...input, eventPlace: true })).rejects.toThrow("APP_UNAVAILABLE");
-  });
-
-  test("only Core's Code event-place check sets the exception", () => {
-    const root = new URL("../../../../", import.meta.url).pathname;
-    const search = Bun.spawnSync(
-      ["git", "grep", "--untracked", "-l", "-E", "eventPlace: *true", "--", ":(glob)packages/*/src/**", ":!*.test.ts"],
-      { cwd: root },
-    );
-    // The declaring module names the option in its type; any other file setting it widens the exception.
-    const callers = search.stdout
-      .toString()
-      .trim()
-      .split("\n")
-      .filter((file) => file && file !== "packages/cloud/src/capabilities/resource-readers.ts");
-    expect(callers).toEqual(["packages/core/src/code/event-access.ts"]);
   });
 });
