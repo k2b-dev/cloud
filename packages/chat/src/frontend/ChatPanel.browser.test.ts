@@ -292,6 +292,43 @@ for (const width of [1440, 390]) {
   }, 30_000);
 }
 
+test("Chat opens the discussion of a place shared only after the panel loaded, as after Allow", async () => {
+  fixture.backend.reset();
+  const shelf = fixture.backend.addChat({ members: [viewer, nora], name: "Lager Ost", count: 1, end: fixture.backend.now() });
+  fixture.backend.setSystem(shelf, { type: "inventory.collection", id: "Shelf-7" });
+  const context = await newContext({ reducedMotion: "reduce" });
+  const page = await context.newPage();
+  page.setDefaultTimeout(8_000);
+  try {
+    // Without consent yet, the panel loads without a place and shows its start.
+    await page.goto(fixture.url + "app/fixture/board/Shelf-7");
+    await page.waitForFunction(() => document.documentElement.dataset.fixtureReady === "true");
+    await page.locator("#open-chat").click();
+    const panel = page.frameLocator("[data-cloud-panel-frame]");
+    await panel.locator('html[data-fixture-ready="true"]').waitFor();
+    const frame = () => page.frames().find((candidate) => candidate.url().includes("/app/chat/panel"))!;
+    expect(new URL(frame().url()).pathname).toBe("/app/chat/panel");
+    // The shell then shares the place by message, as it does once the reader allowed it.
+    await page.evaluate(() => {
+      document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")!.contentWindow!.postMessage(
+        {
+          type: "cloud.panel.context",
+          v: 1,
+          context: { v: 1, seq: 1, pageId: crypto.randomUUID(), app: "fixture", scope: { type: "inventory.collection", id: "Shelf-7" } },
+        },
+        location.origin,
+      );
+    });
+    await shows(panel.locator(".chat-conversation__header"), "Lager Ost").waitFor();
+    await page.waitForFunction(
+      (path) => document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentWindow?.location.pathname === path,
+      `/app/chat/panel/c/${shelf}`,
+    );
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
 test("Chat follows only the latest host place when earlier places answer late", async () => {
   fixture.backend.reset();
   fixture.allowChatContext(true);
