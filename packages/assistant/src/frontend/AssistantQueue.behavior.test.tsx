@@ -74,7 +74,8 @@ const mount = (overrides: Partial<AssistantQueueProps> = {}, locale = "de") => {
   );
   const rows = () => Array.from(dom.root.querySelectorAll<HTMLElement>(".assistant-queue__row"));
   const labels = (row: HTMLElement) =>
-    Array.from(row.querySelectorAll<HTMLElement>(".assistant-queue__actions > *")).map((element) =>
+    // Tooltips are closed popovers beside their buttons; they take no place.
+    Array.from(row.querySelectorAll<HTMLElement>(".assistant-queue__actions > :not([role=tooltip])")).map((element) =>
       element.matches("button") ? element.getAttribute("aria-label") : element.getAttribute("role") === "status" ? "ring" : "slot",
     );
   const toggle = () => dom.root.querySelector<HTMLButtonElement>("[aria-controls]")!;
@@ -112,7 +113,10 @@ test("every button is named by aria-label and none shows a word such as Send now
       expect(button.getAttribute("aria-label")?.length).toBeGreaterThan(0);
       expect(button.textContent?.trim()).toBe("");
     }
-    expect(dom.root.textContent).not.toContain(locale === "de" ? "Jetzt senden" : "Send now");
+    // On screen, without the closed tooltip popovers.
+    const shown = dom.root.cloneNode(true) as HTMLElement;
+    for (const tooltip of Array.from(shown.querySelectorAll('[role="tooltip"]'))) tooltip.remove();
+    expect(shown.textContent).not.toContain(locale === "de" ? "Jetzt senden" : "Send now");
   }
 });
 

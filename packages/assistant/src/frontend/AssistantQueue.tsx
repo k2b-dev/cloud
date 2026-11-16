@@ -173,9 +173,8 @@ export default function AssistantQueue(props: AssistantQueueProps) {
           </Show>
         }
       >
-        <i class="ti ti-hourglass" aria-hidden="true" />
-        <span>{t().queued}</span>
-        <span aria-hidden="true">·</span>
+        {/* Spaces between the parts keep the name "Queued · n"; the flex row does not draw them. */}
+        <i class="ti ti-hourglass" aria-hidden="true" /> <span>{t().queued}</span> <span aria-hidden="true">·</span>{" "}
         <span class="assistant-queue__count">{props.entries.length}</span>
       </Show>
       <i class="ti ti-chevron-up assistant-queue__chevron" aria-hidden="true" />
