@@ -951,7 +951,10 @@ command list and its search field instead; offer file selection as an
   The application owns the list, decides where the message goes (all quotes
   of one message should come from one place), sends the passages with it, and
   clears the list after sending. A message shows them through `MessageRow`'s
-  `quotes`.
+  `quotes`. The rows load with a draft's first quote and scroll in their own
+  area above three rows. Until they show, the draft cannot be sent; if they
+  cannot load, every quote's `onRemove` runs and `onError` is called, so no
+  quote goes out unseen and the text stays.
 - **Hint line:** one line of fixed height above the field, always reserved,
   so a hint never moves the field. Pass `hint` for short application notes,
   such as what people without access see after a reference was attached.

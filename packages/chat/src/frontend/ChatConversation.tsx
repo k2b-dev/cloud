@@ -860,6 +860,8 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
             draftKey={props.draftKey ?? props.chatId}
             reply={props.reply}
             quotes={props.quotes}
+            // Such as quotes that could not be shown and left the draft; the text stays in the field.
+            onError={() => toast.error(t().composerFailed)}
             focusToken={quoted()}
             formatting
             emoji={{ onOpen: setEmojiTarget, onPick: remember }}

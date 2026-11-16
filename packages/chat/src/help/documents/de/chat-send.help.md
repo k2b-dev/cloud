@@ -79,12 +79,13 @@ Die Liste zeigt die Mitglieder des Chats und die Personen, die darin geschrieben
 :::
 
 :::reference
-- Um eine ganze Nachricht zu zitieren, öffne ihr Menü und wähle **Zitieren**. Auf dem Smartphone hältst du die Nachricht gedrückt, um ihr Menü zu öffnen.
+- Um eine ganze Nachricht zu zitieren, öffne ihr Menü und wähle **Zitieren**. Auf dem Smartphone hältst du die Nachricht gedrückt, um ihr Menü zu öffnen. Ein Zitat umfasst höchstens 2.000 Zeichen. Von einer längeren Nachricht wird nur der Anfang zitiert.
 - Mit der Tastatur drückst du nach dem Markieren **Tab** und dann **Enter**. **Escape** schließt **Zitieren**.
 - Du kannst mehrere Stellen in einer Antwort zitieren. Mit **Zitat entfernen** nimmst du eine wieder heraus.
 - Wähle ein Zitat, um zu seiner Nachricht zu springen. Dort sind die zitierten Wörter kurz hervorgehoben.
 - Zitate müssen aus einem Thread stammen. Deine Antwort geht in diesen Thread. Zitierst du aus einem anderen Thread, werden die bisherigen Zitate entfernt.
-- Ein Zitat behält die Wörter, wie sie waren. Löscht jemand die Nachricht, zeigt das Zitat **Nachricht gelöscht**.
+- Ein Zitat behält die Wörter, wie sie waren. Löscht jemand die Nachricht oder ändert sie so, dass die Wörter fehlen, zeigt das Zitat **Stelle nicht mehr vorhanden**.
+- Ändert sich die zitierte Nachricht, bevor deine Antwort gesendet ist, sendet Chat sie nicht. Ist das Eingabefeld leer, kommen Text und Zitate dorthin zurück. Sonst zeigt die Antwort **Nicht gesendet** mit **Verwerfen**.
 :::
 
 ## Cloud-Element teilen {icon="share"}

@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { err, fail, ok, type Result } from "@k2b/cloud/server";
 import { toPgTextArray } from "@k2b/cloud/services";
+import { decodeHTML } from "entities";
 import type { z } from "zod";
 import { wakeChatEvents } from "../app-events";
 import { quoteExcerpt } from "../system-messages";
@@ -9,6 +10,7 @@ import {
   CHANGES_PAGE_SIZE,
   ChangesQuerySchema,
   type ChatSnapshotSchema,
+  MESSAGE_MAX_CODE_POINTS,
   MESSAGE_PAGE_SIZE,
   MessageIdSchema,
   MessageQuerySchema,
@@ -107,8 +109,14 @@ const send = async (input: Input & { input: unknown; replayHash?: string }): Pro
     if (!sourceThreads.size && !(await canReadThread(db, input, threadId))) return threadNotFound(input);
     // Only a reader of the thread learns whether a passage occurs in its message. The stored passage is the
     // message's own text, so its words and spaces are the author's, not the sender's.
-    const excerpts = quoted.map(({ quote, row }) => quoteExcerpt(row!.body_md ?? "", quote.text));
-    if (excerpts.includes(null)) return fail(err.badInput(catalog(input).quoteNotFound));
+    const found = quoted.map(({ quote, row }) => ({ row: row!, text: quoteExcerpt(row!.body_md ?? "", quote.text, decodeHTML) }));
+    if (found.some(({ text }) => text === null)) return fail(err.badInput(catalog(input).quoteNotFound));
+    // The stored passages, once each, within one message's length: what the limits promise is what is stored.
+    const excerpts = found.filter(
+      ({ row, text }, index) => found.findIndex((other) => other.row.short_id === row.short_id && other.text === text) === index,
+    );
+    if (excerpts.reduce((sum, { text }) => sum + [...text!].length, 0) > MESSAGE_MAX_CODE_POINTS)
+      return fail(err.badInput(catalog(input).invalidInput));
     if (threadId) {
       const [thread] = await db<
         { archived_at: Date | null }[]
@@ -136,10 +144,10 @@ const send = async (input: Input & { input: unknown; replayHash?: string }): Pro
       attachments: data.attachments,
       threadId: threadId ?? undefined,
       replyToSeq,
-      quotes: quoted.map(({ row }, index) => ({
-        id: row!.short_id,
-        author: { type: row!.author_type, id: row!.author_id, name: row!.author_name },
-        text: excerpts[index]!,
+      quotes: excerpts.map(({ row, text }) => ({
+        id: row.short_id,
+        author: { type: row.author_type, id: row.author_id, name: row.author_name },
+        text: text!,
       })),
     });
     return ok({ message: (await messageViews(db, [row], input.conversationId, input.accessSubject, input.locale))[0]!, created: true });

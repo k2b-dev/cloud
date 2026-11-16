@@ -435,11 +435,13 @@ the request returns 400. Chat stores that passage of the message with the
 message's own spacing, not the sent `text`.
 
 Message responses and live message events include `quotes`: each entry is
-`{ id, author, text }`, a snapshot taken when the message was sent. Editing the
-quoted message keeps the snapshot. Deleting it turns its entries into
-`{ deleted: true }` in the same transaction. Deleting a quoting message removes
-its quotes with its text.
-Messages from before the upgrade return an empty list.
+`{ id, author, text }`, a snapshot taken when the message was sent. An edit of the
+quoted message keeps the snapshot while the new text still holds its words.
+An edit that takes them away, or deletion, turns its entries into
+`{ deleted: true }` in the same transaction. Each quoting message then gets a
+new `rev` of its own, so clients that follow `/changes` drop the old words.
+Deleting a quoting message removes its quotes with its text. Messages from
+before the upgrade return an empty list.
 
 ## Chat message attachments after the upgrade
 

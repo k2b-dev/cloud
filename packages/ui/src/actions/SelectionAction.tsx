@@ -70,14 +70,29 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
   const current = (): Selected | null => {
     const selection = document.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
-    const range = selection.getRangeAt(0);
+    let range = selection.getRangeAt(0);
     const part = (node: Node) => {
       if (!props.root.contains(node)) return null;
       return props.within ? (props.within(node) ?? null) : props.root;
     };
     const element = part(range.startContainer);
-    if (!element || part(range.endContainer) !== element) return null;
-    const text = selectionActionText(selection.toString());
+    if (!element) return null;
+    let text = selection.toString();
+    if (part(range.endContainer) !== element) {
+      // A triple click selects a paragraph up to the start of the next block. When nothing but whitespace lies past the
+      // part, the selection ends with the part; a selection into another part offers nothing.
+      const end = document.createRange();
+      end.selectNodeContents(element);
+      if (range.compareBoundaryPoints(Range.END_TO_END, end) < 0) return null;
+      const rest = document.createRange();
+      rest.setStart(end.endContainer, end.endOffset);
+      rest.setEnd(range.endContainer, range.endOffset);
+      if (rest.toString().trim()) return null;
+      range = range.cloneRange();
+      range.setEnd(end.endContainer, end.endOffset);
+      text = range.toString();
+    }
+    text = selectionActionText(text);
     return text ? { range, element, text } : null;
   };
 
@@ -146,6 +161,9 @@ export function SelectionAction(props: SelectionActionProps): JSX.Element {
       // field elsewhere keeps its own Tab and Escape.
       const active = document.activeElement;
       if (!inside && active && active !== document.body && active !== document.documentElement && !props.root.contains(active)) return;
+      // A field, a dialog or an open menu inside the root keeps its keys too.
+      if (!inside && active?.closest("input, textarea, select, [contenteditable]:not([contenteditable='false']), dialog, [popover]"))
+        return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();

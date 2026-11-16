@@ -52,7 +52,7 @@ import {
   type SidebarPreferencesSchema,
   type ThreadListSchema,
 } from "../service/contracts";
-import { renderSystemMessage } from "../system-messages";
+import { messagePlainText, renderSystemMessage } from "../system-messages";
 
 import ChatConversation, { type ChatFeedItem } from "./ChatConversation";
 import ChatDeviceNotice from "./ChatDeviceNotice";
@@ -74,7 +74,7 @@ import { ChatDraftConflict, chatDrafts } from "./chat-drafts";
 import { messageTime, sameDay } from "./chat-format";
 import type { DraftQuote } from "./chat-quote-selection";
 import { createChatSearch } from "./chat-search-state";
-import { createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
+import { type ChatSend, createAttachmentUpload, createChatSends, createChatSendsApi } from "./chat-sends";
 import { ChatRequestError, createChatStore, type OpenChat } from "./chat-store";
 import { chatTitle } from "./chat-title";
 import type { DeviceNotice } from "./device-notice";
@@ -695,7 +695,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const quotesOf = (chatId: string, message: Message) =>
     message.quotes?.map((quote) =>
       "deleted" in quote
-        ? { author: "", text: t().quotedDeleted }
+        ? { author: "", text: t().quoteGone }
         : {
             author: quote.author.id === props.viewerId ? t().you : quote.author.name,
             text: quote.text,
@@ -1001,7 +1001,10 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
             at: send.message?.createdAt ?? send.createdAt,
             own: true,
             status,
-            ...(status === "failed" ? { retry: () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) } : {}),
+            // A send whose quotes were refused cannot succeed again: it offers only Discard.
+            ...(status === "failed"
+              ? { retry: send.refused ? undefined : () => outbox?.retry(send.clientId), discard: () => outbox?.forget(send.clientId) }
+              : {}),
           }),
         );
       }
@@ -1012,7 +1015,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
   const waiting = () => {
     const current = openChat();
     sendsVersion();
-    return current ? outbox?.sends(current.id).find((send) => send.status !== "sent")?.status === "failed" : false;
+    return current ? outbox?.sends(current.id).find((send) => send.status !== "sent" && !send.refused)?.status === "failed" : false;
   };
   const focusKey = () => {
     const id = route().messageId;
@@ -2011,6 +2014,34 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       if (!next.keepReply) setReply(null);
       setQuotes(next.quotes);
     });
+  // A quote whose message was deleted leaves the draft.
+  createEffect(() => {
+    const gone = new Set(openChat()?.messages.flatMap((message) => (message.deletedAt ? [message.id] : [])) ?? []);
+    if (quotes().some((entry) => gone.has(entry.id))) setQuotes((list) => list.filter((entry) => !gone.has(entry.id)));
+  });
+  /** The draft each send with quotes came from, so a refused one goes back where it was written. */
+  const sendDrafts = new Map<string, string>();
+  /**
+   * A send whose quotes the server refused stays as "Not sent" with only Discard, so nothing is lost and nothing retries
+   * in vain. While its draft is open and empty, it goes back into the field instead: its text and the quotes whose
+   * message is still there with their words.
+   */
+  const giveBack = (send: ChatSend) => {
+    const id = sendDrafts.get(send.clientId);
+    sendDrafts.delete(send.clientId);
+    toast(t().quotedSendRejected, { iconClass: "ti ti-quote" });
+    if (id === undefined || id !== draftId(route()) || draft().trim() || quotes().length) return;
+    const loaded = openChat()?.id === send.conversationId ? openChat()!.messages : [];
+    const words = (text: string) => text.replace(/\s+/gu, "");
+    const valid = send.quotes.flatMap((quote) => {
+      const original = loaded.find((message) => message.id === quote.id);
+      if (original && (original.deletedAt || !words(messagePlainText(original.body ?? "")).includes(words(quote.text)))) return [];
+      return [{ key: crypto.randomUUID(), ...quote, thread: send.thread }];
+    });
+    changeDraft(send.body);
+    setQuotes(valid);
+    outbox?.forget(send.clientId);
+  };
   const answer = (item: ChatFeedItem) => {
     if (quotes()[0] && quotes()[0]!.thread !== (item.thread ?? "general")) {
       toast(t().quotesReplaced, { iconClass: "ti ti-info-circle" });
@@ -2049,7 +2080,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
       const answered = reply();
       const quoted = quotes();
       const thread = answered ? (answered.thread ?? "general") : (quoted[0]?.thread ?? (current.view === "all" ? "general" : current.view));
-      outbox.send(current.id, body, {
+      const sent = outbox.send(current.id, body, {
         thread,
         refs,
         attachments,
@@ -2057,6 +2088,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
         replyTo: answered?.messageId ? { id: answered.messageId, author: answered.authorName, text: answered.body } : null,
         quotes: quoted.map(({ id, author, text }) => ({ id, author, text })),
       });
+      if (id !== null && quoted.length) sendDrafts.set(sent.clientId, id);
       setReply(null);
       setQuotes([]);
       feed?.scrollToEnd();
@@ -2151,7 +2183,7 @@ export default function ChatWorkspace(props: ChatWorkspaceProps): JSX.Element {
     onCleanup(live.subscribe(sync));
     sync();
 
-    const box = createChatSends({ post: createChatSendsApi() });
+    const box = createChatSends({ post: createChatSendsApi(), onRejected: giveBack });
     outbox = box;
     onCleanup(onPanelBeforeLeave(() => !box.unsent() && unsavedDrafts.size === 0 && !dialogCore.isOpen() && pendingSends === 0));
     setComposerReady(true);

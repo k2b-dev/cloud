@@ -162,7 +162,7 @@ test("Escape closes the pill without leaving the chat, and a deleted original le
     await page.getByRole("menuitem", { name: "Delete message", exact: true }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete message", exact: true }).click();
     await page.getByRole("dialog").waitFor({ state: "hidden" });
-    await sent.locator(".k2b-message-quote", { hasText: "Message deleted" }).waitFor();
+    await sent.locator(".k2b-message-quote", { hasText: "Passage no longer available" }).waitFor();
     expect(await sent.locator(".k2b-message-quote").innerText()).not.toContain("slides");
     expect(errors).toEqual([]);
   } finally {
@@ -226,6 +226,64 @@ test("Quote in the menu takes the message's text without its code bar", async ()
     await page.keyboard.press("Enter");
     await page.locator(".k2b-message-row[data-status='sent']", { hasText: "Done." }).waitFor();
     expect(harness.posted.at(-1)?.quotes?.[0]?.text).toBe("Run this first: bun install");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
+test("a send whose quote the server refuses never blocks the next send, and comes back into an empty field", async () => {
+  const chat = seed();
+  const { page, errors } = await load(desktop, chat);
+  try {
+    harness.refuseQuotes();
+    const held = harness.holdSends();
+    await select(page, passage);
+    await pill(page).getByRole("button", { name: "Quote", exact: true }).click();
+    await page.locator(".k2b-chat-composer__quote").waitFor();
+    await page.keyboard.type("This one is refused.");
+    await page.keyboard.press("Enter");
+    // The next message waits behind the first while the server still holds its answer.
+    await page.keyboard.type("This one arrives.");
+    await page.keyboard.press("Enter");
+    held.answer();
+    await page.locator(".k2b-message-row[data-status='sent']", { hasText: "This one arrives." }).waitFor();
+    await page.locator(".k2b-toast", { hasText: "The quoted message was changed or deleted" }).waitFor();
+    // The field was empty, so text and quote are back in it, and nothing is left as "Not sent".
+    await page.waitForFunction(
+      () => document.querySelector<HTMLTextAreaElement>(".k2b-chat-composer textarea")?.value === "This one is refused.",
+    );
+    expect(await page.locator(".k2b-chat-composer__quote").innerText()).toContain(passage);
+    expect(await page.locator(".k2b-message-row", { hasText: "This one is refused." }).count()).toBe(0);
+    expect(await page.locator(".k2b-message-row[data-status='failed']").count()).toBe(0);
+    expect(harness.posted.map((sent) => sent.body)).toEqual(["This one is refused.", "This one arrives."]);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.context().close();
+  }
+}, 30_000);
+
+test("a refused send stays as Not sent with only Discard while the person already writes the next message", async () => {
+  const chat = seed();
+  const { page, errors } = await load(desktop, chat);
+  try {
+    harness.refuseQuotes();
+    const held = harness.holdSends();
+    await select(page, passage);
+    await pill(page).getByRole("button", { name: "Quote", exact: true }).click();
+    await page.locator(".k2b-chat-composer__quote").waitFor();
+    await page.keyboard.type("This one is refused.");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("Still writing");
+    held.answer();
+    const refused = page.locator(".k2b-message-row[data-status='failed']", { hasText: "This one is refused." });
+    await refused.waitFor();
+    expect(await refused.getByRole("button", { name: "Try again" }).count()).toBe(0);
+    expect(await page.evaluate(() => document.querySelector<HTMLTextAreaElement>(".k2b-chat-composer textarea")?.value)).toBe(
+      "Still writing",
+    );
+    await refused.getByRole("button", { name: "Discard" }).click();
+    await refused.waitFor({ state: "detached" });
     expect(errors).toEqual([]);
   } finally {
     await page.context().close();

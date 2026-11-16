@@ -1,8 +1,10 @@
 import { type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useQuoteMessages } from "./quote-messages";
 
 /** A quoted passage as a message and the composer show it: icon, at most two lines, and its author. */
-export function MessageQuote(props: { quote: { author: string; text: string; onSelect?: () => void }; label: string }): JSX.Element {
+export function MessageQuote(props: { quote: { author: string; text: string; onSelect?: () => void } }): JSX.Element {
+  const t = useQuoteMessages();
   return (
     <Dynamic
       component={props.quote.onSelect ? "button" : "div"}
@@ -14,7 +16,7 @@ export function MessageQuote(props: { quote: { author: string; text: string; onS
       <span class="k2b-message-quote__content">
         <Show when={props.quote.author}>
           <span class="k2b-sr-only">
-            {props.label} {props.quote.author}:{" "}
+            {t().quoteFrom} {props.quote.author}:{" "}
           </span>
         </Show>
         <span class="k2b-message-quote__text">{props.quote.text}</span>

@@ -1266,6 +1266,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       !busy() &&
       !props.submitDisabled &&
       hasDraft() &&
+      // Quotes go out only once the person can see them.
+      !(props.quotes?.length && !quotesView()) &&
       !(props.dictation && liveDictation.active()) &&
       !(running() && runningSubmitIntent() === "steer" && mentions().length),
   );
@@ -1359,7 +1361,14 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
   const [quotesView, setQuotesView] = createSignal<typeof import("./ChatComposerQuotes")["default"]>();
   createEffect(() => {
     if (!props.quotes?.length || quotesView()) return;
-    void import("./ChatComposerQuotes").then((module) => setQuotesView(() => module.default));
+    // Quotes that cannot be shown are not sent unseen: they leave the draft, and `onError` says why. The text stays.
+    void import("./ChatComposerQuotes").then(
+      (module) => setQuotesView(() => module.default),
+      (error) => {
+        for (const quote of props.quotes ?? []) quote.onRemove();
+        props.onError?.(error);
+      },
+    );
   });
 
   onMount(() => {
@@ -2861,14 +2870,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           )}
         </Show>
         <Show when={props.quotes?.length ? quotesView() : undefined}>
-          {(view) => (
-            <Dynamic
-              component={view()}
-              quotes={props.quotes ?? []}
-              label={chatMessages().quoteFrom}
-              removeLabel={chatMessages().removeQuote}
-            />
-          )}
+          {(view) => <Dynamic component={view()} quotes={props.quotes ?? []} />}
         </Show>
         <Show when={attachments().length > 0}>
           <div class="k2b-chat-composer__attachments" role="list" aria-label={chatMessages().attachments} tabIndex={0}>
