@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { DiscussionContainersDataSchema, DiscussionContainersInputSchema } from "@k2b/cloud/contracts";
+import { capabilityPage, DiscussionContainersDataSchema, DiscussionContainersInputSchema } from "@k2b/cloud/contracts";
 import { FilegateError } from "@k2b/filegate";
 import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
@@ -43,7 +43,7 @@ export const discussionQueries = {
         const base = cursor ? bases.find((base) => base.id === cursor.base) : bases[0];
         if (!base) {
           if (cursor) return fail(err.badInput(errorMessage("invalid_cursor", context.locale)));
-          return ok({ data: { items: [], next: null } });
+          return ok({ data: { items: [], next: null }, page: capabilityPage(null) });
         }
         context.signal?.throwIfAborted();
         const page = await filesService.discussionFolderPage(call, { baseId: base.id, after: cursor?.after, signal: context.signal });
@@ -69,7 +69,7 @@ export const discussionQueries = {
                 : null;
         const next = position ? Buffer.from(JSON.stringify({ v: 1, ...position, query: queryKey })).toString("base64url") : null;
         if (next && next.length > 2048) throw new FilesError("unavailable", 503);
-        return ok({ data: { items, next } });
+        return ok({ data: { items, next }, page: capabilityPage(next) });
       } catch (error) {
         if (!(error instanceof FilesError || error instanceof FilegateError)) throw error;
         const { code, status } = apiError(error);
