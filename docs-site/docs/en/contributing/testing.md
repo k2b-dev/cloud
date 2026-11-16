@@ -1237,8 +1237,8 @@ browser tests, the documentation checks, and the image boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in nine shards, WebKit tests in nineteen, and integration tests in
-five. Each mode uses its own measured seconds per suite in
+Unit tests run in twelve shards, WebKit tests in nineteen, and integration tests
+in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
 measurements; Chromium runs inside the unit suites. Equal weights use the suite
@@ -1277,7 +1277,10 @@ Leave measured room below the target for new files. A recommendation that only
 just fits can fail the runner guard as soon as another browser file is added.
 If one suite alone exceeds that target, split the suite: `test:part:<name>`
 scripts in the package become the suites `<package> <name>` in place of its `test`
-script, and together they must run the same files. Commit the
+script, and together they must run the same files. An integration suite that
+a package runs through its own script splits with `test:integration:list`,
+which turns each listed file into a suite of its own; the runner test fails
+when a single integration suite is weighted above 10 minutes. Commit the
 refreshed weights and adjust the matrix together; keep the 20-minute execution
 budget unchanged. Refresh after browser suites grow or timings drift, even
 when the jobs still pass. An outdated table can balance predicted times while

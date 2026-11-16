@@ -10,6 +10,7 @@ import {
   planShards,
   runTestCommand,
   selectSuites,
+  shardTargetMinutes,
   shardTimeNotice,
   suiteWeight,
   type TestSuite,
@@ -465,7 +466,8 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     if (mode === "integration") {
       // A suite above two thirds of the target leaves a shard no room to balance: Mail as one suite
       // was weighted 13.6 min, took up to 19 min and stopped its shard at the budget (#2055).
-      expect(all.filter((suite) => suiteWeight(suite.name, weights) > (15 * 60 * 2) / 3).map((suite) => suite.name)).toEqual([]);
+      const heavy = all.filter((suite) => suiteWeight(suite.name, weights) > ((shardTargetMinutes() * 2) / 3) * 60);
+      expect(heavy.map((suite) => suite.name)).toEqual([]);
     }
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
