@@ -18,6 +18,7 @@ const fakeLive = resolve(import.meta.dir, "AssistantGustav.browser-live.ts");
 const entrySource = `
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
+import { default as RevisionDecision, AssistantCodeReviewStartLine as RevisionStart } from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeDecisionLine.tsx"))};
 import AssistantCodeVersionCard from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeVersionCard.tsx"))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
 import AssistantCodeDecisionLine from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeDecisionLine.tsx"))};
@@ -30,7 +31,13 @@ window.harnessLive = live;
 render(
   () => (
     <LocaleProvider locale={window.harness.locale}>
-      {window.harness.card ? (
+      {window.harness.revising ? (
+        // Requested changes that Gustav revises by himself: the decision line and, below it, the start of his turn.
+        <div style="width:100%;padding:1rem;display:grid;align-content:start;gap:0.5rem">
+          <RevisionDecision decision={window.harness.revising} at={window.harness.revisingAt} timeZone="Europe/Berlin" automatic />
+          <RevisionStart number={window.harness.revising.number} />
+        </div>
+      ) : window.harness.card ? (
         <div style="width:100%;padding:1rem">
           <AssistantLiveProvider value={live}>
             <AssistantCodeVersionCard
@@ -221,6 +228,8 @@ type Scenario = {
   waiting?: boolean;
   /** One card of My apps has a title and a schedule longer than one line. */
   longNames?: boolean;
+  /** Requested changes that Gustav revises by himself: the decision line and the start line below it. */
+  revising?: boolean;
 };
 const approval = {
   id: "33333333-3333-4333-8333-333333333333",
@@ -469,6 +478,19 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
               },
               // The line's own time comes from the fixture clock, like the page's pinned Date.
               decisionAt: at(1),
+            }
+          : {}),
+        ...(scenario.revising
+          ? {
+              revising: {
+                codeId: "c_info01",
+                versionId: cardVersionId,
+                number: 1,
+                outcome: "changes_requested",
+                person: { id: "u-jana", name: "Jana Probe" },
+                anchor: `code-version-${cardVersionId}`,
+              },
+              revisingAt: at(1),
             }
           : {}),
       };
@@ -907,6 +929,28 @@ describe("Gustav", () => {
         }
       }
   }, 240_000);
+
+  test("requested changes that Gustav revises by himself say so once, in the start line below the decision", async () => {
+    for (const view of [desktop, phone]) {
+      const h = await open(view, { revising: true }, { path: "/app/assistant/panel" });
+      try {
+        const lines = h.page.locator(".assistant-code-decision");
+        await lines.nth(1).waitFor();
+        await settled(h.page);
+        const texts = (await lines.allInnerTexts()).map((line) => line.replace(/\s+/g, " ").trim());
+        expect(texts).toHaveLength(2);
+        expect(texts[0]).toContain("Jana Probe");
+        expect(texts[1]).toBe("Gustav überarbeitet Version 1 jetzt, einmal von selbst.");
+        // N3: the decision line carries no second mark that says the same.
+        expect(texts.join(" ").match(/von selbst/g)).toHaveLength(1);
+        expect(await lines.first().getByRole("button").count()).toBe(0);
+        expect(h.errors).toEqual([]);
+        await shot(h.page, `f-ueberarbeitet-selbst-${view.name}-light`);
+      } finally {
+        await h.close();
+      }
+    }
+  }, 120_000);
 
   test("the event line at the end jumps up to the card and puts the focus on switching on", async () => {
     for (const view of [desktop, phone]) {
