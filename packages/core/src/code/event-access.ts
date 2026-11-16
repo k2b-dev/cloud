@@ -47,7 +47,8 @@ export async function canReadCodeEventPlace(
       throw error;
     }
   }
-  const result = await readResourcePrincipals({ ref: place, principals: [principal], signal });
+  // The registration is bound to the place, not a container: ask the place itself as the executing account (#3539).
+  const result = await readResourcePrincipals({ ref: place, principals: [principal], signal, eventPlace: true });
   if (result.state === "not_configured" && result.reason === "no_readable")
     throw new CodeDataError("BAD_INPUT", "This event place has no supported read-access check.");
   if (result.state !== "checked")
