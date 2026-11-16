@@ -21,6 +21,11 @@ export type CommandItem = {
   group?: string;
   /** One quiet line of what the entry does, after the label on the same line, such as "Preis aus dem Text prüfen". */
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * `description` stays the text that search and screen readers use, so set it too.
+   */
+  descriptionVisual?: () => JSX.Element;
   /** Quiet text at the end of the row, such as what a person can type: `/telefonat`. It is searched, too. */
   hint?: string;
   /** Tabler icon class, such as `ti ti-phone`. */

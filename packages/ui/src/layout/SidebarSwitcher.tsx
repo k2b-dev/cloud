@@ -3,6 +3,7 @@ import { createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, Sho
 import { isServer } from "solid-js/web";
 import { dropdownPosition } from "../actions/Dropdown";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
+import { OptionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
 import { SidebarRailHint } from "./SidebarRailHint";
 
@@ -12,6 +13,11 @@ export type AppWorkspaceSwitcherOption = {
   label: string;
   /** One secondary fact, such as a mailbox's address. */
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * `description` stays the text that search and screen readers use, so set it too.
+   */
+  descriptionVisual?: () => JSX.Element;
   /** Tabler icon class; without it the row takes the switcher's icon. */
   icon?: string;
   /** Tints the icon; without it the app accent does. */
@@ -397,7 +403,11 @@ export function AppWorkspaceSidebarSwitcher(props: AppWorkspaceSidebarSwitcherPr
                       </span>
                       <span class="k2b-dropdown__copy">
                         <span>{option.label}</span>
-                        <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>
+                        <Show when={option.description || option.descriptionVisual}>
+                          <small>
+                            <OptionDescription text={option.description} visual={option.descriptionVisual} />
+                          </small>
+                        </Show>
                       </span>
                       <i class="ti ti-check k2b-dropdown__check" data-hidden={current() ? undefined : "true"} aria-hidden="true" />
                     </a>

@@ -10,6 +10,11 @@ export type SelectChipOption<T extends string | number = string> = {
   value: T;
   label: string;
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * `description` stays the text that search and screen readers use, so set it too.
+   */
+  descriptionVisual?: () => JSX.Element;
   icon?: string;
   image?: string;
   disabled?: boolean;
@@ -76,6 +81,7 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
       choice: "radio" as const,
       class: "k2b-select-chip__option",
       description: option.description,
+      descriptionVisual: option.descriptionVisual,
       disabled: option.disabled,
       icon: option.icon,
       image: option.image,

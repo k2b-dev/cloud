@@ -9408,6 +9408,27 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   overflow-wrap: anywhere;
 }
 
+/* A visual in place of an option's second line, such as a colored tag, in
+   every option list: it is exactly one line of the text it replaces tall, so
+   a row with it is as tall as a row with text. A taller visual overlaps the
+   row's padding instead of growing the row. */
+.k2b-ui .k2b-option-visual {
+  display: flex;
+  min-width: 0;
+  block-size: 1lh;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.k2b-ui .k2b-option-visual > * {
+  flex: none;
+  line-height: 1;
+}
+
+.k2b-ui .k2b-choice-options[data-view="grid"] .k2b-option-visual {
+  justify-content: center;
+}
+
 /* A second line, such as an address, wraps at 16rem instead of widening the popover, as in a menu. */
 .k2b-ui .k2b-choice-options:not([data-view="grid"]) .k2b-choice-option small {
   max-inline-size: 16rem;

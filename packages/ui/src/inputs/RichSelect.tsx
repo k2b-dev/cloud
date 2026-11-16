@@ -15,6 +15,7 @@ import {
 import { Button } from "../actions/Button";
 import { dialogCore } from "../feedback/dialog-core";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { OptionDescription } from "../internal/option-description";
 import { LocaleProvider, useLocale } from "../intl/locale";
 import BottomSheet, { bottomSheetOptions } from "../layout/BottomSheet";
 import { createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
@@ -30,6 +31,11 @@ export type RichSelectItem = {
   label: string;
   /** At most one short line that says what the choice changes. */
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * `description` stays the text that search and screen readers use, so set it too.
+   */
+  descriptionVisual?: () => JSX.Element;
   /** Icon class shown before the name. */
   icon?: string;
   /** Color dot shown before the name, such as a space color. Replaces `icon`. */
@@ -132,12 +138,14 @@ function RichSelectRowText(props: { item: RichSelectItem; labelId: string; lineI
       <span id={props.labelId} class="k2b-rich-select__label">
         {props.item.label}
       </span>
-      <Show when={props.item.disabledReason ?? props.item.description}>
-        {(line) => (
-          <span id={props.lineId} class="k2b-rich-select__line" data-reason={props.item.disabledReason ? "true" : undefined}>
-            {line()}
-          </span>
-        )}
+      <Show when={props.item.disabledReason || props.item.description || props.item.descriptionVisual}>
+        <span id={props.lineId} class="k2b-rich-select__line" data-reason={props.item.disabledReason ? "true" : undefined}>
+          {/* The reason of an unavailable row is always text. */}
+          <OptionDescription
+            text={props.item.disabledReason ?? props.item.description}
+            visual={props.item.disabledReason ? undefined : props.item.descriptionVisual}
+          />
+        </span>
       </Show>
     </span>
   );

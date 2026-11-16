@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
+import { OptionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
@@ -28,6 +29,7 @@ export type SelectSourceOption =
       id: string;
       label?: string;
       description?: string;
+      descriptionVisual?: () => JSX.Element;
       icon?: string;
       color?: string;
       groups?: readonly string[];
@@ -438,7 +440,11 @@ export function Select(props: SelectProps): JSX.Element {
                     </Show>
                     <span>
                       <strong>{option.label}</strong>
-                      <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>
+                      <Show when={option.description || option.descriptionVisual}>
+                        <small>
+                          <OptionDescription text={option.description} visual={option.descriptionVisual} />
+                        </small>
+                      </Show>
                     </span>
                   </button>
                 )}

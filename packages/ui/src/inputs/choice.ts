@@ -1,10 +1,15 @@
-import { createEffect, createSignal, onCleanup, type Setter } from "solid-js";
+import { createEffect, createSignal, type JSX, onCleanup, type Setter } from "solid-js";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
 
 export type ChoiceOption<T extends string = string> = {
   value: T;
   label: string;
   description?: string;
+  /**
+   * Shown in place of `description`, such as a colored `Tag`. A function, so each place gets its own element.
+   * `description` stays the text that search and screen readers use, so set it too.
+   */
+  descriptionVisual?: () => JSX.Element;
   icon?: string;
   color?: string;
   disabled?: boolean;
