@@ -10,9 +10,7 @@ for (const locale of ["de", "en"]) {
   test(`${locale}: the catalog holds the 19 approved words after "${t.thinking}"`, () => {
     expect([words.plain.length, words.wink.length, words.moustache.length]).toEqual([11, 6, 2]);
     expect(t.stepThinking).toBe(t.thinking);
-    expect(t.thinkingAnnouncement).toBe(
-      locale === "de" ? "Gustav denkt nach" : "Gustav is thinking",
-    );
+    expect(t.thinkingAnnouncement).toBe(locale === "de" ? "Gustav denkt nach" : "Gustav is thinking");
   });
 
   test(`${locale}: every round starts plain, never shows two winks in a row and splits the moustaches`, () => {
