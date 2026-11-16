@@ -1,6 +1,6 @@
 import { APP_READINESS_PATH, redis } from "@k2b/cloud";
 import { DOMAIN_CHECK_PATH_PREFIX, domainCheckKey } from "@k2b/cloud/contracts/app-domains";
-import { GATEWAY_STATUS_PATH, MAINTENANCE_ADMIN_API_PATH } from "@k2b/cloud/contracts/maintenance";
+import { GATEWAY_STATUS_PATH, MAINTENANCE_ADMIN_API_PATH, MAINTENANCE_BYPASS_HEADER } from "@k2b/cloud/contracts/maintenance";
 import { publishRequestTelemetry } from "@k2b/cloud/services";
 import { type DomainSnapshot, decideHost } from "./app-domains";
 import type { Availability } from "./availability";
@@ -68,6 +68,8 @@ export const createGatewayHandler =
   (dependencies: GatewayDependencies) =>
   async (req: Request, server: GatewayServer, client: ClientAddress | null): Promise<Response | undefined> => {
     stripPublicHeaders(req.headers);
+    // Only the gateway says that a request passed the maintenance wall.
+    req.headers.delete(MAINTENANCE_BYPASS_HEADER);
     const now = dependencies.now ?? Date.now;
     const url = new URL(req.url);
     const snapshot = dependencies.snapshot();
@@ -176,6 +178,8 @@ export const createGatewayHandler =
     const maintenance = availability?.maintenance() ?? null;
     // A valid admin bypass cookie passes the maintenance wall exactly as if there were no maintenance.
     const bypassed = maintenance !== null && bypassesMaintenance(bypassCookie, maintenance, now());
+    // Pages rendered for it say that only this person sees the Cloud.
+    if (bypassed) req.headers.set(MAINTENANCE_BYPASS_HEADER, "1");
     if (availability && isStatusRequest(req, url)) return statusAnswer(req, url, availability, { bypass: bypassed });
     if (isInternalPath(url.pathname)) return new Response("Not found", { status: 404 });
     if (availability && maintenance && !bypassed) {

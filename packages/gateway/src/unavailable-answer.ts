@@ -98,7 +98,7 @@ export const appUnavailableAnswer = (
   answer(
     req,
     APP_UNAVAILABLE_RETRY_AFTER_SECONDS,
-    { type: "about:blank", title: "App is unavailable", status: 503, code: "app_unavailable", appId },
+    { type: "about:blank", title: "App is unavailable", status: 503, code: "app_unavailable", appId, reason },
     () => {
       const locale = pageLocale(req, availability.branding().locale);
       const app = availability.appView(appId, locale);

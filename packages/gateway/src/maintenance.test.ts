@@ -47,12 +47,13 @@ afterEach(async () => {
 const fixture = ({ development = false }: { development?: boolean } = {}) => {
   let clock = NOW;
   const requests: string[] = [];
-  const seen: Array<{ search: string; cookie: string | null }> = [];
+  const seen: Array<{ search: string; cookie: string | null; bypass: string | null }> = [];
   const upstream = Bun.serve({
     port: 0,
     fetch: (req) => {
       requests.push(new URL(req.url).pathname);
-      seen.push({ search: new URL(req.url).search, cookie: req.headers.get("Cookie") });
+      const { search } = new URL(req.url);
+      seen.push({ search, cookie: req.headers.get("Cookie"), bypass: req.headers.get("X-Cloud-Maintenance-Bypass") });
       return Response.json({ ok: true });
     },
   });
@@ -198,6 +199,7 @@ test("an app that deregistered cleanly is updating; its paths get its page inste
     status: 503,
     code: "app_unavailable",
     appId: "mail",
+    reason: "updating",
   });
   expect((await f.request("/app/mail/vorstand", page)).headers.get("Content-Type")).toBe("text/html; charset=utf-8");
   // Ownership rules still apply to remembered routes: mail never owned /app/other or /pwa.
@@ -221,7 +223,7 @@ test("an expired lease or a failing upstream is unavailable, never updating", as
 
   const failing = await f.request("/app/files/x", { headers: { Accept: "application/json" } });
   expect(failing.status).toBe(503);
-  expect(await failing.json()).toMatchObject({ code: "app_unavailable", appId: "files" });
+  expect(await failing.json()).toMatchObject({ code: "app_unavailable", appId: "files", reason: "unavailable" });
   expect(failing.headers.get("Retry-After")).toBe("5");
   // Its lease still lives, but open pages must not reload into the same error.
   const status = async () => (await (await f.request("/_cloud/gateway/status?app=files")).json()) as { app: { available: boolean } };
@@ -328,14 +330,16 @@ test("a valid bypass cookie passes maintenance like no maintenance; the cookie n
   const pass = await f.request("/app/spaces?view=kanban", { headers: { ...page.headers, Cookie: cookie } });
   expect(pass.status).toBe(200);
   expect((await f.request("/login", { headers: { Cookie: cookie } })).status).toBe(200);
+  // The app learns that only this person sees the Cloud, so its pages can say so.
   expect(f.seen).toEqual([
-    { search: "?view=kanban", cookie: "session_token=abc; theme=dark" },
-    { search: "", cookie: "session_token=abc; theme=dark" },
+    { search: "?view=kanban", cookie: "session_token=abc; theme=dark", bypass: "1" },
+    { search: "", cookie: "session_token=abc; theme=dark", bypass: "1" },
   ]);
-  // Without maintenance the cookie is stripped as well; alone it leaves no Cookie header at all.
+  // Without maintenance the cookie is stripped as well; alone it leaves no Cookie header at all. Nobody else can
+  // claim the bypass: the gateway drops the header from every incoming request.
   f.availability.setMaintenance(null);
-  await f.request("/me", { headers: { Cookie: `${COOKIE}=${token}` } });
-  expect(f.seen.at(-1)).toEqual({ search: "", cookie: null });
+  await f.request("/me", { headers: { Cookie: `${COOKIE}=${token}`, "X-Cloud-Maintenance-Bypass": "1" } });
+  expect(f.seen.at(-1)).toEqual({ search: "", cookie: null, bypass: null });
   // Another maintenance, a forged or an expired cookie meets the wall.
   f.availability.setMaintenance({ state: { ...state, id: "1c2d3e4f-0000-4000-8000-000000000000" }, updatedAt: NOW });
   expect((await f.request("/me", { headers: { Cookie: `${COOKIE}=${token}` } })).status).toBe(503);

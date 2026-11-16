@@ -6,6 +6,8 @@
  * the client swaps in place, so the first paint and every later state come from the same code.
  */
 
+import { MAINTENANCE_POLL_STEPS } from "@k2b/cloud/contracts/maintenance";
+
 export type MaintenancePageImage = { src: string /* data: URI */ };
 export type MaintenancePageModel = {
   locale: "de" | "en";
@@ -22,30 +24,8 @@ export type MaintenancePageModel = {
     }
 );
 
-type Kind = MaintenancePageModel["kind"];
-
-/** Status polling: `[from elapsed ms, delay ms]`, first match from the end wins. Each delay varies by ±20 %. */
-export const POLL_STEPS: Record<Kind, readonly (readonly [number, number])[]> = {
-  cloud: [
-    [0, 5_000],
-    [120_000, 15_000],
-    [600_000, 30_000],
-  ],
-  app: [
-    [0, 2_000],
-    [30_000, 5_000],
-    [120_000, 15_000],
-  ],
-};
-
 /** How long an app page waits before it says that the restart takes longer than usual. */
 export const APP_LONG_AFTER_MS = 120_000;
-
-/** Delay before the next status check, `elapsedMs` after the page loaded; `random` in [0, 1). */
-export const pollDelay = (kind: Kind, elapsedMs: number, random: number): number => {
-  const step = POLL_STEPS[kind].filter(([from]) => elapsedMs >= from).at(-1) ?? POLL_STEPS[kind][0];
-  return step[1] * (0.8 + 0.4 * random);
-};
 
 const esc = (value: string): string =>
   value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
@@ -385,7 +365,7 @@ export const renderMaintenancePage = (model: MaintenancePageModel, options: { no
     untilText: time,
     state,
     time,
-    steps: POLL_STEPS[model.kind],
+    steps: MAINTENANCE_POLL_STEPS[model.kind],
     long: APP_LONG_AFTER_MS,
     views: Object.fromEntries(
       Object.entries(templates).map(([key, view]) => [key, { html: fragment(view), say: `${view.heading}. ${view.status}` }]),
