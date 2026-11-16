@@ -165,23 +165,36 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
   });
 
 /** Existing turn creation owns execution and recovery; the DB lock owns FIFO and deduplication. */
+/** Host-owned check right before a Code-started entry becomes a turn; returns a refusal code that resets later. */
+export type AdmitQueuedCodeStart = (submission: Submission) => Promise<string | null>;
+
 export const drainQueuedMessages = async (
   enqueue: (job: { conversationId: string; turnId: string }) => Promise<unknown>,
   conversationId?: string,
+  admitCodeStart?: AdmitQueuedCodeStart,
 ) => {
   const rows = await sql<{ id: string; conversation_id: string; submission: Submission }[]>`
     SELECT q.id, q.conversation_id, q.submission FROM ai.queued_messages q
     JOIN ai.conversations c ON c.id = q.conversation_id
-    WHERE (q.status = 'pending' OR (q.status = 'failed' AND q.error IN ('quota_exhausted','quota_usage_unknown'))) AND c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL
+    WHERE (q.status = 'pending' OR (q.status = 'failed' AND q.error IN ('quota_exhausted','quota_usage_unknown','code_ai_daily_budget_limit','code_ai_owner_daily_budget_limit'))) AND c.archived_at IS NULL AND c.created_by_user_id IS NOT NULL
       AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
       AND NOT EXISTS (SELECT 1 FROM ai.queued_messages earlier WHERE earlier.conversation_id = q.conversation_id AND earlier.position < q.position AND earlier.status IN ('pending','failed'))
       AND NOT EXISTS (SELECT 1 FROM ai.turns t WHERE t.conversation_id = q.conversation_id AND NOT COALESCE(t.run_config ? 'background', false) AND t.status IN ('queued','running','waiting_for_action'))
     ORDER BY q.quota_checked_at NULLS FIRST, q.position LIMIT ${AI_MESSAGE_QUEUE_LIMIT}`;
   for (const row of rows) {
     try {
+      if (row.submission.runConfig.codeOrigin) {
+        // Code without a host check stays queued for the next sweep instead of starting unchecked.
+        const refused = admitCodeStart ? await admitCodeStart(row.submission) : "code_start_unavailable";
+        if (refused) {
+          if (admitCodeStart)
+            await sql`UPDATE ai.queued_messages SET status='failed', error=${refused}, quota_checked_at=clock_timestamp() WHERE id=${row.id}::uuid AND status IN ('pending','failed')`;
+          continue;
+        }
+      }
       const quotaSubject = aiChatAccessSubject(row.submission.runConfig.actor);
       if (isAssistantChatTurn(row.submission.runConfig) && quotaSubject) await aiQuotas.assertAllowed(quotaSubject, row.submission.modelId);
-      await sql`UPDATE ai.queued_messages SET status='pending', error=NULL WHERE id=${row.id}::uuid AND status='failed' AND error IN ('quota_exhausted','quota_usage_unknown')`;
+      await sql`UPDATE ai.queued_messages SET status='pending', error=NULL WHERE id=${row.id}::uuid AND status='failed' AND error IN ('quota_exhausted','quota_usage_unknown','code_ai_daily_budget_limit','code_ai_owner_daily_budget_limit')`;
       const result = await aiConversations.submitChatTurn({ ...row.submission, queuedMessageId: row.id });
       await enqueue({ conversationId: row.conversation_id, turnId: result.turn.id });
     } catch (error) {
