@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../ui/test/browser";
 import { FIXTURE_AT } from "../ai/chat/action-question.fixtures";
 
 // The approval in each of its states and places, painted by a real layout engine at desktop and phone width.
@@ -18,6 +18,9 @@ const buildHarness = async (): Promise<string> => {
     target: "browser",
     format: "esm",
     conditions: ["browser"],
+    // Every test opens the page anew through a route: a minified bundle reaches and runs in the page in a fraction of
+    // the time, so opening a scene stays well inside a test's five seconds on a busy machine.
+    minify: true,
     plugins: [
       {
         name: "solid-approval-scenes-test",
@@ -106,6 +109,34 @@ const open = async (scene: string, width: number, theme: "light" | "dark" = "lig
   return page;
 };
 
+/**
+ * A clipboard the page writes and the test reads. Chromium grants the real one. WebKit's Playwright knows no clipboard
+ * permission, so there, as in the help panel and message row tests, a recorder takes the page's writes: `writeText`,
+ * and `write` with the text of its item, which Copy writes beside the HTML table.
+ */
+const useClipboard = async (page: Page) => {
+  if (browserName === "chromium") {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    return;
+  }
+  await page.evaluate(() => {
+    let text = "";
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          text = value;
+        },
+        write: async (items: ClipboardItem[]) => {
+          const item = items[0];
+          text = item?.types.includes("text/plain") ? await (await item.getType("text/plain")).text() : "";
+        },
+        readText: async () => text,
+      },
+    });
+  });
+};
+
 const shot = async (page: Page, name: string) => {
   const dir = process.env.CAPBLOCKS_SHOTS;
   if (!dir) return;
@@ -123,25 +154,33 @@ const noOverflow = (page: Page) => page.evaluate(() => document.documentElement.
 
 describe("Approval scenes", () => {
   for (const width of [1440, 390])
-    test(`Gustav's chart at ${width} px is an island under Cloud's head, like an app's result`, async () => {
+    test(`Gustav's chart at ${width} px is an island with its own head: title, Copy and Maximize, no origin line`, async () => {
       const page = await open("gustav", width);
       try {
         expect(await noOverflow(page)).toBe(0);
         await page.locator('.cloud-blocks__cell[data-kind="Chart"] .k2b-dashboard-frame').first().waitFor();
         await settled(page);
         const look = await page.evaluate(() => {
-          const head = document.querySelector(".cloud-capability-view__head");
           const frame = document.querySelector<HTMLElement>('.cloud-blocks__cell[data-kind="Chart"] .k2b-dashboard-frame');
+          const head = frame?.querySelector(".k2b-chart-explorer__header");
           return {
-            head: head?.textContent?.replace(/\s+/g, " ").trim(),
-            tools: [...(head?.querySelectorAll("button") ?? [])].map((button) => button.getAttribute("aria-label")),
+            origin: document.querySelectorAll(".cloud-capability-view__head").length,
+            title: head?.querySelector(".k2b-chart-explorer__title")?.textContent?.trim(),
+            tools: [...(head?.querySelectorAll(".k2b-chart-explorer__actions button") ?? [])].map((button) =>
+              button.getAttribute("aria-label"),
+            ),
+            buttons: [...(head?.querySelectorAll(".cloud-block-actions button") ?? [])].map((button) =>
+              Math.round(button.getBoundingClientRect().height),
+            ),
             island: frame ? getComputedStyle(frame).boxShadow !== "none" || getComputedStyle(frame).borderTopWidth !== "0px" : false,
           };
         });
         await shot(page, `06-gustav-diagramm-light-${width}`);
-        expect(look.head).toContain("Gustav");
-        expect(look.head).toContain("Diagramm");
-        expect(look.tools).toEqual(["Groß öffnen", "Daten zeigen"]);
+        expect(look.origin).toBe(0);
+        expect(look.title).toBe("Gesamtsaldo");
+        // Feinschliff v3: Copy as a picture and Maximize, 30 px, no view switcher of the explorer's own.
+        expect(look.tools).toEqual(["Diagramm als Bild kopieren", "Maximieren"]);
+        for (const height of look.buttons) expect(height).toBe(30);
         expect(look.island).toBe(true);
       } finally {
         await page.close();
@@ -156,8 +195,9 @@ describe("Approval scenes", () => {
         await page.locator(".k2b-stat-cell:not([data-status='loading'])").first().waitFor();
         await settled(page);
         const look = await page.evaluate(() => ({
-          heads: [...document.querySelectorAll(".cloud-capability-view__head")].map((head) =>
-            head.textContent?.replace(/\s+/g, " ").trim(),
+          heads: document.querySelectorAll(".cloud-capability-view__head").length,
+          figureActions: [...document.querySelectorAll(".cloud-block-figures .cloud-block-actions button")].map((button) =>
+            button.getAttribute("aria-label"),
           ),
           stats: document.querySelectorAll('.cloud-blocks__cell[data-kind="Stats"]').length,
           negative: getComputedStyle(document.querySelectorAll(".k2b-stat-cell__value")[3]!).color,
@@ -177,9 +217,9 @@ describe("Approval scenes", () => {
           }),
         }));
         await shot(page, `06-gustav-konten-light-${width}`);
-        expect(look.heads).toHaveLength(2);
-        expect(look.heads[0]).toContain("Kennzahlen");
-        expect(look.heads[1]).toContain("Diagramm");
+        // No origin lines; the figures keep Copy and Maximize at the end of their flat row.
+        expect(look.heads).toBe(0);
+        expect(look.figureActions).toEqual(["Kennzahlen kopieren", "Maximieren"]);
         expect(look.stats).toBe(1);
         expect(look.cells.map(([text]) => text)).toEqual([
           expect.stringContaining("2.481,20 €"),
@@ -209,17 +249,14 @@ describe("Approval scenes", () => {
         await page.locator(".k2b-stat-cell:not([data-status='loading'])").first().waitFor();
         await settled(page);
         const look = await page.evaluate(() => ({
-          heads: [...document.querySelectorAll(".cloud-capability-view__head")].map((head) =>
-            head.textContent?.replace(/\s+/g, " ").trim(),
-          ),
+          heads: document.querySelectorAll(".cloud-capability-view__head").length,
           rows: document.querySelectorAll('.cloud-blocks__cell[data-kind="Stats"]').length,
           charts: document.querySelectorAll('.cloud-blocks__cell[data-kind="Chart"]').length,
           cells: document.querySelectorAll(".k2b-stat-cell").length,
           signs: document.querySelectorAll(".k2b-stat-cell__head > .k2b-stat-cell__icon").length,
         }));
         await shot(page, `78-kennzahlen-light-${width}`);
-        expect(look.heads).toHaveLength(2);
-        for (const head of look.heads) expect(head).toContain("Kennzahlen");
+        expect(look.heads).toBe(0);
         // Both rows carry the sign before each name (v12), the stat charts through their icon like the cards.
         expect(look).toMatchObject({ rows: 2, charts: 0, cells: 6, signs: 6 });
       } finally {
@@ -235,7 +272,7 @@ describe("Approval scenes", () => {
     test(`"Open large" shows the ${scene} view itself in the Lightbox, and closing gives the focus back`, async () => {
       const page = await open(scene, 1440);
       try {
-        const opener = page.getByRole("button", { name: "Groß öffnen" }).first();
+        const opener = page.getByRole("button", { name: "Maximieren" }).first();
         await opener.click();
         const lightbox = page.locator(".k2b-lightbox[open]");
         await lightbox.locator(`.k2b-lightbox__view ${content}`).first().waitFor();
@@ -250,6 +287,241 @@ describe("Approval scenes", () => {
         await page.close();
       }
     });
+
+  // Feinschliff v3, section 5: each block's own head with Copy and Maximize, no origin line, and one Lightbox per answer.
+  for (const width of [1440, 390])
+    test(`every block of an answer has its head actions and no origin line, at ${width} px`, async () => {
+      const page = await open("baustein", width);
+      try {
+        expect(await noOverflow(page)).toBe(0);
+        await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+        await settled(page);
+        const look = await page.evaluate(() => ({
+          origin: document.querySelectorAll(".cloud-capability-view__head").length,
+          amounts: [...document.querySelectorAll(".cloud-capability-view .k2b-dashboard-frame__content tbody tr")].map((row) =>
+            (row.lastElementChild?.textContent ?? "").replace(/\s+/g, " ").replace("\u2212", "-").trim(),
+          ),
+          actions: [...document.querySelectorAll(".cloud-block-actions")].map((group) =>
+            [...group.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
+          ),
+        }));
+        await shot(page, `5-baustein-light-${width}`);
+        expect(look.origin).toBe(0);
+        // The table keeps the money format its column declares.
+        expect(look.amounts).toEqual(["-48,90 €", "-112,00 €", "450,00 €", "-386,40 €", "-29,50 €"]);
+        expect(look.actions).toEqual([
+          ["Kennzahlen kopieren", "Maximieren"],
+          ["Tabelle kopieren", "Maximieren"],
+          ["Diagramm als Bild kopieren", "Maximieren"],
+        ]);
+      } finally {
+        await page.close();
+      }
+    });
+
+  test("Copy puts the table on the clipboard, shows a check in place for 1.5 s and moves nothing", async () => {
+    const page = await open("baustein", 1440);
+    try {
+      await useClipboard(page);
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+      await settled(page);
+      const button = page.getByRole("button", { name: "Tabelle kopieren" });
+      const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
+      const before = { button: await button.boundingBox(), frame: await frame.boundingBox() };
+      await button.click();
+      const copied = page.getByRole("button", { name: "Kopiert" });
+      await copied.waitFor();
+      expect(await copied.boundingBox()).toEqual(before.button);
+      expect(await frame.boundingBox()).toEqual(before.frame);
+      expect(await page.locator(".cloud-block-actions", { has: copied }).locator("[role=status]").textContent()).toBe("Kopiert");
+      const text = await page.evaluate(() => navigator.clipboard.readText());
+      expect(text.split("\n")[0]).toBe("Datum\tEmpfänger\tVerwendung\tBetrag");
+      expect(text).toContain("Schraubenwelt\tBeschläge, 200 Stück");
+      await page.getByRole("button", { name: "Tabelle kopieren" }).waitFor({ timeout: 3_000 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a refused clipboard shows a toast with Try again, and trying again copies the table", async () => {
+    const page = await open("baustein", 1440);
+    try {
+      await useClipboard(page);
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+      await settled(page);
+      // The clipboard refuses the first write, as a browser does without permission, and takes the next one.
+      await page.evaluate(() => {
+        const clipboard = navigator.clipboard;
+        const write = clipboard.write.bind(clipboard);
+        const writeText = clipboard.writeText.bind(clipboard);
+        let refuse = true;
+        const once =
+          <T>(real: (value: T) => Promise<void>) =>
+          (value: T) => {
+            if (!refuse) return real(value);
+            refuse = false;
+            return Promise.reject(new DOMException("Write permission denied.", "NotAllowedError"));
+          };
+        clipboard.write = once(write);
+        clipboard.writeText = once(writeText);
+      });
+      const button = page.getByRole("button", { name: "Tabelle kopieren" });
+      const before = await button.boundingBox();
+      await button.click();
+      const retry = page.getByRole("button", { name: "Erneut versuchen" });
+      await retry.waitFor();
+      expect(await page.getByText("Kopieren ging nicht.").count()).toBe(1);
+      // A failure never shows the check: the button keeps its name and its place.
+      expect(await page.getByRole("button", { name: "Kopiert" }).count()).toBe(0);
+      expect(await button.boundingBox()).toEqual(before);
+      await retry.click();
+      await page.getByRole("button", { name: "Kopiert" }).waitFor();
+      const text = await page.evaluate(() => navigator.clipboard.readText());
+      expect(text.split("\n")[0]).toBe("Datum\tEmpfänger\tVerwendung\tBetrag");
+      expect(text).toContain("Schraubenwelt\tBeschläge, 200 Stück");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("Copy takes the whole table even while a search narrows what the reader sees", async () => {
+    const page = await open("baustein", 1440);
+    try {
+      await useClipboard(page);
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+      await settled(page);
+      const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
+      await frame.getByRole("searchbox").fill("Schrauben");
+      await settled(page);
+      await frame.getByRole("button", { name: "Tabelle kopieren" }).click();
+      await page.getByRole("button", { name: "Kopiert" }).waitFor();
+      const lines = (await page.evaluate(() => navigator.clipboard.readText())).split("\n");
+      // The header and all five rows, not the one match: "Copied" never means a part.
+      expect(lines).toHaveLength(6);
+      expect(lines.join("\n")).toContain("Holzhandel Nord");
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("searching the table keeps its island's height", async () => {
+    const page = await open("baustein", 1440);
+    try {
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+      await settled(page);
+      const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
+      const before = await frame.boundingBox();
+      const foot = frame.locator(".k2b-dashboard-frame__footer");
+      expect(await foot.textContent()).toBe("5 Zeilen");
+      await frame.getByRole("searchbox").fill("Schrauben");
+      await settled(page);
+      expect(await frame.locator(".k2b-dashboard-frame__content tbody tr").count()).toBe(1);
+      expect(await frame.boundingBox()).toEqual(before);
+      // The foot names what the search finds, in the same line.
+      expect(await foot.textContent()).toBe("1 Treffer");
+      await frame.getByRole("searchbox").fill("Gibt es nicht");
+      await settled(page);
+      expect(await foot.textContent()).toBe("Keine Treffer für diese Suche");
+      expect(await frame.boundingBox()).toEqual(before);
+      await frame.getByRole("searchbox").fill("");
+      await settled(page);
+      expect(await foot.textContent()).toBe("5 Zeilen");
+      expect(await frame.locator(".k2b-dashboard-frame__content tbody tr").count()).toBe(5);
+      expect(await frame.boundingBox()).toEqual(before);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("on a phone the table's search is a sign that opens over the title and keeps the head's height", async () => {
+    const page = await open("baustein", 390);
+    try {
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+      await settled(page);
+      const frame = page.locator(".cloud-capability-view .k2b-dashboard-frame").first();
+      const head = frame.locator(".k2b-dashboard-frame__header");
+      const title = head.getByRole("heading", { name: "PayPal-Buchungen im November" });
+      const before = { head: await head.boundingBox(), frame: await frame.boundingBox() };
+      expect(await frame.getByRole("searchbox").isVisible()).toBe(false);
+      const sign = frame.getByRole("button", { name: "PayPal-Buchungen im November durchsuchen" });
+      await sign.click();
+      const search = frame.getByRole("searchbox");
+      await search.waitFor();
+      expect(await search.evaluate((input) => input === document.activeElement)).toBe(true);
+      await search.fill("Schrauben");
+      await settled(page);
+      // The search lies over the title, which keeps its room and stays the island's heading: neither the head nor the
+      // island moves.
+      expect(await title.evaluate((node) => getComputedStyle(node.parentElement as Element).opacity)).toBe("0");
+      expect(await head.boundingBox()).toEqual(before.head);
+      expect(await frame.boundingBox()).toEqual(before.frame);
+      const box = await search.boundingBox();
+      expect(box && before.head && box.x >= before.head.x && box.x + box.width <= before.head.x + before.head.width).toBe(true);
+      expect(await frame.locator(".k2b-dashboard-frame__footer").textContent()).toBe("1 Treffer");
+      expect(await noOverflow(page)).toBe(0);
+      await shot(page, "5-baustein-suche-light-390");
+      // An emptied search closes again when it loses the focus.
+      await search.fill("");
+      await page.getByRole("button", { name: "Tabelle kopieren" }).focus();
+      await settled(page);
+      expect(await frame.getByRole("searchbox").isVisible()).toBe(false);
+      expect(await title.evaluate((node) => getComputedStyle(node.parentElement as Element).opacity)).toBe("1");
+      expect(await head.boundingBox()).toEqual(before.head);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("Maximize opens the Lightbox on that block with its name and origin, steps through the answer, and gives the focus back", async () => {
+    const page = await open("baustein", 1440);
+    try {
+      await page.locator(".cloud-capability-view .k2b-dashboard-frame__content table").first().waitFor();
+      await settled(page);
+      const opener = page.locator(".cloud-capability-view .k2b-dashboard-frame").first().getByRole("button", { name: "Maximieren" });
+      await opener.click();
+      const lightbox = page.locator(".k2b-lightbox[open]");
+      await lightbox.locator(".k2b-lightbox__view .k2b-dashboard-frame__content table").first().waitFor();
+      const name = () => lightbox.locator(".k2b-lightbox__name").textContent();
+      expect(await name()).toContain("PayPal-Buchungen im November");
+      expect(await name()).toContain("Mail · Tabelle · Stand");
+      await settled(page);
+      if (process.env.CAPBLOCKS_SHOTS) await page.screenshot({ path: resolve(process.env.CAPBLOCKS_SHOTS, "5-lightbox-light-1440.png") });
+      // Typing in the table's search belongs to the field: the arrows move the caret, never to the next block.
+      const search = lightbox.locator(".k2b-lightbox__view").getByRole("searchbox");
+      await search.fill("Holz");
+      await search.press("ArrowRight");
+      await search.press("ArrowLeft");
+      expect(await name()).toContain("PayPal-Buchungen im November");
+      // From the stage the arrows step through the blocks of this answer: figures, table, chart. WebKit delivers a key
+      // to the page after `press` returns, so each step waits for the name it shows, and the keys wait for the focus.
+      await lightbox.locator(".k2b-lightbox__stage").focus();
+      await page.waitForFunction(() => document.activeElement?.classList.contains("k2b-lightbox__stage") === true);
+      const shows = (text: string) => lightbox.locator(".k2b-lightbox__name", { hasText: text }).waitFor();
+      await page.keyboard.press("ArrowRight");
+      await shows("PayPal-Umsatz");
+      expect(await name()).toContain("Gustav · Diagramm");
+      await page.keyboard.press("ArrowLeft");
+      await shows("PayPal-Buchungen im November");
+      await page.keyboard.press("ArrowLeft");
+      await shows("Kennzahlen");
+      // Copy in the Lightbox answers in place, as in the block's head: its sign turns into a check, its width stays.
+      await useClipboard(page);
+      const copy = lightbox.locator(".k2b-lightbox__action", { hasText: "Kopieren" });
+      await settled(page);
+      const before = await copy.boundingBox();
+      await copy.click();
+      await copy.locator("i.ti-check").waitFor();
+      expect(await copy.boundingBox()).toEqual(before);
+      expect(await lightbox.locator(".k2b-lightbox__view [role=status]").first().textContent()).toBe("Kopiert");
+      // No zoom pill for a block.
+      expect(await lightbox.locator(".k2b-lightbox__bar").evaluate((bar) => getComputedStyle(bar).visibility)).toBe("hidden");
+      await page.keyboard.press("Escape");
+      await lightbox.waitFor({ state: "detached" });
+      expect(await opener.evaluate((button) => button === document.activeElement)).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
 
   for (const width of [1440, 390])
     test(`Gustav's survey at ${width} px is a flat choice: no hull, flat cards, the chosen one tinted`, async () => {

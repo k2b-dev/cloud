@@ -1341,6 +1341,28 @@ test("web search sources retain the query above the activity description", async
   }
 });
 
+test("a presented view records what it shows as its sign; another file keeps the file sign", async () => {
+  const index = spyOn(aiConversations, "indexConversationSource").mockResolvedValue(undefined);
+  try {
+    const present = (path: string, view?: unknown) =>
+      __aiExecutorTest.indexConversationToolSource({
+        conversationId: "conversation",
+        turnId: "turn",
+        callId: path,
+        name: "present",
+        args: { title: "Offene Aufgaben" },
+        result: { path, ...(view ? { view } : {}) },
+        isError: false,
+      });
+    await present("/views/aufgaben.view.json", { view: "chart", kind: "bar", title: "Offene Aufgaben" });
+    await present("/views/liste.view.json", { view: "table", title: "Liste", rows: 3, footer: false, columns: 2 });
+    await present("/report.pdf");
+    expect(index.mock.calls.map(([call]) => call.source.icon)).toEqual(["ti ti-chart-bar", "ti ti-table", "ti ti-file"]);
+  } finally {
+    index.mockRestore();
+  }
+});
+
 test("retired Studio opens never create executable app results", async () => {
   const index = spyOn(aiConversations, "indexConversationSource").mockResolvedValue(undefined);
   const call = {

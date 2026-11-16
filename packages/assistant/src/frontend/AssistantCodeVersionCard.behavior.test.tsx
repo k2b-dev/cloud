@@ -144,6 +144,8 @@ test("ready: one approval form with the question, what changes against the runni
   expect(card.getAttribute("data-k2b-primary")).toBe("ai");
   expect(card.getAttribute("data-chat-anchor")).toBe(`code-version-${versionId}`);
   expect(text(card)).toContain("Approval·Code");
+  // The head always says where the version stands (v12 §9): ready, still off.
+  expect(card.querySelector(".k2b-chat-decision__status")?.textContent).toContain("Ready, still off");
   expect(card.querySelector(".k2b-chat-decision__sentence")?.textContent).toBe("Version 5 of Code of info@ switch on?");
   expect(text(card)).toContain("It may do more than version 4 afterwards.");
   // The label in bold and its context quietly after it, as two parts of the frame.
@@ -154,8 +156,9 @@ test("ready: one approval form with the question, what changes against the runni
   expect(text(card)).toContain("Cloud checks access and triggers, not behavior.");
   expect(text(card)).toContain("3 of 3 examples successful");
   expect(text(card)).toContain("Until then version 4 stays switched on");
-  // An open question has no state word; the difference button is gone, the version opens on the Code page.
-  expect(status(dom.root)).toBeNull();
+  // The open card says where the version stands (v12 version states, Rundgang 6 Fable 10); the difference button is
+  // gone, the version opens on the Code page.
+  expect(status(dom.root)).toBe("Ready, still off");
   expect(button(dom.root, "Difference")).toBeUndefined();
   expect(button(dom.root, "See everything")?.getAttribute("href")).toBe(`/app/mail/m_info/code?tab=versions&version=${versionId}`);
   expect(button(dom.root, "Switch on version 5")?.getAttribute("data-variant")).toBe("ai");
@@ -392,6 +395,7 @@ test("approved: who approved it and what holds until the person switches it on",
     review: () => ({ json: { data: review({ status: "approved", decidedBy: JANA, decidedAt: "2026-10-01T14:01:00.000Z" }) } }),
   });
   expect(text(dom.root)).toMatch(/Jana Probe approved it on .*\./);
+  expect(dom.root.querySelector(".k2b-chat-decision__status")?.textContent).toContain("Approved");
   expect(text(dom.root)).toContain("Until you switch it on, version 4 stays switched on.");
   expect(button(dom.root, "Switch on version 5")).toBeDefined();
 });
@@ -479,7 +483,7 @@ test("the card loads with a placeholder and the word Loading", async () => {
   expect(dom.root.querySelector('[aria-busy="true"]')).not.toBeNull();
   release();
   await tick();
-  expect(status(dom.root)).toBeNull();
+  expect(status(dom.root)).toBe("Ready, still off");
 });
 
 test("the card follows decisions and switch-ons from elsewhere on the live channel, without polling", async () => {

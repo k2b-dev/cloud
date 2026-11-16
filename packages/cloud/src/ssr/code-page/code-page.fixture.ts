@@ -505,6 +505,7 @@ const secret = (name: string, origin: string, configured = true, by = jana, at =
 export const CODE_PAGE_FIXTURE_STATES = [
   // Overview (Bild 19 to 21)
   "overview",
+  "week-start",
   "new-version",
   "changes-requested",
   "needs-you",
@@ -1038,6 +1039,11 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
           },
         ),
       };
+    }
+    case "week-start": {
+      // Monday morning: nothing counted this week yet, the latest results are from last week (Rundgang 6, Fable 8).
+      const week = activity();
+      return { ...base, tab: "overview", state: ready({}, { activity: { ...week, counters: { ...week.counters, items: [] } } }) };
     }
     default:
       return { ...base, tab: "overview", state: ready() };

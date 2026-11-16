@@ -317,6 +317,8 @@ const storedItems = (
     }
 
     if (item.type === "code-decision" || item.type === "code-review-start") {
+      // Automatic reviews have their own fixed task and no personal prompt to retry.
+      if (item.type === "code-review-start") prompt = null;
       // A host that draws the decision gets the whole line: its sentence, time and the one jump to the card.
       const line = actions.renderCodeDecision?.(item.entry);
       const activity: ChatTimelineItem = line

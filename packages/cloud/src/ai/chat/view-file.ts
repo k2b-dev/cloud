@@ -30,6 +30,24 @@ export async function loadView(
   }
 }
 
+/** Loads a view file without a summary from the chat, such as one opened in a tab; it takes its summary from itself. */
+export async function loadViewFile(
+  url: string,
+  path: string,
+  signal: AbortSignal,
+): Promise<{ summary: CloudAiViewSummary; view: CloudViewDescription } | null> {
+  try {
+    const response = await fetch(url, { signal });
+    if (!response.ok || !isAiViewFile({ path, origin: response.headers.get("X-Cloud-Ai-File-Origin") ?? "" })) return null;
+    const blob = await response.blob();
+    if (blob.size > CLOUD_AI_VIEW_MAX_BYTES) return null;
+    const view = parseCloudAiView(JSON.parse(await blob.text()));
+    return view ? { summary: cloudAiViewSummary(view), view: cloudAiViewDescription(view) } : null;
+  } catch {
+    return null;
+  }
+}
+
 type Heading = { title: string; subtitle?: string };
 const sameHeading = (a: Heading, b: Heading | undefined) => a.title === b?.title && a.subtitle === b.subtitle;
 

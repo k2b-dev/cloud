@@ -29,6 +29,8 @@ const { layoutAiTurn } = await import("./turn-layout");
 const { createAiToolDisclosureState } = await import("./tool-disclosure");
 const { CloudSurveyBlock, CloudTextEditorBlock } = await import("./visual-tools");
 const { Chat, LocaleProvider } = await import("@k2b/ui");
+const { ViewFrame } = await import("./capability-view");
+const { useBlockFrame } = await import("../../blocks/block-actions");
 
 const hasOpenDetails = (html: string): boolean => /<details\b[^>]*\sopen(?:=""|(?=[\s>]))/.test(html);
 const hasOpenDetailsContaining = (html: string, text: string): boolean => {
@@ -102,15 +104,13 @@ describe("Gustav's own charts", () => {
     result,
     view: capabilityResultView(result) ?? undefined,
   });
-  test("a chart whose result carries its view stands under Cloud's head with Gustav as its origin", () => {
+  test("a chart whose result carries its view stands as an island without an origin line above it", () => {
     const html = renderToString(() => createComponent(AiTurnBlockView, { block: chartBlock(chartToolResult(revenue)), turnId: "turn-1" }));
     expect(html).toContain('class="cloud-capability-view"');
-    expect(html).toContain("<strong>Gustav</strong>");
-    // The head names the kind of view; the chart's own title stands in its island, once.
-    expect(html).toContain("· Chart");
+    // No origin line above the block (Feinschliff v3): the chart's own head carries its title and actions.
+    expect(html).not.toContain("<strong>Gustav</strong>");
+    expect(html).not.toContain('aria-label="Open large"');
     expect(html.split("Revenue per month").length - 1).toBeGreaterThan(0);
-    expect(html).toContain('aria-label="Open large"');
-    expect(html).toContain('aria-label="Show data"');
     expect(html).toContain('data-kind="Chart"');
     // No step row of its own above the view.
     expect(html).not.toContain("k2b-chat-activity");
@@ -1983,16 +1983,40 @@ describe("turn places in the reader's language", () => {
       view: capabilityResultView(chartResult) ?? undefined,
     };
     const html = renderPlaces([...figures, chart], { locale: "de" });
-    // One head for the three figures and one for the chart, both Gustav's; the figures are one flat row.
-    expect(html.split("<strong>Gustav</strong>").length - 1).toBe(2);
-    expect(html).toContain("· Kennzahlen");
+    // No origin line above either; the figures are one flat row with Copy and Maximize at its end.
+    expect(html).not.toContain("<strong>Gustav</strong>");
     expect(html.split('data-kind="Stats"').length - 1).toBe(1);
+    expect(html).toContain('class="cloud-block-figures"');
+    expect(html).toContain('aria-label="Kennzahlen kopieren"');
+    expect(html).toContain('aria-label="Maximieren"');
     // The tiles' code loads after the first frame, like an app's key figures: the labels stand, the figures wait in place.
     for (const label of ["Girokonto", "Tagesgeld", "Kreditkarte"]) expect(html).toContain(`>${label}</span>`);
     expect(html).toContain('data-kind="Chart"');
     expect(html).not.toContain("ti ti-mood");
-    // The head reads its time in the reader's zone, as every time in the chat does: 10:47 UTC is 11:47 in Berlin.
-    const berlin = renderPlaces([{ ...chart, at: "2026-11-15T10:47:00.000Z" }], { locale: "de", timeZone: "Europe/Berlin" });
+    // The frame reads the time in the reader's zone, as every time in the chat does: 10:47 UTC is 11:47 in Berlin. The
+    // Lightbox names it ("Gustav · Diagramm · Stand 15.11., 11:47").
+    const Probe = () => useBlockFrame()?.asOf ?? "";
+    const berlin = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(AiReaderTimeZoneProvider, {
+            value: "Europe/Berlin",
+            get children() {
+              return createComponent(ViewFrame, {
+                origin: { name: "Gustav", icon: "ti ti-moustache" },
+                title: "Diagramm",
+                at: "2026-11-15T10:47:00.000Z",
+                data: {},
+                get children() {
+                  return createComponent(Probe, {});
+                },
+              });
+            },
+          });
+        },
+      }),
+    );
     expect(berlin).toContain("Stand 15.11., 11:47");
     expect(berlin).not.toContain("10:47");
     // An older stored card or chart without a view keeps the tool's own drawing.
@@ -2014,7 +2038,6 @@ describe("turn places in the reader's language", () => {
       [{ ...chart, id: "s1", callId: "s1", args: statArgs, result: statResult, view: capabilityResultView(statResult) ?? undefined }],
       { locale: "de" },
     );
-    expect(stats).toContain("· Kennzahlen");
     expect(stats.split('data-kind="Stats"').length - 1).toBe(1);
     expect(stats).not.toContain('data-kind="Chart"');
     for (const label of ["Offene Aufgaben", "Diese Woche fällig", "Ohne Fälligkeit"]) expect(stats).toContain(`>${label}</span>`);
@@ -2039,12 +2062,11 @@ describe("turn places in the reader's language", () => {
       },
     };
     const html = renderPlaces([query], { locale: "de" });
-    // The head is Cloud's: app and view, then "Open large" and "Data"; Gustav's text says what the rows mean.
-    expect(html).toContain("<strong>Grids</strong>");
-    expect(html).toContain("· Abfrage ausführen");
-    expect(html).toContain('aria-label="Groß öffnen"');
+    // No origin line: the table's own head carries Copy and Maximize; the Lightbox names Grids.
+    expect(html).not.toContain("<strong>Grids</strong>");
+    expect(html).toContain('aria-label="Tabelle kopieren"');
+    expect(html).toContain('aria-label="Maximieren"');
     expect(html).toContain("<table");
-    expect(html.indexOf("<strong>Grids</strong>")).toBeLessThan(html.indexOf("<table"));
 
     // An action that returns a table shows its summary and links in its receipt, not twice.
     const action = renderPlaces(
@@ -2427,7 +2449,7 @@ test("a presented explorer reserves its title, control rows and 18rem viewport b
   }
 });
 
-test("a view file stands under Gustav's head like an app's result, and still loads on demand", () => {
+test("a view file stands as an island with its own head, like an app's result, and still loads on demand", () => {
   const path = "/views/orders-12345678.view.json";
   const block: AiTurnBlock = {
     id: "view",
@@ -2440,9 +2462,10 @@ test("a view file stands under Gustav's head like an app's result, and still loa
   };
   const html = renderToString(() => createComponent(AiTurnBlockView, { block, turnId: "turn" }));
   expect(html).toContain('class="cloud-capability-view"');
-  expect(html).toContain("<strong>Gustav</strong>");
-  expect(html).toContain("· Table");
-  expect(html).toContain('aria-label="Open large"');
+  // No origin line: the table's head holds Copy and Maximize from the first frame, while the file still loads.
+  expect(html).not.toContain("<strong>Gustav</strong>");
+  expect(html).toContain('aria-label="Copy table"');
+  expect(html).toContain('aria-label="Maximize"');
   expect(html).toContain(`data-view-path="${path}"`);
   expect(html).toContain("Loading");
   // A table or chart from a file is an island like an app's (v12 section 9).
