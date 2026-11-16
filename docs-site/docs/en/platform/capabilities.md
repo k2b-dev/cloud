@@ -1594,13 +1594,19 @@ or destination under that key returns `IDEMPOTENCY_CONFLICT`. A full queue
 returns `chat_busy`; a Project change during preparation returns `chat_changed`.
 A person's Codes have at most one waiting or running message across all chats;
 another send returns `chat_busy` until it finishes. A Code message starts only
-while its run exists, its Code is enabled and the Code and owner daily AI limits
-still have room. While it waits for an allowance, its status is `queued` with
-that reason, and the person's own messages and chat actions pass it. It does not
-outlive the budget day it waited on. A message that cannot start is
-`cancelled` with the reason, for example `code_inactive`, `code_run_gone`,
-`code_budget_day_ended` or `dispatch_failed`. A turn never sends into its own
-chat. Separate
+while its run exists, its Code is enabled, no older Code message of the person
+is open and the Code and owner daily AI limits still have room. While it waits,
+its status is `queued` with the reason, and the person's own messages and chat
+actions pass it. Whatever it waits for, it does not outlive the budget day it
+was accepted on. A message that cannot start is `cancelled` with the reason,
+for example `code_inactive`, `code_run_gone`, `code_budget_day_ended`,
+`chat_archived` or `dispatch_failed`. Archiving a chat withdraws its waiting
+Code messages; restoring does not bring them back. A turn never sends into its
+own chat. A send whose invocation source cannot be checked right now returns
+`409 source_unavailable`; repeat the same call later. A key holds for 24 hours
+per person, like every Action key; after that, the same key queues a new
+message. When the person retries a sent message, the retry runs on the person's
+allowance; the initiator stays for the chain rule. Separate
 automation receipts and capacity follow with the automation queue.
 
 Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.

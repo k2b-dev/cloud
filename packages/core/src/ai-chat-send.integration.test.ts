@@ -25,6 +25,7 @@ import {
   drainQueuedMessages,
   finishAiCall,
   invokeCompiledCapability,
+  listQueuedMessages,
 } from "../../../scripts/fixtures/code-platform";
 import { suiteFor, useMigratedDatabase } from "../../../scripts/fixtures/test-infra";
 import { admitQueuedCodeSend, aiChatSendAction } from "./ai-chat-send";
@@ -343,6 +344,24 @@ suiteFor(
       sourceRestricted: true,
     });
     expect(await read(sent.id)).toMatchObject({ ok: true, data: { data: { message: { id: sent.id, origin: sent.origin } } } });
+    // The person's retry runs on their own allowance: no Code budget attribution carries over.
+    const retried = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: retry.turn.id });
+    expect(retried && retried.kind !== "compact" ? retried.codeOrigin : "compact").toBeUndefined();
+    // Editing the text before retrying makes the person its writer; initiator and receipt stay.
+    await sql`UPDATE ai.turns SET status='completed' WHERE id=${retry.turn.id}::uuid`;
+    const edited = await aiConversations.submitChatTurn({
+      conversationId: chat.id,
+      modelId: "fixture",
+      retrySourceTurnId: retry.turn.id,
+      retryEdited: true,
+      userMessage: { role: "user", content: [{ type: "text", text: "Edited" }] },
+      runConfig: { kind: "chat", input: "Edited", actor: { kind: "user", user } },
+    });
+    expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: edited.turn.id })).toMatchObject({
+      writerOrigin: { kind: "person", id: owner },
+      turnTrigger: { kind: "automation", id: codeId },
+      send: { id: sent.id },
+    });
   });
 
   test("cutover fails pending legacy messages visibly and removes delivery storage without losing text", async () => {
@@ -980,7 +999,8 @@ suiteFor(
     });
     await aiConversations.setConversationDone({ conversationId: chat.id, ownerUserId: owner, done: false });
     // The next budget day withdraws it instead of starting it late.
-    await sql`UPDATE ai.queued_messages SET quota_checked_at=clock_timestamp()-interval '2 days' WHERE id=${id}::uuid`;
+    // Whatever it last waited for, it ends with the budget day it was accepted on.
+    await sql`UPDATE ai.queued_messages SET error='code_busy',created_at=clock_timestamp()-interval '2 days' WHERE id=${id}::uuid`;
     await drainQueuedMessages(async () => {}, chat.id, admitQueuedCodeSend);
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
     expect(await read(id)).toMatchObject({
@@ -993,6 +1013,52 @@ suiteFor(
     await sql`UPDATE ai.queued_messages SET status='failed',error='code_ai_daily_budget_limit',quota_checked_at=clock_timestamp()
       WHERE id=${dataSchema.parse(waiting.data.data).id}::uuid`;
     expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toBeTrue();
+  });
+  test("archiving withdraws a waiting Code message, so restoring never leaves two waiting on each other", async () => {
+    await setup();
+    const first = await invoke();
+    if (!first.ok) throw new Error(first.error.message);
+    const m1 = dataSchema.parse(first.data.data).id;
+    await sql`UPDATE ai.queued_messages SET status='failed',error='code_ai_daily_budget_limit',quota_checked_at=clock_timestamp() WHERE id=${m1}::uuid`;
+    // While it waits, the chat shows it as queued, not failed.
+    expect(await listQueuedMessages(chat.id)).toMatchObject([{ id: m1, failed: false }]);
+    expect(await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner })).toBeTrue();
+    const status = async (id: string) =>
+      sql<{ status: string; error: string | null }[]>`SELECT status,error FROM ai.queued_messages WHERE id=${id}::uuid`;
+    expect(await status(m1)).toEqual([{ status: "cancelled", error: "chat_archived" }]);
+    const other = await aiConversations.createConversation({ ownerUserId: owner });
+    const second = await invoke(other.shortId, ctx("after-archive"));
+    expect(second.ok).toBeTrue();
+    await aiConversations.restoreConversation({ conversationId: chat.id, ownerUserId: owner });
+    await drainQueuedMessages(async () => {}, other.id, admitQueuedCodeSend);
+    expect(await aiConversations.getLatestTurn({ conversationId: other.id })).not.toBeNull();
+    expect(await status(m1)).toEqual([{ status: "cancelled", error: "chat_archived" }]);
+  });
+  test("a queued turn never starts in an archived chat", async () => {
+    await setup();
+    await aiConversations.archiveConversation({ conversationId: chat.id, ownerUserId: owner });
+    await expect(
+      aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "fixture",
+        queuedMessageId: crypto.randomUUID(),
+        userMessage: { role: "user", content: [{ type: "text", text: "Late" }] },
+        runConfig: { kind: "chat", input: "Late", actor: { kind: "user", user } },
+      }),
+    ).rejects.toThrow("archived");
+  });
+  test("a fixed key queues a new message once the person's 24-hour key window has passed", async () => {
+    await setup();
+    const first = await invoke(chat.shortId, ctx("daily-briefing"));
+    if (!first.ok) throw new Error(first.error.message);
+    const old = dataSchema.parse(first.data.data).id;
+    // Yesterday's message ended; the same key on the next day is a new occurrence.
+    await sql`UPDATE ai.queued_messages SET status='cancelled',created_at=clock_timestamp()-interval '25 hours' WHERE id=${old}::uuid`;
+    const next = await invoke(chat.shortId, ctx("daily-briefing"), "Today's briefing.");
+    expect(next.ok).toBeTrue();
+    if (!next.ok) return;
+    expect(dataSchema.parse(next.data.data).id).not.toBe(old);
+    expect(await read(old)).toMatchObject({ ok: true, data: { data: { message: { id: old, status: "cancelled" } } } });
   });
   test("a chat turn cannot send into its own chat, and an unreadable lease asks to retry", async () => {
     await setup();
@@ -1027,7 +1093,7 @@ suiteFor(
     };
     expect(await invoke(source.shortId, context)).toMatchObject({ ok: false, error: { status: 400 } });
     lease.mockResolvedValue(null);
-    expect(await invoke(chat.shortId, context)).toMatchObject({ ok: false, error: { code: "source_unavailable", status: 503 } });
+    expect(await invoke(chat.shortId, context)).toMatchObject({ ok: false, error: { code: "source_unavailable", status: 409 } });
     expect(
       await sql<{ id: string }[]>`SELECT id FROM ai.queued_messages WHERE conversation_id IN (${source.id}::uuid,${chat.id}::uuid)`,
     ).toHaveLength(0);
