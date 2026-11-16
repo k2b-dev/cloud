@@ -976,6 +976,8 @@ function AiTurnText(props: {
       ref={element}
       class="ai-turn__text"
       classList={{ "ai-turn__text--status": quiet() }}
+      // The finished answer, which the person may quote; a status, a note between steps, or a broken-off text is none.
+      data-answer={props.completed() && !quiet() ? "" : undefined}
       aria-live={status() ? "off" : undefined}
       style={minHeight() ? { "min-height": `${minHeight()}px` } : undefined}
     >

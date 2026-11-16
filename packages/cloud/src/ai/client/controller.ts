@@ -10,6 +10,8 @@ import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
 import { aiChatMessages } from "../chat/messages";
 import { reconcileProjectedAiChoices } from "../choice-state";
 import { AI_TURN_LEASE_MS, type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
+import { aiDraftPartTurnText } from "../draft-content";
+import type { AiQuoteMarker } from "../quote-markers";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
   AiClientToolId,
@@ -50,6 +52,7 @@ type ComposerDraftInput = {
   content?: AiUserContentPart[];
   files?: File[];
   resources?: AiResourceMarker[];
+  quotes?: AiQuoteMarker[];
   storedFiles?: Array<{ path: string; mediaType: string; size: number; version: number }>;
 };
 
@@ -847,6 +850,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     const content: AiDraftContentPart[] = [
       ...(input.draftContent ?? textParts),
       ...(input.resources ?? []).map((resource) => ({ type: "resource" as const, ...resource })),
+      ...(input.quotes ?? []).map((quote) => ({ type: "quote" as const, ...quote })),
       ...(input.storedFiles ?? []).map((file) => ({ type: "file" as const, ...file })),
       ...uploaded.map((file) => ({ type: "file" as const, ...file })),
     ];
@@ -965,6 +969,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         ...(input.content ?? []),
         ...(!input.content?.length && input.message ? [{ type: "text" as const, text: input.message }] : []),
         ...(input.resources ?? []).map((ref) => ({ type: "text" as const, text: aiResourceMarker(ref) })),
+        ...(input.quotes ?? []).map((quote) => ({ type: "text" as const, text: aiDraftPartTurnText({ type: "quote", ...quote }) })),
         ...(input.storedFiles ?? []).map((file) => ({ type: "text" as const, text: aiAttachmentMarker(file) })),
         ...(input.files ?? []).map((file) => ({
           type: "text" as const,
@@ -1013,14 +1018,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
               role: "user",
               content: savedDraft.content.map((part) => ({
                 type: "text",
-                text:
-                  part.type === "text"
-                    ? part.text
-                    : part.type === "file"
-                      ? aiAttachmentMarker(part)
-                      : part.type === "project-file"
-                        ? `Project file: ${part.path}`
-                        : aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }),
+                text: part.type === "text" ? part.text : part.type === "file" ? aiAttachmentMarker(part) : aiDraftPartTurnText(part),
               })),
             },
           },

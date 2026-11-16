@@ -1,12 +1,23 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, type ChatAction, type ChatAttachment, dialogCore, PanelDialog, panelDialogOptions, TextInput } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import {
+  Button,
+  type ChatAction,
+  type ChatAttachment,
+  dialogCore,
+  MessageQuote,
+  PanelDialog,
+  panelDialogOptions,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
+import { createSignal, For, type JSX, Show } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
 import type { AiChatActions } from "./message-actions";
 import {
   type AiRetryMessageInput,
   copyTextFromMessage,
+  quotesFromMessage,
   resourcesFromMessage,
   textAttachmentSummariesFromMessage,
   userContentWithEditedVisibleText,
@@ -71,6 +82,28 @@ const openModifyRetryDialog = (
 };
 
 export const aiUserMessageText = (entry: AiStoredMessage): string => userVisibleTextFromMessage(entry.message);
+
+/**
+ * The passages a user message quotes, above its text: each as the marked passage the composer showed, with whose words
+ * it are. Nothing when the message quotes nothing.
+ */
+export function AiUserMessageQuotes(props: { entry: AiStoredMessage }): JSX.Element {
+  const locale = useLocale();
+  const quotes = () => quotesFromMessage(props.entry.message);
+  return (
+    <Show when={quotes().length}>
+      <div class="ai-user-quotes">
+        <For each={quotes()}>
+          {(quote) => (
+            <MessageQuote
+              quote={{ author: quote.from === "assistant" ? "Gustav" : aiChatMessages(locale()).quotedFromYou, text: quote.text }}
+            />
+          )}
+        </For>
+      </div>
+    </Show>
+  );
+}
 
 export const aiUserMessageAttachments = (entry: AiStoredMessage, actions: AiChatActions = {}): ChatAttachment[] => [
   ...textAttachmentSummariesFromMessage(entry.message).map((attachment, index) => ({

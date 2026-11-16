@@ -1,5 +1,6 @@
 import type { Input } from "@k2b/nessi";
 import { parseAiAttachmentMarkers } from "./attachments";
+import { parseAiQuoteMarker } from "./quote-markers";
 import { parseAiResourceMarker } from "./resource-markers";
 import { assistantVisibleTextFromMessage } from "./timeline";
 import type { AiConversation, AiConversationResourceOccurrence, AiConversationService, AiStoredMessage } from "./types";
@@ -361,6 +362,8 @@ export const turnInputText = (input: Input): { text: string; attachments: boolea
       attachments = true;
       continue;
     }
+    // A quoted passage is no word of the person's own.
+    if (parseAiQuoteMarker(text)) continue;
     const parsed = parseAiAttachmentMarkers(text);
     if (parsed.attachments.length) attachments = true;
     if (parsed.text) texts.push(parsed.text);

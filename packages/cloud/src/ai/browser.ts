@@ -8,6 +8,7 @@ export {
   parseCodeToolInput,
 } from "./browser-code-contracts";
 export { type AiTaskRequest, type AiTaskRequestInput, AiTaskRequestSchema } from "./task-contracts";
+export { type AiQuoteMarker, aiQuotesWith } from "./quote-markers";
 export { type AiTodoPlan, parseAiTodoPlan } from "./todo-contracts";
 
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";

@@ -7,6 +7,7 @@ import { CODE_RUNTIME_TOOL_NAMES } from "../browser-code-contracts";
 import { normalizeAiUploadMediaType } from "../file-media-type";
 import { aiProjectFilePathFromMount, aiSkillFilePathFromMount } from "../file-mount";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "../limits";
+import { type AiQuoteMarker, parseAiQuoteMarker } from "../quote-markers";
 import { type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
 import { assistantVisibleTextFromMessage } from "../timeline";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
@@ -193,7 +194,7 @@ export const userVisibleTextFromMessage = (message: Message): string => {
     .map((part) => {
       const text = typeof part === "string" ? part : part.type === "text" ? part.text : "";
       if (text.startsWith(ATTACHMENT_CONTEXT_PREFIX)) return "";
-      if (parseAiResourceMarker(text)) return "";
+      if (parseAiResourceMarker(text) || parseAiQuoteMarker(text)) return "";
       return parseAiAttachmentMarkers(text).text;
     })
     .join("")
@@ -221,10 +222,19 @@ export const resourcesFromMessage = (message: Message): AiResourceMarker[] => {
   });
 };
 
+/** The passages this user message quotes, in their order, shown above its text. */
+export const quotesFromMessage = (message: Message): AiQuoteMarker[] => {
+  if (message.role !== "user") return [];
+  return message.content.flatMap((part) => {
+    const quote = parseAiQuoteMarker(typeof part === "string" ? part : part.type === "text" ? part.text : "");
+    return quote ? [quote] : [];
+  });
+};
+
 export const isAttachmentContextPart = (part: AiUserContentPart): boolean => {
   const text = typeof part === "string" ? part : part.type === "text" ? part.text : "";
   if (text.startsWith(ATTACHMENT_CONTEXT_PREFIX)) return true;
-  if (parseAiResourceMarker(text)) return true;
+  if (parseAiResourceMarker(text) || parseAiQuoteMarker(text)) return true;
   return parseAiAttachmentMarkers(text).attachments.length > 0 && !parseAiAttachmentMarkers(text).text;
 };
 

@@ -8,9 +8,10 @@ import { AiModelRequestSchema } from "../shared/ai-models";
 import { aiAttachmentMarker } from "./attachments";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { hasAiChoiceProvenance } from "./choices";
-import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
+import { AI_DRAFT_QUOTE_MAX_ITEMS, AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema, AiLocalContextSchema } from "./local-tool-contracts";
 import { AiQuotaError } from "./quotas";
+import { AiQuoteMarkerSchema } from "./quote-markers";
 import { AiResourceMarkerSchema } from "./resource-markers";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { AI_SKILL_NAME_MAX_CHARS, AI_SKILL_NAME_PATTERN } from "./skill-format";
@@ -35,18 +36,24 @@ export const AiDraftContentPartSchema = z.discriminatedUnion("type", [
     path: z.string().min(1).max(500).startsWith("/project/"),
     inline: z.boolean().optional(),
   }),
+  AiQuoteMarkerSchema.extend({ type: z.literal("quote") }).strict(),
 ]);
 
 export const AiConversationDraftInputSchema = z
   .object({
-    content: z.array(AiDraftContentPartSchema).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
+    content: z.array(AiDraftContentPartSchema).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1 + AI_DRAFT_QUOTE_MAX_ITEMS),
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.content.reduce((length, part) => length + (part.type === "text" ? part.text.length : 0), 0) > 20_000)
+    // Quoted passages count towards the draft's text: what the model reads stays within the same bound.
+    const text = (part: AiDraftContentPart) => (part.type === "text" || part.type === "quote" ? part.text.length : 0);
+    if (value.content.reduce((length, part) => length + text(part), 0) > 20_000)
       context.addIssue({ code: "custom", path: ["content"], message: "Draft text exceeds 20000 characters" });
-    if (value.content.filter((part) => part.type !== "text").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
+    if (value.content.filter((part) => part.type !== "text" && part.type !== "quote").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
       context.addIssue({ code: "custom", path: ["content"], message: `A draft can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items` });
+    }
+    if (value.content.filter((part) => part.type === "quote").length > AI_DRAFT_QUOTE_MAX_ITEMS) {
+      context.addIssue({ code: "custom", path: ["content"], message: `A draft can quote at most ${AI_DRAFT_QUOTE_MAX_ITEMS} passages` });
     }
   });
 

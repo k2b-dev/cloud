@@ -141,7 +141,9 @@ export type AiDraftContentPart =
   | { type: "text"; text: string }
   | { type: "resource"; ref: CloudResourceRef; title?: string; icon?: string; href?: string; inline?: boolean }
   | { type: "file"; path: string; mediaType: string; size: number; version: number; inline?: boolean }
-  | { type: "project-file"; path: string; inline?: boolean };
+  | { type: "project-file"; path: string; inline?: boolean }
+  /** A passage quoted from this conversation: Gustav's answer or the person's own earlier message. */
+  | { type: "quote"; from: "assistant" | "user"; text: string };
 
 export type AiConversationDraft = {
   content: AiDraftContentPart[];

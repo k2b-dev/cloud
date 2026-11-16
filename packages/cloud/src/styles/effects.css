@@ -39,6 +39,13 @@
   min-width: 0;
 }
 
+/* The passages a message quotes stand above its text, each as the marked passage the composer showed. */
+.k2b-ui .ai-user-quotes {
+  display: grid;
+  gap: 0.375rem;
+  margin-bottom: 0.375rem;
+}
+
 .k2b-ui .ai-turn-work__meta {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

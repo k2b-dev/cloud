@@ -33,6 +33,7 @@ import { activeTimelineSeq } from "./turn-navigator-utils";
 import { type AiTurnDuration, type AiTurnSegment, AiTurnView } from "./turn-view";
 import {
   aiSteerMessageText,
+  AiUserMessageQuotes,
   aiUserMessageAttachments,
   aiUserMessageText,
   createAiSteerMessageActions,
@@ -285,7 +286,8 @@ const storedItems = (
         ) : text || item.entry.meta?.codeOrigin ? (
           <>
             <Show when={item.entry.meta?.codeOrigin}>{(origin) => <p class="text-xs text-dimmed">{origin().label}</p>}</Show>
-            {text ? <p class="whitespace-pre-wrap">{text}</p> : undefined}
+            <AiUserMessageQuotes entry={item.entry} />
+            {text ? <p class="ai-user-text whitespace-pre-wrap">{text}</p> : undefined}
           </>
         ) : undefined,
         attachments: aiUserMessageAttachments(item.entry, actions),

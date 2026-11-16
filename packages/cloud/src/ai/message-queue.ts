@@ -2,12 +2,11 @@ import { sql } from "../runtime/clients";
 
 import { logger } from "../services/logging";
 import { aiChatAccessSubject, isAssistantChatTurn } from "./assistant-models";
-import { editAiDraftText } from "./draft-content";
+import { aiDraftPartTurnText, editAiDraftText } from "./draft-content";
 import { canonicalizeAiConversationAttachments } from "./file-context";
 import { AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT } from "./files-store";
 import { aiInputToUserMessage, aiTurnInputToContent } from "./http";
 import { AiQuotaError, aiQuotas } from "./quotas";
-import { aiResourceMarker } from "./resource-markers";
 import { aiConversations } from "./store";
 import type { AiConversationService, AiDraftContentPart } from "./types";
 
@@ -113,11 +112,9 @@ export const editQueuedMessage = async (conversationId: string, id: string, text
     const parts = content.map((part) =>
       part.type === "text"
         ? part
-        : part.type === "project-file"
-          ? { type: "text" as const, text: `Project file: ${part.path}` }
-          : part.type === "file"
-            ? { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size }
-            : { type: "text" as const, text: aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }) },
+        : part.type === "file"
+          ? { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size }
+          : { type: "text" as const, text: aiDraftPartTurnText(part) },
     );
     const { message } = aiInputToUserMessage(aiTurnInputToContent({ content: parts }));
     const userMessage = canonicalizeAiConversationAttachments(message, row.submission.runConfig.files);

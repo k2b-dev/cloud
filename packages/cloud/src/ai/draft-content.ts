@@ -1,7 +1,9 @@
+import { aiQuoteMarker } from "./quote-markers";
+import { aiResourceMarker } from "./resource-markers";
 import type { AiDraftContentPart } from "./types";
 
 export const aiDraftPartLabel = (part: AiDraftContentPart): string =>
-  part.type === "text"
+  part.type === "text" || part.type === "quote"
     ? part.text
     : part.type === "resource"
       ? (part.title ?? part.ref.id)
@@ -10,7 +12,7 @@ export const aiDraftPartLabel = (part: AiDraftContentPart): string =>
         : part.path.split("/").at(-1) || part.path;
 
 export const aiDraftText = (content: readonly AiDraftContentPart[]) =>
-  content.map((part) => (part.type === "text" || part.inline ? aiDraftPartLabel(part) : "")).join("");
+  content.map((part) => (part.type === "text" || (part.type !== "quote" && part.inline) ? aiDraftPartLabel(part) : "")).join("");
 
 /** Queue text edits preserve untouched inline identities and ordinary attachments. */
 export function editAiDraftText(content: readonly AiDraftContentPart[], text: string): AiDraftContentPart[] {
@@ -29,7 +31,7 @@ export function editAiDraftText(content: readonly AiDraftContentPart[], text: st
       position += part.text.length;
       return [];
     }
-    if (!part.inline) return [];
+    if (part.type === "quote" || !part.inline) return [];
     const from = position;
     position += aiDraftPartLabel(part).length;
     if (position <= start) return [{ from, end: position, part }];
@@ -44,6 +46,14 @@ export function editAiDraftText(content: readonly AiDraftContentPart[], text: st
     offset = item.end;
   }
   if (offset < text.length) result.push({ type: "text", text: text.slice(offset) });
-  result.push(...content.filter((part) => part.type !== "text" && !part.inline));
+  result.push(...content.filter((part) => part.type !== "text" && (part.type === "quote" || !part.inline)));
   return result;
 }
+
+/** The text a draft part sends to the model, for the parts that travel as text: a quote, a project file, a Cloud item. */
+export const aiDraftPartTurnText = (part: Exclude<AiDraftContentPart, { type: "text" | "file" }>): string =>
+  part.type === "quote"
+    ? aiQuoteMarker({ from: part.from, text: part.text })
+    : part.type === "project-file"
+      ? `Project file: ${part.path}`
+      : aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href });

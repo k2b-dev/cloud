@@ -6,9 +6,11 @@ import type {
   AiOpenQuestion,
   AiOpenQuestions,
   AiProject,
+  AiQuoteMarker,
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
+import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
@@ -263,6 +265,11 @@ type ProjectViewState = {
 
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
 const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) => ({ default: module.ChatWorkspace })));
+// "Quote" loads with the first selection in the chat; a draft's quote rows load with its first quote.
+const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
+const ComposerQuotes = lazy(async () => ({
+  default: (await importOnDemand(() => import("./assistant-quotes")))?.ChatComposerQuotes ?? (() => null),
+}));
 
 export default function AssistantWorkspace(props: Props) {
   const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
@@ -529,6 +536,18 @@ export default function AssistantWorkspace(props: Props) {
   const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
   const [timelineViewport, setTimelineViewport] = createSignal<HTMLDivElement>();
   const [timelineContent, setTimelineContent] = createSignal<HTMLDivElement>();
+  // "Quote" loads with the first text selected in the chat and then follows every selection there itself.
+  const [quoting, setQuoting] = createSignal(false);
+  onMount(() => {
+    const select = () => {
+      const selection = document.getSelection();
+      if (!selection || selection.isCollapsed || !timelineContent()?.contains(selection.anchorNode)) return;
+      document.removeEventListener("selectionchange", select);
+      setQuoting(true);
+    };
+    document.addEventListener("selectionchange", select);
+    onCleanup(() => document.removeEventListener("selectionchange", select));
+  });
   let scrollToMessageAnchor: ((anchorId: string | number) => boolean) | undefined;
 
   let revealRequest = 0;
@@ -628,6 +647,14 @@ export default function AssistantWorkspace(props: Props) {
   };
   const [composerMentions, setComposerMentions] = createSignal<Record<string, readonly ChatMention[]>>({});
   const mentionsFor = (key: string) => composerMentions()[key] ?? [];
+  // Passages the draft quotes, saved with it like its attachments.
+  const [composerQuotes, setComposerQuotes] = createSignal<Record<string, readonly AiQuoteMarker[]>>({});
+  const quotesFor = (key: string) => composerQuotes()[key] ?? [];
+  const setQuotesFor = (key: string, quotes: readonly AiQuoteMarker[]) => {
+    editComposerSession(session(key));
+    touchSession();
+    setComposerQuotes((all) => ({ ...all, [key]: quotes }));
+  };
   const setMentionsFor = (key: string, mentions: readonly ChatMention[]) => {
     editComposerSession(session(key));
     touchSession();
@@ -653,6 +680,7 @@ export default function AssistantWorkspace(props: Props) {
     setComposerDrafts((current) => ({ ...current, [key]: restored.text }));
     setComposerAttachments((current) => ({ ...current, [key]: restored.attachments }));
     setComposerMentions((current) => ({ ...current, [key]: restored.mentions }));
+    setComposerQuotes((current) => ({ ...current, [key]: restored.quotes }));
     const local = session(key);
     for (const restored of pastedLinkRestores.get(local) ?? []) restored();
     local.editGeneration++;
@@ -727,13 +755,15 @@ export default function AssistantWorkspace(props: Props) {
     return next;
   };
   type ComposerOverride = { text: string; mentions: readonly ChatMention[] };
-  const composerInput = (key: string, override?: ComposerOverride) =>
-    aiComposerSendInput({
+  const composerInput = (key: string, override?: ComposerOverride) => {
+    const input = aiComposerSendInput({
       intent: "send",
       text: override?.text ?? composerDraft(key),
       mentions: override?.mentions ?? mentionsFor(key),
       attachments: aiChatAttachments(composerAttachmentsFor(key)),
     });
+    return quotesFor(key).length ? { ...input, quotes: [...quotesFor(key)] } : input;
+  };
   /**
    * Only a save the server rejected for its revision is a conflict. Any other failure, such as an unreachable app,
    * leaves the saved draft as it was: the composer keeps its unsaved text and says that saving failed.
@@ -1568,7 +1598,7 @@ export default function AssistantWorkspace(props: Props) {
           editableText: aiComposerDraft(message.content).text,
           text: message.content
             .map((part) =>
-              part.type === "text"
+              part.type === "text" || part.type === "quote"
                 ? part.text
                 : part.type === "file" || part.type === "project-file"
                   ? part.path
@@ -2487,6 +2517,20 @@ export default function AssistantWorkspace(props: Props) {
                   }
                 />
               </Show>
+              <Show when={quotesFor(sessionKey()).length}>
+                <ComposerQuotes
+                  quotes={quotesFor(sessionKey()).map((quote, index) => ({
+                    id: `${index}:${quote.text}`,
+                    author: quote.from === "assistant" ? "Gustav" : t().quotedFromYou,
+                    text: quote.text,
+                    onRemove: () =>
+                      setQuotesFor(
+                        sessionKey(),
+                        quotesFor(sessionKey()).filter((_, position) => position !== index),
+                      ),
+                  }))}
+                />
+              </Show>
             </>
           }
           draftKey={composerIdentity(sessionKey())}
@@ -2871,6 +2915,7 @@ export default function AssistantWorkspace(props: Props) {
     });
 
     return (
+      <>
       <Chat.Timeline
         class="ai-message-list-container h-full"
         conversationKey={chat.activeConversationId()}
@@ -2896,6 +2941,21 @@ export default function AssistantWorkspace(props: Props) {
           />
         }
       />
+      <Show when={quoting() && timelineContent()}>
+        {(root) => (
+          <QuoteSelection
+            root={root()}
+            label={t().quoteSelection}
+            quotes={quotesFor(composerSessionKey())}
+            onChange={(quotes) => {
+              setQuotesFor(composerSessionKey(), quotes);
+              // The answer to the passage is written in the field.
+              focusComposer();
+            }}
+          />
+        )}
+      </Show>
+      </>
     );
   };
 

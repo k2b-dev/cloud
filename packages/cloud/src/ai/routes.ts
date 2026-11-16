@@ -94,7 +94,7 @@ import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-
 import { AiRecentResourceSchema, listAiRecentResources } from "./recent-resources";
 import { RECENT_SENT_REF_LIMIT } from "./recent-sent-refs";
 import { type AiChatRequestContext, resolveAiChatRequestContext as resolveContext } from "./request-context";
-import { aiResourceMarker } from "./resource-markers";
+import { aiDraftPartTurnText } from "./draft-content";
 import { isConversationResourceCursor } from "./resource-refs";
 import {
   AiTurnActionSchema,
@@ -1101,14 +1101,10 @@ export const aiRoutes = (() => {
         const resourceParts = conversation.draft.content.filter((part) => part.type === "resource");
         const turnContent = conversation.draft.content.map((part) => {
           if (part.type === "text") return { type: "text" as const, text: part.text };
-          if (part.type === "project-file") return { type: "text" as const, text: `Project file: ${part.path}` };
           if (part.type === "file") {
             return { type: "attachment" as const, path: part.path, mediaType: part.mediaType, size: part.size };
           }
-          return {
-            type: "text" as const,
-            text: aiResourceMarker({ ref: part.ref, title: part.title, icon: part.icon, href: part.href }),
-          };
+          return { type: "text" as const, text: aiDraftPartTurnText(part) };
         });
         const { input, message } = aiInputToUserMessage(aiTurnInputToContent({ content: turnContent }));
         const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, resourceContext(c)) : null;
