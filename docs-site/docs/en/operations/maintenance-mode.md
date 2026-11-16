@@ -84,18 +84,19 @@ shows the name of the person who switched maintenance on.
 
 ## The waiting game
 
-Below the status line the page offers a small game, "Kurz spielen?" ("Play for
-a moment?"). It never starts on its own. The line opens the game in its waiting
-state; Space, a tap, or a click on the maintenance symbol starts a round. Arrow
-keys or swipes dodge, jump and slide. Escape or "Spiel beenden" closes the game
-and returns focus to the line. The game makes no sound and loads nothing: it is
-part of the page, under the same content security policy. The record stays in
-this browser only. With "reduce motion" the game runs slower and dims the
-screen instead of shaking it.
+Below the status line a small robot waits on a pale road, with "Leertaste:
+losfahren" ("Space: start") or, on touch screens, "Tippen: losfahren" below
+it. A round never starts on its own: Space, a tap on the road, or a click on
+the maintenance symbol starts one. Arrow keys or swipes dodge, jump and slide.
+Escape or "Spiel beenden", shown only during a round, returns to the waiting
+robot; the focus stays on the game, so Space starts the next round. The game
+makes no sound and loads nothing: it is part of the page, under the same
+content security policy. The record stays in this browser only. With "reduce
+motion" the game runs slower and dims the screen instead of shaking it.
 
 If maintenance ends during a round, the page shows "Wartung beendet" with
 "Weiter" and reloads only after the round or that click. When nobody plays, it
-reloads as before. An app page offers the game only once the restart takes
+reloads as before. An app page shows the game only once the restart takes
 longer than usual.
 
 ## When one app restarts

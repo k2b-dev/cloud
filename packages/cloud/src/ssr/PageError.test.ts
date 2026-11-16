@@ -259,10 +259,11 @@ describe("shared page access and error responses", () => {
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.text()).toContain("503");
   });
-  test("only the generic not-found and server-failure pages offer the waiting game", async () => {
+  test("only the generic not-found and server-failure pages show the waiting game", async () => {
     const offered = async (path: string, init?: RequestInit) => {
       const body = await (await server.request(path, init)).text();
-      return body.includes("data-waiting-game") && body.includes("Play for a moment?");
+      // The scene's box is part of the first paint, so nothing moves when the game code arrives.
+      return body.includes("data-waiting-game>") && body.includes("h-[clamp(20rem,52vh,32rem)]");
     };
     expect(await offered("/nested/missing")).toBe(true);
     expect(await offered("/minimal")).toBe(true);

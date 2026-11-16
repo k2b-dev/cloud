@@ -12,8 +12,6 @@ export type NotFoundStateProps = {
   description?: string;
   icon?: string;
   action?: NotFoundStateAction;
-  /** Quiet content below the way out, such as one secondary text button; never a second main action. */
-  children?: JSX.Element;
 };
 
 export function NotFoundState(props: NotFoundStateProps): JSX.Element {
@@ -37,7 +35,6 @@ export function NotFoundState(props: NotFoundStateProps): JSX.Element {
           </a>
         )}
       </Show>
-      {props.children}
     </div>
   );
 }

@@ -2,49 +2,49 @@ import type { MaintenanceGameTexts } from "./messages";
 
 /**
  * „Lauf“, the waiting game of the maintenance page and of the generic error pages: a small robot on one wheel rolls
- * along a road, jumps, slides and changes lanes. It never starts on its own, makes no sound and needs no network.
+ * along a road, jumps, slides and changes lanes. The scene waits visibly below the page, but a round never starts on
+ * its own: Space, a tap on the road or the page's own symbol starts it. No sound, no network.
  *
  * The game is plain browser source, so the gateway can inline it in its self-contained page under a nonce and Cloud
  * pages can load the same text on demand. `LAUF_SCRIPT` is one function expression: `(options) => controller`.
  */
 export type MaintenanceGameOptions = {
-  /** The element the game's full-size layer is appended to. */
+  /** The element the game's layer fills; the page gives it its place and size. */
   host: HTMLElement;
-  /** The page content above the road; its bottom edge is the horizon. Read on every frame, so it may be replaced. */
+  /**
+   * The page content above the road; its bottom edge is the horizon. Read on every frame, so it may be replaced.
+   * Without one, the road starts at the top of the layer.
+   */
   anchor: () => Element | null;
   t: MaintenanceGameTexts;
   /** Whether the page shows its dark theme right now. */
   dark: () => boolean;
-  /** The game closed (Escape, „Leave game“); the page returns focus to its entry. */
-  onClose: () => void;
-  /** After the maintenance ended: the round is over or the player closed the game, so the page may reload. */
+  /** After the maintenance ended: the round is over or the player left it, so the page may reload. */
   onFinish: () => void;
 };
 
 export type MaintenanceGameController = {
-  /** Shows the waiting state: the robot faces the viewer, Space or a tap starts. */
+  /** Shows the waiting scene: the robot faces the viewer; Space or a tap starts a round. */
   open: () => void;
-  /** Opens if needed and starts a round right away (the maintenance symbol). */
+  /** Starts a round right away (the page's symbol). */
   start: () => void;
-  close: () => void;
   /**
    * The maintenance ended. Returns true while a round is on screen: the page then shows „Maintenance finished ·
-   * Continue“ and waits for `onFinish`. Returns false otherwise, and the game closes.
+   * Continue“ and waits for `onFinish`. Returns false otherwise.
    */
   end: () => boolean;
-  isOpen: () => boolean;
 };
 
 export type MaintenanceGameFactory = (options: MaintenanceGameOptions) => MaintenanceGameController;
 
 /** The game's own layer: canvas, live text for screen readers and the „Leave game“ button. Theme comes from the game. */
-export const LAUF_CSS = `.lauf{position:fixed;inset:0;z-index:1;background:var(--lauf-bg);font-family:inherit}
+export const LAUF_CSS = `.lauf{position:absolute;inset:0;font-family:inherit}
 .lauf:focus{outline:none}
 .lauf canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
 [data-lauf=run] .lauf canvas{touch-action:none}
 .lauf-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.lauf-exit{position:fixed;left:12px;bottom:12px;z-index:5;font:inherit;font-size:13px;color:var(--lauf-text);background:var(--lauf-chip);border:1px solid var(--lauf-edge);border-radius:8px;height:30px;padding:0 10px;cursor:pointer}
-.lauf-exit:hover{background:var(--lauf-hover)}.lauf-exit:focus-visible{outline:2px solid var(--lauf-focus);outline-offset:2px}`;
+.lauf-exit{visibility:hidden;position:absolute;left:12px;bottom:12px;z-index:5;font:inherit;font-size:13px;color:var(--lauf-text);background:var(--lauf-chip);border:1px solid var(--lauf-edge);border-radius:8px;height:30px;padding:0 10px;cursor:pointer}
+[data-lauf=run] .lauf-exit{visibility:visible}.lauf-exit:hover{background:var(--lauf-hover)}.lauf-exit:focus-visible{outline:2px solid var(--lauf-focus);outline-offset:2px}`;
 
 export const LAUF_SCRIPT = String.raw`(o)=>{
 const t=o.t,RM=matchMedia('(prefers-reduced-motion: reduce)').matches,TOUCH=matchMedia('(pointer: coarse)').matches;
@@ -55,9 +55,9 @@ dark:{bg:'24 24 27',ink:'#e4e4e7',grey:'#9a9aa5',light:'#52525b',road0:'#2a2a2f'
 let C=PAL.light,BG=C.bg,INK=C.ink,GREY=C.grey,LIGHT=C.light,BOT=C.bot,PANEL=C.panel;
 const ls=(k,v)=>{try{if(v===undefined)return +localStorage.getItem(k)||0;localStorage.setItem(k,v)}catch{}return v||0};
 const fmt=n=>String(n).replace(/\B(?=(\d{3})+(?!\d))/g,' ');
-const bgA=a=>'rgb('+BG+' / '+a+')';
+const bgA=a=>'rgb('+BG+' / '+a+')',k0=a=>'rgb(0 0 0 / '+a+')';
 const SOLID={low:1,tall:1,bar:1},PICKS=['mag','bat','spring','wind'];
-const layer=document.createElement('div');layer.className='lauf';layer.hidden=true;layer.tabIndex=-1;layer.setAttribute('role','group');layer.setAttribute('aria-label',t.name);
+const layer=document.createElement('div');layer.className='lauf';layer.tabIndex=-1;layer.setAttribute('role','group');layer.setAttribute('aria-label',t.name);
 layer.innerHTML='<canvas aria-hidden="true"></canvas><span class="lauf-sr" role="status"></span><button type="button" class="lauf-exit"></button>';
 o.host.appendChild(layer);
 const c=layer.querySelector('canvas'),x=c.getContext('2d'),sr=layer.querySelector('.lauf-sr'),exitB=layer.querySelector('button');exitB.textContent=t.exit;
@@ -69,8 +69,10 @@ const ZC0=CD*CT+CH*ST,A0=(CH*CT-CD*ST)/ZC0;
 const cam={w:0,h:0,F:1,cx:0,cy:0,rw:0,py:0,hz:0,S:1,CH,CD};
 let st,raf=0,last=0,ended=false,learned=ls(LKEY),pale=1,idleT=0,open=false;
 const mode=m=>{if(open)document.documentElement.dataset.lauf=m;else delete document.documentElement.dataset.lauf};
-const paint=()=>{C=o.dark()?PAL.dark:PAL.light;BG=C.bg;INK=C.ink;GREY=C.grey;LIGHT=C.light;BOT=C.bot;PANEL=C.panel;FONT=getComputedStyle(layer).fontFamily||FONT;
-for(const[k,v]of[['bg','rgb('+C.bg+')'],['text',C.text],['edge',C.line],['chip',bgA(.9)],['hover',C.hover],['focus',C.focus]])layer.style.setProperty('--lauf-'+k,v)};
+/* the road fades into the page: take the surface behind the host when the browser reports it as rgb */
+const surface=()=>{for(let e=o.host;e;e=e.parentElement){const v=getComputedStyle(e).backgroundColor,m=/^rgba?\(/.test(v)&&v.match(/[\d.]+/g);if(m&&(m[3]===undefined||+m[3]>0))return m.slice(0,3).join(' ');if(m===false&&v!=='transparent')break}return C.bg};
+const paint=()=>{C=o.dark()?PAL.dark:PAL.light;BG=surface();INK=C.ink;GREY=C.grey;LIGHT=C.light;BOT=C.bot;PANEL=C.panel;FONT=getComputedStyle(layer).fontFamily||FONT;
+for(const[k,v]of[['text',C.text],['edge',C.line],['chip',bgA(.9)],['hover',C.hover],['focus',C.focus]])layer.style.setProperty('--lauf-'+k,v)};
 function fit(){const d=Math.min(2,devicePixelRatio||1);cam.w=c.clientWidth;cam.h=c.clientHeight;c.width=cam.w*d;c.height=cam.h*d;x.setTransform(d,0,0,d,0,0);if(st&&open)draw(0)}
 function layout(){const a=o.anchor(),top=layer.getBoundingClientRect().top,bottom=a?a.getBoundingClientRect().bottom-top:0;
 cam.rw=Math.min(cam.w*.8,440);cam.cx=cam.w/2;cam.py=cam.h-Math.max(86,cam.h*.13);cam.hz=Math.min(bottom+2,cam.py-230);cam.S=cam.py-cam.hz;
@@ -121,15 +123,16 @@ right(){if(st.mode==='run'&&st.lane<1){st.lane++;st.lastMove=st.t}},
 jump(hold){if(st.mode==='over'){if(st.t-st.ot>.6){if(ended)return finish();reset('run');sr.textContent=t.running}return}if(st.mode!=='run')return;st.jbuf=.13;st.hold=true;st.holdT=hold||0},
 release(){if(!st.holdT)st.hold=false},
 down(){if(st.mode!=='run')return;if(st.y>0){st.vy=Math.min(st.vy,-13);st.sbuf=.3}else st.slide=SLIDE}};
-function show(){if(open)return;open=true;ended=false;paint();reset('idle');layer.hidden=false;mode('wait');fit();layer.focus({preventScroll:true});sr.textContent=t.intro;
+/* the scene waits from the start and takes no focus; a round takes the focus to the scene, so keys reach it */
+function show(){if(open)return;open=true;ended=false;paint();reset('idle');mode('wait');fit();
 addEventListener('keydown',key);addEventListener('keyup',keyUp);last=0;cancelAnimationFrame(raf);raf=requestAnimationFrame(frame)}
-function start(){show();if(st.mode!=='idle')return;paint();reset('run');mode('run');layer.focus({preventScroll:true});sr.textContent=t.running}
-function close(){if(!open)return;open=false;cancelAnimationFrame(raf);removeEventListener('keydown',key);removeEventListener('keyup',keyUp);layer.hidden=true;mode();sr.textContent='';
-if(ended){ended=false;o.onFinish()}else o.onClose()}
-function finish(){ended=false;close();o.onFinish()}
+function start(){show();if(st.mode!=='idle')return;paint();reset('run');mode('run');layer.focus({preventScroll:true});sr.textContent=t.intro}
+/* Escape or „Leave game“: back to the waiting scene; the focus stays on the scene, so Space starts again */
+function stop(){if(st.mode==='idle')return;if(ended)return finish();reset('idle');mode('wait');layer.focus({preventScroll:true});sr.textContent=t.left}
+function finish(){ended=false;reset('idle');mode('wait');sr.textContent='';o.onFinish()}
 function key(e){const k=e.key,ae=document.activeElement,free=!ae||ae===document.body||ae===layer;
-if(k==='Escape'){e.preventDefault();return close()}
 if(st.mode==='idle'){if((k===' '||k==='Enter')&&free&&!e.repeat){e.preventDefault();start()}return}
+if(k==='Escape'){e.preventDefault();return stop()}
 if(!free&&ae!==exitB)return;if(ae===exitB&&(k===' '||k==='Enter'))return;
 if(k==='ArrowLeft'||k==='a'){if(!e.repeat)A.left()}else if(k==='ArrowRight'||k==='d'){if(!e.repeat)A.right()}
 else if(k==='ArrowUp'||k===' '||k==='w'||k==='Enter'){if(!e.repeat)A.jump()}else if(k==='ArrowDown'||k==='s'){if(!e.repeat)A.down()}else return;e.preventDefault()}
@@ -141,7 +144,7 @@ c.addEventListener('pointermove',e=>{if(!p0||p0.used)return;const dx=e.clientX-p
 p0.used=true;if(ax>ay)dx<0?A.left():A.right();else if(dy<0)A.jump(.3);else A.down()});
 c.addEventListener('pointerup',()=>{if(p0&&!p0.used){A.jump();st.hold=false}p0=null});
 c.addEventListener('pointercancel',()=>p0=null);
-exitB.addEventListener('click',close);
+exitB.addEventListener('click',stop);
 
 /* rules */
 const mult=()=>1+Math.min(4,Math.floor(st.combo/6));
@@ -264,6 +267,7 @@ let dir=need===1?'u':need===4?'d':'r';const word=need===1?t.jump:need===4?t.slid
 if(need===2){const free=[-1,0,1].filter(l=>!st.obs.some(r=>Math.abs(r.d-q.d)<1&&r.type==='tall'&&Math.abs(l*LW-r.x)<r.w/2+.3)).sort((a,b)=>Math.abs(a-st.lane)-Math.abs(b-st.lane))[0];if(free==null)return;dir=free<st.lane?'l':'r'}
 const g=P(st.px,0,0),cy=cam.py-cam.S*.47,s=Math.min(54,cam.rw*.15),a=RM?1:.75+.25*Math.sin(st.t*6);x.globalAlpha=a;arrow(g.x,cy,dir,s);x.globalAlpha=1;
 x.textAlign='center';x.font='600 13px '+FONT;x.lineJoin='round';x.strokeStyle=bgA(.9);x.lineWidth=4;const txt=TOUCH?(need===1?t.tap:t.swipe)+': '+word:word;x.strokeText(txt,g.x,cy-s*.5-16);x.fillStyle=INK;x.fillText(txt,g.x,cy-s*.5-16)}
+function out(f){x.save();x.globalCompositeOperation='destination-out';f();x.restore()}
 function quad(a,b,d,e){x.beginPath();x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);x.lineTo(d.x,d.y);x.lineTo(e.x,e.y);x.closePath()}
 function draw(dt){
 const w=cam.w,H=cam.h,sk=st.shake*12;st.sx=sk?rnd(-sk,sk):0;st.sy=sk?rnd(-sk,sk):0;
@@ -278,15 +282,15 @@ const fast=st.mode==='run'&&!RM?clamp((st.v-18)/9,0,1):0;/* speed lines beside t
 if(fast>0){x.strokeStyle=st.wind>0?OR:GREY;x.lineWidth=2;x.lineCap='round';x.globalAlpha=fast*.5;for(let i=0;i<10;i++){const z=((i*8-st.dist*1.5)%80+80)%80-3,s=i%2?1:-1,ox=s*(e+.45+(i%3)*.35),a=P(ox,.4,z),b=P(ox,.4,z+2+fast*3);x.beginPath();x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);x.stroke()}x.globalAlpha=1}
 const os=st.obs.filter(q=>q.done!==2&&!(st.mode==='over'&&!SOLID[q.type]&&q.d-st.dist<9)).sort((a,b)=>b.d-a.d);
 for(const q of os){const z=q.d-st.dist;if(z>=0&&z<190)thing(q,z)}
-if(pale>.01){x.fillStyle=bgA(pale*.45);x.fillRect(0,0,w,H)}/* while waiting the road is pale */
+if(pale>.01)out(()=>{x.fillStyle=k0(pale*.45);x.fillRect(0,0,w,H)});/* while waiting the road is pale */
 runner();for(const q of os){const z=q.d-st.dist;if(z<0&&z>(!SOLID[q.type]?-.8:-1.3))thing(q,z)}
 for(let i=st.P.length-1;i>=0;i--){const p=st.P[i];p.l-=dt*p.d;if(p.l<=0){st.P.splice(i,1);continue}x.globalAlpha=p.l;
 if(p.ring){p.r+=dt*110;x.strokeStyle=OR;x.lineWidth=2;x.beginPath();x.arc(p.x,p.y,p.r,0,TAU);x.stroke();continue}
 p.vy+=380*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;x.fillStyle=p.col;x.beginPath();x.arc(p.x,p.y,p.r,0,TAU);x.fill()}x.globalAlpha=1;
-/* the road disappears into the page towards the distance and the bottom */
-const fade=(g,stops)=>{stops.forEach(([s,al])=>g.addColorStop(s,bgA(al)));x.fillStyle=g},ft=cam.hz+cam.S*.24;
-fade(x.createLinearGradient(0,cam.hz,0,ft),[[0,1],[.22,1],[.55,.6],[1,0]]);x.fillRect(0,0,w,ft+1);
-fade(x.createLinearGradient(0,H,0,H-64),[[0,1],[1,0]]);x.fillRect(0,H-64,w,64);
+/* the road disappears into the page towards the distance and the bottom: it turns transparent, so any page shows through */
+const fade=(g,stops)=>{stops.forEach(([s,al])=>g.addColorStop(s,k0(al)));x.fillStyle=g},ft=cam.hz+cam.S*.24;
+out(()=>{fade(x.createLinearGradient(0,cam.hz,0,ft),[[0,1],[.22,1],[.55,.6],[1,0]]);x.fillRect(0,0,w,ft+1);
+fade(x.createLinearGradient(0,H,0,H-64),[[0,1],[1,0]]);x.fillRect(0,H-64,w,64)});
 hint();
 const hx=cam.cx-Math.min(232,w/2-16),hy=cam.hz+34;x.textAlign='left';
 if(st.mode==='run'){
@@ -302,8 +306,8 @@ if(st.toast&&!shout(st.toast,w>=1000?cam.cx+cam.rw*.5+190:w-16-(w-150)/2,w>=1000
 const mid=cam.py-cam.S*.45;
 if(idle){x.fillStyle=GREY;x.font='500 13px '+FONT;x.fillText(TOUCH||w<640?t.goT:t.go,cam.cx,cam.py+40)}
 if(st.flash>0){x.fillStyle='rgb(9 9 11 / '+Math.min(.16,st.flash)+')';x.fillRect(0,0,w,H)}/* reduced motion: a short dim instead of a shake */
-if(st.mode==='over'&&st.t-st.ot>.45){x.fillStyle=bgA(Math.min(.8,(st.t-st.ot-.45)*2.5));x.fillRect(0,0,w,H);runner()}
-if(st.mode==='over'&&st.t-st.ot>.65){x.save();x.translate(cam.cx,mid-24);x.scale(1.6,1);const lg=x.createRadialGradient(0,0,0,0,0,w<640?150:185);lg.addColorStop(0,bgA(1));lg.addColorStop(.6,bgA(.96));lg.addColorStop(1,bgA(0));x.fillStyle=lg;x.globalAlpha=Math.min(1,(st.t-st.ot-.65)*4);x.beginPath();x.arc(0,0,190,0,TAU);x.fill();x.restore();
+if(st.mode==='over'&&st.t-st.ot>.45){out(()=>{x.fillStyle=k0(Math.min(.8,(st.t-st.ot-.45)*2.5));x.fillRect(0,0,w,H)});runner()}
+if(st.mode==='over'&&st.t-st.ot>.65){x.save();x.globalCompositeOperation='destination-out';x.translate(cam.cx,mid-24);x.scale(1.6,1);const lg=x.createRadialGradient(0,0,0,0,0,w<640?150:185);lg.addColorStop(0,k0(1));lg.addColorStop(.6,k0(.96));lg.addColorStop(1,k0(0));x.fillStyle=lg;x.globalAlpha=Math.min(1,(st.t-st.ot-.65)*4);x.beginPath();x.arc(0,0,190,0,TAU);x.fill();x.restore();
 x.fillStyle=INK;x.font='650 26px '+FONT;tx(fmt(score())+' '+t.pts,cam.cx,mid-14);x.font='500 13px '+FONT;x.fillStyle=GREY;if(!st.rec)tx(t.record+' '+fmt(ls(KEY)),cam.cx,mid+8);else shout(st.recS||(st.recS={txt:t.rec,t:0,fx:1,stay:1}),cam.cx,mid-54,w<640?32:42,dt);x.font='500 13px '+FONT;x.strokeStyle=bgA(.9);x.lineWidth=5;x.textAlign='center';
 x.fillStyle=GREY;tx(ended?t.cont:TOUCH||w<640?t.againT:t.again,cam.cx,mid+30)}}
 function frame(now){if(!open)return;raf=requestAnimationFrame(frame);const idle=st.mode==='idle';if(!last)last=now;const dt=Math.min(.033,(now-last)/1000);
@@ -311,4 +315,4 @@ if(idle&&last!==now&&(now-last<(RM?500:66)||document.hidden))return;/* waiting c
 last=now;idleT+=idle?(RM?.5:.066):0;const was=st.mode;if(!idle)step(dt);
 if(was==='run'&&st.mode==='over'){st.rec=score()>st.best0;if(st.rec)ls(KEY,score());sr.textContent=t.over+': '+fmt(score())+' '+t.pts+'.'+(st.rec?' '+t.rec+'.':'')+' '+(ended?t.cont:t.again)}
 draw(idle?.066:dt)}
-return{open:show,start,close,isOpen:()=>open,end(){if(!open)return false;if(st.mode==='idle'){close();return false}ended=true;return true}}}`;
+return{open:show,start,end(){if(!open||st.mode==='idle')return false;ended=true;return true}}}`;

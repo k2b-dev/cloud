@@ -85,7 +85,6 @@ instead of a loader or alert icon on the default empty state; the
 | `code` | `string` | none | Displays a large status code. |
 | `icon` | `string` | none | Displays an icon when no code is set. |
 | `action` | `{ label: string; href: string; icon?: string }` | none | Provides one navigation path out of the dead end. |
-| `children` | `JSX.Element` | none | Adds quiet content below the action, such as one secondary text button. It never competes with the action. |
 
 `NotFoundState` renders a `div`, not a `main`, so the page shell retains
 ownership of landmarks.

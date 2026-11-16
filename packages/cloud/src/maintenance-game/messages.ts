@@ -5,12 +5,12 @@ export const maintenanceGameMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      play: "Play for a moment?",
       start: "Start mini game",
       name: "Mini game",
       intro:
-        "Mini game: a small robot rolls along a road. Space or a tap starts. Arrow keys or swipes dodge, jump and slide. Escape leaves the game.",
-      running: "Round started. Escape leaves the game.",
+        "Mini game: a small robot rolls along a road. Space or a tap starts. Arrow keys or swipes dodge, jump and slide. Escape ends the round.",
+      running: "Round started. Escape ends the round.",
+      left: "Round left. Space starts a new one.",
       exit: "Leave game",
       go: "Space: start",
       goT: "Tap: start",
@@ -35,12 +35,12 @@ export const maintenanceGameMessages = i18n.define({
       swipe: "swipe",
     },
     de: {
-      play: "Kurz spielen?",
       start: "Mini-Spiel starten",
       name: "Mini-Spiel",
       intro:
-        "Mini-Spiel: Ein kleiner Roboter fährt eine Straße entlang. Leertaste oder Tippen startet. Pfeiltasten oder Wischen weichen aus, springen und rutschen. Escape beendet das Spiel.",
-      running: "Runde läuft. Escape beendet das Spiel.",
+        "Mini-Spiel: Ein kleiner Roboter fährt eine Straße entlang. Leertaste oder Tippen startet. Pfeiltasten oder Wischen weichen aus, springen und rutschen. Escape beendet die Runde.",
+      running: "Runde läuft. Escape beendet die Runde.",
+      left: "Runde verlassen. Leertaste startet eine neue.",
       exit: "Spiel beenden",
       go: "Leertaste: losfahren",
       goT: "Tippen: losfahren",

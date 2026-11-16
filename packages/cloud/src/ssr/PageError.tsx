@@ -42,20 +42,13 @@ export const renderPageError = (c: Context, status: PageErrorStatus, options: Pa
           : t.failedDescription);
   const action = options.action ?? { label: t.home, href: "/" };
   c.get("page").title = title;
-  // Only the generic „not found“ and server failure offer the waiting game, quietly below the way out.
+  // Only the generic „not found“ and server failure show the waiting game, below the way out.
   const offered = offersMaintenanceGame(status, { ...options, path: c.req.path });
   const page = () => (
-    <NotFoundState code={String(status)} title={title} description={description} action={action}>
-      {offered ? (
-        <WaitingGame
-          t={maintenanceGameMessages.resolve([getLocale(c)]).t}
-          title={title}
-          description={description}
-          action={{ label: action.label, href: action.href }}
-          icon={status === 404 ? "ti ti-error-404" : "ti ti-server-off"}
-        />
-      ) : undefined}
-    </NotFoundState>
+    <>
+      <NotFoundState code={String(status)} title={title} description={description} action={action} />
+      {offered ? <WaitingGame t={maintenanceGameMessages.resolve([getLocale(c)]).t} /> : null}
+    </>
   );
 
   if (options.layout === "pwa") {
