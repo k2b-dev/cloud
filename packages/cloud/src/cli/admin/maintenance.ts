@@ -1,8 +1,10 @@
-import { MAINTENANCE_ADMIN_API_PATH, MaintenanceStatusSchema } from "../../contracts/maintenance";
+import { MAINTENANCE_ADMIN_API_PATH, MaintenanceBypassSchema, MaintenanceStatusSchema } from "../../contracts/maintenance";
 import { arg, command, flag } from "../commands";
 import type { CloudCliContext } from "../index";
 import {
   cliColorEnabled,
+  maintenanceBypassLines,
+  maintenanceBypassOffSentence,
   maintenanceOffSentence,
   maintenanceOnSentence,
   maintenanceStatusLines,
@@ -53,6 +55,20 @@ export const maintenanceCommands = [
     async run({ ctx }) {
       const status = await call(ctx, "POST", "/off", {});
       if (!printStructured(ctx, status)) say(ctx, [maintenanceOffSentence({ locale: ctx.options.locale })]);
+    },
+  }),
+  command("maintenance bypass", {
+    summary: "Print a personal link that shows you the Cloud during the running maintenance; you still sign in as usual",
+    description:
+      "The browser that opens the link passes the maintenance page on the Cloud address, not on app domains. The link ends with this maintenance and after 12 hours at the latest; run the command again for a longer maintenance. Keep it to yourself like a password.",
+    async run({ ctx }) {
+      const response = await ctx.fetch(`${MAINTENANCE_ADMIN_API_PATH}/bypass`, { method: "POST" });
+      if (response.status === 409) {
+        await response.body?.cancel();
+        throw new Error(maintenanceBypassOffSentence({ locale: ctx.options.locale }));
+      }
+      const link = MaintenanceBypassSchema.parse(await ctx.readJson(response));
+      if (!printStructured(ctx, link)) say(ctx, maintenanceBypassLines(link, { locale: ctx.options.locale }));
     },
   }),
   command("maintenance status", {
