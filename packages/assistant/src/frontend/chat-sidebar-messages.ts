@@ -114,6 +114,8 @@ export const chatSidebarMessages = i18n.define({
       boxShowAllNamed: ({ label }: { label: string }) => `Show all ${label.toLowerCase()} in a tab`,
       boxOpenAsTab: "Open as tab",
       boxNew: ({ count }: { count: number }) => (count > 0 ? `New · ${count}` : "New"),
+      // The + that opens the menu beside the chat; the menu itself loads with its first use and brings its own copy.
+      boxAdd: "Open beside",
       boxShowNew: "Show what is new",
       boxSources: "Sources",
       boxContext: "Context",
@@ -264,6 +266,7 @@ export const chatSidebarMessages = i18n.define({
       boxShowAllNamed: ({ label }: { label: string }) => `Alle ${label} in einem Tab anzeigen`,
       boxOpenAsTab: "Als Tab öffnen",
       boxNew: ({ count }: { count: number }) => (count > 0 ? `Neu · ${count}` : "Neu"),
+      boxAdd: "Daneben öffnen",
       boxShowNew: "Neues anzeigen",
       boxSources: "Quellen",
       boxContext: "Kontext",
