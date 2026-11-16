@@ -45,6 +45,7 @@ import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/A
 import { createAssistantDictation } from "../frontend/assistant-dictation";
 import { createAssistantLiveHub, followAssistantLive, matchesAssistantInvalidation } from "../frontend/assistant-live";
 import { audioMessages } from "../frontend/audio-messages";
+import { assistantMessages } from "../frontend/messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
 import { pwaMessages } from "./messages";
@@ -493,6 +494,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
     const current = files()[key] ?? [];
     const result = await readAiComposerFiles(selected, {
       acceptsImages: props.status.visionModelConfigured,
+      locale: locale(),
       currentCount: current.length,
       currentImageBytes: current.reduce((sum, file) => sum + (file.kind === "image" ? file.size : 0), 0),
     });
@@ -654,6 +656,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
    * Questions beyond the strip's bounded list belong to chats that wait for the person but show none of their questions
    * in the strip; "more" opens the next of them.
    */
+  const waitingMoreLabel = () => assistantMessages.resolve([locale()]).t.waitingMore({ count: waiting().more });
   const showMoreQuestions = () => {
     const listed = new Set(waiting().entries.map((question) => question.conversationId));
     const next = list()?.conversations.find((entry) => entry.runStatus === "needs_attention" && !listed.has(entry.id));
@@ -752,6 +755,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
               quiet={waitingFocus.quiet()}
               onJump={jump}
               onShowMore={showMoreQuestions}
+              more={{ label: waitingMoreLabel(), always: false }}
             />
           </Show>
           <Recording />
@@ -888,6 +892,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       activeTurn: chat.activeTurn,
       reconnecting: () => chat.streamStatus() === "reconnecting",
       timeZone: props.timeZone,
+      renderedAt: props.renderedAt,
     });
     return (
       <Chat.Timeline
@@ -1093,6 +1098,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
       toast.success(t().archived({ title: conversation.title }), {
         action: {
           label: t().undo,
+          variant: "ghost",
           onClick: () =>
             void mutate(t().restore, async () => {
               await assistantApi.restoreConversation(id);

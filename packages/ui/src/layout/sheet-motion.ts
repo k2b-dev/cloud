@@ -27,6 +27,19 @@ export type SheetMotion = {
   dispose: () => void;
 };
 
+/** Initial focus goes to the first input of the top sheet, otherwise to the
+ * dialog element itself. Native `showModal()` focuses the first focusable
+ * descendant, which is the drag handle; iOS shows a ring for that programmatic
+ * focus, so the sheet moves it to the ring-less dialog before the next paint. */
+export const sheetInitialFocus = (dialog: HTMLDialogElement): HTMLElement => {
+  const input = dialog.lastElementChild?.querySelector<HTMLElement>(
+    "input:not([type='hidden']):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role='combobox']:not([disabled]):not([aria-disabled='true'])",
+  );
+  if (input) return input;
+  dialog.tabIndex = -1;
+  return dialog;
+};
+
 /** Opening and moving between detents, and closing, as in the approved prototype. */
 const MOVE_MS = 280;
 const CLOSE_MS = 220;
@@ -48,6 +61,8 @@ const CLOSE_SHARE = 0.25;
 const PROJECTION_MS = 150;
 /** A pointer that rested this long before it lifted carries no speed. */
 const REST_MS = 80;
+/** Pulled past full height, the sheet gives like a rubber band: `RUBBER_PX × ln(1 + overshoot / RUBBER_PX)`. */
+const RUBBER_PX = 28;
 /** A finger that scrolled a list this recently keeps scrolling instead of dragging the sheet. */
 const SCROLL_LOCK_MS = 100;
 /** From this width an adaptive sheet is a centred dialog and does not move. */
@@ -95,7 +110,9 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
   const owners = sheetOwners.get(frame) ?? [];
   sheetOwners.set(frame, owners);
   const owner: SheetOwner = { suspend: () => suspend(), resume: () => resume() };
-  const owning = () => !disposed && owners.at(-1) === owner;
+  /** A level that is no sheet, such as a full-screen prompt, covers this one in the same dialog element. */
+  let covered = false;
+  const owning = () => !disposed && !covered && owners.at(-1) === owner;
   const claim = () => {
     frame.dataset.sheetMotion = "";
     if (detents) frame.dataset.sheetDetents = "";
@@ -120,8 +137,8 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
   };
   const rest = (at: SheetDetent) => (at === "half" ? half : layoutHeight);
   const lowest = () => (detents ? half : layoutHeight);
-  /** Between half and full height the footer stays on the screen's edge; below half it rides along. */
-  const footerAt = (seen: number) => Math.max(0, half - seen) - (layoutHeight - seen);
+  /** Between half and full height the footer stays on the screen's edge; below half and past full it rides along. */
+  const footerAt = (seen: number) => Math.min(0, Math.max(0, half - seen) - (layoutHeight - seen));
   const dimAt = (seen: number) => (lowest() > 0 ? Math.max(0, Math.min(1, seen / lowest())) : 1);
   const frameTransform = (seen: number) => `translate3d(-50%, ${layoutHeight - seen}px, 0)`;
   const footerTransform = (seen: number) => `translate3d(0, ${footerAt(seen)}px, 0)`;
@@ -259,7 +276,8 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
     drag.y = y;
     drag.time = time;
     const floor = options.canDismiss() ? -OFFSCREEN_PX : lowest();
-    put(Math.min(layoutHeight, Math.max(floor, drag.from + distance)));
+    const wanted = drag.from + distance;
+    put(Math.max(floor, wanted > layoutHeight ? layoutHeight + RUBBER_PX * Math.log1p((wanted - layoutHeight) / RUBBER_PX) : wanted));
   };
   /** Returns whether the gesture was a drag, so its click is not a press. */
   const release = (time: number, cancelled: boolean): boolean => {
@@ -309,7 +327,7 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
 
   // A mouse or a pen drags by the handle or the header; a finger uses the touch events below.
   let suppressClick = false;
-  const header = panel.querySelector<HTMLElement>(":scope > .k2b-panel-dialog__header");
+  const header = panel.querySelector<HTMLElement>(":scope > .k2b-panel-dialog__header, :scope > .k2b-dialog__panel > .k2b-dialog__header");
   for (const zone of [handle, header]) {
     if (!zone) continue;
     let pointer: number | null = null;
@@ -466,6 +484,24 @@ export function attachSheetMotion(options: SheetMotionOptions): SheetMotion {
       put(rest(detent));
     });
   }
+
+  // dialogCore shows only its top level, the dialog element's last child; any other level on top takes the element.
+  const levels =
+    typeof MutationObserver === "function"
+      ? new MutationObserver(() => {
+          if (disposed || owners.at(-1) !== owner) return;
+          const top = frame.lastElementChild?.contains(panel) ?? true;
+          if (!top && !covered) {
+            suspend();
+            covered = true;
+          } else if (top && covered) {
+            covered = false;
+            resume();
+          }
+        })
+      : undefined;
+  levels?.observe(frame, { childList: true });
+  cleanups.push(() => levels?.disconnect());
 
   // Set before the dialog opens, so the stylesheet's own entry animation never starts.
   owners.at(-1)?.suspend();

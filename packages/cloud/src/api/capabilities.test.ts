@@ -964,6 +964,57 @@ describe("capability API", () => {
     expect(await response.json()).toMatchObject({ code: "VALIDATION_FAILED" });
   });
 
+  test("registered Unicode patterns accept ordinary names and reject hidden controls on input and output", async () => {
+    const title = z.string().regex(/^[^<>\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u);
+    const capability = entry();
+    capability.manifest = JSON.parse(
+      JSON.stringify(
+        compileCapabilities(
+          "demo",
+          defineCapabilities({
+            protocolVersion: 2,
+            queries: {
+              get: {
+                title: "Get named item",
+                description: "Return one named item.",
+                input: z.object({ id: title.describe("Name to read.") }).strict(),
+                data: z.object({ id: title }).strict(),
+                openWorld: false,
+                run: async ({ id }) => ok({ data: { id } }),
+              },
+            },
+          }),
+        ).manifest,
+      ),
+    );
+    let resultTitle = "Case report 😀";
+    let calls = 0;
+    const routes = createCapabilityRoutes({
+      getCapability: async () => capability,
+      authenticate,
+      fetch: async () => {
+        calls++;
+        return Response.json({ data: { id: resultTitle } });
+      },
+    });
+    const read = (id: string) =>
+      routes.request("/capabilities/v1/queries/demo/get", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: { id } }),
+      });
+    const valid = await read("Café report 😀");
+    expect(valid.status).toBe(200);
+    expect(await valid.json()).toMatchObject({ data: { id: resultTitle } });
+    const badInput = await read("Report\u202ename");
+    expect(badInput.status).toBe(400);
+    expect(calls).toBe(1);
+    resultTitle = "Report\u{e0020}name";
+    const badOutput = await read("Report");
+    expect(badOutput.status).toBe(502);
+    expect(await badOutput.json()).toMatchObject({ code: "INVALID_APP_RESPONSE" });
+  });
+
   test("rejects a successful app response outside the registered result schema", async () => {
     const routes = createCapabilityRoutes({
       getCapability: async () => entry(),

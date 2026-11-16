@@ -57,7 +57,7 @@ test("source tabs preserve drafts and history, guard closing, and fill the works
     expect(await input.inputValue()).toBe("export default () => 99;");
     await page.waitForFunction(() => document.querySelector(".k2b-autocomplete__preview")?.textContent?.includes("99"));
     expect(await page.locator(".artifact-code .hl-keyword").count()).toBeGreaterThan(0);
-    await page.getByRole("button", { name: "Close tab: main.js", exact: true }).click();
+    await page.getByRole("button", { name: "Close main.js", exact: true }).click();
     await page.getByRole("dialog").waitFor();
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     expect(await input.inputValue()).toBe("export default () => 99;");
@@ -120,15 +120,17 @@ test("a read-only source tab scrolls its whole file on the tab surface and keeps
       await panel.locator(".k2b-content-code-display__line").first().waitFor();
       expect(await panel.locator(".k2b-copy-button").count()).toBe(1);
       expect(await panel.locator(".k2b-content-file-view").getAttribute("data-variant")).toBe("plain");
-      // Copy sits at the content's end edge, and the code starts at the tab strip's edge.
+      // Copy sits at the content's end edge.
       const view = (await panel.locator(".k2b-content-file-view").boundingBox())!;
       const copy = (await panel.locator(".k2b-copy-button").boundingBox())!;
-      const tab = (await page.getByRole("tab", { name: file, exact: true }).boundingBox())!;
+      // The pane's head names the file; the code starts at the head's text edge.
+      const tab = (await panel.locator(".artifact-pane__title").boundingBox())!;
       expect(Math.round(copy.x + copy.width)).toBe(Math.round(view.x + view.width));
       expect(Math.round(view.x)).toBe(Math.round(tab.x));
-      await panel.evaluate((element) => element.scrollTo(0, element.scrollHeight));
+      // The whole file scrolls on the pane's surface.
+      await panel.locator(".k2b-content-code-display__line").last().scrollIntoViewIfNeeded();
       const last = await panel.locator(".k2b-content-code-display__line").last().boundingBox();
-      expect(last!.y + last!.height).toBeLessThanOrEqual(700);
+      expect(Math.round(last!.y + last!.height)).toBeLessThanOrEqual(700);
     }
   } finally {
     await browser.close();

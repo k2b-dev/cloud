@@ -2582,6 +2582,68 @@ const TableOfContentsDemo = () => {
   );
 };
 
+type ThreadEntry = { id: string; name: string; role?: string; time: string; text: string };
+
+const DiscussionThreadDemo = () => {
+  const [entries, setEntries] = createSignal<ThreadEntry[]>([
+    {
+      id: "a",
+      name: "Ben Schulz",
+      role: "Cloud admin",
+      time: "20 min ago",
+      text: "Every unread mail gets a task, not only a callback request.",
+    },
+    { id: "b", name: "Jana Probe", time: "5 min ago", text: "I see it the same way. I will ask for changes." },
+  ]);
+  return (
+    <DemoCard
+      id="discussion-thread"
+      chip={{ kind: "component", name: "Discussion.Thread", from: "@k2b/ui" }}
+      description="A compact thread beside a line of code: no surface, one line at its start that turns into the focus colour while writing, every entry flush, and a real reply field. Posting changes no height."
+      code={`<Discussion.Thread
+  label="Comments on line 3"
+  placeholder="Reply …"
+  hint="Visible with your decision"
+  submitLabel="Comment"
+  onSubmit={(text) => saveComment(text)}
+>
+  <For each={comments()}>
+    {(comment, index) => (
+      <Discussion.Item
+        avatar={<Avatar name={comment.name} size="sm" />}
+        author={comment.name}
+        meta={index() === 0 ? comment.role : undefined}
+        timestamp={comment.ago}
+      >
+        {comment.text}
+      </Discussion.Item>
+    )}
+  </For>
+</Discussion.Thread>`}
+    >
+      <div style={{ padding: "0.75rem 0", background: "var(--k2b-surface-muted)", "border-radius": "var(--k2b-radius-control)" }}>
+        <Discussion.Thread
+          label="Comments on line 3"
+          placeholder="Reply …"
+          hint="Visible with your decision"
+          submitLabel="Comment"
+          onSubmit={(text) => {
+            setEntries((list) => [...list, { id: `n${list.length}`, name: "You", time: "now", text }]);
+          }}
+        >
+          <For each={entries()}>
+            {(entry) => (
+              <Discussion.Item avatar={<Avatar name={entry.name} size="sm" />} author={entry.name} meta={entry.role} timestamp={entry.time}>
+                {entry.text}
+              </Discussion.Item>
+            )}
+          </For>
+        </Discussion.Thread>
+      </div>
+    </DemoCard>
+  );
+};
+
 const demos: DemoSection = {
   print: () => (
     <DemoCard
@@ -2682,6 +2744,7 @@ const items = [
   discussion: () => (
     <DemoGrid columns="one">
       <DiscussionDemo />
+      <DiscussionThreadDemo />
     </DemoGrid>
   ),
   "page-title": () => (

@@ -170,7 +170,7 @@ const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
           icon: "ti ti-palette",
           description: "App color scope",
           routes: ["/accent", "/admin/accent"],
-          ...(accent === undefined ? {} : { appearance: { accent } }),
+          ...(accent === undefined ? {} : { appearance: { accent, primary: c.req.query("primary") === "ai" ? "ai" : undefined } }),
         },
         { id: "core", name: "Core", icon: "ti ti-cloud", description: "Help host", routes: ["/help"], appearance: { accent: "#2563eb" } },
       ],
@@ -206,6 +206,18 @@ const accentServer = new Hono<{ Variables: { runtime: RuntimeContext } }>()
   );
 
 describe("Cloud layouts SSR", () => {
+  test("the owning app's AI primary reaches the body on pages, focus pages, Help and administration", async () => {
+    for (const path of ["/accent", "/accent?focusMode=true", "/help/apps/accent-probe", "/admin/accent"]) {
+      const base = `${path}${path.includes("?") ? "&" : "?"}accent=%230f766e`;
+      for (const primary of [undefined, "ai"]) {
+        const response = await accentServer.request(`${base}${primary ? "&primary=ai" : ""}`);
+        expect(response.status).toBe(200);
+        const body = (await response.text()).match(/<body\b[^>]*>/)?.[0] ?? "";
+        expect(body.includes('data-k2b-primary="ai"')).toBe(primary === "ai");
+      }
+    }
+  });
+
   test("the page shell gives portalled dialogs the current app's accent without its canvas background", async () => {
     const style = appAccentStyle("#0f766e");
     expect(style).toBeDefined();
@@ -676,6 +688,67 @@ test("page swap replaces only the content column and its page data", async () =>
     window.document.body.innerHTML = await (await swapServer.request("/app/swap?anonymous=true")).text();
     expect(window.document.querySelector("[data-nav-root] #cloud-shell-data")).not.toBeNull();
     expect(window.document.querySelector("[data-nav-shell]")?.getAttribute("data-nav-shell")).not.toBe(signature);
+  } finally {
+    dom.cleanup();
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+const scopedApp = defineApp({
+  id: "scoped",
+  name: "Scoped",
+  icon: "ti ti-box",
+  description: "Page swap paths render fixture",
+  baseUrl: "http://scoped:3000",
+  routes: ["/app/scoped"],
+  pageSwap: ["/app/scoped/:itemId/code"],
+});
+const scopedServer = new Hono<{ Variables: { runtime: RuntimeContext; user: import("../contracts/shared").User | undefined } }>()
+  .use(async (c, next) => {
+    c.set("runtime", {
+      apps: [
+        {
+          id: "scoped",
+          name: "Scoped",
+          icon: "ti ti-box",
+          description: "Scoped",
+          routes: ["/app/scoped"],
+          nav: { href: "/app/scoped", section: "primary" },
+        },
+      ],
+    });
+    c.set("user", person);
+    await next();
+  })
+  .get(
+    "/app/scoped/*",
+    ...scopedApp.ssr((c) => () => createComponent(Layout, { c, title: "Scoped page", fullPage: true, children: "Content" })),
+  );
+
+test("an app that names its swap paths swaps only there, within the matched path", async () => {
+  const { createDomTestHarness } = await import("../../../ui/test/dom");
+  const spies = [
+    spyOn(railSnapshot, "readRailSnapshot").mockResolvedValue(defaultRailPreferences()),
+    spyOn(settingsMiddleware, "preloadLayoutAnnouncements").mockResolvedValue(undefined),
+    spyOn(help, "preloadLayoutHelp").mockResolvedValue(null),
+  ];
+  const dom = createDomTestHarness();
+  const window = dom.window;
+  try {
+    for (const path of ["/app/scoped/A1/code", "/app/scoped/A1/code?tab=runs", "/app/scoped/A1/code/catch-up"]) {
+      window.document.body.innerHTML = await (await scopedServer.request(path)).text();
+      const canvas = window.document.querySelector(".cloud-app-canvas")!;
+      expect(canvas.getAttribute("data-nav-shell")).toMatch(/^[a-f0-9]{32}$/);
+      // Links to the item itself or another item's Code leave the scope and load a document.
+      expect(canvas.getAttribute("data-nav-scope")).toBe("/app/scoped/A1/code");
+      expect(canvas.querySelectorAll("[data-nav-root]")).toHaveLength(1);
+    }
+    for (const path of ["/app/scoped/A1", "/app/scoped/A1/settings", "/app/scoped/A1/coder"]) {
+      window.document.body.innerHTML = await (await scopedServer.request(path)).text();
+      expect(window.document.querySelector("[data-nav-shell],[data-nav-root],[data-nav-scope]")).toBeNull();
+      // Without a swap, a full page keeps its window-bound canvas.
+      expect(window.document.querySelector(".cloud-app-canvas")?.getAttribute("class")).toContain("h-dvh overflow-hidden");
+    }
   } finally {
     dom.cleanup();
     for (const spy of spies) spy.mockRestore();

@@ -111,14 +111,29 @@ describe("turn layout", () => {
     expect(layoutAiTurn([{ id: "s", kind: "steer_applied", steerId: "s" }], { phase: "completed" }).showWork).toBe(false);
   });
 
-  test("a stopped or failed turn folds all of its text into the work line", () => {
+  test("a running turn shows its work line before its first step and hands the place to an answer without steps", () => {
+    expect(layoutAiTurn([], { phase: "running" }).showWork).toBe(true);
+    expect(layoutAiTurn([thinking("r1")], { phase: "running" }).showWork).toBe(true);
+    expect(layoutAiTurn([thinking("r1"), text("t1", "Tokyo: 02:14.")], { phase: "running" }).showWork).toBe(false);
+    expect(layoutAiTurn([thinking("r1")], { phase: "completed" }).showWork).toBe(false);
+  });
+
+  test("a stopped or failed turn folds a status into the work line and keeps the answer it had begun", () => {
     for (const phase of ["stopped", "failed"] as const) {
       const layout = layoutAiTurn([text("t1", "Now I build the dashboard."), tool("run", "code_run")], { phase });
       expect(layout.text).toEqual([]);
       expect(layout.showWork).toBe(true);
       expect(ids(layout.work)).toEqual(["t1", "tool-run"]);
+      // The text after the last step was the answer: it stays in its place, the work line keeps the steps.
+      const begun = layoutAiTurn([tool("read", "read_file"), text("t1", "Jana asks two things:")], { phase });
+      expect(ids(begun.text)).toEqual(["t1"]);
+      expect(ids(begun.work)).toEqual(["tool-read"]);
+      expect(begun.showWork).toBe(true);
+      // An answer without steps stays as it is, with no work line.
+      const plain = layoutAiTurn([text("t1", "Starting.")], { phase });
+      expect(ids(plain.text)).toEqual(["t1"]);
+      expect(plain.showWork).toBe(false);
     }
-    expect(layoutAiTurn([text("t1", "Starting.")], { phase: "stopped" }).showWork).toBe(true);
   });
 
   test("a result with the same target replaces the earlier one at its place", () => {

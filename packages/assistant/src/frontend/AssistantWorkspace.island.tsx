@@ -55,7 +55,6 @@ import {
   ButtonLink,
   Chat,
   type ChatMention,
-  DetailsToggle,
   dialogCore,
   LocaleProvider,
   NoticeCard,
@@ -63,9 +62,10 @@ import {
   Placeholder,
   prompts,
   reconcileChatMentions,
+  toast,
   useLocale,
 } from "@k2b/ui";
-import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, For, lazy, on, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { assistantApi } from "../api/client";
 import { createArtifactAgentRuntime } from "../artifacts/agent-runtime";
 import { revokeChatWebsite } from "../artifacts/approval-preferences";
@@ -74,9 +74,10 @@ import { ChatPresentation } from "../artifacts/ChatPresentation";
 import { scheduleChartPreparation } from "../artifacts/html/prepare-assets";
 import { artifactMessages } from "../artifacts/messages";
 import { browserHttpHost, openSecretsDialog } from "../artifacts/SecretsDialog";
-import { ArtifactWorkspace, createArtifactWorkspace } from "../artifacts/Workspace";
-import { appTab, contextTab, fileTab, taskTab } from "../artifacts/workspace-state";
+import { createArtifactWorkspace } from "../artifacts/workspace-controller";
+import { appTab, contextTab, fileTab, presentationTab, taskTab, webTab } from "../artifacts/workspace-state";
 import type { AssistantChatContextSnapshot } from "../chat-context";
+import type { ChatWorkspaceSnapshot } from "../chat-workspace";
 import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
@@ -89,14 +90,15 @@ import {
   type ContextView,
   createAssistantChatContextState,
 } from "./AssistantChatContext";
-import { AssistantChatSidebarPanel, type ChatSidebarJump, openAssistantChatSidebarSheet } from "./AssistantChatSidebar";
+import { AssistantChatContextPlaces, type ContextBoxActions } from "./AssistantChatContextBox";
+import type { ChatSidebarJump } from "./AssistantChatSidebar";
 import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
 import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
-import AssistantQuota, { createAssistantQuota } from "./AssistantQuota";
+import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
 import AssistantSidebar from "./AssistantSidebar";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
 import { assistantChatFilePaths } from "./assistant-context";
@@ -125,7 +127,7 @@ import { submitAssistantProjectMessage } from "./assistant-project-chat";
 import { assistantSearchOptions } from "./assistant-search";
 import { audioMessages } from "./audio-messages";
 import { resolveChatFileLink } from "./chat-file-link";
-import { createChatSidebarHost, revealChatDelivery } from "./chat-sidebar-layout";
+import { revealChatDelivery } from "./chat-sidebar-layout";
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
 import {
@@ -154,9 +156,12 @@ import {
 import { isPlainChat } from "./conversation-view";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
+import { createAssistantNextMessage } from "./next-message";
+import { quotaText } from "./quota-messages";
 import { assistantTaskTitle } from "./scheduled-task-format";
+import { finishedPlanShown, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
-import { waitingQuestionsView } from "./waiting-questions";
+import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
 
 type Status = AiPeopleModels & {
   ok: boolean;
@@ -197,8 +202,10 @@ type Props = {
   initialWorkspaceHref?: string;
   initialDetail: InitialDetail | null;
   initialContext: AssistantChatContextSnapshot | null;
-  /** The person closed the chat sidebar's column before; the server renders it closed. */
-  initialContextClosed?: boolean;
+  /** The open tabs of the initial chat as the person left them, from the server. */
+  initialTabs?: { chatId: string; snapshot: ChatWorkspaceSnapshot } | null;
+  /** The hint that tabs can be arranged was dismissed. */
+  arrangeHintSeen?: boolean;
   projects: AiProject[];
   initialProject: AiProject | null;
   initialProjectChats: AiConversationPage | null;
@@ -215,6 +222,9 @@ type ProjectViewState = {
   context: AssistantProjectContextSnapshot;
 };
 
+/** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
+const ArtifactWorkspace = lazy(() => import("../artifacts/Workspace").then((module) => ({ default: module.ArtifactWorkspace })));
+
 export default function AssistantWorkspace(props: Props) {
   const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
   const approvalsHref = `${basePath}?approvals=1`;
@@ -222,7 +232,19 @@ export default function AssistantWorkspace(props: Props) {
   const contextText = useAssistantText();
   const commandCopy = useAssistantCopy();
   const runKeys = createAssistantTaskRunKeys();
-  const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref);
+  const artifactWorkspace = createArtifactWorkspace(props.initialWorkspaceHref, {
+    initial: props.initialTabs ?? null,
+    store: { load: assistantApi.getChatTabs, save: assistantApi.saveChatTabs },
+    onSaveError: () => toast.error(t().tabsNotSaved),
+  });
+  // Web pages of the chat open as reading views only where the operator set up the reading service.
+  const [webReader] = createResource(async () => (await assistantApi.getWebReader().catch(() => ({ available: false }))).available);
+  const openWebPage = () => {
+    const conversationId = chat.activeConversationId();
+    return webReader() && conversationId
+      ? (url: string, title: string) => artifactWorkspace.open(webTab(conversationId, url, title))
+      : undefined;
+  };
   const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
   const openContextView = (view: ContextView) =>
     artifactWorkspace.open(
@@ -261,30 +283,6 @@ export default function AssistantWorkspace(props: Props) {
   };
   const artifactCopy = () => artifactMessages.resolve([locale()]).t;
   const t = () => assistantMessages.resolve([locale()]).t;
-  const contextMenuItems = () => [
-    { label: "Secrets", icon: "ti ti-key", action: openChatSecrets },
-    { label: artifactCopy().apps, icon: "ti ti-app-window", action: () => openContextOverview("apps", artifactCopy().apps) },
-    { label: artifactCopy().files, icon: "ti ti-files", action: () => openContextOverview("files", artifactCopy().files) },
-    { label: contextText("Sources"), icon: "ti ti-link", action: () => openContextOverview("sources", contextText("Sources")) },
-    ...(activeConversationProject()
-      ? [
-          {
-            label: contextText("Project knowledge"),
-            icon: "ti ti-bulb",
-            action: () => openContextOverview("knowledge", contextText("Project knowledge")),
-          },
-        ]
-      : []),
-    ...(workspaceContext()?.tasks.length
-      ? [
-          {
-            label: contextText("Routines"),
-            icon: "ti ti-calendar-time",
-            action: () => openContextOverview("tasks", contextText("Routines")),
-          },
-        ]
-      : []),
-  ];
   const audioCopy = () => audioMessages.resolve([locale()]).t;
 
   const [liveError, setLiveError] = createSignal<string | null>(null);
@@ -412,6 +410,11 @@ export default function AssistantWorkspace(props: Props) {
       if (id) return id;
     }
     return "";
+  });
+  const quotaSections = createAssistantQuotaSections({
+    quota: quotas,
+    model: selectedModelId,
+    modelLabel: () => props.models.find((m) => m.id === selectedModelId())?.label ?? selectedModelId(),
   });
   /** A class when the person chose one, so the chat follows the administration's assignment. */
   const setSelectedModelRequest = (request: AiModelRequest) => {
@@ -1110,6 +1113,8 @@ export default function AssistantWorkspace(props: Props) {
   };
   // "Waiting for you" above the composer: the server's read of every open question, corrected by what this chat shows.
   const waitingConversationId = () => (projectView() || approvalsOpen() ? null : chat.activeConversationId());
+  // What stopped in the open chat and waits for the person (routines, failed app runs); set once the chat's details exist.
+  const [waitingAttention, setWaitingAttention] = createSignal<() => WaitingAttention[]>(() => []);
   const waiting = createMemo(() => {
     const conversationId = waitingConversationId();
     const loaded = conversationId !== null && chat.conversation()?.id === conversationId && !chat.loadingConversation();
@@ -1117,6 +1122,7 @@ export default function AssistantWorkspace(props: Props) {
       questions: openQuestions(),
       conversationId,
       local: loaded ? (chat.activeTurn()?.blocks ?? []) : null,
+      attention: loaded ? waitingAttention()() : [],
     });
   });
   const waitingFocus = createWaitingQuestionFocus({
@@ -1455,7 +1461,6 @@ export default function AssistantWorkspace(props: Props) {
 
   const activeConversation = () =>
     conversations().find((conversation) => conversation.id === chat.activeConversationId()) ?? chat.conversation();
-  const [todoOpen, setTodoOpen] = createSignal(false);
   const todoItems = () => {
     const checkpoint = chat.conversation()?.todoPlan;
     let todos = checkpoint?.todos ?? [];
@@ -1477,20 +1482,63 @@ export default function AssistantWorkspace(props: Props) {
     return todos;
   };
   const hasOpenTodos = createMemo(() => todoItems().some((item) => item.status === "pending" || item.status === "in_progress"));
-  const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
-  createEffect(() => {
-    chat.activeConversationId();
-    hasOpenTodos();
-    setShowCompletedTodos(false);
-    setTodoOpen(false);
-  });
-  const todoProgress = () => {
-    const todos = todoItems(),
-      done = todos.filter((item) => item.status === "completed").length;
-    const cancelled = todos.filter((item) => item.status === "cancelled").length;
-    const de = locale().startsWith("de");
-    return `${done}/${todos.length - cancelled} ${de ? "erledigt" : "complete"}${cancelled ? ` · ${cancelled} ${de ? "verworfen" : "cancelled"}` : ""}`;
+  /**
+   * The plan above the field (Bauplan 3a): open while Gustav works on it; once every task is done its header says so and
+   * the list folds, unless the person opened it. Their own choice per chat stays for the session. A plan that was
+   * already done when the chat opened stays out of the way behind "Show tasks", as before.
+   */
+  const todoChoiceKey = () => `assistant.tasks-open:${chat.activeConversationId() ?? ""}`;
+  const readTodoChoice = (): TaskHostChoice => {
+    try {
+      const value = window.sessionStorage.getItem(todoChoiceKey());
+      return value === "open" || value === "closed" ? value : null;
+    } catch {
+      return null;
+    }
   };
+  const [todoChoice, setTodoChoice] = createSignal<TaskHostChoice>(null);
+  const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
+  createEffect(
+    on(
+      () => chat.activeConversationId(),
+      () => {
+        setTodoChoice(readTodoChoice());
+        setShowCompletedTodos(false);
+      },
+    ),
+  );
+  // Work that finishes while the person watches keeps its folded "All tasks done" header in place instead of vanishing.
+  createEffect(
+    on([hasOpenTodos, () => chat.activeConversationId()] as const, ([open, id], before) => {
+      if (before && before[1] === id && before[0] && !open) setShowCompletedTodos(true);
+    }),
+  );
+  const todoOpen = () => taskHostOpen({ hasOpenTasks: hasOpenTodos(), choice: todoChoice() });
+  const setTodoOpen = (open: boolean) => {
+    const choice = open ? "open" : "closed";
+    setTodoChoice(choice);
+    try {
+      window.sessionStorage.setItem(todoChoiceKey(), choice);
+    } catch {
+      /* Without storage the choice holds until the chat changes. */
+    }
+  };
+  /** A finished plan shows when it just finished here or when the person opened it in this chat. */
+  const completedPlanShown = () => finishedPlanShown({ finishedHere: showCompletedTodos(), choice: todoChoice() });
+  /** "2 of 4": done tasks of those that count; cancelled ones do not. */
+  const todoProgress = () => {
+    const counted = todoItems().filter((item) => item.status !== "cancelled");
+    const done = counted.filter((item) => item.status === "completed").length;
+    return locale().startsWith("de") ? `${done} von ${counted.length}` : `${done} of ${counted.length}`;
+  };
+  const todoLabel = () =>
+    hasOpenTodos()
+      ? locale().startsWith("de")
+        ? "Aufgaben"
+        : "Tasks"
+      : locale().startsWith("de")
+        ? "Alle Aufgaben erledigt"
+        : "All tasks done";
   const activeConversationProject = () => {
     const projectId = activeConversation()?.projectId;
     return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
@@ -1527,23 +1575,75 @@ export default function AssistantWorkspace(props: Props) {
       onJump: (target) => void jumpTo(target),
       onOpenSecrets: openChatSecrets,
       onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
+      onOpenWebPage: openWebPage(),
     });
-  const contextHost = createChatSidebarHost({
-    initialClosed: props.initialContextClosed === true,
-    onSheet: () =>
-      void openAssistantChatSidebarSheet({
+  // "Needs attention" in this chat becomes entries of "Waiting for you", with the same targets as its details had.
+  setWaitingAttention(() => () => {
+    const snapshot = contextState.snapshot();
+    if (!snapshot || snapshot.chatId !== chat.activeConversationId()) return [];
+    const actions = sidebarActions();
+    return [
+      ...snapshot.tasks
+        .filter((task) => task.state === "needs_attention")
+        .map((task) => ({
+          key: `task:${task.id}`,
+          kind: "routine" as const,
+          short: sidebarCopy().taskNeedsAttention({ title: assistantTaskTitle(task) }),
+          open: () => actions.onOpenTask?.(task),
+        })),
+      ...snapshot.results.flatMap((result) =>
+        result.app?.lastRun === "error"
+          ? [
+              {
+                key: `app:${result.key}`,
+                kind: "app_run" as const,
+                short: sidebarCopy().appRunFailed({ title: result.title }),
+                open: () => actions.onOpenApp(result.app!.id, result.title),
+              },
+            ]
+          : [],
+      ),
+    ];
+  });
+  // The box "In this chat": a click opens the thing as a tab beside the chat, or jumps to it.
+  const contextBoxActions = (): ContextBoxActions => ({
+    onOpen: (target) => {
+      const actions = sidebarActions();
+      if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
+      else if (target.kind === "app") actions.onOpenApp(target.id, target.title);
+      else if (target.kind === "presentation") {
+        const conversationId = chat.activeConversationId();
+        if (conversationId) artifactWorkspace.open(presentationTab(conversationId, target.id, target.title));
+      } else if (target.kind === "jump") actions.onJump(target.target);
+      else window.location.assign(target.href);
+    },
+    onJump: (target) => void jumpTo(target),
+    onOpenAll: () => openContextOverview("files", sidebarCopy().title),
+    onOpenSources: () => openContextOverview("sources", contextText("Sources")),
+    onOpenContext: () => openContextOverview("context", artifactCopy().context),
+  });
+  const openContextSheet = () =>
+    // The phone sheet loads when it opens.
+    void import("./AssistantChatContextSheet").then(({ openAssistantContextBoxSheet }) =>
+      openAssistantContextBoxSheet({
         state: contextState,
-        actions: sidebarActions(),
+        actions: contextBoxActions(),
         project: activeConversationProject(),
-        runCount: contextState.snapshot()?.runCount,
         wrap: (content) => (
           <LocaleProvider locale={locale()}>
             <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
           </LocaleProvider>
         ),
       }),
-  });
-  createEffect(on(() => chat.activeConversationId(), contextHost.closeDrawer, { defer: true }));
+    );
+  // The tabs belong to the chat and the person: another chat shows its own tabs.
+  createEffect(
+    on(
+      () => chat.activeConversationId(),
+      (id) => artifactWorkspace.bindChat(id ?? null),
+      { defer: true },
+    ),
+  );
   const [emptyProjectId, setEmptyProjectId] = createSignal<string | null>(activeConversation()?.projectId ?? null);
   const [choosingProject, setChoosingProject] = createSignal(false);
   let emptyProjectConversationId: string | null = null;
@@ -1644,6 +1744,7 @@ export default function AssistantWorkspace(props: Props) {
       const current = composerAttachmentsFor(sessionKey);
       const result = await readAiComposerFiles(files, {
         acceptsImages: acceptsImages(),
+        locale: locale(),
         currentCount: composerPartCount(sessionKey),
         currentImageBytes: current.reduce((total, attachment) => total + (attachment.kind === "image" ? attachment.size : 0), 0),
       });
@@ -1726,6 +1827,16 @@ export default function AssistantWorkspace(props: Props) {
     }
   };
 
+  /** "Ask Gustav about it" in a tab's menu: names the thing in the next message of this chat. */
+  const askAboutTab = (title: string) => {
+    const key = chat.activeConversationId();
+    if (!key) return;
+    const mention = `„${title}“ `;
+    const existing = composerDraft(key);
+    setComposerDraft(key, existing.trim() ? `${existing} ${mention}` : mention);
+    artifactWorkspace.setMobile("chat");
+    focusComposer();
+  };
   const editScheduledTask = async (task: AiChatTaskView, repair: boolean) => {
     if (!(await openAndFocusConversation(task.chatId))) return;
     const key = task.chatId;
@@ -1919,11 +2030,37 @@ export default function AssistantWorkspace(props: Props) {
     },
   });
 
+  /** "Waiting for you": over the chat's free end above the field, in flow on the start screen and in a project. */
+  const WaitingRow = () => (
+    <Show when={waiting().total > 0}>
+      <AssistantWaitingStrip
+        view={waiting()}
+        conversationId={waitingConversationId()}
+        quiet={waitingFocus.quiet()}
+        onJump={(question) => void jumpToQuestion(question)}
+        onShowMore={openApprovals}
+      />
+    </Show>
+  );
   const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
     const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
     const projectComposer = () => Boolean(composerProps.projectId);
     // A Project composer starts new chats; a response still running in the previous chat does not block it.
     const composerRunning = () => !projectComposer() && chat.running();
+    const nextMessage = createAssistantNextMessage({
+      conversationId: () => (projectComposer() ? null : chat.activeConversationId()),
+      messages: chat.messages,
+      blocked: () =>
+        chat.running() ||
+        Boolean(chat.activeTurn()) ||
+        waiting().entries.some((question) => question.conversationId === chat.activeConversationId()) ||
+        queuedMessagesFor(chat.activeConversationId() ?? "").length > 0,
+      dismiss: assistantApi.dismissNextMessage,
+      onDismissFailed: (retry) =>
+        toast.error(contextText("Failed to dismiss the suggestion"), {
+          action: { label: commandCopy().commandTryAgain, onClick: retry },
+        }),
+    });
     const catalog = createCloudComposerCatalog();
     let commandTarget: string | undefined;
     const [commandCreating, setCommandCreating] = createSignal(false);
@@ -2192,13 +2329,15 @@ export default function AssistantWorkspace(props: Props) {
           addOpensCommands
           accessory={
             <>
-              <Show when={!projectComposer() && (hasOpenTodos() || showCompletedTodos())}>
+              <Show when={!projectComposer() && (hasOpenTodos() || completedPlanShown())}>
                 <Chat.Tasks
                   items={todoItems()}
                   open={todoOpen()}
                   onOpenChange={setTodoOpen}
-                  label={locale().startsWith("de") ? "Aufgaben" : "Tasks"}
+                  label={todoLabel()}
                   progressLabel={todoProgress()}
+                  // A plan whose turn is not running (stopped, failed, or waiting for the person) stands still.
+                  paused={chat.activeTurn()?.status !== "running"}
                   statusLabels={
                     locale().startsWith("de")
                       ? {
@@ -2214,16 +2353,6 @@ export default function AssistantWorkspace(props: Props) {
                           cancelled: "Cancelled",
                         }
                   }
-                />
-              </Show>
-              {/* Right above the field, under the thumb on phones. */}
-              <Show when={waiting().total > 0}>
-                <AssistantWaitingStrip
-                  view={waiting()}
-                  conversationId={waitingConversationId()}
-                  quiet={waitingFocus.quiet()}
-                  onJump={(question) => void jumpToQuestion(question)}
-                  onShowMore={openApprovals}
                 />
               </Show>
             </>
@@ -2362,7 +2491,14 @@ export default function AssistantWorkspace(props: Props) {
                 locked={!projectComposer() && chat.running()}
                 lockedReason={t().modelLockedWhileRunning}
               />
-              <Show when={!props.status.liveDictationAvailable || dictation.busy() || dictation.pendingResult()}>
+              {/* Without live dictation or an audio model there is nothing to start, so no greyed microphone stands there. */}
+              <Show
+                when={
+                  dictation.busy() ||
+                  dictation.pendingResult() ||
+                  (!props.status.liveDictationAvailable && props.status.audioModelConfigured)
+                }
+              >
                 <dictation.Control />
               </Show>
             </>
@@ -2393,15 +2529,7 @@ export default function AssistantWorkspace(props: Props) {
             disabled: !projectComposer() && chat.running(),
             label: t().attachFiles,
           }}
-          modelDetails={
-            <AssistantQuota
-              snapshot={quotas.data()}
-              model={selectedModelId()}
-              modelLabel={props.models.find((m) => m.id === selectedModelId())?.label ?? selectedModelId()}
-              error={quotas.error()}
-              onRefresh={quotas.refresh}
-            />
-          }
+          contextSections={quotaSections()}
           disabled={
             (props.embedded && !workspaceMounted()) ||
             composerPicking() > 0 ||
@@ -2422,7 +2550,9 @@ export default function AssistantWorkspace(props: Props) {
                   ? "running"
                   : "idle"
           }
-          focusToken={projectComposer() ? undefined : composerFocusToken()}
+          // Only an explicit request focuses the field (a new or opened chat, a starter); a page load leaves it at rest.
+          focusToken={projectComposer() || composerFocusToken() === 0 ? undefined : composerFocusToken()}
+          suggestion={nextMessage()}
           submitDisabled={aiModelBlocksSending(modelState(), selectedModelRequest())}
           runningSubmitIntent={!projectComposer() ? "queue" : undefined}
           placeholder={
@@ -2463,15 +2593,15 @@ export default function AssistantWorkspace(props: Props) {
                     id: "toggle-completed-tasks",
                     icon: "ti ti-list-check",
                     label: locale().startsWith("de")
-                      ? showCompletedTodos()
+                      ? completedPlanShown()
                         ? "Aufgaben ausblenden"
                         : "Aufgaben anzeigen"
-                      : showCompletedTodos()
+                      : completedPlanShown()
                         ? "Hide tasks"
                         : "Show tasks",
-                    pressed: showCompletedTodos(),
+                    pressed: completedPlanShown(),
                     onSelect: () => {
-                      const visible = !showCompletedTodos();
+                      const visible = !completedPlanShown();
                       setShowCompletedTodos(visible);
                       setTodoOpen(visible);
                     },
@@ -2484,9 +2614,10 @@ export default function AssistantWorkspace(props: Props) {
             !projectComposer() && activeConversation() && chat.messages().length > 0
               ? {
                   id: "compact-context",
-                  label: t().compactContext,
-                  icon: "ti ti-package",
+                  label: quotaText.resolve([locale()]).t.compactNow,
+                  icon: "ti ti-arrows-diagonal-minimize-2",
                   disabled: chat.running(),
+                  disabledReason: quotaText.resolve([locale()]).t.compactWhileRunning,
                   onSelect: async () => {
                     if (!chat.activeConversationId()) return;
                     await chat.compactConversation({ model: selectedModelRequest() });
@@ -2500,7 +2631,9 @@ export default function AssistantWorkspace(props: Props) {
               : {
                   usage: usageSnapshot()?.request ?? null,
                   loopUsage: usageSnapshot()?.loop ?? null,
+                  contextWindow: usageModel()?.contextWindow,
                   modelLabel: usageModel()?.label,
+                  note: quotaText.resolve([locale()]).t.contextNote,
                 }
           }
         />
@@ -2603,6 +2736,7 @@ export default function AssistantWorkspace(props: Props) {
       activeTurn: chat.activeTurn,
       reconnecting: () => chat.streamStatus() === "reconnecting",
       timeZone: props.timeZone,
+      renderedAt: props.renderedAt,
     });
 
     return (
@@ -2718,7 +2852,13 @@ export default function AssistantWorkspace(props: Props) {
 
         <AppWorkspace.Content>
           <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
-            <AppWorkspace.MainPane id="chat" label={artifactCopy().chat} scroll={false} class="assistant-chat-pane flex min-h-0 flex-col">
+            <AppWorkspace.MainPane
+              id="chat"
+              label={artifactCopy().chat}
+              scroll={false}
+              minSize={360}
+              class="assistant-chat-pane flex min-h-0 flex-col"
+            >
               <Show when={props.embedded && !approvalsOpen()}>
                 <AssistantPanelContext
                   initial={props.initialPanelContext ?? null}
@@ -2756,12 +2896,7 @@ export default function AssistantWorkspace(props: Props) {
                   when={projectView()}
                   fallback={
                     <Chat class="assistant-chat-shell min-h-0 flex-1">
-                      <div
-                        ref={contextHost.layoutRef}
-                        class="assistant-chat-layout"
-                        data-context={contextHost.closed() ? "closed" : "auto"}
-                        data-drawer={contextHost.drawerOpen() ? "open" : undefined}
-                      >
+                      <div class="assistant-chat-layout" data-tabs={artifactWorkspace.state().tabs.length > 0 ? "open" : undefined}>
                         <div class="contents">
                           <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
                             <Show
@@ -2824,6 +2959,12 @@ export default function AssistantWorkspace(props: Props) {
                                     onOpenScheduledTaskRun: (taskId, occurrenceId) =>
                                       void openAssistantTaskRun(taskId, occurrenceId, liveHub),
                                     onOpenFile: (path) => void openFiles(path),
+                                    onOpenWebLink: (href, title) => {
+                                      const open = openWebPage();
+                                      if (!open) return false;
+                                      open(href, title);
+                                      return true;
+                                    },
                                     resolveFileLink: (href) => {
                                       const context = workspaceContext();
                                       const conversationId = chat.activeConversationId();
@@ -2840,6 +2981,7 @@ export default function AssistantWorkspace(props: Props) {
                               }
                             >
                               <AssistantEmptyChat
+                                // The start screen keeps only the field (v12 image 11); what waits is in the navigation.
                                 composer={<AssistantComposer />}
                                 notices={<ComposerNotices />}
                                 modelNote={modelNote()}
@@ -2858,7 +3000,10 @@ export default function AssistantWorkspace(props: Props) {
 
                           <Show when={!emptyChat()}>
                             <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
-                              <div class="mx-auto flex max-w-3xl flex-col gap-2">
+                              <div class="assistant-chat-composer__column mx-auto flex max-w-3xl flex-col gap-2">
+                                {/* Right above everything over the field, under the thumb on phones. It lies over the
+                                    timeline's free end, so it comes and goes without moving the field or the chat. */}
+                                <WaitingRow />
                                 <ComposerNotices />
                                 {modelNote()}
                                 <AssistantComposer />
@@ -2870,23 +3015,13 @@ export default function AssistantWorkspace(props: Props) {
                           </Show>
                         </div>
                         <Show when={activeConversation() && !emptyChat()}>
-                          <DetailsToggle
-                            ref={contextHost.toggleRef}
-                            class="assistant-context-toggle"
-                            size="sm"
-                            label={sidebarCopy().show}
-                            aria-expanded="false"
-                            aria-controls="assistant-chat-context"
-                            onClick={contextHost.open}
-                          />
-                          <AssistantChatSidebarPanel
-                            id="assistant-chat-context"
+                          <AssistantChatContextPlaces
+                            chatId={chat.activeConversationId()}
                             state={contextState}
-                            actions={sidebarActions()}
+                            actions={contextBoxActions()}
                             project={activeConversationProject()}
-                            runCount={contextState.snapshot()?.runCount}
-                            onClose={contextHost.close}
-                            headingRef={contextHost.headingRef}
+                            title={activeConversation()?.title ?? null}
+                            onSheet={openContextSheet}
                           />
                         </Show>
                       </div>
@@ -2902,6 +3037,7 @@ export default function AssistantWorkspace(props: Props) {
                           initialContext={view.context}
                           composer={
                             <div class="flex flex-col gap-2">
+                              <WaitingRow />
                               {modelNote()}
                               <AssistantComposer projectId={project().id} projectName={project().name} />
                               <Show when={props.embedded}>
@@ -2921,7 +3057,7 @@ export default function AssistantWorkspace(props: Props) {
               id="workspace"
               label={artifactCopy().workspace}
               open={artifactWorkspace.state().tabs.length > 0}
-              defaultSize={620}
+              defaultSize={680}
               minSize={320}
               scroll={false}
             >
@@ -2933,18 +3069,30 @@ export default function AssistantWorkspace(props: Props) {
                   </div>
                 }
               >
-                <ArtifactWorkspace
-                  onEditTask={(task, repair) => void editScheduledTask(task, repair)}
-                  onOpenView={openContextView}
-                  project={activeConversationProject()}
-                  conversationId={chat.activeConversationId()}
-                  controller={artifactWorkspace}
-                  userId={props.userId}
-                  refreshKey={filesRefreshKey()}
-                  menuItems={contextMenuItems()}
-                  onJump={(target) => void jumpTo(target)}
-                  onOpenSecrets={openChatSecrets}
-                />
+                <Suspense
+                  fallback={
+                    <div class="flex h-full items-center justify-center">
+                      <Placeholder state="loading" title={artifactCopy().loading} />
+                    </div>
+                  }
+                >
+                  <ArtifactWorkspace
+                    onEditTask={(task, repair) => void editScheduledTask(task, repair)}
+                    onOpenView={openContextView}
+                    project={activeConversationProject()}
+                    conversationId={chat.activeConversationId()}
+                    controller={artifactWorkspace}
+                    userId={props.userId}
+                    refreshKey={filesRefreshKey()}
+                    onJump={(target) => void jumpTo(target)}
+                    onOpenSecrets={openChatSecrets}
+                    snapshot={contextState.snapshot}
+                    onAsk={askAboutTab}
+                    onAdd={() => openContextOverview("files", sidebarCopy().title)}
+                    webReader={webReader() === true}
+                    arrangeHintSeen={props.arrangeHintSeen === true}
+                  />
+                </Suspense>
               </Show>
             </AppWorkspace.MainPane>
           </AppWorkspace.Main>

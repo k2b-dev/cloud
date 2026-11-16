@@ -29,7 +29,7 @@ export type AiTurnLayout = {
   work: AiTurnBlock[];
   /** Tool calls and compactions. */
   steps: number;
-  /** A turn without tool calls or compactions has no work line, unless it was stopped or failed with folded text. */
+  /** A turn without tool calls or compactions has no work line, unless it was stopped or failed with folded work. */
   showWork: boolean;
   /** Place 2: delivered results in creation order. A result with the target of an earlier one replaces it at its place. */
   results: AiTurnResult[];
@@ -119,18 +119,21 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
   }
 
   const texts = blocks.filter((block): block is TextBlock => block.kind === "text");
+  const lastStep = blocks.findLastIndex((block) => block.kind === "tool" || block.kind === "compaction");
   let text: TextBlock[] = [];
-  if (options.phase !== "stopped" && options.phase !== "failed") {
-    if (steps === 0) text = texts;
-    else {
-      const newest = texts.at(-1);
-      const previous = texts.at(-2);
-      const shown = newest && previous && live(options.phase) && !hasCompleteSentence(newest.text) ? previous : newest;
-      text = shown ? [shown] : [];
-    }
+  if (steps === 0) text = texts;
+  else if (options.phase === "stopped" || options.phase === "failed") {
+    // A stopped or failed turn keeps the answer it had begun after its last step; a status before a step was never the
+    // answer and folds into the work line.
+    const newest = texts.at(-1);
+    text = newest && blocks.indexOf(newest) > lastStep ? [newest] : [];
+  } else {
+    const newest = texts.at(-1);
+    const previous = texts.at(-2);
+    const shown = newest && previous && live(options.phase) && !hasCompleteSentence(newest.text) ? previous : newest;
+    text = shown ? [shown] : [];
   }
   const visible = new Set(text);
-  const lastStep = blocks.findLastIndex((block) => block.kind === "tool" || block.kind === "compaction");
   const shownAt = text.length > 0 ? blocks.indexOf(text.at(-1)!) : -1;
   const work = blocks.filter((block) => !visible.has(block as TextBlock));
 
@@ -140,7 +143,11 @@ export function layoutAiTurn(input: readonly AiTurnBlock[], options: { phase: Ai
   return {
     work,
     steps,
-    showWork: steps > 0 || ((options.phase === "stopped" || options.phase === "failed") && work.length > 0),
+    // A running turn shows its work line from the start, "Thinking" included, until its answer starts without a step.
+    showWork:
+      steps > 0 ||
+      ((options.phase === "stopped" || options.phase === "failed") && work.length > 0) ||
+      (live(options.phase) && text.length === 0),
     results,
     text,
     textIsStatus: live(options.phase) && shownAt >= 0 && shownAt < lastStep,

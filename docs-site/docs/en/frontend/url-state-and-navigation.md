@@ -5,7 +5,7 @@ section: Frontend
 order: 860
 description: Keep durable view state in the URL and navigate without losing server authority.
 tags: [url, navigation, filters]
-updated: 2026-10-20
+updated: 2026-11-15
 ---
 
 # URL state and navigation
@@ -177,7 +177,7 @@ regions keep their scroll position instead of starting at the top.
 
 The swap fetches the page and loads its island modules before it changes the
 old column. Then it disposes the old islands, pushes history, replaces the
-column, sets the title, mounts the new islands, focuses the first heading of
+column, sets the title, mounts the new islands, focuses the first visible heading of
 the column, and announces the title. A newer navigation cancels a pending
 swap, also a native form submission, an island's `Link` click, or a
 `navigate()` call. A swap that starts while a `Link` handler still loads
@@ -185,11 +185,31 @@ wins as well: that handler's `push`, `replaceWith`, and `fallback` then do
 nothing. Island cleanups should not navigate: they run inside the swap.
 
 Any failure loads the requested URL as a document, so the person sees what a
-reload shows: a status other than 200 such as an expired session's 403, a
-response that is not HTML, a redirect out of the scope, a different
-signature, another `<base>`, a new build with another module prefix or other
-stylesheets, or a module that fails. Inline scripts in the fetched page do not
-run; give page data to islands as props.
+reload shows: a failed request, a status other than 200 such as an expired
+session's 403, a response that is not HTML, a redirect out of the scope, a
+different signature, another `<base>`, `lang` or `dir` on `<html>`, a new build
+with another module prefix or other stylesheets, or a module that fails. The
+old column stays untouched until then; there is no half-swapped page. Inline
+scripts in the fetched page do not run; give page data to islands as props.
+
+`installPageSwap({ timeout })` bounds the fetch and module loading in
+milliseconds. Past it, the swap gives up and loads the document, so a hanging
+request never leaves the old page pending. Without `timeout` there is no
+limit.
+
+Right before such a document load, `window` receives `ssr:nav-fallback` with
+`detail: { reason, url, status? }`. `reason` is a stable code: `network`,
+`timeout`, `status`, `content-type`, `redirect`, `shell`, `assets`, `head`,
+`module`, `commit`, `history`, `history-limit`, or `error`; `status` names a non-200 response.
+Hosts count it to find pages that keep falling back. `url` is the requested URL;
+strip it before reporting. Links outside the scope are not failures and emit
+nothing.
+
+A swap keeps the document's `<head>`. It takes the fetched page's title and
+`<meta name="description">`. It compares only `<base>`, the stylesheet links,
+and `lang` and `dir` on `<html>`; a difference there loads the document. Put
+every other head difference, such as inline styles, the viewport, or a
+canonical link, into the shell signature. Cloud does that for its layouts.
 
 Back and Forward fetch another server page's column without a document load.
 Within the shown page, `listenPopState()` lets islands restore state from the
@@ -231,8 +251,15 @@ swaps emit no event. A listener error does not trigger a document load.
 
 ## Cloud page swaps
 
-Opt in with `defineApp({ pageSwap: true, ... })`. The default is off.
-Cloud keeps the rail, panel slot, and provider document.
+Opt in with `defineApp({ pageSwap: true, ... })`. The default is off. A list
+of paths, such as `pageSwap: ["/app/inventory/:itemId/history"]`, limits swaps
+to pages under one of them and to links within the matched path; see
+[Define an app](/en/docs/build/define-app#keep-the-shell-during-page-navigation).
+Before you opt in, move every `beforeunload` guard of the swapped pages to
+[`protectUnsavedInput()`](#protect-unsaved-input) and give the app the
+browser tests described in [Swap stability](#swap-stability).
+Cloud keeps the rail, panel slot, and provider document. Links in the app menu
+behind the page title on phones swap like links in the column.
 It replaces the header, banners, warnings, page trail, main content, footer,
 and the page's shell data and Help ids. Regular and full-page layouts can
 swap between each other.
@@ -262,12 +289,66 @@ traversals and `ssr:nav-swapped` for the committed content.
 Web Vitals belong to the document. INP and CLS cover every swapped page and
 carry the route template of the page that loaded the document.
 
-Protect unsaved column state with `onBeforeLeave()` as described below.
-`beforeunload` is not consulted during swaps; keep it for document loads.
+Protect unsaved column state with `protectUnsavedInput()` as described below.
+`beforeunload` is not consulted during swaps.
+
+Cloud bounds each swap by the gateway's idle timeout of 10 seconds. A page
+that takes longer loads as a document instead. Each fallback of a signed-in
+person is recorded once in the `page-swap` log with the app and the reason,
+without path, query or person (see [Observability](/en/docs/operations/observability#page-swap-fallbacks)).
+
+### Swap stability
+
+A swap must never leave a page that a reload would not show. Cloud holds
+page swaps to this contract; the framework tests in `packages/ssr/test/engine`
+and each app's swap tests check it in Chromium and WebKit:
+
+- **Fallback:** a failed request, a timeout, any status other than 200 (an
+  expired session included), another build or asset version, another shell,
+  a changed head, a failing island module, and a commit or history conflict
+  each load the requested URL once as a document. The old column stays until
+  then. Each fallback is reported with its reason.
+- **History:** Back and Forward swap the arriving page and restore its scroll;
+  a new page opens at the top or its hash. Focus moves to the first visible heading,
+  and the title is announced to screen readers.
+- **Head:** title and description follow the page. Language, theme, user,
+  build and app are part of the shell signature, so a change of any of them
+  loads the document, and with it the right `lang`, head and accent color.
+- **Cleanup:** the old column's islands are disposed before the new ones mount,
+  so their `onCleanup` stops timers, sockets, listeners and live
+  subscriptions. 50 swaps leave window and document listeners, the head and
+  the shell at their size after the first. Shell islands outside the column,
+  such as the rail, the panel and toasts, keep their state.
+- **Live updates:** `liveConnection()` shares one socket per page and closes
+  it when the last subscription closes; a swap subscribes once per mounted
+  island.
+- **Unsaved input:** `protectUnsavedInput()` asks before a swap and the
+  browser asks before a document load, as before page swaps.
+- **Access:** every swap fetch passes the same route policy and SSR permission
+  checks as a reload, and the column is the server's HTML for that URL.
+- **Other apps:** links outside the app's route prefix stay document loads.
 
 ## Protect unsaved input
 
-Call `onBeforeLeave()` while an island renders or in `onMount` to protect
+For a draft or form, call `protectUnsavedInput()` while the island renders. It
+asks your dialog before a page swap leaves and lets the browser ask before a
+document load, such as a reload, a closed tab, or a link to another app:
+
+```tsx
+import { protectUnsavedInput } from "@k2b/ssr/nav";
+
+protectUnsavedInput({
+  dirty: () => form.dirty(),
+  confirm: () => prompts.confirm(t().discardChanges, { variant: "danger" }),
+});
+```
+
+`confirm` may return a promise. Once the person confirms, the island does not
+ask again on its way out, also when the swap falls back to a document load.
+Declining keeps the page, its input and, for Back or Forward, its history
+entry.
+
+For your own decision logic, call `onBeforeLeave()` while an island renders or in `onMount` to protect
 unsaved input before an in-scope link click, `swapPage()`, or a Back/Forward
 swap leaves its page:
 

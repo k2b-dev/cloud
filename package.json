@@ -1,7 +1,7 @@
 {
   "name": "@k2b/cloud-workspace",
   "private": true,
-  "version": "0.78.0",
+  "version": "0.79.0",
   "type": "module",
   "packageManager": "bun@1.4.4",
   "workspaces": {
@@ -137,6 +137,7 @@
   "trustedDependencies": [],
   "patchedDependencies": {
     "hucre@1.1.0": "patches/hucre@1.1.0.patch",
-    "bun-plugin-tailwind@0.1.2": "patches/bun-plugin-tailwind@0.1.2.patch"
+    "bun-plugin-tailwind@0.1.2": "patches/bun-plugin-tailwind@0.1.2.patch",
+    "zod@4.6.7": "patches/zod@4.6.7.patch"
   }
 }

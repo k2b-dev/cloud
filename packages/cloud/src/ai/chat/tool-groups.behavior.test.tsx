@@ -45,7 +45,7 @@ const mount = async (blocks: () => AiTurnBlock[], phase: () => "running" | "comp
     dom,
     toggle,
     work: () => dom.root.querySelector<HTMLDetailsElement>("details.ai-turn-work")!,
-    steps: () => Array.from(dom.root.querySelectorAll<HTMLDetailsElement>(".ai-turn-steps > details")),
+    steps: () => Array.from(dom.root.querySelectorAll<HTMLElement>(".ai-turn-steps > .k2b-chat-activity")),
     cleanup: () => {
       dispose();
       dom.cleanup();
@@ -53,7 +53,7 @@ const mount = async (blocks: () => AiTurnBlock[], phase: () => "running" | "comp
   };
 };
 
-domTest("streaming appends steps at the work line's indent without remounting them or revealing payloads", async () => {
+domTest("streaming appends steps in words at the work line's indent without remounting them or revealing payloads", async () => {
   const [blocks, setBlocks] = createSignal([tool("one"), tool("two")]);
   const view = await mount(blocks);
   try {
@@ -65,7 +65,9 @@ domTest("streaming appends steps at the work line's indent without remounting th
     expect(first?.textContent).toContain("Read file");
     // Steps sit directly in the work line's body; nothing summarizes them a second time.
     expect(work.querySelector(".ti-stack-2")).toBeNull();
-    const summary = first!.querySelector("summary")!;
+    // A step in words has no payload to open; the work line keeps the focus while steps stream in.
+    expect(first!.querySelector("summary")).toBeNull();
+    const summary = work.querySelector("summary")!;
     summary.focus();
     setBlocks((previous) => [...previous, tool("three")]);
     setBlocks((previous) => [...previous, tool("four")]);
@@ -75,16 +77,11 @@ domTest("streaming appends steps at the work line's indent without remounting th
     expect(view.steps()).toHaveLength(4);
     expect(document.activeElement).toBe(summary);
     expect(view.dom.root.textContent).not.toContain("hidden payload");
-    // A step's details open in place, without a second indent.
-    view.toggle(first!);
-    expect(first!.getAttribute("data-body-inset")).toBe("false");
-    expect(view.dom.root.textContent).toContain("hidden payload");
     const { createAiToolDisclosureState } = await import("./tool-disclosure");
     const restored = createAiToolDisclosureState();
     expect(restored.get("work:ai-turn:turn:0")).toBe(true);
-    expect(restored.get("one")).toBe(true);
-    restored.set("one", false);
-    expect(createAiToolDisclosureState().get("one")).toBeUndefined();
+    restored.set("work:ai-turn:turn:0", false);
+    expect(createAiToolDisclosureState().get("work:ai-turn:turn:0")).toBeUndefined();
   } finally {
     view.cleanup();
   }
@@ -118,7 +115,7 @@ domTest("housekeeping folds at step level and opens in place; steps a reader wat
   try {
     view.toggle(view.work());
     // Only housekeeping so far: the steps show directly instead of a group that would summarize all of them.
-    expect(view.steps().map((step) => step.querySelector("summary")?.textContent)).toEqual([
+    expect(view.steps().map((step) => step.querySelector(".k2b-chat-activity__row")?.textContent)).toEqual([
       expect.stringContaining("Load skill"),
       expect.stringContaining("Load tools"),
       expect.stringContaining("Search help"),
@@ -138,8 +135,8 @@ domTest("housekeeping folds at step level and opens in place; steps a reader wat
       expect.stringContaining("App check"),
     ]);
     expect(group!.getAttribute("data-body-inset")).toBe("false");
-    view.toggle(group!);
-    expect(group!.querySelectorAll(".ai-turn-steps > details")).toHaveLength(3);
+    view.toggle(group as HTMLDetailsElement);
+    expect(group!.querySelectorAll(".ai-turn-steps > .k2b-chat-activity")).toHaveLength(3);
   } finally {
     view.cleanup();
   }
@@ -149,7 +146,7 @@ domTest("rows a reader sees in the open work list stay when later reasoning or a
   const work = [tool("x", "code_run"), tool("y", "code_run"), tool("a", "load_skill"), tool("b", "load_tools")];
   const [blocks, setBlocks] = createSignal<AiTurnBlock[]>(work);
   const view = await mount(blocks);
-  const labels = () => view.steps().map((step) => step.querySelector("summary")?.textContent ?? "");
+  const labels = () => view.steps().map((step) => step.querySelector(".k2b-chat-activity__row")?.textContent ?? "");
   try {
     view.toggle(view.work());
     expect(labels()).toEqual([
@@ -162,6 +159,9 @@ domTest("rows a reader sees in the open work list stay when later reasoning or a
     // Reasoning streams in after the group, then the next housekeeping step: the reasoning row stays.
     setBlocks([...work, { id: "t", kind: "thinking", text: "Which reference?" }]);
     const thought = view.steps()[3]!;
+    // Thinking is a step in words; its reasoning opens in place.
+    expect(thought.textContent).toContain("Thinking");
+    view.toggle(thought as HTMLDetailsElement);
     expect(thought.textContent).toContain("Which reference?");
     setBlocks([...work, { id: "t", kind: "thinking", text: "Which reference?" }, tool("c", "load_skill")]);
     expect(view.steps()[2]).toBe(group);
@@ -207,24 +207,26 @@ for (const kind of ["repeat", "housekeeping"] as const) {
     try {
       view.toggle(view.work());
       const group = view.steps()[0]!;
-      view.toggle(group);
-      const children = group.querySelectorAll<HTMLDetailsElement>(".ai-turn-steps > details");
+      view.toggle(group as HTMLDetailsElement);
+      const children = group.querySelectorAll<HTMLElement>(".ai-turn-steps > .k2b-chat-activity");
       expect(children).toHaveLength(entries.length);
-      const summary = children[children.length - 1]!.querySelector("summary")!;
+      const last = children[children.length - 1]!;
+      // Steps in words take no focus; the group's own summary keeps it and the rows stay the same elements.
+      const summary = group.querySelector("summary")!;
       summary.focus();
       expect(document.activeElement).toBe(summary);
 
       setBlocks((previous) =>
         previous.map((entry) => (entry.kind === "tool" && entry.id === lastId ? { ...entry, status: "completed" } : entry)),
       );
-      expect(summary.isConnected).toBe(true);
+      expect(last.isConnected).toBe(true);
       expect(document.activeElement).toBe(summary);
-      expect(group.open).toBe(true);
+      expect((group as HTMLDetailsElement).open).toBe(true);
 
       setBlocks((previous) => previous.map((entry) => ({ ...entry })));
-      expect(summary.isConnected).toBe(true);
+      expect(last.isConnected).toBe(true);
       expect(document.activeElement).toBe(summary);
-      expect(group.open).toBe(true);
+      expect((group as HTMLDetailsElement).open).toBe(true);
     } finally {
       view.cleanup();
     }
@@ -249,8 +251,8 @@ domTest("repeated reads open in place with their title, target and call count", 
       expect.stringContaining("App check"),
     ]);
     expect(repeat.getAttribute("data-body-inset")).toBe("false");
-    view.toggle(repeat);
-    expect(repeat.querySelectorAll(".ai-turn-steps > details")).toHaveLength(3);
+    view.toggle(repeat as HTMLDetailsElement);
+    expect(repeat.querySelectorAll(".ai-turn-steps > .k2b-chat-activity")).toHaveLength(3);
   } finally {
     view.cleanup();
   }
@@ -265,14 +267,48 @@ domTest("a failed read stays outside repeated reads as its own row", async () =>
     view.toggle(view.work());
     const steps = view.steps();
     expect(steps).toHaveLength(3);
-    expect(steps[1]!.querySelector("summary")?.textContent).toContain("failed");
+    expect(steps[1]!.textContent).toContain("This did not work.");
     expect(steps[0]!.querySelector("summary")?.textContent).toContain("2 times");
     expect(steps[2]!.querySelector("summary")?.textContent).toContain("2 times");
     for (const repeat of [steps[0]!, steps[2]!]) {
-      view.toggle(repeat);
-      expect(repeat.querySelectorAll(".ai-turn-steps > details")).toHaveLength(2);
-      expect(repeat.textContent).not.toContain("failed");
+      view.toggle(repeat as HTMLDetailsElement);
+      expect(repeat.querySelectorAll(".ai-turn-steps > .k2b-chat-activity")).toHaveLength(2);
+      expect(repeat.textContent).not.toContain("did not work");
     }
+  } finally {
+    view.cleanup();
+  }
+});
+
+domTest("a finished app Query says what it did: the app's past form, else its title marked done; a running one its title", async () => {
+  const query = (id: string, status: "completed" | "running", doneTitle?: string): AiTurnBlock => ({
+    id,
+    kind: "tool",
+    callId: id,
+    name: `acme__query__${id}`,
+    status,
+    args: { query: "Messestand" },
+    result: { data: "hidden payload" },
+    presentation: {
+      kind: "capability",
+      appId: "acme",
+      appName: "Acme",
+      appIcon: "ti ti-box",
+      title: `Search ${id}`,
+      capabilityKind: "query",
+      ...(doneTitle ? { doneTitle } : {}),
+    },
+  });
+  const view = await mount(() => [query("mail", "completed", "Searched mail"), query("notes", "completed"), query("files", "running")]);
+  try {
+    view.toggle(view.work());
+    const labels = view.steps().map((step) => step.querySelector(".k2b-chat-activity__label")?.textContent ?? step.textContent);
+    expect(labels[0]).toContain("Searched mail");
+    expect(labels[1]).toContain("Search notes · done");
+    expect(labels[2]).toContain("Search files");
+    expect(labels[2]).not.toContain("done");
+    // What the step looked for stays below it.
+    expect(view.steps()[0]?.textContent).toContain("Messestand");
   } finally {
     view.cleanup();
   }

@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-07
+updated: 2026-11-16
 ---
 
 # Testing
@@ -250,6 +250,16 @@ panel, a test moves the pointer off the content that moves, so no hover starts
 while it settles, and awaits `settled(page)` before its next press. See the Info
 reopening test in `packages/chat/src/frontend/ChatWorkspace.browser.test.ts`
 ([#2487](https://github.com/k2b-dev/cloud/issues/2487)).
+
+Media that gets its size late moves controls the same way. Without the shipped
+stylesheet, a `<video>` is 300 × 150 until its first frame arrives and then
+takes the picture's size, so a control below it moves. Playwright checks the
+hit target only for the first event of a click, so `click()` resolves even
+when the release and the click land elsewhere. A test that presses a control
+next to media lays the page out with `dist/styles.css`, as Cloud does, and
+checks that the control stays where it appeared. See the "Try again" cases in
+`packages/ui/src/inputs/qr-scanner.browser.test.ts`
+([#2187](https://github.com/k2b-dev/cloud/issues/2187)).
 
 After a pointer move, a test waits until the target matches `:hover`, or for
 the control that the hover reveals, before it reads what the hover changes.
@@ -703,6 +713,13 @@ branch:
   `packages/ui/test/browser.ts`. It waits until the browser store agrees with
   the document and returns the full cookie with its attributes. The
   `cookie-store` check enforces this.
+- Chromium keeps a running animation at one point for the whole task; WebKit
+  moves it on between two reads in the same `evaluate()`. Two boxes read while
+  a bottom sheet slides in therefore sit at different heights, as if they
+  overlapped. A locator `waitFor` returns as soon as the sheet is visible, in
+  its first frame, so a test that compares boxes of something that just
+  appeared awaits `settled(page)` first
+  ([#3441](https://github.com/k2b-dev/cloud/issues/3441)).
 - Playwright's WebKit draws overlay scrollbars that reserve no gutter.
 - Playwright's WebKit ignores the charset of a routed response. A page that a
   test serves names it with `<meta charset="utf-8">`, as every Cloud page
@@ -751,6 +768,32 @@ branch:
   moving that `play()` to the end of the seek did not measurably make it stall
   less often. Renewed playback can therefore stall in Linux WebKit, so its test
   waits for `ended` in Chromium and only for `playing` in WebKit.
+
+### Test an application's page swaps
+
+Before an application turns on `pageSwap`, it runs the shared contract in
+`scripts/fixtures/page-swap-app.ts` against its real SSR pages
+([Swap stability](/en/docs/frontend/url-state-and-navigation#swap-stability)).
+The test file calls `installSsrTransform()` before it imports the page modules,
+starts the harness with `startPageSwapApp()` in `beforeAll`, and registers
+`pageSwapContract()` with two linked pages, a `ready` check, and optionally a
+page with URL state, a tour through the heaviest pages, and extra regions to
+compare. `packages/tools/src/frontend/page-swap.browser.test.ts` is the
+example. The contract checks:
+
+- links, Back, and Forward without a document load;
+- the server render of a direct visit;
+- one document load with a reported fallback for a failing page;
+- a link to another application as a document load;
+- the same layout after a swap as after a reload, at 390 and 1440 pixels;
+- focus on a visible heading and the sidebar's current item in view;
+- 50 swaps, and three rounds through the tour, without growing listeners,
+  intervals, sockets, workers, or object URLs.
+
+The footprint runs keep below WebKit's history budget of 100 writes per 10
+seconds. They click links without Playwright's actionability wait, which
+lasts several animation frames, and headless WebKit renders only about 30
+frames a second. The links test keeps the full click checks.
 
 ## Replace modules in tests
 

@@ -16,6 +16,7 @@ import { directoryPageCount, directoryPages } from "./directory-pages";
 import { RECENT_MOVED_HINT, SELECTION_PILL_HINT } from "./hints";
 import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
+import { filesPageScope } from "./page-scope";
 import { FAVORITES_PREVIEW } from "./StorageOverview";
 import { searchRequest, searchState } from "./search-state";
 import { snapshotTitle } from "./trail";
@@ -187,8 +188,9 @@ export default ssr<AuthContext>(async (c) => {
   } else initial.hints = { recentMoved: hintOpen(c, RECENT_MOVED_HINT, { allowed: true }), selectionPill };
   const locale = getLocale(c);
   const title = snapshotTitle(initial, t.files, browserMessages.resolve([locale]).t, locale);
+  const scope = filesPageScope(initial) ?? undefined;
   return () => (
-    <Layout c={c} title={title} fullWidth fullPage>
+    <Layout context={{ scope }} c={c} title={title} fullWidth fullPage>
       <Workspace initial={initial} preferences={preferences} timeZone={timeZone} retentionDays={retentionDays} />
     </Layout>
   );

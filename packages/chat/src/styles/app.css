@@ -96,11 +96,9 @@
     display: flex;
   }
 }
+/* The preview fades out at its end like the name above it (shared `k2b-truncate-fade`), never with an ellipsis. */
 .chat-list__preview {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 /* The time sits on the title line and the unread count below it on the preview line. Both lines always exist, so a
    count that comes or goes never moves the time or changes the row. */
@@ -285,13 +283,18 @@
 
 /* Fifteen unchanged two-line rows fit before this personal section scrolls. */
 .chat-list-pins { max-height: calc(15 * 3.25rem); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: auto; }
-.chat-list-filters { display: flex; gap: .25rem; padding: .25rem; }
-.chat-list-search { padding: .25rem; }
-.chat-list-error, .chat-list-status { padding: .5rem; font-size: .875rem; }
+/* The pins sit in the sidebar, whose own track already takes its inset; an empty second track would narrow the pinned
+   rows beside the other rows. The list scrolls only past fifteen pins, when a new pin changes it anyway. */
+.k2b-ui .k2b-scroll-area.chat-list-pins[data-orientation] { overflow-y: auto; }
+/* The search fills the row; the filter beside it shows its chosen view like Mail's filter. */
+.chat-list-search { display: flex; align-items: center; gap: .25rem; padding: .25rem; }
+.chat-list-search > :first-child { flex: 1; min-width: 0; }
+.k2b-ui .chat-list-filter[data-active="true"] { color: var(--ui-app-accent-text); background: var(--ui-app-selected); }
+.chat-list-error { padding: .5rem; font-size: .875rem; }
 .chat-list-error { color: var(--k2b-danger-text); }
 
-/* Keep progress in one persistent slot; long recovery messages may grow instead of clipping. */
-.chat-list-feedback { display: grid; min-height: 2.25rem; }
+/* Progress is for screen readers only; a failure takes this slot and may grow instead of clipping. */
+.chat-list-feedback { display: grid; }
 .chat-list-feedback > * { grid-area: 1 / 1; }
 /* Where the reader cannot write, a quiet line takes the composer's place in the same reading column. */
 .chat-conversation__notice {
@@ -339,31 +342,14 @@
   font-size: 0.875rem;
 }
 
-/* The open thread beside the chat's title: name, a dot while other threads have unread messages, and a chevron. */
-.chat-thread-picker {
-  display: inline-flex;
+/* The open thread beside the chat's title: name, a dot while other threads have unread messages, and a chevron. It is
+   a choice, so it carries the shared field edge (`Dropdown.Trigger variant="input"`, Linie B) instead of a grey fill. */
+.k2b-ui .chat-thread-picker {
   flex: none;
   max-width: 16rem;
-  height: 2rem;
-  align-items: center;
   gap: 0.375rem;
   margin-inline-start: 0.5rem;
-  padding: 0 0.5rem;
-  border: 0;
-  border-radius: var(--k2b-radius-control);
-  color: var(--k2b-text);
-  background: var(--k2b-surface-muted);
-  font: inherit;
-  font-size: 0.875rem;
   font-weight: 500;
-  cursor: pointer;
-}
-.chat-thread-picker:hover {
-  background: var(--k2b-hover);
-}
-.chat-thread-picker:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: var(--k2b-focus-offset);
 }
 .chat-thread-picker > i {
   color: var(--k2b-text-muted);
@@ -997,9 +983,6 @@
   margin-inline-start: auto;
   text-align: end;
 }
-.k2b-ui .chat-system-chats .k2b-app-workspace__sidebar-section-toggle > i {
-  margin-inline-start: 0;
-}
 .k2b-ui .chat-system-chats--read .k2b-app-workspace__sidebar-section-count {
   visibility: hidden;
 }
@@ -1010,15 +993,9 @@
   min-width: 1.75rem;
   font-variant-numeric: tabular-nums;
 }
-.chat-system-chats__loading,
 .chat-system-directory__results {
   min-height: 3rem;
 }
-.chat-system-chats__skeleton {
-  height: 3.25rem;
-  margin: 0.25rem 0.5rem;
-}
-.chat-system-chats__empty,
 .chat-search__empty,
 .chat-system-chats__membership {
   padding: 0.5rem 0.75rem;
@@ -1191,3 +1168,8 @@
 .chat-deferred-dialog > * { min-height: 0; flex: 1; }
 .chat-deferred-dialog .chat-dialog__body { flex: 1; }
 .chat-deferred-dialog > .chat-deferred-feedback { height: 100%; }
+
+/* The panel's ready discussion about a resource before anyone wrote: the quiet line fills the feed's place. */
+.chat-resource-start__feed {
+  display: flex;
+}

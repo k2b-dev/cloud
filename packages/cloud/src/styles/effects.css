@@ -44,11 +44,208 @@
   white-space: nowrap;
 }
 
-/* Phones keep the clock while the turn runs; the step count follows once it is finished. */
-@media (max-width: 40rem) {
-  .k2b-ui .ai-turn-work__live-steps {
+/* The work line (Gustav chat v12): ✦ and the app tiles, one sentence in 13 px, the time in 12 px tabular figures, and
+   the chevron. One line in every state and the same height whether the turn runs or has ended (Bauplan 6b). */
+.k2b-ui .ai-turn-work {
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+}
+
+/* The opened work keeps one right axis (Valentin, 15.11.): the work line, every step and every folded row end on the
+   same edge, and their times, counts and chevrons stand right-aligned on it. The work line spans the row measure; the
+   hover surface reaches 4 px past the text edge, so its right edge is the steps' right edge. */
+.k2b-ui .ai-turn-work > .k2b-chat-activity__row {
+  width: min(calc(100% + 0.25rem), var(--k2b-row-measure, 40rem));
+  min-height: 1.75rem;
+  margin-inline-start: -0.25rem;
+  padding: 0.1875rem 0.5rem 0.1875rem 0.25rem;
+  border-radius: 0.5rem;
+}
+
+.k2b-ui .ai-turn-work > summary.k2b-chat-activity__row:hover {
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-edge-hover-bg);
+}
+
+/* Before the first step there is nothing to open; the chevron's place stays, so the time does not move when it comes. */
+.k2b-ui .ai-turn-work > div.k2b-chat-activity__row::after {
+  width: 1em;
+  flex: none;
+  content: "";
+}
+
+.k2b-ui .ai-turn-work .k2b-chat-activity__copy strong {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  white-space: nowrap;
+}
+
+/* The sentence gives way first: it fades at its end, while the step count and what did not go through stay whole. */
+.k2b-ui .ai-turn-work__text {
+  display: flex;
+  min-width: 0;
+}
+
+.k2b-ui .ai-turn-work__sentence {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.k2b-ui .ai-turn-work__steps {
+  flex: none;
+  white-space: pre;
+}
+
+/* On a narrow chat the sentence needs the room: the plain step count gives way, what did not go through stays. */
+@container k2b-chat (max-width: 39.999rem) {
+  .k2b-ui .ai-turn-work__count {
     display: none;
   }
+
+  .k2b-ui .ai-turn-work__steps:not([data-issues]) {
+    display: none;
+  }
+}
+
+/* A step that goes on reads that way: "Thinking …". */
+.k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence::after {
+  content: " …";
+}
+
+.k2b-ui .ai-turn-work__lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+}
+
+.k2b-ui .ai-turn-work__lead > i {
+  margin-inline-end: 0.3125rem;
+  color: var(--k2b-ai-accent);
+  font-size: 0.9375rem;
+}
+
+.k2b-ui .ai-turn-work .k2b-chat-activity__trailing {
+  margin-inline-start: auto;
+}
+
+/* The time follows the sentence and the chevron follows the time, each right beside the other (v12); tabular figures keep
+   a ticking clock from shifting the chevron within a unit. */
+.k2b-ui .ai-turn-work__meta {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
+
+/* Only the sentence shimmers while Gustav works: a plum light runs over it every 2.2 s, on the sentence itself so its
+   fade still applies. Tiles, ✦ and the step count keep their colours; with reduced motion nothing moves. The selectors
+   repeat the shared busy rule's conditions, so they win over it. */
+.k2b-ui
+  .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
+  .k2b-chat-activity__leading:has(.ai-app-tile, .ai-turn-work__lead),
+.k2b-ui
+  .k2b-chat-activity.ai-turn-work[data-busy="true"]:not([data-tone="success"]):not([data-tone="warning"]):not([data-tone="danger"])
+  .k2b-chat-activity__copy
+  strong {
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+}
+
+.k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence {
+  background-image: linear-gradient(
+    90deg,
+    var(--k2b-text-secondary) 0 40%,
+    var(--k2b-ai-accent) 50%,
+    var(--k2b-text-secondary) 60% 100%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: k2b-chat-activity-shimmer 2.2s linear infinite;
+}
+
+/* A changing thinking word (`Chat.Activity.Words`) carries the shimmer itself: a light painted on the sentence would
+   show through the word's own fade, so the word could never fade out. The " …" after it keeps the sentence colour. */
+.k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence:has(.k2b-chat-activity__words) {
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+}
+
+.k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence .k2b-chat-activity__word {
+  background-image: linear-gradient(
+    90deg,
+    var(--k2b-text-secondary) 0 40%,
+    var(--k2b-ai-accent) 50%,
+    var(--k2b-text-secondary) 60% 100%
+  );
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: k2b-chat-activity-shimmer 2.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence,
+  .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence .k2b-chat-activity__word {
+    background-image: none;
+    -webkit-text-fill-color: currentColor;
+    animation: none;
+  }
+}
+
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence,
+:where(html[data-k2b-motion="reduced"]) .k2b-ui .ai-turn-work[data-busy="true"] .ai-turn-work__sentence .k2b-chat-activity__word {
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+}
+
+/* Opened work: one step per row, its app tile on the work line's tile axis, what it did in 13 px and what came of it in
+   12 px below. Icons of steps that keep their own detail sit on the same 20 px axis. */
+.k2b-ui .ai-turn-steps .k2b-chat-activity {
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .ai-turn-steps .k2b-chat-activity__leading {
+  min-width: 1.25rem;
+}
+
+/* The work line already says that Gustav works; the message's progress dots stay for screen readers only. */
+.k2b-ui .k2b-chat-message:has(.ai-turn-work) .k2b-chat-progress-dots {
+  visibility: hidden;
+}
+
+/* One gap before the time and the chevron in every row of the work, so they share the axis; a step's tile keeps its
+   10 px to the words with its own margin. */
+.k2b-ui .ai-turn-work .k2b-chat-activity__row {
+  column-gap: 0.5rem;
+}
+
+.k2b-ui .ai-work-step .k2b-chat-activity__leading {
+  margin-inline-end: 0.125rem;
+}
+
+/* Every row that opens, at any depth (thinking, housekeeping, a file read in parts), ends where the work line ends its
+   own: chevron under chevron, time under time. */
+.k2b-ui .ai-turn-steps summary.k2b-chat-activity__row {
+  width: min(100%, calc(var(--k2b-row-measure, 40rem) - 0.25rem));
+  padding-inline-end: 0.5rem;
+}
+
+.k2b-ui .ai-work-step .k2b-chat-activity__copy strong {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .ai-work-step .k2b-chat-activity__copy small {
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+.k2b-ui .ai-work-step--failed .k2b-chat-activity__copy small {
+  color: var(--k2b-warning-text);
 }
 
 /* Expanded work: at the work line's left edge, one size, no lines or boxes; intermediate texts are quiet paragraphs. */
@@ -58,8 +255,9 @@
   flex-direction: column;
 }
 
+/* The clamp trims its text's outer margins, so the padding carries them: the same space as before. */
 .k2b-ui .ai-turn-steps__text {
-  padding-block: 0.25rem;
+  padding-block: 0.625rem;
 }
 
 /* A live status in place 3 reads like those texts. It keeps the place's line height, so a status and the text that
@@ -89,6 +287,43 @@
 
 .k2b-ui .ai-turn__text--status .assistant-markdown-block > :where(:last-child) {
   margin-bottom: 0;
+}
+
+/* Text between steps: longer than three lines, it shows three with its last line fading, and a chevron beside the first
+   line shows the rest. The chevron takes its column only then, and it stays where it is when the text opens or closes. */
+.k2b-ui .ai-turn-clamp {
+  /* turn-view.tsx reads this limit to measure the text and cap the status reserve. */
+  --ai-turn-clamp-lines: 3;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.k2b-ui .ai-turn-clamp[data-long] {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.25rem;
+}
+
+/* The limit holds from the first render, also on the server; the fade only marks a text that goes on. */
+.k2b-ui .ai-turn-clamp[data-clamp]:not([data-open]) > .assistant-markdown-block {
+  max-height: calc(var(--ai-turn-clamp-lines) * 1lh);
+  overflow: hidden;
+}
+
+.k2b-ui .ai-turn-clamp[data-long]:not([data-open]) > .assistant-markdown-block {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1lh), transparent);
+}
+
+.k2b-ui .ai-turn-clamp > .assistant-markdown-block > :where(:first-child) {
+  margin-top: 0;
+}
+
+.k2b-ui .ai-turn-clamp > .assistant-markdown-block > :where(:last-child) {
+  margin-bottom: 0;
+}
+
+.k2b-ui .ai-turn-clamp__toggle {
+  align-self: start;
 }
 
 .k2b-ui .ai-turn-steps__thought {
@@ -334,8 +569,9 @@
   margin-block: calc(1.125rem - var(--md-table-bleed)) 1.125rem;
 }
 
+/* A thematic break is space, never a line between parts of an answer (design guide: no lines between areas). */
 .assistant-markdown-block :where(hr) {
-  @apply border-0 border-t border-zinc-200 dark:border-zinc-800;
+  border: 0;
   margin-block: 1.375rem;
 }
 
@@ -447,6 +683,29 @@
   overflow: hidden;
   padding-bottom: 0.25rem;
   scrollbar-gutter: stable;
+}
+
+/* With a mouse the help's shared 0.5rem track is always there and lies in its
+   end padding (p-4, sm:p-5), so the text keeps its width when an article grows
+   past the panel; the head then needs no gutter of its own to stay aligned. */
+@media (pointer: fine) and (forced-colors: none) {
+  @supports selector(::-webkit-scrollbar) {
+    .k2b-ui .help-scroll {
+      padding-inline-end: 0.5rem;
+    }
+
+    .help-shell[data-surface="modal"] .help-head,
+    .help-shell[data-surface="panel"] .help-head,
+    .help-shell[data-surface="embedded"] .help-head {
+      scrollbar-gutter: auto;
+    }
+
+    @media (min-width: 640px) {
+      .k2b-ui .help-scroll {
+        padding-inline-end: 0.75rem;
+      }
+    }
+  }
 }
 
 @media (min-width: 40rem) {
@@ -1787,3 +2046,166 @@ dialog:has(.launchpad-panel)::backdrop {
   object-fit: cover;
   object-position: top;
 }
+
+/* Citations and sources (Gustav chat v12). A citation in the answer is a small grey chip with its number, two pixels
+   above the baseline; the row under the answer lists each source as a grey pill with the same number in a white
+   circle, its app tile, and its title. */
+.k2b-ui .assistant-markdown-block a.ai-cite {
+  display: inline-block;
+  box-sizing: border-box;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  margin-inline: 0.0625rem;
+  padding-inline: 0.3125rem;
+  border-radius: 0.375rem;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.125rem;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: 2px;
+}
+
+.k2b-ui .assistant-markdown-block a.ai-cite:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .assistant-markdown-block a.ai-cite:focus-visible,
+.k2b-ui .ai-source:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 1px;
+}
+
+/* An app's icon tile beside a source or a step: 20 px, its icon in the app colour on its tint. */
+.k2b-ui .ai-app-tile {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.375rem;
+  color: var(--k2b-text-secondary);
+  font-size: 0.75rem;
+}
+
+.k2b-ui .ai-sources {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--k2b-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.k2b-ui .ai-sources__list {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.k2b-ui .ai-sources__list > li {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.k2b-ui .ai-source {
+  display: inline-flex;
+  height: 1.625rem;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.625rem 0 0.25rem;
+  border-radius: 999px;
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  text-decoration: none;
+}
+
+.k2b-ui .ai-source:hover {
+  color: var(--k2b-text);
+  background: var(--k2b-hover);
+}
+
+.k2b-ui .ai-source__number {
+  display: inline-grid;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--k2b-text);
+  background: var(--k2b-surface);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.k2b-ui .ai-source__title {
+  min-width: 0;
+  max-width: 20rem;
+}
+
+/* An answer's headings stand out by size and weight only: 18 px for the first three levels, the text's 14 px below. */
+.k2b-ui .ai-turn__text:not(.ai-turn__text--status) .assistant-markdown-block :where(h1, h2, h3) {
+  font-size: 1.125rem;
+  line-height: 1.625rem;
+  letter-spacing: -0.005em;
+}
+
+/* "Answer again" follows the sentence, as one quiet line (v12 g-antwort/gestoppt), instead of standing at the far edge. */
+.k2b-ui .ai-turn__stopped .k2b-chat-activity__copy {
+  flex: 0 1 auto;
+}
+
+.k2b-ui .ai-turn__stopped .k2b-chat-activity__trailing {
+  margin-inline-start: 0.25rem;
+}
+
+/* A note at a step: a quiet line under the step's words, at its text edge, that opens the text in place. */
+.k2b-ui .ai-turn-steps__text.ai-turn-note {
+  padding-block: 0.125rem;
+  padding-inline-start: 1.875rem;
+}
+
+.k2b-ui .ai-turn-note__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  color: var(--k2b-text-muted);
+  background: none;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+}
+
+.k2b-ui .ai-turn-note__toggle:hover {
+  color: var(--k2b-text-secondary);
+}
+
+.k2b-ui .ai-turn-note__toggle:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+
+.k2b-ui .ai-turn-note__toggle > i {
+  font-size: 0.8125rem;
+}
+
+.k2b-ui .ai-turn-note[data-open] .ai-turn-note__toggle > i {
+  transform: rotate(90deg);
+}
+
+.k2b-ui .ai-turn-note__body {
+  padding-block-start: 0.25rem;
+}
+

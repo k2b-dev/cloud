@@ -14,8 +14,6 @@ export const chatSidebarMessages = i18n.define({
   messages: {
     en: {
       title: "In this chat",
-      show: "Show what is in this chat",
-      close: "Close the sidebar",
       search: "Search this chat",
       searchLabel: "Search results, files, and sources in this chat",
       clearSearch: "Close search",
@@ -24,7 +22,6 @@ export const chatSidebarMessages = i18n.define({
       couldNotLoad: "Could not load this chat’s content",
       retry: "Retry",
 
-      attention: "Needs attention",
       taskNeedsAttention: ({ title }: { title: string }) => `Routine “${title}” needs attention`,
       appRunFailed: ({ title }: { title: string }) => `The last run of “${title}” failed`,
 
@@ -108,11 +105,64 @@ export const chatSidebarMessages = i18n.define({
 
       today: "Today",
       yesterday: "Yesterday",
+
+      boxEmpty: "Results, sources, and automations of this chat appear here.",
+      boxFailed: "“In this chat” could not be loaded.",
+      boxFailedDetail: "The chat itself is not affected.",
+      boxNone: "None yet",
+      boxShowAll: "Show all",
+      boxShowAllNamed: ({ label }: { label: string }) => `Show all ${label.toLowerCase()} in a tab`,
+      boxOpenAsTab: "Open as tab",
+      boxNew: ({ count }: { count: number }) => (count > 0 ? `New · ${count}` : "New"),
+      boxShowNew: "Show what is new",
+      boxSources: "Sources",
+      boxContext: "Context",
+      boxSourcesSummary: ({
+        named,
+        pages,
+        searches,
+        items,
+      }: {
+        named: readonly string[];
+        pages: number;
+        searches: number;
+        items: number;
+      }) =>
+        [
+          ...named,
+          items
+            ? plural(items, named.length ? "other item" : "item from your Cloud", named.length ? "other items" : "items from your Cloud")
+            : null,
+          pages ? plural(pages, "web page", "web pages") : null,
+          searches ? plural(searches, "search", "searches") : null,
+        ]
+          .filter(Boolean)
+          .join(", "),
+      boxContextSummary: ({
+        project,
+        skills,
+        memories,
+        routines,
+      }: {
+        project: string | null;
+        skills: number;
+        memories: number;
+        routines: number;
+      }) =>
+        [
+          project ? `Project ${project}` : null,
+          skills ? plural(skills, "skill", "skills") : null,
+          memories ? plural(memories, "memory", "memories") : null,
+          routines ? plural(routines, "routine", "routines") : null,
+        ]
+          .filter(Boolean)
+          .join(", "),
+      downloadNamedShort: ({ name }: { name: string }) => `Download “${name}”`,
+      openRow: ({ title }: { title: string }) => `Open “${title}” as a tab`,
+      jumpRow: ({ title }: { title: string }) => `Show “${title}” in the chat`,
     },
     de: {
       title: "In diesem Chat",
-      show: "Zeigen, was in diesem Chat ist",
-      close: "Seitenleiste schließen",
       search: "In diesem Chat suchen",
       searchLabel: "Ergebnisse, Dateien und Quellen dieses Chats durchsuchen",
       clearSearch: "Suche schließen",
@@ -121,7 +171,6 @@ export const chatSidebarMessages = i18n.define({
       couldNotLoad: "Inhalte dieses Chats konnten nicht geladen werden",
       retry: "Erneut versuchen",
 
-      attention: "Braucht Aufmerksamkeit",
       taskNeedsAttention: ({ title }: { title: string }) => `Routine „${title}“ braucht Aufmerksamkeit`,
       appRunFailed: ({ title }: { title: string }) => `Der letzte Lauf von „${title}“ ist fehlgeschlagen`,
 
@@ -206,6 +255,65 @@ export const chatSidebarMessages = i18n.define({
 
       today: "Heute",
       yesterday: "Gestern",
+
+      boxEmpty: "Ergebnisse, Quellen und Automationen dieses Chats erscheinen hier.",
+      boxFailed: "„In diesem Chat“ konnte nicht geladen werden.",
+      boxFailedDetail: "Der Chat selbst ist davon nicht betroffen.",
+      boxNone: "Noch keine",
+      boxShowAll: "Alle anzeigen",
+      boxShowAllNamed: ({ label }: { label: string }) => `Alle ${label} in einem Tab anzeigen`,
+      boxOpenAsTab: "Als Tab öffnen",
+      boxNew: ({ count }: { count: number }) => (count > 0 ? `Neu · ${count}` : "Neu"),
+      boxShowNew: "Neues anzeigen",
+      boxSources: "Quellen",
+      boxContext: "Kontext",
+      boxSourcesSummary: ({
+        named,
+        pages,
+        searches,
+        items,
+      }: {
+        named: readonly string[];
+        pages: number;
+        searches: number;
+        items: number;
+      }) =>
+        [
+          ...named,
+          items
+            ? plural(
+                items,
+                named.length ? "weiterer Eintrag" : "Eintrag aus deiner Cloud",
+                named.length ? "weitere Einträge" : "Einträge aus deiner Cloud",
+              )
+            : null,
+          pages ? plural(pages, "Webseite", "Webseiten") : null,
+          searches ? plural(searches, "Suche", "Suchen") : null,
+        ]
+          .filter(Boolean)
+          .join(", "),
+      boxContextSummary: ({
+        project,
+        skills,
+        memories,
+        routines,
+      }: {
+        project: string | null;
+        skills: number;
+        memories: number;
+        routines: number;
+      }) =>
+        [
+          project ? `Projekt ${project}` : null,
+          skills ? plural(skills, "Skill", "Skills") : null,
+          memories ? plural(memories, "Erinnerung", "Erinnerungen") : null,
+          routines ? plural(routines, "Routine", "Routinen") : null,
+        ]
+          .filter(Boolean)
+          .join(", "),
+      downloadNamedShort: ({ name }: { name: string }) => `„${name}“ herunterladen`,
+      openRow: ({ title }: { title: string }) => `„${title}“ als Tab öffnen`,
+      jumpRow: ({ title }: { title: string }) => `„${title}“ im Chat zeigen`,
     },
   },
 });

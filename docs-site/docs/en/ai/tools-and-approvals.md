@@ -819,6 +819,14 @@ Its receipt names where the read ended, and content from another origin is not
 returned, but the request has reached that origin by then. A website with an
 open redirect can therefore pass an address it receives on to another website.
 
+Web extraction and the reading view use hosted Firecrawl at `api.firecrawl.dev`.
+Cloud accepts only HTTP or HTTPS page addresses without URL credentials and
+checks both the requested and returned address against its hostname and IP
+literal rules. A rejected returned address yields no extracted content.
+The connection to the Firecrawl API does not follow redirects. Each API request
+has a 30-second deadline, and extracted Markdown is limited to 1,000,000
+characters; a longer page sets `truncated: true`.
+
 ### Read web pages with provenance
 
 `web_search` never asks. `web_extract` and `fetch_file` read an address
@@ -841,6 +849,24 @@ addresses to choose from. A page someone else controls can list links that
 differ in one detail and tell the model to pick one according to data from the
 chat; each such read then tells that website one choice. When a chat holds
 data that must not leave it, read pages only from sources you trust.
+
+### Offer a reading view to the person
+
+`readWebPageForPerson` and `WebReaderResultSchema` from `@k2b/cloud/ai` let an
+application offer Markdown from the same Firecrawl service as `web_extract`.
+The application must check that the user-backed actor owns the chat before
+passing its internal conversation UUID. The same address rule applies:
+provenance in that chat or a remembered website approval for that chat allows
+the read; otherwise `confirm` returns the full URL for the person to approve
+with a second request containing that URL and `confirmed: true`.
+
+The reader requests fresh content, removes images, and returns `contentAt`
+with the Markdown. A redirect needs its own address permission, except a
+same-origin redirect after explicit confirmation; otherwise it returns
+`redirect_blocked` without content. Empty or failed reads return `unreadable`.
+Without a configured Firecrawl key it returns `unavailable`. Assistant exposes
+`GET /api/assistant/workspace/web-reader` with `{ available }` so clients can
+open links in the person's browser when the service is unavailable.
 
 See [Resource authorization](/en/docs/identity/authorization) for the domain
 permission check.

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { checkMimeType } from "@k2b/stdlib/browser";
+import { normalizeAiUploadMediaType } from "../file-media-type";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
   AI_PASTED_TEXT_ATTACHMENT_THRESHOLD,
@@ -203,7 +205,17 @@ describe("Cloud chat composer adapter", () => {
 
     expect(aiComposerFileAccept).toContain("image/png");
     expect(result.attachments).toEqual([]);
-    expect(result.errors).toEqual(["photo.png: choose a Vision model or configure the view_image fallback."]);
+    expect(result.errors).toEqual([
+      "photo.png: this model cannot look at images. Choose a model that understands images, or send without the image.",
+    ]);
+    // A German reader reads the reason and the way out in German.
+    const german = await readAiComposerFiles([new File(["image"], "foto.png", { type: "image/png" })], {
+      acceptsImages: false,
+      locale: "de",
+    });
+    expect(german.errors).toEqual([
+      "foto.png: Dieses Modell kann keine Bilder ansehen. Wähle ein Modell, das Bilder versteht, oder sende ohne das Bild.",
+    ]);
   });
 
   test("accepts every document format supported by read_file", () => {
@@ -214,13 +226,39 @@ describe("Cloud chat composer adapter", () => {
     }
   });
 
+  for (const locale of ["de", "en"]) {
+    test(`accepts ZIP attachments through the composer filter in ${locale}`, async () => {
+      for (const name of ["bank.zip", "bank.ZIP"]) {
+        for (const type of ["application/zip", "application/x-zip-compressed", "application/octet-stream", ""]) {
+          const file = new File(["opaque archive bytes"], name, { type });
+          expect(checkMimeType(file, aiComposerFileAccept)).toBe(true);
+          const result = await readAiComposerFiles([file], { locale });
+          expect(result.errors).toEqual([]);
+          expect(result.attachments).toHaveLength(1);
+          expect(result.attachments[0]).toMatchObject({ kind: "file", name, size: file.size, mediaType: "application/zip", file });
+          expect(aiChatAttachments(result.attachments)[0]).toMatchObject({ kind: "file", name, size: file.size });
+          expect(normalizeAiUploadMediaType(name, type)).toBe("application/zip");
+        }
+      }
+      expect(checkMimeType(new File(["executable"], "setup.exe", { type: "application/x-msdownload" }), aiComposerFileAccept)).toBe(false);
+    });
+  }
+
+  test("ZIP attachments keep the ordinary file size ceiling", async () => {
+    const file = new File(["zip"], "bank.ZIP", { type: "application/zip" });
+    Object.defineProperty(file, "size", { value: 50 * 1024 * 1024 + 1 });
+    const result = await readAiComposerFiles([file], { locale: "en" });
+    expect(result.attachments).toEqual([]);
+    expect(result.errors[0]).toContain("larger than");
+  });
+
   test("preflights the aggregate image limit across composer selections", async () => {
     const result = await readAiComposerFiles([new File(["image"], "photo.png", { type: "image/png" })], {
       acceptsImages: true,
       currentImageBytes: 40 * 1024 * 1024,
     });
     expect(result.attachments).toEqual([]);
-    expect(result.errors[0]).toContain("40 MB total limit");
+    expect(result.errors[0]).toContain("larger than 40 MB");
   });
 
   test("bounds what chooseFiles reads from Cloud apps by the draft's free slots, 50 MiB each", () => {

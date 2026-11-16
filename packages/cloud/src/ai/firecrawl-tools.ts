@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { CapabilityActionCallReview } from "../contracts/capabilities";
 import type { RequestActor } from "../server";
 import { coreSettings } from "../services";
+import { withNetworkDeadline } from "../services/network-transport";
 import { isUnsafeNetworkAddress, isUnsafeNetworkHostname, parseNetworkAddress } from "../shared/network-address";
 import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsWebsiteApprovals, aiWebsiteApprovalScope, findRememberedAiToolApproval } from "./approvals";
 import { aiConversations } from "./store";
@@ -15,9 +16,10 @@ export const AI_FIRECRAWL_API_KEY_SETTING_KEY = "ai.firecrawl_api_key";
 
 const FIRECRAWL_BASE_URL = "https://api.firecrawl.dev";
 const FIRECRAWL_SEARCH_LIMIT = 5;
-const FIRECRAWL_TIMEOUT_MS = 30_000;
+export const FIRECRAWL_TIMEOUT_MS = 30_000;
+export const FIRECRAWL_TOOL_TIMEOUT_MS = 90_000;
 const FIRECRAWL_CACHE_MAX_AGE_MS = 172_800_000;
-const WEB_EXTRACT_MAX_CONTENT_CHARS = 1_000_000;
+export const WEB_EXTRACT_MAX_CONTENT_CHARS = 1_000_000;
 const WEB_SEARCH_HISTORY_SNIPPET_CHARS = 120;
 const WEB_EXTRACT_HISTORY_CONTENT_CHARS = 4_000;
 
@@ -69,21 +71,6 @@ const resolveApiKey = async (apiKey: string | null | undefined) => {
   return resolved;
 };
 
-const fetchWithTimeout = async (fetcher: FirecrawlFetch, url: string, init: RequestInit, signal?: AbortSignal): Promise<Response> => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FIRECRAWL_TIMEOUT_MS);
-  const abort = () => controller.abort();
-  if (signal?.aborted) controller.abort();
-  else signal?.addEventListener("abort", abort, { once: true });
-
-  try {
-    return await fetcher(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener("abort", abort);
-  }
-};
-
 const readJson = async (response: Response): Promise<unknown> => {
   try {
     return await response.json();
@@ -109,25 +96,26 @@ const firecrawlPost = async (input: {
 }): Promise<unknown> => {
   const apiKey = await resolveApiKey(input.apiKey);
   const fetcher = input.fetch ?? fetch;
-  const response = await fetchWithTimeout(
-    fetcher,
-    `${FIRECRAWL_BASE_URL}${input.path}`,
-    {
+  return withNetworkDeadline(FIRECRAWL_TIMEOUT_MS, input.signal, new Error("Firecrawl request timed out."), async (signal) => {
+    // Hosted Firecrawl fetches the page. A self-hosted service or direct Cloud fetch must first check every
+    // resolved IP, bind the connection to a checked address, and validate each redirect.
+    const response = await fetcher(`${FIRECRAWL_BASE_URL}${input.path}`, {
       method: "POST",
+      redirect: "error",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(input.body),
-    },
-    input.signal,
-  );
-  const body = await readJson(response);
-  if (!response.ok) {
-    const message = extractErrorMessage(body) ?? response.statusText;
-    throw new Error(`Firecrawl request failed (HTTP ${response.status}): ${message}`);
-  }
-  return body;
+      signal,
+    });
+    const body = await readJson(response);
+    if (!response.ok) {
+      const message = extractErrorMessage(body) ?? response.statusText;
+      throw new Error(`Firecrawl request failed (HTTP ${response.status}): ${message}`);
+    }
+    return body;
+  });
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -151,6 +139,8 @@ export const assertPublicHttpUrl = (rawUrl: string): string => {
     throw new Error("URL must be valid.");
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("URL must use http or https.");
+
+  if (parsed.username || parsed.password) throw new Error("URL must not contain credentials.");
 
   const hostname = parsed.hostname.toLowerCase();
   if (isUnsafeNetworkHostname(hostname)) {
@@ -200,7 +190,7 @@ export const runCloudAiWebSearch = async (
 
 export const runCloudAiWebExtract = async (
   input: z.infer<typeof CloudAiWebExtractInputSchema>,
-  config: FirecrawlToolConfig & { signal?: AbortSignal; maxChars?: number } = {},
+  config: FirecrawlToolConfig & { signal?: AbortSignal; maxChars?: number; maxAge?: number } = {},
 ): Promise<z.infer<typeof CloudAiWebExtractOutputSchema>> => {
   const url = assertPublicHttpUrl(input.url);
   const body = await firecrawlPost({
@@ -211,7 +201,7 @@ export const runCloudAiWebExtract = async (
       url,
       formats: ["markdown"],
       onlyMainContent: true,
-      maxAge: FIRECRAWL_CACHE_MAX_AGE_MS,
+      maxAge: config.maxAge ?? FIRECRAWL_CACHE_MAX_AGE_MS,
       timeout: FIRECRAWL_TIMEOUT_MS,
       removeBase64Images: true,
       blockAds: true,
@@ -225,7 +215,8 @@ export const runCloudAiWebExtract = async (
   const maxChars = config.maxChars ?? WEB_EXTRACT_MAX_CONTENT_CHARS;
   const data = body.data;
   const metadata = isRecord(data.metadata) ? data.metadata : {};
-  const normalizedUrl = asString(data.url) || asString(metadata.url) || asString(metadata.sourceURL) || url;
+  // Validate the returned address before exposing content; Firecrawl has already followed any page redirects.
+  const normalizedUrl = assertPublicHttpUrl(asString(data.url) || asString(metadata.url) || asString(metadata.sourceURL) || url);
   const content = asString(data.markdown);
   const truncated = truncate(content, maxChars);
 
@@ -246,7 +237,7 @@ export const createCloudAiWebSearchTool = (config: FirecrawlToolConfig = {}) =>
     inputSchema: CloudAiWebSearchInputSchema,
     outputSchema: CloudAiWebSearchOutputSchema,
     approval: "never",
-    timeoutMs: 90_000,
+    timeoutMs: FIRECRAWL_TOOL_TIMEOUT_MS,
     promptHint:
       "search the web for current facts and sources; use additional focused searches when the evidence is incomplete or conflicting.",
     toHistoricalResult: ({ output }) =>
@@ -332,7 +323,7 @@ export const createCloudAiWebExtractTool = (config: FirecrawlToolConfig = {}) =>
     inputSchema: CloudAiWebExtractInputSchema,
     outputSchema: CloudAiWebExtractOutputSchema,
     approval: "never",
-    timeoutMs: 90_000,
+    timeoutMs: FIRECRAWL_TOOL_TIMEOUT_MS,
     promptHint:
       "read relevant pages found by web_search; for research or comparison, inspect multiple useful sources and prefer primary sources.",
     toHistoricalResult: ({ output }) => {

@@ -11,7 +11,9 @@ import {
   onCleanup,
   type Setter,
   Show,
+  sharedConfig,
 } from "solid-js";
+import { isServer } from "solid-js/web";
 import type { AiActiveTurn } from "../client/projection";
 import { aiModelChooserMessages } from "../model-chooser-messages";
 import { type AiActiveTurnSegment, type AiTurnBlock, splitActiveTurnBlocks } from "../protocol";
@@ -21,7 +23,7 @@ import { AiReaderTimeZoneProvider } from "./action-sentences";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { isRecord, isSurveyToolName, textFromMessage } from "./message-utils";
 import { aiChatMessages } from "./messages";
-import { aiMessageStopNotice } from "./stop-notice";
+import { type AiStopNotice, aiMessageStopNotice, stoppedByPerson } from "./stop-notice";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { type AiTurnLayout, type AiTurnPhase, layoutAiTurn, storedPhase, waitsForUser } from "./turn-layout";
 import { TurnNavigator } from "./turn-navigator";
@@ -207,10 +209,13 @@ const storedItems = (
       },
     ];
   };
+  // The person's message an answer belongs to, so the answer can be given again.
+  let prompt: AiStoredMessage | null = null;
   return timeline.flatMap((item, itemIndex): ChatTimelineItem | ChatTimelineItem[] => {
     if (item.type === "user") {
       const text = aiUserMessageText(item.entry);
       const agentMessage = item.entry.meta?.agentMessage;
+      prompt = agentMessage ? null : item.entry;
       if (agentMessage) {
         const separator = text.indexOf("\n\n");
         const forwardedText = separator >= 0 ? text.slice(separator + 2) : text;
@@ -256,7 +261,7 @@ const storedItems = (
         content: text ? <p class="whitespace-pre-wrap">{text}</p> : undefined,
         attachments: aiUserMessageAttachments(item.entry, actions),
         actions: createAiUserMessageActions(item.entry, actions, locale),
-        actionDisplay: "menu",
+        actionDisplay: "inline",
         anchorId: item.entry.seq,
       };
       // A removed model: the chat says once which model answers from now on, right before the message it took over.
@@ -311,6 +316,9 @@ const storedItems = (
     if (segments.length === 0 || (turnError && segments.at(-1)?.type === "survey")) segments.push({ type: "assistant", blocks: [] });
     const lastAssistant = segments.findLastIndex((segment) => segment.type === "assistant");
     const scheduledTask = item.entries.find((entry) => entry.meta?.scheduledTask)?.meta?.scheduledTask ?? null;
+    // Only the answer right after the person's message can be given again; a delivered routine result has no prompt.
+    const answerPrompt = scheduledTask ? null : prompt;
+    prompt = null;
     let firstSegment = true;
     let opener = leadingSteerOpener(item.blocks) ?? "start";
     return segments.flatMap((segment, index): ChatTimelineItem[] => {
@@ -325,13 +333,33 @@ const storedItems = (
       const layout = layoutAiTurn(segment.blocks, { phase: segmentPhase, codePresentations: Boolean(actions.renderCodePresentation) });
       const messageActions =
         actionEntry && index === lastAssistant
-          ? createAssistantMessageActions({ entry: actionEntry, entries: item.entries, copyText: finalText(layout), actions })
+          ? createAssistantMessageActions({
+              entry: actionEntry,
+              entries: item.entries,
+              copyText: finalText(layout),
+              actions,
+              prompt: answerPrompt,
+            })
           : undefined;
       const task = firstSegment ? scheduledTask : null;
       firstSegment = false;
       const error = last ? turnError : undefined;
       const lastMessage = item.entries.findLast((entry) => entry.message.role === "assistant");
-      const stopNotice = index === lastAssistant && lastMessage ? aiMessageStopNotice(lastMessage) : null;
+      // One ending, never two: the person's stop is the quiet line; only a turn Cloud ended explains itself in a notice.
+      const byPerson = last && segmentPhase === "stopped" && stoppedByPerson(item.entries);
+      const storedNotice = index === lastAssistant && lastMessage && !byPerson ? aiMessageStopNotice(lastMessage) : null;
+      // A finished turn whose steps leave nothing to read, act on, or explain ends visibly, never in silence.
+      const silent =
+        last &&
+        segmentPhase === "completed" &&
+        !error &&
+        !storedNotice &&
+        !task &&
+        layout.steps > 0 &&
+        layout.text.length === 0 &&
+        layout.results.length === 0 &&
+        layout.actions.length === 0;
+      const stopNotice: AiStopNotice | null = storedNotice ?? (silent ? { kind: "no_answer" } : null);
       if (isEmptyLayout(layout) && !messageActions && !task && !error && !stopNotice) return [];
       const id = item.loopId ? segmentId(item.loopId, segmentOpener) : `${item.id}:${index}`;
       return [
@@ -350,7 +378,13 @@ const storedItems = (
             duration: last ? () => ({ workedMs: item.workedMs, waitingMs: null }) : () => null,
             scheduledTask: task,
             error,
+            stoppedByPerson: byPerson,
             stopNotice: error ? null : stopNotice,
+            // A stopped answer offers to answer the person's message again, where it stopped.
+            answerAgain:
+              last && (segmentPhase === "stopped" || silent) && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
+                ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
+                : undefined,
             continuable: idle && (item.loopId ? newestLoop === item.loopId : lastMessage?.id === messages.at(-1)?.id),
           }),
           actions: messageActions,
@@ -448,7 +482,11 @@ const activeItems = (
  * running, so a step that starts right after the pause is timed from the true work time.
  */
 const createActiveTurnClock = (source: AiChatTimelineSource, paused: Accessor<boolean>): Accessor<AiTurnDuration | null> => {
-  const [now, setNow] = createSignal(Date.now());
+  // The server's render time seeds the clock only for the server render and the hydration that adopts it, so both show
+  // the same time and word. A timeline built later, such as for another chat, starts from the real clock: an old render
+  // time would otherwise become the start of a newer turn.
+  const rendered = source.renderedAt && (isServer || sharedConfig.context) ? Date.parse(source.renderedAt) : Number.NaN;
+  const [now, setNow] = createSignal(Number.isFinite(rendered) ? rendered : Date.now());
   const running = createMemo(() => source.activeTurn() !== null);
   createEffect(() => {
     if (!running() || typeof window === "undefined") return;
@@ -507,6 +545,12 @@ export type AiChatTimelineSource = {
    * browser. Defaults to the browser's own zone, and to UTC outside a browser.
    */
   timeZone?: string;
+  /**
+   * When the server rendered the page, such as the island's `renderedAt`. The work clock starts there, so the server
+   * output and the first browser frame show the same time and the same thinking word; the browser counts on from its
+   * own clock after that frame.
+   */
+  renderedAt?: string;
 };
 
 /**

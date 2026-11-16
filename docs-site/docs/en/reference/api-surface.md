@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-11
+updated: 2026-11-16
 ---
 
 # API surface
@@ -272,10 +272,11 @@ For [resource discussions](/en/docs/platform/resource-types-and-discussions),
 `CloudResourceReaderViewSchema`, `ResourcePrincipalSchema`,
 `ResourceReadableInputSchema`, `ResourceReadableDataSchema`,
 `ResourceActivityEventSchema`, the `Discussion*Schema` values,
-`typeViewIssues`, and `discussionsIssues` come from `@k2b/cloud/contracts`.
+`typeViewIssues`, `discussionsIssues`, and `discussionContainersPageIssues`
+come from `@k2b/cloud/contracts`.
 `discussionProviders`, `readResourcePrincipals`, and `ResourceReaderRateLimited` come from
-`@k2b/cloud/capabilities/server`; `assertResourceView` comes from
-`@k2b/cloud/capabilities/testing`. The generated Query's context is
+`@k2b/cloud/capabilities/server`; `assertResourceView` and
+`assertDiscussionContainersPage` come from `@k2b/cloud/capabilities/testing`. The generated Query's context is
 `CapabilityAppExecutionContext`.
 
 For [calendar sources](/en/docs/platform/calendar-sources), `calendarSource`,
@@ -689,6 +690,10 @@ and [Upload preflight](/en/docs/platform/pdf-and-templates#upload-browser-map-sn
 model class and interpret the resolved variant. See
 [Structured and background AI](/en/docs/ai/structured-and-background-ai#request-a-class).
 
+
+`readWebPageForPerson`, `WebReaderResult`, and `WebReaderResultSchema` from
+`@k2b/cloud/ai` support a person's [web reading view](/en/docs/ai/tools-and-approvals#offer-a-reading-view-to-the-person)
+after the application checks chat ownership.
 
 ## Workspace speedtest consumers
 

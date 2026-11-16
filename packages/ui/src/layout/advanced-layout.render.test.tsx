@@ -393,8 +393,12 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     const css = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
     expect(css).toContain("@media (any-hover: hover)");
-    expect(css).toContain(':where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-app-workspace__sidebar-section-actions');
-    expect(css).toContain(':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-app-workspace__sidebar-section-actions');
+    expect(css).toContain(
+      ':where(html:not([data-k2b-input="touch"])) .k2b-ui .k2b-app-workspace__sidebar-section-actions > :not([data-visibility="always"])',
+    );
+    expect(css).toContain(
+      ':where(html[data-k2b-input="trackpad"]) .k2b-ui .k2b-app-workspace__sidebar-section-actions > :not([data-visibility="always"])',
+    );
     expect(css).toContain(".k2b-app-workspace__sidebar-section-actions");
     expect(css).toContain(':has(.k2b-dropdown__trigger[aria-expanded="true"])');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-action[data-visibility="hover"]');
@@ -1147,7 +1151,8 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(css).toContain(".k2b-panes__tabs::-webkit-scrollbar{display:none}");
       const tabsScrollbar = rule(".k2b-panes__tabs-scrollbar");
       expect(tabsScrollbar).toContain("position:absolute");
-      expect(tabsScrollbar).toContain("top:2.125rem");
+      expect(tabsScrollbar).toContain("top:2.0625rem");
+      expect(tabsScrollbar).toContain("height:.5rem");
       expect(tabsScrollbar).toContain("opacity:0");
       expect(tabsScrollbar).toContain("pointer-events:none");
       expect(css).toContain(".k2b-panes__head:has(>.k2b-panes__tabs:is(:hover,:focus-within))+.k2b-panes__tabs-scrollbar");

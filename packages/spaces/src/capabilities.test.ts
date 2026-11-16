@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import {
   assertCapabilityReview,
+  assertDiscussionContainersPage,
   assertResourceOpenLink,
   assertResourceView,
   compileCapabilityManifest,
@@ -2842,6 +2843,7 @@ test("discussion containers continue from the same offset when the limit changes
   if (!first.ok) throw new Error("Expected containers");
   expect(operation.data.safeParse(first.data.data).success).toBeTrue();
   expect(first.data.data).toEqual({ items: [{ ref: { type: "spaces.space", id: spaceId }, title: space.name }], next: expect.any(String) });
+  assertDiscussionContainersPage(first.data);
   const last = await operation.run(operation.input.parse({ query: "Product", limit: 2, cursor: first.data.data.next }), userContext);
   if (!last.ok) throw new Error("Expected containers");
   expect(last.data.data).toEqual({
@@ -2851,6 +2853,7 @@ test("discussion containers continue from the same offset when the limit changes
     ],
     next: null,
   });
+  assertDiscussionContainersPage(last.data);
   expect(list).toHaveBeenLastCalledWith(
     expect.objectContaining({ query: "Product", requiredLevel: "read", pagination: { perPage: 2, offset: 1 } }),
   );
@@ -2950,4 +2953,16 @@ test("creation reviews preserve every supplied domain field and bound compact pr
     const { content: _content, ...compact } = eventReview.data;
     expect(Buffer.byteLength(JSON.stringify(compact))).toBeLessThan(32 * 1024);
   }
+});
+
+test("every Query people see says in English and German what it did once it finished", async () => {
+  const { spacesCapabilityPresentation } = await import("./capability-presentation");
+  const visible = Object.entries(spacesCapabilities.queries).filter(([, query]) => !("appOnly" in query && query.appOnly));
+  const queries = spacesCapabilityPresentation.translations.de?.queries ?? {};
+  const missing = visible.flatMap(([id]) => {
+    const english = spacesCapabilityPresentation.doneTitles?.[id];
+    const german = (queries as Record<string, { doneTitle?: string }>)[id]?.doneTitle;
+    return english && german ? [] : [id];
+  });
+  expect(missing).toEqual([]);
 });

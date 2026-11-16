@@ -905,14 +905,21 @@ mobile trigger and application identity.
 
 Pass labelled shared controls through `SidebarSection.actions` when a section
 needs a compact header action such as creating a resource. The section owns
-the header alignment; the control still owns its accessible name and action
+the header alignment: a collapsible section's chevron closes its header in one
+column at the right edge, after any actions, so stacked sections line up with
+or without actions and counts. The heading button stays the control for the
+keyboard and screen readers; the chevron also toggles on pointer press; the control still owns its accessible name and action
 behavior. Section headers and their actions are hidden with the compact rail
 and mobile section layout, so expose an equivalent reachable action in those
 compositions. A `SidebarSection` in the content area, such as a list page
 that replaces the sidebar on a phone, keeps its header and actions at every
 width. With a mouse or trackpad, including a tablet with a mouse,
 section actions stay hidden until the header is hovered or contains keyboard
-focus. Touch-only screens always show them. An open dropdown keeps its section
+focus. Touch-only screens always show them. Wrap an action that people must
+find, such as an entry point for discovering more, in
+`AppWorkspace.SidebarSectionAction visibility="always"`; it stays shown in the
+same reserved box, while unwrapped actions and the default `"hover"` keep the
+behavior above. An open dropdown keeps its section
 action visible and interactive until the menu closes.
 
 Section titles are quiet sentence-case labels. Keep them short and let the
@@ -1855,6 +1862,11 @@ The sheet adds no history entry, so Back leaves the page while it is open.
 Other phone sheets close on Back, but a sidebar may replace the URL while
 the sheet is open, such as a search, and the sheet's entry would then stay
 behind as a stale step in the history.
+
+The sheet's code loads in the background where the row shows All, so All
+opens within the tap. If it cannot load, for example offline or after a
+deploy, All opens the same sidebar in the dialog that prompts use and the error
+goes to `reportError`; the next All tries the sheet again.
 
 Hosts can set `--k2b-workspace-chip-inset` for the row's content inset
 (default `clamp(1rem, 3vw, 2.5rem)`, `1rem` below a 40 rem viewport),

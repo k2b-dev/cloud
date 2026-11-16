@@ -25,7 +25,9 @@ import { Dynamic, isServer } from "solid-js/web";
 import { Button, ButtonLink, type ButtonSize, IconButton, IconButtonLink } from "../actions/Button";
 import { Dropdown, type DropdownItem, type DropdownSearch } from "../actions/Dropdown";
 import { useFilterMessages } from "../actions/filter-messages";
-import { dialogCore } from "../feedback/dialog-core";
+import { type DialogRender, dialogCore } from "../feedback/dialog-core";
+import { DialogHeader } from "../feedback/prompt-confirm";
+import { contentClass, panelClass } from "../feedback/prompt-sheet";
 import { Tooltip } from "../feedback/Tooltip";
 import { RenderErrorBoundary } from "../internal/render-error";
 import {
@@ -63,7 +65,7 @@ import {
   appWorkspaceWidthToken,
   isAppWorkspaceWidthShare,
 } from "./app-workspace-width";
-import BottomSheet, { bottomSheetAdaptiveOptions } from "./BottomSheet";
+import { preloadBottomSheet, withBottomSheet } from "./bottom-sheet-load";
 import { DETAILS_ICON } from "./DetailsToggle";
 import { PageTitle, usePageTrail } from "./PageTitle";
 import type { ScrollAreaProps } from "./ScrollArea";
@@ -577,6 +579,15 @@ export type AppWorkspaceSidebarItemActionProps = {
   children?: JSX.Element;
 };
 export type AppWorkspaceSidebarItemActionsProps = {
+  children: JSX.Element;
+  visibility?: AppWorkspaceSidebarAccessoryVisibility;
+};
+/**
+ * One action in a section header's `actions`. With a mouse or trackpad, header actions show on hover or focus
+ * (`"hover"`, the default, as for unwrapped actions); `"always"` keeps an entry point people must find, such as
+ * discovering more, shown at all times. Its box is reserved either way, so revealing moves nothing.
+ */
+export type AppWorkspaceSidebarSectionActionProps = {
   children: JSX.Element;
   visibility?: AppWorkspaceSidebarAccessoryVisibility;
 };
@@ -1210,8 +1221,12 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
   const workspaceMessages = useWorkspaceMessages();
   const owner = getOwner();
   const [sheetOpen, setSheetOpen] = createSignal(false);
+  /** Ends an All sheet that is still waiting for its code when the sidebar goes. */
+  const unmounted = new AbortController();
+  onCleanup(() => unmounted.abort());
   let aside: HTMLElement | undefined;
   let row: HTMLDivElement | undefined;
+  let all: HTMLButtonElement | undefined;
   // Fades mark the row's cut edges; the sidebar column never scrolls sideways, so it never shows one.
   createScrollFade(
     () => row,
@@ -1228,6 +1243,8 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
     });
     // A client-rendered row settles here; server markup settled in its inline script.
     if (stacked() && row) settleChipRow(row, scrollFadeEdges);
+    // A row that shows All, also on a tablet, loads the sheet's code in the background, so All opens within the tap.
+    if (all?.getClientRects().length) preloadBottomSheet();
   });
   /**
    * The complete sidebar for a chip row: a second rendering of the same
@@ -1246,6 +1263,7 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
     );
     // The sheet belongs to the chip row: when the workspace widens into the sidebar column, All disappears and the sheet closes.
     const leave = new AbortController();
+    const abortLeave = () => leave.abort();
     const watch = new ResizeObserver(() => {
       if (button.getClientRects().length === 0) leave.abort();
     });
@@ -1260,57 +1278,92 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
       // A task, not a microtask: the document's delegated handlers run later in this dispatch.
       setTimeout(close);
     };
-    void dialogCore
-      .open<void>(
-        (close, context) => {
-          let dispose: (() => void) | undefined;
-          const view = createRoot((disposeRoot) => {
-            dispose = disposeRoot;
-            return (
-              <BottomSheet onDismiss={context.requestDismiss}>
-                <BottomSheet.Header title={props.label} close={() => void context.requestDismiss()} />
-                <BottomSheet.Body>
-                  {/* The sheet keeps its own failure: the application's boundary around the sidebar stays untouched. */}
-                  <RenderErrorBoundary
-                    onClose={() => void context.requestDismiss()}
-                    content={() => {
-                      const resolved = children(
-                        () =>
-                          flatten(props.hidden ? undefined : props.children)
-                            .filter(sidebarChildSlot)
-                            .find((slot) => slot.kind === SIDEBAR_DESKTOP)?.children,
-                      );
-                      // Pre-resolved children belong to the row; inserting them here would move its nodes into the sheet.
-                      if (resolved.toArray().some((node) => node instanceof Node && aside?.contains(node))) {
-                        console.error(
-                          "AppWorkspace.Sidebar: write the sidebar children as JSX inside AppWorkspace.Sidebar so they can render a second time in the All sheet; pre-resolved children cannot be reused.",
-                        );
-                        return null;
-                      }
-                      return (
-                        <nav
-                          class="k2b-app-workspace__sidebar-sheet"
-                          aria-label={props.label}
-                          style={accent}
-                          on:click={(event) => choose(event, () => close())}
-                        >
-                          {resolved()}
-                        </nav>
-                      );
-                    }}
-                  />
-                </BottomSheet.Body>
-              </BottomSheet>
-            );
-          }, owner);
-          onCleanup(() => dispose?.());
-          return view;
-        },
-        // No history entry: an application may replace the URL from inside the sidebar, such as a search, and an
-        // entry of the sheet would then outlive it. So Back leaves the page here, unlike other phone sheets.
-        { ...bottomSheetAdaptiveOptions, ariaLabel: props.label, signal: leave.signal },
-      )
+    type Frame = (body: JSX.Element, context: Parameters<DialogRender<void>>[1]) => JSX.Element;
+    const view =
+      (frame: Frame): DialogRender<void> =>
+      (close, context) => {
+        let dispose: (() => void) | undefined;
+        const node = createRoot((disposeRoot) => {
+          dispose = disposeRoot;
+          return frame(
+            // The sheet keeps its own failure: the application's boundary around the sidebar stays untouched.
+            <RenderErrorBoundary
+              onClose={() => void context.requestDismiss()}
+              content={() => {
+                const resolved = children(
+                  () =>
+                    flatten(props.hidden ? undefined : props.children)
+                      .filter(sidebarChildSlot)
+                      .find((slot) => slot.kind === SIDEBAR_DESKTOP)?.children,
+                );
+                // Pre-resolved children belong to the row; inserting them here would move its nodes into the sheet.
+                if (resolved.toArray().some((node) => node instanceof Node && aside?.contains(node))) {
+                  console.error(
+                    "AppWorkspace.Sidebar: write the sidebar children as JSX inside AppWorkspace.Sidebar so they can render a second time in the All sheet; pre-resolved children cannot be reused.",
+                  );
+                  return null;
+                }
+                return (
+                  <nav
+                    class="k2b-app-workspace__sidebar-sheet"
+                    aria-label={props.label}
+                    style={accent}
+                    on:click={(event) => choose(event, () => close())}
+                  >
+                    {resolved()}
+                  </nav>
+                );
+              }}
+            />,
+            context,
+          );
+        }, owner);
+        onCleanup(() => dispose?.());
+        return node;
+      };
+    // No history entry: an application may replace the URL from inside the sidebar, such as a search, and an entry of
+    // the sheet would then outlive it. So Back leaves the page here, unlike other phone sheets.
+    const frame = { ariaLabel: props.label, signal: leave.signal };
+    // An All sheet asked for before the sheet's code arrived opens only while its row still shows All. All has the
+    // focus as it opens, also where a tap does not focus a button, so a sheet that waited for its code reads its
+    // palette from All rather than from whatever took the focus meanwhile; the focus returns there after it.
+    const stillShown = () => {
+      if (!button.isConnected || button.getClientRects().length === 0) leave.abort();
+      else button.focus({ preventScroll: true });
+    };
+    unmounted.signal.addEventListener("abort", abortLeave, { once: true });
+    let loaded = false;
+    void withBottomSheet(({ default: BottomSheet, bottomSheetAdaptiveOptions }) => {
+      loaded = true;
+      stillShown();
+      return dialogCore.open<void>(
+        view((body, context) => (
+          <BottomSheet onDismiss={context.requestDismiss}>
+            <BottomSheet.Header title={props.label} close={() => void context.requestDismiss()} />
+            <BottomSheet.Body>{body}</BottomSheet.Body>
+          </BottomSheet>
+        )),
+        { ...bottomSheetAdaptiveOptions, ...frame },
+      );
+    })
+      .catch((error: unknown) => {
+        if (loaded) throw error;
+        globalThis.reportError(error);
+        // The sheet's code did not load: the same sidebar opens in the dialog every prompt uses, and the next All tries
+        // the sheet again.
+        stillShown();
+        return dialogCore.open<void>(
+          view((body, context) => (
+            <div class="k2b-dialog__panel">
+              <DialogHeader title={props.label} close={() => void context.requestDismiss()} />
+              <div class="k2b-dialog__body">{body}</div>
+            </div>
+          )),
+          { panelClassName: panelClass(), contentClassName: contentClass(), ...frame },
+        );
+      })
       .finally(() => {
+        unmounted.signal.removeEventListener("abort", abortLeave);
         watch.disconnect();
         setSheetOpen(false);
         if (button.isConnected && !aside?.contains(document.activeElement)) {
@@ -1348,6 +1401,7 @@ function AppWorkspaceSidebar(props: AppWorkspaceSidebarProps): JSX.Element {
           </div>
           <Show when={stacked()}>
             <button
+              ref={all}
               type="button"
               class="k2b-app-workspace__sidebar-all"
               aria-haspopup="dialog"
@@ -1444,6 +1498,11 @@ const AppWorkspaceSidebarSection = (props: AppWorkspaceSidebarSectionProps) => {
   const [expanded, setExpanded] = createSignal(props.defaultOpen ?? true);
   const open = () => !props.collapsible || (props.open ?? expanded());
   const id = `sidebar-section-${createUniqueId()}`;
+  const toggle = () => {
+    const next = !open();
+    setExpanded(next);
+    props.onOpenChange?.(next);
+  };
   const title = () => (
     <>
       <Show when={props.icon}>
@@ -1478,18 +1537,20 @@ const AppWorkspaceSidebarSection = (props: AppWorkspaceSidebarSectionProps) => {
               class="k2b-app-workspace__sidebar-section-toggle"
               aria-expanded={open()}
               aria-controls={id}
-              onClick={() => {
-                const next = !open();
-                setExpanded(next);
-                props.onOpenChange?.(next);
-              }}
+              onClick={toggle}
             >
               {title()}
-              <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
             </button>
           </Show>
           <Show when={props.actions}>
             <div class="k2b-app-workspace__sidebar-section-actions">{props.actions}</div>
+          </Show>
+          {/* The chevron closes every header in one column at the right edge, after any actions, so sections with
+              and without actions or counts line up. The heading button stays the control for keyboard and readers. */}
+          <Show when={props.collapsible}>
+            <span class="k2b-app-workspace__sidebar-section-chevron" aria-hidden="true" onClick={toggle}>
+              <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} />
+            </span>
           </Show>
         </header>
       </Show>
@@ -1508,6 +1569,11 @@ const AppWorkspaceSidebarItemMeta = (props: AppWorkspaceSidebarItemMetaProps): J
   mergeProps({ kind: SIDEBAR_ITEM_META }, props) as unknown as JSX.Element;
 const AppWorkspaceSidebarItemAction = (props: AppWorkspaceSidebarItemActionProps): JSX.Element =>
   mergeProps({ kind: SIDEBAR_ITEM_ACTION }, props) as unknown as JSX.Element;
+const AppWorkspaceSidebarSectionAction = (props: AppWorkspaceSidebarSectionActionProps): JSX.Element => (
+  <span class="k2b-app-workspace__sidebar-section-action" data-visibility={props.visibility === "always" ? "always" : undefined}>
+    {props.children}
+  </span>
+);
 const AppWorkspaceSidebarItemActions = (props: AppWorkspaceSidebarItemActionsProps): JSX.Element => (
   <div class="k2b-app-workspace__sidebar-item-actions" data-visibility={props.visibility === "hover" ? "hover" : undefined}>
     {props.children}
@@ -2367,6 +2433,7 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   SidebarItemMeta: (props: AppWorkspaceSidebarItemMetaProps) => JSX.Element;
   SidebarItemAction: (props: AppWorkspaceSidebarItemActionProps) => JSX.Element;
   SidebarItemActions: (props: AppWorkspaceSidebarItemActionsProps) => JSX.Element;
+  SidebarSectionAction: (props: AppWorkspaceSidebarSectionActionProps) => JSX.Element;
   SidebarItemStatus: (props: AppWorkspaceSidebarItemStatusProps) => JSX.Element;
   NavTree: AppWorkspaceNavTreeComponent;
   SidebarIconGrid: (props: AppWorkspaceSidebarIconGridProps) => JSX.Element;
@@ -2666,6 +2733,7 @@ AppWorkspace.SidebarItemLabel = AppWorkspaceSidebarItemLabel;
 AppWorkspace.SidebarItemMeta = AppWorkspaceSidebarItemMeta;
 AppWorkspace.SidebarItemAction = AppWorkspaceSidebarItemAction;
 AppWorkspace.SidebarItemActions = AppWorkspaceSidebarItemActions;
+AppWorkspace.SidebarSectionAction = AppWorkspaceSidebarSectionAction;
 AppWorkspace.SidebarItemStatus = AppWorkspaceSidebarItemStatus;
 AppWorkspace.NavTree = AppWorkspaceNavTree;
 AppWorkspace.SidebarIconGrid = AppWorkspaceSidebarIconGrid;

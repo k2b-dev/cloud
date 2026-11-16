@@ -12,6 +12,7 @@ import {
   aiMemories,
   aiProjects,
   aiSkills,
+  describeAiResourceTypeCounts,
   loadAiConversationFileOverview,
   toAiChatTaskView,
 } from "@k2b/cloud/ai";
@@ -45,6 +46,37 @@ export type AssistantChatResult = {
   presentationId?: string;
 };
 
+/**
+ * A further group of the box "In this chat", such as the automations of the chat. Whoever owns the data fills it
+ * through the snapshot; the box draws it like the results, so it needs no code of its own here. Texts are final and in
+ * the viewer's language.
+ */
+export type AssistantChatContextGroup = {
+  key: string;
+  label: string;
+  /** All entries; the box shows at most three, then "Show all". */
+  count: number;
+  rows: Array<{
+    key: string;
+    icon: string;
+    /** The app colour of the tile. */
+    accent?: string;
+    title: string;
+    /** One state word at the row's end, such as "Paused". */
+    word: string;
+    tone?: "warn" | "ok" | "ai" | "danger";
+    /** It waits for the viewer: the tile carries a ring. */
+    attention?: boolean;
+    tooltip?: string;
+    /** A click jumps to this message of the chat. */
+    jump?: { messageSeq: number; callId: string | null };
+    /** Without a jump, a click opens this Cloud address. */
+    href?: string;
+    /** The one action shown while pointing at the row. */
+    action?: { href: string; label: string; icon: string };
+  }>;
+};
+
 export type AssistantChatContextSnapshot = {
   chatId: string;
   viewerUserId: string;
@@ -72,6 +104,13 @@ export type AssistantChatContextSnapshot = {
   apps: ArtifactSummary[];
   runCount: number;
   runs: Array<{ id: string; status: string; createdAt: string }>;
+  /** Further groups of the box, after the results; none yet. */
+  groups?: AssistantChatContextGroup[];
+  /**
+   * The Cloud items among `sources`, counted by type in the viewer's words ("3 Mails"), for types whose app names its
+   * nouns; the rest count as items.
+   */
+  resourceCounts?: Array<{ type: string; count: number; label: string }>;
 };
 
 const runState = (status: string | undefined): "ready" | "error" | "running" | null =>
@@ -114,6 +153,16 @@ export const loadAssistantChatSources = async (
   return { ...page, sources: readableSources(page.sources, apps) };
 };
 
+/** The Cloud items among the sources by type, named where the type's app names its nouns. */
+const countResourceSources = async (sources: readonly AiConversationSource[], locale: string | undefined) => {
+  const counts = new Map<string, number>();
+  for (const source of sources)
+    if (source.kind === "resource" && source.ref) counts.set(source.ref.type, (counts.get(source.ref.type) ?? 0) + 1);
+  if (!locale || counts.size === 0) return [];
+  const labels = await describeAiResourceTypeCounts(counts, locale).catch(() => new Map<string, string>());
+  return [...labels].map(([type, label]) => ({ type, count: counts.get(type) ?? 0, label }));
+};
+
 /** Apps this chat referenced (built, edited, ran, listed, or opened), newest first, for the Studio overview. */
 const chatAppIds = async (conversationId: string) => {
   const ids = new Set<string>();
@@ -141,7 +190,7 @@ const resultSources = async (conversationId: string) => {
 export const loadAssistantChatContextSnapshot = async (
   identity: AiResourceContext,
   chatId: string,
-  options: { timeZone: string },
+  options: { timeZone: string; locale?: string },
 ): Promise<AssistantChatContextSnapshot | null> => {
   if (identity.accessSubject.type !== "user") throw new Error("A user-backed identity is required.");
   const userId = identity.accessSubject.userId;
@@ -257,6 +306,8 @@ export const loadAssistantChatContextSnapshot = async (
   const [count] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM assistant.artifact_agent_calls
     WHERE conversation_id=${conversation.id}::uuid AND user_id=${userId}::uuid
       AND input->>'operation'='run' AND input->>'id' IS NULL`;
+  const shownSources = readableSources(sourcePage.sources, apps);
+  const resourceCounts = await countResourceSources(shownSources, options.locale);
   return {
     chatId,
     viewerUserId: userId,
@@ -274,8 +325,9 @@ export const loadAssistantChatContextSnapshot = async (
       bytes: overview.workingBytes,
     },
     storage: { usedBytes: overview.usedBytes, maxBytes: overview.maxBytes },
-    sources: readableSources(sourcePage.sources, apps),
+    sources: shownSources,
     sourceCount: sourcePage.total,
+    ...(resourceCounts.length ? { resourceCounts } : {}),
     sourceCursor: sourcePage.nextCursor ?? null,
     tasks: tasks.map(toAiChatTaskView),
     skills,

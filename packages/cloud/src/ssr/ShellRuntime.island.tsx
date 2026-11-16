@@ -17,6 +17,7 @@ import { registerContextAwareCommand } from "../browser/command-bridge";
 import { attachCommandShortcuts } from "../browser/command-shortcuts";
 import { type IdleState, type IdleWarning, installSharedWorkstation } from "../browser/idle-sign-out";
 import { navigationSearchItems } from "../browser/navigation-search";
+import { reportPageSwapFallbacks } from "../browser/page-swap-fallbacks";
 import { openPanel, type PanelRequest } from "../browser/panel";
 import { installPrivacyScreen } from "../browser/privacy-screen";
 import { onPrivacyTimer, requestPrivacyScreen } from "../browser/privacy-timer";
@@ -32,6 +33,7 @@ import {
 } from "../contracts/announcement-cookie";
 import type { AnnouncementDisplayEntry } from "../contracts/announcements";
 import type { PrivacyTimerSeconds } from "../contracts/privacy-timer";
+import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { createGlobalSearchHost } from "./global-search-host";
 import { LayoutHelpDocuments } from "./layout-help-registry";
 import { installPageTrailRuntime } from "./page-trail-runtime";
@@ -89,7 +91,12 @@ const searchItems = () => {
 };
 
 export default function ShellRuntime(props: ShellRuntimeProps) {
-  if (!isServer && document.querySelector(".cloud-app-canvas[data-nav-shell]")) onCleanup(installPageSwap());
+  if (!isServer && document.querySelector(".cloud-app-canvas[data-nav-shell]")) {
+    // A page the gateway would not answer within its idle timeout loads as a document rather than staying pending.
+    onCleanup(installPageSwap({ timeout: REQUEST_IDLE_TIMEOUT_SECONDS * 1000 }));
+    const shell = readShellData();
+    if (shell?.profile && shell.appId) onCleanup(reportPageSwapFallbacks(shell.appId));
+  }
   const locale = useLocale();
   const t = () => platformMessages.resolve([locale()]).t;
   onMount(() => syncTimezoneCookie(true));

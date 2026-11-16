@@ -11,7 +11,7 @@ import { startLiveOutbox } from "../events/live";
 import { appCatalogExists, usesLegacyCatalogRenewal } from "../services/app-catalog-store";
 import { registerHelp } from "../services/help";
 import { preloadLayoutHelp } from "../ssr/help";
-import { registerPageSwap } from "../ssr/page-swap";
+import { assertPageSwapPaths, matchPageSwapScope, registerPageSwap } from "../ssr/page-swap";
 import { preloadPanelConsent } from "../ssr/panel-consent";
 import { appAccessManagementPath } from "./app-access-path";
 import { bindResourceAppAccess, RESOURCE_ACCESS_PATH } from "./app-access-resources";
@@ -110,6 +110,7 @@ import { normalizeLocale } from "../shared/locale";
 import { escapeHtml } from "../shared/markdown/shared";
 import { type CloudThemePreference, readThemePreferenceFromCookieHeader, themeBootstrapScript } from "../shared/theme";
 import { appAccentStyle } from "../ssr/app-appearance";
+import { validateAppAppearance } from "./app-appearance";
 import { appFaviconHref } from "./app-favicon";
 import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
@@ -159,6 +160,7 @@ type ResolvedPageOptions = PageOptions & {
   performanceRoute?: string;
   themePreference?: CloudThemePreference;
   appAccent?: string;
+  appPrimary?: AppAppearance["primary"];
   /** Signed-in pages: the person's screen preferences, for the privacy screen. */
   screen?: ScreenPreferences;
 };
@@ -190,8 +192,12 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   appearance?: AppAppearance;
   /** URL prefix for SSR asset isolation. Omit for the global `/_ssr/` path (core). */
   basePath?: string;
-  /** Swap Layout content within this app while keeping the rail, tab bar and panel document. Default: false; focusMode pages still load a document. */
-  pageSwap?: boolean;
+  /**
+   * Swap Layout content while keeping the rail, tab bar and panel document. `true` swaps within the app's route prefix.
+   * A list of paths swaps only on pages under one of them, and only between pages under the same matched path; `:name`
+   * stands for one path segment (`"/app/mail/:mailboxId/code"`). Default: off; focusMode pages still load a document.
+   */
+  pageSwap?: true | readonly string[];
   /** Base URL as seen by other containers (e.g. "http://app-notebooks:3000"). */
   baseUrl: string;
   adminHref?: string;
@@ -519,6 +525,7 @@ export const defineApp = <
   opts: AppOptions<S, N, AppId>,
 ): AppDefinition<S, N, AppId> => {
   validatePublicSurfaceRoutes(opts.routes);
+  validateAppAppearance(opts.id, opts.appearance);
   const publicRouter = new Hono();
   const appSkills = opts.skills ? validateAppSkillCatalog(opts.skills) : undefined;
   const skillsManifestHash = appSkills ? appSkillManifestHash(appSkills) : undefined;
@@ -530,6 +537,8 @@ export const defineApp = <
   const installable = opts.installable === undefined ? undefined : validateInstallable(opts.id, opts.routes, opts.installable);
   if (installable === null)
     throw new Error(`App "${opts.id}" declares invalid installable; use a canonical own /app/<id>/<surface>/ path covered by routes`);
+  const swapPaths = typeof opts.pageSwap === "object" ? opts.pageSwap : undefined;
+  if (swapPaths) assertPageSwapPaths(swapPaths);
   const requestInstallable = (path: string) => (installable && installableContains(installable.path, path) ? installable : undefined);
   validateAppNavBadge(opts);
   const panel = validateAppPanel(opts);
@@ -569,6 +578,7 @@ export const defineApp = <
       performanceRoute,
       pwa,
       appAccent,
+      appPrimary,
       installable: pageInstallable,
     }) => {
       // A URL changes only when what it names changes: the app's own files by their content, Core's shared sheets by
@@ -637,7 +647,7 @@ export const defineApp = <
     <link rel="stylesheet" href="${versionedPublicHref("/public/global.css", sharedVersion)}">${head.styles}
     <script>${themeBootstrapScript}</script>${pageInstallable ? `<script>${installableThemeScript(pageInstallable)}</script>` : ""}
   </head>
-  <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""} data-k2b-app-workspace-controller="global">
+  <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""}${appPrimary === "ai" ? ' data-k2b-primary="ai"' : ""} data-k2b-app-workspace-controller="global">
     ${body}
   </body>
   ${scripts}
@@ -666,8 +676,9 @@ export const defineApp = <
   const ssr = Object.assign(
     createStatusPreservingSsrHandler<ResolvedPageOptions>(html, async (c) => {
       c.get("page").installable = requestInstallable(c.req.path);
-      if (opts.pageSwap && !c.get("page").installable)
-        registerPageSwap(c, isDevelopment ? String(developmentStamp) : `${buildMetadata.version}:${buildMetadata.release}`);
+      const swapScope = swapPaths ? matchPageSwapScope(swapPaths, new URL(c.req.url).pathname) : undefined;
+      if (opts.pageSwap && !c.get("page").installable && (!swapPaths || swapScope))
+        registerPageSwap(c, isDevelopment ? String(developmentStamp) : `${buildMetadata.version}:${buildMetadata.release}`, swapScope);
       c.get("page").lang = getLocale(c);
       c.get("page").themePreference = readThemePreferenceFromCookieHeader(c.req.header("Cookie"));
       const user = c.get("user");

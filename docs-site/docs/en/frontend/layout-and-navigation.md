@@ -250,6 +250,11 @@ createEffect(() => {
 });
 ```
 
+Use `publishPageContext({ scope: null })` when navigating to an overview with
+no resource. It clears the server scope while that publication is active;
+disposing it restores the next source or server scope. An omitted scope does
+not override another source.
+
 Each call owns one source. The most recent active source with a scope wins;
 disposing it reveals the next source, then the server scope. Publishers work
 before the lazy panel controller loads and across independent islands. Cloud

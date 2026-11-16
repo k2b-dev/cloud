@@ -3,6 +3,7 @@ import { conversationFileSource } from "@k2b/cloud/ai/solid";
 import { query } from "@k2b/stdlib/solid";
 import {
   Button,
+  DetailPanel,
   type DetailPanelActionSecondary,
   FileView,
   Lightbox,
@@ -22,7 +23,13 @@ import { ContextStudio } from "../artifacts/ContextStudio";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
-import { AssistantChatSidebarTab, type ChatSidebarActions, type ChatSidebarJump, createChatSourcePages } from "./AssistantChatSidebar";
+import {
+  AssistantChatSidebarTab,
+  ChatContextDetails,
+  type ChatSidebarActions,
+  type ChatSidebarJump,
+  createChatSourcePages,
+} from "./AssistantChatSidebar";
 import {
   type AssistantContextFile,
   AssistantContextRow,
@@ -58,7 +65,7 @@ export { splitAssistantConversationSources } from "./assistant-context";
 const CONTEXT_PREVIEW_LIMIT = 3;
 /** The primary control of a focusable context row. */
 const CONTEXT_ROW_ACTION = ":is(a, button).k2b-detail-panel__action";
-export type ContextCategory = "apps" | "files" | "sources" | "knowledge" | "tasks";
+export type ContextCategory = "apps" | "files" | "sources" | "knowledge" | "tasks" | "context";
 export type ContextView = {
   task?: { id: string };
   context?: { conversationId: string; category: ContextCategory; project?: AiProject | null };
@@ -68,6 +75,8 @@ export type ContextView = {
   render: () => JSX.Element;
 };
 type ContextNavigation = {
+  /** Opens a web page of the chat in the reading view; without it, links open in the person's own browser. */
+  onOpenWebPage?: (url: string, title: string) => void;
   onOpenView?: (view: ContextView) => void;
   /** Called after a chat file was deleted, so the host can close its open views. */
   onFileDeleted?: (file: { conversationId: string; path: string }) => void;
@@ -419,7 +428,8 @@ function AssistantChatContextView(
           );
           if (!selected?.value) return;
           if (selected.value.kind === "source" && selected.value.source.href) {
-            await confirmOpenAssistantLink(selected.value.title, selected.value.source.href);
+            if (props.onOpenWebPage) props.onOpenWebPage(selected.value.source.href, selected.value.title);
+            else await confirmOpenAssistantLink(selected.value.title, selected.value.source.href);
           } else if (selected.value.kind === "project") {
             await openAssistantCloudReference(selected.value.title, selected.value.reference.ref);
           }
@@ -501,7 +511,7 @@ function AssistantChatContextView(
             </Show>
 
             <Show when={section("sources") && chatSources().length > 0}>
-              <AssistantContextSection title={text("Sources")}>
+              <AssistantContextSection title={props.category === "sources" ? "" : text("Sources")}>
                 <AssistantContextRows>
                   <For
                     each={chatSources()
@@ -513,7 +523,14 @@ function AssistantChatContextView(
                         icon={source.icon}
                         title={source.title}
                         description={source.preview ?? undefined}
-                        onClick={source.href ? () => void confirmOpenAssistantLink(source.title, source.href!) : undefined}
+                        onClick={
+                          source.href
+                            ? () =>
+                                props.onOpenWebPage
+                                  ? props.onOpenWebPage(source.href!, source.title)
+                                  : void confirmOpenAssistantLink(source.title, source.href!)
+                            : undefined
+                        }
                       />
                     )}
                   </For>
@@ -739,6 +756,7 @@ export const assistantChatSidebarActions = (input: {
   onJump: (target: ChatSidebarJump) => void;
   onOpenSecrets?: () => void;
   onFileDeleted?: (file: { conversationId: string; path: string }) => void;
+  onOpenWebPage?: (url: string, title: string) => void;
 }): ChatSidebarActions => {
   const overview = (category: ContextCategory, title: string) =>
     input.onOpenView({
@@ -782,6 +800,7 @@ export const assistantChatSidebarActions = (input: {
       : undefined,
     onOpenSecrets: input.onOpenSecrets,
     onFileDeleted: input.onFileDeleted,
+    onOpenWebPage: input.onOpenWebPage,
   };
 };
 
@@ -798,6 +817,38 @@ export function AssistantChatContextContent(
 ) {
   const state = createAssistantChatContextState(props);
   const text = useAssistantText();
+  const actions = (onOpenView: (view: ContextView) => void) =>
+    assistantChatSidebarActions({
+      chatId: props.chatId,
+      project: props.project ?? null,
+      copy: { files: text("Files"), apps: "Studio", knowledge: text("Project knowledge"), sources: text("Sources") },
+      onOpenView,
+      onOpenApp: (id, title) => props.onOpenApp?.(id, title),
+      onJump: (target) => props.onJump?.(target),
+      onOpenSecrets: props.onOpenSecrets,
+      onFileDeleted: props.onFileDeleted,
+      onOpenWebPage: props.onOpenWebPage,
+    });
+  // The tab "Context": what the chat works with, open, with its secrets.
+  if (props.category === "context")
+    return (
+      <div class="assistant-context-tab">
+        <DetailPanel surface="plain">
+          <DetailPanel.Body>
+            <Show when={state.snapshot()}>
+              {(snapshot) => (
+                <ChatContextDetails
+                  snapshot={snapshot()}
+                  project={props.project ?? null}
+                  state={state}
+                  actions={actions(props.onOpenView ?? (() => undefined))}
+                />
+              )}
+            </Show>
+          </DetailPanel.Body>
+        </DetailPanel>
+      </div>
+    );
   return (
     <Show
       when={props.category === "files" && props.onOpenView}
@@ -808,6 +859,7 @@ export function AssistantChatContextContent(
           category={props.category}
           onOpenView={props.onOpenView}
           onFileDeleted={props.onFileDeleted}
+          onOpenWebPage={props.onOpenWebPage}
         />
       }
     >
@@ -816,16 +868,7 @@ export function AssistantChatContextContent(
           state={state}
           project={props.project}
           runCount={state.snapshot()?.runCount}
-          actions={assistantChatSidebarActions({
-            chatId: props.chatId,
-            project: props.project ?? null,
-            copy: { files: text("Files"), apps: "Studio", knowledge: text("Project knowledge"), sources: text("Sources") },
-            onOpenView: onOpenView(),
-            onOpenApp: (id, title) => props.onOpenApp?.(id, title),
-            onJump: (target) => props.onJump?.(target),
-            onOpenSecrets: props.onOpenSecrets,
-            onFileDeleted: props.onFileDeleted,
-          })}
+          actions={actions(onOpenView())}
         />
       )}
     </Show>

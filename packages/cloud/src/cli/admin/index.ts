@@ -30,6 +30,7 @@ import { jobCommands } from "./jobs";
 import { legalCommands } from "./legal";
 import { linuxCommands } from "./linux";
 import { logCommands } from "./logs";
+import { maintenanceCommands } from "./maintenance";
 import { metricsCommands } from "./metrics";
 import { natsCommands } from "./nats";
 import { notificationCommands } from "./notifications";
@@ -107,6 +108,10 @@ const build = (locale?: string) =>
       geoip: "Replace and inspect sign-in location databases.",
       jobs: "Inspect background jobs and their runs.",
       logs: "Search, inspect, and clean up retained logs.",
+      maintenance: localizeCloudCliText(locale, {
+        en: "Switch maintenance mode on or off, change its end, and show its state.",
+        de: "Wartungsmodus ein- und ausschalten, sein Ende ändern und seinen Zustand zeigen.",
+      }),
       metrics: "Inspect collectors and manage metrics access.",
       "metrics tokens": "Manage metrics bearer tokens.",
       nats: "Inspect NATS nodes, streams, and consumers.",
@@ -157,6 +162,7 @@ const build = (locale?: string) =>
       ...instanceCommands,
       ...gatewayCommands,
       ...logCommands,
+      ...maintenanceCommands,
       ...telemetryCommands,
       ...jobCommands,
       ...legalCommands,

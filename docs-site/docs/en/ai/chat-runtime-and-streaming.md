@@ -532,7 +532,9 @@ const questions = await listAiOpenQuestions({
 ```
 
 `AiOpenQuestions` contains at most 20 `items`, newest first, and a `count` of
-all matching questions. Each `AiOpenQuestion` carries the approval ID, chat
+all matching questions. Each `AiOpenQuestion` carries its `kind` (today
+`approval`; a further source of things that wait for the person adds its own
+kind, and Assistant gives each kind its sign in "Waiting for you"), the approval ID, chat
 short ID and current title, tool-block `anchor`, short plain text, app
 presentation, and ISO creation time. The short text uses the review's `short`
 template when provided, otherwise its action sentence, rendered like the card's
@@ -739,6 +741,10 @@ attempt and sequence are current. Older snapshots cannot restore obsolete
 streaming block IDs. Pending local steering remains visible until acknowledged.
 In-attempt continuations publish a complete turn baseline before incremental
 updates, so persisted and streamed representations do not appear together.
+
+ZIP archives (`.zip` or `.ZIP`, `application/zip` or `application/x-zip-compressed`)
+are ordinary file attachments with a download and the same 50 MiB file limit.
+Uploads store their bytes unchanged; the server does not unpack archives.
 
 Conversation multipart uploads accept an optional `directory` form field
 (default `/`). The normal path validation and reserved Project namespace apply.

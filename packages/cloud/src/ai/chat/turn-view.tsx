@@ -1,9 +1,10 @@
-import { announce, Button, Chat, NoticeCard, useLocale } from "@k2b/ui";
+import { announce, Button, Chat, IconButton, NoticeCard, useLocale } from "@k2b/ui";
 import {
   type Accessor,
   createEffect,
   createMemo,
   createSignal,
+  createUniqueId,
   For,
   type JSX,
   Match,
@@ -20,6 +21,7 @@ import { type ChatTaskReason, chatTaskReasonSentence, chatTaskReasonState, chatT
 import { AI_TURN_LEASE_MS, type AiTurnBlock } from "../protocol";
 import type { AiTurnError } from "../types";
 import { toolSubject, useReaderTimeZone } from "./action-sentences";
+import { AiAnswerSources, AiAppTile, answerSources } from "./answer-sources";
 import { CompactionBlockView, CompactToolRow, SurveyToolView, TextEditorToolView } from "./blocks";
 import { CapabilityTablePreview } from "./capability-table";
 import { PresentToolBlock } from "./file-tools";
@@ -29,12 +31,15 @@ import { aiToolIcon, displayToolName, isCardToolName, isChartToolName, isRecord,
 import { aiChatMessages } from "./messages";
 import { AssistantMarkdownBlock } from "./primitives";
 import type { AiStopNotice } from "./stop-notice";
+import { aiThinkingMessages, aiThinkingWordRound, aiThinkingWords } from "./thinking-words";
 import { ResultLinks, resultLinks, ToolActionView } from "./tool-action";
-import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState } from "./tool-disclosure";
+import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, useAiToolDisclosure } from "./tool-disclosure";
 import { type AiWorkEntry, type AiWorkItem, countWorkSteps, groupWorkBlocks } from "./tool-groups";
-import { aiTurnErrorCanContinue, aiTurnErrorDescription } from "./turn-error";
+import { aiTurnErrorCanContinue } from "./turn-error";
 import type { AiTurnAction, AiTurnLayout, AiTurnPhase, AiTurnResult } from "./turn-layout";
 import { CloudCardBlock } from "./visual-tools";
+import { AiThoughtStep, AiWorkFollowedContext, AiWorkStep, keepsStepDetail } from "./work-steps";
+import { AI_WORK_APP_TILES, workApps, workStepLine, workStepParts, workSummary } from "./work-summary";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type Messages = ReturnType<typeof aiChatMessages>;
@@ -72,6 +77,10 @@ export type AiTurnSegment = {
   reconnect?: "line" | "row";
   /** Why the turn failed, shown in a notice at its end. Only the last segment of a failed turn carries it. */
   error?: AiTurnError | null;
+  /** A stopped answer can be given again: the person's message is answered anew. */
+  answerAgain?: () => void | Promise<void>;
+  /** The person stopped this turn: it ends with the quiet stopped line and no notice. */
+  stoppedByPerson?: boolean;
   stopNotice?: AiStopNotice | null;
   /** The turn is the chat's newest and nothing runs, so a new message can pick up its work. */
   continuable?: boolean;
@@ -92,15 +101,6 @@ export const formatWorkDuration = (ms: number, t: Messages, long = false): strin
 /** Identity of the current step: it changes when another block becomes current or the current call changes state. */
 const stepKey = (block: AiTurnBlock | null): string =>
   !block ? "start" : `${block.id}:${block.kind === "tool" || block.kind === "compaction" ? block.status : block.kind}`;
-
-/** A running clock: "2:41", "1:02:41". */
-export const formatWorkClock = (ms: number): string => {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = String(total % 60).padStart(2, "0");
-  return hours > 0 ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
-};
 
 const basename = (value: string) => value.slice(value.lastIndexOf("/") + 1) || value;
 
@@ -157,6 +157,11 @@ const stepPhrase = (block: AiTurnBlock | null, t: Messages, withTargets: boolean
   return withTarget(t.stepTool);
 };
 
+/**
+ * The work line of a turn: ✦ and the tiles of the apps it worked in, then one sentence. While the turn runs the
+ * sentence is the current step and shimmers, with the work time beside it; once it ends it says what the turn did and
+ * how many steps that took. It has the same height in every state, and a click opens the steps in words.
+ */
 function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
@@ -183,81 +188,116 @@ function AiWorkLine(props: { segment: Accessor<AiTurnSegment> }) {
     const duration = segment().duration();
     return !segment().earlier && duration && duration.workedMs > 0 ? duration.workedMs : null;
   };
-  const steps = () => t().steps({ count: layout().steps });
-  const label = () => {
+  const apps = createMemo(() => workApps(layout().work));
+  const summary = createMemo(() => (isLive(segment().phase) ? "" : workSummary(layout().work, locale())));
+  const ending = () => {
+    const phase = segment().phase;
+    return phase === "stopped" ? "stopped" : phase === "failed" && !segment().error ? "failed" : null;
+  };
+  // Thinking between steps changes its word with time; each thinking phase gets its own round (Feinschliff v3, 1).
+  const thinkingPhase = () =>
+    working() && stepPhrase(layout().current, t(), false) === t().stepThinking ? `${segment().id}:${currentStep() ?? "start"}` : null;
+  const thinkingWords = (phase: string) => aiThinkingWordRound(phase, aiThinkingWords(locale()));
+  const sentence = () => {
     if (reconnecting()) return t().reconnecting;
     if (working()) return liveStepLabel(layout().current, t(), stepMs());
     if (waiting()) return layout().waitingFor === "approval" ? t().waitingForApproval : t().waitingForAnswer;
+    if (summary()) return summary();
     const duration = worked();
     const short = duration === null ? "" : formatWorkDuration(duration, t());
-    if (segment().phase === "stopped") return t().workedStopped({ duration: short });
+    if (ending() === "stopped") return t().workedStopped({ duration: short });
     // A failed turn with a stored reason says it in its notice; the line then reads like any finished turn.
-    if (segment().phase === "failed" && !segment().error) return t().workedInterrupted({ duration: short });
+    if (ending() === "failed") return t().workedInterrupted({ duration: short });
     return short ? t().workedFor({ duration: short }) : t().worked;
   };
-  const ariaLabel = () => {
-    const phase = segment().phase;
-    if (isLive(phase)) return undefined;
-    const duration = worked();
-    return t().workedLabel({
-      duration: duration === null ? "" : formatWorkDuration(duration, t(), true),
-      steps: layout().steps ? steps() : "",
-      ending: phase === "stopped" || (phase === "failed" && !segment().error) ? phase : null,
-    });
+  /** After a finished turn's sentence: its steps, what did not go through, and how it ended. */
+  const stepParts = () => {
+    if (isLive(segment().phase) || (!layout().steps && !summary())) return null;
+    const parts = workStepParts(layout().work, layout().steps, locale());
+    const ended = summary() && ending() ? (ending() === "stopped" ? t().workEndedStopped : t().workEndedInterrupted) : "";
+    return { count: parts.count, issues: [...parts.issues, ended].filter(Boolean).join(", ") };
   };
-  const trailing = () => {
+  const ariaLabel = () => {
+    if (isLive(segment().phase)) return undefined;
+    const duration = worked();
+    const label = t().workedLabel({
+      duration: duration === null ? "" : formatWorkDuration(duration, t(), true),
+      steps: layout().steps ? workStepLine(layout().work, layout().steps, locale()) : "",
+      ending: ending(),
+    });
+    return summary() ? `${summary()}. ${label}` : label;
+  };
+  const hasSteps = createMemo(() => layout().work.length > 0);
+  // The turn went on after a step when a later step, its answer, or its normal end followed.
+  const followed = (id: string) => {
+    const work = layout().work;
+    const index = work.findIndex((block) => block.id === id);
+    return (index >= 0 && index < work.length - 1) || layout().text.length > 0 || segment().phase === "completed";
+  };
+  const steps = () => <AiWorkSteps blocks={layout().work} active={working()} followed={followed} />;
+  /** The time beside the sentence, in tabular figures: the work time while it runs, how long it waits, or the total. */
+  const time = () => {
     const duration = segment().duration();
-    if ((working() || reconnecting()) && duration) {
-      return (
-        <span class="ai-turn-work__meta">
-          {formatWorkClock(duration.workedMs)}
-          <span class="ai-turn-work__live-steps"> · {steps()}</span>
-        </span>
-      );
-    }
-    if (waiting() && duration?.waitingMs !== null && duration?.waitingMs !== undefined) {
-      return (
-        <span class="ai-turn-work__meta">
-          {t().waitingSince({ duration: formatWorkDuration(duration.waitingMs, t()) })}
-          <span class="ai-turn-work__live-steps"> · {steps()}</span>
-        </span>
-      );
-    }
-    return layout().steps ? <span class="ai-turn-work__meta">{steps()}</span> : undefined;
+    if ((working() || reconnecting()) && duration) return formatWorkDuration(Math.max(1000, duration.workedMs), t());
+    if (waiting() && duration?.waitingMs !== null && duration?.waitingMs !== undefined)
+      return t().waitingSince({ duration: formatWorkDuration(duration.waitingMs, t()) });
+    const total = worked();
+    return summary() && total !== null ? formatWorkDuration(total, t()) : "";
   };
   return (
     <AiToolActivity
       blockId={`work:${segment().id}`}
       class="ai-turn-work"
-      label={label()}
+      label={
+        <span class="ai-turn-work__text">
+          <span class="ai-turn-work__sentence k2b-truncate-fade">
+            <Show when={thinkingPhase()} keyed fallback={sentence()}>
+              {(phase) => (
+                <Chat.Activity.Words
+                  first={t().thinking}
+                  words={thinkingWords(phase)}
+                  elapsedMs={stepMs()}
+                  announce={aiThinkingMessages(locale()).announcement({ assistant: t().assistant })}
+                />
+              )}
+            </Show>
+          </span>
+          <Show when={stepParts()}>
+            {(parts) => (
+              <span class="ai-turn-work__steps" data-issues={parts().issues ? "" : undefined}>
+                {" · "}
+                <span class="ai-turn-work__count">{parts().count}</span>
+                <Show when={parts().issues}>
+                  <span class="ai-turn-work__count">, </span>
+                  <span>{parts().issues}</span>
+                </Show>
+              </span>
+            )}
+          </Show>
+        </span>
+      }
       ariaLabel={ariaLabel()}
-      icon={waiting() ? "ti ti-hand-stop" : segment().phase === "stopped" ? "ti ti-player-stop" : "ti ti-route"}
-      tone={working() ? "ai" : "neutral"}
+      leading={
+        <span class="ai-turn-work__lead">
+          <i class={waiting() ? "ti ti-hand-stop" : "ti ti-sparkles"} />
+          <For each={apps().slice(0, AI_WORK_APP_TILES)}>{(app) => <AiAppTile icon={app.icon} accent={app.accent} />}</For>
+        </span>
+      }
+      tone="ai"
       busy={working()}
-      trailing={trailing()}
+      trailing={
+        <Show when={time()}>
+          {/* While the turn runs the seconds stay silent; the line announces its activity once. */}
+          <span class="ai-turn-work__meta" aria-hidden={isLive(segment().phase) ? "true" : undefined}>
+            {time()}
+          </span>
+        </Show>
+      }
       bodyInset={false}
-      renderBody={() => <AiWorkSteps blocks={layout().work} active={working()} />}
+      // Nothing to open before the first step, so no chevron yet. Read through a memo, so the open list is built once
+      // and never rebuilt while the turn updates.
+      renderBody={hasSteps() ? steps : undefined}
     />
-  );
-}
-
-function ThoughtRow(props: { block: Extract<AiTurnBlock, { kind: "thinking" }>; busy: boolean }) {
-  const locale = useLocale();
-  const firstLine = () =>
-    props.block.text
-      .split("\n")
-      .map((line) => line.trim())
-      .find(Boolean) ?? "";
-  return (
-    <Show when={firstLine()} fallback={<Chat.Activity label={aiChatMessages(locale()).stepThinking} icon="ti ti-bulb" busy={props.busy} />}>
-      <AiToolActivity
-        blockId={props.block.id}
-        label={firstLine()}
-        icon="ti ti-bulb"
-        bodyInset={false}
-        renderBody={() => <p class="ai-turn-steps__thought">{props.block.text.trim()}</p>}
-      />
-    </Show>
   );
 }
 
@@ -265,8 +305,13 @@ function WorkEntryRow(props: { entry: AiWorkEntry; busy: boolean }) {
   const locale = useLocale();
   return (
     <Switch>
-      <Match when={props.entry.kind === "tool" && props.entry}>{(tool) => <CompactToolRow block={tool()} busy={props.busy} />}</Match>
-      <Match when={props.entry.kind === "thinking" && props.entry}>{(thought) => <ThoughtRow block={thought()} busy={props.busy} />}</Match>
+      <Match when={props.entry.kind === "tool" && keepsStepDetail(props.entry.name) && props.entry}>
+        {(tool) => <CompactToolRow block={tool()} busy={props.busy} />}
+      </Match>
+      <Match when={props.entry.kind === "tool" && props.entry}>{(tool) => <AiWorkStep block={tool()} busy={props.busy} />}</Match>
+      <Match when={props.entry.kind === "thinking" && props.entry}>
+        {(thought) => <AiThoughtStep block={thought()} busy={props.busy} />}
+      </Match>
       <Match when={props.entry.kind === "compaction" && props.entry}>{(compaction) => <CompactionBlockView block={compaction()} />}</Match>
       <Match when={props.entry.kind === "steer_applied"}>
         <Chat.Activity label={aiChatMessages(locale()).steered} icon="ti ti-route" />
@@ -334,14 +379,119 @@ function RepeatedSteps(props: { id: string; target: string; entries: AiWorkEntry
   );
 }
 
-function WorkText(props: { text: string }) {
+/**
+ * The height of a clamped text: `--ai-turn-clamp-lines` (effects.css) lines of its Markdown block. A status in place 3
+ * keeps at most this height.
+ */
+const clampedHeight = (block: Element): number => {
+  const style = getComputedStyle(block);
+  return Number.parseFloat(style.getPropertyValue("--ai-turn-clamp-lines")) * Number.parseFloat(style.lineHeight);
+};
+
+/**
+ * Text between steps. With `clamp`, a text longer than three lines shows three, its last line fading, and a chevron beside
+ * its first line shows the rest; the chevron stays where it is when the text opens or closes. The limit comes from `clamp`
+ * itself, so the server render is already short; measuring only decides the chevron and the fade. Without `clamp` (the
+ * answer) it shows whole. A keyboard user who reaches a link in the faded or hidden part gets the whole text, with the
+ * link in view. A new `reset` closes it.
+ */
+function AiClampedText(props: { html: string; clamp: boolean; reset?: unknown }) {
   const locale = useLocale();
+  const id = createUniqueId();
+  const [open, setOpen] = createSignal(false);
+  const [long, setLong] = createSignal(false);
+  let block: HTMLDivElement | undefined;
+  const measure = () => {
+    if (!block) return;
+    setLong(props.clamp && block.scrollHeight > clampedHeight(block) + 1);
+  };
+  // A clamped text keeps its height while it grows, so the new text is measured, not only a new size.
+  createEffect(on([() => props.html, () => props.clamp], measure));
+  createEffect(
+    on(
+      () => props.reset,
+      () => setOpen(false),
+      { defer: true },
+    ),
+  );
+  onMount(() => {
+    if (typeof ResizeObserver === "undefined" || !block) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(block);
+    onCleanup(() => observer.disconnect());
+  });
+  const t = () => aiChatMessages(locale());
+  return (
+    <div
+      class="ai-turn-clamp"
+      data-clamp={props.clamp ? "" : undefined}
+      data-long={long() ? "" : undefined}
+      data-open={open() ? "" : undefined}
+      onFocusIn={(event) => {
+        const target = event.target;
+        if (!block || !long() || open() || !(target instanceof Element) || !block.contains(target)) return;
+        // Links in the visible lines keep the text closed; only the faded last line and the clipped rest open it.
+        const fade = block.getBoundingClientRect().bottom - Number.parseFloat(getComputedStyle(block).lineHeight);
+        if (target.getBoundingClientRect().bottom <= fade) return;
+        setOpen(true);
+        // A timeline that follows its end moves the opened text up in the next frame; bring the link back afterwards.
+        requestAnimationFrame(() => requestAnimationFrame(() => target.scrollIntoView({ block: "nearest" })));
+      }}
+    >
+      <AssistantMarkdownBlock
+        id={id}
+        ref={(element) => {
+          block = element;
+        }}
+        html={props.html}
+      />
+      <Show when={long()}>
+        <IconButton
+          size="xs"
+          class="ai-turn-clamp__toggle"
+          label={open() ? t().textShowLess : t().textShowAll}
+          aria-expanded={open() ? "true" : "false"}
+          aria-controls={id}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <i class={open() ? "ti ti-chevron-up" : "ti ti-chevron-down"} aria-hidden="true" />
+        </IconButton>
+      </Show>
+    </div>
+  );
+}
+
+/**
+ * What Gustav wrote between two steps, kept at the step it followed as a note: one quiet line "Note on this step" that
+ * opens the text in place, again at most three lines with its chevron for the rest (Bauplan 3o). Nothing is lost, and
+ * the opened work stays a list of steps.
+ */
+function WorkText(props: { text: string; noteId: string }) {
+  const locale = useLocale();
+  const id = createUniqueId();
+  // The reader's choice survives the work line closing and a reload, like every other disclosure in the turn.
+  const disclosure = useAiToolDisclosure(() => props.noteId);
+  const open = () => disclosure.open() === true;
   // Render Markdown only when the text itself changes, not on every update of the turn around it.
   const text = createMemo(() => props.text);
   const html = createMemo(() => markdown.renderSync(text(), { locale: locale() }));
   return (
-    <div class="ai-turn-steps__text">
-      <AssistantMarkdownBlock html={html()} />
+    <div class="ai-turn-steps__text ai-turn-note" data-open={open() ? "" : undefined}>
+      <button
+        type="button"
+        class="ai-turn-note__toggle"
+        aria-expanded={open() ? "true" : "false"}
+        aria-controls={id}
+        onClick={() => disclosure.onOpenChange(!open())}
+      >
+        <i class="ti ti-chevron-right" aria-hidden="true" />
+        {aiChatMessages(locale()).stepNote}
+      </button>
+      <div id={id} class="ai-turn-note__body" hidden={!open()}>
+        <Show when={open()}>
+          <AiClampedText html={html()} clamp />
+        </Show>
+      </div>
     </div>
   );
 }
@@ -361,7 +511,7 @@ const workItemKey = (item: AiWorkItem): string =>
  * folds away under the reader, also when reasoning or arguments that would fold it arrive later; the next time it
  * opens, it folds like in history.
  */
-function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
+function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean; followed: (id: string) => boolean }) {
   const shown = new Set<string>();
   const items = createMemo(() => {
     const work = groupWorkBlocks(props.blocks, shown);
@@ -370,40 +520,42 @@ function AiWorkSteps(props: { blocks: AiTurnBlock[]; active: boolean }) {
   });
   const keys = createMemo(() => [...items().keys()]);
   return (
-    <div class="ai-turn-steps">
-      <For each={keys()}>
-        {(key, index) => {
-          const item = () => items().get(key);
-          const text = () => {
-            const value = item();
-            return value?.kind === "text" ? value.block.text : undefined;
-          };
-          const step = () => {
-            const value = item();
-            return value?.kind === "step" ? value.entry : undefined;
-          };
-          const group = () => {
-            const value = item();
-            return value?.kind === "housekeeping" ? value : undefined;
-          };
-          const repeat = () => {
-            const value = item();
-            return value?.kind === "repeat" ? value : undefined;
-          };
-          const active = () => props.active && index() === keys().length - 1;
-          return (
-            <Switch>
-              <Match when={text()}>{(value) => <WorkText text={value()} />}</Match>
-              <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={active()} />}</Match>
-              <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={active()} />}</Match>
-              <Match when={repeat()}>
-                {(value) => <RepeatedSteps id={value().id} target={value().target} entries={value().entries} active={active()} />}
-              </Match>
-            </Switch>
-          );
-        }}
-      </For>
-    </div>
+    <AiWorkFollowedContext.Provider value={props.followed}>
+      <div class="ai-turn-steps">
+        <For each={keys()}>
+          {(key, index) => {
+            const item = () => items().get(key);
+            const text = () => {
+              const value = item();
+              return value?.kind === "text" ? value.block.text : undefined;
+            };
+            const step = () => {
+              const value = item();
+              return value?.kind === "step" ? value.entry : undefined;
+            };
+            const group = () => {
+              const value = item();
+              return value?.kind === "housekeeping" ? value : undefined;
+            };
+            const repeat = () => {
+              const value = item();
+              return value?.kind === "repeat" ? value : undefined;
+            };
+            const active = () => props.active && index() === keys().length - 1;
+            return (
+              <Switch>
+                <Match when={text()}>{(value) => <WorkText text={value()} noteId={`note:${key}`} />}</Match>
+                <Match when={step()}>{(entry) => <WorkEntryRow entry={entry()} busy={active()} />}</Match>
+                <Match when={group()}>{(value) => <HousekeepingGroup id={value().id} entries={value().entries} active={active()} />}</Match>
+                <Match when={repeat()}>
+                  {(value) => <RepeatedSteps id={value().id} target={value().target} entries={value().entries} active={active()} />}
+                </Match>
+              </Switch>
+            );
+          }}
+        </For>
+      </div>
+    </AiWorkFollowedContext.Provider>
   );
 }
 
@@ -539,7 +691,7 @@ function AiTurnActionView(props: { action: Accessor<AiTurnAction | undefined>; t
  * Output-limit notices use the established multiline message surface, so their explanation stays readable on phones.
  * Continue sends a visible follow-up through the host's normal send path, only while the newest turn is idle.
  */
-function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean }) {
+function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean; answerAgain?: () => void | Promise<void> }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const actions = useAiChatActions();
@@ -561,13 +713,32 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
     <NoticeCard
       tone="warning"
       class="ai-turn__notice"
-      title={props.notice.kind === "output_limit" ? t().outputLimitReached : t().turnErrorTitle}
-      detail={props.notice.kind === "output_limit" && props.notice.reasoning ? t().outputLimitReasoning : undefined}
+      title={
+        props.notice.kind === "output_limit"
+          ? t().outputLimitReached
+          : props.notice.kind === "no_answer"
+            ? t().noAnswerTitle
+            : t().turnErrorTitle
+      }
+      detail={
+        props.notice.kind === "output_limit" && props.notice.reasoning
+          ? t().outputLimitReasoning
+          : props.notice.kind === "no_answer"
+            ? t().noAnswerDetail
+            : undefined
+      }
     >
       <Show when={props.continuable && actions.onContinueTurn}>
         <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueAnswer()}>
-          <i class="ti ti-player-play" aria-hidden="true" /> {t().continueAnswer}
+          <i class="ti ti-player-play" aria-hidden="true" /> {props.notice.kind === "no_answer" ? t().continueTurn : t().continueAnswer}
         </Button>
+      </Show>
+      <Show when={props.notice.kind === "no_answer" && props.answerAgain}>
+        {(again) => (
+          <Button variant="text" size="sm" disabled={actions.actionDisabled?.()} onClick={() => void again()()}>
+            <i class="ti ti-refresh" aria-hidden="true" /> {t().actionAnswerAgain}
+          </Button>
+        )}
       </Show>
       <Show when={failed()}>
         <p role="alert">{t().continueAnswerFailed}</p>
@@ -576,7 +747,7 @@ function AiTurnStopNotice(props: { notice: AiStopNotice; continuable: boolean })
   );
 }
 
-function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) {
+function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean; kept: boolean }) {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
   const actions = useAiChatActions();
@@ -592,7 +763,14 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) 
     }
   };
   return (
-    <NoticeCard tone="danger" class="ai-turn__notice" title={t().turnErrorTitle} detail={aiTurnErrorDescription(props.error, locale())}>
+    <NoticeCard
+      tone="danger"
+      icon="ti ti-alert-circle"
+      layout="card"
+      class="ai-turn__notice"
+      title={t().turnInterrupted({ reason: t().turnErrorReason(props.error) })}
+      detail={props.kept ? t().keptSoFar : undefined}
+    >
       <Show when={canContinue()}>
         <Button variant="text" size="sm" loading={continuing()} disabled={actions.actionDisabled?.()} onClick={() => void continueTurn()}>
           <i class="ti ti-player-play" aria-hidden="true" /> {t().continueTurn}
@@ -603,10 +781,11 @@ function AiTurnErrorNotice(props: { error: AiTurnError; continuable: boolean }) 
 }
 
 /**
- * Place 3. Live it is a status that switches in this same element; it keeps its height until the turn ends. Once a step
- * started after it, it reads quietly like the texts in the expanded work; a trailing text may still be the answer and
- * keeps answer typography. A status is not read token by token: screen readers hear each status once it is complete,
- * and that the answer is ready.
+ * Place 3. Live it is a status that switches in this same element. Once a step started after it, it reads quietly like
+ * the texts in the expanded work, at most three lines with a chevron for the rest; a trailing text may still be the answer
+ * and keeps answer typography and its whole length. While the turn runs, the place keeps the height of the text before,
+ * up to a clamped status, so short statuses do not jump and a long one leaves no empty space behind. A status is not read
+ * token by token: screen readers hear each status once it is complete, and that the answer is ready.
  */
 function AiTurnText(props: {
   blocks: Accessor<Extract<AiTurnBlock, { kind: "text" }>[]>;
@@ -617,6 +796,8 @@ function AiTurnText(props: {
   quiet: Accessor<boolean>;
   /** An earlier segment of a split turn: it stops being live while the turn goes on. */
   earlier: Accessor<boolean>;
+  /** The turn ended with its answer; a stopped or failed turn keeps its text but its answer is not ready. */
+  completed: Accessor<boolean>;
 }) {
   const locale = useLocale();
   const status = () => props.live() && props.folding();
@@ -640,19 +821,29 @@ function AiTurnText(props: {
     observer.observe(element);
     onCleanup(() => observer.disconnect());
   });
-  /** The quiet text's height in answer typography, measured in place before the browser paints. */
+  /** The quiet text's height in answer typography, whole, measured in place before the browser paints. */
   const answerHeight = () => {
+    const clamp = element.querySelector(".ai-turn-clamp");
+    const marks = ["data-clamp", "data-long"].filter((name) => clamp?.hasAttribute(name));
     element.classList.remove("ai-turn__text--status");
+    for (const name of marks) clamp?.removeAttribute(name);
     const height = element.offsetHeight;
     element.classList.add("ai-turn__text--status");
+    for (const name of marks) clamp?.setAttribute(name, "");
     return height;
   };
-  // A new status keeps the height of the one before it. A quiet status keeps the height it has as the answer, also when
-  // it first shows quietly after a reload, so nothing below moves when it is replaced or becomes the answer again.
+  /** The height of a clamped status: no reserve is larger, so a long text leaves no empty space when it is replaced. */
+  const statusLimit = () => {
+    const block = element.querySelector(".assistant-markdown-block");
+    return block ? clampedHeight(block) : 0;
+  };
+  // A new status keeps the height of the one before it, and a quiet status the height it has as the answer, also when it
+  // first shows quietly after a reload; both only up to a clamped status. So short statuses and a short answer move
+  // nothing below, and a long text that is replaced or folds to three lines leaves no empty space.
   createEffect(
     on([shownId, quiet], ([id, isQuiet], previous) => {
       if (!props.live()) return;
-      const height = Math.max(previous && previous[0] !== id ? lastHeight : 0, isQuiet ? answerHeight() : 0);
+      const height = Math.min(statusLimit(), Math.max(previous && previous[0] !== id ? lastHeight : 0, isQuiet ? answerHeight() : 0));
       if (height > 0) setMinHeight((current) => Math.max(current ?? 0, height));
     }),
   );
@@ -668,7 +859,8 @@ function AiTurnText(props: {
   );
   createEffect(
     on(props.live, (live, wasLive) => {
-      if (wasLive === true && !live && untrack(props.folding) && !untrack(props.earlier)) announce(aiChatMessages(locale()).answerReady);
+      if (wasLive === true && !live && untrack(props.folding) && !untrack(props.earlier) && untrack(props.completed))
+        announce(aiChatMessages(locale()).answerReady);
     }),
   );
   return (
@@ -679,7 +871,7 @@ function AiTurnText(props: {
       aria-live={status() ? "off" : undefined}
       style={minHeight() ? { "min-height": `${minHeight()}px` } : undefined}
     >
-      <AssistantMarkdownBlock html={html()} />
+      <AiClampedText html={html()} clamp={quiet()} reset={shownId()} />
     </div>
   );
 }
@@ -710,13 +902,38 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
   const actions = createMemo(() => new Map(layout().actions.map((action) => [action.id, action])));
   const actionIds = createMemo(() => [...actions().keys()]);
   const live = () => isLive(props.segment().phase);
-  // Screen readers hear once that the turn they followed failed and why; history read later is not announced.
+  // One "Answer again" at a time: a second click while the first is on its way would ask the controller to stop it.
+  const [answering, setAnswering] = createSignal(false);
+  const answerAgain = async (run: () => unknown) => {
+    if (answering()) return;
+    setAnswering(true);
+    try {
+      await run();
+    } catch {
+      // The chat controller shows why the message could not be answered again.
+    } finally {
+      setAnswering(false);
+    }
+  };
+  // The sources the finished answer cites, numbered as in its text. Read once the turn ends, from the same sanitized HTML
+  // the answer shows, so a link the sanitizer drops never comes back as a source.
+  const sources = createMemo(() => {
+    if (live()) return [];
+    const text = layout()
+      .text.map((block) => block.text)
+      .join("\n\n");
+    return text.includes("](") ? answerSources(markdown.renderSync(text, { locale: locale() }), layout().work) : [];
+  });
+  /** Something of the turn stays above its failure notice. */
+  const kept = () => layout().text.length > 0 || layout().results.length > 0 || layout().steps > 0;
+  // Screen readers hear once that the turn they followed failed and why, as the notice says it; history read later is not
+  // announced.
   createEffect(
     on(live, (now, before) => {
       const error = props.segment().error;
       if (before && !now && error) {
         const t = aiChatMessages(locale());
-        announce(`${t.turnErrorTitle} ${aiTurnErrorDescription(error, locale())}`);
+        announce([t.turnInterrupted({ reason: t.turnErrorReason(error) }), kept() ? t.keptSoFar : ""].filter(Boolean).join(" "));
       }
     }),
   );
@@ -760,7 +977,11 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
             folding={() => layout().steps > 0}
             quiet={() => layout().textIsStatus}
             earlier={() => props.segment().earlier}
+            completed={() => props.segment().phase === "completed"}
           />
+        </Show>
+        <Show when={!live() && !props.segment().scheduledTask?.stop && !props.segment().scheduledTask?.reasonOnly}>
+          <AiAnswerSources sources={sources()} />
         </Show>
         <For each={mapFollowupIds()}>{(id) => <AiTurnResultView result={() => results().get(id)} receipt={() => false} />}</For>
         <Show when={props.segment().scheduledTask?.stop ? undefined : props.segment().scheduledTask?.reason}>
@@ -781,11 +1002,41 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
           {/* Calm by design: no busy sweep while the turn reconnects. */}
           <Chat.Activity label={aiChatMessages(locale()).reconnecting} icon="ti ti-refresh" />
         </Show>
+        <Show when={props.segment().phase === "stopped" && !props.segment().earlier && props.segment().stoppedByPerson}>
+          {/* Calm by design: the person stopped it, so this is a quiet line, not a warning. */}
+          <Chat.Activity
+            class="ai-turn__stopped"
+            wrap
+            icon="ti ti-player-stop"
+            label={layout().text.length > 0 ? aiChatMessages(locale()).stoppedTextStays : aiChatMessages(locale()).stoppedByYou}
+            trailing={
+              <Show when={props.segment().answerAgain}>
+                {(again) => (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={answering()}
+                    onClick={() => void answerAgain(again())}
+                    disabled={chatActions.actionDisabled?.()}
+                  >
+                    <i class="ti ti-refresh" aria-hidden="true" /> {aiChatMessages(locale()).actionAnswerAgain}
+                  </Button>
+                )}
+              </Show>
+            }
+          />
+        </Show>
         <Show when={props.segment().error}>
-          {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} />}
+          {(error) => <AiTurnErrorNotice error={error()} continuable={props.segment().continuable === true} kept={kept()} />}
         </Show>
         <Show when={props.segment().stopNotice}>
-          {(notice) => <AiTurnStopNotice notice={notice()} continuable={props.segment().continuable === true} />}
+          {(notice) => (
+            <AiTurnStopNotice
+              notice={notice()}
+              continuable={props.segment().continuable === true}
+              answerAgain={props.segment().answerAgain}
+            />
+          )}
         </Show>
       </div>
     </AiToolDisclosureProvider>

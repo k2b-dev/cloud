@@ -54,6 +54,29 @@ databaseSuite()("room access sources use Core's transactional live outbox", () =
   const due = () => sql<{ payload: { d: { type: string } } }[]>`SELECT payload FROM events.outbox
     WHERE app_id = 'core' AND kind = 'live' AND next_attempt_at <= clock_timestamp()`;
   const clear = () => sql`DELETE FROM events.outbox`;
+  for (const authenticatedOnly of [true, false])
+    test(`group-free grants notify people on restriction and removal (authenticated: ${authenticatedOnly})`, async () => {
+      const guest = crypto.randomUUID();
+      const access = crypto.randomUUID();
+      await sql`INSERT INTO auth.users(id, uid, provider, profile) VALUES (${guest}::uuid, ${guest}, 'local', 'guest')`;
+      try {
+        await sql`INSERT INTO auth.access(id, authenticated_only, permission) VALUES (${access}::uuid, ${authenticatedOnly}, 'read')`;
+        for (const change of [
+          () => sql`UPDATE auth.access SET permission = 'none' WHERE id = ${access}::uuid`,
+          () => sql`DELETE FROM auth.access WHERE id = ${access}::uuid`,
+        ]) {
+          await clear();
+          await change();
+          const hints = await sql<{ user_id: string }[]>`SELECT DISTINCT payload->'d'->>'userId' AS user_id
+            FROM events.outbox WHERE payload->'d'->>'type' = 'identity.access.changed'
+              AND payload->'d'->>'userId' IS NOT NULL`;
+          expect(hints.map((row) => row.user_id).sort()).toEqual([user, guest].sort());
+        }
+      } finally {
+        await sql`DELETE FROM auth.access WHERE id = ${access}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id = ${guest}::uuid`;
+      }
+    });
   // Empty/no-op writes must never fan out authentication work.
   for (const [table, column] of [
     ["user_groups_v2", "user_id"],

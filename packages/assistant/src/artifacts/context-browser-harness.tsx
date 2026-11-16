@@ -1,7 +1,7 @@
 import { AppWorkspace, Dropdown } from "@k2b/ui";
 import { render } from "solid-js/web";
 import { assistantChatSidebarActions, type ContextView, createAssistantChatContextState } from "../frontend/AssistantChatContext";
-import { AssistantChatSidebarPanel } from "../frontend/AssistantChatSidebar";
+import { AssistantChatSidebarTab } from "../frontend/AssistantChatSidebar";
 import { AssistantLiveProvider, createAssistantLiveHub } from "../frontend/assistant-live";
 import { ArtifactWorkspace, createArtifactWorkspace } from "./Workspace";
 import { appTab, contextTab, fileTab } from "./workspace-state";
@@ -11,20 +11,21 @@ const live = createAssistantLiveHub();
 function ChatSidebar(props: { open: (view: ContextView) => void; openApp: (id: string, title: string) => void }) {
   const state = createAssistantChatContextState({ chatId: "chat-one" });
   return (
-    <AssistantChatSidebarPanel
-      id="assistant-chat-context"
-      state={state}
-      runCount={state.snapshot()?.runCount}
-      onClose={() => undefined}
-      actions={assistantChatSidebarActions({
-        chatId: "chat-one",
-        project: null,
-        copy: { files: "Files", apps: "Studio", knowledge: "Project knowledge", sources: "Sources" },
-        onOpenView: props.open,
-        onOpenApp: props.openApp,
-        onJump: () => undefined,
-      })}
-    />
+    // The chat's whole list, as the tab "In this chat" shows it.
+    <div id="assistant-chat-context" style={{ flex: "1", "min-height": "0" }}>
+      <AssistantChatSidebarTab
+        state={state}
+        runCount={state.snapshot()?.runCount}
+        actions={assistantChatSidebarActions({
+          chatId: "chat-one",
+          project: null,
+          copy: { files: "Files", apps: "Studio", knowledge: "Project knowledge", sources: "Sources" },
+          onOpenView: props.open,
+          onOpenApp: props.openApp,
+          onJump: () => undefined,
+        })}
+      />
+    </div>
   );
 }
 render(() => {
@@ -62,8 +63,8 @@ render(() => {
                   <div class="assistant-chat-composer">
                     <input aria-label="Message" />
                   </div>
-                  <ChatSidebar open={open} openApp={(id, title) => controller.open(appTab(id, title))} />
                 </div>
+                <ChatSidebar open={open} openApp={(id, title) => controller.open(appTab(id, title))} />
               </div>
             </AppWorkspace.MainPane>
             <AppWorkspace.MainPane id="workspace" label="Workspace" open={controller.state().tabs.length > 0} defaultSize={620}>
@@ -74,7 +75,6 @@ render(() => {
                 refreshKey="initial"
                 onOpenView={open}
                 conversationId="chat-one"
-                menuItems={menuItems}
               />
             </AppWorkspace.MainPane>
           </AppWorkspace.Main>

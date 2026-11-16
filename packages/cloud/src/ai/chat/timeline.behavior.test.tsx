@@ -1,4 +1,4 @@
-import { expect, jest, test } from "bun:test";
+import { expect, jest, setSystemTime, test } from "bun:test";
 import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
@@ -7,6 +7,14 @@ import { emptyProjection, mergeActiveTurn, reduceProjection, visibleMessages } f
 import { type AiStreamEvent, type AiTurnBlock, type AiWireEvent, steerAppliedBlockId, steerMessageBlockId } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { aiTurnErrorText } from "./turn-error";
+
+/** The text a reader sees: without the screen-reader announcement and the resting word that only reduced motion shows. */
+const visibleText = (node: Element | null | undefined) => {
+  if (!node) return undefined;
+  const copy = node.cloneNode(true) as Element;
+  for (const hidden of copy.querySelectorAll(".k2b-sr-only, .k2b-chat-activity__word-rest")) hidden.remove();
+  return copy.textContent?.trim();
+};
 
 (isServer ? test.skip : test)("streamed text and tool updates render each block exactly once", async () => {
   const dom = createDomTestHarness();
@@ -28,6 +36,12 @@ import { aiTurnErrorText } from "./turn-error";
     dom.root,
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  // Text between steps is a note at its step; opened, every text shows exactly once.
+  const openNotes = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    for (const toggle of dom.root.querySelectorAll<HTMLButtonElement>('.ai-turn-note__toggle[aria-expanded="false"]')) toggle.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
   try {
     emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     for (let index = 0; index < 10; index++) {
@@ -45,7 +59,7 @@ import { aiTurnErrorText } from "./turn-error";
         type: "block_set",
         block: { id: `tool-${index}`, kind: "tool", callId: `call-${index}`, name: "code_run", args: {}, status: "running" },
       });
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await openNotes();
       for (let previous = 0; previous <= index; previous++)
         expect(dom.root.textContent?.split(`Unique message ${previous}.`).length).toBe(2);
       emit({
@@ -62,10 +76,10 @@ import { aiTurnErrorText } from "./turn-error";
       blocks: old.blocks.map((block) => ({ ...block, id: block.kind === "text" ? `persisted-${block.id}` : block.id })),
     };
     setState("activeTurn", reconcile(mergeActiveTurn(state.activeTurn, baseline)));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await openNotes();
     for (let index = 0; index < 10; index++) expect(dom.root.textContent?.split(`Unique message ${index}.`).length).toBe(2);
     setState("activeTurn", reconcile(mergeActiveTurn(state.activeTurn, old)));
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await openNotes();
     for (let index = 0; index < 10; index++) expect(dom.root.textContent?.split(`Unique message ${index}.`).length).toBe(2);
   } finally {
     dispose();
@@ -204,7 +218,9 @@ import { aiTurnErrorText } from "./turn-error";
     emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     emit({ ...base, seq: 2, type: "provider_retry" });
     await settle();
-    expect(rows()).toEqual(["Reconnecting"]);
+    // The running turn has its work line from the start; it says in place that it reconnects, its time standing.
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]).toStartWith("Reconnecting");
 
     emit({ ...base, seq: 3, type: "block_delta", blockId: "text-1", blockKind: "text", delta: "Checking the files." });
     emit({
@@ -217,7 +233,7 @@ import { aiTurnErrorText } from "./turn-error";
     expect(rows().some((row) => row?.includes("Reconnecting"))).toBe(false);
     const before = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
     const workLine = () => dom.root.querySelector(".ai-turn-work");
-    const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+    const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
 
     emit({ ...base, seq: 5, type: "provider_retry" });
     await settle();
@@ -484,6 +500,45 @@ const renderTimeline = async (
   }
 });
 
+(isServer ? test.skip : test)("a timeline built after the page was rendered times its turn by the real clock", async () => {
+  jest.useFakeTimers();
+  const dom = createDomTestHarness();
+  const { Chat } = await import("@k2b/ui");
+  const { createAiChatTimeline, AiChatActionsProvider } = await import("./presentation");
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiWireEvent) => setState(reconcile(reduceProjection(state, event), { key: "id", merge: true }));
+  // The page was rendered an hour ago; this timeline is built now, such as for another chat.
+  setSystemTime(new Date("2026-11-15T12:00:00.000Z"));
+  const renderedAt = "2026-11-15T11:00:00.000Z";
+  const dispose = render(
+    () => (
+      <AiChatActionsProvider actions={{}}>
+        {(() => {
+          const items = createAiChatTimeline({
+            messages: createMemo(() => visibleMessages(state)),
+            activeTurn: () => state.activeTurn,
+            renderedAt,
+          });
+          return <Chat.Timeline items={items()} />;
+        })()}
+      </AiChatActionsProvider>
+    ),
+    dom.root,
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const clock = () => dom.root.querySelector(".ai-turn-work .ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+    jest.advanceTimersByTime(5_000);
+    expect(clock()).toBe("5 s");
+  } finally {
+    dispose();
+    dom.cleanup();
+    jest.useRealTimers();
+    setSystemTime();
+  }
+});
+
 (isServer ? test.skip : test)("the work line says that the stream reconnects and how long a long step runs", async () => {
   jest.useFakeTimers();
   const dom = createDomTestHarness();
@@ -509,7 +564,7 @@ const renderTimeline = async (
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
-  const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+  const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
   const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {
@@ -517,7 +572,7 @@ const renderTimeline = async (
     emit({ ...base, seq: 2, type: "block_set", block: { ...run, status: "running" } });
     jest.advanceTimersByTime(10_000);
     expect(label()).toBe("Running code · Report");
-    expect(clock()).toBe("0:10");
+    expect(clock()).toBe("10 s");
     const nodes = Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"));
 
     // The connection drops: the line says so in place, calmly, and its clock stands.
@@ -525,13 +580,13 @@ const renderTimeline = async (
     expect(label()).toBe("Reconnecting");
     expect(workLine()?.getAttribute("data-busy")).toBeNull();
     jest.advanceTimersByTime(20_000);
-    expect(clock()).toBe("0:10");
+    expect(clock()).toBe("10 s");
     expect(Array.from(dom.root.querySelectorAll(".k2b-chat-activity, .k2b-chat-message"))).toEqual(nodes);
 
     // Back online, the clock shows the true work time, and the step that ran all along shows how long.
     setReconnecting(false);
     jest.advanceTimersByTime(1_000);
-    expect(clock()).toBe("0:31");
+    expect(clock()).toBe("31 s");
     expect(label()).toBe("Running code · Report");
     jest.advanceTimersByTime(15_000);
     expect(label()).toBe("Running code · 46 s");
@@ -569,7 +624,7 @@ const renderTimeline = async (
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
-  const label = () => workLine()?.querySelector(".k2b-chat-activity__copy strong")?.textContent?.trim();
+  const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
   const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
   const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/a.csv" } };
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
@@ -582,11 +637,11 @@ const renderTimeline = async (
     emit({ ...base, seq: 3, type: "provider_retry" });
     expect(label()).toBe("Reconnecting");
     jest.advanceTimersByTime(30_000);
-    expect(clock()).toBe("0:05");
+    expect(clock()).toBe("5 s");
 
     // The next step starts with the true work time and is timed from there.
     emit({ ...base, seq: 4, type: "block_set", block: { ...run, status: "running" } });
-    expect(clock()).toBe("0:35");
+    expect(clock()).toBe("35 s");
     jest.advanceTimersByTime(16_000);
     expect(label()).toBe("Running code · Report");
     jest.advanceTimersByTime(30_000);
@@ -699,7 +754,7 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(turn);
     const notice = dom.root.querySelector(".ai-turn__notice");
     const noticeText = notice?.textContent;
-    expect(noticeText).toContain(locale === "de" ? "Die Antwort wurde abgebrochen." : "The answer was interrupted.");
+    expect(noticeText).toContain(locale === "de" ? "Die Antwort wurde unterbrochen:" : "The answer was interrupted:");
     expect(noticeText).toContain(reason);
     expect(noticeText).toContain(locale === "de" ? "Weiterarbeiten" : "Continue");
     expect(outsideWork()).not.toContain(progress);
@@ -723,6 +778,109 @@ const renderFailedTurnTimeline = async (
     dom.cleanup();
   }
 });
+
+(isServer ? test.skip : test)("a failed answer keeps the text it had begun and is not announced as ready", async () => {
+  const dom = createDomTestHarness();
+  const [state, setState] = createStore(emptyProjection());
+  const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+  const dispose = await renderFailedTurnTimeline(
+    dom,
+    { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+    "de",
+    () => {},
+  );
+  const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/q1.csv" } };
+  const answer = "Jana fragt zwei Dinge:";
+  try {
+    emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+    emit({ ...base, seq: 2, type: "block_set", block: { ...read, status: "completed", result: "a" } });
+    emit({ ...base, seq: 3, type: "block_delta", blockId: "a2-t0-0", blockKind: "text", delta: answer });
+    await tick();
+    emit({
+      ...base,
+      seq: 4,
+      type: "turn_finished",
+      status: "failed",
+      error: "Der KI-Dienst hat nicht geantwortet.",
+      messages: [
+        storedMessage(10, { role: "user", content: [{ type: "text", text: "Was fragt Jana?" }] }),
+        storedMessage(11, { role: "assistant", content: [{ type: "tool_call", id: "read", name: "read_file", args: read.args }] }),
+        storedMessage(12, { role: "tool_result", callId: "read", name: "read_file", result: "a", isError: false }),
+        storedMessage(
+          13,
+          { role: "assistant", content: [{ type: "text", text: answer }] },
+          { loopDoneReason: "error", meta: { turnError: { code: "model_unavailable" } } },
+        ),
+      ],
+    });
+    await tick();
+    expect(dom.root.querySelector(".ai-turn__text")?.textContent).toContain(answer);
+    expect(dom.root.querySelector(".ai-turn__notice")?.textContent).toContain("Was bis hier steht, bleibt erhalten.");
+    // Screen readers hear why the answer broke off, never that it is ready (announcements land after 100 ms).
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const heard = document.querySelector("[data-k2b-live]")?.textContent ?? "";
+    expect(heard).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet. Was bis hier steht, bleibt erhalten.");
+    expect(heard).not.toContain("Antwort fertig");
+  } finally {
+    dispose();
+    dom.cleanup();
+  }
+});
+
+(isServer ? test.skip : test)(
+  "a turn that ends after its steps without any answer says so and offers to go on, never ends in silence",
+  async () => {
+    const dom = createDomTestHarness();
+    const [state, setState] = createStore(emptyProjection());
+    const emit = (event: AiStreamEvent) => setState(reconcile(reduceProjection(unwrap(state), event), { key: "id", merge: true }));
+    const continued: string[] = [];
+    const dispose = await renderFailedTurnTimeline(
+      dom,
+      { messages: () => visibleMessages(state), activeTurn: () => state.activeTurn },
+      "de",
+      (message) => {
+        continued.push(message);
+      },
+    );
+    const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const write = { id: "tool-write", kind: "tool" as const, callId: "write", name: "write_file", args: { path: "/code.ts" } };
+    try {
+      emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
+      emit({ ...base, seq: 2, type: "block_set", block: { ...write, status: "completed", result: "ok" } });
+      await tick();
+      expect(dom.root.querySelector(".ai-turn__notice")).toBeNull();
+      // The model answers with an empty message and a normal stop (kimi-k3 in the Preview, finding 85).
+      emit({
+        ...base,
+        seq: 3,
+        type: "turn_finished",
+        status: "completed",
+        error: null,
+        messages: [
+          storedMessage(10, { role: "user", content: [{ type: "text", text: "Bau die Automation fertig." }] }),
+          storedMessage(11, { role: "assistant", content: [{ type: "tool_call", id: "write", name: "write_file", args: write.args }] }),
+          storedMessage(12, { role: "tool_result", callId: "write", name: "write_file", result: "ok", isError: false }),
+          storedMessage(13, { role: "assistant", content: [] }, { loopDoneReason: "stop", stopReason: "stop" }),
+        ],
+      });
+      await tick();
+      const notice = dom.root.querySelector(".ai-turn__notice");
+      expect(notice?.textContent).toContain("Die Antwort endete ohne Text.");
+      expect(notice?.textContent).toContain("Die Schritte oben bleiben.");
+      const button = [...(notice?.querySelectorAll("button") ?? [])].find((element) => element.textContent?.includes("Weiterarbeiten"));
+      expect(button).toBeDefined();
+      button!.click();
+      await tick();
+      expect(continued).toEqual(["Mach an der Stelle weiter, an der du aufgehört hast."]);
+    } finally {
+      dispose();
+      dom.cleanup();
+    }
+  },
+);
 
 (isServer ? test.skip : test)("a failed turn keeps its elements and names its reason and next step in the reader's language", async () => {
   const dom = createDomTestHarness();
@@ -780,8 +938,8 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(turn);
     expect(dom.root.textContent).not.toContain("Jetzt lese ich die Daten.");
     const notice = dom.root.querySelector(".ai-turn__notice");
-    expect(notice?.textContent).toContain("Die Antwort wurde abgebrochen.");
-    expect(notice?.textContent).toContain("Der KI-Dienst hat nicht geantwortet. Die bisherigen Ergebnisse bleiben erhalten.");
+    expect(notice?.textContent).toContain("Die Antwort wurde unterbrochen: Der KI-Dienst hat nicht geantwortet.");
+    expect(notice?.textContent).toContain("Was bis hier steht, bleibt erhalten.");
     expect(dom.root.querySelector(".ai-turn > :last-child")).toBe(notice);
     // The notice says why; the work line reads like any finished turn.
     expect(dom.root.querySelector(".ai-turn-work")?.textContent).not.toContain("abgebrochen");
@@ -857,7 +1015,7 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(progress);
     expect(dom.root.querySelector(".ai-turn-work")).toBeNull();
     const notice = dom.root.querySelector(".ai-turn__notice");
-    expect(notice?.textContent).toContain("The answer was interrupted.");
+    expect(notice?.textContent).toContain("The answer was interrupted:");
     expect(notice?.textContent).toContain("You can continue once it resets.");
     // Another turn would meet the same limit, so the notice offers no Continue.
     expect(notice?.querySelector("button")).toBeNull();
@@ -921,7 +1079,7 @@ const renderFailedTurnTimeline = async (
     expect(dom.root.querySelector(".ai-turn")).toBe(progress);
     const notice = dom.root.querySelector(".ai-turn__notice");
     expect(notice?.textContent).toContain("The model service did not answer.");
-    expect(dom.root.textContent?.indexOf("150 EUR")).toBeLessThan(dom.root.textContent?.indexOf("The answer was interrupted.") ?? -1);
+    expect(dom.root.textContent?.indexOf("150 EUR")).toBeLessThan(dom.root.textContent?.indexOf("The answer was interrupted:") ?? -1);
   } finally {
     dispose();
     dom.cleanup();

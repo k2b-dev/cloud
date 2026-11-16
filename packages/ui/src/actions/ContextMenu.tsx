@@ -1,6 +1,7 @@
 import { createMemo, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { returnFocus, ringOnReturn } from "../internal/focus-return";
+import { inheritUiScope } from "../internal/portal-scope";
 import { useUiMessages } from "../intl/messages";
 import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition } from "./Dropdown";
 import { focusRowSegment } from "./menu-rows";
@@ -243,10 +244,19 @@ export function ContextMenuBase(
       </div>
       <Show when={position()}>
         {(point) => (
-          <Portal>
+          // Like a dropdown's menu, it stays inside an open dialog and shows in the top layer: a modal dialog makes the
+          // rest of the page inert, and the top layer keeps it at the pointer whatever the dialog's transform.
+          <Portal mount={host?.closest("dialog[open]") ?? undefined}>
             <div
-              ref={menu}
+              ref={(element) => {
+                menu = element;
+                inheritUiScope(element, host);
+                queueMicrotask(() => {
+                  if (element.isConnected && typeof element.showPopover === "function") element.showPopover();
+                });
+              }}
               id={menuId}
+              popover="manual"
               class="k2b-ui k2b-context-menu"
               role="menu"
               aria-label={props.label ?? messages().contextMenu}

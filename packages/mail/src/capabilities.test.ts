@@ -3959,3 +3959,15 @@ describe("Mail safe unattended actions", () => {
     expect(batch).toHaveBeenCalledWith(expect.objectContaining({ completion: "needs_action", expectedRevisions: { [conversationId]: 4 } }));
   });
 });
+
+test("every Query people see says in English and German what it did once it finished", async () => {
+  const { mailCapabilityPresentation } = await import("./capability-presentation");
+  const visible = Object.entries(mailCapabilities.queries).filter(([, query]) => !("appOnly" in query && query.appOnly));
+  const queries = mailCapabilityPresentation.translations.de?.queries ?? {};
+  const missing = visible.flatMap(([id]) => {
+    const english = mailCapabilityPresentation.doneTitles?.[id];
+    const german = (queries as Record<string, { doneTitle?: string }>)[id]?.doneTitle;
+    return english && german ? [] : [id];
+  });
+  expect(missing).toEqual([]);
+});

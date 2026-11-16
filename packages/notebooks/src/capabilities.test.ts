@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import {
   assertCapabilityReview,
+  assertDiscussionContainersPage,
   assertResourceOpenLink,
   assertResourceView,
   compileCapabilityManifest,
@@ -1463,8 +1464,11 @@ test("discussion containers preserve authorized list pagination", async () => {
     items: [{ ref: { type: "notebooks.notebook", id: notebook.shortId }, title: notebook.name }],
     next: expect.any(String),
   });
+  assertDiscussionContainersPage(first.data);
   const last = await operation.run(operation.input.parse({ limit: 1, cursor: first.data.data.next }), userContext);
-  expect(last.ok && last.data.data.next).toBeNull();
+  if (!last.ok) throw new Error("Expected containers");
+  expect(last.data.data.next).toBeNull();
+  assertDiscussionContainersPage(last.data);
 });
 
 test("note.create starts from a page template only for writers, with the caller filled in", async () => {
@@ -1536,4 +1540,16 @@ test("shared creation reviews keep complete text, notebook scope and current wri
   expect((await notebooksCapabilities.actions["comment.create"].review({ noteId: note.shortId, content: "Comment" }, userContext)).ok).toBe(
     false,
   );
+});
+
+test("every Query people see says in English and German what it did once it finished", async () => {
+  const { notebooksCapabilityPresentation } = await import("./capability-presentation");
+  const visible = Object.entries(notebooksCapabilities.queries).filter(([, query]) => !("appOnly" in query && query.appOnly));
+  const queries = notebooksCapabilityPresentation.translations.de?.queries ?? {};
+  const missing = visible.flatMap(([id]) => {
+    const english = notebooksCapabilityPresentation.doneTitles?.[id];
+    const german = (queries as Record<string, { doneTitle?: string }>)[id]?.doneTitle;
+    return english && german ? [] : [id];
+  });
+  expect(missing).toEqual([]);
 });

@@ -2,6 +2,38 @@ import type { CapabilityPresentationCatalog } from "@k2b/cloud/contracts";
 
 export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
   baseLocale: "en",
+  // What a finished Query did, named in the chat's step list; each German translation gives its own `doneTitle`.
+  doneTitles: {
+    "space.containers": "Listed discussion containers",
+    "space.activity": "Read item activity",
+    "task.work.read": "Read task work state",
+    "space.search": "Searched spaces",
+    "item.search": "Searched Space items",
+    "item.link-candidate.search": "Searched writable Space items",
+    "task.focus": "Found actionable tasks",
+    "calendar.list": "Listed calendars",
+    "calendar.events": "Read calendar items",
+    "event.agenda": "Read calendar occurrences",
+    "space.browse": "Browsed Spaces",
+    "task.checklist.list": "Listed task checklist",
+    "space.list": "Listed spaces",
+    "space.read": "Read space",
+    "template.list": "Listed templates",
+    "template.read": "Read template",
+    "space.assignee.list": "Listed assignable Space members",
+    "task.list": "Listed tasks",
+    "event.list": "Listed events",
+    "item.read": "Read Space item",
+    "item.reference.find": "Found items linked to a resource",
+    "item.reference.list": "Listed item resource links",
+    "task.blocker.list": "Listed task blockers",
+    "task.blocks.list": "Listed tasks blocked by a task",
+    "comment.list": "Listed comments",
+    "comment.read": "Read comment",
+    "calendar-invitation.preview": "Previewed calendar invitation",
+    "calendar-destination.list": "Listed calendar destinations",
+    "calendar-invitation.response.prepare": "Prepared calendar response",
+  },
   sentences: {
     "task.create": {
       approval: "Create the task {input.title}",
@@ -70,6 +102,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
       queries: {
         "space.containers": {
           title: "Diskussionsorte auflisten",
+          doneTitle: "Diskussionsorte aufgelistet",
           description: "Lesbare Spaces mit Fortsetzung auflisten.",
           input: {
             query: "Optionaler Suchtext für Orte.",
@@ -101,6 +134,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "calendar.list": {
           title: "Kalender auflisten",
+          doneTitle: "Kalender aufgelistet",
           description:
             "Lesbare Space-Kalender auflisten; Kalender mit Mitgliedschaft werden vorgeschlagen. Diese Version bietet nur Lesezugriff.",
           input: {
@@ -110,6 +144,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "calendar.events": {
           title: "Kalendereinträge lesen",
+          doneTitle: "Kalendereinträge gelesen",
           description:
             "Offene Termine und Fristen lesbarer Space-Kalender in höchstens 31 verstrichenen Tagen lesen. Spaces erweitert Wiederholungen; Seiten sind chronologisch.",
           input: {
@@ -122,6 +157,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "space.activity": {
           title: "Elementereignisse lesen",
+          doneTitle: "Elementereignisse gelesen",
           description:
             "Berechtigte Änderungen an Aufgaben und Terminen eines Space lesen, neueste zuerst. Optional auf ein Element begrenzen. Kommentare und gelöschte Elemente werden ausgelassen. Dem Cursor folgen.",
           input: {
@@ -137,6 +173,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "template.list": {
           title: "Vorlagen auflisten",
+          doneTitle: "Vorlagen aufgelistet",
           description:
             "Aufgaben- und Terminvorlagen eines Space mit Datumsregel und den nächsten vorgeschlagenen Tagen in timeZone auflisten. Eine Vorlagen-ID und einen Vorschlag als date an task.create oder event.create übergeben.",
           input: {
@@ -147,6 +184,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "template.read": {
           title: "Vorlage lesen",
+          doneTitle: "Vorlage gelesen",
           description:
             "Alle Vorgaben einer Vorlage lesen: Titel, Beschreibung, Checkliste, Schlagwörter, Zuständige, Zeiten und Vorschläge.",
           input: {
@@ -156,6 +194,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "task.work.read": {
           title: "Arbeitsstand lesen",
+          doneTitle: "Arbeitsstand gelesen",
           description:
             "Aktuelle Übernahme, vollständigen Fortschritt und letztes Abschlussergebnis lesen. Das Ergebnis bleibt beim Wiederöffnen erhalten.",
           input: {
@@ -164,6 +203,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "task.focus": {
           title: "Offene Aufgaben finden",
+          doneTitle: "Offene Aufgaben gefunden",
           description:
             "Kompakte, seitenweise Aufgabenübersicht über zugängliche Spaces. Nach Zuständigkeit, Frist, Priorität, Blockern oder 30 Tagen Inaktivität filtern.",
           input: {
@@ -181,6 +221,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "event.agenda": {
           title: "Kalendervorkommen lesen",
+          doneTitle: "Kalendervorkommen gelesen",
           description:
             "Offene Termine in höchstens 31 Tagen lesen; Wiederholungen werden serverseitig aufgelöst. Auch nach leeren Seiten weiterblättern. Für eine vollständige chronologische Agenda alle Seiten sammeln und nach startsAt sortieren. Cursor nur mit unveränderten Filtern verwenden.",
           input: {
@@ -194,6 +235,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "space.browse": {
           title: "Spaces auswählen",
+          doneTitle: "Spaces ausgewählt",
           description:
             "Kompakte, seitenweise Auswahl zugänglicher Spaces mit Berechtigung. Für neue Inhalte minimumPermission write verwenden; space.read nur für Spalten- oder Tag-IDs aufrufen.",
           input: {
@@ -205,6 +247,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "task.checklist.list": {
           title: "Aufgabencheckliste lesen",
+          doneTitle: "Aufgabencheckliste gelesen",
           description:
             "Checklistenpunkte einer Aufgabe seitenweise mit ID, Text und Erledigt-Status lesen. Weitere Seiten über page.nextCursor abrufen.",
           input: {
@@ -215,12 +258,14 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "calendar-destination.list": {
           title: "Kalenderziele auflisten",
+          doneTitle: "Kalenderziele aufgelistet",
           description:
             "Listen Sie das beschreibbare Ziel Spaces auf, nachdem calendar-invitation.preview kein verknüpftes Ereignis gefunden hat. Übergeben Sie eine zurückgegebene spaceId an calendar-invitation.import.",
           input: { cursor: "Fortsetzung der vorherigen Seite.", limit: "Maximal 100 Ziele pro Seite; page.hasMore beachten." },
         },
         "calendar-invitation.preview": {
           title: "Vorschau der Kalendereinladung",
+          doneTitle: "Kalendereinladung angesehen",
           description:
             "Starten Sie einen Mail-zu-Spaces-Einladungsfluss, indem Sie den begrenzten iCalendar-Inhalt mit seiner Mail-Mailbox-ID und -Nachrichten-ID analysieren. Zeigt ein sichtbares verknüpftes Ereignis an; Andernfalls verwenden Sie calendar-destination.list vor calendar-invitation.import.",
           input: {
@@ -231,6 +276,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "calendar-invitation.response.prepare": {
           title: "Eine Kalenderantwort vorbereiten",
+          doneTitle: "Kalenderantwort vorbereitet",
           description:
             "Bereiten Sie eine standardbasierte Antwort vor, nachdem calendar-invitation.preview ein importiertes beschreibbares Space-Ereignis findet. Erstellen Sie die zurückgegebene Nutzlast mit mail.draft.create und rufen Sie dann calendar-invitation.response.commit auf. Mail IDs sind Korrelationswerte, keine Space-Autorisierung.",
           input: {
@@ -245,6 +291,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "comment.list": {
           title: "Kommentare auflisten",
+          doneTitle: "Kommentare aufgelistet",
           description:
             "Listen Sie Kommentare zu einem bekannten Element oder wiederkehrenden Vorkommnis auf, nachdem Sie den Space-Zugriff überprüft haben. Holen Sie sich die Artikel-ID von einem spaces.item ref; Verwenden Sie das zurückgegebene spaces.comment refs mit comment.read.",
           input: {
@@ -257,6 +304,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "comment.read": {
           title: "Kommentar lesen",
+          doneTitle: "Kommentar gelesen",
           description:
             "Lesen Sie einen von comment.list zurückgegebenen spaces.comment ref, nachdem Sie dessen übergeordnetes Element und Space überprüft haben.",
           input: {
@@ -265,6 +313,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "event.list": {
           title: "Ereignisse auflisten",
+          doneTitle: "Ereignisse aufgelistet",
           description:
             "Durchsuchen Sie Kalenderereignisse in einem bekannten Space. SpaceId, ColumnIds und TagIds von space.read abrufen; Verwenden Sie das zurückgegebene spaces.item refs mit item.read, Kommentaren oder dem Ereignis Actions.",
           input: {
@@ -286,6 +335,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "item.link-candidate.search": {
           title: "Suche nach beschreibbaren Space-Elementen",
+          doneTitle: "Beschreibbare Space-Einträge durchsucht",
           description:
             "Spezialisierte Cross-Space-Suche nach beschreibbaren Aufgaben oder Ereignissen vor item.reference.add. Verwenden Sie item.search für normales Lesen. Übergeben Sie einen zurückgegebenen spaces.item ref als Action-Ziel.",
           input: {
@@ -295,6 +345,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "item.read": {
           title: "Artikel Space lesen",
+          doneTitle: "Space-Eintrag gelesen",
           description:
             "Lesen Sie einen spaces.item ref, der von item.search, task.list, event.list oder einer reference-Abfrage zurückgegeben wird. Das Art-Feld unterscheidet Aufgaben von Ereignissen für nachfolgende Actions.",
           input: {
@@ -303,6 +354,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "item.reference.find": {
           title: "Elementen, die mit einer Ressource verknüpft sind suchen",
+          doneTitle: "Verknüpfte Einträge gefunden",
           description:
             "Finden Sie lesbare Space-Elemente, die mit einer bekannten Cloud-Ressource ref verknüpft sind. Verwenden Sie zurückgegebenes spaces.item refs mit item.read. Verwenden Sie stattdessen item.search für die Titel- oder Workflow-Erkennung.",
           input: {
@@ -314,6 +366,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "item.reference.list": {
           title: "Ressourcenlinks für Artikel auflisten",
+          doneTitle: "Verknüpfungen eines Eintrags aufgelistet",
           description:
             "Listen Sie die Cloud-Ressource refs auf, die an einen bekannten spaces.item ref angehängt ist. Zurückgegebene refs können direkt an die jeweiligen App-Reader weitergegeben werden; Verwenden Sie item.reference.find für die umgekehrte Suche.",
           input: {
@@ -322,6 +375,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "item.search": {
           title: "Space-Artikeln suchen",
+          doneTitle: "Space-Einträge durchsucht",
           description:
             "Direkter Space-übergreifender Eintrag zum Auffinden lesbarer Aufgaben und Ereignisse nach Text oder Workflow-Facetten. Verwenden Sie zurückgegebenes spaces.item refs mit item.read. Verwenden Sie task.list oder event.list, um einen bekannten Space zu durchsuchen.",
           input: {
@@ -353,6 +407,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "space.assignee.list": {
           title: "Zuweisbare Space-Mitglieder auflisten",
+          doneTitle: "Zuweisbare Space-Mitglieder aufgelistet",
           description:
             "Liste Personen und Dienstkonten auf, die in einem beschreibbaren Space Aufgaben oder Terminen zugewiesen werden können. Dienstkonten brauchen eigenen direkten Zugriff. Nutze eine Space-ID aus space.list oder space.search und übergib eine zurückgegebene ID an eine Eintragsaktion.",
           input: {
@@ -363,6 +418,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "space.list": {
           title: "Leerzeichen auflisten",
+          doneTitle: "Spaces aufgelistet",
           description:
             "Normaler Eintrag für Space-bezogene Arbeiten. Liste zugänglicher Spaces mit wirksamer Genehmigung; Verwenden Sie das zurückgegebene spaces.space refs oder IDs mit space.read, task.list, event.list und der Elementerstellung Actions.",
           input: {
@@ -374,6 +430,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "space.read": {
           title: "Leseraum",
+          doneTitle: "Space gelesen",
           description:
             "Lesen Sie einen von space.list oder space.search zurückgegebenen spaces.space ref, einschließlich der Spalte und des Tags IDs, die für gefilterte Listen und das Element Actions erforderlich sind.",
           input: {
@@ -382,6 +439,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "space.search": {
           title: "Suchräume",
+          doneTitle: "Spaces durchsucht",
           description:
             "Suchen Sie einen zugänglichen Space anhand des Namens oder der Beschreibung, wenn sein ID unbekannt ist. Verwenden Sie zurückgegebene spaces.space refs mit space.read oder deren IDs mit task.list, event.list und Artikel Actions.",
           input: {
@@ -401,6 +459,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "task.blocker.list": {
           title: "Aufgabenblocker auflisten",
+          doneTitle: "Blockierende Aufgaben aufgelistet",
           description:
             "Listen Sie Aufgaben auf, die eine bekannte Aufgabe blockieren. ItemId von task.list, item.search oder item.read abrufen; zurückgegebene spaces.item refs kann mit item.read geöffnet werden.",
           input: {
@@ -409,6 +468,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "task.blocks.list": {
           title: "Durch eine Aufgabe blockierte Aufgaben auflisten",
+          doneTitle: "Blockierte Aufgaben aufgelistet",
           description:
             "Listen Sie Aufgaben auf, die derzeit von einer bekannten Aufgabe blockiert werden, höchstens 100 pro Seite. Folgen Sie page.nextCursor, bis page.hasMore false ist. itemId von task.list, item.search oder item.read abrufen; task.blocker.list liefert die Gegenrichtung.",
           input: {
@@ -419,6 +479,7 @@ export const spacesCapabilityPresentation: CapabilityPresentationCatalog = {
         },
         "task.list": {
           title: "Aufgaben auflisten",
+          doneTitle: "Aufgaben aufgelistet",
           description:
             "Durchsuchen Sie Aufgaben in einem bekannten Space. SpaceId, ColumnIds und TagIds von space.read abrufen; Verwenden Sie das zurückgegebene spaces.item refs mit item.read, Abhängigkeitsabfragen, Kommentaren oder der Aufgabe Actions.",
           input: {

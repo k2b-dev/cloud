@@ -687,7 +687,8 @@ describe("capability tool presentation", () => {
 
     expect(storedHtml).toContain("Worked 3 min");
     expect(storedHtml).toContain("3 steps");
-    expect(storedHtml).toContain('aria-label="Worked 3 minutes, 3 steps"');
+    // The work line says what the turn did, then how long and how many steps.
+    expect(storedHtml).toContain('aria-label="Created files. Worked 3 minutes, 3 steps"');
     expect(hasOpenDetails(storedHtml)).toBe(false);
     for (const html of [storedHtml, liveHtml]) {
       expect(html).not.toContain("Before tool");
@@ -737,10 +738,13 @@ describe("capability tool presentation", () => {
     disclosureState.set("work:ai-turn:turn-1:0", true);
     disclosureState.set("failed-tool", true);
     const expanded = renderSegment(blocks, { disclosureState });
-    expect(hasOpenDetailsContaining(expanded, "Unknown tool")).toBe(true);
-    expect(expanded).toContain("failed");
+    // Opened, the failed step says in words that it did not work and that the turn went on; the app's code and message
+    // stay in the data.
+    expect(expanded).toContain("Unknown tool");
+    expect(expanded).toContain("This did not work. Went on without this result.");
     expect(expanded).not.toContain('data-tone="danger"');
-    expect(expanded).toContain("Mailbox is required");
+    expect(expanded).not.toContain("Mailbox is required");
+    expect(expanded).not.toContain("VALIDATION_FAILED");
   });
 
   test("shows categorized fetch_file failures as a clear danger activity", () => {
@@ -1373,7 +1377,9 @@ describe("survey answer timeline", () => {
     const accepted = snapshot([], turn([survey]));
     expect(accepted.map((item) => item.kind === "message" && item.role)).toEqual(["user", "assistant"]);
     expect(accepted[1]).toMatchObject({ status: "streaming" });
-    expect(accepted[1]!.html).toBe('<div class="ai-turn"></div>');
+    // The running segment after the answer shows its work line from the start: Gustav thinks.
+    expect(accepted[1]!.html).toContain('class="k2b-chat-activity ai-turn-work"');
+    expect(accepted[1]!.html).toContain(">Thinking<");
   });
 
   test("keeps empty answers and zero ratings readable and IDs scoped to their turn", () => {
@@ -1809,7 +1815,8 @@ describe("turn places in the reader's language", () => {
   test("a failed turn says that it was interrupted", () => {
     const blocks: AiTurnBlock[] = [
       { id: "text-1", kind: "text", text: "Now I build the dashboard." },
-      { id: "tool-run", kind: "tool", callId: "run", name: "code_run", status: "completed", result: {} },
+      // A step that names nothing it did, so the line says how long the turn worked.
+      { id: "tool-run", kind: "tool", callId: "run", name: "memory", status: "completed", result: {} },
     ];
     const english = renderPlaces(blocks, { phase: "failed", workedMs: 240_000 });
     expect(english).toContain("Worked 4 min · interrupted");
@@ -2236,4 +2243,24 @@ test("the series filter shows chart colors only when the shown view colors its s
   expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count", series: "region" }])).toBe(2);
   // Without a series column every line is one region mix, so a region color would describe nothing the chart draws.
   expect(swatches([{ id: "trend", label: "Trend", kind: "line", x: "month", y: "count" }])).toBe(0);
+});
+
+test("the server renders a quiet status already limited, and the answer whole", () => {
+  const read = (id: string, status: "running" | "completed" = "completed"): AiTurnBlock => ({
+    id,
+    kind: "tool",
+    callId: id,
+    name: "read_file",
+    args: { path: "/notes.json" },
+    status,
+    result: status === "completed" ? "{}" : undefined,
+  });
+  const text: AiTurnBlock = { id: "text-1", kind: "text", text: "The check passed.\n\nThen I compare the notes with the orders." };
+  // A reload while a step runs after the text: the status is limited before the browser measures anything.
+  const live = renderSegment([read("tool-1"), text, read("tool-2", "running")], { phase: "running" });
+  expect(live).toMatch(/class="ai-turn__text ai-turn__text--status"[^>]*><div class="ai-turn-clamp" data-clamp=""/);
+  // Finished, the same text is the answer: no limit.
+  const done = renderSegment([read("tool-1"), text, read("tool-2")]);
+  expect(done).toContain('class="ai-turn-clamp"');
+  expect(done).not.toContain("data-clamp");
 });

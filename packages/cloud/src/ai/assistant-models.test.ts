@@ -107,6 +107,35 @@ test("people choices reuse one settings snapshot and one quota read per owning m
   expect(snapshot.mock.calls[0]?.[4]).toEqual({ state, config });
 });
 
+test("people choices carry the context window, so the composer can show how full a chat is", async () => {
+  const state = aiSettingsFixture({
+    profiles: [
+      aiModelFixture({ contextWindow: 128_000 }),
+      aiModelFixture({ id: "chat:deep", variantLabel: "Deep", contextWindow: undefined }),
+    ],
+  });
+  spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
+  spyOn(aiModelCatalog, "providers").mockResolvedValue([]);
+  spyOn(credentials, "listAiCredentialProviderIds").mockResolvedValue([]);
+  spyOn(aiUserPrefs, "get").mockResolvedValue({
+    userId: subject.userId,
+    memoryEnabled: true,
+    memoryLearningEnabled: true,
+    suggestNextMessage: true,
+    selection: null,
+    updatedAt: "2026-10-27T00:00:00Z",
+  });
+  spyOn(aiModelAccess, "filterModels").mockResolvedValue(state.profiles);
+  spyOn(aiQuotas, "config").mockResolvedValue({ enabled: false, revision: 1, rules: [] });
+  spyOn(aiQuotas, "snapshot").mockResolvedValue({ enabled: false, balances: [], usage: [] });
+  const result = await peopleAiModels(subject);
+  expect(result.options.map((option) => [option.id, option.contextWindow])).toEqual([
+    ["chat", 128_000],
+    ["chat:deep", undefined],
+  ]);
+  expect("contextWindow" in result.options[1]!).toBe(false);
+});
+
 test("quota snapshots accept catalog state without rereading settings or config", async () => {
   const state = aiSettingsFixture();
   const read = spyOn(settings, "readAiSettingsState").mockRejectedValue(new Error("Must reuse state"));

@@ -48,6 +48,8 @@ else
       };
       const { TextEditor } = await import("../src/text-editor/TextEditor");
       const { dialogCore } = await import("../src/feedback/dialog-core");
+      // A phone loads the sheet's code with its menus; from then on a tap opens the sheet within the tap.
+      if (phone) await (await import("../src/actions/menu-sheet-open")).loadMenuSheet();
       const [readOnly, setReadOnly] = createSignal(readonly);
       const changes: string[] = [];
       const actions: string[] = [];

@@ -54,6 +54,7 @@ describe("@k2b/ui ink contract", () => {
     for (const { name, lightValue, darkValue } of [
       { name: "--k2b-text-secondary", lightValue: "#27272a", darkValue: "#f1f1f3" },
       { name: "--k2b-text-muted", lightValue: "#45454e", darkValue: "#bdbdc6" },
+      { name: "--k2b-text-subtle", lightValue: "#71717a", darkValue: "#8d8d98" },
     ]) {
       expect({ name, light: color(name, [light]), dark: color(name, [dark, light]) }).toEqual({
         name,
@@ -61,6 +62,14 @@ describe("@k2b/ui ink contract", () => {
         dark: darkValue,
       });
       expect({ name, pair: baseRoot.get(name) }).toEqual({ name, pair: `light-dark(${lightValue}, ${darkValue})` });
+    }
+  });
+
+  test("keeps the third grey readable for meta text on the surface in both themes", () => {
+    for (const scopes of [[light], [dark, light]]) {
+      const foreground = color("--k2b-text-subtle", scopes);
+      const background = color("--k2b-surface", scopes);
+      expect(contrast(foreground, background), JSON.stringify({ foreground, background })).toBeGreaterThanOrEqual(4.5);
     }
   });
 

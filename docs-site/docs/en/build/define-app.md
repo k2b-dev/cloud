@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-11-05
+updated: 2026-11-07
 ---
 
 # Define an application
@@ -93,7 +93,7 @@ See [SSR pages and routing](/en/docs/frontend/ssr-pages-and-routing).
 ## Keep the shell during page navigation
 
 Set `pageSwap: true` to swap `Layout` pages within the app. The default is
-`false`. The rail, panel slot, and provider document stay mounted.
+off. The rail, panel slot, and provider document stay mounted.
 The next server page replaces the content column and its islands.
 
 `focusMode` pages and links to other apps load a document. So does a page
@@ -101,6 +101,19 @@ whose kept shell would differ from a reload: another user, locale, theme,
 or build, other panel providers, navigation entries or profile, a new
 announcement, or other Help. Server route policies still authorize every
 request.
+
+To swap only in one area, list its paths instead of `true`. A segment
+`:name` stands for one path segment:
+
+```ts
+pageSwap: ["/app/inventory/:itemId/history"],
+```
+
+Pages under a listed path swap between each other: links within the
+matched path, such as `/app/inventory/A1/history?tab=moves`, change only the
+content column. Every other page of the app, and every link that leaves the
+matched path, loads a document. Startup fails for a path that is not
+absolute or ends with `/`.
 
 See [URL state and navigation](/en/docs/frontend/url-state-and-navigation#cloud-page-swaps)
 for the replaced content and unsaved-input guards.
@@ -248,7 +261,8 @@ and fallback conventions.
 
 ## Set the application appearance
 
-`appearance` supplies the accent and optional page background:
+`appearance` supplies the accent and optional page background. AI applications
+can also [use the AI primary colour](#use-the-ai-primary-colour).
 
 ```ts
 appearance: {
@@ -300,6 +314,24 @@ Signed-in people see the background behind the app bar from 768 px and, from
 1024 px, also around the app area. Anonymous pages show it around the header
 and content from 768 px. Narrower screens use the flat work surface in both
 light and dark mode.
+
+### Use the AI primary colour
+
+An AI application can also use plum for its primary actions, selection, and
+focus by declaring `appearance.primary: "ai"` alongside its required `accent`:
+
+```ts
+appearance: { accent: "#0f766e", primary: "ai" },
+```
+
+Omit `primary` to keep blue. `"ai"` is the only accepted value; any other value
+fails when `defineApp()` runs. Built-in and third-party applications use the
+same declaration. Cloud applies `data-k2b-primary="ai"` to the application's
+page body, its pages in the Cloud app, and its Help panel even when Core hosts
+that panel. Provider pages rendered with `PanelLayout` also take their own
+application's primary colour. Shared `@k2b/ui` controls and Cloud's selection
+and focus styles follow that scope in light and dark mode. Status colours and
+other applications' declared accents keep their meaning.
 
 ## Declare platform integrations
 

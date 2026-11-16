@@ -4930,6 +4930,7 @@ export const mailCapabilities = localizeCapabilityErrors(
       conversation: {
         title: "Mail conversation",
         description: "A grouped mail conversation with collaboration state.",
+        count: { one: "mail conversation", other: "mail conversations" },
         icon: "ti ti-mail",
         reader: "conversation.read",
         pages: ["/app/mail/:mailbox?conversation=:id"],
@@ -4937,6 +4938,7 @@ export const mailCapabilities = localizeCapabilityErrors(
       message: {
         title: "Mail message",
         description: "One message in an accessible mailbox.",
+        count: { one: "mail", other: "mails" },
         icon: "ti ti-mail",
         reader: "message.read",
         pages: ["/app/mail/:mailbox?message=:id"],
@@ -4944,12 +4946,14 @@ export const mailCapabilities = localizeCapabilityErrors(
       attachment: {
         title: "Mail attachment",
         description: "Bounded metadata for a message attachment.",
+        count: { one: "mail attachment", other: "mail attachments" },
         icon: "ti ti-paperclip",
         reader: "attachment.read",
       },
       draft: {
         title: "Mail draft",
         description: "An editable outgoing message.",
+        count: { one: "mail draft", other: "mail drafts" },
         icon: "ti ti-mail-pencil",
         reader: "draft.read",
         pages: ["/app/mail/:mailbox/compose/:id", "/app/mail/:mailbox/drafts/:id"],

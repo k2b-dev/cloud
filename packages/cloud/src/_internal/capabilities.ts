@@ -67,7 +67,7 @@ import {
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
 } from "../contracts/capabilities";
-import { discussionsIssues } from "../contracts/discussions";
+import { discussionContainersPageIssues, discussionsIssues } from "../contracts/discussions";
 import { fileProviderIssues } from "../contracts/file-provider";
 import { typeViewIssues } from "../contracts/resource-types";
 import { canonicalLocale, localeFallbackChain, normalizeLocale } from "../shared/locale";
@@ -131,6 +131,7 @@ const FILE_PROVIDER_FIELDS = {
 const TYPE_FIELDS = {
   title: true,
   description: true,
+  count: true,
   icon: true,
   color: true,
   reader: true,
@@ -307,6 +308,13 @@ const assertText = (value: string, label: string, max: number): void => {
   if (value.length > max) throw new Error(`${label} must be at most ${max} characters`);
 };
 
+/** A type's nouns after a number, both required and short. */
+const typeCount = (count: { one: string; other: string }, localId: string) => {
+  assertText(count.one, `Resource type ${localId} count.one`, 60);
+  assertText(count.other, `Resource type ${localId} count.other`, 60);
+  return { one: count.one.trim(), other: count.other.trim() };
+};
+
 const schemaFieldPaths = (schema: unknown, prefix = ""): Set<string> => {
   const paths = new Set<string>();
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return paths;
@@ -410,7 +418,7 @@ const compileOperationPresentation = (
   const allowed = new Set(
     "path" in operation
       ? ["title", "description", "input", "keywords"]
-      : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences"] : [])],
+      : ["title", "description", "input", "data", "searchTags", ...(isAction(operation) ? ["sentences"] : ["doneTitle"])],
   );
   const extra = Object.keys(translation).find((key) => !allowed.has(key));
   if (strict && extra) throw new Error(`${label} contains unsupported field "${extra}"`);
@@ -422,6 +430,8 @@ const compileOperationPresentation = (
     if (typeof translation.description !== "string") throw new Error(`${label}.description must be text`);
     assertText(translation.description, `${label}.description`, 1000);
   }
+  // A reader keeps the entry's other copy when only its past form is unusable.
+  const doneTitle = readDoneTitle(translation.doneTitle, `${label}.doneTitle`, strict);
   const keywords =
     "path" in operation && translation.keywords !== undefined
       ? CapabilityCommandManifestSchema.shape.keywords.parse(translation.keywords)
@@ -472,8 +482,22 @@ const compileOperationPresentation = (
     ...(input ? { input } : {}),
     ...(data ? { data } : {}),
     ...(searchTags ? { searchTags } : {}),
+    ...(doneTitle && !("path" in operation) && !isAction(operation) ? { doneTitle } : {}),
     ...(sentences ? { sentences } : {}),
   };
+};
+
+/** A Query's past form: plain text like a title, so it never becomes a template. */
+const readDoneTitle = (value: unknown, label: string, strict: boolean): string | undefined => {
+  if (value === undefined) return undefined;
+  try {
+    if (typeof value !== "string") throw new Error(`${label} must be text`);
+    assertText(value, label, 120);
+    return value.trim();
+  } catch (error) {
+    if (strict) throw error;
+    return undefined;
+  }
 };
 
 /**
@@ -490,7 +514,10 @@ export const compileCapabilityPresentation = (
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Capability presentation must be an object");
   const catalog = value as Record<string, unknown>;
-  if (strict && Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "sentences" && key !== "translations")) {
+  if (
+    strict &&
+    Object.keys(catalog).some((key) => key !== "baseLocale" && key !== "sentences" && key !== "doneTitles" && key !== "translations")
+  ) {
     throw new Error("Capability presentation contains unsupported fields");
   }
   const baseLocale = typeof catalog.baseLocale === "string" ? canonicalLocale(catalog.baseLocale) : undefined;
@@ -503,6 +530,27 @@ export const compileCapabilityPresentation = (
   const actions = new Map(manifest.actions.map((operation) => [operation.localId, operation]));
   const commands = new Map(manifest.commands.map((operation) => [operation.localId, operation]));
   const events = new Map((manifest.events ?? []).map((event) => [event.localId, event]));
+  let doneTitles: Record<string, string> | undefined;
+  if (catalog.doneTitles !== undefined) {
+    try {
+      if (!catalog.doneTitles || typeof catalog.doneTitles !== "object" || Array.isArray(catalog.doneTitles)) {
+        throw new Error("Capability presentation doneTitles must be an object");
+      }
+      doneTitles = Object.fromEntries(
+        Object.entries(catalog.doneTitles as Record<string, unknown>).flatMap(([localId, entry]) => {
+          if (!queries.has(localId)) {
+            if (strict) throw new Error(`Query doneTitles reference unknown localId "${localId}"`);
+            return [];
+          }
+          const doneTitle = readDoneTitle(entry, `Query ${localId}.doneTitle`, strict);
+          return doneTitle ? [[localId, doneTitle]] : [];
+        }),
+      );
+    } catch (error) {
+      if (strict) throw error;
+      doneTitles = undefined;
+    }
+  }
   let sentences: Record<string, CapabilityActionSentences> | undefined;
   if (catalog.sentences !== undefined) {
     if (!catalog.sentences || typeof catalog.sentences !== "object" || Array.isArray(catalog.sentences)) {
@@ -559,10 +607,10 @@ export const compileCapabilityPresentation = (
         }),
       ) as Readonly<Record<string, never>>;
     };
-    const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, _definition, label) => {
+    const translatedTypes = compileGroup(raw.types, types, "Resource type", (entry, definition, label) => {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`${label} must be an object`);
       const copy = entry as Record<string, unknown>;
-      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description");
+      const extraField = Object.keys(copy).find((key) => key !== "title" && key !== "description" && key !== "count");
       if (strict && extraField) throw new Error(`${label} contains unsupported field "${extraField}"`);
       if (copy.title !== undefined) {
         if (typeof copy.title !== "string") throw new Error(`${label}.title must be text`);
@@ -572,9 +620,19 @@ export const compileCapabilityPresentation = (
         if (typeof copy.description !== "string") throw new Error(`${label}.description must be text`);
         assertText(copy.description, `${label}.description`, 500);
       }
+      // A translated count needs base nouns to translate.
+      const count =
+        copy.count === undefined
+          ? undefined
+          : z
+              .object({ one: z.string().trim().min(1).max(60), other: z.string().trim().min(1).max(60) })
+              .strict()
+              .parse(copy.count);
+      if (count && !definition.count) throw new Error(`${label}.count needs a count on the resource type`);
       return {
         ...(copy.title ? { title: String(copy.title).trim() } : {}),
         ...(copy.description ? { description: String(copy.description).trim() } : {}),
+        ...(count ? { count } : {}),
       };
     });
     const translatedEvents = compileGroup(raw.events, events, "Event", (entry, _definition, label) => {
@@ -610,7 +668,12 @@ export const compileCapabilityPresentation = (
       ...(translatedCommands ? { commands: translatedCommands } : {}),
     };
   }
-  return { baseLocale, ...(sentences && Object.keys(sentences).length > 0 ? { sentences } : {}), translations };
+  return {
+    baseLocale,
+    ...(sentences && Object.keys(sentences).length > 0 ? { sentences } : {}),
+    ...(doneTitles && Object.keys(doneTitles).length > 0 ? { doneTitles } : {}),
+    translations,
+  };
 };
 
 const assertPropertyDescriptions = (schema: unknown, label: string, path: readonly string[] = []): void => {
@@ -789,6 +852,7 @@ export const compileCapabilities = (
         localId,
         title: definition.title.trim(),
         description: definition.description.trim(),
+        ...(definition.count ? { count: typeCount(definition.count, localId) } : {}),
         ...(definition.icon ? { icon: definition.icon } : {}),
         ...(definition.color !== undefined ? { color: z.enum(CAPABILITY_RESOURCE_COLORS).parse(definition.color) } : {}),
         ...(definition.reader !== undefined ? { reader: CapabilityLocalIdSchema.parse(definition.reader) } : {}),
@@ -1182,6 +1246,22 @@ export const resolveCapabilityOperationTitle = (
   );
 
 /**
+ * What a finished Query did, in the requested locale, or `undefined` when its app gives no past form there. The
+ * past form comes from the same locale as the title it stands for, so a step never mixes two languages.
+ */
+export const resolveCapabilityQueryDoneTitle = (
+  operation: Pick<CapabilityQueryManifest, "localId">,
+  catalog: CapabilityPresentationCatalog | undefined,
+  requestedLocale: string,
+): string | undefined => {
+  if (!catalog) return undefined;
+  return presentationOverlays(catalog, requestedLocale).reduce<string | undefined>((done, translation) => {
+    const copy = translation.queries?.[operation.localId];
+    return copy?.title !== undefined || copy?.doneTitle !== undefined ? copy.doneTitle : done;
+  }, catalog.doneTitles?.[operation.localId]);
+};
+
+/**
  * Everything a reader needs to word calls of one Action in the requested locale: its title, the app's
  * sentences, and the labelled fields of the generic sentence. Derived only from the live manifest and
  * presentation catalog, the same way for every app.
@@ -1220,7 +1300,14 @@ export const resolveCapabilityManifestPresentation = (
       appId: current.appId,
       types: current.types.map((type) => {
         const copy = translation.types?.[type.localId];
-        return copy ? { ...type, title: copy.title ?? type.title, description: copy.description ?? type.description } : type;
+        return copy
+          ? {
+              ...type,
+              title: copy.title ?? type.title,
+              description: copy.description ?? type.description,
+              ...(copy.count && type.count ? { count: copy.count } : {}),
+            }
+          : type;
       }),
       queries: current.queries.map((operation) => {
         const copy = translation.queries?.[operation.localId];
@@ -1692,6 +1779,26 @@ export const validateCapabilityResult = (
         error: {
           code: CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse,
           message: `Capability returned undeclared resource type ${ref.type}`,
+          status: 500,
+        },
+      };
+    }
+  }
+  if (compiled.manifest.discussions?.containers === operation.manifest.localId) {
+    const issues = discussionContainersPageIssues(parsed.data);
+    if (issues.length > 0) {
+      try {
+        onInvalidResult?.(
+          new Error(`Capability ${operation.manifest.localId} returned a discussion containers page: ${issues.join("; ")}`),
+        );
+      } catch {
+        // Observability must not change the public failure contract.
+      }
+      return {
+        ok: false,
+        error: {
+          code: CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse,
+          message: "Discussion containers must return a page that matches data.next",
           status: 500,
         },
       };

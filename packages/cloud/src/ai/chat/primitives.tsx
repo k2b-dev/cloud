@@ -1,9 +1,12 @@
+import { useLocale } from "@k2b/ui";
 import { createEffect, onCleanup, onMount } from "solid-js";
 import { rootResourceLinks } from "./answer-links";
 import { useAiChatActions } from "./message-actions";
+import { aiChatMessages } from "./messages";
 
-export function AssistantMarkdownBlock(props: { html: string }) {
+export function AssistantMarkdownBlock(props: { html: string; id?: string; ref?: (element: HTMLDivElement) => void }) {
   const actions = useAiChatActions();
+  const locale = useLocale();
   let element!: HTMLDivElement;
   const originals = new WeakMap<HTMLAnchorElement, { href: string; target: string | null }>();
   const files = new WeakMap<HTMLAnchorElement, string>();
@@ -23,24 +26,30 @@ export function AssistantMarkdownBlock(props: { html: string }) {
   });
   onMount(() => {
     const handleClick = (event: MouseEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey ||
-        !actions.onOpenFile
-      )
-        return;
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = event.target instanceof Element ? event.target.closest("a") : null;
-      const path = link ? files.get(link) : undefined;
-      if (!path) return;
-      event.preventDefault();
-      actions.onOpenFile(path);
+      if (!link) return;
+      const path = files.get(link);
+      if (path && actions.onOpenFile) {
+        event.preventDefault();
+        actions.onOpenFile(path);
+        return;
+      }
+      const href = link.getAttribute("href") ?? "";
+      if (!path && /^https?:\/\//iu.test(href) && actions.onOpenWebLink?.(href, link.textContent?.trim() || href)) event.preventDefault();
     };
     element.addEventListener("click", handleClick);
     onCleanup(() => element.removeEventListener("click", handleClick));
   });
-  return <div ref={element} class="assistant-markdown-block" innerHTML={rootResourceLinks(props.html)} />;
+  return (
+    <div
+      ref={(node) => {
+        element = node;
+        props.ref?.(node);
+      }}
+      id={props.id}
+      class="assistant-markdown-block"
+      innerHTML={rootResourceLinks(props.html, (number) => aiChatMessages(locale()).citeLabel({ number }))}
+    />
+  );
 }

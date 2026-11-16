@@ -93,6 +93,8 @@ describe("Chat threads on a desktop", () => {
       // Each thread link starts a view transition; WebKit sends input during one to <html>, so Back and the next click wait.
       await viewTransitionEnded(page);
       await page.locator(".chat-thread-picker", { hasText: "Problems" }).waitFor();
+      // A choice carries the shared 2 px field edge (Linie B), not a grey fill.
+      expect(await page.locator(".chat-thread-picker").evaluate((picker) => getComputedStyle(picker).borderTopWidth)).toBe("2px");
       // The picker stands right beside the chat's title text, not at the far end of the head.
       const titleEnd = await page.locator(".chat-conversation__header > .k2b-page-title").evaluate((title) => {
         const walker = document.createTreeWalker(title, NodeFilter.SHOW_TEXT);
@@ -121,6 +123,35 @@ describe("Chat threads on a desktop", () => {
       await threadRow(page, "all").and(page.locator('[aria-current="page"]')).waitFor();
       await viewTransitionEnded(page);
       await threadRow(page, updates).click();
+      await page.waitForURL(`**/t/${updates}`);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a thread still opens when its live summary refreshes during the press after Back", async () => {
+    const { chat, problems, updates } = seed();
+    const { page, errors } = await load(desktop, { chat });
+    try {
+      await threadRow(page, problems).click();
+      await page.waitForURL(`**/t/${problems}`);
+      await viewTransitionEnded(page);
+      await page.goBack();
+      await threadRow(page, "all").and(page.locator('[aria-current="page"]')).waitFor();
+      await viewTransitionEnded(page);
+      await until(() => harness.subscribed(chat));
+      const target = threadRow(page, updates);
+      await target.hover();
+      const pressed = await target.elementHandle();
+      await page.mouse.down();
+      // A live message refreshes every thread object while the person's pointer is held down.
+      // Rename another summary in that response so its visible label signals that the refresh applied.
+      harness.thread(chat, updates)!.name = "Release updates";
+      harness.receiveIn(chat, nora, "Another printer outage", { thread: problems });
+      await target.getByText("Release updates", { exact: true }).waitFor();
+      expect(await target.evaluate((element, before) => element === before, pressed)).toBe(true);
+      await page.mouse.up();
       await page.waitForURL(`**/t/${updates}`);
       expect(errors).toEqual([]);
     } finally {
@@ -560,8 +591,8 @@ for (const system of [false, true])
           expect(new URL(page.url()).searchParams.get("list")).toBe("archive");
           expect(new URL(page.url()).searchParams.get("filter")).toBe("unread");
         }
-        const full = page.getByRole("link", { name: "Open full view", exact: true });
-        expect(new URL((await full.getAttribute("href"))!, page.url()).pathname).toBe(path.replace("/panel", ""));
+        // The panel stays the panel: no link leads out of it to the full view.
+        expect(await page.locator('.chat-conversation__header a[href^="/app/chat/c/"]').count()).toBe(0);
         if (selected === "thread") expect(harness.thread(chat, other)!.read!.lastReadSeq).toBe(10);
         expect(errors).toEqual([]);
       } finally {

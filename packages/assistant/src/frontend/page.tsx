@@ -14,11 +14,12 @@ import { publicCloudOrigin } from "@k2b/cloud/shared";
 import { Layout, PanelLayout, readPanelContext } from "@k2b/cloud/ssr";
 import { getCookie } from "hono/cookie";
 import { loadAssistantChatContextSnapshot } from "../chat-context";
+import { loadAssistantChatWorkspace } from "../chat-workspace-service";
 import { ssr } from "../config";
 import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { loadAssistantSidebarSnapshot } from "../sidebar";
 import AssistantWorkspace from "./AssistantWorkspace.island";
-import { ASSISTANT_CONTEXT_COOKIE, assistantContextClosedFromCookie } from "./chat-sidebar-layout";
+import { ASSISTANT_PANES_HINT_COOKIE } from "./chat-sidebar-layout";
 import { assistantMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
@@ -90,15 +91,18 @@ export default ssr<AuthContext>(async (c) => {
   const initialConversations = conversations.map((conversation) =>
     conversation.id === activeConversation?.shortId ? { ...conversation, unreadCompletion: false } : conversation,
   );
-  const [initialDetail, initialTimeline, initialContext] = activeConversation
+  const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject") };
+  const [initialDetail, initialTimeline, initialContext, initialTabs] = activeConversation
     ? await Promise.all([
         loadAiStreamState(activeConversation, c.get("actor").kind === "user" ? user.id : null),
         aiConversations.listConversationTimeline({ conversationId: activeConversation.id }),
         loadAssistantChatContextSnapshot({ actor: c.get("actor"), accessSubject: c.get("accessSubject") }, activeConversation.shortId, {
           timeZone,
+          locale,
         }),
+        loadAssistantChatWorkspace(identity, activeConversation.shortId),
       ])
-    : [null, [], null];
+    : [null, [], null, null];
 
   const workspace = () => (
     <AssistantWorkspace
@@ -130,7 +134,8 @@ export default ssr<AuthContext>(async (c) => {
           : null
       }
       initialContext={initialContext}
-      initialContextClosed={assistantContextClosedFromCookie(getCookie(c, ASSISTANT_CONTEXT_COOKIE))}
+      initialTabs={activeConversation && initialTabs ? { chatId: activeConversation.shortId, snapshot: initialTabs } : null}
+      arrangeHintSeen={getCookie(c, ASSISTANT_PANES_HINT_COOKIE) === "seen"}
       projects={projects}
       initialProject={activeProject}
       initialProjectChats={
