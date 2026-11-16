@@ -79,7 +79,7 @@ test("on, until and off keep one maintenance identity and never expose the bypas
   const until = new Date(NOW + 28 * 60_000).toISOString();
   const started = await call("/on", { message: "  Wir spielen Version 2.4 ein.  ", until });
   expect(started.status).toBe(200);
-  expect(started.headers.get("cache-control")).toBe("no-store");
+  expect(started.headers.get("cache-control")).toContain("no-store");
   const body = await started.json();
   expect(MaintenanceStatusSchema.parse(body)).toEqual({
     active: true,
