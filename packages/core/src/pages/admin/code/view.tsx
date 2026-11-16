@@ -1219,22 +1219,21 @@ export function CodeAreaView(props: Props) {
   };
 
   // ---------- Composition ----------
-  const section = query.sec;
+  // The area without a section opens on the approvals, the work that waits; the area stays the level a phone shows.
+  const section = query.sec ?? "approvals";
   const level = codeAreaLevel(query);
-  const sectionLabel = section
-    ? {
-        approvals: t.approvals,
-        code: t.allCode,
-        policy: t.standard,
-        groups: t.groups,
-        effective: t.effective,
-        history: t.history,
-        cleanup: t.cleanup,
-        databases: t.unusedDatabases,
-        limits: t.limits,
-        runners: t.runners,
-      }[section]
-    : t.area;
+  const sectionLabel = {
+    approvals: t.approvals,
+    code: t.allCode,
+    policy: t.standard,
+    groups: t.groups,
+    effective: t.effective,
+    history: t.history,
+    cleanup: t.cleanup,
+    databases: t.unusedDatabases,
+    limits: t.limits,
+    runners: t.runners,
+  }[section];
   const sectionDescription = (): string | undefined => {
     if (section === "approvals") return summary?.approvals ? t.nWaiting({ n: summary.approvals }) : t.nothingOpen;
     if (section === "code")
@@ -1336,9 +1335,7 @@ export function CodeAreaView(props: Props) {
             id="section"
             label={sectionLabel}
             description={sectionDescription()}
-            href={
-              section ? codeAreaHref({ sec: section, tab: query.tab, status: query.status, app: query.app, q: query.q }) : codeAreaHref({})
-            }
+            href={codeAreaHref({ sec: section, tab: query.tab, status: query.status, app: query.app, q: query.q })}
             defaultSize={320}
             minSize={280}
             maxSize={480}
