@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { sql } from "@k2b/cloud";
+import { type CloudResourceReaderView, DISCUSSION_PAGE_LIMIT } from "@k2b/cloud/contracts";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import {
   AccountIdentityError,
@@ -72,7 +73,7 @@ import { isMarkdown, MARKDOWN_LIMIT, markdownRevision, TEMPLATE_LIMIT } from "..
 import { type DocumentKind, documentExtension, editableExtension } from "../documents";
 import type { MachineOwner } from "../machine-contracts";
 import { isPdfName, pdfBody } from "../pdf-body";
-import { parseStableEntryRefId } from "../resource-ref";
+import { FOLDER_TYPE, parseStableEntryRefId } from "../resource-ref";
 import { currentActivityId, fileAction, type Intent, purgeActivity, recoverActivity, type UserFilesCall, uploadAction } from "./activity";
 import { createActivityActions } from "./activity-actions";
 import { createActivityExportService } from "./activity-export";
@@ -738,6 +739,10 @@ export function createFilesService(
       path: current.relative,
       query: q,
       scope,
+      resourceId: await entryRef(
+        current.inspection.summary.id,
+        fileEntry(current.relative ? current.inspection.summary : { id: current.inspection.summary.id }, current.relative, current.node),
+      ),
       items,
       next: page.next ?? null,
       total: page.total,
@@ -1088,14 +1093,14 @@ export function createFilesService(
    * Every failure to resolve it is `not_found`; storage outages stay outages. After the usual path checks, the entry
    * must still be the same file.
    */
-  async function located(actor: RequestActor, id: string, directory?: boolean) {
+  async function located(actor: RequestActor, id: string, directory?: boolean, signal?: AbortSignal) {
     const stable = parseStableEntryRefId(id);
     if (!stable) {
       const ref = await resolveEntryRefId(id);
       if (!ref) throw new FilesError("not_found", 404);
-      return authorized(actor, ref.baseId, ref.path, directory);
+      return authorized(actor, ref.baseId, ref.path, directory, undefined, signal);
     }
-    const base = await authorizedBase(actor, stable.baseId);
+    const base = await authorizedBase(actor, stable.baseId, undefined, false, undefined, signal);
     let node: Node;
     try {
       // Unscoped like `info()`: the Unix checks follow on the resolved path with the actor's execution identity.
@@ -1957,6 +1962,10 @@ export function createFilesService(
       return {
         base: current.inspection.summary,
         path: current.relative,
+        resourceId: await entryRef(
+          current.inspection.summary.id,
+          fileEntry(current.relative ? current.inspection.summary : { id: current.inspection.summary.id }, current.relative, current.node),
+        ),
         items,
         next: page.next ?? null,
         actions: { create },
@@ -2514,7 +2523,10 @@ export function createFilesService(
           kind: "markdown",
           managed: current.info.managed,
           base: current.inspection.summary,
-          entry: fileEntry(current.inspection.summary, current.relative, current.node),
+          entry: {
+            ...fileEntry(current.inspection.summary, current.relative, current.node),
+            resourceId: await entryRef(input.baseId, fileEntry(current.inspection.summary, current.relative, current.node)),
+          },
           canWrite: actions.write,
           url: lease.url,
         };
@@ -2538,7 +2550,10 @@ export function createFilesService(
       const expiresAt = Date.now() + EDITOR_TOKEN_TTL_MS;
       return {
         base: current.inspection.summary,
-        entry: fileEntry(current.inspection.summary, current.relative, current.node),
+        entry: {
+          ...fileEntry(current.inspection.summary, current.relative, current.node),
+          resourceId: await entryRef(input.baseId, fileEntry(current.inspection.summary, current.relative, current.node)),
+        },
         action: withWopiSrc(action, wopiSrc),
         token: signEditorToken({
           userId: actor.kind === "service_account" ? actor.serviceAccount.id : current.state.self.user.id,
@@ -2762,6 +2777,78 @@ export function createFilesService(
       await uploads.finish(row.id, "aborted", null);
     },
     entry: (call: UserFilesCall, input: { baseId: string; path: string }) => entry(call.actor, input),
+    /** Canonical discussion presentation uses the same current path authority as API reads. */
+    async resourceEntry(call: UserFilesCall, id: string, folder = false, signal?: AbortSignal) {
+      const current = await located(call.actor, id, folder ? true : undefined, signal);
+      const base = current.inspection.summary;
+      const projected = fileEntry(current.relative ? base : { id: base.id }, current.relative, current.node);
+      const item = { ...projected, name: current.relative ? projected.name : base.name };
+      const storage = current.inspection.candidate.storage;
+      let permission: CloudResourceReaderView["permission"];
+      if (storage) {
+        const level = await storagePermission(call.actor, storage, current.relative);
+        if (level === "none") throw new FilesError("forbidden", 403);
+        permission = level;
+      } else {
+        const writable = current.node.directory ? await canWriteDirectory(current) : (await entryActions(current)).write;
+        permission = writable ? "write" : "read";
+      }
+      const view: CloudResourceReaderView = { title: item.name.slice(0, 500), permission };
+      if (!folder) {
+        const path = current.relative.split("/").slice(0, -1).join("/");
+        const container = await authorized(call.actor, base.id, path, true, current.state, signal);
+        const entry = fileEntry(path ? base : { id: base.id }, path, container.node);
+        view.container = {
+          ref: { type: FOLDER_TYPE, id: await entryRef(base.id, entry) },
+          title: (path ? entry.name : base.name).slice(0, 500),
+        };
+      }
+      return { base, entry: item, view };
+    },
+    /** One fixed source page; callers may change their output limit without changing Filegate's cursor. */
+    async discussionFolderPage(call: UserFilesCall, input: { baseId: string; after?: string; signal?: AbortSignal }) {
+      let base: Awaited<ReturnType<typeof authorizedBase>>;
+      let current: Awaited<ReturnType<typeof authorizedPath>>;
+      try {
+        base = await authorizedBase(call.actor, input.baseId, undefined, true, undefined, input.signal);
+        current = await authorizedPath(base, "", true);
+      } catch (error) {
+        if (
+          (error instanceof FilesError &&
+            (error.status === 404 || ["forbidden", "not_found", "area_disabled", "retired"].includes(error.code))) ||
+          (error instanceof FilegateError && [403, 404].includes(error.status))
+        )
+          return { items: [], next: null };
+        throw error;
+      }
+      const page = await searchIn(
+        current,
+        { q: "", type: "directories", sort: "name", groupFolders: false, after: input.after, signal: input.signal },
+        false,
+        DISCUSSION_PAGE_LIMIT,
+      );
+      const items: Array<{ ref: { type: string; id: string }; title: string }> = [];
+      if (!input.after)
+        items.push({
+          ref: { type: FOLDER_TYPE, id: await persistedEntryRefId(input.baseId, "") },
+          title: current.inspection.summary.name.slice(0, 500),
+        });
+      for (const hit of page.items) {
+        input.signal?.throwIfAborted();
+        try {
+          const checked = await authorizedPath(base, hit.path, true);
+          const entry = fileEntry(current.inspection.summary, checked.relative, checked.node);
+          items.push({
+            ref: { type: FOLDER_TYPE, id: await entryRef(input.baseId, entry) },
+            title: `${current.inspection.summary.name} / ${checked.relative}`.slice(0, 500),
+          });
+        } catch (error) {
+          if ((error instanceof FilesError || error instanceof FilegateError) && [403, 404].includes(error.status)) continue;
+          throw error;
+        }
+      }
+      return { items, next: page.next };
+    },
     /** A file ID (`resourceId`, or a `filesv2.entry` ref) resolves to its current area and path, with the same access checks. */
     async entryById(call: UserFilesCall, id: string): Promise<EntryResult> {
       const actor = call.actor;

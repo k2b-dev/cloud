@@ -1,4 +1,4 @@
-import { CapabilitySemanticLinkSchema } from "@k2b/cloud/contracts";
+import { CapabilitySemanticLinkSchema, CloudResourceReaderViewSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { ShortIdSchema } from "./contracts";
 import { ObjectListColumnSchema } from "./field-types/object-list";
@@ -21,6 +21,8 @@ export const BaseCapabilityDataSchema = z
   .strict();
 
 export const BaseListDataSchema = z.array(BaseCapabilityDataSchema).max(100);
+
+export const BaseReaderDataSchema = BaseCapabilityDataSchema.extend({ view: CloudResourceReaderViewSchema });
 
 export const BaseListInputSchema = z
   .object({
@@ -302,6 +304,10 @@ export const RecordCapabilityDataSchema = z
     updatedAt: TimestampSchema,
   })
   .strict();
+
+export const RecordReaderDataSchema = RecordCapabilityDataSchema.extend({
+  view: CloudResourceReaderViewSchema.required({ container: true }),
+});
 
 export const TableReadInputSchema = z.object({ id: ShortIdSchema.describe("Stable public Table ID.") }).strict();
 export const ViewReadInputSchema = z.object({ id: ShortIdSchema.describe("Stable public View ID.") }).strict();

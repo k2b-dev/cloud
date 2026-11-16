@@ -76,6 +76,8 @@ const server = new Hono<AuthContext & { Variables: { runtime: RuntimeContext } }
   .get("/nested/missing", auth.requireRole("*"), (c) => ssr.error(c, 404))
   .get("/minimal", (c) => ssr.error(c, 404, { layout: "minimal" }))
   .get("/service-error", (c) => ssr.error(c, 503))
+  .get("/admin/missing", (c) => ssr.error(c, 404))
+  .get("/app/test/item", (c) => ssr.error(c, 404, { action: { label: "Back to items", href: "/app/test" } }))
   .get("/unsafe", (c) => ssr.error(c, 404, { title: "</title><script>bad()</script>", description: "<img src=x onerror=bad()>" }))
   .get(
     "/status",
@@ -256,6 +258,23 @@ describe("shared page access and error responses", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.text()).toContain("503");
+  });
+  test("only the generic not-found and server-failure pages show the waiting game", async () => {
+    const offered = async (path: string, init?: RequestInit) => {
+      const body = await (await server.request(path, init)).text();
+      // The scene's box is part of the first paint, so nothing moves when the game code arrives.
+      return body.includes("data-waiting-game>") && body.includes("h-[clamp(20rem,52vh,32rem)]");
+    };
+    expect(await offered("/nested/missing")).toBe(true);
+    expect(await offered("/minimal")).toBe(true);
+    expect(await offered("/service-error")).toBe(true);
+    // Never where the person has a problem to solve: access denied, an app's own error, administration.
+    signIn();
+    expect(await offered("/admin", { headers: { Cookie: "session_token=test-session" } })).toBe(false);
+    expect(await offered("/resource", { headers: { Cookie: "session_token=test-session" } })).toBe(false);
+    expect(await offered("/unsafe")).toBe(false);
+    expect(await offered("/app/test/item")).toBe(false);
+    expect(await offered("/admin/missing")).toBe(false);
   });
   test("denied POST actions never execute or replay effects", async () => {
     expect((await server.request("/action", { method: "POST" })).status).toBe(302);

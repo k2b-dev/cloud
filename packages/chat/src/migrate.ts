@@ -263,6 +263,9 @@ export const migrate = async (): Promise<void> => {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_message_mutations_message ON chat.message_mutations(message_id);
     CREATE INDEX IF NOT EXISTS idx_chat_message_mutations_created ON chat.message_mutations(created_at);
+    -- Quoted passages are frozen with the message; deleting an original marks its entries deleted.
+    ALTER TABLE chat.messages ADD COLUMN IF NOT EXISTS quotes jsonb NOT NULL DEFAULT '[]'::jsonb;
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_quotes ON chat.messages(conversation_id, seq) WHERE quotes <> '[]'::jsonb;
   `.simple();
   console.log("  ✓ chat schema");
 };

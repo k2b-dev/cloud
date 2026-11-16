@@ -28,7 +28,8 @@ describe("root test orchestration", () => {
     expect(byName.get("@k2b/ui rest")?.command).toEqual(["bun", "run", "test:part:rest"]);
     expect(byName.get("@k2b/cloud-app-pulse")?.command).toEqual(["bun", "run", "test"]);
     expect(byName.get("@k2b/cloud-app-accounts")?.command).toEqual(["bun", "run", "test"]);
-    expect(byName.get("@k2b/cloud-app-tools")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
+    // A package without a test script of its own; the gateway runs no SSR pages and keeps none.
+    expect(byName.get("@k2b/cloud-app-gateway")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
     expect(byName.get("workspace root tests")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
     expect(byName.get("workspace root scripts")?.command).toEqual(["bun", "test", "--preload", preload, behaviorIgnore]);
   });
@@ -474,15 +475,21 @@ test("a shard's time asks for fresh weights before it fails", () => {
 });
 
 test("a package's test parts run every file: the rest part excludes exactly what the other parts name", async () => {
-  for (const [workspace, part, name] of [
-    ["packages/cloud", "test:part:ssr-ai", "@k2b/cloud"],
-    ["packages/ui", "test:part:layout-content", "@k2b/ui"],
+  for (const [workspace, name] of [
+    ["packages/cloud", "@k2b/cloud"],
+    ["packages/mail", "@k2b/cloud-app-mail"],
+    ["packages/ui", "@k2b/ui"],
   ] as const) {
     const { scripts } = (await Bun.file(join(workspaceRoot, workspace, "package.json")).json()) as { scripts: Record<string, string> };
-    const directories = /test [^&]*'\*\*\/\*\.behavior\.test\.\*' ([^&]+?)\s*$/.exec(scripts[part]!)?.[1]?.split(" ") ?? [];
-    expect(directories.length).toBeGreaterThan(0);
+    const parts = Object.keys(scripts).filter((script) => script.startsWith("test:part:") && script !== "test:part:rest");
+    expect(parts.length).toBeGreaterThan(0);
+    const directories = parts.flatMap(
+      (part) => /test [^&]*'\*\*\/\*\.behavior\.test\.\*' ([^&]+?)\s*$/.exec(scripts[part]!)?.[1]?.split(" ") ?? [],
+    );
+    expect(directories.length).toBeGreaterThanOrEqual(parts.length);
     for (const directory of directories) expect(scripts["test:part:rest"]).toContain(`--path-ignore-patterns '${directory}/**'`);
-    expect(scripts["test:part:rest"]!.match(/--path-ignore-patterns 'src\//g)?.length).toBe(directories.length);
+    // Every other ignore pattern of the rest part is the behavior-test pattern that all parts share.
+    expect(scripts["test:part:rest"]!.match(/--path-ignore-patterns '/g)?.length).toBe(directories.length + 1);
     const suites = await discoverTestSuites(workspaceRoot, { integration: false, filters: [workspace] });
     expect(suites.map((suite) => suite.name)).not.toContain(name);
     expect(suites.map((suite) => suite.name)).toContain(`${name} rest`);

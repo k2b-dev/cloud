@@ -582,6 +582,15 @@ export type AppWorkspaceSidebarItemActionsProps = {
   children: JSX.Element;
   visibility?: AppWorkspaceSidebarAccessoryVisibility;
 };
+/**
+ * One action in a section header's `actions`. With a mouse or trackpad, header actions show on hover or focus
+ * (`"hover"`, the default, as for unwrapped actions); `"always"` keeps an entry point people must find, such as
+ * discovering more, shown at all times. Its box is reserved either way, so revealing moves nothing.
+ */
+export type AppWorkspaceSidebarSectionActionProps = {
+  children: JSX.Element;
+  visibility?: AppWorkspaceSidebarAccessoryVisibility;
+};
 export type AppWorkspaceNavTreeProps = {
   children: JSX.Element;
   ariaLabel: string;
@@ -1560,6 +1569,11 @@ const AppWorkspaceSidebarItemMeta = (props: AppWorkspaceSidebarItemMetaProps): J
   mergeProps({ kind: SIDEBAR_ITEM_META }, props) as unknown as JSX.Element;
 const AppWorkspaceSidebarItemAction = (props: AppWorkspaceSidebarItemActionProps): JSX.Element =>
   mergeProps({ kind: SIDEBAR_ITEM_ACTION }, props) as unknown as JSX.Element;
+const AppWorkspaceSidebarSectionAction = (props: AppWorkspaceSidebarSectionActionProps): JSX.Element => (
+  <span class="k2b-app-workspace__sidebar-section-action" data-visibility={props.visibility === "always" ? "always" : undefined}>
+    {props.children}
+  </span>
+);
 const AppWorkspaceSidebarItemActions = (props: AppWorkspaceSidebarItemActionsProps): JSX.Element => (
   <div class="k2b-app-workspace__sidebar-item-actions" data-visibility={props.visibility === "hover" ? "hover" : undefined}>
     {props.children}
@@ -2419,6 +2433,7 @@ type AppWorkspaceComponent = ((props: AppWorkspaceProps) => JSX.Element) & {
   SidebarItemMeta: (props: AppWorkspaceSidebarItemMetaProps) => JSX.Element;
   SidebarItemAction: (props: AppWorkspaceSidebarItemActionProps) => JSX.Element;
   SidebarItemActions: (props: AppWorkspaceSidebarItemActionsProps) => JSX.Element;
+  SidebarSectionAction: (props: AppWorkspaceSidebarSectionActionProps) => JSX.Element;
   SidebarItemStatus: (props: AppWorkspaceSidebarItemStatusProps) => JSX.Element;
   NavTree: AppWorkspaceNavTreeComponent;
   SidebarIconGrid: (props: AppWorkspaceSidebarIconGridProps) => JSX.Element;
@@ -2718,6 +2733,7 @@ AppWorkspace.SidebarItemLabel = AppWorkspaceSidebarItemLabel;
 AppWorkspace.SidebarItemMeta = AppWorkspaceSidebarItemMeta;
 AppWorkspace.SidebarItemAction = AppWorkspaceSidebarItemAction;
 AppWorkspace.SidebarItemActions = AppWorkspaceSidebarItemActions;
+AppWorkspace.SidebarSectionAction = AppWorkspaceSidebarSectionAction;
 AppWorkspace.SidebarItemStatus = AppWorkspaceSidebarItemStatus;
 AppWorkspace.NavTree = AppWorkspaceNavTree;
 AppWorkspace.SidebarIconGrid = AppWorkspaceSidebarIconGrid;

@@ -312,4 +312,63 @@ else
       dispose = undefined;
       dialog.close();
     });
+
+    test("an avatar stack opens its people list beside it instead, and a person can be chosen", async () => {
+      const { AvatarStack } = await import("../src/surfaces/AvatarStack");
+      const chosen: string[] = [];
+      dispose = render(
+        () => (
+          <AvatarStack
+            title="Here now"
+            label="Here now: 3 people"
+            people={["Nora", "Lea", "Jonas"].map((name) => ({ id: name, name, onSelect: () => chosen.push(name) }))}
+          />
+        ),
+        dom.root,
+      );
+      const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-avatar-stack__trigger")!;
+      const popover = dom.root.querySelector<HTMLElement>(".k2b-avatar-stack__popover")!;
+      trigger.click();
+      await until(() => popover.matches(":popover-open"));
+      // The person still sees and chooses from the list: the popover that is always in the page opens instead.
+      expect(popover.matches(":popover-open")).toBe(true);
+      expect(reported).toHaveBeenCalledTimes(1);
+      await settle(10);
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      popover.querySelector<HTMLButtonElement>(".k2b-avatar-stack__row")!.click();
+      await settle(10);
+      expect(chosen).toEqual(["Nora"]);
+    });
+
+    test("a rich select opens its list as the popover beside the field instead, and a choice commits", async () => {
+      const { RichSelect } = await import("../src/inputs/RichSelect");
+      define(HTMLElement.prototype, "scrollIntoView", () => {});
+      const [value, setValue] = createSignal<string | null>(null);
+      dispose = render(
+        () => (
+          <RichSelect
+            label="Move card"
+            value={value}
+            onValueChange={setValue}
+            items={[
+              { value: "review", label: "Review" },
+              { value: "archive", label: "Archive" },
+            ]}
+          />
+        ),
+        dom.root,
+      );
+      const trigger = dom.root.querySelector<HTMLButtonElement>("button[aria-haspopup]")!;
+      const popover = dom.root.querySelector<HTMLElement>(".k2b-rich-select__popover")!;
+      trigger.click();
+      await until(() => popover.matches(":popover-open"));
+      expect(popover.matches(":popover-open")).toBe(true);
+      expect(reported).toHaveBeenCalledTimes(1);
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      const options = [...popover.querySelectorAll<HTMLElement>("[role='option']")];
+      expect(options.map((option) => option.textContent)).toEqual(["Review", "Archive"]);
+      options[1]!.click();
+      await settle(10);
+      expect(value()).toBe("archive");
+    });
   });

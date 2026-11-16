@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-11-11
+updated: 2026-11-16
 ---
 
 # API surface
@@ -272,10 +272,11 @@ For [resource discussions](/en/docs/platform/resource-types-and-discussions),
 `CloudResourceReaderViewSchema`, `ResourcePrincipalSchema`,
 `ResourceReadableInputSchema`, `ResourceReadableDataSchema`,
 `ResourceActivityEventSchema`, the `Discussion*Schema` values,
-`typeViewIssues`, and `discussionsIssues` come from `@k2b/cloud/contracts`.
+`typeViewIssues`, `discussionsIssues`, and `discussionContainersPageIssues`
+come from `@k2b/cloud/contracts`.
 `discussionProviders`, `readResourcePrincipals`, and `ResourceReaderRateLimited` come from
-`@k2b/cloud/capabilities/server`; `assertResourceView` comes from
-`@k2b/cloud/capabilities/testing`. The generated Query's context is
+`@k2b/cloud/capabilities/server`; `assertResourceView` and
+`assertDiscussionContainersPage` come from `@k2b/cloud/capabilities/testing`. The generated Query's context is
 `CapabilityAppExecutionContext`.
 
 For [calendar sources](/en/docs/platform/calendar-sources), `calendarSource`,
@@ -467,6 +468,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/ai/live` | Supported, server-only | `aiLive`: the cursor of AI live updates for server-rendered state; Core mounts its socket | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/live-events` | Supported, browser and server | `AiInvalidationSchema` and `AI_INVALIDATION_DOMAINS`, the data of AI live updates | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming#ai-live-updates) |
 | `@k2b/cloud/ai/question-text` | Platform-owned, browser and server | The plain-text form of an Assistant question (`approvalCard`, `actionCardText`, `actionQuestionLines`) that `cld`, notifications, and Cloud Login show | [Tools and approvals](/en/docs/ai/tools-and-approvals) |
+| `@k2b/cloud/maintenance-game` | Platform-owned, browser source | The waiting game the gateway maintenance page inlines and the generic 404 and 5xx pages load, with its message catalog and the rule which error pages may offer it | [Maintenance mode](/en/docs/operations/maintenance-mode) |
 | `@k2b/cloud/ai/app-frame` | Platform-owned, browser | The chart, view, and task contracts that an Assistant app frame draws and checks, without the skill parser and schemas of `ai/browser`, because the frame inlines its script in every app | [Chat interface](/en/docs/ai/chat-interface#assistant-apps-and-browser-work) |
 | `@k2b/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@k2b/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting, model access, and masked request-header names for administration | [Models and providers](/en/docs/ai/models-and-providers), [Observability](/en/docs/operations/observability) |
