@@ -36,7 +36,7 @@ const count = (text: string, part: string) => text.split(part).length - 1;
 
 test("the whole Cloud with note and end shows both, the end printed in the Cloud's zone", () => {
   const html = visible(render({ ...base, kind: "cloud", message: MESSAGE, until: at("14:30") }));
-  expect(html).toContain('<html lang="de">');
+  expect(html).toContain('<html lang="de" data-lauf="wait">');
   expect(count(html, "<h1>")).toBe(1);
   expect(html).toContain("<h1>Wartungsmodus aktiv</h1>");
   expect(html).toContain("Die Cloud wird gerade aktualisiert.");
@@ -82,7 +82,7 @@ test("an end on another day names that day, so an end after midnight is not read
 
 test("English pages use calm English and a 12-hour time", () => {
   const html = visible(render({ ...base, locale: "en", kind: "cloud", message: MESSAGE, until: at("14:30") }));
-  expect(html).toContain('<html lang="en">');
+  expect(html).toContain('<html lang="en" data-lauf="wait">');
   expect(html).toContain("<h1>Maintenance in progress</h1>");
   expect(html).toMatch(/Expected to be done by <span data-t>2:30\sPM<\/span>\./);
   expect(html).toContain("Note from your Cloud team");
@@ -193,25 +193,23 @@ test("the game stays small: its script and style under 14 KB gzip", () => {
   expect(Bun.gzipSync(LAUF_SCRIPT + LAUF_CSS).length).toBeLessThan(14 * 1024);
 });
 
-test("the page offers the game below the status line, on app pages only once it takes longer than usual", () => {
+test("the whole-Cloud page shows the waiting game from the first paint; app pages only once it takes longer", () => {
   const cloud = render({ ...base, kind: "cloud", message: MESSAGE, until: at("14:30") });
+  // The road sits below the content from the first paint, so the page does not move when the script runs.
+  expect(cloud).toContain('<html lang="de" data-lauf="wait">');
+  expect(script(cloud)).toContain('if(c.kind==="cloud")play()');
   const views = config(cloud).views;
-  for (const state of ["plain", "active", "late", "moved", "offline"]) {
-    expect(views[state]?.html).toContain('<button type="button" class="play" data-play>Kurz spielen?</button>');
-    expect(views[state]?.html.indexOf('class="play"')).toBeGreaterThan(views[state]?.html.indexOf('class="live"') ?? Infinity);
-  }
-  expect(views.active?.html).toContain('<button type="button" class="tile maint" data-play="start" aria-label="Mini-Spiel starten">');
+  for (const state of ["plain", "active", "late", "moved"])
+    expect(views[state]?.html).toContain('<button type="button" class="tile maint" data-play="start" aria-label="Mini-Spiel starten">');
   for (const state of ["ended", "done"]) expect(views[state]?.html).not.toContain("data-play");
   expect(views.ended?.html).toContain('<b>Wartung beendet</b></span><button type="button" class="btn primary" data-next>Weiter</button>');
-  expect(visible(cloud)).toContain("Kurz spielen?");
+  expect(cloud).not.toContain("Kurz spielen");
 
   const app = render({ ...base, locale: "en", kind: "app", app: mail, reason: "updating" });
-  const appViews = config(app).views;
-  expect(visible(app)).not.toContain("data-play");
-  expect(appViews.base?.html).not.toContain("data-play");
-  expect(appViews.long?.html).toContain("Play for a moment?");
-  expect(appViews.ended?.html).toContain("data-next>Continue</button>");
-  // The game itself is part of the one script and starts only from these entries.
+  expect(app).toContain('<html lang="en">');
+  expect(script(app)).toContain("long=true;render();if(!done)play()");
+  expect(config(app).views.ended?.html).toContain("data-next>Continue</button>");
+  // The game itself is part of the one script; the page starts no round on its own.
   expect(script(cloud).startsWith(`const LAUF=${LAUF_SCRIPT};`)).toBe(true);
 });
 
@@ -236,6 +234,9 @@ const runClient = (html: string, answer: () => Promise<unknown>) => {
   const listeners: Record<string, () => void> = {};
   const urls: string[] = [];
   const location = { reloads: 0, reload: () => location.reloads++ };
+  // The game runs in a real engine in maintenance-game.browser.test.ts; here it only records what the page asks of it.
+  const game = { opened: 0, round: false, open: () => game.opened++, start: () => {}, end: () => game.round };
+  const LAUF = () => game;
   let next = 0;
   const document = {
     getElementById: (id: string) => (id === "v" ? v : a),
@@ -260,18 +261,20 @@ const runClient = (html: string, answer: () => Promise<unknown>) => {
   const addEventListener = (type: string, fn: () => void) => {
     listeners[type] = fn;
   };
-  new Function("document", "fetch", "setTimeout", "clearTimeout", "addEventListener", "location", script(html))(
+  const client = script(html).slice(`const LAUF=${LAUF_SCRIPT};`.length);
+  new Function("document", "fetch", "setTimeout", "clearTimeout", "addEventListener", "location", "LAUF", client)(
     document,
     fetch,
     setTimeout,
     clearTimeout,
     addEventListener,
     location,
+    LAUF,
   );
   const settle = async () => {
     await new Promise((resolve) => setImmediate(resolve));
   };
-  return { v, a, timers, listeners, urls, location, settle };
+  return { v, a, timers, listeners, urls, location, game, settle };
 };
 
 test("the client swaps a moved end in place, shows a lost connection, then reloads after the end", async () => {
@@ -279,6 +282,7 @@ test("the client swaps a moved end in place, shows a lost connection, then reloa
   const html = renderMaintenancePage({ ...base, kind: "cloud", message: MESSAGE, until: at("14:30") }, { nonce: "n" });
   let answer: () => Promise<unknown> = () => Promise.resolve({ maintenance: { active: true, until: new Date(at("15:00")).toISOString() } });
   const page = runClient(html, () => answer());
+  expect(page.game.opened).toBe(1);
   const first = page.timers.find((timer) => timer.ms >= 4_000 && timer.ms <= 6_000);
   expect(first).toBeDefined();
   expect(page.v.innerHTML).toBe("");
@@ -318,7 +322,9 @@ test("an app page asks for its app and waits until it is available outside maint
   expect(page.urls).toEqual(["/_cloud/gateway/status?app=mail"]);
   expect(page.v.innerHTML).toBe("");
 
+  expect(page.game.opened).toBe(0);
   page.timers.find((timer) => timer.ms === 120_000)?.fn();
+  expect(page.game.opened).toBe(1);
   expect(page.v.innerHTML).toContain('<span class="word">Dauert länger</span> als üblich.');
   expect(page.v.innerHTML).not.toContain('class="badge"');
 

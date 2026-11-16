@@ -141,11 +141,12 @@ missing and inaccessible resources apart. Other HTTP error statuses are
 preserved and receive generic failure copy. This does not catch exceptions.
 
 The generic `404` and `5xx` pages, without your own `title`, `description`, or
-`action` and outside `/admin` and `"pwa"`, add a quiet "Play for a moment?"
-line below the home link. It opens the waiting game of the maintenance page,
-which loads only on that click and never starts on its own. Pages with your own
-copy never offer it, and neither do `403` and other client errors: there the
-person has a problem to solve.
+`action` and outside `/admin` and `"pwa"`, show the waiting game of the
+maintenance page below the home link: a robot on a road that starts a round
+with Space or a tap, never on its own. Its space is part of the first paint, and
+its code loads right after the page. Pages with your own copy never show it,
+and neither do `403` and other client errors: there the person has a problem to
+solve.
 
 The optional third argument accepts `title`, `description`,
 `action: { label, href, icon? }`, and `layout: "cloud" | "minimal" | "pwa"`
