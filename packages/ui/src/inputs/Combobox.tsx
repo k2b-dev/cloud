@@ -268,11 +268,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                     <Show when={option().icon}>{(icon) => <i class={iconClass(icon())} aria-hidden="true" />}</Show>
                     <span>
                       <strong>{option().label}</strong>
-                      <Show when={option().description || option().descriptionVisual}>
-                        <small>
-                          <OptionDescription text={option().description} visual={option().descriptionVisual} />
-                        </small>
-                      </Show>
+                      <OptionDescription text={option().description} visual={option().descriptionVisual} />
                     </span>
                   </button>
                 );

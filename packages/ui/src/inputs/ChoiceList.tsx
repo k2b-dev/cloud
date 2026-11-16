@@ -124,11 +124,12 @@ export function ChoiceList<T extends string = string>(props: ChoiceListProps<T>)
                         </Show>
                       </span>
                     </span>
-                    <Show when={option().description || option().descriptionVisual}>
-                      <span class="k2b-choice-list__description" id={descriptionId}>
-                        <OptionDescription text={option().description} visual={option().descriptionVisual} />
-                      </span>
-                    </Show>
+                    <OptionDescription
+                      id={descriptionId}
+                      class="k2b-choice-list__description"
+                      text={option().description}
+                      visual={option().descriptionVisual}
+                    />
                   </span>
                 </button>
                 <Show when={checked() && props.details}>

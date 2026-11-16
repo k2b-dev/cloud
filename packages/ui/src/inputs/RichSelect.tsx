@@ -138,15 +138,13 @@ function RichSelectRowText(props: { item: RichSelectItem; labelId: string; lineI
       <span id={props.labelId} class="k2b-rich-select__label">
         {props.item.label}
       </span>
-      <Show when={props.item.disabledReason || props.item.description || props.item.descriptionVisual}>
-        <span id={props.lineId} class="k2b-rich-select__line" data-reason={props.item.disabledReason ? "true" : undefined}>
-          {/* The reason of an unavailable row is always text. */}
-          <OptionDescription
-            text={props.item.disabledReason ?? props.item.description}
-            visual={props.item.disabledReason ? undefined : props.item.descriptionVisual}
-          />
-        </span>
-      </Show>
+      <OptionDescription
+        id={props.lineId}
+        class="k2b-rich-select__line"
+        text={props.item.disabledReason ?? props.item.description}
+        visual={props.item.descriptionVisual}
+        reason={Boolean(props.item.disabledReason)}
+      />
     </span>
   );
 }

@@ -648,11 +648,7 @@ const openSearchPrompt = <T extends unknown = unknown>(resolver: CloudSearchReso
                           </Show>
                           <span class="k2b-prompt-search__copy">
                             <strong>{item().label}</strong>
-                            <Show when={item().desc || item().descriptionVisual}>
-                              <small>
-                                <OptionDescription text={item().desc} visual={item().descriptionVisual} />
-                              </small>
-                            </Show>
+                            <OptionDescription text={item().desc} visual={item().descriptionVisual} />
                           </span>
                         </button>
                       )}

@@ -317,11 +317,7 @@ const itemContent = (props: {
     </Show>
     <span class="k2b-dropdown__copy">
       <span>{props.children}</span>
-      <Show when={props.description || props.descriptionVisual}>
-        <small>
-          <OptionDescription text={props.description} visual={props.descriptionVisual} />
-        </small>
-      </Show>
+      <OptionDescription text={props.description} visual={props.descriptionVisual} />
     </span>
     {props.trailing}
   </>
@@ -477,11 +473,7 @@ function DropdownChoiceRow(props: DropdownChoice): JSX.Element {
       </Show>
       <span class="k2b-dropdown__copy">
         <span>{props.label}</span>
-        <Show when={props.description || props.descriptionVisual}>
-          <small>
-            <OptionDescription text={props.description} visual={props.descriptionVisual} />
-          </small>
-        </Show>
+        <OptionDescription text={props.description} visual={props.descriptionVisual} />
       </span>
       {props.trailing}
       {/* Always present for radios, so selecting the widest entry cannot widen a content-sized menu. */}
