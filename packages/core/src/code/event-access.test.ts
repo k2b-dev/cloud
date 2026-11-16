@@ -35,7 +35,7 @@ test("foreign place checks use the executing account for two apps and repeat aft
     for (const code of [resource, personal]) {
       readable = true;
       expect(await canReadCodeEventPlace(code, place)).toBe(true);
-      expect(reader).toHaveBeenLastCalledWith({ ref: place, principals: [codeEventPrincipal(code)], signal: undefined });
+      expect(reader).toHaveBeenLastCalledWith({ ref: place, principals: [codeEventPrincipal(code)], signal: undefined, eventPlace: true });
       readable = false;
       expect(await canReadCodeEventPlace(code, place)).toBe(false);
     }
@@ -87,4 +87,27 @@ test("personal Code loses event access when its source app grant is withdrawn ev
     { sub: user, principal_type: "user", access_subject_type: "user", access_subject_id: user, credential_kind: "session", scopes: [] },
     "core",
   );
+});
+
+test("a contained place (a Files folder) is asked as itself: the account that may read it activates, another is refused (#3539)", async () => {
+  const readers = new Set<string>([account]);
+  reader = spyOn(capabilities, "readResourcePrincipals").mockImplementation(async (input) => {
+    // The registration names only the place; the exception applies, and no container is invented.
+    expect(input).toMatchObject({ eventPlace: true });
+    expect(input).not.toHaveProperty("container");
+    return {
+      state: "checked",
+      readable: input.principals.filter((value) => readers.has(value.type === "user" ? value.userId : value.serviceAccountId)),
+    };
+  });
+  const place = { type: "filesv2.entry", id: "folder-ref" };
+  expect(await canReadCodeEventPlace(resource, place)).toBe(true);
+  expect(await canReadCodeEventPlace(personal, place)).toBe(false);
+  readers.clear();
+  expect(await canReadCodeEventPlace(resource, place)).toBe(false);
+  // A provider without a supported check, or one that fails, never grants activation.
+  reader.mockResolvedValue({ state: "not_configured", reason: "no_readable" });
+  await expect(canReadCodeEventPlace(resource, place)).rejects.toMatchObject({ code: "BAD_INPUT" });
+  reader.mockRejectedValue(new Error("Resource reader check unavailable: APP_UNAVAILABLE"));
+  await expect(canReadCodeEventPlace(resource, place)).rejects.toThrow("APP_UNAVAILABLE");
 });

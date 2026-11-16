@@ -1,5 +1,10 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { assertResourceOpenLink, assertResourceView, compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
+import {
+  assertDiscussionContainersPage,
+  assertResourceOpenLink,
+  assertResourceView,
+  compileCapabilityManifest,
+} from "@k2b/cloud/capabilities/testing";
 import { type CapabilityExecutionContext, capabilityResultSchema, discussionsIssues, type PermissionLevel } from "@k2b/cloud/contracts";
 import * as settings from "@k2b/cloud/services/settings";
 import { gridsCapabilities } from "./capabilities";
@@ -207,6 +212,7 @@ describe("Grids discussion provider", () => {
     if (!first.ok || !first.data.data.next) throw new Error("Expected continuation after the denied candidate");
     expect(first.data.data.items).toEqual([]);
     expect(first.data.data.next).not.toBe("1");
+    // A paginated Query's page mirrors its continuation cursor.
     expect(first.data.page).toEqual({ hasMore: true, nextCursor: first.data.data.next });
     listVisible.mockResolvedValueOnce({
       items: [
@@ -221,6 +227,7 @@ describe("Grids discussion provider", () => {
     expect(second.data.data.items.map((item) => item.ref.id)).toEqual(["BASE02", "BASE03"]);
     expect(second.data.data.next).toBeNull();
     expect(second.data.page).toEqual({ hasMore: false });
+    assertDiscussionContainersPage(second.data);
     capabilityResultSchema(gridsCapabilities.queries["base.containers"].data).parse(second.data);
   });
 

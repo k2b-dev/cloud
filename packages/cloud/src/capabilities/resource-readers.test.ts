@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { bindProcessApplicationId, clearProcessApplicationId } from "../_internal/process-identity";
@@ -151,4 +151,63 @@ test("manager notices use workload authority and bounded recipient pages without
   expect(await listResourceManagers({ ref: input.ref })).toEqual([]);
   lookup.mockResolvedValue(null);
   await expect(listResourceManagers({ ref: input.ref })).rejects.toThrow("registry entry unavailable");
+});
+
+describe("the Code event-place exception (#3539)", () => {
+  const events = {
+    created: { title: "Created", description: "Created.", version: 1, subject: "item", place: "item", schema: z.strictObject({}) },
+  };
+  const contained = (access?: { readable: () => [] }) =>
+    compileCapabilityManifest("inventory", {
+      protocolVersion: 2,
+      queries: { "item.read": reader },
+      events,
+      types: {
+        collection: { title: "Collection", description: "Collection." },
+        item: { title: "Item", description: "Item.", container: "collection", reader: "item.read", ...(access ? { access } : {}) },
+      },
+    });
+
+  test("only the event-place check asks a contained place without a container; every other caller still fails", async () => {
+    lookup.mockResolvedValue({ ...entry, manifest: contained({ readable: () => [] }) });
+    await expect(readResourcePrincipals(input)).rejects.toThrow("requires a reference to the declared container type");
+    await expect(readResourcePrincipals({ ...input, container: { type: "inventory.other", id: "collection-1" } })).rejects.toThrow(
+      "requires a reference to the declared container type",
+    );
+    // A derived reader cannot check a container: callers that name one, even the right one, find no reader as before.
+    lookup.mockResolvedValue({ ...entry, manifest: contained() });
+    for (const container of [undefined, { type: "inventory.other", id: "c" }, { type: "inventory.collection", id: "collection-1" }])
+      expect(await readResourcePrincipals({ ...input, container })).toEqual({ state: "not_configured", reason: "no_readable" });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(await readResourcePrincipals({ ...input, eventPlace: true })).toEqual({ state: "checked", readable: [] });
+    expect(invoke).toHaveBeenCalledWith(
+      { appId: "inventory", capabilityId: "item.readable", kind: "query", input: { id: "item-1", principals: [principal] } },
+      expect.anything(),
+      expect.objectContaining({ workload: { appId: "consumer" } }),
+    );
+  });
+
+  test("a hook on a contained type keeps answering callers with the right container", async () => {
+    lookup.mockResolvedValue({ ...entry, manifest: contained({ readable: () => [] }) });
+    const container = { type: "inventory.collection", id: "collection-1" };
+    expect(await readResourcePrincipals({ ...input, container })).toEqual({ state: "checked", readable: [] });
+    expect(invoke.mock.calls[0]?.[0].input).toEqual({ id: "item-1", container, principals: [principal] });
+  });
+
+  test("an explicit hook that expects a container, a missing reader, or an unknown type refuses the event-place check", async () => {
+    lookup.mockResolvedValue({ ...entry, manifest: contained({ readable: () => [] }) });
+    expect(await readResourcePrincipals({ ...input, eventPlace: true })).toEqual({ state: "not_configured", reason: "no_readable" });
+    const derived = contained();
+    const withoutReader = { ...derived, queries: derived.queries.filter((query) => query.localId !== "item.readable") };
+    lookup.mockResolvedValue({ ...entry, manifest: withoutReader });
+    expect(await readResourcePrincipals({ ...input, eventPlace: true })).toEqual({ state: "not_configured", reason: "no_readable" });
+    lookup.mockResolvedValue({ ...entry, manifest: contained() });
+    expect(await readResourcePrincipals({ ...input, ref: { type: "inventory.unknown", id: "x" }, eventPlace: true })).toEqual({
+      state: "not_configured",
+      reason: "no_readable",
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    invoke.mockResolvedValue({ ok: false, error: { code: "APP_UNAVAILABLE", message: "Try later", status: 503 } });
+    await expect(readResourcePrincipals({ ...input, eventPlace: true })).rejects.toThrow("APP_UNAVAILABLE");
+  });
 });
