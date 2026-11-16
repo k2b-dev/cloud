@@ -288,7 +288,7 @@ export const assistantMessages = i18n.define({
           other: `${count} Anhänge wurden verworfen, weil die Höchstzahl erreicht ist.`,
         }),
       queuedMessages: "Vorgemerkte Nachrichten",
-      sending: "Wird gesendet…",
+      sending: "Wird gesendet …",
       sendNow: "Jetzt senden",
       retrySendNow: "Erneut senden",
       queueRemove: "Entfernen",

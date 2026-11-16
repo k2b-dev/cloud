@@ -160,7 +160,7 @@ test("Send now shows a ring in its place and locks every other button until Clou
   setSendingId("q2");
   const sending = rows()[1]!;
   expect(labels(sending)).toEqual(["slot", "ring", "Entfernen"]);
-  expect(sending.querySelector('[role="status"]')!.getAttribute("aria-label")).toBe("Wird gesendet…");
+  expect(sending.querySelector('[role="status"]')!.getAttribute("aria-label")).toBe("Wird gesendet …");
   expect(sending.querySelector(".assistant-queue__actions")!.hasAttribute("data-pinned")).toBe(true);
   expect(
     Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".assistant-queue__actions button")).every((button) => button.disabled),
