@@ -1608,6 +1608,8 @@ for (const locale of ["en", "de"])
           cloudAiNumberFormatters({ style: "percent", decimals: 1 }, locale).value(0.461),
         );
         expect(await boxes(page)).toEqual(loading);
+        // A key figure that names no icon has the neutral sign before its name (v12 §9), and it moves nothing.
+        expect(await page.locator(".k2b-stat-cell__head > .k2b-stat-cell__icon .ti-hash").count()).toBe(1);
         if (process.env.VIEW_SHOTS && locale === "en")
           await page.screenshot({ path: `${process.env.VIEW_SHOTS}/stats-light-${width}.png`, fullPage: true });
       } finally {

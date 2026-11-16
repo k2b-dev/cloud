@@ -168,6 +168,10 @@ Keep numbers numeric; a Date value is an error. Format it as text or use details
 Tiles are narrow (up to six share a chat column) and cut long values: prefer
 `compact` or whole-number formats for large amounts.
 
+Give each item an `icon`: a Tabler icon name such as `wallet`, `receipt` or
+`truck`, drawn as the small sign before the label. Without one the tile shows a
+neutral sign; a name that is no Tabler icon name is an error.
+
 Numeric values may have the number `format` described under Tables and a finite
 `delta` in the value's units. Set `better: "up" | "down"` only with a delta and
 only when improvement has a defined direction. The host chooses better/worse
@@ -204,9 +208,9 @@ export default async (_input, { files }) => {
   await cloud.view.stats({
     title: "Offers overview", subtitle: "Selected CSV · listed months",
     items: [
-      { label: "Offers", value: rows.length, sub: "All rows" },
-      { label: "Sum of prices", value: total, format: { style: "currency", currency: "EUR", decimals: 2 } },
-      { label: "Offers in latest month", value: latest, sub: ordered.at(-1)[0],
+      { label: "Offers", icon: "file-text", value: rows.length, sub: "All rows" },
+      { label: "Sum of prices", icon: "coin-euro", value: total, format: { style: "currency", currency: "EUR", decimals: 2 } },
+      { label: "Offers in latest month", icon: "calendar", value: latest, sub: ordered.at(-1)[0],
         delta: latest - counts.at(-2), better: "up", sparkline: counts.slice(-480) },
     ],
   });
@@ -371,9 +375,9 @@ export default async (_input, { files }) => {
   await cloud.view.stats({
     title: "Inventory overview", subtitle: "Selected CSV · stock value = price × stock",
     items: [
-      { label: "Products", value: rows.length },
-      { label: "Stock", value: stock, sub: "Units" },
-      { label: "Stock value", value: stockValue,
+      { label: "Products", icon: "package", value: rows.length },
+      { label: "Stock", icon: "stack-2", value: stock, sub: "Units" },
+      { label: "Stock value", icon: "coin-euro", value: stockValue,
         format: { style: "currency", currency: "EUR", decimals: 2 } },
     ],
   });
