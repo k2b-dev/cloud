@@ -12,8 +12,8 @@ due date. Use `DateRangePicker` for a start and end, with `withTime` when both
 endpoints include time. Use [`TimeInput`](/en/ui/input/time-input) for a clock
 time without a date, such as an opening hour.
 
-The time field in the panel of `DateTimePicker` and a `DateRangePicker` with
-`withTime` reads short input as `TimeInput` does: `9:30` and `930` are 09:30.
+In the panel of `DateTimePicker` and a `DateRangePicker` with `withTime`, the
+time field reads `0930` and `9:30` as 09:30.
 
 ## Type a date or pick one
 

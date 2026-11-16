@@ -1,5 +1,4 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { filterTimeText, parseTimeText } from "./time-input";
 
 export type DateRangeValue = {
   start: string | null;
@@ -138,18 +137,18 @@ export const draftDateTimeValue = (value: string | null | undefined, date: strin
 export const formatDateTimeValue = (value: string | null | undefined, context?: DateContext): string =>
   value ? dates.formatDateTime(value, pickerContext(context)) : "";
 
-/** The panel's time on leaving its field: what the text means as a time, else the nearest time of the day. */
 export const normalizeTimeInput = (value: string): string => {
-  const result = parseTimeText(value);
-  if (result.kind === "time" && result.value !== "24:00") return result.value;
   const [hours = "", minutes = ""] = value.split(":");
   const hour = Math.max(0, Math.min(23, Number(hours || 0)));
   const minute = Math.max(0, Math.min(59, Number(minutes || 0)));
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 };
 
-/** The panel's time field keeps what the public `TimeInput` keeps while someone types. */
-export const filterTimeInput = filterTimeText;
+export const filterTimeInput = (value: string): string => {
+  // A typed one-digit hour such as "9:30" is 09:30, not the digits 930.
+  const digits = value.replace(/^(\d)[:.]/, "0$1").replace(/\D/g, "").slice(0, 4);
+  return digits.length <= 2 ? digits : `${digits.slice(0, 2)}:${digits.slice(2)}`;
+};
 
 export const orderedRange = (start: string, end: string): DateRangeValue =>
   end.localeCompare(start) < 0 ? { start: end, end: start } : { start, end };
