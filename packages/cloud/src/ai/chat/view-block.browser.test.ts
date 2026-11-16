@@ -857,6 +857,31 @@ const stock = {
 };
 files["/views/stock-2b3c4d5e.view.json"] = stock;
 
+for (const width of [1280, 390])
+  test(`a table in an answer has its search in the head even when its view names none (${width})`, async () => {
+    const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+    try {
+      const page = await context.newPage();
+      await page.goto(`http://127.0.0.1:${server.port}/?lang=en`);
+      // The stock view sets no `search`: in an answer its head still has search, Copy and Maximize (Feinschliff v3 §5).
+      const parsed = parseCloudAiView(stock);
+      if (!parsed) throw new Error("Invalid stock fixture");
+      await page.evaluate((block) => window.show([block]), present("/views/stock-2b3c4d5e.view.json", cloudAiViewSummary(parsed)));
+      await page.waitForSelector("[data-view-path] table");
+      await settled(page);
+      const search = page.getByRole("searchbox", { name: "Search Stock" });
+      // On a phone the search is a sign that opens it over the title.
+      if (width < 480) await page.getByRole("button", { name: "Search Stock" }).click();
+      await search.fill("hall");
+      await page.locator("[data-view-path] .cloud-block-foot", { hasText: "1 match" }).waitFor();
+      expect(await page.locator("[data-view-path] tbody tr").count()).toBe(1);
+      if (process.env.VIEW_SHOTS)
+        await page.screenshot({ path: `${process.env.VIEW_SHOTS}/n5-tabelle-suche-light-${width}.png`, fullPage: true });
+    } finally {
+      await context.close();
+    }
+  });
+
 for (const theme of ["light", "dark"] as const)
   test(`a table view stands in an island without a frame of its own; a Markdown table keeps its frame, both share the header band and cell padding (${theme})`, async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
