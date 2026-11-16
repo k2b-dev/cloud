@@ -11,6 +11,8 @@ export type PanelFollowHost = {
   resourceChat: () => ResourceChat | null;
   setResourceChat: (chat: ResourceChat | null) => void;
   atResource: () => boolean;
+  /** The panel shows its start: the chat list it opens with, no chat, page or archive chosen. */
+  atStart: () => boolean;
   /** Counts every open the reader or the workspace starts. */
   opens: () => number;
   open: (next: Route) => Promise<OpenResult>;
@@ -54,7 +56,9 @@ export function followPanelContext(host: PanelFollowHost): () => void {
     }
     const start = inflight?.start ?? host.route();
     const shownRoute = host.route();
-    const following = host.atResource() || inflight !== null;
+    // The panel also follows from its start: a place shared only after it loaded (such as after "Allow" on the
+    // context question) still opens its discussion, as long as the reader has not chosen a chat meanwhile.
+    const following = host.atResource() || inflight !== null || (!shown && host.atStart());
     const opens = host.opens();
     locateResource(scope)
       .then(async (found) => {
