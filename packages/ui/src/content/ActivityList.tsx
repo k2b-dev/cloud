@@ -455,6 +455,8 @@ export type ActivityDialogInput = ActivityTimeProps & {
   entries: () => readonly ActivityEntry[];
   /** Defaults to "History". */
   title?: string;
+  /** Icon class beside the title, such as `ti ti-activity`; none by default. */
+  icon?: string;
   /** Second line, such as the object the history belongs to. */
   subtitle?: string;
   kinds?: readonly ActivityKind[];
@@ -579,6 +581,7 @@ export function ActivityCard(props: ActivityCardProps): JSX.Element {
 export const openActivityDialog = (input: ActivityDialogInput): Promise<void | undefined> =>
   prompts.dialog<void>(() => <ActivityDialogContent {...input} />, {
     title: input.title ?? resolveActivityMessages(input.dateConfig?.locale).activityTitle,
+    icon: input.icon,
     size: "large",
   });
 
