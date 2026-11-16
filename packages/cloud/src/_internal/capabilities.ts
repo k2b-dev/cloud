@@ -986,19 +986,24 @@ export const compileCapabilities = (
         },
       };
     }
-    const readable = type.access?.readable ?? eventPlaceReader(definitions, localId);
+    const explicit = type.access?.readable;
+    const readable = explicit ?? eventPlaceReader(definitions, localId);
     if (!readable) continue;
     const queryId = `${localId}.readable`;
     if (Object.hasOwn(definitions.queries ?? {}, queryId)) throw new Error(`Generated Query ${queryId} collides with a declared Query`);
     const container = type.container;
-    const input = container
-      ? ResourceReadableInputSchema.extend({
-          container: ResourceReadableInputSchema.shape.container
-            .unwrap()
-            .extend({ type: z.literal(qualifiedId(appId, container)).describe("Declared container type.") })
-            .describe("Expected current container of the resource."),
-        })
-      : ResourceReadableInputSchema;
+    // A derived reader for a contained event place checks the place itself and answers only Core's Code event-place
+    // check (#3539), so its input has no container; a check that names one is refused instead of answered without it.
+    const input = !container
+      ? ResourceReadableInputSchema
+      : !explicit
+        ? ResourceReadableInputSchema.omit({ container: true })
+        : ResourceReadableInputSchema.extend({
+            container: ResourceReadableInputSchema.shape.container
+              .unwrap()
+              .extend({ type: z.literal(qualifiedId(appId, container)).describe("Declared container type.") })
+              .describe("Expected current container of the resource."),
+          });
     generated[queryId] = {
       title: "Check resource readers",
       description: `Check current principal readability of ${type.title} without granting content access.`,

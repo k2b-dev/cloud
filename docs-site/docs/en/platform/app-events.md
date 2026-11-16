@@ -673,9 +673,13 @@ For an event place without an explicit `access.readable` hook, Cloud derives
 its app-only readability query from the place's ordinary Type reader. The
 reader runs as each current requested principal with read authority; only the
 readable principal subset leaves the provider. An existing hook remains the
-provider's batch implementation. A contained event-place Type needs its own
-batch hook to check the expected container. Apps declare events and permission-aware
-readers through the generic platform contract.
+provider's batch implementation. A contained event-place Type without a hook
+gets the same derived reader, and its input has no `container`: Code binds a
+registration to the place, not to a container, so its event-place check asks
+the place itself, as event delivery does. Every other check of a contained Type
+still names its expected container, and a hook on a contained Type still
+requires one. Apps declare events and permission-aware readers through the
+generic platform contract.
 
 ## Resolve an occurrence for catch-up
 

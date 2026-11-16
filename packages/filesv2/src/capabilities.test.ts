@@ -1569,7 +1569,7 @@ describe("Files discussions contract", () => {
     expect(discussionsIssues(manifest)).toEqual([]);
     expect(manifest.resourceTypes).toEqual(
       expect.arrayContaining([
-        { type: "entry", container: "folder", view: true },
+        { type: "entry", container: "folder", view: true, readable: true },
         { type: "folder", view: true },
       ]),
     );

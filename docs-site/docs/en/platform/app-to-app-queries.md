@@ -49,6 +49,9 @@ identity and the workload credential Core issues to the app automatically
 (an explicit `CLOUD_APP_CREDENTIAL` override wins, for apps run on the host).
 `CLOUD_CORE_INTERNAL_ORIGIN` must name Core's direct listener origin. When Core
 rejects the credential before dispatch, the call refreshes it once and retries.
+For a contained Type, pass the expected `container`; without it the call
+throws. The `eventPlace: true` option is reserved for Core's Code event-place
+check, which asks a contained event place itself.
 
 Handle all three outcomes:
 
