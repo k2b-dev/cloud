@@ -1,0 +1,6 @@
+### Approvals repeated a name, wrapped titles early, and left a column empty
+
+- **What happened:** In Administration › Code › Approvals, someone who submitted their own personal Code appeared twice ("Lea Muster · Lea Muster, personal"). A title wrapped at about 330 px while the change column beside it stayed half empty. A decided version's overview showed an empty left half next to "Everything version 2 may do".
+- **Root cause:** The row printed the author and the owner without comparing them. Each row was its own grid with two equal `1fr` columns, so the title could not take free room from the change. The decided overview hid the description section entirely instead of showing its stored text or an empty-state line.
+- **Error class:** The same person shown twice as two roles; equal flexible columns for content of very different widths; a section that disappears in a state instead of saying it is empty.
+- **Guard:** `CodeArea.render.test.tsx` checks one name for the same person and two for different people, and the decided overview with and without a description; `CodeArea.browser.test.ts` measures a long title as one line at 1440 px and the change column at the same place in every row.

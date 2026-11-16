@@ -716,6 +716,19 @@ main > .code-page-host {
   color: inherit;
   text-decoration: none;
 }
+/* Wide: every row shares one set of columns. The title takes the width it needs before the change gets the rest, so a
+   long title does not wrap beside an empty half, and the columns still line up from row to row. */
+@media (min-width: 48rem) {
+  .core-code-approvals__list {
+    grid-template-columns: auto minmax(0, max-content) minmax(12rem, 1fr) minmax(5.5rem, max-content) auto;
+  }
+  .core-code-approvals__list > li,
+  .core-code-approvals__row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+}
 .core-code-approvals__row:hover {
   background: var(--k2b-app-workspace-hover);
 }

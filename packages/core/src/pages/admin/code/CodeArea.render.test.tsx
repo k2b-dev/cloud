@@ -33,7 +33,14 @@ beforeAll(() => setSystemTime(new Date("2026-11-01T12:10:00.000Z")));
 afterAll(() => setSystemTime());
 
 type State = Parameters<typeof codeFixtureData>[0];
-const render = (query: Record<string, string>, state: State = "normal", locale = "de", counts?: { approvals: number; reports: number }) =>
+type AreaData = ReturnType<typeof codeFixtureData>;
+const render = (
+  query: Record<string, string>,
+  state: State = "normal",
+  locale = "de",
+  counts?: { approvals: number; reports: number },
+  edit: (area: AreaData) => AreaData = (area) => area,
+) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -46,7 +53,7 @@ const render = (query: Record<string, string>, state: State = "normal", locale =
           data:
             state === "noperm"
               ? null
-              : { ...codeFixtureData(state, query, locale), ...(counts ? { summary: { ...data.fixtureSummary(), ...counts } } : {}) },
+              : edit({ ...codeFixtureData(state, query, locale), ...(counts ? { summary: { ...data.fixtureSummary(), ...counts } } : {}) }),
           noPermission: state === "noperm",
           retryHref: "/admin/code",
           viewerId: data.FIXTURE_PEOPLE.jana,
@@ -408,6 +415,31 @@ for (const locale of ["de", "en"]) {
     expect(button(sole)).not.toMatch(/\sdisabled(?:=""|\s|>)/);
   });
 }
+
+test("a decided version keeps the left column: its stored description, or a line that there is none", () => {
+  const described = renderedText(render(review, "approved"), " ").replaceAll(/\s+/g, " ");
+  expect(described).toContain("Was sie damit tut");
+  expect(described).toContain("Legt werktags um 8 Uhr");
+  // A decided version offers no explanation any more.
+  expect(described).not.toContain("Diese Version erklären");
+  const withoutText = (area: AreaData): AreaData => {
+    const approval = area.approval;
+    if (!approval || approval === "failed" || approval === "missing" || !approval.readModel) return area;
+    return {
+      ...area,
+      approval: {
+        ...approval,
+        explanation: null,
+        readModel: { ...approval.readModel, description: { ...approval.readModel.description, state: "missing", text: null } },
+      },
+    };
+  };
+  const empty = renderedText(render(review, "approved", "de", undefined, withoutText), " ").replaceAll(/\s+/g, " ");
+  expect(empty).toContain("Was sie damit tut Noch keine Beschreibung.");
+  expect(empty).not.toContain("Diese Version erklären");
+  const english = renderedText(render(review, "approved", "en", undefined, withoutText), " ").replaceAll(/\s+/g, " ");
+  expect(english).toContain("What it does No description yet.");
+});
 
 for (const locale of ["de", "en"]) {
   test(`after deciding their own version the author is addressed directly, not told about a notice to themselves (${locale})`, () => {

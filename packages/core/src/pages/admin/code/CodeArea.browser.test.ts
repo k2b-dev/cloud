@@ -84,6 +84,23 @@ test("an approval keeps its version in one line next to a long title, on a wide 
   }
 });
 
+test("on a wide screen a long title uses the row's width, and the change starts at the same place in every row", async () => {
+  await goto("sec=approvals&state=long", { width: 1440, height: 900 });
+  await settled(page);
+  const rows = await page.locator(".core-code-approvals__row").evaluateAll((elements) =>
+    elements.map((row) => {
+      const title = row.querySelector<HTMLElement>(".core-code-approvals__title strong")!;
+      const lineHeight = Number.parseFloat(getComputedStyle(title).lineHeight);
+      return {
+        lines: Math.round(title.getBoundingClientRect().height / lineHeight),
+        change: Math.round(row.querySelector(".core-code-approvals__change")!.getBoundingClientRect().left),
+      };
+    }),
+  );
+  expect(rows.map((row) => row.lines)).toEqual(rows.map(() => 1));
+  expect(new Set(rows.map((row) => row.change)).size).toBe(1);
+});
+
 test("the area without a section shows the approvals next to the area column, and only the area on a phone", async () => {
   await goto("");
   expect(await page.getByRole("heading", { name: "Freigaben" }).first().isVisible()).toBe(true);

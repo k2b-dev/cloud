@@ -914,6 +914,20 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
     );
   };
 
+  /** A decided version asks for no explanation any more: the stored one with its AI mark, or a line that there is none. */
+  const decidedDescription = () => (
+    <Show
+      when={explanation()}
+      fallback={
+        <Section frame="line" title={t().whatItDoes}>
+          <p class="core-code-review__muted">{t().noDescription}</p>
+        </Section>
+      }
+    >
+      {description()}
+    </Show>
+  );
+
   const commentsIsland = () => (
     <Show when={threads().length}>
       <Section
@@ -1010,7 +1024,9 @@ export default function CodeApprovalReview(props: CodeApprovalReviewProps) {
       {frame(false)}
       <div class="core-code-review__columns">
         <div class="core-code-review__column">
-          <Show when={!closed() || !props.decision}>{description()}</Show>
+          <Show when={!closed() || !props.decision} fallback={decidedDescription()}>
+            {description()}
+          </Show>
           {commentsIsland()}
         </div>
         <div class="core-code-review__column">

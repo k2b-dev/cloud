@@ -1060,7 +1060,7 @@ export function codeFixtureData(state: CodeFixtureState, query: Record<string, s
   if (state === "long" && (query.sec ?? "approvals") === "approvals" && !query.id)
     data.approvals = {
       items: fixtureApprovals().map((entry, index) =>
-        index === 0 ? { ...entry, title: "Rückrufe bestätigen – wöchentliche Aufgabe im Space Kundendienst Nord" } : entry,
+        index === 0 ? { ...entry, title: "Backups prüfen – wöchentliche Aufgabe im Space Betrieb" } : entry,
       ),
       nextCursor: null,
     };
