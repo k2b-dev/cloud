@@ -51,7 +51,11 @@ test("excluded Mail files retain normal CI coverage and the package entry point 
     "bun --cwd=../.. test --path-ignore-patterns '**/*.behavior.test.*' packages/mail/src packages/mail/scripts packages/mail/test",
   );
   const suites = await discoverTestSuites(workspaceRoot, { integration: false, filters: ["packages/mail"] });
-  expect(suites.find((suite) => suite.name === "@k2b/cloud-app-mail")?.command).toEqual(["bun", "run", "test"]);
+  // CI runs the `test` script as its `test:part:*` parts; scripts/run-tests.test.ts checks that they cover the same files.
+  expect(suites.filter((suite) => suite.name !== "@k2b/cloud-app-mail behavior").map((suite) => suite.command)).toEqual([
+    ["bun", "run", "test:part:components"],
+    ["bun", "run", "test:part:rest"],
+  ]);
   const behavior = suites.find((suite) => suite.name === "@k2b/cloud-app-mail behavior");
   const selected = new Set((await mailIntegrationCommand()).slice(10));
   for (const file of await listTestFiles(mailRoot)) {

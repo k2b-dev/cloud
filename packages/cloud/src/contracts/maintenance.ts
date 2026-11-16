@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAINTENANCE_PROBLEM_CODES } from "./maintenance-signals";
 
 /**
  * Maintenance mode: the contract Core, the gateway and `cld` share.
@@ -9,21 +10,28 @@ import { z } from "zod";
  * reaches Core so `cld admin maintenance off` keeps working.
  */
 
-/** Public, unauthenticated gateway status that the maintenance page polls; answered from gateway memory. */
-export const GATEWAY_STATUS_PATH = "/_cloud/gateway/status";
-
-/** Core's admin API for the switch. The gateway passes exactly this path and its subpaths to Core during maintenance. */
-export const MAINTENANCE_ADMIN_API_PATH = "/api/admin/maintenance";
+export {
+  type AppUnavailableReason,
+  formatUnavailableHeader,
+  GATEWAY_STATUS_PATH,
+  type GatewayStatus,
+  MAINTENANCE_ADMIN_API_PATH,
+  MAINTENANCE_BYPASS_HEADER,
+  MAINTENANCE_POLL_STEPS,
+  MAINTENANCE_PROBLEM_CODES,
+  type MaintenancePollKind,
+  type MaintenanceProblemCode,
+  maintenancePollDelay,
+  parseUnavailableHeader,
+  UNAVAILABLE_HEADER,
+  type UnavailableSignal,
+} from "./maintenance-signals";
 
 export const MAINTENANCE_MESSAGE_MAX_LENGTH = 500;
 
 /** `Retry-After` seconds: whole-Cloud maintenance, and one app restarting or unreachable. */
 export const MAINTENANCE_RETRY_AFTER_SECONDS = 30;
 export const APP_UNAVAILABLE_RETRY_AFTER_SECONDS = 5;
-
-/** Stable problem codes; `cld` and other machine clients branch on these, never on the title. */
-export const MAINTENANCE_PROBLEM_CODES = ["maintenance", "app_unavailable"] as const;
-export type MaintenanceProblemCode = (typeof MAINTENANCE_PROBLEM_CODES)[number];
 
 const epochMs = z.number().int().positive().max(8.64e15);
 
@@ -73,17 +81,12 @@ export const MaintenanceProblemSchema = z.object({
   code: z.enum(MAINTENANCE_PROBLEM_CODES),
   until: z.iso.datetime().optional(),
   appId: z.string().optional(),
+  /** `app_unavailable` only: the app's name in the request's language, when the gateway knows it. */
+  appName: z.string().optional(),
+  /** `app_unavailable` only: "updating" after a clean deregistration, "unavailable" for anything else. */
+  reason: z.enum(["updating", "unavailable"]).optional(),
 });
 export type MaintenanceProblem = z.infer<typeof MaintenanceProblemSchema>;
-
-/**
- * `GET /_cloud/gateway/status[?app=<id>]`. `bypass` is present only on the Cloud host for a browser whose admin
- * bypass link is valid for the running maintenance: it sees the Cloud while everyone else sees the page.
- */
-export type GatewayStatus = {
-  maintenance: { active: true; until: string | null; bypass?: true } | null;
-  app?: { available: boolean };
-};
 
 /**
  * What one app instance reports while maintenance stage „Ruhe“ (quiesce) is

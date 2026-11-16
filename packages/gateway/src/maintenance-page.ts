@@ -9,6 +9,8 @@
  * (on app pages only once the restart takes longer than usual). A round never starts on its own; Space, a tap on the
  * road or a click on the maintenance symbol starts one.
  */
+
+import { MAINTENANCE_POLL_STEPS } from "@k2b/cloud/contracts/maintenance";
 import { LAUF_CSS, LAUF_SCRIPT, maintenanceGameMessages } from "@k2b/cloud/maintenance-game";
 
 export type MaintenancePageImage = { src: string /* data: URI */ };
@@ -27,31 +29,8 @@ export type MaintenancePageModel = {
     }
 );
 
-type Kind = MaintenancePageModel["kind"];
-
-/** Status polling: `[from elapsed ms, delay ms]`, first match from the end wins. Each delay varies by ±20 %. */
-export const POLL_STEPS: Record<Kind, readonly (readonly [number, number])[]> = {
-  cloud: [
-    [0, 5_000],
-    [120_000, 15_000],
-    [600_000, 30_000],
-  ],
-  app: [
-    [0, 2_000],
-    [30_000, 5_000],
-    [120_000, 15_000],
-  ],
-};
-
 /** How long an app page waits before it says that the restart takes longer than usual. */
 export const APP_LONG_AFTER_MS = 120_000;
-
-/** Delay before the next status check, `elapsedMs` after the page loaded; `random` in [0, 1). */
-export const pollDelay = (kind: Kind, elapsedMs: number, random: number): number => {
-  let delay = 0;
-  for (const [from, ms] of POLL_STEPS[kind]) if (elapsedMs >= from || delay === 0) delay = ms;
-  return delay * (0.8 + 0.4 * random);
-};
 
 const esc = (value: string): string =>
   value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] ?? ch);
@@ -432,7 +411,7 @@ export const renderMaintenancePage = (model: MaintenancePageModel, options: { no
     untilText: time,
     state,
     time,
-    steps: POLL_STEPS[model.kind],
+    steps: MAINTENANCE_POLL_STEPS[model.kind],
     long: APP_LONG_AFTER_MS,
     game,
     views: Object.fromEntries(
