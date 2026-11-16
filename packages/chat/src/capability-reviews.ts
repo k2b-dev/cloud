@@ -57,6 +57,7 @@ export const discussionReview = (
   body: string,
   locale?: string,
   revision?: number,
+  quotes: readonly { text: string }[] = [],
 ): CapabilityActionCallReview => {
   const language = locale?.startsWith("de") ? "de" : "en";
   const label =
@@ -68,7 +69,14 @@ export const discussionReview = (
     locale: language,
     sentence: sentences[language][operation],
     slots: { item: { kind: "object", title: label, ...(item ? { ref: item } : {}) } },
-    content: { kind: "page", title: label, body, format: "plain", ...(revision === undefined ? {} : { baseRevision: revision }) },
+    // Quoted passages stand above the text, as the message will show them.
+    content: {
+      kind: "page",
+      title: label,
+      body: quotes.length ? `${quotes.map((quote) => `> ${quote.text.replace(/\s+/gu, " ").trim()}`).join("\n")}\n\n${body}` : body,
+      format: "plain",
+      ...(revision === undefined ? {} : { baseRevision: revision }),
+    },
     ...(operation === "post" ? { reach: "shared" as const } : {}),
   };
 };

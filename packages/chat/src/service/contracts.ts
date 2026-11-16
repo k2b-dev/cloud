@@ -654,6 +654,26 @@ const MessageRefsSchema = z
       return true;
     });
   });
+/** Quoted passages a send names: shared by the app and the discussion capability, so both check the same way. */
+export const MessageQuotesInputSchema = z
+  .array(
+    z.strictObject({
+      message: MessageIdSchema,
+      // PostgreSQL jsonb cannot store NUL or unpaired UTF-16 surrogates.
+      text: z
+        .string()
+        // UTF-16 units; the sum below counts code points.
+        .max(MESSAGE_MAX_CODE_POINTS * 2)
+        .transform(quoteText)
+        .refine((text) => text !== "" && !/[\u0000\uD800-\uDFFF]/u.test(text)),
+    }),
+  )
+  .max(MAX_MESSAGE_REFS)
+  .refine((quotes) => quotes.reduce((sum, quote) => sum + [...quote.text].length, 0) <= MESSAGE_MAX_CODE_POINTS)
+  // The same passage of the same message once, in the order first given.
+  .transform((quotes) =>
+    quotes.filter((quote, index) => quotes.findIndex((other) => other.message === quote.message && other.text === quote.text) === index),
+  );
 export const SendMessageSchema = z
   .strictObject({
     clientId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
@@ -668,28 +688,7 @@ export const SendMessageSchema = z
     thread: ThreadIdSchema.optional(),
     replyTo: MessageIdSchema.optional(),
     /** Passages of messages in the same thread; each text must occur in its message. */
-    quotes: z
-      .array(
-        z.strictObject({
-          message: MessageIdSchema,
-          // PostgreSQL jsonb cannot store NUL or unpaired UTF-16 surrogates.
-          text: z
-            .string()
-            // UTF-16 units; the sum below counts code points.
-            .max(MESSAGE_MAX_CODE_POINTS * 2)
-            .transform(quoteText)
-            .refine((text) => text !== "" && !/[\u0000\uD800-\uDFFF]/u.test(text)),
-        }),
-      )
-      .max(MAX_MESSAGE_REFS)
-      .refine((quotes) => quotes.reduce((sum, quote) => sum + [...quote.text].length, 0) <= MESSAGE_MAX_CODE_POINTS)
-      // The same passage of the same message once, in the order first given.
-      .transform((quotes) =>
-        quotes.filter(
-          (quote, index) => quotes.findIndex((other) => other.message === quote.message && other.text === quote.text) === index,
-        ),
-      )
-      .optional(),
+    quotes: MessageQuotesInputSchema.optional(),
   })
   .refine((message) => message.body !== "" || (message.refs?.length ?? 0) > 0 || (message.attachments?.length ?? 0) > 0)
   .refine((message) => validMentionRanges(message.body, message.mentions ?? []));

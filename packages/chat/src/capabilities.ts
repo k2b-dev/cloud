@@ -241,7 +241,7 @@ export const chatCapabilities = defineCapabilities({
         const access = await authorizeDiscussion(input.ref, context, true);
         if (!access.ok) return access;
         return ok({
-          ...discussionReview("post", input.ref, access.data.decision.title, input.body, context.locale),
+          ...discussionReview("post", input.ref, access.data.decision.title, input.body, context.locale, undefined, input.quotes),
           scope: discussionApprovalScope(access.data.container.ref),
         });
       },

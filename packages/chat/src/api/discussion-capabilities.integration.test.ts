@@ -218,6 +218,82 @@ suiteFor(
     expect(calls.every((id) => id === "resource.fetch" || id === "collection.read")).toBe(true);
     expect(calls.filter((id) => id === "resource.fetch").length).toBeGreaterThan(0);
   });
+  test("an agent quotes like a person: same checks, its passages stored and read back, and part of the replay key", async () => {
+    const author = await f.person("Lea Muster");
+    const agent = await f.person("Ben Schulz");
+    const item = { type: "inventory.item" as const, id: crypto.randomUUID() };
+    const owner = { type: "inventory.collection" as const, id: crypto.randomUUID() };
+    const context = (person: Person, key: string, currentItem = item): CapabilityExecutionContext => ({
+      actor: person.context.actor,
+      accessSubject: person.context.accessSubject,
+      user: person.context.actor.kind === "user" ? person.context.actor.user : null,
+      locale: "en",
+      requestId: "discussion-quotes",
+      origin: "assistant",
+      via: "assistant",
+      idempotencyKey: key,
+      signal: new AbortController().signal,
+      query: async (input, schema) => ({
+        ok: true,
+        data: {
+          data: schema.parse({
+            view: {
+              title: "Planning",
+              permission: input.capabilityId === "resource.fetch" ? "read" : "write",
+              ...(input.capabilityId === "resource.fetch" ? { container: { ref: owner, title: "Planning" } } : {}),
+            },
+          }),
+          links: [{ rel: "open", href: `/app/inventory/resource/${currentItem.id}` }],
+        },
+      }),
+    });
+    const source = await postDiscussion({ ref: item, body: "The **quarterly report** is ready." }, context(author, "source"));
+    if (!source.ok) throw new Error("Expected source");
+    const [chat] = await sql<
+      { short_id: string }[]
+    >`SELECT short_id FROM chat.conversations WHERE resource_type = ${owner.type} AND resource_id = ${owner.id}`;
+    f.trackChat(chat!.short_id);
+    const id = source.data.data.ref.id;
+
+    // The review shows the passage; the post stores the message's own words.
+    const reviewed = await chatCapabilities.actions["discussion.post"].review(
+      { ref: item, body: "Agreed.", quotes: [{ message: id, text: "quarterly  report is" }] },
+      context(agent, "review"),
+    );
+    expect(reviewed.ok && "content" in reviewed.data && reviewed.data.content?.body).toBe("> quarterly report is\n\nAgreed.");
+    const quoted = await postDiscussion(
+      { ref: item, body: "Agreed.", quotes: [{ message: id, text: "quarterly  report is" }] },
+      context(agent, "quote"),
+    );
+    if (!quoted.ok) throw new Error("Expected quote");
+    const expected = [{ id, author: { type: "user" as const, id: author.id, name: "Lea Muster" }, text: "quarterly report is" }];
+    expect(DiscussionMessageDataSchema.parse(quoted.data.data).quotes).toEqual(expected);
+    const read = await readDiscussionMessage({ id: quoted.data.data.ref.id }, context(agent, "read"));
+    expect(read.ok && read.data.data.quotes).toEqual(expected);
+    const listed = await listDiscussion({ ref: item, limit: 1 }, context(agent, "list"));
+    expect(listed.ok && listed.data.data[0]?.quotes).toEqual(expected);
+
+    // A retry with other quotes is another request; an invented passage and a message of another discussion are refused.
+    expect(
+      await postDiscussion({ ref: item, body: "Agreed.", quotes: [{ message: id, text: "ready" }] }, context(agent, "quote")),
+    ).toMatchObject({
+      ok: false,
+      error: { code: "IDEMPOTENCY_CONFLICT", status: 409 },
+    });
+    expect(
+      await postDiscussion({ ref: item, body: "No.", quotes: [{ message: id, text: "report is late" }] }, context(agent, "invented")),
+    ).toMatchObject({
+      ok: false,
+      error: { status: 400 },
+    });
+    const anotherItem = { ...item, id: crypto.randomUUID() };
+    const cross = await postDiscussion(
+      { ref: anotherItem, body: "Elsewhere.", quotes: [{ message: id, text: "ready" }] },
+      context(agent, "cross", anotherItem),
+    );
+    expect(cross.ok).toBe(false);
+  });
+
   test("concurrent post keys compare their inputs after waiting for the conversation lock", async () => {
     const author = await f.person();
     const chat = await f.fixture(author);

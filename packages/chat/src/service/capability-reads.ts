@@ -55,6 +55,7 @@ export const readMessage = async (input: { id: string }, context: CapabilityExec
       revision: message.contentRevision ?? 0,
       via: message.via ?? null,
       replyTo: message.replyTo && "id" in message.replyTo ? message.replyTo.id : null,
+      quotes: message.quotes ?? [],
       body: message.body,
       refs: message.refs,
       attachments: message.attachments,

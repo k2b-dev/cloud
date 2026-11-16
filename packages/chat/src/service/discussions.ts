@@ -27,6 +27,7 @@ export const discussionMessage = (item: Item, message: Message) => ({
   revision: message.contentRevision ?? 0,
   via: message.via ?? null,
   replyTo: message.replyTo && "id" in message.replyTo ? message.replyTo.id : null,
+  quotes: message.quotes ?? [],
 });
 export const discussionPreview = (body: string | null) => {
   const points = Array.from(body ?? "");
@@ -102,7 +103,10 @@ const normalize = <T>(result: Result<T> | RateLimited): { ok: true; data: T } | 
     return { ok: false, error: { code: result.code, message: result.error, status: 429, details: { retryAfter: result.retryAfter } } };
   return result;
 };
-export const postDiscussion = async (input: { ref: Item; body: string; replyTo?: string }, context: CapabilityExecutionContext) => {
+export const postDiscussion = async (
+  input: { ref: Item; body: string; replyTo?: string; quotes?: { message: string; text: string }[] },
+  context: CapabilityExecutionContext,
+) => {
   const key = clientId(context, "discussion.post");
   if (!key) return fail({ code: "IDEMPOTENCY_KEY_REQUIRED", status: 400, message: catalog(context).invalidInput });
   const access = await authorizeDiscussion(input.ref, context, true);
@@ -120,9 +124,19 @@ export const postDiscussion = async (input: { ref: Item; body: string; replyTo?:
     await messages.send({
       ...bound,
       replayHash: new Bun.CryptoHasher("sha256")
-        .update(JSON.stringify([input.ref.type, input.ref.id, input.body, input.replyTo ?? null]))
+        // Quotes are part of the request, so a retry with other quotes is a conflict, not the same post.
+        .update(
+          JSON.stringify([
+            input.ref.type,
+            input.ref.id,
+            input.body,
+            input.replyTo ?? null,
+            ...(input.quotes?.length ? [input.quotes] : []),
+          ]),
+        )
         .digest("hex"),
-      input: { body: input.body, clientId: key, thread: thread.data.thread.id, replyTo: input.replyTo },
+      // The same service and checks as a person's send in the app.
+      input: { body: input.body, clientId: key, thread: thread.data.thread.id, replyTo: input.replyTo, quotes: input.quotes },
     }),
   );
   if (!sent.ok) return sent;

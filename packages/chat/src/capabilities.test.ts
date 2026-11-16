@@ -97,6 +97,24 @@ test("bounds pages, Unicode content and previews, rejects provenance and occurre
   expect(discussionPreview("🦋".repeat(301))).toEqual({ preview: "🦋".repeat(300), previewTruncated: true });
   expect(discussionPreview("a".repeat(300)).previewTruncated).toBe(false);
   expect(discussionPreview(null)).toEqual({ preview: "", previewTruncated: false });
+  const quote = { message: "AbCdEf1234", text: "the report" };
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: Array(10).fill(quote) }).success).toBe(true);
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: Array(11).fill(quote) }).success).toBe(false);
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: [{ ...quote, text: "" }] }).success).toBe(false);
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: [{ ...quote, author: "Lea" }] }).success).toBe(false);
+});
+
+test("a post's review shows its quoted passages above the text, also for maximum-size quotes", async () => {
+  const quotes = [{ text: "the quarterly\n report " }, { text: "🦋".repeat(9_999) }];
+  const review = discussionReview("post", item, "Review", "Agreed.", "en", undefined, quotes);
+  expect(CapabilityActionReviewDataSchema.parse(review)).toEqual(review);
+  expect(review.content?.body).toBe(`> the quarterly report\n> ${"🦋".repeat(9_999)}\n\nAgreed.`);
+  expect(discussionReview("post", item, "Review", "Agreed.").content?.body).toBe("Agreed.");
+  const actual = await chatCapabilities.actions["discussion.post"].review(
+    { ref: item, body: "Agreed.", quotes: [{ message: "AbCdEf1234", text: "the report" }] },
+    context(),
+  );
+  expect(actual.ok && "content" in actual.data && actual.data.content?.body).toBe("> the report\n\nAgreed.");
 });
 
 test("fresh standard item and container readers supply only the exact authorized resources", async () => {

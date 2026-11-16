@@ -1,6 +1,14 @@
 import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
-import { AttachmentViewSchema, AuthorSchema, MessageBodySchema, MessageIdSchema } from "./service/contracts";
+import {
+  AttachmentViewSchema,
+  AuthorSchema,
+  MAX_MESSAGE_REFS,
+  MESSAGE_MAX_CODE_POINTS,
+  MessageBodySchema,
+  MessageIdSchema,
+  MessageQuoteSchema,
+} from "./service/contracts";
 
 export const DISCUSSION_PAGE_SIZE = 20;
 export const DISCUSSION_PREVIEW_LENGTH = 300;
@@ -27,6 +35,22 @@ export const DiscussionPostInputSchema = z.strictObject({
   ref: DiscussionItemSchema,
   body: MessageBodySchema.describe("Markdown text, at most 20,000 Unicode characters, with non-whitespace content."),
   replyTo: MessageIdSchema.optional().describe("Message ID to reply to, within this same item discussion."),
+  quotes: z
+    .array(
+      z.strictObject({
+        message: MessageIdSchema.describe("ID of a message in this same item discussion."),
+        text: z
+          .string()
+          .min(1)
+          .max(MESSAGE_MAX_CODE_POINTS * 2)
+          .describe(
+            "Words exactly as the message shows them (from message.read); spacing may differ. The stored quote uses the message's own text.",
+          ),
+      }),
+    )
+    .max(MAX_MESSAGE_REFS)
+    .optional()
+    .describe("Passages of earlier messages this message answers, at most 10 and together at most 20,000 Unicode characters."),
 });
 export const MessageEditInputSchema = z.strictObject({
   id: MessageIdSchema.describe("Own message ID from a chat.message resource ref."),
@@ -44,6 +68,10 @@ export const DiscussionMessageSchema = z.strictObject({
   revision: z.number().int().nonnegative(),
   via: z.enum(["assistant", "mcp"]).nullable(),
   replyTo: MessageIdSchema.nullable(),
+  quotes: z
+    .array(MessageQuoteSchema)
+    .max(MAX_MESSAGE_REFS)
+    .describe("Passages of earlier messages it quotes, as they were when quoted; { deleted: true } once their message was deleted."),
 });
 export const DiscussionPreviewSchema = DiscussionMessageSchema.extend({ preview: z.string(), previewTruncated: z.boolean() });
 export const DiscussionListDataSchema = z.array(DiscussionPreviewSchema).max(DISCUSSION_PAGE_SIZE);
