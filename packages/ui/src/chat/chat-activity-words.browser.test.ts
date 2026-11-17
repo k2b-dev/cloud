@@ -60,8 +60,14 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const open = async (width: number, reducedMotion: "reduce" | "no-preference" = "no-preference"): Promise<Page> => {
-  const page = await browser.newPage({ viewport: { width, height: 400 }, reducedMotion });
+const open = async (
+  width: number,
+  reducedMotion: "reduce" | "no-preference" = "no-preference",
+  touch = false,
+  // Where a mouse rests before the row appears, such as the send button the person just pressed.
+  restingPointer?: { x: number; y: number },
+): Promise<Page> => {
+  const page = await browser.newPage({ viewport: { width, height: 400 }, reducedMotion, isMobile: touch, hasTouch: touch });
   // Installed and paused: time moves only through runFor, so every change happens at an exact phase time.
   await page.clock.install({ time: new Date("2026-11-15T10:00:00Z") });
   await page.clock.pauseAt(new Date("2026-11-15T10:00:01Z"));
@@ -76,6 +82,7 @@ const open = async (width: number, reducedMotion: "reduce" | "no-preference" = "
       ["400 13px 'IBM Plex Sans'", "400 14px 'IBM Plex Sans'", "16px tabler-icons"].map((font) => document.fonts.load(font)),
     );
   });
+  if (restingPointer) await page.mouse.move(restingPointer.x, restingPointer.y);
   await page.addScriptTag({ content: script });
   // Attached, not visible: with reduced motion the stylesheet hides the changing word.
   await page.locator(".k2b-chat-activity__word").waitFor({ state: "attached" });
@@ -165,6 +172,41 @@ describe("Chat.Activity.Words in the browser", () => {
         expect((await sample(page)).words.map((word) => word.text)).toEqual([FIRST]);
         await page.clock.runFor(30_000);
         expect((await sample(page)).words.map((word) => word.text)).toEqual([FIRST]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "on a phone a tap on the row does not hold the words: a finger leaves no pointer resting there",
+    async () => {
+      const page = await open(390, "no-preference", true);
+      try {
+        // The finger that just sent the message lands on the row; touch screens keep that spot as hovered. A tap at the
+        // row's place, since an actionability wait needs frames, which stand while the page clock is paused (WebKit).
+        const row = (await page.locator(".k2b-chat-activity__row").boundingBox())!;
+        await page.touchscreen.tap(row.x + row.width / 2, row.y + row.height / 2);
+        await page.clock.runFor(3_500);
+        // settled: the page clock is installed, so runFor has already run every timer and frame this read depends on.
+        expect((await sample(page)).words.map((word) => word.text)).toEqual([WORDS[0]!]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "a row that appears under a resting pointer keeps changing its words: only a pointer moved onto it holds them",
+    async () => {
+      // At 390 px the start page's field stands where the work line appears once the message is sent (Rundgang 7, #106).
+      const page = await open(390, "no-preference", false, { x: 120, y: 50 });
+      try {
+        await page.clock.runFor(3_500);
+        // settled: the page clock is installed, so runFor has already run every timer and frame this read depends on.
+        expect((await sample(page)).words.map((word) => word.text)).toEqual([WORDS[0]!]);
       } finally {
         await page.close();
       }
