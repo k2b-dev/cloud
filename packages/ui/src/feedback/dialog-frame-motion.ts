@@ -155,6 +155,10 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     started = { from: seen(), anchor: anchor(), leaving, scrolled: scrolled() };
     endFrame();
     hold(leaving);
+    // The frame clips from now on: the held content, larger than the new one, must not give it a scrollbar while the
+    // new content is measured and pinned (a classic scrollbar would narrow it until the old content has gone). A frame
+    // that scrolls itself swaps at once and keeps its scroll place instead.
+    if (!started.scrolled) dialog.dataset.k2bFrameMotion = "";
     if (!back) return;
     // The shown level stays the dialog's last child, as sheets and tone rules expect; the closed one moves before it,
     // with the scroll places the dialog core kept for it.
@@ -199,6 +203,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     // Between a sheet and a centred dialog there is no shared edge to morph from. A frame that scrolls itself swaps at
     // once too: its contents stand in its scrolled space, which a moving size would cut or shift.
     if (!duration || anchor() !== change.anchor || change.scrolled || scrolled()) {
+      delete dialog.dataset.k2bFrameMotion;
       fade(leaving, 0, 0, 0, leave);
       fade(arriving, 1, 0, 0, () => {});
       return;
