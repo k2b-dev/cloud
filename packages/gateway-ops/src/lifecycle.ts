@@ -120,6 +120,7 @@ const refreshRegisteredAppsOnce = async (): Promise<void> => {
 const startRegistryWatcher = (): void => {
   if (registryWatcherTask) return;
   registryWatcherAbort = new AbortController();
+  // runtime-timer: registry watcher for the operations view that requests read.
   registryWatcherTask = superviseRuntimeTask({
     name: "Registered apps watcher",
     signal: registryWatcherAbort.signal,

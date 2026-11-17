@@ -105,3 +105,37 @@ test("a failed pass is visible and a subsequent hint can recover", async () => {
     await dispatcher.stop();
   }
 });
+
+test("quiesce stops a backlog loop after the batch in flight; resume catches up", async () => {
+  const { processQuiesce } = await import("../runtime-quiesce");
+  const blocked = Promise.withResolvers<void>();
+  let calls = 0;
+  const dispatcher = startEventDispatcher(
+    {
+      work: async () => {
+        if (++calls === 1) await blocked.promise;
+        // Always more backlog: without quiesce the loop would keep going.
+        return calls < 50 ? 1 : 0;
+      },
+      checkGap: async () => {},
+      retain: async () => {},
+    },
+    () => {},
+  );
+  try {
+    await settled();
+    const quiet = processQuiesce.quiesce();
+    blocked.resolve();
+    await quiet;
+    await settled();
+    expect(calls).toBe(1);
+    await processQuiesce.resume();
+    dispatcher.wake();
+    for (let i = 0; i < 60 && calls < 50; i++) await settled();
+    expect(calls).toBe(50);
+  } finally {
+    blocked.resolve();
+    await processQuiesce.resume();
+    await dispatcher.stop();
+  }
+});

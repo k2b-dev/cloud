@@ -32,6 +32,7 @@ export function createChatSecretRuntime() {
       const ownership = new AbortController();
       let leaseUntil = Date.now() + 120000,
         renewing = false;
+      // runtime-timer: browser lease heartbeat of secret entry already in flight; it must continue while maintenance drains work.
       const heartbeat = setInterval(async () => {
         if (renewing || abort.signal.aborted) return;
         renewing = true;

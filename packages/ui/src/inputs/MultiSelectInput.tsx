@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { colorTintStyle, normalizeHexColor } from "../internal/color";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { optionDescription } from "../internal/option-description";
 import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
 import {
@@ -18,7 +19,15 @@ import { useSelectMessages } from "./select-messages";
 
 export type MultiSelectOption =
   | string
-  | { id: string; label?: string; description?: string; icon?: string; color?: string; groups?: readonly string[] }
+  | {
+      id: string;
+      label?: string;
+      description?: string;
+      descriptionVisual?: () => JSX.Element;
+      icon?: string;
+      color?: string;
+      groups?: readonly string[];
+    }
   | ChoiceOption<string>;
 type NormalizedOption = ChoiceOption<string>;
 export type MultiSelectFetchDataFn = (query: string, signal: AbortSignal, group: string | null) => Promise<MultiSelectOption[]>;
@@ -468,7 +477,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                       fallback={
                         <>
                           <strong>{option.label}</strong>
-                          <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>
+                          {optionDescription(option)}
                         </>
                       }
                     >

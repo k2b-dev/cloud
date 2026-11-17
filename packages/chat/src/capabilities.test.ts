@@ -97,6 +97,33 @@ test("bounds pages, Unicode content and previews, rejects provenance and occurre
   expect(discussionPreview("🦋".repeat(301))).toEqual({ preview: "🦋".repeat(300), previewTruncated: true });
   expect(discussionPreview("a".repeat(300)).previewTruncated).toBe(false);
   expect(discussionPreview(null)).toEqual({ preview: "", previewTruncated: false });
+  const quote = { message: "AbCdEf1234", text: "the report" };
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: Array(10).fill(quote) }).success).toBe(true);
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: Array(11).fill(quote) }).success).toBe(false);
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: [{ ...quote, text: "" }] }).success).toBe(false);
+  expect(DiscussionPostInputSchema.safeParse({ ref: item, body: "ok", quotes: [{ ...quote, author: "Lea" }] }).success).toBe(false);
+});
+
+test("a review shows each stored passage with its author above the text, also for maximum-size quotes", () => {
+  const quotes = [
+    { text: "disapprove of this plan", author: "Lea Muster" },
+    { text: "🦋".repeat(9_999), author: "Ben Schulz" },
+  ];
+  for (const operation of ["post", "edit", "delete"] as const) {
+    const review = discussionReview(operation, item, "Review", "Agreed.", "en", operation === "post" ? undefined : 0, quotes);
+    expect(CapabilityActionReviewDataSchema.parse(review)).toEqual(review);
+    expect(review.view?.blocks.slice(0, 2)).toEqual(quotes.map((quote) => ({ kind: "Text", text: `> ${quote.text} — ${quote.author}` })));
+    expect(review.view?.blocks.at(-1)).toEqual(
+      operation === "delete"
+        ? { kind: "Text", text: "Agreed." }
+        : {
+            kind: "Draft",
+            context: [{ label: "Place", value: "Review" }],
+            fields: [{ name: "body", label: "Body", type: "textarea", value: "Agreed." }],
+          },
+    );
+  }
+  expect(discussionReview("post", item, "Review", "Agreed.").view?.blocks).toHaveLength(1);
 });
 
 test("fresh standard item and container readers supply only the exact authorized resources", async () => {

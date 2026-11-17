@@ -6,6 +6,7 @@ import { readPanelCookie } from "../_internal/panel-cookie";
 import { readShellFocusCookie } from "../_internal/shell-focus";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
 import { type CloudResourceRef, CloudResourceRefSchema } from "../contracts/capabilities";
+import { MAINTENANCE_BYPASS_HEADER } from "../contracts/maintenance-signals";
 import { PANEL_HELP_ID_MAX_LENGTH, PanelPageContextSchema } from "../contracts/panel-context";
 import { isPwaShellAvailable } from "../contracts/pwa";
 import { defaultRailPreferences } from "../contracts/rail-preferences";
@@ -239,6 +240,13 @@ export default function Layout(props: LayoutProps) {
   const proof = browserSession ? c.get("credentialProof") : undefined;
   const signedInBrowser =
     user && proof?.kind === "session" ? { userId: user.id, sid: proof.sid, ...(sessionIdle ? { idle: sessionIdle } : {}) } : undefined;
+  // The gateway let this request past the maintenance wall with an admin bypass link; administrators may end it.
+  const maintenanceBypass = c.req.raw.headers.get(MAINTENANCE_BYPASS_HEADER) === "1";
+  const canEndMaintenance = !!user && hasRole(user, "admin");
+  const maintenance =
+    maintenanceBypass || canEndMaintenance
+      ? { ...(maintenanceBypass ? { bypass: true as const } : {}), ...(canEndMaintenance ? { canEnd: true as const } : {}) }
+      : undefined;
   const profileName = user?.displayName || user?.uid || "?";
   const profileAvatarSrc =
     user?.avatarHash && user.id
@@ -353,6 +361,7 @@ export default function Layout(props: LayoutProps) {
             panel={panel ? true : undefined}
             privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
             browserSession={signedInBrowser}
+            {...(maintenance ? { maintenance } : {})}
           />
           {/* Without an app bar, the privacy screen's countdown floats at the bottom start corner. */}
           {user && (
@@ -441,6 +450,7 @@ export default function Layout(props: LayoutProps) {
           banners={user && (swap || announcements?.banners.length) ? true : undefined}
           privacy={user ? { timerSeconds: privacyTimerSeconds, name: appName } : undefined}
           browserSession={signedInBrowser}
+          {...(maintenance ? { maintenance } : {})}
         />
         <ShellDataProvider data={shellData} skipScript={swap}>
           {showRail && <LayoutRail currentPath={requestPath(c)} panelOpen={panel ? panelState.open : undefined} name={appName} />}

@@ -1,4 +1,4 @@
-import { expect, jest, setSystemTime, test } from "bun:test";
+import { beforeAll, expect, jest, setSystemTime, test } from "bun:test";
 import { createMemo, createSignal } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { isServer, render } from "solid-js/web";
@@ -7,6 +7,18 @@ import { emptyProjection, mergeActiveTurn, reduceProjection, visibleMessages } f
 import { type AiStreamEvent, type AiTurnBlock, type AiWireEvent, steerAppliedBlockId, steerMessageBlockId } from "../protocol";
 import type { AiStoredMessage } from "../types";
 import { aiTurnErrorText } from "./turn-error";
+
+// The opened work loads its code on demand in the browser. Load it once before the tests, with time for a cold
+// transpile, so a toggle shows its rows at once.
+beforeAll(async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  try {
+    await (await import("#chat-work-list")).preloadAiWorkSteps();
+  } finally {
+    dom.cleanup();
+  }
+}, 30_000);
 
 /** The text a reader sees: without the screen-reader announcement and the resting word that only reduced motion shows. */
 const visibleText = (node: Element | null | undefined) => {
@@ -36,10 +48,8 @@ const visibleText = (node: Element | null | undefined) => {
     dom.root,
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
-  // Text between steps is a note at its step; opened, every text shows exactly once.
+  // Text between steps is a step of its own whose card holds the text; every text shows exactly once.
   const openNotes = async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    for (const toggle of dom.root.querySelectorAll<HTMLButtonElement>('.ai-turn-note__toggle[aria-expanded="false"]')) toggle.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
   };
   try {
@@ -526,7 +536,7 @@ const renderTimeline = async (
     dom.root,
   );
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
-  const clock = () => dom.root.querySelector(".ai-turn-work .ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const clock = () => dom.root.querySelector(".ai-turn-work .k2b-chat-activity__duration")?.textContent?.trim();
   try {
     emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
     jest.advanceTimersByTime(5_000);
@@ -565,7 +575,7 @@ const renderTimeline = async (
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
   const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
-  const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const clock = () => workLine()?.querySelector(".k2b-chat-activity__duration")?.textContent?.trim();
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {
     emit({ ...base, seq: 1, type: "turn_started", modelId: "model", providerModel: "model", blocks: [] });
@@ -758,7 +768,7 @@ const renderTimeline = async (
   const base = { v: 1 as const, conversationId: "chat", turnId: "turn", attempt: 1 };
   const workLine = () => dom.root.querySelector(".ai-turn-work");
   const label = () => visibleText(workLine()?.querySelector(".k2b-chat-activity__copy strong"));
-  const clock = () => workLine()?.querySelector(".ai-turn-work__meta")?.firstChild?.textContent?.trim();
+  const clock = () => workLine()?.querySelector(".k2b-chat-activity__duration")?.textContent?.trim();
   const read = { id: "tool-read", kind: "tool" as const, callId: "read", name: "read_file", args: { path: "/a.csv" } };
   const run = { id: "tool-run", kind: "tool" as const, callId: "run", name: "code_run", args: { title: "Report" } };
   try {

@@ -3,7 +3,7 @@ title: Put Cloud into maintenance mode
 navTitle: Maintenance mode
 section: Operations
 order: 1151
-description: Switch maintenance mode on and off with cld, get past it as an administrator, and know what browsers, API clients, sockets and probes see while it is on or while one app restarts.
+description: Switch maintenance mode on and off with cld or the admin settings, get past it as an administrator, and know what browsers, API clients, sockets and probes see while it is on or while one app restarts.
 tags: [maintenance, gateway, cli, operations]
 updated: 2026-11-16
 ---
@@ -41,7 +41,8 @@ cld admin maintenance off
   stays. Only the message or end you give changes; `--message ""` removes the
   message.
 - `status` shows when it started, the planned end, the message and
-  `Apps bereit: 9 von 11 (mail, files starten)`. The total counts the apps
+  `Apps bereit: 9 von 11 (mail, files starten)`; in stage „Ruhe“ also how
+  many apps are quiet (see below). The total counts the apps
   that Core has seen and that you did not remove from the Apps listing. The
   ready count is the apps that are registered right now.
 
@@ -51,6 +52,32 @@ OAuth app, so `cld` can still renew its token and switch maintenance off. Core
 checks the administrator role on every call. Every change is in the audit log
 (`maintenance.start`, `maintenance.update`, `maintenance.end`), and so is every
 bypass link (`maintenance.bypass`).
+
+## In the admin settings
+
+Administrators also find the switch under **Administration → Maintenance
+mode** (`/admin/settings/maintenance`). The page shows the same state as
+`cld admin maintenance status`. `cld` stays the safer way, because it also
+works while Core restarts.
+
+- While maintenance is off, you can write a note for everyone and pick the
+  expected end, then choose **Start maintenance**. Maintenance starts
+  at once. The page then gets a bypass link for your browser and opens it, so
+  you stay in the Cloud while everyone else sees the maintenance page.
+- While maintenance is on, the page shows since when and who started it, the
+  planned end, the note and how many apps are ready. The apps line updates
+  every 10 seconds. **Move end** sets a new end time. **End maintenance** asks
+  once and switches maintenance off.
+- The end is a date and a time in your time zone, which the picker names, so
+  it can lie after midnight. The page suggests one hour from now, rounded up
+  to the next quarter hour; clear the field for no planned end. A time that
+  has already passed is rejected.
+- If starting works but the bypass link fails, the page says so and offers to
+  try again. You can also run `cld admin maintenance bypass` or
+  `cld admin maintenance off`.
+
+Only administrators see the page; Core checks the role again before it reads
+the state.
 
 ## Get in as an administrator
 
@@ -103,6 +130,88 @@ closed when maintenance starts, also when a new maintenance replaces the
 running one; a bypassed socket that opened later stays open until it closes
 by itself or the next maintenance starts.
 
+Every page you open this way shows the notice "Wartungsmodus aktiv. Nur du
+siehst die Cloud." (see [Open pages](#open-pages)). For administrators it
+also has **Wartung beenden**, which switches maintenance off for everyone.
+Someone else who opens the link sees the same notice without it. The gateway tells the app with
+the request header `X-Cloud-Maintenance-Bypass: 1`; it removes that header
+from every incoming request, so no browser can set it itself.
+
+## Quiet background work (stage Ruhe)
+
+Maintenance mode alone only closes the Cloud to people. Background work keeps
+running: mail is fetched and sent, notifications go out, schedules and
+workflows run. For a database migration or a backup that needs a still Cloud,
+add stage „Ruhe“:
+
+```bash
+cld admin maintenance on --quiesce
+cld admin maintenance status
+cld admin maintenance on --no-quiesce   # background work runs again, maintenance stays
+cld admin maintenance off               # ends maintenance and resumes everything
+```
+
+`--quiesce` works when you switch maintenance on and while it is already on.
+`on` without either flag keeps the current stage.
+
+In every app instance (Core included, the gateway excluded), then:
+
+- every Sync worker (jobs, queues, topic consumers, schedulers, pumps) stops
+  taking new work and finishes the work in flight. After 30 seconds, work
+  that is still running is cancelled and returns to NATS for later. Work that
+  ignores the cancel still counts as running until it ends;
+- outbox publishers, recovery scans, retention sweeps, outgoing mail, mail
+  fetching including IMAP push, notifications, automations and workflows
+  start nothing new. They stop after the workers have finished, one after
+  another, so no running job meets a runtime that has already stopped. One
+  that takes longer than the drain time plus a second is logged and keeps
+  counting as running while the next one stops;
+- the processes keep running and their registry entries stay. Requests are
+  still answered, but a request that waits for background work waits until
+  the stage ends: an AI chat turn, a file preview, or saving a shared text.
+
+New work that arrives while quiet waits in NATS or Postgres. A job whose
+stream reaches its retention limit rejects further submissions, so keep the
+stage as short as the work needs.
+
+When you run `--no-quiesce` or `off`, each instance starts its runtimes
+again in their original order and then its workers. A worker whose old work
+still runs starts again only after that work ended, so the same work never
+runs twice in one instance. Work that ignores its cancel and still runs about
+a minute after the restart began waiting makes the instance restart itself,
+which ends it. A schedule that missed ticks runs once, not once
+per missed tick. Periodic sweeps also run once.
+
+An instance that cannot start part of its background work again tries up to
+five times and logs each retry; fast failures end within about a minute,
+attempts that hang take a few minutes. If it still fails, the
+instance restarts itself. The AI chat and dictation workers keep trying
+without a restart.
+
+`status` adds one line while the stage is on:
+
+```text
+Ruhe: 8 von 9 Apps ruhig, Mail: 2 Aufgaben laufen noch und 1 Instanz ohne Rückmeldung
+Quiet: 8 of 9 apps quiet, Mail: 2 tasks still running and 1 instance has not reported
+```
+
+An app counts as quiet when every running instance reports no work in
+flight. Tasks count running jobs, other background tasks, and runtimes that
+are still stopping. An instance without a report may have just started, or it
+cannot reach NATS. At most three apps are named; the rest are counted.
+`--json` returns `quiesce` and
+`quiet: { quiet, total, busy: [{ id, name, inFlight, unreported }] }`.
+
+Each instance reports to the Sync ephemeral `cloud-quiesce` (owner `cloud`,
+one key per instance, at most 1024, each kept for 45 seconds and renewed
+every 15 seconds while quiet). A report names the maintenance and how often
+the stage was switched on in it, so after `--no-quiesce` and `--quiesce` an
+old report never counts as quiet. The quiet line reads the app registry and
+one snapshot of these reports, not the database. The `Apps bereit` line
+reads Core's app catalogue from Postgres. Turning the stage on or off is in
+the audit log as `maintenance.start` or `maintenance.update` with `quiesce`
+in its metadata.
+
 ## What people and programs see
 
 | Client | Whole Cloud in maintenance | One app restarting or unreachable |
@@ -121,10 +230,19 @@ Branch on `code`, never on `title`:
 ```
 
 ```json
-{ "type": "about:blank", "title": "App is unavailable", "status": 503, "code": "app_unavailable", "appId": "mail" }
+{ "type": "about:blank", "title": "App is unavailable", "status": 503, "code": "app_unavailable", "appId": "mail", "appName": "E-Mail", "reason": "updating" }
 ```
 
-`until` is present only when a planned end is set. Every answer has
+`until` is present only when a planned end is set. `reason` is `updating`
+when the app deregistered cleanly and `unavailable` otherwise (see
+[When one app restarts](#when-one-app-restarts)). `appName` is the app's name
+in the request's language (from `Accept-Language`, else the Cloud's
+language); it is missing when the gateway does not know the app.
+
+Every problem answer also has the header `X-Cloud-Unavailable`, with
+`maintenance` or `app_unavailable; app=mail; reason=updating`. It says the
+same as the body and is there for answers without a body, such as `HEAD`.
+The HTML page does not have it. Every answer has
 `Cache-Control: no-store`. The HTML page has a strict content security policy
 with a new nonce per response.
 
@@ -134,6 +252,54 @@ with a new nonce per response.
 
 App domains show the same maintenance page as the Cloud host. The page never
 shows the name of the person who switched maintenance on.
+
+## Open pages
+
+A page that is already open when maintenance starts, or when an app restarts,
+stays where it is. Nothing on it is discarded, and text in a field stays in
+the field. With its first request that gets a `503` with code `maintenance`
+or `app_unavailable`, the page shows one persistent notice in the usual
+place for notices: at the bottom on a computer, at the top on a phone. It
+floats, so nothing on the page moves.
+
+| Situation | Notice | When it is over |
+| --- | --- | --- |
+| Whole Cloud in maintenance | "Wartungsmodus aktiv" | "Wartung beendet" |
+| App deregistered cleanly | "Mail wird gerade aktualisiert" | "Aktualisierung abgeschlossen" |
+| App gone otherwise | "Mail ist gerade nicht erreichbar" | "Mail ist verfügbar" |
+| Bypass link (administrator) | "Wartungsmodus aktiv. Nur du siehst die Cloud." | "Wartung beendet" |
+
+- **Reads** (`GET` and `HEAD`) wait quietly and are sent again once it is
+  over. The page shows no error for them. Reads of the same address wait as
+  one: a query that polls sends nothing more while it waits, and at the end
+  one request answers all of them. At most 64 different addresses wait per
+  page; a further read gets its `503` with the reason at once, like an
+  action, and the notice stays.
+- **Actions** (every other method, such as sending, booking or deleting) are
+  never held and never repeated. They return the gateway's `503` with a
+  `message` that names the reason, for example "Wartungsmodus aktiv. Das geht
+  wieder, sobald die Wartung beendet ist." The person presses again once it
+  is over.
+- From the first `503` on, the page polls the
+  [status endpoint](#status-endpoint) on the same schedule as the
+  maintenance page, and at once when the tab becomes visible or the device is
+  online again. A hidden tab does not poll. Once it is over, the notice says
+  so; the page does **not** reload, so the person keeps their place and
+  their input.
+- The notice shows one situation at a time. Reads that wait for a second app
+  are sent again after each status check, so they go through as soon as that
+  app is back, even while the first one is still away.
+- When the page does not know the app's name, the notice uses the name from
+  the problem answer, else "Diese App"; never the app's id.
+- A link clicked during maintenance loads the maintenance page, which reloads
+  the address after the end.
+- With a bypass link, nothing is blocked. Administrators see **Wartung
+  beenden** in the notice; it calls `POST /api/admin/maintenance/off`.
+
+Every page built with the Cloud `Layout` gets this, built-in and third-party
+apps alike. See
+[Browser clients and mutations](/en/docs/frontend/browser-clients-and-mutations#maintenance-and-app-restarts)
+for what this means for application code.
 
 ## The waiting game
 
@@ -181,7 +347,9 @@ The page polls this endpoint. It reports no other details.
 ## How the state is kept
 
 The state is one record on the Sync ephemeral `cloud-maintenance` (owner
-`cloud`, key `state`), next to the app registry. Core writes it. Every gateway
+`cloud`, key `state`), next to the app registry. Core writes it. Every app
+instance watches it for stage „Ruhe“ and keeps its last known stage when NATS
+is briefly unreachable. Every gateway
 watches it and keeps the last known state in memory when NATS is briefly
 unreachable. The record has a 7-day lease, which the gateway renews while
 maintenance is on when less than half of it remains. If every gateway is

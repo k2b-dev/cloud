@@ -13,6 +13,8 @@ export type PanelFollowHost = {
   atResource: () => boolean;
   /** The panel shows its start: the chat list it opens with, no chat, page or archive chosen. */
   atStart: () => boolean;
+  /** While true, the panel shows the discussion's loading state instead of the chat list it is about to leave. */
+  setFollowPending: (pending: boolean) => void;
   /** Counts every open the reader or the workspace starts. */
   opens: () => number;
   open: (next: Route) => Promise<OpenResult>;
@@ -49,8 +51,12 @@ export function followPanelContext(host: PanelFollowHost): () => void {
     const scope = context?.scope;
     const shown = host.resourceChat();
     const token = ++scopeToken;
-    if (scope && shown && scope.type === shown.ref.type && scope.id === shown.ref.id) return void returnFromFollow();
+    if (scope && shown && scope.type === shown.ref.type && scope.id === shown.ref.id) {
+      host.setFollowPending(false);
+      return void returnFromFollow();
+    }
     if (!scope) {
+      host.setFollowPending(false);
       host.setResourceChat(null);
       return void returnFromFollow();
     }
@@ -59,6 +65,8 @@ export function followPanelContext(host: PanelFollowHost): () => void {
     // The panel also follows from its start: a place shared only after it loaded (such as after "Allow" on the
     // context question) still opens its discussion, as long as the reader has not chosen a chat meanwhile.
     const following = host.atResource() || inflight !== null || (!shown && host.atStart());
+    // A discussion already shown stays while the next one loads; the list the panel is about to leave does not.
+    host.setFollowPending(following && !host.atResource());
     const opens = host.opens();
     locateResource(scope)
       .then(async (found) => {
@@ -68,7 +76,10 @@ export function followPanelContext(host: PanelFollowHost): () => void {
         // A chat the reader opened meanwhile, even one still loading, wins; a route an earlier follow put in place
         // does not count as the reader's choice.
         const moved = host.route() !== shownRoute && host.route() !== followedRoute;
-        if (!following || host.opens() !== opens || moved) return void host.setResourceChat(next);
+        if (!following || host.opens() !== opens || moved) {
+          host.setResourceChat(next);
+          return void host.setFollowPending(false);
+        }
         const target = resourceChatExists(next)
           ? host.chatRoute(next.id, next.thread ?? "all")
           : host.chatRoute(null, "all", { resource: true });
@@ -82,10 +93,14 @@ export function followPanelContext(host: PanelFollowHost): () => void {
         }
         if (token !== scopeToken) return;
         inflight = null;
+        // The discussion takes the loading frame's place before the frame goes, so the list never mounts between.
         host.setResourceChat(next);
+        host.setFollowPending(false);
       })
       .catch(() => {
-        if (token === scopeToken) host.setResourceChat(null);
+        if (token !== scopeToken) return;
+        host.setFollowPending(false);
+        host.setResourceChat(null);
       });
   };
   const dispose = onContextChange(follow);

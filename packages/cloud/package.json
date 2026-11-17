@@ -23,6 +23,10 @@
     "#block-view-schema": {
       "browser": "./src/blocks/view-schema-light.ts",
       "default": "./src/blocks/view-schema.ts"
+    },
+    "#chat-work-list": {
+      "browser": "./src/ai/chat/work-list-lazy.tsx",
+      "default": "./src/ai/chat/work-list-eager.tsx"
     }
   },
   "files": [

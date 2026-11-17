@@ -1,0 +1,6 @@
+### The shared-workstation test read the warning's focus before the dialog set it
+
+- **What happened:** "background work never extends the session; the warning's Keep working does" failed in a merge-queue run (#3577): right after the idle warning showed, "Keep working" did not have the focus yet. The same file passed on a fast machine.
+- **Root cause:** `dialogCore` shows the dialog first and applies `initialFocus` in the next animation frame. The test waited for the dialog to be visible and then read `document.activeElement` once, so on a busy runner it read the focus before that frame. Delaying the dialog's focus by 300 ms reproduced the failure locally; with the fix the test passes under the same delay. The product moved the focus correctly.
+- **Error class:** A browser test reads the focus once right after a dialog opens, although the dialog takes the focus a frame later.
+- **Guard:** The test now waits for the focus with `page.waitForFunction`. No repository check, because a rule cannot tell which of the more than one hundred one-time focus reads follow a dialog opening; most follow a key press or click that moves the focus at once. The convention in [Testing](/en/contributing/testing), "A dialog places its initial focus in the next frame after it opens", already covers the class.

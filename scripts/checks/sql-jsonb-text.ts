@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "@typescript/typescript6";
-import { listFiles, sourceFilePattern } from "./files";
+import { listFiles, parseSource, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const message =
@@ -10,7 +10,7 @@ const message =
 /** Inspect real tagged templates, including multiline/nested stringify expressions and local text aliases. */
 export function checkSqlJsonbTextSource(file: string, source: string): Finding[] {
   if (!/(?:::|\bAS)\s*(?:pg_catalog\.)?jsonb?\b/i.test(source)) return [];
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const { sourceFile, findings } = parseSource(file, source);
   // A file-local checker resolves lexical scopes and explicit string parameter types without loading dependencies.
   const host: ts.CompilerHost = {
     getSourceFile: (name) => (name === file ? sourceFile : undefined),
@@ -46,7 +46,6 @@ export function checkSqlJsonbTextSource(file: string, source: string): Finding[]
     }
     return false;
   };
-  const findings: Finding[] = [];
   const visit = (node: ts.Node): void => {
     if (ts.isTaggedTemplateExpression(node) && ts.isTemplateExpression(node.template)) {
       for (const [index, span] of node.template.templateSpans.entries()) {

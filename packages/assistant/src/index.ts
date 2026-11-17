@@ -1,3 +1,4 @@
+import { startRuntimeInterval } from "@k2b/cloud/services";
 import { websocket } from "hono/bun";
 import { assistantCapabilities } from "./capabilities";
 import { agentHost } from "./chat-code/agent-host";
@@ -9,15 +10,7 @@ import { apiRoutes, router } from "./router";
 
 let hostTimer: ReturnType<typeof setInterval> | undefined;
 let hostSweep: Promise<unknown> | undefined;
-let databaseTimer: ReturnType<typeof setInterval> | undefined;
-let databaseCleanup: Promise<unknown> | undefined;
-const sweep = () =>
-  (databaseCleanup ??= httpService
-    .cleanup()
-    .catch(() => console.warn("Assistant storage cleanup deferred"))
-    .finally(() => {
-      databaseCleanup = undefined;
-    }));
+let storageCleanup: ReturnType<typeof startRuntimeInterval> | undefined;
 
 const result = await app.start({
   fetch: router.fetch,
@@ -27,6 +20,7 @@ const result = await app.start({
   lifecycle: {
     setup: migrateAssistant,
     start: async () => {
+      // runtime-timer: closes idle and expired code hosts; releasing them is how in-flight work ends, so quiesce keeps it.
       hostTimer = setInterval(() => {
         hostSweep ??= agentHost
           .sweep()
@@ -36,16 +30,18 @@ const result = await app.start({
           });
       }, 1000);
       hostTimer.unref();
-      await sweep();
-      databaseTimer = setInterval(() => void sweep(), 30000);
-      databaseTimer.unref();
+      storageCleanup = startRuntimeInterval({
+        run: () => httpService.cleanup(),
+        intervalMs: 30_000,
+        onError: () => console.warn("Assistant storage cleanup deferred"),
+      });
     },
     stop: async () => {
       clearInterval(hostTimer);
       await hostSweep;
       await agentHost.close();
-      clearInterval(databaseTimer);
-      await databaseCleanup;
+      await storageCleanup?.stop();
+      storageCleanup = undefined;
     },
   },
 });
