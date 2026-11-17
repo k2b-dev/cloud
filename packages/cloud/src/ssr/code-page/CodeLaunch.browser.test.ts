@@ -3,11 +3,12 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
-import type { Browser, Page } from "playwright";
+import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
 import { HEAD_RUN_ID, HEAD_STATES, type HeadState } from "./head-action.fixture";
 
 let browser: Browser;
+const contexts = new Map<string, BrowserContext>();
 const harnessErrors = new WeakMap<Page, string[]>();
 let harness: string;
 let css: string;
@@ -67,56 +68,66 @@ beforeAll(async () => {
   browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
+  for (const context of contexts.values()) await context.close();
   await browser?.close();
 });
 
 const fixedNow = new Date("2026-11-14T12:49:04.000Z").getTime();
-const html = (locale: string) =>
-  `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${plex}</style><style>${css}</style><style>${icons}</style></head><body class="k2b-ui"><main id="root" style="padding:32px 24px;max-width:1440px;margin:auto"></main></body></html>`;
+const html = (locale: string, theme: string) =>
+  `<!doctype html><html lang="${locale}" data-theme="${theme}" class="${theme === "dark" ? "dark" : ""}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/__head.css"><script defer src="/__head.js"></script></head><body class="k2b-ui"><main id="root" style="padding:32px 24px;max-width:1440px;margin:auto"></main></body></html>`;
 async function open(state: HeadState, width: number, locale = "de", theme = "light") {
-  const page = await browser.newPage({
-    viewport: { width, height: width === 390 ? 780 : 900 },
-    reducedMotion: "reduce",
-    hasTouch: width === 390,
-    colorScheme: theme === "dark" ? "dark" : "light",
-  });
-  harnessErrors.set(page, pageErrors(page));
-  await page.addInitScript((at) => {
-    const RealDate = Date;
-    globalThis.Date = new Proxy(RealDate, {
-      construct: (target, args) => Reflect.construct(target, args.length ? args : [at]),
-      apply: () => new RealDate(at).toString(),
-      get: (target, key, receiver) => (key === "now" ? () => at : Reflect.get(target, key, receiver)),
+  const key = `${width}-${theme}`;
+  let context = contexts.get(key);
+  if (!context) {
+    context = await browser.newContext({
+      viewport: { width, height: width === 390 ? 780 : 900 },
+      reducedMotion: "reduce",
+      hasTouch: width === 390,
+      colorScheme: theme === "dark" ? "dark" : "light",
     });
-    let key = 0;
-    Object.defineProperty(crypto, "randomUUID", { value: () => `00000000-0000-4000-8000-${String(++key).padStart(12, "0")}` });
-  }, fixedNow);
-  await page.route("http://code.test/**", async (route) => {
-    if (route.request().resourceType() === "document") await route.fulfill({ contentType: "text/html", body: html(locale) });
-    else
-      await route.fulfill({
-        status: 503,
-        contentType: "application/json",
-        body: JSON.stringify({ error: { code: "app_unavailable", message: "Unavailable" } }),
+    contexts.set(key, context);
+  }
+  const page = await context.newPage();
+  try {
+    harnessErrors.set(page, pageErrors(page));
+    await page.addInitScript((at) => {
+      const RealDate = Date;
+      globalThis.Date = new Proxy(RealDate, {
+        construct: (target, args) => Reflect.construct(target, args.length ? args : [at]),
+        apply: () => new RealDate(at).toString(),
+        get: (target, key, receiver) => (key === "now" ? () => at : Reflect.get(target, key, receiver)),
       });
-  });
-  await page.goto(`http://code.test/?state=${state}&locale=${locale}`);
-  await page.evaluate((theme) => {
-    document.documentElement.dataset.theme = theme;
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, theme);
-  await page.addScriptTag({ content: harness });
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-  });
-  await settled(page);
-  return page;
+      let key = 0;
+      Object.defineProperty(crypto, "randomUUID", { value: () => `00000000-0000-4000-8000-${String(++key).padStart(12, "0")}` });
+    }, fixedNow);
+    await page.route("http://code.test/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path === "/__head.js") await route.fulfill({ contentType: "text/javascript", body: harness });
+      else if (path === "/__head.css") await route.fulfill({ contentType: "text/css", body: `${plex}\n${css}\n${icons}` });
+      else if (route.request().resourceType() === "document") await route.fulfill({ contentType: "text/html", body: html(locale, theme) });
+      else
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "app_unavailable", message: "Unavailable" } }),
+        });
+    });
+    await page.goto(`http://code.test/?state=${state}&locale=${locale}`);
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+    });
+    await settled(page);
+    return page;
+  } catch (error) {
+    await page.close();
+    throw error;
+  }
 }
 async function shot(page: Page, motif: string, width: number) {
   if (!process.env.CODE_HEAD_SHOTS) return;
   await settled(page);
   mkdirSync(process.env.CODE_HEAD_SHOTS, { recursive: true });
-  await page.screenshot({ path: resolve(process.env.CODE_HEAD_SHOTS, `${motif}-light-${width}.png`), fullPage: true });
+  await page.screenshot({ path: resolve(process.env.CODE_HEAD_SHOTS, `${motif}-light-${width}.png`), fullPage: false });
 }
 const boxes = (page: Page) =>
   page.evaluate(() =>
@@ -181,6 +192,10 @@ for (const width of [1440, 390]) {
           ),
         ).toEqual([]);
         await shot(page, state, width);
+        if (state === "both" && width === 390) {
+          await page.locator(".cloud-code__pages").scrollIntoViewIfNeeded();
+          await shot(page, "pages-and-addresses", width);
+        }
         expect(errors).toEqual([]);
       } finally {
         await page.close();
@@ -495,7 +510,7 @@ for (const width of [1440, 390]) {
       expect(colors.transition.split(",").every((duration) => duration.trim() === "0s")).toBe(true);
       expect(harnessErrors.get(page)).toEqual([]);
       if (process.env.CODE_HEAD_SHOTS)
-        await page.screenshot({ path: resolve(process.env.CODE_HEAD_SHOTS, `mailbox-dark-${width}.png`), fullPage: true });
+        await page.screenshot({ path: resolve(process.env.CODE_HEAD_SHOTS, `mailbox-dark-${width}.png`), fullPage: false });
     } finally {
       await page.close();
     }
