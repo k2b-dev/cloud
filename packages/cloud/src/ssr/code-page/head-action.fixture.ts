@@ -38,6 +38,7 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
   if (data.state.kind !== "ready") return data;
   data.dates.now = "2026-11-14T12:49:04.000Z";
   const state = data.state;
+  if (!state.runs) throw new Error("Expected run history in ready head fixture");
   // These head scenarios create reports and pages, not chat messages. The base personal fixture also covers chat.send.
   delete state.chatBinding;
   if (state.words?.current)

@@ -5,7 +5,7 @@ import { codePageMessages } from "./messages";
 
 const ready = () => {
   const data = headActionFixture("both");
-  if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
+  if (data.state.kind !== "ready" || !data.state.runs) throw new Error("Expected ready fixture with run history");
   return data.state;
 };
 test("the browser consumes Core's projection and localizes fallback titles without inferring eligibility from routes", () => {

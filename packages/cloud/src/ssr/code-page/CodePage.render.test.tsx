@@ -1593,7 +1593,7 @@ test("last and next starts share the request's timezone, including a DST change"
     ["America/New_York", "Mo, 19.10., 02:00", "Mo, 16.11., 02:00"],
   ]) {
     const data = headActionFixture("schedule");
-    if (data.state.kind !== "ready") throw new Error("Expected schedule fixture");
+    if (data.state.kind !== "ready" || !data.state.runs) throw new Error("Expected schedule fixture with run history");
     data.dates.timeZone = timeZone;
     const run = { ...data.state.runs.items[0]!, createdAt: "2026-10-19T06:00:00.000Z" };
     data.state.runs.items = [run];
