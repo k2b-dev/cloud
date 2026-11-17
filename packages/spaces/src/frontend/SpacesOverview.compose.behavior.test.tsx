@@ -18,6 +18,7 @@ test.skipIf(isServer)("a New task that fails says why and offers Retry, which tr
         initialActivity: { items: [], nextCursor: null },
         initialActivityError: null,
         dateConfig: { locale: "en", timeZone: "UTC" },
+        now: "2026-08-20T12:00:00.000Z",
       }),
     dom.root,
   );

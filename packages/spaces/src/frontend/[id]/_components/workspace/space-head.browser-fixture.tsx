@@ -187,6 +187,7 @@ export function OverviewFixture(props: ComponentProps<typeof SpacesOverview>) {
         initialActivity={props.initialActivity}
         initialActivityError={props.initialActivityError}
         dateConfig={props.dateConfig}
+        now={props.now}
       />
     </LocaleProvider>
   );

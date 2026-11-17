@@ -153,6 +153,107 @@ const emit = async (page: Page, event: AiWireEvent) => {
   await page.evaluate((value) => (window as unknown as { emit: (event: AiWireEvent) => void }).emit(value), event);
   await frames(page);
 };
+
+test("thinking details show only duration, including legacy model text, in both request languages", async () => {
+  const raw = "INTERNAL_INSTRUCTION code_Open42 22222222-2222-4222-8222-222222222222 code_run({code: 'return 42'})";
+  for (const locale of ["de", "en"])
+    for (const width of [1440, 390])
+      for (const theme of ["light", "dark"]) {
+        const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+        try {
+          const page = await context.newPage();
+          await page.addInitScript(pinPageDate, testNow);
+          await page.goto(`http://127.0.0.1:${server.port}/?lang=${locale}&theme=${theme}`);
+          await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+          await emit(page, { ...base, seq: 2, type: "block_set", block: { id: "thought", kind: "thinking", text: raw } });
+          await page.locator(".ai-turn-work > summary").click();
+          const thought = page.locator(".ai-turn-steps > .k2b-chat-activity").first();
+          const label = locale === "de" ? "Denkt nach" : "Thinking";
+          await thought.getByRole("button", { name: `Details: ${label}`, exact: true }).waitFor();
+          const before = await thought.boundingBox();
+          await hoverInPlace(thought.getByRole("button"));
+          const card = page.locator(".k2b-hover-card:popover-open");
+          await card.waitFor();
+          expect(await card.locator("p").innerText()).toBe("1 s");
+          expect(await thought.boundingBox()).toEqual(before);
+          for (const forbidden of ["INTERNAL_INSTRUCTION", "code_Open42", "22222222-2222-4222-8222-222222222222", "code_run", "return 42"])
+            expect(await page.locator("body").innerText()).not.toContain(forbidden);
+          await page.keyboard.press("Escape");
+          await card.waitFor({ state: "hidden" });
+          await emit(page, { ...base, seq: 3, type: "block_set", block: tool(1, "completed") });
+          expect(await thought.innerText()).toContain(locale === "de" ? "Nachgedacht" : "Thought it over");
+          expect(await thought.getByRole("button").count()).toBe(0);
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        } finally {
+          await context.close();
+        }
+      }
+}, 60_000);
+test("thinking details return keyboard focus to their work overview before disappearing", async () => {
+  for (const locale of ["de", "en"])
+    for (const ending of ["next-step", "turn-finished"])
+      for (const keepInfoFocus of [true, false]) {
+        const context = await browser.newContext({
+          viewport: { width: locale === "de" ? 390 : 1440, height: 900 },
+          reducedMotion: "reduce",
+        });
+        try {
+          const page = await context.newPage();
+          await page.addInitScript(pinPageDate, testNow);
+          await page.goto(`http://127.0.0.1:${server.port}/?lang=${locale}&theme=${locale === "de" ? "dark" : "light"}`);
+          const request = storedMessage(10, "turn", { role: "user", content: [{ type: "text", text: "Check the delivery notes" }] });
+          await emit(page, { ...base, seq: 1, type: "turn_started", modelId: "m", providerModel: "m", blocks: [] });
+          await emit(page, { ...base, seq: 2, type: "message_saved", message: request });
+          await emit(page, { ...base, seq: 3, type: "block_set", block: { id: "thought", kind: "thinking", text: "" } });
+          const summary = page.locator(".ai-turn-work > summary");
+          await summary.click();
+          const info = page.locator(".ai-turn-steps > .k2b-chat-activity").first().getByRole("button");
+          await info.waitFor();
+          await page.keyboard.press("Tab");
+          expect(await info.evaluate((button) => document.activeElement === button && button.matches(":focus-visible"))).toBe(true);
+          if (!keepInfoFocus)
+            await page.evaluate(() => {
+              const elsewhere = document.createElement("button");
+              elsewhere.id = "other-task";
+              elsewhere.textContent = "Another task";
+              elsewhere.style.position = "fixed";
+              elsewhere.style.bottom = "0";
+              document.body.append(elsewhere);
+              elsewhere.focus({ preventScroll: true });
+            });
+          await settled(page, ".ai-turn-work");
+          const before = await summary.boundingBox();
+          if (ending === "next-step") await emit(page, { ...base, seq: 4, type: "block_set", block: tool(1, "completed") });
+          else
+            await emit(page, {
+              ...base,
+              seq: 4,
+              type: "turn_finished",
+              status: "completed",
+              error: null,
+              messages: [
+                request,
+                storedMessage(11, "turn", { role: "assistant", content: [{ type: "thinking", thinking: "" }] }, { loopDoneReason: "stop" }),
+              ],
+            });
+          expect(await info.count()).toBe(0);
+          const focused = keepInfoFocus ? summary : page.locator("#other-task");
+          expect(await focused.evaluate((node) => document.activeElement === node && node.matches(":focus-visible"))).toBe(true);
+          if (keepInfoFocus) {
+            const ring = await summary.evaluate((node) => {
+              const style = getComputedStyle(node);
+              return { style: style.outlineStyle, width: parseFloat(style.outlineWidth), color: style.outlineColor };
+            });
+            expect(ring.style).toBe("solid");
+            expect(ring.width).toBeGreaterThan(0);
+            expect(ring.color).not.toBe("rgba(0, 0, 0, 0)");
+          }
+          expect(await summary.boundingBox()).toEqual(before);
+        } finally {
+          await context.close();
+        }
+      }
+}, 60_000);
 const reconnect = async (page: Page, on: boolean) => {
   await page.evaluate((value) => (window as unknown as { reconnect: (on: boolean) => void }).reconnect(value), on);
   await frames(page);

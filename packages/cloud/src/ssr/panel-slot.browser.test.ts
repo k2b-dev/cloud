@@ -50,7 +50,19 @@ beforeAll(async () => {
           name: "solid-panel-fixture",
           setup(builder) {
             builder.onLoad({ filter: /\.tsx$/ }, async ({ path }) => {
-              const transformed = await transformAsync(await Bun.file(path).text(), {
+              let source = await Bun.file(path).text();
+              if (path.endsWith("/ShellRuntime.island.tsx")) {
+                source = source.replace(
+                  "const panel = await importOnDemand",
+                  `
+                  if (sessionStorage.getItem("fixture-delay-panel-controller")) {
+                    document.documentElement.dataset.panelControllerWaiting = "true";
+                    await new Promise(resolve => window.addEventListener("fixture.resume-panel-controller", resolve, { once: true }));
+                  }
+                  const panel = await importOnDemand`,
+                );
+              }
+              const transformed = await transformAsync(source, {
                 filename: path,
                 babelrc: false,
                 configFile: false,
@@ -307,7 +319,7 @@ for (const width of [1440, 390]) {
 async function fixture(
   width = 1440,
   cookie?: string,
-  options: { focus?: boolean; hasTouch?: boolean; height?: number; ask?: boolean; motion?: boolean } = {},
+  options: { focus?: boolean; hasTouch?: boolean; height?: number; ask?: boolean; motion?: boolean; delayController?: boolean } = {},
 ) {
   const context = await browser.newContext({
     viewport: { width, height: options.height ?? 900 },
@@ -335,6 +347,9 @@ async function fixture(
       ...(cookie ? [{ name: "cloud_panel", value: cookie, url: origin }] : []),
     ]);
     const page = await context.newPage();
+    if (options.delayController) {
+      await page.addInitScript(() => sessionStorage.setItem("fixture-delay-panel-controller", "true"));
+    }
     await page.goto(`${origin}/app/fixture`);
     await page.waitForFunction(() => document.documentElement.dataset.panelHostMounted === "true");
     return { context, page };
@@ -969,6 +984,79 @@ for (const [width, height] of [
       await context.close();
     }
   });
+
+test("a panel menu click survives a delayed lazy controller mount", async () => {
+  const { context, page } = await fixture(1440, "1:fixture:", { delayController: true });
+  try {
+    await page.waitForFunction(() => document.documentElement.dataset.panelControllerWaiting === "true");
+    const placeholder = await page.getByRole("button", { name: "Panel menu", exact: true }).elementHandle();
+    await page.getByRole("button", { name: "Panel menu", exact: true }).click();
+    await page.evaluate(() => {
+      sessionStorage.removeItem("fixture-delay-panel-controller");
+      window.dispatchEvent(new Event("fixture.resume-panel-controller"));
+    });
+    await ready(page);
+    expect(await placeholder!.evaluate((element) => element.isConnected)).toBe(false);
+    expect(await page.getByRole("button", { name: "Panel menu", exact: true }).getAttribute("aria-expanded")).toBe("true");
+    expect(await page.getByRole("menuitemcheckbox", { name: "Share context", exact: true }).isVisible()).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("an open panel menu follows a delayed consent save without closing or replacing its row", async () => {
+  const { context, page } = await fixture(1440, "1:fixture:", { ask: true });
+  const saving = Promise.withResolvers<void>();
+  const response = Promise.withResolvers<void>();
+  try {
+    await page.route("**/api/me/panel-consent/fixture", async (route) => {
+      if (route.request().method() !== "PUT") return route.continue();
+      const saved = await route.fetch();
+      saving.resolve();
+      await response.promise;
+      await route.fulfill({ response: saved });
+    });
+    await ready(page);
+    await page.getByRole("button", { name: "Allow", exact: true }).click();
+    await saving.promise;
+    expect(await page.locator(slot).getAttribute("data-context-allowed")).toBe("false");
+    expect(await page.locator(slot).getAttribute("data-consent-saving")).toBe("true");
+    await page.getByRole("button", { name: "Panel menu", exact: true }).click();
+    const choice = page.getByRole("menuitemcheckbox", { name: "Share context", exact: true });
+    const row = await choice.elementHandle();
+    expect(await choice.isDisabled()).toBe(true);
+    response.resolve();
+    await page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.contextAllowed === "true");
+    expect(await page.locator(slot).getAttribute("data-consent-saving")).toBe("false");
+    expect(await row!.evaluate((element) => element.isConnected)).toBe(true);
+    expect(await choice.isVisible()).toBe(true);
+    expect(await choice.isDisabled()).toBe(false);
+    expect(await choice.getAttribute("aria-checked")).toBe("true");
+    await page.waitForFunction(() =>
+      document
+        .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
+        ?.contentDocument?.getElementById("panel-context-probe")
+        ?.textContent?.includes('"id":"place1"'),
+    );
+    await choice.click();
+    await page.waitForFunction(
+      () =>
+        document.getElementById("cloud-panel")?.dataset.contextAllowed === "false" &&
+        document.getElementById("cloud-panel")?.dataset.consentSaving === "false",
+    );
+    await page.waitForFunction(
+      () =>
+        document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentDocument?.getElementById("panel-context-probe")
+          ?.textContent === "null",
+    );
+    await page.locator("#change-context").click();
+    await settle(page);
+    expect(await page.frameLocator("[data-cloud-panel-frame]").locator("#panel-context-probe").textContent()).toBe("null");
+  } finally {
+    response.resolve();
+    await context.close();
+  }
+});
 
 test("Allow delivers the place live; the menu checkbox withdraws it and stops subsequent updates", async () => {
   const { context, page } = await fixture(1440, "1:fixture:", { ask: true });

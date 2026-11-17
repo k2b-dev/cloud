@@ -60,6 +60,7 @@ import {
   type TagEditorItem,
   TagsInput,
   TextInput,
+  TimeInput,
 } from "@k2b/ui";
 import { TextEditor } from "@k2b/ui/text-editor";
 import { batch, createSignal, createUniqueId, type JSX, onCleanup } from "solid-js";
@@ -854,6 +855,58 @@ const DateDemo = () => {
             { label: "Half day", minutes: 240 },
           ]}
         />
+      </div>
+    </DemoCard>
+  );
+};
+
+const TimeDemo = () => {
+  const [start, setStart] = createSignal<string | null>("09:30");
+  const [end, setEnd] = createSignal<string | null>("17:00");
+  const [opens, setOpens] = createSignal<string | null>("18:00");
+  const [closes, setCloses] = createSignal<string | null>("24:00");
+  const [reminder, setReminder] = createSignal<string | null>(null);
+  const [late, setLate] = createSignal<string | null>("16:00");
+  const endError = () => {
+    const from = start();
+    const to = end();
+    return from && to && to <= from ? "The end is before the start." : undefined;
+  };
+  const columns = { display: "grid", "grid-template-columns": "repeat(2, minmax(0, 10rem))", gap: "0.875rem" } as const;
+  return (
+    <DemoCard
+      id="time-input"
+      chip={[{ kind: "component", name: "TimeInput", from: "@k2b/ui" }]}
+      description="A clock time alone, as HH:mm. Type 9, 930 or 9:30 with the number keypad; Enter or leaving the field commits 09:30. Step snaps to a minute grid, min and max refuse a time outside them with the nearest allowed one, and max 24:00 allows until midnight. A refused text stays red with its reason and keeps the value; Escape restores it."
+      code={`<TimeInput label="Start" value={start} onValueChange={setStart} required />
+<TimeInput label="End" value={end} onValueChange={setEnd} required error={endError} />
+
+<TimeInput label="Opens" value={opens} onValueChange={setOpens} step={15} />
+<TimeInput label="Closes" value={closes} onValueChange={setCloses} step={15} max="24:00" />
+
+<TimeInput label="Reminder" description="Every weekday" value={reminder} onValueChange={setReminder} />
+<TimeInput label="Last pickup" value={late} onValueChange={setLate} min="08:00" max="18:00" />
+
+<TimeInput label="Start (disabled)" value="08:00" disabled />
+<TimeInput label="End (read only)" value="12:00" readOnly />`}
+    >
+      <div style={{ display: "grid", gap: "1.25rem" }}>
+        <div style={columns}>
+          <TimeInput label="Start" value={start} onValueChange={setStart} required />
+          <TimeInput label="End" value={end} onValueChange={setEnd} required error={endError} />
+        </div>
+        <div style={columns}>
+          <TimeInput label="Opens" value={opens} onValueChange={setOpens} step={15} />
+          <TimeInput label="Closes" value={closes} onValueChange={setCloses} step={15} max="24:00" />
+        </div>
+        <div style={columns}>
+          <TimeInput label="Reminder" description="Every weekday" value={reminder} onValueChange={setReminder} />
+          <TimeInput label="Last pickup" value={late} onValueChange={setLate} min="08:00" max="18:00" />
+        </div>
+        <div style={columns}>
+          <TimeInput label="Start (disabled)" value="08:00" disabled />
+          <TimeInput label="End (read only)" value="12:00" readOnly />
+        </div>
       </div>
     </DemoCard>
   );
@@ -2408,6 +2461,11 @@ const demos: DemoSection = {
   "period-picker": () => (
     <DemoGrid columns="one">
       <PeriodDemo />
+    </DemoGrid>
+  ),
+  "time-input": () => (
+    <DemoGrid columns="one">
+      <TimeDemo />
     </DemoGrid>
   ),
   "rich-select": () => <RichSelectDemo />,

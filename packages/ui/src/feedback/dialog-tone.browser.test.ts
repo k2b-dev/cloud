@@ -166,6 +166,12 @@ describe("@k2b/ui dialog tones", () => {
             expect(await header.locator(`[data-tone="${tones[variant]}"]`).count()).toBe(1);
             const title = await plain.locator("dialog[open] h2").textContent();
             expect(await toned.locator("dialog[open] h2").textContent()).toBe(title);
+            // Every ordinary primary action uses blue; semantic dialog tones never turn it into an AI action.
+            for (const button of await toned.locator('dialog[open] button[data-variant="primary"]').all()) {
+              expect(await button.evaluate((button) => getComputedStyle(button).backgroundColor)).toBe(
+                theme === "light" ? "rgb(29, 78, 216)" : "rgb(37, 99, 235)",
+              );
+            }
             await toned.getByRole("heading", { name: title!, exact: true }).waitFor();
             expect(
               await toned.locator("dialog[open]").evaluate((dialog) =>
