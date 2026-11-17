@@ -318,7 +318,8 @@ order:
    thinking is never included in step details, read APIs, or live updates.
    Without a separate summary, thinking details show only the available running
    duration; finished steps have no duration card because their individual
-   timing is not stored. A step's
+   timing is not stored. If its detail button has keyboard focus when it
+   disappears, focus returns to the work overview without scrolling. A step's
    outcome is one word in meta: Failed, No access, Rejected, Stopped,
    Cancelled, Waiting for you, or Outcome unclear; a step that went through
    says nothing there. Its details, such as the result, the reason and its
@@ -532,9 +533,11 @@ order:
    "Open", "Edit", or "Download" in the reader's language.
 
 A turn without tool calls or compaction, such as a plain answer, a steering
-marker, or an answer with only reasoning, has no work line. Its texts form the
-message. While such a turn reconnects, a calm "Reconnecting" row stands at its
-end, where it moves nothing above it. Pass `reconnecting`, such as
+marker, or an answer with only reasoning, has no work line unless the person
+opened its running work overview. That overview remains until they close it.
+Its texts form the message. While such a turn reconnects, a calm "Reconnecting"
+row stands at its end, where it moves nothing above it. Pass `reconnecting`,
+such as
 `() => chat.streamStatus() === "reconnecting"`, to `createAiChatTimeline` so
 a lost connection shows like a model retry; Assistant then leaves the
 composer's reconnecting notice to chats without a running turn. Steering and accepted survey answers split a turn into segments; each

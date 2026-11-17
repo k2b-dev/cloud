@@ -64,7 +64,13 @@ describe("public AI message projection", () => {
       message: {
         role: "assistant",
         content: [
-          { type: "thinking", thinking: reasoning, signature: "signed-thinking", redacted: "opaque-thinking" },
+          {
+            type: "thinking",
+            thinking: reasoning,
+            signature: "signed-thinking",
+            redacted: "opaque-thinking",
+            details: [{ type: "reasoning.encrypted", data: "opaque-details", index: 0 }],
+          },
           { type: "text", text: "Finished." },
         ],
       },
@@ -78,7 +84,15 @@ describe("public AI message projection", () => {
       ],
     });
     expect(original.message).toMatchObject({
-      content: [{ thinking: reasoning, signature: "signed-thinking", redacted: "opaque-thinking" }, {}],
+      content: [
+        {
+          thinking: reasoning,
+          signature: "signed-thinking",
+          redacted: "opaque-thinking",
+          details: [{ type: "reasoning.encrypted", data: "opaque-details", index: 0 }],
+        },
+        {},
+      ],
     });
   });
 
