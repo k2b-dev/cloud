@@ -1,18 +1,17 @@
-import { type DateContext, dates } from "@k2b/stdlib";
+import type { DateContext } from "@k2b/stdlib";
 import {
-  Avatar,
+  ActivityList,
   Button,
   Dropdown,
   FilterChip,
   FilterToggle,
   Placeholder,
   ScrollArea,
-  Skeleton,
   useLocale,
   VirtualFeed,
   type VirtualFeedController,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, on, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { unwrap } from "solid-js/store";
 import { apiClient } from "../../api/client";
 import { isMailActivityKind, MAIL_ACTIVITY_KINDS, type MailActivityKind } from "../../mail-activity-kinds";
@@ -30,10 +29,9 @@ import { mailEventsMessages } from "./mail-events-messages";
 import { type MailEventPages, mergeMailEventPages, type PresentedMailEvent, presentMailEvents } from "./mail-events-presentation";
 
 const PAGE_SIZE = "50";
-const SKELETON_ROWS = 8;
 /** Row heights in px: the avatar row, and one with a detail line below it. Day headings come on top. */
-const EVENT_ESTIMATE = 50;
-const EVENT_WITH_DETAIL_ESTIMATE = 58;
+const EVENT_ESTIMATE = 44;
+const EVENT_WITH_DETAIL_ESTIMATE = 64;
 
 const cloudAvatarSource = (userId: string | null, avatarHash: string | null): string | undefined =>
   userId && avatarHash ? `/api/accounts/users/${encodeURIComponent(userId)}/avatar?rev=${encodeURIComponent(avatarHash)}` : undefined;
@@ -139,12 +137,20 @@ export function MailEventsFeed(props: {
   selectedConversationId: string | null;
   currentUserId: string;
   dateConfig: DateContext;
+  /** The server's clock for the first render; one feed clock then updates all visible rows. */
+  now?: string;
   localTags: readonly LocalTag[];
   onOpenHref: (href: string) => void;
   onOpenConversation: (href: string, conversationId: string, subject: string) => void;
   onRetry: () => void;
 }) {
   const locale = useLocale();
+  const [now, setNow] = createSignal(props.now ? new Date(props.now) : new Date());
+  onMount(() => {
+    setNow(new Date());
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    onCleanup(() => clearInterval(timer));
+  });
   const t = createMemo(() => mailEventsMessages.resolve([locale()]).t);
   const pages = () => props.feed.pages();
   const loadingMore = () => props.feed.loadingMore();
@@ -173,7 +179,7 @@ export function MailEventsFeed(props: {
       locale: locale(),
       currentUserId: props.currentUserId,
       dateConfig: props.dateConfig,
-      now: new Date(),
+      now: now(),
       tagName: (id) => props.localTags.find((tag) => tag.id === id)?.name,
     }).map((row) => {
       const key = JSON.stringify(row);
@@ -217,46 +223,38 @@ export function MailEventsFeed(props: {
     props.onOpenConversation(eventHref(conversationId), conversationId, row.subject ?? "");
   };
 
-  const rowContent = (row: PresentedMailEvent) => (
-    <>
-      <Show
-        when={row.automated}
-        fallback={
-          <Avatar
-            name={row.actorLabel}
-            src={row.event.actor.kind === "user" ? cloudAvatarSource(row.event.actor.id, row.event.actor.avatarHash) : undefined}
-            icon={row.event.actor.kind === "system" ? "ti ti-mail" : undefined}
-            size="sm"
-          />
-        }
-      >
-        <span class="mail-event__robot" aria-hidden="true">
-          <i class="ti ti-robot" />
-        </span>
-      </Show>
-      <span class="mail-event__text">
-        <span class="mail-event__line">
-          <span class="mail-event__icon" data-tone={row.tone} aria-hidden="true">
-            <i class={row.icon} />
-          </span>
-          <b class="mail-event__actor">{row.actorLabel}</b> {row.before}
-          <Show when={row.subject}>{(subject) => <span class="mail-event__subject">{subject()}</span>}</Show>
+  const activityRow = (row: PresentedMailEvent) => (
+    <ActivityList.Row
+      class="mail-events__row"
+      dateConfig={props.dateConfig}
+      now={now()}
+      selected={row.event.conversationId !== null && row.event.conversationId === props.selectedConversationId}
+      onNavigate={(event) => open(event, row)}
+      entry={{
+        at: row.event.createdAt,
+        actor: row.actorLabel,
+        avatar: {
+          name: row.actorLabel,
+          kind: row.automated || row.event.actor.kind === "service_account" ? "service" : row.event.actor.kind === "user" && row.event.actor.id ? "person" : "system",
+          src: row.event.actor.kind === "user" ? cloudAvatarSource(row.event.actor.id, row.event.actor.avatarHash) : undefined,
+        },
+        icon: row.icon,
+        tone: row.tone === "error" ? "danger" : row.tone === "warning" ? "warning" : "neutral",
+        text: <>
+          {row.before}
+          <Show when={row.subject}>{(subject) => <span>{subject()}</span>}</Show>
           {row.after}
-          <Show when={row.count > 1}>
-            <span class="mail-event__count"> · {t().times({ count: row.count })}</span>
-          </Show>
-        </span>
-        <Show when={row.detail}>{(detail) => <span class="mail-event__detail">{detail()}</span>}</Show>
-      </span>
-      <time class="mail-event__time" dateTime={row.event.createdAt} title={dates.formatDateTime(row.event.createdAt, props.dateConfig)}>
-        {row.time}
-      </time>
-    </>
+          <Show when={row.count > 1}> · {t().times({ count: row.count })}</Show>
+        </>,
+        detail: row.detail,
+        href: row.event.conversationId ? eventHref(row.event.conversationId) : undefined,
+      }}
+    />
   );
 
   return (
     <section class="mail-events" aria-label={t().feedLabel} aria-busy={props.loading || loadingMore()} data-mail-events>
-      <div class="mail-events__filters" data-mail-events-filters>
+      <ScrollArea orientation="horizontal" class="mail-events__filters" data-mail-events-filters>
         <FilterChip
           label={props.filter.kind ? t().kindValue({ kind: kindLabel(props.filter.kind) }) : t().kind}
           icon="ti ti-filter"
@@ -291,15 +289,15 @@ export function MailEventsFeed(props: {
           ]}
         >
           <Dropdown.Trigger
-            appearance="plain"
-            class="k2b-filter-chip"
+            variant="ghost"
+            size="sm"
             data-active={props.filter.actorId ? "true" : undefined}
             label={actorName() ? t().personValue({ name: actorName()! }) : t().person}
             data-mail-events-person
           >
             <i class="ti ti-user" aria-hidden="true" />
-            <span class="k2b-filter-chip__label">{actorName() ? t().personValue({ name: actorName()! }) : t().person}</span>
-            <i class="ti ti-chevron-down k2b-filter-chip__chevron" aria-hidden="true" />
+            <span>{actorName() ? t().personValue({ name: actorName()! }) : t().person}</span>
+            <i class="ti ti-chevron-down" aria-hidden="true" />
           </Dropdown.Trigger>
         </Dropdown.Root>
         <FilterToggle
@@ -318,7 +316,7 @@ export function MailEventsFeed(props: {
             {t().reset}
           </Button>
         </Show>
-      </div>
+      </ScrollArea>
       <Show
         when={!props.loading && pages() && rows().length > 0}
         fallback={
@@ -326,17 +324,8 @@ export function MailEventsFeed(props: {
             <Show
               when={!props.loading}
               fallback={
-                <div class="mail-events__skeleton" role="status" aria-live="polite">
-                  <span class="sr-only">{t().loading}</span>
-                  <For each={Array.from({ length: SKELETON_ROWS }, (_, index) => index)}>
-                    {(index) => (
-                      <div class="mail-event mail-event--skeleton">
-                        <Skeleton class="mail-event__skeleton-avatar" />
-                        <Skeleton class={`mail-event__skeleton-line mail-event__skeleton-line--${index % 3}`} />
-                        <Skeleton class="mail-event__skeleton-time" />
-                      </div>
-                    )}
-                  </For>
+                <div class="mail-events__skeleton">
+                  <ActivityList.Loading label={t().loading} />
                 </div>
               }
             >
@@ -389,19 +378,7 @@ export function MailEventsFeed(props: {
         >
           {(row) => (
             <div data-mail-event={row.event.id} data-tone={row.tone}>
-              <Show when={row.event.conversationId} fallback={<div class="mail-event">{rowContent(row)}</div>}>
-                {(conversationId) => (
-                  <a
-                    class="mail-event mail-event--link"
-                    href={eventHref(conversationId())}
-                    aria-current={conversationId() === props.selectedConversationId ? "true" : undefined}
-                    title={t().openConversation({ subject: row.subject ?? "" })}
-                    onClick={(event) => open(event, row)}
-                  >
-                    {rowContent(row)}
-                  </a>
-                )}
-              </Show>
+              {activityRow(row)}
             </div>
           )}
         </VirtualFeed>

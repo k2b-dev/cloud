@@ -110,7 +110,7 @@ const renderFeed = async (input: { page: MailEventsPage | null; error?: string |
 test.skipIf(isServer)("lists events under their day, opens a conversation in place, and leaves events without one unlinked", async () => {
   const feed = await renderFeed({
     page: page([
-      event("3", { action: "message.sent", metadata: { result: "failed", intent: "reply" } }),
+      event("3", { actor: { kind: "user", id: MIRA, displayName: "Mira Schulz", avatarHash: "fixture-picture" }, action: "message.sent", metadata: { result: "failed", intent: "reply" } }),
       event("2", { action: "draft.created", conversationId: null, conversationSubject: null }),
       event("1", {
         actor: { kind: "workflow", id: null, displayName: "Rechnungen", avatarHash: null },
@@ -120,10 +120,14 @@ test.skipIf(isServer)("lists events under their day, opens a conversation in pla
   });
   try {
     expect(feed.text()).toContain("Heute");
+    expect(feed.dom.root.querySelectorAll(".k2b-activity__entry")).toHaveLength(3);
+    expect(feed.dom.root.querySelectorAll("[data-mail-event] [title]")).toHaveLength(0);
+    expect(feed.dom.root.querySelector("[data-mail-events-person]")?.classList.contains("k2b-filter-chip")).toBe(false);
     expect(feed.rows().map((row) => row.dataset.tone)).toEqual(["error", "draft", "automation"]);
+    expect(feed.rows()[0]?.querySelector("img")?.getAttribute("src")).toBe(`/api/accounts/users/${MIRA}/avatar?rev=fixture-picture`);
     expect(feed.rows()[0]?.textContent).toContain("Details in der Unterhaltung.");
     expect(feed.rows()[1]?.querySelector("a")).toBeNull();
-    expect(feed.rows()[2]?.querySelector(".mail-event__robot")).not.toBeNull();
+    expect(feed.rows()[2]?.querySelector(".k2b-activity__avatar .ti-robot")).not.toBeNull();
     const link = feed.rows()[0]!.querySelector<HTMLAnchorElement>("a")!;
     expect(link.getAttribute("href")).toBe("/app/mail/Box001?view=events&conversation=Conv01");
     link.click();
@@ -194,7 +198,7 @@ test.skipIf(isServer)("shows the empty, filtered empty, loading and error states
   }
   const loading = await renderFeed({ page: page([event("1")]), loading: true });
   try {
-    expect(loading.dom.root.querySelector(".mail-events__skeleton[role='status']")?.textContent).toContain("Ereignisse werden geladen");
+    expect(loading.dom.root.querySelector(".mail-events__skeleton [role='status']")?.getAttribute("aria-label")).toContain("Ereignisse werden geladen");
     expect(loading.rows()).toHaveLength(0);
     // The chips stay in place while the feed loads.
     expect(loading.dom.root.querySelector("[data-mail-events-filters]")).not.toBeNull();

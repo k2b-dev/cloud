@@ -94,7 +94,7 @@ const errorMessage = async (response: Pick<Response, "json">, fallback: string) 
 const activityDescription = (item: ActivityItem, locale: string): string =>
   describeOverviewActivity(item.action, {
     locale,
-    target: item.note ? `“${item.note.title}”` : item.notebook.name,
+    target: item.note ? (locale.startsWith("de") ? `„${item.note.title}“` : `“${item.note.title}”`) : item.notebook.name,
     notebook: item.notebook.name,
   });
 
@@ -217,7 +217,7 @@ export default function NotebooksOverview(props: Props) {
     },
   ];
 
-  // The row links to the note or notebook; the person stands in the meta line, "automatic" for the system.
+  // The row links to the note or notebook; the actor and avatar start the sentence, "automatic" for the system.
   const activityEntries = (): ActivityEntry[] =>
     activityItems().map((item) => ({
       id: item.id,
@@ -226,6 +226,13 @@ export default function NotebooksOverview(props: Props) {
       text: activityDescription(item, locale()),
       href: activityHref(item),
       actor: item.actor.kind === "system" ? null : item.actor.displayName,
+        avatar: {
+          name: item.actor.displayName,
+          kind: item.actor.kind === "service_account" ? "service" : item.actor.kind === "user" && item.actor.id ? "person" : "system",
+          src: item.actor.kind === "user" && item.actor.id && item.actor.avatarHash
+            ? `/api/accounts/users/${encodeURIComponent(item.actor.id)}/avatar?rev=${encodeURIComponent(item.actor.avatarHash)}`
+            : undefined,
+        },
     }));
   const reloadActivity = () => {
     setInitialActivityError(null);

@@ -40,18 +40,24 @@ const entry: ActivityEntry = {
 ```
 
 - **One row:** a 24 px `Avatar`, the actor and sentence in 14 px, then the
-  time in 13 px on the right. String actors get initials; JSX actors keep
-  their text and a neutral person avatar. Without an actor, the row reads
+  time in 13 px on the right. Pass `avatar: { name, kind, src? }` for identity: `person` keeps profile
+  pictures or coloured initials, `service` shows a neutral square robot, and
+  `system` shows a neutral glyph for automatic or deleted identities. Without
+  `avatar`, string actors get initials and JSX actors keep a neutral glyph. Without an actor, the row reads
   "automatic" with a neutral system avatar. Within the last week the time
   names the hour alone, before that the day and hour.
 - **Surface:** both sides keep the Mail list's 0.5rem inset. Rows use
   `--k2b-radius-control`, the FileGrid list's 0.5rem / 0.75rem padding, and
-  Mail's 2.75rem single-line minimum height. Hover uses
-  `--k2b-edge-hover-bg`; folded-out details use `--k2b-row-selected`.
+  Mail's 2.75rem single-line minimum height. The avatar starts 1.25rem
+  inside the list viewport: 0.5rem surface inset plus 0.75rem row padding.
+  Hover uses the translucent `--k2b-app-workspace-hover`, so elevated and
+  base surfaces both respond. Only `Row selected` uses `--k2b-row-selected`;
+  expanding details leaves the surface unchanged.
   Hover, focus, and selection change only paint.
 - **Icons:** ordinary kind and success icons are redundant with the sentence
   and stay hidden. Warning, danger, or an explicit `iconLabel` retain a
-  small status mark at the avatar, outside the text axis.
+  small status mark at the avatar, outside the text axis. `icon` is optional;
+  warnings and failures without one use an alert glyph.
 - **Text:** sentences wrap in full, including on a phone. They have no
   tooltip or native `title`. Dates expose their full instant and distance
   as screen-reader text, without a hover hint.
@@ -78,6 +84,27 @@ const entry: ActivityEntry = {
 - **Focus:** every row is a focus target with `tabindex="-1"`, outside the
   tab order. Put a `data-*` attribute on it with `attrs`, and move focus there
   after a reload, such as after "Send again".
+
+## A row inside VirtualFeed
+
+`ActivityList.Row` renders the same row as a `div`, without a timeline or day
+dividers. The feed owns ordering, grouping, pagination, and the clock. Pass
+`now` from the server and update it in the parent when relative time should
+advance; each row creates no timer. `selected` marks the currently open
+object. `onNavigate(event)` handles its sentence link, including Enter;
+leave modified clicks untouched so the browser can open another tab.
+
+```tsx
+<VirtualFeed anchor="start" items={entries()} getKey={(entry) => entry.id!}
+  estimateSize={() => 44} label="Mailbox events">
+  {(entry) => <ActivityList.Row entry={entry} now={data.now}
+    selected={entry.id === selectedId()} onNavigate={(event) => navigate(event)} />}
+</VirtualFeed>
+```
+
+Use the same 0.5rem inset around each feed row as around the timeline.
+Keep application filters outside the row; a mailbox may filter on the server
+and preserve those filters in the URL.
 
 ## Densities
 
@@ -120,9 +147,9 @@ N" counts rows, bundles as one. The dialog
 shows the list in the wide density, `subtitle` under its title, and a filter
 by `kinds`. The `ChoiceChips` filter counts entries, not rows, shows only kinds with
 entries, and appears only from three choices on ("All" and two kinds). The
-chips scroll horizontally on a phone. A compact `ScrollArea` keeps the
-history viewport at one height while filtering, so the heading and filters
-stay in place.
+chips scroll horizontally on a phone. The dialog keeps a stable height of
+`min(40rem, 70dvh)` and its inset `ScrollArea` fills the remaining space.
+The heading, filters, and equal side margins stay in place while filtering.
 
 Build `entries` in a getter, never in `createMemo`: sentences and details are
 JSX, and the card and the dialog each need nodes of their own.
@@ -171,6 +198,7 @@ const entries = (): ActivityEntry[] =>
     text: event.kind === "mail" ? "Sent by email" : "Draft changed",
     bundle: event.kind === "mail" ? undefined : { key: "draft", text: (count) => `Draft changed ${count} times` },
     actor: event.person,
+    avatar: { name: event.person, kind: "person", src: event.avatarUrl },
     kind: event.kind,
   }));
 

@@ -955,6 +955,13 @@ export default function NotebookDetailPanel(props: Props) {
    * show; until then the rail fades out above "Show more" and "Load older". A change links to the versions; a comment
    * reveals itself in the comments.
    */
+  const activityAvatar = (actor: NotebookActivityActor | null | undefined): ActivityEntry["avatar"] => ({
+    name: actor?.displayName ?? "",
+    kind: actor?.kind === "service_account" ? "service" : actor?.kind === "user" && actor.id ? "person" : "system",
+    src: actor?.kind === "user" && actor.id && actor.avatarHash
+      ? `/api/accounts/users/${encodeURIComponent(actor.id)}/avatar?rev=${encodeURIComponent(actor.avatarHash)}`
+      : undefined,
+  });
   const activityEntries = (): ActivityEntry[] => [
     ...visibleActivity().map((item): ActivityEntry => {
       const href = activityHref(item);
@@ -966,6 +973,7 @@ export default function NotebookDetailPanel(props: Props) {
         href,
         onOpen: href ? undefined : () => revealComment(item),
         actor: item.actor.kind === "system" ? null : actorName(item.actor),
+        avatar: activityAvatar(item.actor),
         attrs: { "data-activity-id": item.id },
       };
     }),
@@ -978,6 +986,7 @@ export default function NotebookDetailPanel(props: Props) {
             text: t().createdNote,
             href: buildVersionsUrl(props.notebookId, noteId()),
             actor: authors().createdBy ? actorName(authors().createdBy) : null,
+            avatar: activityAvatar(authors().createdBy),
           },
         ]
       : []),

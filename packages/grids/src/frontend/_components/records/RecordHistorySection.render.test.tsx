@@ -75,9 +75,18 @@ describe("Record history", () => {
     expect(html).not.toContain('<i class="ti ti-pencil"');
     expect(html).toContain("k2b-activity__avatar");
     expect(html).not.toContain(" title=");
+    // Deleted and system actors use neutral glyphs, never coloured initials.
+    expect(html.match(/class="ti ti-settings"/g)).toHaveLength(2);
+    expect(html.match(/data-tint=/g)).toHaveLength(1);
     // The before and after of a field fold out from its row and are not rendered until then.
     expect(html).toMatch(/<button type="button" class="k2b-activity__text-button" aria-expanded="false"/);
     expect(plain).not.toContain("Open → Done");
+  });
+
+  test("keeps the person's profile picture on the shared row", () => {
+    const html = render({ entries: [entry({ userAvatarHash: "fixture-picture" })] });
+    expect(html).toContain('/api/accounts/users/11111111-1111-4111-8111-111111111111/avatar?rev=fixture-picture');
+    expect(html).not.toContain('class="ti ti-settings"');
   });
 
   test("keeps the server clock when the browser starts across midnight", () => {

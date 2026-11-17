@@ -79,6 +79,19 @@ describe("mail activity presentation", () => {
 
     expect(mailActivityIcon(workflowEvent)).toBe("ti-tag");
     expect(mailActivityActorLabel(workflowEvent)).toBe("Workflow Invoice triage");
+    expect(mailActivityEntry(workflowEvent).avatar).toMatchObject({ kind: "service", name: "Invoice triage" });
+  });
+
+  test("keeps profile pictures and distinguishes service and system identities", () => {
+    const person = { ...event(), actor: { kind: "user" as const, id: "user-1", displayName: "Ada", avatarHash: "fixture-picture" } };
+    expect(mailActivityEntry(person).avatar).toEqual({
+      name: "Ada", kind: "person", src: "/api/accounts/users/user-1/avatar?rev=fixture-picture",
+    });
+    const service = { ...event(), actor: { kind: "service_account" as const, id: "service-1", displayName: "Import", avatarHash: null } };
+    expect(mailActivityEntry(service).avatar?.kind).toBe("service");
+    const system = { ...event(), actor: { kind: "system" as const, id: null, displayName: "Mail", avatarHash: null } };
+    expect(mailActivityEntry(system).avatar?.kind).toBe("system");
+    expect(mailActivityEntry({ ...person, actor: { ...person.actor, id: null, avatarHash: null } }).avatar?.kind).toBe("system");
   });
 
   test("names who started and stopped keeping a conversation", () => {

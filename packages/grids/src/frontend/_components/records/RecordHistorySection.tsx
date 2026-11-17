@@ -123,6 +123,13 @@ export function RecordHistoryList(props: HistoryProps) {
         text: formatRecordHistoryAction(entry.action, locale()),
         detail: detail || undefined,
         actor: entry.userDisplayName ?? (entry.userId === null ? t().systemActor : t().deletedUser),
+        avatar: {
+          name: entry.userDisplayName ?? "",
+          kind: entry.userId !== null && entry.userDisplayName ? "person" : "system",
+          src: entry.userId && entry.userAvatarHash
+            ? `/api/accounts/users/${encodeURIComponent(entry.userId)}/avatar?rev=${encodeURIComponent(entry.userAvatarHash)}`
+            : undefined,
+        },
         details:
           answers.length > 0 || fieldsChanged.length > 0
             ? () => (

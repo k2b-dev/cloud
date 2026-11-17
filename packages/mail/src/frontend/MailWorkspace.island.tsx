@@ -173,6 +173,8 @@ type MailWorkspaceProps = {
   currentUserEmail: string | null;
   contactDirectory: MailContactDirectory;
   dateConfig: DateContext;
+  /** Serialized server time, shared with the Events feed's first browser render. */
+  now?: string;
   initialPreferences: MailWorkspacePreferences;
   initialUserPreferences: MailUserPreferences;
   /** `null` under Automatic: only the browser knows the device scheme, and it is read on mount. */
@@ -3220,6 +3222,7 @@ function MailboxWorkspace(props: Omit<MailboxControllerProps, keyof MailboxSessi
       currentUserId={props.currentUserId}
       dateConfig={props.dateConfig}
       localTags={controller().data.localTags}
+      now={props.now}
       onOpenHref={(href) => void controller().openWorkspaceHref(href)}
       onOpenConversation={(href, conversationId, subject) => void controller().openEventConversation(href, conversationId, subject)}
       onRetry={() => void controller().reconcileWorkspace()}

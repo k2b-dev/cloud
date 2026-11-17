@@ -120,6 +120,13 @@ export const mailActivityEntry = (event: MailActivityEvent, locale = "en"): Acti
     iconLabel: failed ? t.activityFailed : undefined,
     text: label,
     actor: mailActivityActorLabel(event, locale),
+    avatar: {
+      name: event.actor.displayName,
+      kind: event.actor.kind === "workflow" || event.actor.kind === "service_account" ? "service" : event.actor.kind === "user" && event.actor.id ? "person" : "system",
+      src: event.actor.kind === "user" && event.actor.id && event.actor.avatarHash
+        ? `/api/accounts/users/${encodeURIComponent(event.actor.id)}/avatar?rev=${encodeURIComponent(event.actor.avatarHash)}`
+        : undefined,
+    },
     bundle: { key: `${event.actor.kind}:${event.actor.id ?? ""}:${label}`, text: (count) => t.activityRepeated({ label, count }) },
   };
 };

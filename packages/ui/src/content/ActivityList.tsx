@@ -1,5 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { Button } from "../actions/Button";
 import { InlineGuidance } from "../feedback/InlineGuidance";
 import { prompts } from "../feedback/prompts";
@@ -36,6 +37,13 @@ export type ActivityAction = {
   data?: string;
 };
 
+/** Identity for the avatar; the actor text stays application-owned. Deleted identities use `system`. */
+export type ActivityAvatar = {
+  name: string;
+  kind: "person" | "service" | "system";
+  src?: string | null;
+};
+
 export type ActivityEntry = {
   /**
    * Stable key of the entry, such as its record id; unique within the list. With it a row keeps its node, folded-out
@@ -46,7 +54,7 @@ export type ActivityEntry = {
   /** ISO instant. */
   at: string;
   /** Kind icon, shown as a status mark for warning, danger, or an explicit `iconLabel`. */
-  icon: string;
+  icon?: string;
   tone?: ActivityTone;
   /** Name of the icon for screen readers, when the sentence does not say it already. */
   iconLabel?: string;
@@ -62,6 +70,7 @@ export type ActivityEntry = {
   detail?: JSX.Element;
   /** Who did it, shown before the sentence; without one the row reads "automatic". */
   actor?: JSX.Element | null;
+  avatar?: ActivityAvatar;
   action?: ActivityAction | null;
   /** A click on the entry opens it, such as its dialog. */
   onOpen?: () => void;
@@ -105,6 +114,33 @@ export type ActivityListProps = ActivityTimeProps & {
   label?: string;
   class?: string;
 };
+
+/** A single row inside a feed. The caller owns ordering, grouping, pagination, and the clock. */
+export type ActivityRowProps = ActivityTimeProps & {
+  entry: ActivityEntry;
+  /** Marks the currently open object, independently of expanded details. */
+  selected?: boolean;
+  /** Handles the sentence link, including keyboard activation. Leave modified clicks to the browser. */
+  onNavigate?: (event: MouseEvent) => void;
+  class?: string;
+};
+
+function ActivityStandaloneRow(props: ActivityRowProps): JSX.Element {
+  const context = useActivityContext(props);
+  const initial = new Date();
+  return (
+    <ActivityRowItem
+      entry={props.entry}
+      all={[props.entry]}
+      now={props.now ? new Date(props.now) : initial}
+      locale={context.locale()}
+      timeZone={context.timeZone()}
+      selected={props.selected}
+      onNavigate={props.onNavigate}
+      class={props.class}
+    />
+  );
+}
 
 /** Bundle key of an entry: its bundle key and its actor; without `bundle` never bundled. */
 const activityBundleKey = (entry: ActivityEntry): string | null =>
@@ -208,6 +244,7 @@ function ActivityListRoot(props: ActivityListProps): JSX.Element {
                 entry={entry()}
                 all={all()}
                 now={now()}
+                listItem
                 first={index() === 0}
                 end={last() ? (fades() ? "more" : "last") : undefined}
                 locale={context.locale()}
@@ -225,8 +262,12 @@ function ActivityRowItem(props: {
   entry: ActivityEntry;
   all: readonly ActivityEntry[];
   now: Date;
-  first: boolean;
-  end: "last" | "more" | undefined;
+  listItem?: boolean;
+  first?: boolean;
+  end?: "last" | "more";
+  selected?: boolean;
+  onNavigate?: (event: MouseEvent) => void;
+  class?: string;
   locale: string;
   timeZone: string;
 }): JSX.Element {
@@ -262,9 +303,10 @@ function ActivityRowItem(props: {
     else link?.click();
   };
   const actor = () => e().actor ?? t().activityAutomatic;
-  const avatarName = () => {
-    const value = e().actor;
-    return typeof value === "string" ? value : "";
+  const avatar = (): ActivityAvatar => {
+    const entry = e();
+    const actor = entry.actor;
+    return entry.avatar ?? { name: typeof actor === "string" ? actor : "", kind: typeof actor === "string" ? "person" : "system" };
   };
   const marked = () => e().tone === "warning" || e().tone === "danger" || Boolean(e().iconLabel);
   const meta = () => (
@@ -312,10 +354,12 @@ function ActivityRowItem(props: {
   return (
     // tabindex -1: the target for focus after a reload, never in the tab order.
     // biome-ignore lint/a11y/useKeyWithClickEvents: the sentence's own button is the keyboard target; a row click only widens the pointer target.
-    <li
+    <Dynamic
+      component={props.listItem ? "li" : "div"}
       {...e().attrs}
       tabindex="-1"
-      class="k2b-activity__entry"
+      class={props.class ? `k2b-activity__entry ${props.class}` : "k2b-activity__entry"}
+      data-selected={props.selected ? "" : undefined}
       data-first={props.first ? "" : undefined}
       data-end={props.end}
       data-clickable={clickable() ? "" : undefined}
@@ -329,17 +373,19 @@ function ActivityRowItem(props: {
       <span class="k2b-activity__avatar">
         <span aria-hidden="true">
           <Avatar
-            name={avatarName()}
+            name={avatar().name}
+            src={avatar().src}
             size="xs"
-            tone={avatarName() ? "person" : "neutral"}
-            icon={avatarName() ? undefined : e().actor ? "ti ti-user" : "ti ti-settings"}
+            shape={avatar().kind === "service" ? "square" : "circle"}
+            tone={avatar().kind === "person" ? "person" : "neutral"}
+            icon={avatar().kind === "service" ? "ti ti-robot" : avatar().kind === "system" ? "ti ti-settings" : undefined}
           />
         </span>
         <Show when={marked()}>
           <span class="k2b-activity__icon" data-tone={TONES[e().tone ?? "neutral"]}>
             {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: a named icon is an image. */}
             <i
-              class={e().icon}
+              class={e().icon ?? "ti ti-alert-triangle"}
               role={e().iconLabel ? "img" : undefined}
               aria-label={e().iconLabel}
               aria-hidden={e().iconLabel ? undefined : "true"}
@@ -371,7 +417,13 @@ function ActivityRowItem(props: {
               }
             >
               {(target) => (
-                <a ref={link} class="k2b-activity__text-link" href={target()}>
+                <a
+                  ref={link}
+                  class="k2b-activity__text-link"
+                  href={target()}
+                  aria-current={props.selected ? "true" : undefined}
+                  onClick={(event) => props.onNavigate?.(event)}
+                >
                   {text()}
                 </a>
               )}
@@ -387,7 +439,7 @@ function ActivityRowItem(props: {
         <Show when={open() && e().details}>{(show) => <div class="k2b-activity__details">{show()(props.all)}</div>}</Show>
       </div>
       {meta()}
-    </li>
+    </Dynamic>
   );
 }
 
@@ -461,6 +513,7 @@ function ActivityEmpty(props: { text?: JSX.Element }): JSX.Element {
 }
 
 type ActivityListComponent = ((props: ActivityListProps) => JSX.Element) & {
+  Row: typeof ActivityStandaloneRow;
   Loading: typeof ActivityLoading;
   Empty: typeof ActivityEmpty;
   Error: typeof ActivityError;
@@ -468,6 +521,7 @@ type ActivityListComponent = ((props: ActivityListProps) => JSX.Element) & {
 };
 
 export const ActivityList: ActivityListComponent = Object.assign(ActivityListRoot, {
+  Row: ActivityStandaloneRow,
   Loading: ActivityLoading,
   Empty: ActivityEmpty,
   Error: ActivityError,
@@ -636,7 +690,7 @@ function ActivityDialogContent(props: ActivityDialogInput): JSX.Element {
           <ChoiceChips aria-label={t().activityFilter} value={kind()} options={options()} onValueChange={setKind} />
         </div>
       </Show>
-      <ScrollArea viewportSize="compact">
+      <ScrollArea inset class="k2b-activity-dialog__list">
         <Show when={props.entries().length > 0} fallback={<ActivityEmpty text={props.emptyText} />}>
           <ActivityListRoot
             entries={shown()}

@@ -54,7 +54,7 @@ const tableRow = '.k2b-ui .k2b-data-table__row[data-selected="true"]';
 const rows = [
   '.k2b-ui .k2b-file-grid__item[aria-selected="true"]',
   '.k2b-ui .k2b-content-file-tree__row[data-state="selected"]',
-  ".k2b-ui .k2b-activity__entry[data-expanded]",
+  ".k2b-ui .k2b-activity__entry[data-selected]",
 ];
 
 describe("selection hooks", () => {

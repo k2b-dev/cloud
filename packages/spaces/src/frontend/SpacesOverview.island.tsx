@@ -241,7 +241,7 @@ export default function SpacesOverview(props: Props) {
 
   const activityHref = (entry: ActivityItem) =>
     entry.item ? `/app/spaces/${entry.space.id}?item=${entry.item.id}` : `/app/spaces/${entry.space.id}`;
-  // The sentence links to the Space or item; the person stands in the meta line, "automatic" for the system.
+  // The sentence links to the Space or item; the actor and avatar start the sentence, "automatic" for the system.
   const activityEntries = (): ActivityEntry[] =>
     activityItems().map(
       (entry): ActivityEntry => ({
@@ -252,6 +252,13 @@ export default function SpacesOverview(props: Props) {
         text: activityDescription(entry),
         href: activityHref(entry),
         actor: entry.actor.kind === "system" ? null : entry.actor.displayName,
+        avatar: {
+          name: entry.actor.displayName,
+          kind: entry.actor.kind === "service_account" ? "service" : entry.actor.kind === "user" && entry.actor.id ? "person" : "system",
+          src: entry.actor.kind === "user" && entry.actor.id && entry.actor.avatarHash
+            ? `/api/accounts/users/${encodeURIComponent(entry.actor.id)}/avatar?rev=${encodeURIComponent(entry.actor.avatarHash)}`
+            : undefined,
+        },
       }),
     );
   const reloadActivity = () => {

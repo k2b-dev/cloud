@@ -49,6 +49,18 @@ const loading = document.createElement("div");
 loading.id = "loading-reference";
 document.body.append(loading);
 render(() => createComponent(ActivityList.Loading, {}), loading);
+const standalone = document.createElement("div");
+standalone.id = "standalone";
+standalone.style.background = "var(--k2b-surface-elevated)";
+document.body.append(standalone);
+render(() => createComponent(ActivityList.Row, { entry: { at: "2026-11-12T15:00:00Z", actor: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", text: "hat die lange Unterhaltung zum Sommerfest im Stadtpark kommentiert", href: "#conversation", avatar: { name: "Alexandra-Christiane von Sonnenfeld-Lichtenberg", kind: "person", src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='12' fill='%23789'/%3E%3C/svg%3E" } }, now: "2026-11-12T15:31:00Z", onNavigate: (event) => { event.preventDefault(); window.opened++; } }), standalone);
+const states = document.createElement("div");
+states.id = "state-reference";
+document.body.append(states);
+window.reloaded = 0;
+render(() => createComponent(LocaleProvider, { locale: "de", get children() {
+  return [createComponent(ActivityList.Empty, {}), createComponent(ActivityList.Error, { onReload: () => { window.reloaded++; } })];
+} }), states);
 
 `;
 const build = await Bun.build({
@@ -69,9 +81,9 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const load = async (width = 720) => {
+const load = async (width = 720, theme: "light" | "dark" = "light") => {
   // Not about motion: without reduced motion, the button colour fading back after the dialog keeps settled() busy.
-  const context = await browser.newContext({ viewport: { width, height: 900 }, reducedMotion: "reduce" });
+  const context = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: theme, reducedMotion: "reduce" });
   // Only Date stands at the mockup's "now", so the browser's own reading of the clock changes nothing; timers stay real.
   await context.addInitScript((now: number) => {
     const Real = Date;
@@ -82,7 +94,7 @@ const load = async (width = 720) => {
   }, Date.parse("2026-11-12T15:31:00Z"));
   const page = await context.newPage();
   await page.setContent(
-    `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>body{margin:24px}</style></head><body class="k2b-ui" data-theme="light"><div id="root"></div></body></html>`,
+    `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><style>body{margin:24px}</style></head><body class="k2b-ui" data-theme="${theme}"><div id="root"></div></body></html>`,
   );
   await page.addScriptTag({ content: script });
   await page.waitForSelector(".k2b-activity__entry");
@@ -191,6 +203,20 @@ describe("ActivityList", () => {
     }
   });
 
+  test("empty and error states fit the phone and provide a working reload action", async () => {
+    const page = await load(390);
+    try {
+      const states = page.locator("#state-reference");
+      expect(await states.locator(".k2b-activity-empty").textContent()).toBe("Noch nichts passiert.");
+      expect(await states.getByRole("alert").textContent()).toContain("Der Verlauf ließ sich nicht laden.");
+      await states.getByRole("button", { name: "Neu laden" }).click();
+      expect(await page.evaluate(() => Reflect.get(window, "reloaded"))).toBe(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("a click on the row acts like its sentence, but not on links and the action inside it", async () => {
     const page = await load();
     try {
@@ -207,6 +233,7 @@ describe("ActivityList", () => {
       await mail.locator(".k2b-activity__meta").click();
       expect(await sentence.getAttribute("aria-expanded")).toBe("true");
       expect(await mail.getAttribute("data-expanded")).toBe("");
+      expect(await mail.getAttribute("data-selected")).toBeNull();
       expect(await mail.locator(".k2b-activity__details").textContent()).toContain("Betreff");
       await sentence.click();
       expect(await mail.locator(".k2b-activity__details").count()).toBe(0);
@@ -242,6 +269,13 @@ describe("ActivityList", () => {
           return [style.borderTopWidth, style.borderRadius, chip.getBoundingClientRect().height];
         });
       expect(chipsGeometry).toEqual(["1px", "9999px", 32]);
+      const listFrame = await dialog.locator(".k2b-activity-dialog__list").evaluate((element) => {
+        const row = element.querySelector(".k2b-activity__entry")!.getBoundingClientRect();
+        const box = element.getBoundingClientRect();
+        return [row.left - box.left, box.right - row.right, box.height];
+      });
+      expect(listFrame.slice(0, 2)).toEqual([8, 8]);
+      expect(listFrame[2]).toBeGreaterThan(450);
       await dialog.getByRole("radio", { name: "Dateien 2" }).click();
       await settled(page);
       expect(await frame()).toEqual(before);
@@ -294,4 +328,33 @@ describe("ActivityList", () => {
       await page.context().close();
     }
   });
+  test.each(["light", "dark"] as const)("public rows keep hover visible on an elevated %s surface and long names fit on a phone", async (theme) => {
+    const page = await load(390, theme);
+    try {
+      const row = page.locator("#standalone .k2b-activity__entry");
+      expect(await row.evaluate((element) => element.tagName)).toBe("DIV");
+      await row.scrollIntoViewIfNeeded();
+      const before = await row.boundingBox();
+      await hoverInPlace(row);
+      expect(await row.boundingBox()).toEqual(before);
+      const paint = await row.evaluate((element) => {
+        const text = element.querySelector(".k2b-activity__text")!;
+        return { hover: getComputedStyle(element).backgroundColor, surface: getComputedStyle(element.parentElement!).backgroundColor,
+          ink: getComputedStyle(text).color, link: getComputedStyle(text.querySelector("a")!).color, fits: text.scrollWidth <= text.clientWidth };
+      });
+      expect(paint.hover).not.toBe("rgba(0, 0, 0, 0)");
+      expect(paint.hover).not.toBe(paint.surface);
+      expect(paint.ink).toBe(paint.link);
+      expect(paint.fits).toBe(true);
+      expect(await row.locator("[title]").count()).toBe(0);
+      expect(await row.locator("img").count()).toBe(1);
+      await row.locator(".k2b-activity__meta").click();
+      expect((await counters(page)).opened).toBe(1);
+      await row.locator("a").focus();
+      await page.keyboard.press("Enter");
+      expect((await counters(page)).opened).toBe(2);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+    } finally { await page.context().close(); }
+  });
+
 });

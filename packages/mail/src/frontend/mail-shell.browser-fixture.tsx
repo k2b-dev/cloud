@@ -839,6 +839,7 @@ export default function MailShellFixture(props: {
   return (
     <LocaleProvider locale={locale}>
       <MailWorkspace
+        now={MAIL_SHELL_NOW}
         data={data}
         requestPath={props.source}
         currentUserId="user-1"

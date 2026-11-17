@@ -1106,6 +1106,13 @@ const ActivityWideDemo = () => (
     code={`<ActivityList entries={entries()} density="wide" now={data.now} timeZone="Europe/Berlin" />`}
   >
     <ActivityList entries={activityEntries()} density="wide" now={ACTIVITY_NOW} timeZone="Europe/Berlin" />
+    <div style={{ padding: "0.5rem", "margin-top": "1rem" }}>
+      <ActivityList.Row
+        now={ACTIVITY_NOW}
+        timeZone="Europe/Berlin"
+        entry={{ at: ACTIVITY_NOW, actor: "Import service", avatar: { name: "Import service", kind: "service" }, text: "Imported the latest records" }}
+      />
+    </div>
   </DemoCard>
 );
 

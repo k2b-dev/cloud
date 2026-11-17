@@ -147,4 +147,34 @@ else {
     expect(rowOf(dom.root, "Per E-Mail gesendet")).toBe(row);
     expect(row.querySelector(".k2b-activity__details")?.textContent).toBe("Betreff");
   });
+
+  test("a feed row follows the parent's clock and selection without replacing the focused link", async () => {
+    const [now, setNow] = createSignal(NOW);
+    const [selected, setSelected] = createSignal(false);
+    let navigated = 0;
+    const { dom } = await mount(({ ActivityList }) => () => (
+      <ActivityList.Row
+        entry={{ at: "2026-11-12T16:20:00+01:00", text: "Kommentar ergänzt", actor: "Mira Lang", href: "/conversation" }}
+        now={now()}
+        timeZone={ZONE}
+        selected={selected()}
+        onNavigate={(event) => {
+          event.preventDefault();
+          navigated++;
+        }}
+      />
+    ));
+    const row = rowOf(dom.root, "Kommentar ergänzt")!;
+    const link = row.querySelector<HTMLAnchorElement>("a")!;
+    link.focus();
+    expect(row.querySelector("time .k2b-sr-only")?.textContent).toContain("11 min. ago");
+    setNow("2026-11-12T15:32:00Z");
+    setSelected(true);
+    expect(row.querySelector("time .k2b-sr-only")?.textContent).toContain("12 min. ago");
+    expect(rowOf(dom.root, "Kommentar ergänzt")).toBe(row);
+    expect(dom.document.activeElement).toBe(link);
+    expect(link.getAttribute("aria-current")).toBe("true");
+    row.querySelector<HTMLElement>(".k2b-activity__meta")!.click();
+    expect(navigated).toBe(1);
+  });
 }
