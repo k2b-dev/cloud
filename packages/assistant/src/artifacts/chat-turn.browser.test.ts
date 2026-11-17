@@ -181,9 +181,10 @@ for (const viewport of [
       expect(await page.getByRole("button", { name: "Stoppen", exact: true }).count()).toBe(1);
       expect(await app(page).locator("#total").textContent()).toBe("30");
       // The line says what the turn did, its steps, and how long it worked.
-      expect(await page.locator(".ai-turn-work > summary").textContent()).toBe(
-        "In Mail geändert, Dateien gelesen, Dateien erstellt · 6 Schritte3 Min.",
-      );
+      // Sentence, then in their own columns the steps and the time.
+      expect(await page.locator(".ai-turn-work__sentence").textContent()).toBe("In Mail geändert, Dateien gelesen, Dateien erstellt");
+      expect(await page.locator(".ai-turn-work > summary .ai-turn-work__steps").textContent()).toBe("6 Schritte");
+      expect(await page.locator(".ai-turn-work > summary .k2b-chat-activity__duration").textContent()).toBe("3 Min.");
       expect(await page.locator(".ai-turn").textContent()).not.toContain("Now I build the dashboard.");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
       await page.screenshot({ path: `/tmp/assistant-turn-${viewport.width}.png`, fullPage: false });
@@ -237,9 +238,9 @@ test("a stop while a question waits leaves a not-run line at the card's place", 
     expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-chat-outcome"))).toBe(false);
     // A stopped turn has no valid status any more: its texts fold into the work line.
     expect(after.text).toBeNull();
-    expect(await page.locator(".ai-turn-work > summary").textContent()).toBe(
-      "Dateien gelesen, Dateien erstellt · 6 Schritte, gestoppt3 Min.",
-    );
+    expect(await page.locator(".ai-turn-work__sentence").textContent()).toBe("Dateien gelesen, Dateien erstellt");
+    expect(await page.locator(".ai-turn-work > summary .ai-turn-work__steps").textContent()).toBe("6 Schritte · gestoppt");
+    expect(await page.locator(".ai-turn-work > summary .k2b-chat-activity__duration").textContent()).toBe("3 Min.");
   } finally {
     await page.close();
   }

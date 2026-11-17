@@ -21,9 +21,11 @@ export {
   createRuntimeLifecycle,
   createRuntimeTaskTracker,
   stopRuntimeJobs,
+  startRuntimeInterval,
   stopRuntimeResources,
   superviseRuntimeTask,
 } from "./runtime-lifecycle";
+export { backgroundWork } from "./runtime-quiesce";
 export type { RuntimeTaskFailure, RuntimeTaskTracker } from "./runtime-lifecycle";
 export type {
   LogEntry,

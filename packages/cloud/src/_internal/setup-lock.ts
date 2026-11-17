@@ -7,6 +7,7 @@ const SETUP_LEASE_MS = 60_000;
 const setupMutex = lazySync((sync) => sync.mutex({ id: "app-setup", owner: "cloud", ttlMs: SETUP_LEASE_MS, retry: { maxAttempts: 1 } }));
 
 const scheduleRenewal = (renew: () => Promise<void> | undefined, intervalMs: number): (() => void) => {
+  // runtime-timer: lease of application setup during startup, which is not background work.
   const timer = setInterval(() => void renew(), intervalMs);
   timer.unref();
   return () => clearInterval(timer);

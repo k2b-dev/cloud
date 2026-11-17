@@ -131,7 +131,8 @@ const auditActor = (actor: RequestActor | undefined): AuditActor | null => {
 
 const asFailure = <T>(error: unknown, notFoundLabel: string, content = true): Result<T> => {
   if (error instanceof NotFoundError) return fail(err.notFound(notFoundLabel));
-  if (error instanceof ConflictError) return fail(err.conflict(content ? error.message : "Sync operation conflict"));
+  if (error instanceof ConflictError)
+    return fail(err.conflict(content ? error.message : "Sync operation conflicts with the current state"));
   if (error instanceof SyncUsageError) return fail(err.badInput(content ? error.message : "Invalid Sync operation"));
   return fail(err.internal(content ? (error instanceof Error ? error.message : String(error)) : "Sync operation failed"));
 };

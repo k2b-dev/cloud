@@ -126,7 +126,8 @@ test("baseline counts findings by file and occurrence; --fix only removes stale 
     expect(await readFile(join(root, baseline), "utf8")).toBe(formatBaseline([key]));
     await run(false, new Set(["--warnings"]));
     expect(warnings.mock.calls.some(([warning]) => String(warning).includes(`${tsx}:1`))).toBe(true);
-    await writeFile(join(root, tsx), `${source}\n${source}`);
+    // Two statements, so the file stays valid TSX and every line is checked.
+    await writeFile(join(root, tsx), `${source};\n${source};`);
     expect(await run()).toEqual([`${tsx}:2`]);
     const other = "packages/example/src/Other.tsx";
     await writeFile(join(root, other), source);

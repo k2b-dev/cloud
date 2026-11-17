@@ -74,7 +74,8 @@ const modal = () =>
 
 // The wrapper is what applications put around the modal to size it inside their dialog.
 const openDialog = async (viewport: { width: number; height: number }) => {
-  const page = await browser.newPage({ viewport });
+  // About layout, not motion: the dialog's entrance would move the frame while it is measured.
+  const page = await browser.newPage({ viewport, reducedMotion: "reduce" });
   await page.setContent(
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
       `<body class="k2b-ui"><dialog class="k2b-dialog k2b-dialog--large is-bare"><div class="k2b-dialog__viewport is-bare">` +

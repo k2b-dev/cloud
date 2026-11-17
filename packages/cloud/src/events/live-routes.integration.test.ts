@@ -234,8 +234,9 @@ suite("live routes", () => {
   }
 
   test("a delayed identity hint during replica startup revalidation keeps valid access and replays", async () => {
-    // The fixture's legal acceptance commits before either handshake. Hold its
-    // real outbox publication until the new replica's startup catch-up is reading.
+    // The fixture's legal acceptance commits before either handshake. Read its
+    // real outbox hint before starting the catch-up budget, then hold only the
+    // follower's notification until the catch-up credential read is pending.
     const resets = spyOn(identityRuntimeConfig, "invalidateIdentityRuntimeConfig");
     const topic = liveTopic(APP);
     const originalEventPublish = topic.publish.bind(topic);
@@ -258,10 +259,18 @@ suite("live routes", () => {
       }
       return originalPublish(input);
     });
+    const deliverHint = Promise.withResolvers<void>();
+    const releaseStartup = Promise.withResolvers<void>();
+    const hintReader = new AbortController();
+    let restoreHead = () => {};
+    let restoreFollow = () => {};
     const initialRead = Promise.withResolvers<void>();
     const finishInitial = Promise.withResolvers<void>();
     const catchupRead = Promise.withResolvers<void>();
     const finishCatchup = Promise.withResolvers<void>();
+    const hintRead = Promise.withResolvers<void>();
+    const finishHintRead = Promise.withResolvers<void>();
+    let hintDelivered = false;
     const authenticate = session.authenticateRequest;
     let reconnecting = false;
     let checks = 0;
@@ -276,6 +285,9 @@ suite("live routes", () => {
         } else if (checks === 2) {
           catchupRead.resolve();
           await finishCatchup.promise;
+        } else if (hintDelivered) {
+          hintRead.resolve();
+          await finishHintRead.promise;
         }
       }
       return result;
@@ -298,11 +310,38 @@ suite("live routes", () => {
       await until(() => first.state.closed !== null);
       await publish("delayed-identity", 3);
 
+      // Read the real outbox hint before either credential deadline starts.
+      // Give the restarted follower that captured head and buffered event, so
+      // only its notification remains delayed during the controlled reads.
+      const hintAfter = await core.head();
+      const originalFollow = core.follow.bind(core);
+      publishHint.resolve();
+      const hint = await (async () => {
+        for await (const event of originalFollow({ after: hintAfter, signal: hintReader.signal })) {
+          const parsed = z.object({ type: z.literal("identity.access.changed"), userId: z.literal(ada.id) }).safeParse(event.data.d);
+          if (parsed.success) return event;
+        }
+        throw new Error("The identity hint reader ended before the hint arrived");
+      })();
+      const head = spyOn(core, "head").mockImplementation(async () => {
+        await releaseStartup.promise;
+        return hintAfter;
+      });
+      restoreHead = () => head.mockRestore();
+      const following = spyOn(core, "follow").mockImplementation(async function* (options) {
+        await deliverHint.promise;
+        if (options?.signal?.aborted) return;
+        yield hint;
+        yield* originalFollow({ ...options, after: hint.cursor });
+      });
+      restoreFollow = () => following.mockRestore();
+
       const startupBefore = resets.mock.calls.length;
       reconnecting = true;
       const second = await open(1, ada.headers);
       sockets.push(second);
       await initialRead.promise;
+      releaseStartup.resolve();
       // Observe the startup notification and this replica's applied cursor,
       // rather than assuming either completes within the credential read.
       await until(() => resets.mock.calls.length > startupBefore);
@@ -312,25 +351,39 @@ suite("live routes", () => {
       await catchupRead.promise;
       const delivered = Promise.withResolvers<void>();
       stopHint = subscribeIdentityAccessChanged((subject) => {
-        if (subject?.userId === ada.id) delivered.resolve();
+        if (subject?.userId === ada.id) {
+          hintDelivered = true;
+          delivered.resolve();
+        }
       });
-      publishHint.resolve();
+      deliverHint.resolve();
       await delivered.promise;
       finishCatchup.resolve();
       second.sub("s", "item", { key: "delayed-identity" }, applied);
+      // A delivered hint must cause a fresh check after the held catch-up read.
+      // Other invalidations may cause more checks; their scheduling is not a contract.
+      await hintRead.promise;
+      expect(second.of("s")).toEqual([]);
+      expect(second.state.closed).toBeNull();
+      finishHintRead.resolve();
       await until(() => second.of("s").some((frame) => frame.t === "ready") || second.state.closed !== null);
       expect(second.state.closed).toBeNull();
       expect(second.of("s").map((frame) => [frame.t, frame.data?.n])).toEqual([
         ["event", 3],
         ["ready", undefined],
       ]);
-      expect(checks).toBe(3);
     } finally {
       publishHint.resolve();
+      deliverHint.resolve();
+      releaseStartup.resolve();
       finishInitial.resolve();
       finishCatchup.resolve();
+      finishHintRead.resolve();
       stopHint();
       publishing.mockRestore();
+      hintReader.abort();
+      restoreFollow();
+      restoreHead();
       events.mockRestore();
       resets.mockRestore();
       authentication.mockRestore();

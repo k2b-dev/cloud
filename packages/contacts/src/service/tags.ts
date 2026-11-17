@@ -119,7 +119,7 @@ export const create = async (config: { bookId: string; data: CreateContactTagInp
     // same client (and other parts of this repo) read it from `code`. Check
     // both so the conflict response works regardless of runtime version.
     if (isObject(error) && (error["errno"] === "23505" || error["code"] === "23505")) {
-      return fail(err.conflict("Tag with that name"));
+      return fail(err.conflict("Tag with that name already exists"));
     }
     throw error;
   }
@@ -158,7 +158,7 @@ export const update = async (config: { bookId: string; id: string; data: UpdateC
     // same client (and other parts of this repo) read it from `code`. Check
     // both so the conflict response works regardless of runtime version.
     if (isObject(error) && (error["errno"] === "23505" || error["code"] === "23505")) {
-      return fail(err.conflict("Tag with that name"));
+      return fail(err.conflict("Tag with that name already exists"));
     }
     throw error;
   }

@@ -815,8 +815,9 @@ when the page owns its content insets; it replaces the default shell padding.
 
 The admin sidebar shows the overview, then **Set up** (base settings, storage,
 sign-in, outgoing mail, email templates, announcements, AI), then
-**Operations** (apps, app bar, Observability, People), then app-owned groups,
-and last **Settings per app** with one entry per app's `adminHref`.
+**Operations** (apps, app bar, maintenance mode, Observability, People), then
+app-owned groups, and last **Settings per app** with one entry per app's
+`adminHref`.
 
 App-owned admin groups come from `adminNav` in the application declaration.
 A group may declare `section: "ai"` or `section: "observability"` to contribute

@@ -216,8 +216,9 @@ export const contactsApiErrorMessage = (status: number, locale?: string | null, 
 };
 
 /**
- * Full-message error constructors. `err.notFound`/`err.conflict` compose an
- * English suffix around a label, so localized messages must be passed whole.
+ * Full-message error constructors. `err.notFound` composes an English suffix
+ * around a label, so a localized message is passed whole; `conflictError` is
+ * the same as `err.conflict`, which takes its sentence as given.
  */
 export const notFoundError = (message: string): ServiceError => ({ code: "NOT_FOUND", message, status: 404 });
 export const conflictError = (message: string): ServiceError => ({ code: "CONFLICT", message, status: 409 });
