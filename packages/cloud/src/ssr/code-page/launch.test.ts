@@ -46,10 +46,11 @@ test("head fixtures keep recurring dates, unscheduled triggers and reader identi
     "paused-reader",
   ] as const) {
     const data = headActionFixture(name);
-    if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
+    if (data.state.kind !== "ready" || !data.state.runs) throw new Error("Expected ready fixture with run history");
     for (const item of data.state.automations ?? []) {
       if (item.kind === "event" || item.kind === "manual") expect(item.nextRunAt).toBeNull();
       if (item.kind === "schedule") {
+        if (!item.lastRun) throw new Error("Expected schedule fixture with a last run");
         const next = new Date(item.nextRunAt!);
         expect(next.getTime()).toBeGreaterThan(Date.parse(data.dates.now));
         expect(
@@ -69,7 +70,7 @@ test("head fixtures keep recurring dates, unscheduled triggers and reader identi
             hour: "2-digit",
             minute: "2-digit",
             hourCycle: "h23",
-          }).format(new Date(item.lastRun!.createdAt)),
+          }).format(new Date(item.lastRun.createdAt)),
         ).toBe(item.entrypoint === "reminder" ? "Fri 16:00" : "Mon 08:00");
         expect(data.state.runs.items.find((run) => run.id === item.lastRun?.id)).toEqual(item.lastRun);
       }

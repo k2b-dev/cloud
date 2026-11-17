@@ -1591,7 +1591,7 @@ test("last and next starts share the request's timezone, including a DST change"
   for (const [timeZone, last, next] of [
     ["Europe/Berlin", "Mo, 19.10., 08:00", "Mo, 16.11., 08:00"],
     ["America/New_York", "Mo, 19.10., 02:00", "Mo, 16.11., 02:00"],
-  ]) {
+  ] as const) {
     const data = headActionFixture("schedule");
     if (data.state.kind !== "ready" || !data.state.runs) throw new Error("Expected schedule fixture with run history");
     data.dates.timeZone = timeZone;
