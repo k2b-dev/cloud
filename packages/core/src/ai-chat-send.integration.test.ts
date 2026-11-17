@@ -1100,11 +1100,11 @@ suiteFor(
     };
     await fill(chat.id, 1);
     await fill(second.id, 6);
-    // Beside them: a message of today whose Code and run are fine walks every branch and stays, and a
-    // malformed run id retires its message without failing the statement.
+    // Beside them: a message whose budget day never ends, with a fine Code and run, walks every branch and
+    // stays whatever the day, and a malformed run id retires its message without failing the statement.
     const [current, malformed] = [crypto.randomUUID(), crypto.randomUUID()];
-    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status)
-      SELECT ${current}::uuid,${second.id}::uuid,q.submission #- '{runConfig,send,keyHash}',q.content,'pending'
+    await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status,created_at)
+      SELECT ${current}::uuid,${second.id}::uuid,q.submission #- '{runConfig,send,keyHash}',q.content,'pending','infinity'::timestamptz
       FROM ai.queued_messages q WHERE q.id=${template}::uuid`;
     await sql`INSERT INTO ai.queued_messages(id,conversation_id,submission,content,status)
       SELECT ${malformed}::uuid,${second.id}::uuid,jsonb_set(q.submission #- '{runConfig,send,keyHash}','{runConfig,codeOrigin,runId}','"run-7"'),q.content,'pending'

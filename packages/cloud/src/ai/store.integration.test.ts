@@ -174,35 +174,49 @@ suite("AI conversation store integration", () => {
         frontendMode: "client",
         resolvedEvent: null,
       });
-      let answer: Promise<unknown> | undefined;
-      // The stop's order, as completeTurn takes it: the turn, then its actions, then its status.
-      await sql.begin(async (stop) => {
-        const [stopSession] = await stop<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
-        if (!stopSession) throw new Error("The stop has no session");
-        const { pid } = stopSession;
-        await stop`SELECT id FROM ai.turns WHERE id=${turn.id}::uuid FOR UPDATE`;
-        // A tool result without a signed-in session also marks the turn, so the answer needs the turn row.
-        answer = aiConversations.resolvePendingTurnAction({
-          conversationId: chat.id,
-          turnId: turn.id,
-          callId,
-          event: { type: "tool_result", callId, result: { value: 1 } },
-          signedInSession: false,
+      type Outcome = { ok: true; value: unknown } | { ok: false; error: unknown };
+      let answer: Promise<Outcome> | undefined;
+      try {
+        // The stop's order, as completeTurn takes it: the turn, then its actions, then its status.
+        await sql.begin(async (stop) => {
+          // A deadlock or a lost barrier fails within the test instead of hanging it.
+          await stop`SET LOCAL lock_timeout = '3s'`;
+          const [stopSession] = await stop<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+          if (!stopSession) throw new Error("The stop has no session");
+          const { pid } = stopSession;
+          await stop`SELECT id FROM ai.turns WHERE id=${turn.id}::uuid FOR UPDATE`;
+          // A tool result without a signed-in session also marks the turn, so the answer needs the turn row.
+          // Settled at once: a failed answer is a result to check, never an unhandled rejection.
+          answer = aiConversations
+            .resolvePendingTurnAction({
+              conversationId: chat.id,
+              turnId: turn.id,
+              callId,
+              event: { type: "tool_result", callId, result: { value: 1 } },
+              signedInSession: false,
+            })
+            .then(
+              (value): Outcome => ({ ok: true, value }),
+              (error: unknown): Outcome => ({ ok: false, error }),
+            );
+          for (let waited = 0; ; waited++) {
+            const [blocked] = await sql<{ count: number }[]>`
+              SELECT count(*)::int AS count FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`;
+            if (blocked?.count) break;
+            if (waited > 200) throw new Error("The tool answer never waited for the stop");
+            await Bun.sleep(10);
+          }
+          // Holding the action here as well would deadlock: the answer must wait without holding it.
+          await stop`UPDATE ai.pending_actions SET status='aborted', resolved_at=now()
+            WHERE turn_id=${turn.id}::uuid AND status='pending'`;
+          await stop`UPDATE ai.turns SET status='aborted', completed_at=now() WHERE id=${turn.id}::uuid`;
         });
-        for (let waited = 0; ; waited++) {
-          const [blocked] = await sql<{ count: number }[]>`
-            SELECT count(*)::int AS count FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`;
-          if (blocked?.count) break;
-          if (waited > 200) throw new Error("The tool answer never waited for the stop");
-          await Bun.sleep(10);
-        }
-        // Holding the action here as well would deadlock: the answer must wait without holding it.
-        await stop`UPDATE ai.pending_actions SET status='aborted', resolved_at=now()
-          WHERE turn_id=${turn.id}::uuid AND status='pending'`;
-        await stop`UPDATE ai.turns SET status='aborted', completed_at=now() WHERE id=${turn.id}::uuid`;
-      });
+      } finally {
+        // After commit or rollback the answer can finish; it settles before the fixture is removed.
+        await answer;
+      }
       // The answer finds a finished turn and takes nothing.
-      expect(await answer).toBeNull();
+      expect(await answer).toEqual({ ok: true, value: null });
       const [row] = await sql<{ status: string; restricted: boolean }[]>`
         SELECT status, COALESCE((run_config->>'sourceRestricted')::boolean,false) AS restricted FROM ai.turns WHERE id=${turn.id}::uuid`;
       expect(row).toEqual({ status: "aborted", restricted: false });
