@@ -123,15 +123,13 @@ export const admitQueuedCodeSend: QueuedCodeStart["admit"] = async (submission, 
  * queue can retire every Code message that can never start without checking them one by one. */
 const expiredCodeSendReason: QueuedCodeStart["expiredReason"] = async () => {
   const timeZone = (await coreSettings.get<string>("app.timezone")) || "UTC";
-  return sql`(SELECT CASE
+  const expression = sql`(CASE
       WHEN q.submission#>>'{runConfig,codeOrigin,runId}' IS NULL OR q.submission#>>'{runConfig,send,accountId}' IS NULL THEN 'code_run_gone'
-      WHEN c.state IS DISTINCT FROM 'active' THEN 'code_inactive'
+      WHEN NOT EXISTS (SELECT 1 FROM code.codes c WHERE c.id = q.submission#>>'{runConfig,codeOrigin,codeId}' AND c.state = 'active') THEN 'code_inactive'
       WHEN (q.created_at AT TIME ZONE ${timeZone})::date < (clock_timestamp() AT TIME ZONE ${timeZone})::date THEN 'code_budget_day_ended'
-      WHEN r.id IS NULL THEN 'code_run_gone'
-    END
-    FROM (SELECT 1) AS one
-    LEFT JOIN code.codes c ON c.id = q.submission#>>'{runConfig,codeOrigin,codeId}'
-    LEFT JOIN code.runs r ON r.id::text = q.submission#>>'{runConfig,codeOrigin,runId}')`;
+      WHEN NOT EXISTS (SELECT 1 FROM code.runs r WHERE r.id::text = q.submission#>>'{runConfig,codeOrigin,runId}') THEN 'code_run_gone'
+    END)`;
+  return { expression };
 };
 
 export const queuedCodeSendStart: QueuedCodeStart = { admit: admitQueuedCodeSend, expiredReason: expiredCodeSendReason };

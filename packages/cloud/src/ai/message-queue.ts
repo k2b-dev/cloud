@@ -186,8 +186,9 @@ export type QueuedCodeStart = {
    * entry waiting; any other refusal cancels it. */
   admit: (submission: Submission, messageId: string) => Promise<string | null>;
   /** A scalar SQL expression over the queued row `q`: the reason this Code-started entry can never
-   * start, or NULL while it still may. The queue retires every such entry in one bounded statement. */
-  expiredReason: () => Promise<SQL.Query<unknown>>;
+   * start, or NULL while it still may. The queue retires every such entry in one bounded statement.
+   * Wrapped in an object: a query is thenable, so an async function returning it would run it. */
+  expiredReason: () => Promise<{ expression: SQL.Query<unknown> }>;
 };
 
 /** What a retired entry keeps: only its send receipt and initiator. */
@@ -208,10 +209,10 @@ const retireQueuedMessage = async (id: string, error: string) => {
  * otherwise one stuck chat would keep its owner's other Codes busy. One statement, bounded by the queue
  * limit; rows another dispatcher holds are left to it. */
 const retireExpiredCodeStarts = async (codeStart: QueuedCodeStart, conversationId: string | undefined) => {
-  const reason = await codeStart.expiredReason();
+  const { expression: reason } = await codeStart.expiredReason();
   await sql`WITH expired AS (
-      SELECT q.id, x.reason FROM ai.queued_messages q CROSS JOIN LATERAL (SELECT ${reason} AS reason) x
-      WHERE q.status IN ('pending','failed') AND q.submission->'runConfig' ? 'codeOrigin' AND x.reason IS NOT NULL
+      SELECT q.id, ${reason} AS reason FROM ai.queued_messages q
+      WHERE q.status IN ('pending','failed') AND q.submission->'runConfig' ? 'codeOrigin' AND ${reason} IS NOT NULL
         AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id = ${conversationId ?? null}::uuid)
       ORDER BY q.position LIMIT ${AI_MESSAGE_QUEUE_LIMIT} FOR UPDATE OF q SKIP LOCKED
     ), retired AS (
@@ -228,8 +229,12 @@ export const drainQueuedMessages = async (
 ) => {
   const waits = sql([...AI_QUEUE_RETRYABLE_ERRORS]);
   if (codeStart)
-    await retireExpiredCodeStarts(codeStart, conversationId).catch(() =>
-      log.warn("Expired Code messages could not be retired", { code: "queue_expiry_failed", conversationId }),
+    await retireExpiredCodeStarts(codeStart, conversationId).catch((error) =>
+      log.warn("Expired Code messages could not be retired", {
+        code: "queue_expiry_failed",
+        conversationId,
+        error: error instanceof Error ? error.message : String(error),
+      }),
     );
   // A Code message waiting for its allowance never holds back the person's later messages.
   const rows = await sql<{ id: string; conversation_id: string; submission: Submission }[]>`

@@ -1098,9 +1098,9 @@ suiteFor(
         SELECT gen_random_uuid(),${conversationId}::uuid,q.submission #- '{runConfig,send,keyHash}',q.content,'pending',clock_timestamp()-interval '2 days'
         FROM ai.queued_messages q CROSS JOIN generate_series(1,${count}) WHERE q.id=${template}::uuid`;
     };
-    await sql`DELETE FROM ai.queued_messages WHERE id=${template}::uuid`;
     await fill(chat.id, 1);
     await fill(second.id, 6);
+    await sql`DELETE FROM ai.queued_messages WHERE id=${template}::uuid`;
     const meter = await meterSql();
     try {
       const one = await meter.during(() => drainQueuedMessages(async () => {}, chat.id, queuedCodeSendStart));
@@ -1113,10 +1113,11 @@ suiteFor(
     } finally {
       await meter.close();
     }
-    const left = await sql<{ conversation_id: string; status: string; error: string }[]>`
-      SELECT conversation_id,status,error FROM ai.queued_messages WHERE submission->'runConfig' ? 'send' ORDER BY position`;
+    const left = await sql<{ status: string; error: string | null; send: boolean }[]>`
+      SELECT status,error,submission->'runConfig' ? 'send' AS send FROM ai.queued_messages
+      WHERE conversation_id IN (${chat.id}::uuid,${second.id}::uuid) AND content='[]'::jsonb AND error IS DISTINCT FROM 'dispatch_failed'`;
     expect(left).toHaveLength(7);
-    expect(left.every((entry) => entry.status === "cancelled" && entry.error === "code_budget_day_ended")).toBeTrue();
+    expect(left.every((entry) => entry.status === "cancelled" && entry.error === "code_budget_day_ended" && entry.send)).toBeTrue();
   });
   test("a queued turn is built from the entry as it is under the chat lock", async () => {
     await setup();
