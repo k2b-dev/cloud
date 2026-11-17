@@ -8,6 +8,9 @@ import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser"
 import { HEAD_RUN_ID, HEAD_STATES, type HeadState } from "./head-action.fixture";
 
 let browser: Browser;
+let origin: string;
+let stop: (() => void) | undefined;
+const fonts = new Map<string, string>();
 const contexts = new Map<string, BrowserContext>();
 const harnessErrors = new WeakMap<Page, string[]>();
 let harness: string;
@@ -51,25 +54,45 @@ beforeAll(async () => {
   const source = await Bun.file(iconPath).text();
   const font = source.match(/url\((\.\/[^)"']+\.woff2)[^)]*\)/)?.[1];
   if (!font) throw new Error("Missing Tabler WOFF2 file");
-  icons = source.replace(
-    /url\([^)]+\)/,
-    `url("data:font/woff2;base64,${Buffer.from(await Bun.file(resolve(dirname(iconPath), font)).arrayBuffer()).toString("base64")}")`,
-  );
+  fonts.set("/__icons.woff2", resolve(dirname(iconPath), font));
+  icons = source.replace(/url\([^)]+\)/, 'url("/__icons.woff2")');
   const plexPath = fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css"));
-  const plexSource = await Bun.file(plexPath).text();
-  const plexFiles = [...new Set(plexSource.match(/\.\/fonts\/[^)"']+\.woff2/g) ?? [])];
+  plex = await Bun.file(plexPath).text();
+  const plexFiles = [...new Set(plex.match(/\.\/fonts\/[^)"']+\.woff2/g) ?? [])];
   if (!plexFiles.length) throw new Error("Missing IBM Plex WOFF2 files");
-  plex = plexSource;
-  for (const file of plexFiles)
-    plex = plex.replaceAll(
-      file,
-      `data:font/woff2;base64,${Buffer.from(await Bun.file(resolve(dirname(plexPath), file)).arrayBuffer()).toString("base64")}`,
-    );
+  for (const file of plexFiles) fonts.set(file.slice(1), resolve(dirname(plexPath), file));
+  // Serve immutable assets once, like the neighboring browser fixtures. Repeated route.fulfill copies
+  // of the full bundle and base64 fonts make navigation dominate the unchanged five-second test budget.
+  const assets = { "cache-control": "public, max-age=3600" };
+  const served = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname === "/__head.js")
+        return new Response(harness, { headers: { ...assets, "content-type": "text/javascript" } });
+      if (url.pathname === "/__head.css")
+        return new Response(`${plex}\n${css}\n${icons}`, { headers: { ...assets, "content-type": "text/css" } });
+      const font = fonts.get(url.pathname);
+      if (font) return new Response(Bun.file(font), { headers: { ...assets, "content-type": "font/woff2" } });
+      if (request.headers.get("sec-fetch-dest") === "document")
+        return new Response(html(url.searchParams.get("locale") ?? "de", url.searchParams.get("theme") ?? "light"), {
+          headers: { "content-type": "text/html" },
+        });
+      return Response.json({ error: { code: "app_unavailable", message: "Unavailable" } }, { status: 503 });
+    },
+  });
+  origin = `http://127.0.0.1:${served.port}`;
+  stop = () => void served.stop(true);
   browser = await launchBrowser();
 }, 60_000);
 afterAll(async () => {
-  for (const context of contexts.values()) await context.close();
-  await browser?.close();
+  try {
+    for (const context of contexts.values()) await context.close();
+    await browser?.close();
+  } finally {
+    stop?.();
+  }
 });
 
 const fixedNow = new Date("2026-11-14T12:49:04.000Z").getTime();
@@ -100,19 +123,7 @@ async function open(state: HeadState, width: number, locale = "de", theme = "lig
       let key = 0;
       Object.defineProperty(crypto, "randomUUID", { value: () => `00000000-0000-4000-8000-${String(++key).padStart(12, "0")}` });
     }, fixedNow);
-    await page.route("http://code.test/**", async (route) => {
-      const path = new URL(route.request().url()).pathname;
-      if (path === "/__head.js") await route.fulfill({ contentType: "text/javascript", body: harness });
-      else if (path === "/__head.css") await route.fulfill({ contentType: "text/css", body: `${plex}\n${css}\n${icons}` });
-      else if (route.request().resourceType() === "document") await route.fulfill({ contentType: "text/html", body: html(locale, theme) });
-      else
-        await route.fulfill({
-          status: 503,
-          contentType: "application/json",
-          body: JSON.stringify({ error: { code: "app_unavailable", message: "Unavailable" } }),
-        });
-    });
-    await page.goto(`http://code.test/?state=${state}&locale=${locale}`);
+    await page.goto(`${origin}/?state=${state}&locale=${locale}&theme=${theme}`);
     await page.evaluate(async () => {
       await document.fonts.ready;
     });
@@ -252,7 +263,7 @@ for (const width of [1440, 390]) {
         }),
       );
       await pages.getByRole("button", { name: "Adresse kopieren" }).last().click();
-      expect(await page.locator("body").getAttribute("data-copied")).toBe("http://code.test/code/c_woche1/inbox");
+      expect(await page.locator("body").getAttribute("data-copied")).toBe(`${origin}/code/c_woche1/inbox`);
       await page.evaluate(() =>
         Object.defineProperty(navigator, "clipboard", {
           configurable: true,
@@ -267,7 +278,7 @@ for (const width of [1440, 390]) {
       await page.getByText("Die Adresse konnte nicht kopiert werden.", { exact: true }).waitFor();
       await shot(page, "copy-error", width);
       await Promise.all([
-        page.waitForURL("http://code.test/code/c_woche1/", { waitUntil: "commit" }),
+        page.waitForURL(`${origin}/code/c_woche1/`, { waitUntil: "commit" }),
         page.locator(".cloud-code__head").getByRole("button", { name: "Öffnen", exact: true }).click(),
       ]);
     } finally {
