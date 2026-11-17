@@ -162,6 +162,7 @@ const failedRunFixture = {
 };
 async function holdStarts(page: Page) {
   const finishes: (() => Promise<void>)[] = [];
+  let started = Promise.withResolvers<void>();
   await page.route("**/api/capabilities/v1/actions/**", async (route) => {
     await new Promise<void>((resolve) => {
       const id = finishes.length === 0 ? HEAD_RUN_ID : "00000000-0000-4000-8000-999900000003";
@@ -169,9 +170,17 @@ async function holdStarts(page: Page) {
         await route.fulfill({ contentType: "application/json", body: JSON.stringify({ data: { runId: id, duplicate: false } }) });
         resolve();
       });
+      const received = started;
+      started = Promise.withResolvers<void>();
+      received.resolve();
     });
   });
-  return finishes;
+  return {
+    finishes,
+    waitForStarts: async (count: number) => {
+      while (finishes.length < count) await started.promise;
+    },
+  };
 }
 const timingBoxes = (page: Page) =>
   page.locator(".cloud-code__when .cloud-code__row").evaluateAll((rows) =>
@@ -472,10 +481,12 @@ for (const theme of ["light", "dark"])
       },
     );
     scene(`${theme} ${width}: only the selected pending schedule is disabled`, "schedules", width, "de", theme, async (page) => {
-      const finishes = await holdStarts(page);
+      const { finishes, waitForStarts } = await holdStarts(page);
       const trigger = page.locator(".cloud-code__head").getByRole("button", { name: "Jetzt ausführen" });
       await trigger.click();
       await page.getByRole("menuitem", { name: /Erinnert an offene Aufgaben/ }).click();
+      await waitForStarts(1);
+      await trigger.and(page.locator('[aria-expanded="false"]')).waitFor();
       await trigger.click();
       const pending = page.getByRole("menuitem", { name: /Erinnert an offene Aufgaben/ });
       expect(await pending.getAttribute("aria-disabled")).toBe("true");
@@ -487,12 +498,27 @@ for (const theme of ["light", "dark"])
       await finishes[0]!();
     });
     scene(`${theme} ${width}: concurrent menu starts retain both receipts`, "schedules", width, "de", theme, async (page) => {
-      const finishes = await holdStarts(page);
+      const { finishes, waitForStarts } = await holdStarts(page);
       const trigger = page.locator(".cloud-code__head").getByRole("button", { name: "Jetzt ausführen" });
       await trigger.click();
       await page.getByRole("menuitem", { name: /Erinnert an offene Aufgaben/ }).click();
+      await waitForStarts(1);
+      await trigger.and(page.locator('[aria-expanded="false"]')).waitFor();
       await trigger.click();
-      await page.getByRole("menuitem", { name: /Erstellt den Wochenbericht/ }).click();
+      const first = page.getByRole("menuitem", { name: /Erinnert an offene Aufgaben/ });
+      await first.locator(".cloud-code__spin").waitFor();
+      expect(await first.getAttribute("aria-disabled")).toBe("true");
+      const second = page.getByRole("menuitem", { name: /Erstellt den Wochenbericht/ });
+      expect(await second.getAttribute("aria-disabled")).not.toBe("true");
+      await second.click();
+      // A phone sheet runs the selection only after leaving history. A completed click is not a started request.
+      await waitForStarts(2);
+      await trigger.and(page.locator('[aria-expanded="false"]')).waitFor();
+      await trigger.click();
+      await second.locator(".cloud-code__spin").waitFor();
+      expect(await second.getAttribute("aria-disabled")).toBe("true");
+      expect(await first.getAttribute("aria-disabled")).toBe("true");
+      expect(await trigger.getAttribute("aria-busy")).toBeNull();
       expect(finishes).toHaveLength(2);
       // Out-of-order receipts must preserve the first start; pending-state interleavings are checked in the DOM behavior test.
       await finishes[1]!();

@@ -60,10 +60,10 @@ app.get("/empty", {}, c => c.text(c.user?.name ?? ""));`);
   expect(result.ok ? [] : result.diagnostics).toEqual([]);
   if (!result.ok) return;
   expect(result.manifest.entrypoints.map((e) => e.route)).toEqual([
-    { method: "GET", path: "/public", public: true, layout: "plain" },
-    { method: "POST", path: "/private", public: false },
-    { method: "GET", path: "/legacy", public: true },
-    { method: "GET", path: "/empty", public: false },
+    { method: "GET", path: "/public", public: true, layout: "plain", page: false },
+    { method: "POST", path: "/private", public: false, page: false },
+    { method: "GET", path: "/legacy", public: true, page: false },
+    { method: "GET", path: "/empty", public: false, page: false },
   ]);
   expect(result.permissions).toContainEqual(
     expect.objectContaining({ operation: "work-shop.catalog.list", entrypoints: ["route:POST:/private"] }),

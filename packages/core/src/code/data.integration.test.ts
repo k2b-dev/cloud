@@ -13,6 +13,7 @@ import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
+import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import * as access from "./access";
@@ -109,6 +110,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
     await migrateAppEvents();
     await migrateCode();
     await migrateActivation(); // Forward on an empty identity database.
+    await migratePolicy(); // Pause attribution reads the policy migration's reason columns.
     for (const [name, id] of Object.entries(ids))
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;
     // Forward migration over an already populated identity database.
