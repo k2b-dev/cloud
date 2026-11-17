@@ -48,7 +48,10 @@ SDK property segments use camelCase: `spaces.space(id).task.setCompleted`,
 `grids.table(id).record.upsertExternal`, and `mail.mailbox(id).mailingList`.
 Snake_case segments from Pulse and Venue follow the same rule. Capability
 and event IDs keep their original spelling. Files imports as `files`;
-its app and event IDs stay `filesv2` and `filesv2.*`.
+its app and event IDs stay `filesv2` and `filesv2.*`. The Chat application
+imports as `_chat`, for example `_chat.message.post({ conversation, body,
+idempotencyKey })`; capability IDs remain `chat.*`. The reserved `chat` export
+addresses the bound Gustav chat in personal Code through `chat.send`.
 
 Application authors may set `sdkExportName` in `defineCapabilities()` to
 choose a module export. The optional manifest field accepts a JavaScript

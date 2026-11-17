@@ -223,22 +223,24 @@ Queries: `chat.discussion.list`, `chat.message.read`, `chat.notifications.read`.
 | `chat.discussion.post` | — | Post to item discussion | — | — | not in the SDK |
 | `chat.message.delete` | — | Delete discussion message | — | — | not in the SDK |
 | `chat.message.edit` | — | Edit discussion message | — | — | not in the SDK |
-| `chat.message.post` | `chat.message.post` | Post a chat message | — | required | admin approval |
+| `chat.message.post` | `_chat.message.post` | Post a chat message | — | required | admin approval |
 | `chat.notifications.set` | — | Set chat notifications | — | — | not in the SDK |
 | `chat.thread.follow` | — | Follow or unfollow a discussion | — | — | not in the SDK |
 
-`chat.message.post` takes a `conversation` ID and a Markdown `body`. The
-account must be a member of that conversation. See the
+`_chat.message.post` calls `chat.message.post` with a `conversation` ID and a
+Markdown `body`. The account must be a member of that conversation. The Chat
+application imports as `_chat`; `chat.send(...)` addresses the bound Gustav chat
+in personal Code. See the
 [event to chat template](template-event-to-chat.md).
 
 <!-- check: personal -->
 ```ts
-import { app, chat } from "@sdk";
+import { app, _chat } from "@sdk";
 
 app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note", title: "Weekend note" }, async () => {
   const day = new Date().toISOString().slice(0, 10);
   // Fictional conversation ID; take the real one from the conversation's address in Chat or ask the person.
-  await chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
+  await _chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
 });
 export default app;
 ```

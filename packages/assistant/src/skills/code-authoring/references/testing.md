@@ -177,11 +177,11 @@ export default app;
 
 <!-- check: personal -->
 ```ts
-import { app, chat } from "@sdk";
+import { app, _chat } from "@sdk";
 
 app.schedule({ cron: "0 16 * * 5", timeZone: "Europe/Berlin", name: "weekend-note", title: "Weekend note" }, async () => {
   const day = new Date().toISOString().slice(0, 10);
-  await chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
+  await _chat.message.post({ conversation: "Cnv001", body: "Have a good weekend!", idempotencyKey: `weekend:${day}` });
 });
 export default app;
 ```
@@ -218,7 +218,7 @@ replays the first result; a run a week later posts again.
 
 <!-- check: resource mail.mailbox -->
 ```ts
-import { app, chat, mail } from "@sdk";
+import { app, _chat, mail } from "@sdk";
 
 app.on("mail.message.received", async event => {
   let { data: message } = await mail.message.read({ id: event.subject.id, waitForHydration: true });
@@ -228,7 +228,7 @@ app.on("mail.message.received", async event => {
   if (!/urgent/i.test(message.subject)) return;
   // The subject is untrusted: post it only as a short code span, never as Markdown.
   const subject = message.subject.replace(/[\r\n`]/g, " ").slice(0, 120);
-  await chat.message.post({
+  await _chat.message.post({
     conversation: "Cnv001",
     body: `Urgent mail: \`${subject}\``,
     idempotencyKey: `urgent:${message.id}`,

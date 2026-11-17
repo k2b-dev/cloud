@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { z } from "zod";
+import { chatCapabilities } from "../../../chat/src/capabilities";
 import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
 import { compileCapabilityManifest } from "../capabilities/testing";
 import { defineCapabilities } from "../contracts/capabilities";
@@ -37,6 +38,36 @@ const manifest = compileCapabilityManifest(
   }),
 );
 const sdk = (options: CodeSdkOptions = { mode: "personal" }) => generateCodeSdk([manifest], options);
+
+test("bound Gustav chat and the Chat application keep separate SDK exports and invocations", async () => {
+  const generated = generateCodeSdk([manifest, compileCapabilityManifest("chat", chatCapabilities)], { mode: "personal" });
+  expect(generated.manifest.apps.find((app) => app.appId === "chat")?.exportName).toBe("_chat");
+  const calls: CodeSdkInvocation[] = [];
+  const module = await import(`data:text/javascript;base64,${Buffer.from(generated.runtime).toString("base64")}`);
+  module.__codeSdk.bind({
+    call: async (_operation: string, input: CodeSdkInvocation) => {
+      calls.push(input);
+      return {};
+    },
+  });
+  await module.chat.send({ text: "Review the supplied notes.", idempotencyKey: "gustav-note" });
+  await module._chat.message.post({ conversation: "Cnv001", body: "Team note", idempotencyKey: "team-note" });
+  expect(calls).toEqual([
+    {
+      call: {
+        capability: "core.ai.chat.send",
+        target: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
+        refs: {},
+        input: { text: "Review the supplied notes." },
+      },
+      metadata: { idempotencyKey: "gustav-note" },
+    },
+    {
+      call: { capability: "chat.message.post", target: null, refs: {}, input: { conversation: "Cnv001", body: "Team note" } },
+      metadata: { idempotencyKey: "team-note" },
+    },
+  ]);
+});
 
 test("bound send stays bound through generated AI tools and requires the dynamic checked permission", async () => {
   const generated = sdk();

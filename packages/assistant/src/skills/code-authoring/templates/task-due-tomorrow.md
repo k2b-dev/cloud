@@ -20,7 +20,7 @@ Assignment and chat effects follow the installation's Code approval policy.
 
 <!-- check: personal -->
 ```ts
-import { app, spaces, chat } from "@sdk";
+import { app, spaces, _chat } from "@sdk";
 
 const SPACE = "Spc001";
 const PERSON = "00000000-0000-4000-8000-000000000001";
@@ -55,7 +55,7 @@ async function assignAndNotify(id: string) {
   }
   // Repeating after assignment is safe: the message keeps the same occurrence key.
   const title = task.title.replace(/[\r\n`]/g, " ").slice(0, 120);
-  await chat.message.post({
+  await _chat.message.post({
     conversation: TEAM_CHAT,
     body: `Morgen fällig und zugewiesen: \`${title}\` (${task.id})`,
     idempotencyKey: `tomorrow:${task.id}:${due}`,

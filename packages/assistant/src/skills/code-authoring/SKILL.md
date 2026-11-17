@@ -141,7 +141,7 @@ and start with the [database template](references/template-database.md).
 | Put a result into the owner's Gustav chat | `core.ai.chat(chatId).send` with fixed `text` and result as `context` (personal Code) | [AI](references/ai.md), [weekly report](references/template-weekly-report.md) |
 | Let Gustav do open-ended work with tools | `core.ai.chat(chatId).send` (personal Code) | [AI](references/ai.md) |
 | Rebuild an Assistant routine as Code | Personal Code: the routine's schedule and time zone, then `deliver` for a fixed result or `run` for open-ended work | [Rebuild](references/rebuild.md), [Schedules](references/schedules.md), [AI](references/ai.md) |
-| Post into a team chat conversation | `chat.message.post` | [Capabilities](references/capabilities.md), [event to chat](references/template-event-to-chat.md) |
+| Post into a team chat conversation | `_chat.message.post` | [Capabilities](references/capabilities.md), [event to chat](references/template-event-to-chat.md) |
 | Create or update a task in a Space | `spaces.space(id).task.create`, `spaces.space(id).task.update` | [Capabilities](references/capabilities.md), [form app](references/template-form-app.md) |
 | A page with key figures, charts and tables | `app.get` with `c.page(<Page>…)`: `Stats`/`Stat`, `Chart.*`, `Table`/`Column` | [Pages](references/pages.md), [dashboard](references/template-dashboard-page.md) |
 | A form that changes something | `Form` with `Field.*`, handled by `app.post` | [Pages](references/pages.md), [form app](references/template-form-app.md) |
