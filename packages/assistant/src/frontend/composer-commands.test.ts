@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AiProject, AiSkillSummary } from "@k2b/cloud/ai";
 import type { CloudResourcePickerItem } from "@k2b/cloud/browser/resource-picker";
-import { createConfig } from "@k2b/ssr";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-slash-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { assistantCopyFor } = await import("./ui-copy");
 const { assistantApi } = await import("../api/client");

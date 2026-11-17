@@ -66,7 +66,7 @@ Use its existing patterns:
   Action's reply remains direct. Do not poll for a human.
 - **Targets and rights:** an Assistant `targetChat` is a Gustav chat, different
   from a general Chat conversation. Deterministic output uses `core.ai.chat(chatId).send` with fixed instructions and the output as `context`
-  for the original chat; use `chat.message.post` only for an explicitly chosen
+  for the original chat; use `_chat.message.post` only for an explicitly chosen
   general Chat target. Open-ended turns report themselves; do not post a second
   copy. Exported grants/mandates never become shares. Follow [Access](access.md).
 

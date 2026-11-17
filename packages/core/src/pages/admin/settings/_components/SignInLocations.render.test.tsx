@@ -3,15 +3,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { GeoIpAdminStatus } from "@k2b/cloud/contracts";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { bundledStatus, emptyStatus, maxmindStatus, staleStatus, uploadedStatus } from "./sign-in-locations-fixture";
 
 const root = mkdtempSync(join(tmpdir(), "cloud-sign-in-locations-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: SignInLocations } = await import("./SignInLocations.tsx");
 const { default: Form } = await import("./CoreSettingsForm.island.tsx");

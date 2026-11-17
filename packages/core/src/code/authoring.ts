@@ -196,7 +196,14 @@ export const codeAuthoringServices = {
   withdraw: withdrawCodeVersion,
   async init(input: CodeAuthoringInput<"init">, context: CodeContext): Promise<CodeAuthoringData<"init">> {
     const user = codePerson(context, true);
-    const code = await createCode({ title: input.title, owner: input.owner ?? { kind: "person", userId: user.id } }, context);
+    const code = await createCode(
+      {
+        title: input.title,
+        owner: input.owner ?? { kind: "person", userId: user.id },
+        ...(context.submissionOrigin?.kind === "ai_chat" ? { chatConversationId: context.submissionOrigin.conversationId } : {}),
+      },
+      context,
+    );
     const { entry, files } = codeInitialFiles(code.owner);
     return {
       version: 1,

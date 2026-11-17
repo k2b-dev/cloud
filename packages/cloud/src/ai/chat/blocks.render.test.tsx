@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { type Accessor, createComponent, createRoot, createSignal, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { CodeCheckResultSchema } from "../../code/checker-contract";
 import { aiAttachmentMarker } from "../attachments";
 import type { AiActiveTurn } from "../client/projection";
@@ -14,8 +14,8 @@ import type { AiStoredMessage } from "../types";
 import type { AiTurnPhase } from "./turn-layout";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-capability-block-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { AiReaderTimeZoneProvider } = await import("./action-sentences");

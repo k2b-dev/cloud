@@ -24,7 +24,12 @@ export const CodeReadModelChangeSchema = z.strictObject({
   approvalReason: text.optional(),
   accessLabel: text.optional(),
 });
-export const CodeReadModelNoticeSchema = z.strictObject({ severity: z.enum(["warning", "block"]), text, consequence: text });
+export const CodeReadModelNoticeSchema = z.strictObject({
+  severity: z.enum(["warning", "block"]),
+  text,
+  consequence: text,
+  code: z.literal("chat_missing").optional(),
+});
 export const CodeReadModelExampleSchema = z.strictObject({
   name: text,
   modelLabel: text,
@@ -42,7 +47,7 @@ export const CodeVersionReadModelSchema = z.strictObject({
   assurance: text,
   mayDo: list(
     CodeReadModelRowSchema.extend({
-      /** Resolve an unavailable static target with an independent canonical reader as the viewer. */
+      /** Resolve a static target or current bound chat with an independent canonical reader as the viewer. */
       target: z.strictObject({ ref: z.strictObject({ type: text, id: text }), text }).optional(),
     }),
   ),

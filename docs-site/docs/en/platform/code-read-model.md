@@ -49,6 +49,13 @@ to this Code. Ordinary Code read permission suffices.
   types, without raw structured payloads.
 - `notices` contains a sentence and consequence for each checker finding.
   Technical codes and source coordinates remain available to CLI clients.
+  In the owner's projection, a version using `chat.send` receives a blocking
+  notice with `code: "chat_missing"` when its bound chat is missing, archived or
+  deleted, including before the first binding. Localized instructions explain
+  how to choose another chat or restore the archived chat. This notice reflects
+  the current binding; versions without `chat.send` receive no chat notice.
+  Consumers use this notice for missing-chat warnings instead of treating every
+  stored binding as a dependency.
 
 An unavailable target reader produces a neutral type label and no link;
 a reader's explicit refusal may say that the target is not visible. Within one
@@ -59,7 +66,7 @@ one-child-Query limit (tracked in #3423).
 
 An unresolved static `mayDo.items[]` target carries an optional
 `target: { ref: { type, id }, text }`. Its text has exactly one `{name}` slot;
-the ordinary row text remains the neutral fallback. Targets Core has explicitly marked hidden, and dynamic
+the ordinary row text remains the neutral fallback. Targets Core has explicitly marked hidden, and ordinary dynamic
 targets, do not carry this lookup hint. An unavailable invocation reader can
 still carry the hint; the independent reader must authorize it again. At the outer request boundary, call
 `nameCodeGrantTargets(model, invoke, readerOf, signal)` from `@k2b/cloud/code` to fill
@@ -73,6 +80,32 @@ slots retain the fallback without a link. Render the resulting `text` as plain
 text; never render the reference ID. This composition changes only grant rows;
 it cannot unhide descriptions, examples, or comparison text. Pass the request
 signal to cancel pending readers and prevent further batches.
+
+For personal Code, a dynamic `core.ai.chat.send` permission uses the current
+chat binding as a naming hint in its owner's projection when that chat is active. Core returns:
+
+```ts
+{
+  text: "Write to a chat, Gustav answers",
+  note: "AI · with your rights, counts toward your allowance",
+  target: {
+    ref: { type: "core.ai.chat", id: "Chat23" },
+    text: "Write to the chat “{name}”, Gustav answers"
+  }
+}
+```
+
+The existing `nameCodeGrantTargets` helper resolves this hint through the
+catalog's `core.ai.chat` reader, `ai.chat.read`. Its authorized `data.view`
+contains the title and permission. Only the chat owner receives the title;
+other Code readers keep the neutral sentence. Without an available naming hint,
+`target.ref` retains the SDK's `bound-chat` handle; it names no conversation.
+Changing the binding updates this hint
+without changing version permissions, comparisons, or admin approvals.
+
+The SQL meter pins the personal version read to three statements without a
+binding and four with a binding, excluding canonical target readers' own costs.
+
 Descriptions and example text are visible only when the caller can read every
 version target. Otherwise the answer explains that the description names
 unreadable targets. Administrator status alone does not authorize these names.

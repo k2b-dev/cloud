@@ -2,12 +2,12 @@ import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { createComponent } from "solid-js";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as watcher from "../_internal/runtime-watcher";
 import type { RuntimeAppMeta } from "../contracts/app";
 import * as builds from "../contracts/pwa-builds";
@@ -19,8 +19,8 @@ import { pwaMessages } from "./pwa-messages";
 import type { RuntimeContext } from "./runtime";
 
 const root = mkdtempSync(join(tmpdir(), "cloud-pwa-layout-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { default: PwaLayout } = await import("./PwaLayout");

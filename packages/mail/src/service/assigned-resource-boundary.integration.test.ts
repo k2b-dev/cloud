@@ -2,11 +2,11 @@ import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:tes
 import { sql } from "@k2b/cloud";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { accounts, oauthTokens } from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { unwrap } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { type MailApiContext, resolveMailboxParam, resolveMailboxResourceParam } from "../api/public-resource-boundary";
 import { mailCapabilities } from "../capabilities";
 import { newShortId } from "../lib/short-id";
@@ -15,7 +15,7 @@ import { grantMailboxAccess } from "./access";
 import type { MailRequestContext } from "./auth";
 import { createMailbox } from "./mailboxes";
 
-Bun.plugin(createConfig({ dev: true, rootDir: import.meta.dir }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir });
 const { router } = await import("../router");
 
 const suite = suiteFor("database", "nats", "valkey");

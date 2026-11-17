@@ -2,9 +2,9 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { PageOptions } from "../_internal/define-app";
 import type { RuntimeAppMeta } from "../contracts/app";
 import type { RailSnapshot } from "../contracts/rail-preferences";
@@ -13,8 +13,8 @@ import type { LayoutAnnouncementsState } from "../server/middleware/settings";
 import type { RuntimeContext } from "./runtime";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-panel-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");

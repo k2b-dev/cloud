@@ -10,12 +10,12 @@ import type { AuthContext } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as rail from "@k2b/cloud/services/rail-snapshot";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { type ComponentProps, createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as chatContext from "../chat-context";
 import * as chatWorkspace from "../chat-workspace-service";
 import * as projectContext from "../project-context";
@@ -23,8 +23,8 @@ import * as sidebar from "../sidebar";
 import type AssistantWorkspace from "./AssistantWorkspace.island";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-page-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
 // After the Solid plugin: the shared Code page and Cloud's SSR are .tsx.

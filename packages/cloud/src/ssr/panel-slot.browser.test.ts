@@ -4,14 +4,13 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { browserName, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { browserName, launchBrowser, pageErrors, settled, storedCookie } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-panel-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
 const rail = await import("../services/rail-snapshot");
@@ -1020,6 +1019,63 @@ test("a panel menu click survives a delayed lazy controller mount", async () => 
     expect(await placeholder!.evaluate((element) => element.isConnected)).toBe(false);
     expect(await page.getByRole("button", { name: "Panel menu", exact: true }).getAttribute("aria-expanded")).toBe("true");
     expect(await page.getByRole("menuitemcheckbox", { name: "Share context", exact: true }).isVisible()).toBe(true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("a panel frame without a document root does not leave a partially installed controller", async () => {
+  const { context, page } = await fixture(1440, "1:fixture:", { ask: true, delayController: true });
+  const errors = pageErrors(page);
+  let writes = 0;
+  page.on("request", (request) => {
+    if (request.method() === "PUT" && new URL(request.url()).pathname === "/api/me/panel-consent/fixture") writes++;
+  });
+  try {
+    await page.waitForFunction(() => document.documentElement.dataset.panelControllerWaiting === "true");
+    const placeholder = await page.getByRole("button", { name: "Panel menu", exact: true }).elementHandle();
+    await page.evaluate(() => {
+      const frame = document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")!;
+      // A navigation can expose a Document before its root has arrived.
+      const empty = document.implementation.createHTMLDocument();
+      empty.documentElement.remove();
+      Object.defineProperty(frame, "contentDocument", {
+        configurable: true,
+        get() {
+          document.documentElement.dataset.frameRootRead = "true";
+          return empty;
+        },
+      });
+      sessionStorage.removeItem("fixture-delay-panel-controller");
+      window.dispatchEvent(new Event("fixture.resume-panel-controller"));
+    });
+    await page.waitForFunction(() => document.documentElement.dataset.frameRootRead === "true");
+    expect(await placeholder!.evaluate((element) => element.isConnected)).toBe(false);
+    expect(errors).toEqual([]);
+    await page.evaluate(() => {
+      const frame = document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")!;
+      Reflect.deleteProperty(frame, "contentDocument");
+    });
+    // The loading provider announces readiness after its root becomes available.
+    await page
+      .frameLocator("[data-cloud-panel-frame]")
+      .locator("html")
+      .evaluate(() => {
+        window.parent.postMessage({ type: "cloud.panel.ready", v: 1, provider: "fixture" }, location.origin);
+      });
+    await ready(page);
+    await page.getByRole("button", { name: "Allow", exact: true }).click();
+    await page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.contextAllowed === "true");
+    await page.getByRole("button", { name: "Panel menu", exact: true }).click();
+    const choice = page.getByRole("menuitemcheckbox", { name: "Share context", exact: true });
+    expect(await choice.getAttribute("aria-checked")).toBe("true");
+    await choice.click();
+    await page.waitForFunction(() => {
+      const state = document.getElementById("cloud-panel")?.dataset;
+      return state?.contextAllowed === "false" && state.consentSaving === "false";
+    });
+    expect(writes).toBe(2);
+    expect(errors).toEqual([]);
   } finally {
     await context.close();
   }

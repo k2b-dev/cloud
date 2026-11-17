@@ -1,13 +1,13 @@
 import { setSystemTime } from "bun:test";
+import { registerSsrTestPlugin } from "../../packages/ui/test/ssr-test-plugin";
 /** The real Code surfaces, with deterministic fictional inputs. No snapshot strings stand in for a renderer. */
 
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { createConfig } from "../../packages/ssr/src/index";
 import { renderedText } from "./rendered-markup";
 
 setSystemTime(new Date("2026-11-14T12:00:00.000Z"));
-Bun.plugin(createConfig({ dev: true, rootDir: import.meta.dir }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir });
 const [
   { LocaleProvider },
   { default: CodePage },

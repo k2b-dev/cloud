@@ -3,11 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { CloudRuntime } from "../contracts/app";
 import {
   formatUnavailableHeader,
@@ -91,7 +91,7 @@ const updatingProblem = () =>
 export async function maintenanceNoticeBrowserFixture() {
   const root = mkdtempSync(join(tmpdir(), "cloud-maintenance-notice-browser-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const [{ default: Layout }, { preloadDisplayApps }] = await Promise.all([import("../ssr/Layout"), import("../ssr/runtime")]);
   const ui = resolve(import.meta.dir, "../../../ui");
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", `${ui}/`));

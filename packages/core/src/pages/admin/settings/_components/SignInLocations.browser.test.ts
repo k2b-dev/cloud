@@ -3,20 +3,20 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { GeoIpAdminStatus } from "@k2b/cloud/contracts";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider, SettingsPage } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import type { SignInLocationPhase } from "./SignInLocations";
 import { bundledStatus, emptyStatus, staleStatus, uploadedStatus } from "./sign-in-locations-fixture";
 
 // Every transient state of the block replaces text in fixed places: rows and actions never move.
 const root = mkdtempSync(join(tmpdir(), "core-sign-in-locations-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: SignInLocations } = await import("./SignInLocations.tsx");
 const { buildFontAssets } = await import("../../../../../scripts/font-assets");

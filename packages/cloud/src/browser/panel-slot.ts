@@ -194,7 +194,7 @@ export function installPanelSlot(): () => void {
       const scope = new URL(provider.href, location.origin).pathname.replace(/\/$/, "");
       return (
         !!shown &&
-        (!requireReady || frame?.contentDocument?.documentElement.dataset.cloudPanelReady === provider.id) &&
+        (!requireReady || frame?.contentDocument?.documentElement?.dataset.cloudPanelReady === provider.id) &&
         (shown.pathname === scope || shown.pathname.startsWith(`${scope}/`))
       );
     } catch {
@@ -867,9 +867,10 @@ export function installPanelSlot(): () => void {
   window.addEventListener("resize", seedWidth);
   // An SSR iframe can have posted its one-shot ready before this lazy module
   // arrived. Its runtime also marks its own same-origin document, so read that
-  // once the listener is in place instead of loading the provider again.
+  // once the listener is in place instead of loading the provider again. A
+  // navigating iframe can expose a document before it has a documentElement.
   if (isOpen() && frame) {
-    if (frame.contentDocument?.documentElement.dataset.cloudPanelReady === provider.id) markReady();
+    if (frame.contentDocument?.documentElement?.dataset.cloudPanelReady === provider.id) markReady();
     else loading();
   } else if (isOpen()) load();
   else unload();

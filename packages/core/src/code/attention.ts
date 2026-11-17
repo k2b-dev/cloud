@@ -1,11 +1,12 @@
 import { sql } from "@k2b/cloud";
 import { z } from "zod";
 import { type CodeContext, CodeOwnerUnavailableError, codePermission, codePerson } from "./access";
+import { codeChatMissing, codeChatMissingCondition, codeChatSchemaAvailable } from "./chat-binding";
 import { type Code, CodeIdSchema, CodeOwnerSchema, CodeSchema } from "./contracts";
 import { type CodeRow, listCodes, mapCode } from "./store";
 
 /** Why an owner's Code needs someone: its newest run of an entrypoint failed, a call was refused by its target, or a version waits for approval. */
-export const CodeAttentionReasonSchema = z.enum(["run_failed", "access_missing", "approval_pending"]);
+export const CodeAttentionReasonSchema = z.enum(["run_failed", "access_missing", "approval_pending", "chat_missing"]);
 export type CodeAttentionReason = z.infer<typeof CodeAttentionReasonSchema>;
 
 /** One SSR-friendly query per owner page: which readable Code of this owner needs attention. */
@@ -105,7 +106,7 @@ const computeReasons = async (code: Code, _context: CodeContext): Promise<CodeAt
   ];
 };
 
-export const cachedCodeAttentionReasons = (code: Code, context: CodeContext, now = Date.now()) => {
+const cachedRunAttentionReasons = (code: Code, context: CodeContext, now = Date.now()) => {
   const hit = cache.get(code.id);
   // One computation per Code at a time: an unfinished one is shared, however old.
   if (hit && (!hit.settled || now - hit.at < CODE_ATTENTION_CACHE_MS)) return hit.reasons;
@@ -126,6 +127,15 @@ export const cachedCodeAttentionReasons = (code: Code, context: CodeContext, now
   while (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value!);
   return reasons;
 };
+
+/** Chat state is live: a changed binding or restored chat immediately removes the reason. */
+export async function cachedCodeAttentionReasons(code: Code, context: CodeContext, now = Date.now()): Promise<CodeAttentionReason[]> {
+  const [reasons, missing] = await Promise.all([
+    cachedRunAttentionReasons(code, context, now),
+    code.owner.kind === "person" && code.owner.userId === codePerson(context).id ? codeChatMissing(code.id).catch(() => false) : false,
+  ]);
+  return [...reasons, ...(missing ? ["chat_missing" as const] : [])];
+}
 
 /** Readable Code of one owner and why it needs attention. Unreadable Code is never listed. */
 export async function readCodeAttention(input: z.infer<typeof codeAttentionContracts.attention.input>, context: CodeContext) {
@@ -148,12 +158,13 @@ export const CODE_ATTENTION_CANDIDATES = 50;
  * that cannot answer leaves out what it cannot confirm instead of failing the list.
  */
 export async function listCodeAttention(input: z.infer<typeof codeAttentionContracts.list.input>, context: CodeContext) {
-  codePerson(context);
+  const viewer = codePerson(context);
+  const missingChat = codeChatMissingCondition(await codeChatSchemaAvailable());
   const rows = await sql<(CodeRow & { last_run_at: Date | null })[]>`SELECT c.*,
       (SELECT max(r.ended_at) FROM code.runs r WHERE r.code_id = c.id) AS last_run_at
     FROM code.codes c
-    WHERE c.owner_kind <> 'person' AND c.state <> 'deleting'
-      AND (c.state = 'paused'
+    WHERE (c.owner_kind <> 'person' OR (c.owner_user_id=${viewer.id}::uuid AND ${missingChat})) AND c.state <> 'deleting'
+      AND (${missingChat} OR c.state = 'paused'
         OR EXISTS(SELECT 1 FROM (SELECT DISTINCT ON (entrypoint) state FROM code.runs
             WHERE code_id = c.id AND state IN ('succeeded','failed') ORDER BY entrypoint, created_at DESC) latest
           WHERE latest.state = 'failed')

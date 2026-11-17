@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { funnelListFixtures } from "../../test/chart-funnel-list-fixtures";
 import { parseRows069, positiveRows069Json } from "../../test/chart-rows-069-fixture";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
-const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir });
+
 const { default: Chart, chartRenderHeight, renderChartSvg } = await import("./Chart");
 test("funnel and ranked-list SSR embeds the same pure drawing as the first client render", () => {
   for (const spec of funnelListFixtures) {

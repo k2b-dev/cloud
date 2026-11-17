@@ -546,6 +546,7 @@ export const CODE_PAGE_FIXTURE_STATES = [
   "reader",
   "personal",
   "personal-needs-you",
+  "personal-chat-missing",
   "personal-loading",
   "personal-error",
   "no-access",
@@ -970,7 +971,9 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
     case "code":
       return { ...base, tab: "code", state: ready({ sourceTab: sourceTabFixture("code") }) };
     case "personal":
-    case "personal-needs-you": {
+    case "personal-needs-you":
+    case "personal-chat-missing": {
+      const chatMissing = state === "personal-chat-missing";
       const weekly = Array.from({ length: 8 }, (_, index) => ({
         ...runs()[0]!,
         id: id(4, index + 1),
@@ -996,6 +999,21 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
             active: { ...version(2, "approved"), active: true },
             runs: { items: weekly, nextCursor: null },
             refusal: null,
+            // The chat Gustav built it in; archived in "personal-chat-missing", where the owner chooses or restores one.
+            chatBinding: {
+              codeId: "c_woche1",
+              revision: 1,
+              canChange: true,
+              chat: chatMissing
+                ? { state: "unavailable", reason: "archived", id: "Wk7chat", title: L("Wochenbericht", "Weekly report") }
+                : {
+                    state: "available",
+                    id: "Wk7chat",
+                    title: L("Wochenbericht", "Weekly report"),
+                    project: null,
+                    href: "/app/assistant?conversation=Wk7chat",
+                  },
+            },
             automations: [
               {
                 entrypoint: "wochenbericht",
@@ -1031,7 +1049,45 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
                   app: L("KI", "AI"),
                   icon: "tabler:sparkles",
                 },
+                // Named for the owner as the page names it (#77); without a chat only the safe sentence remains.
+                chatMissing
+                  ? {
+                      text: L("In einen Chat schreiben, Gustav antwortet", "Write to a chat, Gustav answers"),
+                      note: L("KI · mit deinen Rechten, zählt auf dein Kontingent", "AI · with your rights, counts toward your allowance"),
+                      app: "Gustav",
+                      icon: "tabler:message-chatbot",
+                      // Core marks the row with the SDK's own handle; no reader names it.
+                      target: {
+                        ref: { type: "core.ai.chat", id: "bound-chat" },
+                        text: L("In den Chat „{name}“ schreiben, Gustav antwortet", "Write to the chat “{name}”, Gustav answers"),
+                      },
+                    }
+                  : {
+                      text: L(
+                        "In den Chat „Wochenbericht“ schreiben, Gustav antwortet",
+                        "Write to the chat “Weekly report”, Gustav answers",
+                      ),
+                      note: L("KI · mit deinen Rechten, zählt auf dein Kontingent", "AI · with your rights, counts toward your allowance"),
+                      app: "Gustav",
+                      icon: "tabler:message-chatbot",
+                      target: {
+                        ref: { type: "core.ai.chat", id: "Wk7chat" },
+                        text: L("In den Chat „{name}“ schreiben, Gustav antwortet", "Write to the chat “{name}”, Gustav answers"),
+                      },
+                    },
               ]),
+              notices: list(
+                chatMissing
+                  ? [
+                      {
+                        code: "chat_missing" as const,
+                        severity: "block" as const,
+                        text: L("Diese Automation braucht einen Chat.", "This automation needs a chat."),
+                        consequence: L("Wähle einen Chat oder stelle diesen wieder her.", "Choose a chat or restore this one."),
+                      },
+                    ]
+                  : [],
+              ),
               timing: list([{ text: L("montags um 07:00", "Mondays at 07:00") }]),
             }),
             activity: null,

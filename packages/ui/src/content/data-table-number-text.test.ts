@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
-import { createConfig } from "@k2b/ssr";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
-Bun.plugin(createConfig({ dev: true, rootDir: import.meta.dir }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir });
 const { tableCellText } = await import("./data-table-columns");
 
 test("number text keeps significant digits and formats short mantissas", () => {

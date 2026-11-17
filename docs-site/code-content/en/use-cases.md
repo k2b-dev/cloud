@@ -50,7 +50,7 @@ the deadline, so it cannot signal the day before.
 Both paths read the task and check its deadline. Unassigned tasks go through
 `spaces.space(SPACE).task.update({ itemId: task.id, addAssigneeIds: [PERSON] })`.
 Tasks assigned only to that person get a note through
-`chat.message.post({ conversation, body, idempotencyKey })`; tasks with other
+`_chat.message.post({ conversation, body, idempotencyKey })`; tasks with other
 assignees are skipped. The chat key prevents duplicate notes for the same task
 and deadline. The executing account needs read and write access to the Space
 and membership in the team chat.

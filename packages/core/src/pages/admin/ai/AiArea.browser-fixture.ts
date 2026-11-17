@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AiModelSlot } from "@k2b/cloud/shared";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import { type AiFixtureCatalog, aiFixtureCatalog, aiFixtureOverview, aiFixtureUsage } from "./AiArea.fixture-data";
 
 /** States the captures and tests switch with `?state=`. */
@@ -96,7 +96,7 @@ const catalogFor = (state: AiAreaFixtureState): AiFixtureCatalog => {
 export async function aiAreaBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-ai-area-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const { AdminLayout } = await import("@k2b/cloud/ssr");
   const { AiAreaView } = await import("./view");
   const { aiAreaMessages } = await import("./messages");
