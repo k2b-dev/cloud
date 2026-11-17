@@ -45,6 +45,27 @@ export * from "./event-tools";
 export { CODE_FILE_LIMITS } from "./file-generation-contract";
 export { type CodeAiToolBinding, CodeAiToolBindingSchema, CodeFileRefSchema } from "./file-ref";
 export { generateCodeSdk } from "./generator";
+export { type CodeCallEvent, CodeCallEventSchema, codeDetailsKey } from "./live-events";
+export {
+  appendCodeOutput,
+  applyCodeOutputEvent,
+  CODE_OUTPUT_INTERVAL_MS,
+  CODE_OUTPUT_OPERATION,
+  type CodeOutputBatch,
+  CodeOutputBatchSchema,
+  type CodeOutputEntry,
+  CodeOutputEntrySchema,
+  type CodeOutputEvent,
+  CodeOutputEventSchema,
+  type CodeOutputKnownEntry,
+  CodeOutputKnownEntrySchema,
+  type CodeOutputWindow,
+  CodeOutputWindowSchema,
+  cleanCodeOutput,
+  codeOutputParts,
+  emptyCodeOutput,
+  isCodeOutputLogEntry,
+} from "./output";
 export {
   assertCodePageData,
   CODE_PAGE_LIMITS,

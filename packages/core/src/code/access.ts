@@ -210,6 +210,7 @@ export const codeLiveReaders = async (
   code: Code,
   viewers: readonly LiveViewer[],
   readOwner: typeof readCodeOwner = readCodeOwner,
+  editorsOnly = false,
 ): Promise<ReadonlySet<string>> => {
   const allowed = new Set<string>();
   const shared: { viewer: LiveViewer; context: CodeContext }[] = [];
@@ -232,7 +233,8 @@ export const codeLiveReaders = async (
         },
       };
       const user = codePerson(context);
-      if ((code.owner.kind === "person" && code.owner.userId === user.id) || user.roles.includes("admin")) allowed.add(viewer.id);
+      if ((code.owner.kind === "person" && code.owner.userId === user.id) || (!editorsOnly && user.roles.includes("admin")))
+        allowed.add(viewer.id);
       else shared.push({ viewer, context });
     } catch (error) {
       if (!(error instanceof CodeDataError)) throw error;
@@ -247,7 +249,7 @@ export const codeLiveReaders = async (
   for (let start = 0; start < shared.length; start += ownerReadConcurrency) {
     await Promise.all(
       shared.slice(start, start + ownerReadConcurrency).map(async ({ viewer, context }, offset) => {
-        if (["read", "write", "admin"].includes(permissions[start + offset] ?? "none")) {
+        if ((editorsOnly ? ["write", "admin"] : ["read", "write", "admin"]).includes(permissions[start + offset] ?? "none")) {
           allowed.add(viewer.id);
           return;
         }

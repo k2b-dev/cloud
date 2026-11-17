@@ -49,6 +49,7 @@ COPY --from=build /app/job-isolate /app/job-isolate
 COPY --from=build /app/checker-isolate /app/checker-isolate
 COPY --from=build /app/workerd /app/workerd
 COPY packages/runner/src/assets/host.js /app/assets/host.js
+COPY packages/runner/src/assets/console.js /app/assets/console.js
 COPY --from=build /app/runner-isolate /app/runner-isolate
 COPY --from=build /app/runner-entrypoint /app/runner-entrypoint
 RUN mkdir /run/runner-key && chmod 0700 /run/runner-key

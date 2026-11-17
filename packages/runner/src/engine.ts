@@ -1,8 +1,15 @@
 import { chmod, chown, lstat, mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { CODE_REQUEST_LIMITS, type CodeRouteResponse, CodeRouteResponseSchema } from "@k2b/cloud/code";
+import {
+  CODE_OUTPUT_INTERVAL_MS,
+  CODE_OUTPUT_OPERATION,
+  CODE_REQUEST_LIMITS,
+  type CodeRouteResponse,
+  CodeRouteResponseSchema,
+} from "@k2b/cloud/code";
 import type { RunnerConfig, RunnerJsonValue, RunnerLease, RunnerOutcome } from "@k2b/cloud/code/runner";
 import { RunnerCallError } from "@k2b/cloud/code/runner";
+import { LIVE_LIMITS } from "@k2b/cloud/events/limits";
 import { z as schema } from "zod";
 import { readBytes } from "./bridge";
 import { allocateRunnerIdentities } from "./identities";
@@ -31,6 +38,7 @@ type Loaded = {
   call: SandboxCall;
   signal: AbortSignal;
   calls: number;
+  outputPending: boolean;
   modules?: Record<string, string>;
   group?: Group;
 };
@@ -64,7 +72,7 @@ export class WorkerdEngine implements RunnerEngine {
   ) {
     signal.throwIfAborted();
     if (this.#loaded.has(lease.runId)) throw new Error("runner_already_loaded");
-    this.#loaded.set(lease.runId, { lease, source, config, call, signal, calls: 0, modules });
+    this.#loaded.set(lease.runId, { lease, source, config, call, signal, calls: 0, outputPending: false, modules });
   }
   async #spawn(config: RunnerConfig, retire: () => void): Promise<Group> {
     if (process.platform !== "linux" || process.getuid?.() !== 0) throw new Error("runner_isolation_requires_root");
@@ -93,13 +101,17 @@ export class WorkerdEngine implements RunnerEngine {
             const loaded = this.#loaded.get(call.runId);
             if (!members.has(call.runId) || !loaded || loaded.signal.aborted) return new Response(null, { status: 409 });
             // Reject overload immediately; there is no unbounded per-worker queue of HTTP calls.
-            if (loaded.calls >= config.bridgeConcurrency) return Response.json({ ok: false, error: { code: "runner_bridge_busy" } });
-            loaded.calls++;
+            const output = call.operation === CODE_OUTPUT_OPERATION;
+            if (output ? loaded.outputPending : loaded.calls >= config.bridgeConcurrency)
+              return Response.json({ ok: false, error: { code: "runner_bridge_busy" } });
+            if (output) loaded.outputPending = true;
+            else loaded.calls++;
             let result: RunnerJsonValue;
             try {
               result = await loaded.call(call.operation, call.input);
             } finally {
-              loaded.calls--;
+              if (output) loaded.outputPending = false;
+              else loaded.calls--;
             }
             const body = JSON.stringify({ ok: true, data: result });
             if (Buffer.byteLength(body) > config.bridgeBytes) throw new Error("runner_call_too_large");
@@ -123,6 +135,7 @@ export class WorkerdEngine implements RunnerEngine {
       await chown(bridgeSocket, 0, uid);
       await chmod(bridgeSocket, 0o660);
       await Bun.write(join(directory, "host.js"), Bun.file(join(import.meta.dir, "assets/host.js")));
+      await Bun.write(join(directory, "console.js"), Bun.file(join(import.meta.dir, "assets/console.js")));
       await Bun.write(
         join(directory, "config.capnp"),
         `using Workerd = import "/workerd/workerd.capnp";
@@ -130,7 +143,7 @@ const config :Workerd.Config = (
   services = [
     (name = "host", worker = (
       compatibilityDate = "2026-10-01", compatibilityFlags = ["experimental"],
-      modules = [(name = "host.js", esModule = embed "host.js")],
+      modules = [(name = "host.js", esModule = embed "host.js"), (name = "console-source", text = embed "console.js")],
       bindings = [(name = "LOADER", workerLoader = ()),
         (name = "BRIDGE", service = "bridge"), (name = "CAPABILITY", text = ${JSON.stringify(capability)})],
       globalOutbound = (name = "denied")
@@ -142,7 +155,7 @@ const config :Workerd.Config = (
 );`,
       );
       // Do not depend on the supervisor's umask for child readability.
-      await Promise.all(["host.js", "config.capnp"].map((file) => chmod(join(directory, file), 0o444)));
+      await Promise.all(["host.js", "console.js", "config.capnp"].map((file) => chmod(join(directory, file), 0o444)));
       // The workerd child has no environment, including no app key or Core origin.
       const executable =
         this.executable ?? (import.meta.path.endsWith(".ts") ? (await import("workerd")).default : join(import.meta.dir, "workerd"));
@@ -251,7 +264,9 @@ const config :Workerd.Config = (
   }
   async #remove(directory: string) {
     await Promise.all(
-      ["host.js", "config.capnp", "workerd.sock", "bridge.sock"].map((file) => unlink(join(directory, file)).catch(() => undefined)),
+      ["host.js", "console.js", "config.capnp", "workerd.sock", "bridge.sock"].map((file) =>
+        unlink(join(directory, file)).catch(() => undefined),
+      ),
     );
     await rmdir(directory).catch(() => undefined);
   }
@@ -307,6 +322,16 @@ const config :Workerd.Config = (
           entrypoint: lease.entrypoint,
           input: lease.input,
           modules: loaded.modules,
+          outputLimits: ["chat", "test"].includes(lease.trustTier)
+            ? null
+            : {
+                // Reserve the exact signed Core envelope; the raw batch and its lease proof together fit one live frame.
+                bytes:
+                  LIVE_LIMITS.frameBytes -
+                  Buffer.byteLength(JSON.stringify({ runId: lease.runId, generation: lease.generation, token: lease.token, batch: null })),
+                intervalMs: CODE_OUTPUT_INTERVAL_MS,
+                operation: CODE_OUTPUT_OPERATION,
+              },
         }),
         signal,
         timeout: false,

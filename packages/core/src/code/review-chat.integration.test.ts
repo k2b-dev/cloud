@@ -177,8 +177,10 @@ databaseSuite()("durable Code decisions and once-only automatic revisions", () =
       await sql`INSERT INTO code.activations(id,code_id,version_id,activating_person,locale,cloud_admin,state)
         VALUES(gen_random_uuid(),${f.codeId},${f.versionId}::uuid,${owner}::uuid,'de',false,'active')`;
       await sql.begin((tx) => enqueueCodeReviewChat(f.versionId, "activation", tx));
-      await deliverCodeReviewChatFacts(await sql<ReviewChatEffect[]>`SELECT * FROM code.review_chat_outbox
-        WHERE version_id=${f.versionId}::uuid AND kind='activation'`);
+      await deliverCodeReviewChatFacts(
+        await sql<ReviewChatEffect[]>`SELECT * FROM code.review_chat_outbox
+        WHERE version_id=${f.versionId}::uuid AND kind='activation'`,
+      );
       const messages = await aiConversations.listMessages({ conversationId: f.chat.id });
       const fact = messages.at(-1)?.meta?.codeDecision;
       expect(fact).toMatchObject({ outcome: "activated", pageCount: withPages ? 2 : 0 });

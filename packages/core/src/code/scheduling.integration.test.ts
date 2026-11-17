@@ -35,6 +35,7 @@ import { verifyCodeSubmission } from "./authoring-check";
 import { listCodeAutomations } from "./automations";
 import { createCodeBridgeHost, requireCodeRunFence } from "./bridge";
 import { claimCodeWork } from "./dispatch";
+import { receiveCodeOutput, replayCodeOutput } from "./output";
 import * as ownerTransport from "./owner-transport";
 import { codeRequestVersion, requestCodeRoute } from "./requests";
 import {
@@ -246,6 +247,7 @@ suiteFor(
     connection = await connectTestNats();
   });
   beforeEach(async () => {
+    cloud.unbindProcessSync();
     await sql`DELETE FROM code.codes`;
     await sql`DELETE FROM code.runner_instances`;
     await sql`DELETE FROM code.jobs`;
@@ -255,8 +257,10 @@ suiteFor(
     syncs.push(sync);
     queue = sync.queue<CodeRunWakeup>({ id: "runs", dedupeWindowMs: 60_000, retention: { maxAgeMs: 60_000, maxBytes: 1_048_576 } });
     await sync.ready();
+    cloud.bindProcessSync(sync, connection);
   });
   afterAll(async () => {
+    cloud.unbindProcessSync();
     settings?.mockRestore();
     for (const sync of syncs) await sync.drain({ timeoutMs: 1000 });
     await connection?.drain();
@@ -419,6 +423,96 @@ suiteFor(
         setSystemTime(slot);
       }
     }, 15_000);
+  test("harden visitor cancellation with a frozen, retained output window", async () => {
+    const code = await fixture(owner, false, true);
+    const cancel = new AbortController();
+    const [clock] = await sql<{ now: Date }[]>`SELECT clock_timestamp() AS now`;
+    setSystemTime(clock!.now);
+    const response = requestCodeRoute({
+      ...code,
+      signal: cancel.signal,
+      request: {
+        codeId: code.codeId,
+        method: "GET",
+        path: "/",
+        query: "",
+        contentType: "text/plain",
+        body: "",
+        params: {},
+        user: null,
+      },
+    });
+    const observed = response.catch((error: unknown) => error);
+    try {
+      // Admission completes before the claim; no production timeout is changed.
+      let ready = false;
+      let settled = false;
+      void observed.then(() => {
+        settled = true;
+      });
+      while (!settled) {
+        const rows = await sql`SELECT id FROM code.runs WHERE code_id=${code.codeId} AND state='queued'`;
+        if (rows.length) {
+          ready = true;
+          break;
+        }
+        await Bun.sleep(0);
+      }
+      expect(ready).toBe(true);
+      const lease = await take();
+      await receiveCodeOutput(lease, {
+        seq: 1,
+        entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before cancel" }],
+        droppedLines: 0,
+        droppedBytes: 0,
+      });
+      const meter = await meterSql();
+      try {
+        const statements = await meter.during(async () => {
+          cancel.abort();
+          await observed;
+        });
+        expect(statements.filter((statement) => statement.includes("UPDATE code.runs SET console_output="))).toHaveLength(1);
+      } finally {
+        await meter.close();
+      }
+      expect((await state(lease.runId)).state).toBe("cancelled");
+      const [saved] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${lease.runId}::uuid`;
+      expect(saved!.console_output).toEqual(await replayCodeOutput(lease.runId));
+      expect(saved!.console_output).not.toBeNull();
+      await expect(receiveCodeOutput(lease, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
+        RunnerLeaseLostError,
+      );
+    } finally {
+      cancel.abort();
+      await observed;
+      setSystemTime(slot);
+    }
+  }, 15_000);
+  test("harden recovery of an expired attempt before the next retry is admitted", async () => {
+    const code = await fixture();
+    await enqueueMany(code, 1);
+    const lease = await take();
+    await receiveCodeOutput(lease, {
+      seq: 1,
+      entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before recovery" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
+    await sql`UPDATE code.runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${lease.runId}::uuid`;
+    await reconcileCodeRuns();
+    expect((await state(lease.runId)).state).toBe("queued");
+    await expect(receiveCodeOutput(lease, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
+      RunnerLeaseLostError,
+    );
+    const page = await readCodeRun({ codeId: code.codeId, runId: lease.runId }, context());
+    expect(page.run.state).toBe("queued");
+    expect(page.contents?.consoleOutput?.entries).toEqual([
+      { id: "1:1:0", kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before recovery" }] },
+    ]);
+    const [stored] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${lease.runId}::uuid`;
+    expect(stored!.console_output).toBeNull();
+  });
   test("HTTP failure never requeues even before the first effect", async () => {
     const code = await fixture(owner, true, true);
     const registry = spyOn(cloud, "getApp").mockResolvedValue({
@@ -1246,8 +1340,20 @@ suiteFor(
     const first = await take(),
       old = await claims(first);
     await sql`UPDATE code.runs SET ai_reference_cost=0.75,ai_reserved_cost=0.25,ai_budget_call=1 WHERE id=${first.runId}::uuid`;
+    await receiveCodeOutput(first, {
+      seq: 1,
+      entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before retry" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
     await completeCodeRun(old, "failed");
     expect((await state(first.runId)).state).toBe("queued");
+    await expect(receiveCodeOutput(first, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
+      RunnerLeaseLostError,
+    );
+    expect((await replayCodeOutput(first.runId)).entries).toEqual([
+      { id: "1:1:0", kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before retry" }] },
+    ]);
     const next = await take();
     expect(next.runId).toBe(first.runId);
     expect(next.generation).toBe(2);
@@ -1386,6 +1492,11 @@ suiteFor(
       if (generation < 3) lease = await take();
     }
     expect(await state(lease.runId)).toMatchObject({ state: "failed", outcome: "retry_exhausted" });
+    const [saved] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${lease.runId}::uuid`;
+    expect(saved!.console_output).not.toBeNull();
+    await expect(receiveCodeOutput(lease, { seq: 1, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
+      RunnerLeaseLostError,
+    );
   });
   test("one permanent schedule tick with three Core deliveries; running predecessor records the skipped tick", async () => {
     const code = await fixture();

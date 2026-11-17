@@ -1,4 +1,4 @@
-import type { CodeRouteResponse } from "@k2b/cloud/code";
+import { CODE_OUTPUT_OPERATION, type CodeRouteResponse } from "@k2b/cloud/code";
 import type { RunnerBridge, RunnerCallResponse, RunnerConfig, RunnerLease, RunnerLeaseProof, RunnerOutcome } from "@k2b/cloud/code/runner";
 import {
   RunnerCallError,
@@ -12,6 +12,7 @@ import { BundleCache } from "./cache";
 import { executeChatJob } from "./chat-job";
 import type { RunnerEngine } from "./engine";
 import { executeRunnerJob } from "./jobs";
+import { RunnerOutput } from "./output";
 
 const proof = ({ runId, generation, token }: RunnerLease): RunnerLeaseProof => ({ runId, generation, token });
 const pause = (ms: number, signal: AbortSignal) =>
@@ -181,6 +182,10 @@ export class Runner {
   }
   async #execute(lease: RunnerLease) {
     const controller = new AbortController();
+    const output = new RunnerOutput(async (batch) => {
+      if (!this.bridge.output) throw new Error("runner_output_unavailable");
+      await this.bridge.output({ ...proof(lease), batch }, controller.signal);
+    }, proof(lease));
     let outcome: RunnerOutcome = "failed";
     let response: CodeRouteResponse | undefined;
     let expiresAt = lease.leaseExpiresAt;
@@ -242,6 +247,10 @@ export class Runner {
         async (operation, input) => {
           let result: RunnerCallResponse;
           try {
+            if (operation === CODE_OUTPUT_OPERATION) {
+              await output.write(input);
+              return null;
+            }
             result = await this.bridge.call({ ...proof(lease), operation, input }, controller.signal);
           } catch (error) {
             if (error instanceof RunnerLeaseLostError && !controller.signal.aborted) {
@@ -272,6 +281,12 @@ export class Runner {
       if (error instanceof RunnerLeaseLostError && !controller.signal.aborted) outcome = "lease_lost";
       /* A failed attempt is recorded without bundle exceptions or payloads. */
     } finally {
+      try {
+        await output.finish(controller.signal);
+      } catch (error) {
+        if (!controller.signal.aborted) outcome = error instanceof RunnerLeaseLostError ? "lease_lost" : "failed";
+        this.log("runner_output_unavailable");
+      }
       clearTimeout(deadline);
       clearTimeout(heartbeat);
       clearTimeout(expiry);

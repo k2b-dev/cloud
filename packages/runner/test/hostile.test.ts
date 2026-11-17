@@ -1,18 +1,41 @@
 import { test as bunTest, expect } from "bun:test";
+import { CODE_OUTPUT_OPERATION, type CodeOutputBatch } from "@k2b/cloud/code";
 import type { RunnerJsonValue } from "@k2b/cloud/code/runner";
+import { LIVE_LIMITS } from "@k2b/cloud/events/limits";
 import { type SandboxCall, WorkerdEngine } from "../src/engine";
+import { RunnerOutput } from "../src/output";
 import { config, lease } from "./fixtures";
 
 // Executed by runner-attacks in the real image, never with weaker local isolation.
 const test = bunTest.skipIf(process.getuid?.() !== 0);
 
-async function attack(source: string, call: SandboxCall, input: RunnerJsonValue = null) {
+async function attack(
+  source: string,
+  call: SandboxCall,
+  input: RunnerJsonValue = null,
+  onOutput: (batch: CodeOutputBatch) => Promise<void> = async () => {},
+) {
   const engine = new WorkerdEngine();
   const run = lease({ input });
   const signal = AbortSignal.timeout(5000);
+  const proof = { runId: run.runId, generation: run.generation, token: run.token };
+  // Match Runner's trusted output dispatch: console never becomes a capability call.
+  const output = new RunnerOutput(onOutput, proof);
   try {
-    await engine.load(run, source, config, call, signal);
-    return await engine.run(run, signal);
+    await engine.load(
+      run,
+      source,
+      config,
+      async (operation, input) => {
+        if (operation !== CODE_OUTPUT_OPERATION) return call(operation, input);
+        await output.write(input);
+        return null;
+      },
+      signal,
+    );
+    const result = await engine.run(run, signal);
+    await output.finish(signal);
+    return result;
   } finally {
     await engine.close();
   }
@@ -155,6 +178,7 @@ test("giant call input is refused before the supervisor callback and giant resul
   expect(admitted).toBe(0);
   expect(inputErrors).toEqual(["runner_bridge_unavailable"]);
   const outputErrors: RunnerJsonValue[] = [];
+  const outputBatches: CodeOutputBatch[] = [];
   expect(
     await attack(
       `export async function main(input, cloud) {
@@ -172,9 +196,18 @@ test("giant call input is refused before the supervisor callback and giant resul
         outputErrors.push(input);
         return null;
       },
+      null,
+      async (batch) => {
+        outputBatches.push(batch);
+        expect(Buffer.byteLength(JSON.stringify(batch))).toBeLessThanOrEqual(LIVE_LIMITS.frameBytes);
+      },
     ),
   ).toBe("succeeded");
   expect(outputErrors).toEqual(["runner_bridge_unavailable"]);
+  expect(outputBatches).toHaveLength(1);
+  expect(outputBatches[0]!.entries).toEqual([]);
+  expect(outputBatches[0]!.droppedLines).toBe(2);
+  expect(outputBatches[0]!.droppedBytes).toBeGreaterThan(config.bridgeBytes * 2);
 }, 10_000);
 
 test("call flood receives the exact concurrency refusal without an unbounded queue", async () => {

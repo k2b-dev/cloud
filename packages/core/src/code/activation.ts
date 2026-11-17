@@ -234,9 +234,13 @@ export async function previewCodeActivation(
   const readiness = await codeVersionReadiness(code, input.versionId, sql, context);
   const targets = manifest.success ? await previewTargets(code, manifest.data, catalog) : undefined;
   const operationLabels = targets
-    ? await describeOperations(
-        targets.flatMap((row) => row.operations),
-        catalog,
+    ? Object.fromEntries(
+        Object.entries(
+          await describeOperations(
+            targets.flatMap((row) => row.operations),
+            catalog,
+          ),
+        ).map(([operation, { title, app }]) => [operation, { title, app }] as const),
       )
     : undefined;
   return { ...base, activated: null, readiness, place, page, ...(targets ? { targets, operationLabels } : {}) };

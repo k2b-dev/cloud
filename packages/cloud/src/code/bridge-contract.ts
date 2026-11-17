@@ -116,6 +116,8 @@ export const codeBridgeDispatchRefusalKind = (code: string, targetStatus?: numbe
 };
 /** Core's admitted version mandate; the target app still resolves current resource rights. */
 export type CodeBridgeAuthority = {
+  /** Invoked after the receipt's signer transaction commits, before transport. No authority is granted by this observation. */
+  onReceiptCommitted?: () => Promise<void>;
   /** Atomically spends a run-bound file reference before any target effect. False means already spent. */
   consumeFileRef?: (digest: string) => Promise<boolean>;
   /** Internal observation only. Core persists this reason with the call result; never grants authority. */

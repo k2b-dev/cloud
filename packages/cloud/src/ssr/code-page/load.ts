@@ -1,5 +1,7 @@
 import type { Context } from "hono";
 import { z } from "zod";
+import { resolveCapabilityActionWording, resolveCapabilityQueryDoneTitle } from "../../_internal/capabilities";
+import { getCapability } from "../../_internal/registry";
 import { aiLive } from "../../ai/live";
 import { getCapabilityCatalogApp, invokeCapabilityWithDataSchema } from "../../capabilities/server";
 import type { CapabilityCaller } from "../../capabilities/server-invoke";
@@ -232,6 +234,7 @@ export const describeEvent = async (
 export const describeOperations = async (
   operations: Iterable<string>,
   catalog: ReturnType<typeof catalogCache>,
+  locale = "en",
 ): Promise<Record<string, CodeOperationLabel>> => {
   const entries = await Promise.all(
     [...new Set(operations)].map(async (operation) => {
@@ -240,7 +243,18 @@ export const describeOperations = async (
       if (!app?.ok || !app.data) return null;
       const localId = operation.slice(appId.length + 1);
       const entry = [...app.data.manifest.actions, ...app.data.manifest.queries].find((candidate) => candidate.localId === localId);
-      return entry ? ([operation, { title: entry.title, app: app.data.appName ?? null }] as const) : null;
+      if (!entry) return null;
+      const registered = await getCapability(appId).catch(() => null);
+      const query = registered?.manifest.queries.find((candidate) => candidate.localId === localId);
+      const action = registered?.manifest.actions.find((candidate) => candidate.localId === localId);
+      const past = query
+        ? resolveCapabilityQueryDoneTitle(query, registered?.presentation, locale)
+        : action
+          ? resolveCapabilityActionWording(action, registered?.presentation, locale).sentences?.done
+          : undefined;
+      // Hints carry no input/result. Templates requiring values use the same localized title with a state word.
+      const done = past && !/[{}]/.test(past) ? past : `${entry.title} · ${locale.startsWith("de") ? "erledigt" : "done"}`;
+      return [operation, { title: entry.title, app: app.data.appName ?? null, running: `${entry.title} …`, done }] as const;
     }),
   );
   return Object.fromEntries(entries.filter((entry) => entry !== null));
@@ -499,11 +513,15 @@ const loadReady = async (
   // Names only the operations this page shows anyway: its target rows, the switch-on rows and the version difference.
   const operationLabels = await describeOperations(
     [
+      ...(activeManifest?.permissions ?? []).map((permission) => permission.operation),
+      ...(waitingManifest?.permissions ?? []).map((permission) => permission.operation),
       ...(targetRows ?? []).flatMap((row) => [...row.operations, ...row.newOperations]),
       ...(waitingTargets ?? []).flatMap((row) => row.operations),
       ...diffPermissions.map((permission) => permission.operation),
+      ...(runCalls?.calls ?? []).map((call) => call.capability),
     ],
     catalog,
+    getLocale(c),
   );
   // A skipped tick or a cancelled start is not a run's result.
   const nextRuns = new Map(automationResult?.ok ? automationResult.data.data.items.map((item) => [item.entrypoint, item.nextRunAt]) : []);
@@ -638,6 +656,7 @@ const loadReady = async (
       calls: runCalls.readable ? runCalls.calls : null,
       nextCallCursor: runCalls.readable ? runCalls.next : null,
       input: runCalls.input,
+      consoleOutput: runCalls.consoleOutput,
       inputTooLarge: runCalls.inputTooLarge,
       refusal: runRefusal,
     };

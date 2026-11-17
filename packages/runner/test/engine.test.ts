@@ -3,6 +3,7 @@ import "./test-kit.engine.test";
 import "./jobs.engine.test";
 import "./chat-job.engine.test";
 import { test as bunTest, expect } from "bun:test";
+import { CODE_OUTPUT_OPERATION } from "@k2b/cloud/code";
 import { WorkerdEngine } from "../src/engine";
 import { config, lease, source } from "./fixtures";
 
@@ -155,7 +156,9 @@ test("parallel sandbox calls above the budget fail without building an HTTP work
       await Promise.all([cloud.call('first', null), cloud.call('second', null)]);
     }`,
       config,
-      async () => {
+      async (operation) => {
+        // The new console lane is independent of the deliberately held capability.
+        if (operation === CODE_OUTPUT_OPERATION) return null;
         calls++;
         return held.promise;
       },
@@ -304,3 +307,96 @@ test("stable Core refusal codes survive the sandbox bridge without exception det
     await engine.close();
   }
 }, 10_000);
+
+test("shared workerd keeps console output and uncaught stacks bound to their own run, with no text in the terminal report", async () => {
+  const { CODE_OUTPUT_OPERATION, CodeOutputBatchSchema } = await import("@k2b/cloud/code");
+  const engine = new WorkerdEngine();
+  const signal = new AbortController().signal;
+  const left = lease({ runId: "console-left" });
+  const right = lease({ runId: "console-right" });
+  const received = new Map<string, string[]>();
+  try {
+    for (const run of [left, right]) {
+      await engine.load(
+        run,
+        `console.log('top level ${run.runId}'); export async function main() { console.error('line ${run.runId}'); ${run === right ? "throw new Error('sandbox stack right');" : "return null;"} }`,
+        config,
+        async (operation, input) => {
+          expect(operation).toBe(CODE_OUTPUT_OPERATION);
+          const batch = CodeOutputBatchSchema.parse(input);
+          expect(batch.entries.every((entry) => entry.kind === "log" && Number.isFinite(Date.parse(entry.at)))).toBe(true);
+          for (const entry of batch.entries) if (entry.text.includes("sandbox stack right")) expect(entry.level).toBe("error");
+          received.set(run.runId, [...(received.get(run.runId) ?? []), ...batch.entries.map((line) => line.text)]);
+          return null;
+        },
+        signal,
+      );
+    }
+    expect(await Promise.all([engine.run(left, signal), engine.run(right, signal)])).toEqual(["succeeded", "failed"]);
+    expect(received.get(left.runId)).toEqual(["top level console-left", "line console-left"]);
+    expect(received.get(right.runId)?.some((line) => line.includes("Error: sandbox stack right"))).toBe(true);
+    expect(received.get(right.runId)?.some((line) => line.includes("bundle.js"))).toBe(true);
+    expect(received.get(left.runId)?.join("\n")).not.toContain("right");
+    expect(received.get(right.runId)?.join("\n")).not.toContain("left");
+  } finally {
+    await engine.close();
+  }
+}, 10_000);
+
+test("harden supervisor output pacing for direct calls in the native isolate", async () => {
+  const { setSystemTime } = await import("bun:test");
+  const { CODE_OUTPUT_INTERVAL_MS } = await import("@k2b/cloud/code");
+  const { Runner } = await import("../src/runner");
+  const { bundleHash } = await import("../src/cache");
+  const now = Date.UTC(2030, 0, 2);
+  setSystemTime(now);
+  const source = `export async function main(input, cloud) {
+    for (let seq=1; seq<=100; seq++) await cloud.call('runtime.output', { seq, entries: [{kind:'log',at:'2030-01-02T00:00:00.000Z',level:'log',text:'fixture'}], droppedLines:0, droppedBytes:0 });
+    await cloud.call('done', null);
+  }`;
+  const run = lease({ runId: "paced-native", bundleHash: bundleHash(source), deadlineAt: now + 5000, leaseExpiresAt: now + 5000 });
+  let fetched = false;
+  const sent: { at: number; dropped: number }[] = [];
+  const engine = new WorkerdEngine();
+  const runner = new Runner(
+    {
+      configure: async () => ({ ...config, slots: 1 }),
+      fetch: async (_, signal) => {
+        if (!fetched) {
+          fetched = true;
+          return { runs: [run] };
+        }
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { runs: [] };
+      },
+      bundle: async () => source,
+      heartbeat: async () => ({ leaseExpiresAt: now + 5000 }),
+      output: async ({ batch }) => {
+        sent.push({ at: Date.now(), dropped: batch.droppedLines });
+      },
+      call: async () => {
+        setSystemTime(now + CODE_OUTPUT_INTERVAL_MS);
+        return { ok: true, data: null };
+      },
+      complete: async ({ outcome }) => {
+        expect(outcome).toBe("succeeded");
+        runner.stop();
+      },
+    },
+    engine,
+  );
+  try {
+    await runner.start();
+    expect(sent).toEqual([
+      { at: now, dropped: 0 },
+      { at: now + CODE_OUTPUT_INTERVAL_MS, dropped: 99 },
+    ]);
+  } finally {
+    runner.stop();
+    await engine.close();
+    setSystemTime();
+  }
+}, 10000);

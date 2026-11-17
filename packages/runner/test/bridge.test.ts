@@ -217,3 +217,42 @@ test("mounted runner key requires supervisor ownership, exact 0400 and a regular
     await rmdir(directory);
   }
 });
+
+test("output uses the signed run-proof route, outside the terminal report, and preserves lease loss", async () => {
+  jest.setSystemTime(NOW);
+  const proof = { runId: INSTALLATION_ID, generation: 1, token: "run-proof" };
+  const batch = {
+    seq: 1,
+    entries: [{ kind: "log" as const, level: "error" as const, at: new Date(NOW).toISOString(), text: "sandbox stack" }],
+    droppedLines: 0,
+    droppedBytes: 0,
+  };
+  let calls = 0;
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: async (request) => {
+      if (new URL(request.url).pathname === RUNNER_PATHS.config) return Response.json(config);
+      const body = await request.text();
+      expect(new URL(request.url).pathname).toBe(RUNNER_PATHS.output);
+      const { payload } = await jwtVerify(
+        request.headers.get("Authorization")!.slice(7),
+        await importAppPublicKey(APP_KEY_FIXTURES[0].publicKey),
+        { currentDate: new Date(NOW), issuer: "runner", audience: `cloud-core:${INSTALLATION_ID}` },
+      );
+      expect(payload.bdh).toBe(Buffer.from(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(body))).toString("base64url"));
+      expect(JSON.parse(body)).toEqual({ ...proof, batch });
+      return new Response(null, { status: calls++ ? 409 : 204 });
+    },
+  });
+  try {
+    const bridge = new CoreBridge(key, server.url.origin);
+    const signal = new AbortController().signal;
+    await bridge.configure(signal);
+    await bridge.output({ ...proof, batch }, signal);
+    await expect(bridge.output({ ...proof, batch }, signal)).rejects.toBeInstanceOf(RunnerLeaseLostError);
+  } finally {
+    await server.stop(true);
+    jest.useRealTimers();
+  }
+});

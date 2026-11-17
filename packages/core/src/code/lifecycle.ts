@@ -8,6 +8,7 @@ import type { z } from "zod";
 import type { CodeContext } from "./access";
 import { deleteCodeDatabase } from "./database";
 import { type CodeCleanupJob, codeLifecycleContracts } from "./lifecycle-contracts";
+import { persistCodeOutput } from "./output";
 import { requireCodePolicyAdmin } from "./policy";
 
 type OwnerDeletedRow = OutboxRow & { app_id: string; ordering_key: string; payload: unknown };
@@ -51,8 +52,11 @@ async function lockDeletedCode(db: SQL, codeId: string, principal: string | null
     WHERE m.owner_app_id IN ('core','runner') AND m.workload_type='code.version' AND m.state<>'revoked'
       AND EXISTS(SELECT 1 FROM code.versions v WHERE v.code_id=${codeId} AND v.id::text=m.workload_id)`;
   if (principal) await db`UPDATE auth.service_accounts SET status='disabled' WHERE id=${principal}::uuid AND kind='code'`;
-  await db`UPDATE code.runs SET state='cancelled',outcome='owner_deleted',generation=generation+1,
-    lease_expires_at=NULL,ended_at=clock_timestamp() WHERE code_id=${codeId} AND state IN ('queued','running')`;
+  const stopped = await db<
+    { id: string; generation: number }[]
+  >`UPDATE code.runs SET state='cancelled',outcome='owner_deleted',generation=generation+1,
+    lease_expires_at=NULL,ended_at=clock_timestamp() WHERE code_id=${codeId} AND state IN ('queued','running') RETURNING id,generation-1 AS generation`;
+  for (const run of stopped) await persistCodeOutput(run.id, db, run.generation);
   await db`UPDATE code.activations SET cancel_requested=TRUE,state='cancelled',authority=NULL,updated_at=now()
     WHERE code_id=${codeId} AND state NOT IN ('active','failed','cancelled')`;
   await db`INSERT INTO code.cleanup_jobs(code_id,kind) VALUES(${codeId},'code.delete') ON CONFLICT DO NOTHING`;

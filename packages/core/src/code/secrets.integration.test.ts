@@ -1,13 +1,14 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import * as registry from "@k2b/cloud";
-import { connections, sql } from "@k2b/cloud";
+import { bindProcessSync, connections, sql, unbindProcessSync } from "@k2b/cloud";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
 import { CodeHttpRequestSchema, type CodeSecretVersionBinding, type User } from "@k2b/cloud/contracts";
 import { createAppEventTestHarness, installLiveOutbox } from "@k2b/cloud/events/testing";
 import { mandates, requestPublicHttps as publicHttps, purposeSecretCipher, type requestPublicHttps } from "@k2b/cloud/services";
 import { migrateApprovals } from "@k2b/cloud/services/approvals";
 import { resolvePublicNetworkAddresses } from "@k2b/cloud/services/network-security";
-import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { createSync, type Sync } from "@k2b/sync";
+import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppApproval } from "../migrate/core/app-approval";
 import { migrate as migrateAudit } from "../migrate/core/audit";
@@ -24,6 +25,7 @@ import { type CodeContext, CodeDataError } from "./access";
 import * as authoringChecks from "./authoring-check";
 import { createCodeBridgeHost } from "./bridge";
 import * as origins from "./origins";
+import { openCodeOutput } from "./output";
 import { dispatchCodeSecretHttp } from "./secret-http";
 import {
   CODE_SECRET_PURPOSE,
@@ -38,7 +40,7 @@ import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, readCodeRun } from "./store";
 import { decideCodeVersion, diffCodeVersion, startCodeVersionApprovals, submitCodeVersion } from "./versions";
 
-const fixed = new Date("2026-11-01T12:00:00Z");
+const fixed = new Date("2030-01-02T12:00:00Z");
 const authorId = "11111111-1111-4111-8111-111111111111",
   reviewerId = "22222222-2222-4222-8222-222222222222";
 const person = (id: string): User => ({
@@ -70,8 +72,14 @@ const context = (id = authorId): CodeContext => ({
 });
 const destination = { origin: "https://api.example:8443", pathPrefix: "/v1", headers: ["authorization"] };
 
-databaseSuite()("C11 version-bound write-only secrets", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("C11 version-bound write-only secrets", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
+  let connection: Awaited<ReturnType<typeof connectTestNats>>;
+  let sync: Sync;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   let serverCheck: ReturnType<typeof spyOn<typeof authoringChecks, "verifyCodeSubmission">>;
   let ownOrigins: ReturnType<typeof spyOn<typeof origins, "readCodeOwnOrigins">>;
@@ -81,6 +89,10 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("code_secrets_c11");
+    connection = await connectTestNats();
+    sync = createSync({ connection, namespace: testSyncNamespace("code-secrets"), application: "core", defaults: { replicas: 1 } });
+    bindProcessSync(sync, connection);
+    await sync.ready();
     await migrateAuth();
     await installLiveOutbox(sql);
     await migrateRailPreferences();
@@ -119,6 +131,9 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
     settings?.mockRestore();
     ownOrigins?.mockRestore();
     app?.mockRestore();
+    unbindProcessSync();
+    await sync?.drain();
+    await connection?.drain();
     await database?.drop();
     setSystemTime();
   });
@@ -201,6 +216,10 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
       mandateRevision: mandate.data.revision,
       bundleHash: submission.binding.bundleHash,
     };
+    await openCodeOutput(
+      { ...claims, token: "fixture-output-proof", deadlineAt: claims.exp * 1000, leaseExpiresAt: claims.exp * 1000 },
+      32768,
+    );
     return { claims, submission };
   }
   const request = (url = destination.origin + "/v1/items") =>
@@ -225,6 +244,19 @@ databaseSuite()("C11 version-bound write-only secrets", () => {
           send,
         ),
     );
+  test("harden secret dispatch admission against the retained redaction byte budget", async () => {
+    const { codeId, binding } = await fixture();
+    const { claims } = await running(codeId, binding);
+    let sent = false;
+    const req = request();
+    req.headers.authorization = `${"x".repeat(CODE_SETTINGS["core.code.payload_bytes"].default / 4)} [secret:API]`;
+    const response = await publicCall(claims, req, async () => {
+      sent = true;
+      return { status: 204, headers: {}, body: new Uint8Array() };
+    });
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: "code_http_output_redaction_limit" } });
+    expect(sent).toBe(false);
+  });
   test("requests without a secret require the exact version origin, including the effective port", async () => {
     const { codeId, binding } = await fixture();
     const { claims } = await running(codeId, binding);

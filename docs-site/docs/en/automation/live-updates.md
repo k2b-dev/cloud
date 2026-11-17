@@ -5,7 +5,7 @@ section: Automation
 order: 645
 description: Write an application's live updates in the transaction that makes the change and serve them to its open tabs over one socket.
 tags: [live, realtime, outbox, transactions, websocket]
-updated: 2026-11-14
+updated: 2026-11-17
 ---
 
 # Live updates
@@ -63,7 +63,9 @@ produce hints; a cancelled run is reported as `skipped`. Hints contain no
 names, call arguments, or results. Read the
 authorized snapshot for details. Effects are counted at run completion:
 the transition to `succeeded` or `failed` tells the page to refresh them.
-Individual calls do not write live outbox rows (DATA-13).
+Individual calls do not write live outbox rows (DATA-13). Editor-only call
+hints use committed transient publication on the separate `codeDetails` key;
+see [Code live details](/en/docs/platform/code-runs#follow-calls-and-console-output).
 
 Code live admission uses the same read permissions as Code's HTTP service:
 the personal owner, administrators of the owning resource or application,
@@ -561,3 +563,22 @@ with [Topics and live events](/en/docs/automation/topics-and-live-events) for
 topics that other consumers read, or with
 [Migrations and transactions](/en/docs/data/migrations-and-transactions) for
 transaction boundaries.
+
+
+## Publish a committed observation without SQL
+
+`defineLive({ appId, event }).publishTransient({ key, data, idempotencyKey? })`
+publishes directly to the application's existing NATS live topic, with zero
+SQL and no transactional outbox row. Use it for bounded progress observations
+whose authoritative snapshot already exists. Call it only after committing
+that state. Publication can fail after the commit: catch that failure without
+undoing the effect, and let admission, reconnect or sequence gaps request a
+covering authorized snapshot. Use transactional `publish(tx, ...)` for durable
+notifications and access invalidations.
+
+The event schema validates the JSON transport form. A transient key must have
+the same read policy as its contents: use a separate channel and key for
+editor-only progress. Code's `codeDetails` channel illustrates this split;
+the reader channel keeps only run state. `LIVE_LIMITS` from
+`@k2b/cloud/events/limits` (also exported by `@k2b/cloud/events`) supplies the live frame budget for producers of bounded
+messages.

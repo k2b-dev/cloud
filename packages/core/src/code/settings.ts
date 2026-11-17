@@ -150,15 +150,15 @@ export const CODE_SETTINGS = {
     min: 1,
     max: 32_768,
     default: 32_768,
-    label: "Run and call input bytes",
+    label: "Run input and output window bytes",
     description:
-      "Maximum jsonb text bytes of each run input or normalized capability call before invocation. Results retain the public capability result budget.",
+      "Maximum jsonb text bytes of each run input or normalized capability call before invocation. Also bounds each run’s structured console output window. Results retain the public capability result budget.",
     presentation: {
       translations: {
         de: {
-          label: "Lauf- und Aufrufeingaben (Bytes)",
+          label: "Laufeingaben und Ausgabefenster (Bytes)",
           description:
-            "Maximale jsonb-Textbytes je Laufeingabe oder normalisiertem Aufruf vor der Ausführung. Ergebnisse behalten das öffentliche Capability-Ergebnisbudget.",
+            "Maximale jsonb-Textbytes je Laufeingabe oder normalisiertem Aufruf vor der Ausführung. Begrenzt auch das strukturierte Console-Ausgabefenster je Lauf. Ergebnisse behalten das öffentliche Capability-Ergebnisbudget.",
         },
       },
     },

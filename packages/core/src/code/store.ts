@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import { aiLive } from "@k2b/cloud/ai/live";
+import { type CodeOutputWindow, CodeOutputWindowSchema, emptyCodeOutput } from "@k2b/cloud/code";
 import {
   CodeAutomationTitleSchema,
   CodeCheckedVersionManifestSchema,
@@ -37,6 +38,7 @@ import {
   CodeVersionManifestSchema,
   type codeQueryContracts,
 } from "./contracts";
+import { replayCodeOutput } from "./output";
 import { describeCodePages } from "./page-links";
 import { type CodeEffectEvidence, CodeEffectEvidenceSchema } from "./read-model/effects";
 import { createCodeServiceAccount } from "./service-account";
@@ -555,8 +557,8 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
   const viewer = codePerson(context);
   if (permission === "reader") return { run: mapRun(row, viewer), contents: null };
   const [payload] = await sql<
-    { input: CodeCall["result"]; output: CodeCall["result"] }[]
-  >`SELECT input,output FROM code.runs WHERE id = ${input.runId}::uuid`;
+    { input: CodeCall["result"]; output: CodeCall["result"]; console_output: CodeOutputWindow | null; generation: number }[]
+  >`SELECT input,output,console_output,generation FROM code.runs WHERE id = ${input.runId}::uuid`;
   if (!payload) throw new CodeDataError("NOT_FOUND", "Code run not found.");
   // Fetch only the refused call's coordinates, never its potentially chunked/private input or result.
   const [firstRefusedCall] =
@@ -584,6 +586,14 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
       firstRefusedCall: firstRefusedCall ?? null,
       input: inputChunked ? null : payload.input,
       output: outputChunked ? null : payload.output,
+      consoleOutput:
+        (input.cursor ?? 0) === 0
+          ? payload.console_output
+            ? CodeOutputWindowSchema.parse(payload.console_output)
+            : (row.state === "running" || row.state === "queued") && payload.generation > 0
+              ? await replayCodeOutput(input.runId)
+              : emptyCodeOutput()
+          : null,
       inputChunked,
       outputChunked,
       content: selected === undefined ? null : codeTextChunk(selected, input.offset ?? 0, input.length ?? 16_384),

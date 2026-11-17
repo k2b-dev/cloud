@@ -13,6 +13,7 @@ import { type CodeContext, CodeDataError, codePerson } from "./access";
 import { codeAdmissionLock } from "./admission";
 import { requireCodeRunFence } from "./bridge";
 import { checkCodeEventBeforeRun } from "./event-access";
+import { closeCodeOutput, openCodeOutput, persistCodeOutput, renewCodeOutput } from "./output";
 import { checkCodeOwnerBeforeRun } from "./owner-check";
 import {
   CODE_RUN_HEARTBEAT_MS,
@@ -156,10 +157,14 @@ async function enqueue(
     const scheduleKey = input.entrypoint;
     await db`UPDATE code.runs SET schedule_key=${scheduleKey},state=${busy ? "skipped" : "queued"},
       outcome=${busy ? "previous_schedule_running" : null},ended_at=CASE WHEN ${!!busy} THEN clock_timestamp() ELSE NULL END WHERE id=${runId}::uuid`;
-    if (busy) await db`DELETE FROM code.run_outbox WHERE run_id=${runId}::uuid`;
+    if (busy) {
+      await persistCodeOutput(runId, db, 0);
+      await db`DELETE FROM code.run_outbox WHERE run_id=${runId}::uuid`;
+    }
   }
   if (refused) {
     await db`UPDATE code.runs SET state='failed',outcome='code_admission_refused',ended_at=clock_timestamp() WHERE id=${runId}::uuid`;
+    if (!input.tick || !busy) await persistCodeOutput(runId, db, 0);
     await db`DELETE FROM code.run_outbox WHERE run_id=${runId}::uuid`;
   }
   await db`INSERT INTO code.run_requests(code_id,request_key,run_id,request_digest,tick_at)
@@ -223,6 +228,7 @@ async function admitScheduleTick(tick: ScheduledTick): Promise<CodeStartResult |
 }
 
 type ClaimedRun = {
+  payload_bytes: number;
   id: string;
   code_id: string;
   version_id: string;
@@ -274,8 +280,11 @@ export async function claimCodeRuns(
         await requireCodeVersionApproval(code, code.activeVersionId, db);
       } catch (error) {
         if (!(error instanceof CodeVersionError)) throw error;
-        await db`UPDATE code.runs SET state='failed',outcome='code_admission_refused',ended_at=clock_timestamp()
-          WHERE id IN (SELECT id FROM code.runs WHERE code_id=${code.id} AND state='queued' ORDER BY created_at,id LIMIT 100)`;
+        const stopped = await db<
+          { id: string; generation: number }[]
+        >`UPDATE code.runs SET state='failed',outcome='code_admission_refused',ended_at=clock_timestamp()
+          WHERE id IN (SELECT id FROM code.runs WHERE code_id=${code.id} AND state='queued' ORDER BY created_at,id LIMIT 100) RETURNING id,generation`;
+        for (const run of stopped) await persistCodeOutput(run.id, db, run.generation);
         await db`UPDATE code.codes SET last_dispatched_at=clock_timestamp() WHERE id=${code.id}`;
         continue;
       }
@@ -286,8 +295,11 @@ export async function claimCodeRuns(
           OR (subject_kind='service_account' AND subject_service_account_id=${code.serviceAccountId}::uuid))
         ORDER BY id LIMIT 1 FOR SHARE`;
       if (!mandate) {
-        await db`UPDATE code.runs SET state='failed',outcome='code_mandate_mismatch',ended_at=clock_timestamp()
-          WHERE id IN (SELECT id FROM code.runs WHERE code_id=${code.id} AND state='queued' ORDER BY created_at,id LIMIT 100)`;
+        const stopped = await db<
+          { id: string; generation: number }[]
+        >`UPDATE code.runs SET state='failed',outcome='code_mandate_mismatch',ended_at=clock_timestamp()
+          WHERE id IN (SELECT id FROM code.runs WHERE code_id=${code.id} AND state='queued' ORDER BY created_at,id LIMIT 100) RETURNING id,generation`;
+        for (const run of stopped) await persistCodeOutput(run.id, db, run.generation);
         await db`UPDATE code.codes SET last_dispatched_at=clock_timestamp() WHERE id=${code.id}`;
         continue;
       }
@@ -321,6 +333,14 @@ export async function claimCodeRuns(
   aiLive.wake();
   return result;
 }
+/** End a claimed attempt under its row lock before any delayed admission can arrive. */
+async function stopClaimedRun(run: ClaimedRun, state: "failed" | "skipped", outcome: string) {
+  await sql.begin(async (db) => {
+    const ended = await db`UPDATE code.runs SET state=${state},outcome=${outcome},ended_at=clock_timestamp(),lease_expires_at=NULL
+      WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running' RETURNING id`;
+    if (ended.length) await persistCodeOutput(run.id, db, run.generation);
+  });
+}
 /** Owner reads and signing happen after claim commit, outside dispatch locks. Missing owners never receive a token. */
 export async function codeRunnerLease(
   run: ClaimedRun,
@@ -331,8 +351,7 @@ export async function codeRunnerLease(
   const budget = AbortSignal.timeout(CODE_RUN_HEARTBEAT_MS);
   const signal = options.signal ? AbortSignal.any([options.signal, budget]) : budget;
   if (run.trigger === "path" && code && code.owner.kind !== "person" && !code.serviceAccountId) {
-    await sql`UPDATE code.runs SET state='failed',outcome='code_route_account_required',ended_at=clock_timestamp(),lease_expires_at=NULL
-      WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running'`;
+    await stopClaimedRun(run, "failed", "code_route_account_required");
     return null;
   }
   let check = code ? options.ownerChecks?.get(code.id) : undefined;
@@ -342,15 +361,17 @@ export async function codeRunnerLease(
   }
   if (!code || !(await check)) {
     const current = await findCode(run.code_id);
-    await sql`UPDATE code.runs SET state=${current?.pauseReason === "owner_not_found" ? "skipped" : "failed"},outcome=${current?.pauseReason === "owner_not_found" ? "owner_not_found" : "code_not_active"},ended_at=clock_timestamp(),lease_expires_at=NULL
-      WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running'`;
+    await stopClaimedRun(
+      run,
+      current?.pauseReason === "owner_not_found" ? "skipped" : "failed",
+      current?.pauseReason === "owner_not_found" ? "owner_not_found" : "code_not_active",
+    );
     return null;
   }
   if (run.trigger === "event") {
     const refusal = await checkCodeEventBeforeRun(code, run, signal);
     if (refusal) {
-      await sql`UPDATE code.runs SET state='failed',outcome=${refusal},ended_at=clock_timestamp(),lease_expires_at=NULL
-        WHERE id=${run.id}::uuid AND generation=${run.generation} AND state='running'`;
+      await stopClaimedRun(run, "failed", refusal);
       return null;
     }
   }
@@ -376,6 +397,17 @@ export async function codeRunnerLease(
     },
     { deadlineAt },
   );
+  await openCodeOutput(
+    {
+      runId: run.id,
+      codeId: run.code_id,
+      generation: run.generation,
+      deadlineAt,
+      leaseExpiresAt: renewed.lease_expires_at.getTime(),
+      token,
+    },
+    run.payload_bytes,
+  );
   return {
     ...(run.trigger === "path" ? { kind: "request" as const } : {}),
     runId: run.id,
@@ -399,7 +431,7 @@ export async function codeRunnerLease(
 }
 /** Heartbeats fence under the same row lock as the bridge and never refill a wall-clock budget. */
 export async function heartbeatCodeRun(claims: CodeRunTokenClaims): Promise<{ leaseExpiresAt: number }> {
-  return sql.begin(async (db) => {
+  const renewed = await sql.begin(async (db) => {
     await requireCodeRunFence(claims, db);
     const [row] = await db<{ lease_expires_at: Date }[]>`UPDATE code.runs
       SET lease_expires_at=LEAST(deadline_at,to_timestamp(${claims.exp}),clock_timestamp()+${CODE_RUN_LEASE_MS}*interval '1 millisecond')
@@ -409,16 +441,20 @@ export async function heartbeatCodeRun(claims: CodeRunTokenClaims): Promise<{ le
       WHERE instance_id=(SELECT runner_instance_id FROM code.runs WHERE id=${claims.runId}::uuid)`;
     return { leaseExpiresAt: row.lease_expires_at.getTime() };
   });
+  await renewCodeOutput(claims, renewed.leaseExpiresAt);
+  return renewed;
 }
 async function settleRun(runId: string, outcome: RunnerOutcome, limits: CodeRunLimits, db: SQL) {
   // An in-flight or uncertain Action is an effect boundary too. Never retry it automatically.
-  const [result] = await db<{ retry: boolean; exhausted: boolean }[]>`SELECT
+  const [result] = await db<{ retry: boolean; exhausted: boolean; generation: number }[]>`SELECT generation,
     (${outcome}<>'succeeded' AND generation<${limits.attempts} AND deadline_at>clock_timestamp()
       AND trigger<>'path' AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS retry,
     (${outcome}<>'succeeded' AND generation>=${limits.attempts} AND deadline_at>clock_timestamp()
       AND trigger<>'path' AND NOT effect_started AND NOT EXISTS(SELECT 1 FROM code.calls WHERE run_id=r.id AND kind='action')) AS exhausted
     FROM code.runs r WHERE id=${runId}::uuid`;
   const retry = result?.retry ?? false;
+  await closeCodeOutput(runId, result?.generation);
+  if (!retry) await persistCodeOutput(runId, db, result?.generation);
   await db`UPDATE code.calls SET state='uncertain',ended_at=clock_timestamp(),result='{"ok":false,"error":{"code":"code_result_unknown"}}'::json
     WHERE run_id=${runId}::uuid AND state='running'`;
   await db`UPDATE code.runs SET state=${retry ? "queued" : outcome === "succeeded" ? "succeeded" : "failed"},
@@ -462,10 +498,13 @@ export async function reconcileCodeRuns(): Promise<void> {
       WHERE state='running' AND (lease_expires_at<=clock_timestamp() OR deadline_at<=clock_timestamp())
       ORDER BY lease_expires_at,id LIMIT 100 FOR UPDATE SKIP LOCKED`;
     for (const run of expired) await settleRun(run.id, run.timed_out ? "wall_clock_limit" : "lease_lost", limits, db);
-    await db`UPDATE code.runs r SET state='failed',outcome=CASE WHEN r.deadline_at<=clock_timestamp() THEN 'wall_clock_limit' ELSE 'code_not_active' END,ended_at=clock_timestamp()
+    const stopped = await db<
+      { id: string; generation: number }[]
+    >`UPDATE code.runs r SET state='failed',outcome=CASE WHEN r.deadline_at<=clock_timestamp() THEN 'wall_clock_limit' ELSE 'code_not_active' END,ended_at=clock_timestamp()
       WHERE r.id IN(SELECT q.id FROM code.runs q JOIN code.codes c ON c.id=q.code_id WHERE q.state='queued'
         AND ((c.state<>'active' AND NOT(q.trigger='event' AND q.generation=0)) OR q.version_id IS DISTINCT FROM c.active_version_id OR q.deadline_at<=clock_timestamp())
-        ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q SKIP LOCKED)`;
+        ORDER BY q.created_at,q.id LIMIT 100 FOR UPDATE OF q SKIP LOCKED) RETURNING r.id,r.generation`;
+    for (const run of stopped) await persistCodeOutput(run.id, db, run.generation);
     // Periodic outbox repair covers queue retention, delivery exhaustion and a ticket consumed while all Codes were busy.
     await db`INSERT INTO code.run_outbox(run_id) SELECT id FROM code.runs WHERE state='queued'
       AND (wake_at IS NULL OR wake_at<clock_timestamp()-interval '30 seconds') ORDER BY wake_at NULLS FIRST,id LIMIT 100

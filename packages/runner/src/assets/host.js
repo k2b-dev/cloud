@@ -1,5 +1,6 @@
 // Trusted loader host. Never include this module in the dynamic worker's module map.
 import { WorkerEntrypoint } from "cloudflare:workers";
+import consoleSource from "console-source";
 
 export class Cloud extends WorkerEntrypoint {
   async call(operation, input) {
@@ -33,7 +34,7 @@ export class Cloud extends WorkerEntrypoint {
 export default {
   async fetch(request, env, ctx) {
     if (new URL(request.url).pathname === "/ping") return new Response("pong");
-    const { runId, source, entrypoint, input, modules } = await request.json();
+    const { runId, source, entrypoint, input, modules, outputLimits } = await request.json();
     // load() is unnamed: every attempt gets a fresh isolate, even for an identical bundle.
     const worker = env.LOADER.load({
       compatibilityDate: "2026-10-01",
@@ -42,12 +43,23 @@ export default {
       modules: {
         ...modules,
         "bundle.js": source,
+        "console.js": consoleSource,
         "entry.js": `import {WorkerEntrypoint} from 'cloudflare:workers';
-          import * as bundle from './bundle.js';
+          import {createCodeConsole} from './console.js';
           export default class extends WorkerEntrypoint {
             async run(name, input) {
-              if (typeof bundle[name] !== 'function') throw new Error('missing_entrypoint');
-              return await bundle[name](input, this.env.cloud);
+              const output = ${outputLimits ? `createCodeConsole(this.env.cloud, ${JSON.stringify(outputLimits)})` : "null"};
+              if (output) globalThis.console = output.console;
+              try {
+                const bundle = await import('./bundle.js');
+                if (typeof bundle[name] !== 'function') throw new Error('missing_entrypoint');
+                return await bundle[name](input, this.env.cloud);
+              } catch (error) {
+                // Only sandbox-originated text goes to the separate, bounded output channel.
+                // The host's terminal HTTP response remains payload-free, even for exceptions.
+                output?.console.error(error);
+                throw error;
+              } finally { await output?.finish(); }
             }
           }`,
       },
