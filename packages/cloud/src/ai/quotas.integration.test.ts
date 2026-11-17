@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import * as publicAi from "@k2b/cloud/ai";
 import type { Provider } from "@k2b/nessi";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
@@ -8,9 +8,11 @@ import { geoTestContext } from "../services/geo/geo.test-fixture";
 import { type TraceContext, trace } from "../services/logging";
 import type { AiQuotaRule } from "../shared/ai-quotas";
 import { streamAnswer } from "./answer-stream.test-fixture";
+import { CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
 import { backgroundCostState, beginAiCall, finishAiCall, releaseBackgroundCostStop } from "./inference-calls";
 import { drainQueuedMessages } from "./message-queue";
 import { aiPeopleAtLimit } from "./quota-limits";
+import { inferenceProvider } from "./quota-provider";
 import { quotaAdminConfig, quotaReport } from "./quota-report";
 import { aiQuotas, quotaWindow } from "./quotas";
 import { migrateAiQuotas } from "./quotas-migrate";
@@ -511,6 +513,133 @@ suite("Assistant quota PostgreSQL boundaries", () => {
     await finishAiCall(call.id, { input: 1, output: 2 }, "ok");
     expect((await aiQuotas.snapshot(subject)).balances[0]!.used).toBe(0.3);
   });
+  test("priced authoring passes the token allowance, books cached input at its price and stops at cost admission", async () => {
+    const now = new Date("2030-01-01T12:00:00.000Z");
+    setSystemTime(now);
+    try {
+      await save([rule("*", 3.5)]);
+      const model = { ...pricedModel(), pricing: { inputPerMillion: 2, outputPerMillion: 10, cacheReadPerMillion: 0.2 } };
+      let dispatched = 0;
+      const base: Provider = {
+        name: "fixture",
+        family: "openai-compatible",
+        model: "fixture",
+        contextWindow: 2_000_000,
+        capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+        async *stream() {
+          dispatched++;
+          yield { type: "usage", usage: { input: 1_000_000, output: 0, total: 1_000_000, cacheRead: 990_000 } };
+        },
+      };
+      const guard = createCodeAuthoringTurnBudget({
+        selected: true,
+        billable: await aiQuotas.assertAllowed(subject, model.id),
+        finishedToolCalls: [],
+        priorCalls: { calls: 0, inputTokens: 0 },
+      });
+      const wrapped = guard.wrap(inferenceProvider(base, model, { kind: "chat", task: "chat", subject, turnId: turn }));
+      const consume = async () => {
+        for await (const _event of wrapped.stream({ messages: [], systemPrompt: "x".repeat(4_000_000), maxOutputTokens: 1 })) {
+        }
+      };
+      for (let i = 0; i < 7; i++) {
+        await consume();
+        // Keep DB-clock receipts in the same explicit quota window as the frozen application clock.
+        await sql`UPDATE ai.inference_calls SET started_at=${now} WHERE turn_id=${turn}::uuid`;
+      }
+      expect(dispatched * 1_000_000).toBeGreaterThan(CODE_AUTHORING_TURN_BUDGET.inputTokens);
+      expect(guard.stopped()).toBeNull();
+      expect((await aiQuotas.snapshot(subject)).balances[0]?.used).toBe(1.526);
+      const [receipt] = await sql`SELECT input,cache_read,cost::text AS cost FROM ai.inference_calls LIMIT 1`;
+      expect(Number(receipt.input)).toBe(1_000_000);
+      expect(Number(receipt.cache_read)).toBe(990_000);
+      expect(Number(receipt.cost)).toBe(0.218);
+      await expect(consume()).rejects.toMatchObject({ code: "quota_exhausted" });
+      expect(dispatched).toBe(7);
+      expect(guard.stopped()).toBeNull();
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  test.each(["disabled", "unlimited", "bypass", "finite"] as const)(
+    "priced authoring keeps its token guard unless cost admission is effective (%s)",
+    async (mode) => {
+      setSystemTime(new Date("2030-01-01T12:00:00.000Z"));
+      try {
+        await save(
+          mode === "bypass" ? [rule("*", null), rule("a", 10)] : [rule("*", mode === "unlimited" ? null : 10)],
+          mode !== "disabled",
+        );
+        const guard = createCodeAuthoringTurnBudget({
+          selected: true,
+          billable: await aiQuotas.assertAllowed(subject, "a"),
+          finishedToolCalls: [],
+          priorCalls: { calls: 0, inputTokens: CODE_AUTHORING_TURN_BUDGET.inputTokens },
+        });
+        let dispatched = 0;
+        const wrapped = guard.wrap({
+          name: "fixture",
+          model: "fixture",
+          family: "openai-compatible",
+          capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+          async *stream() {
+            dispatched++;
+          },
+        });
+        for await (const _event of wrapped.stream({ messages: [] })) {
+        }
+        expect(dispatched).toBe(mode === "finite" ? 1 : 0);
+        expect(guard.stopped()?.reason).toBe(mode === "finite" ? undefined : "input_tokens");
+      } finally {
+        setSystemTime();
+      }
+    },
+  );
+
+  test("the single closing answer still passes cost admission and keeps its receipt if admission rejects", async () => {
+    setSystemTime(new Date("2030-01-01T12:00:00.000Z"));
+    try {
+      await save([rule("*", 10)]);
+      const model = pricedModel();
+      const guard = createCodeAuthoringTurnBudget({
+        selected: true,
+        billable: await aiQuotas.assertAllowed(subject, model.id),
+        finishedToolCalls: [
+          { name: "code_submit", status: "completed", args: { codeId: "c_done" }, result: { submission: { version: { id: "saved" } } } },
+        ],
+        priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 0 },
+      });
+      // An intervening allowance change must still reject the closing dispatch.
+      await save([rule("*", 0)]);
+      let dispatched = 0;
+      const wrapped = guard.wrap(
+        inferenceProvider(
+          {
+            name: "fixture",
+            model: "fixture",
+            family: "openai-compatible",
+            capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: true },
+            async *stream() {
+              dispatched++;
+            },
+          },
+          model,
+          { kind: "chat", task: "chat", subject, turnId: turn },
+        ),
+      );
+      const consume = async () => {
+        for await (const _event of wrapped.stream({ messages: [], maxOutputTokens: 1 })) {
+        }
+      };
+      await consume();
+      expect(dispatched).toBe(0);
+      expect(guard.stopped()).toMatchObject({ reason: "model_calls", unsubmitted: 0 });
+    } finally {
+      setSystemTime();
+    }
+  });
+
   test("price snapshots survive model price changes and duplicate finalization", async () => {
     const model = pricedModel();
     const call = await beginAiCall(model, { kind: "chat", task: "chat", subject, turnId: turn }, 1, 1);

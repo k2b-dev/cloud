@@ -750,7 +750,7 @@ describe("Assistant quota administration", () => {
   });
   test("model discovery and updates preserve exact prices and row revisions", async () => {
     const previous = { inputPerMillion: 0.25, outputPerMillion: 1.5 };
-    const pricing = { inputPerMillion: 0.125001, outputPerMillion: 0 };
+    const pricing = { inputPerMillion: 0.125001, outputPerMillion: 0, cacheReadPerMillion: 0.01 };
     const model = { id: "chat", label: "Chat", pricing: previous, revision: 7 };
     const models = { models: [model] };
     const read = createContext(["ai", "models", "list"], {}, [jsonResponse(models)]);

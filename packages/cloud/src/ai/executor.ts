@@ -89,6 +89,7 @@ import {
 import { retryTransientProviderErrors } from "./provider-retry";
 import { publicAiToolBlock, publicAiToolInput, publicAiToolResult } from "./public-tool-input";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
+import { aiQuotas } from "./quotas";
 import { collectConversationResourceObservations } from "./resource-refs";
 import { capabilityResultView } from "./result-view";
 import { assertInteractiveChatTurn } from "./retired-routines";
@@ -1670,6 +1671,12 @@ export class AiTurnExecutor {
       selected: Boolean(config.codeReview) || loadedSkills.some((skill) => skill.name === "code-authoring"),
       nonPerson,
       inputTokenCeiling,
+      // Only person/review chat calls with effective cost admission replace the authoring token cap.
+      billable:
+        !nonPerson &&
+        isAssistantChatTurn(config) &&
+        quotaSubject !== null &&
+        (await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id, settings)),
       onStop: (reason) => log.info("AI chat turn reached its safety budget", { conversationId, turnId, reason }),
     });
     const turnPolicy = applyAiTurnPolicy({

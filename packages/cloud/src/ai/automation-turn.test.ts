@@ -1,8 +1,11 @@
-import { expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setSystemTime, test } from "bun:test";
 import { memoryStore, type Provider, type ProviderRequest, type StoreEntry } from "@k2b/nessi";
 import { AUTOMATION_TURN_BUDGET, createCodeAuthoringTurnBudget, isAutomaticAiChatTurn } from "./code-authoring-turn";
 import { retryTransientProviderErrors } from "./provider-retry";
 import { AiTurnInferenceLimit } from "./turn-failure";
+
+beforeEach(() => setSystemTime(new Date("2026-11-17T09:00:00.000Z")));
+afterEach(() => setSystemTime());
 
 const budget = (priorCalls = { calls: 0, inputTokens: 0 }) =>
   createCodeAuthoringTurnBudget({ priorCalls, finishedToolCalls: [], selected: false, nonPerson: true });
@@ -212,4 +215,80 @@ test("a review revision keeps the authoring allocation and compaction threshold"
   expect(guard.stopped()).toBeNull();
   expect(await compactionRequest(guard, 40_000)).toBe(0.1);
   expect(await compactionRequest(guard, 70_000)).toBe(1);
+});
+
+test.each([
+  { reason: "model_calls", calls: AUTOMATION_TURN_BUDGET.modelCalls, tokens: 0, expected: 0 },
+  { reason: "input_tokens", calls: 0, tokens: AUTOMATION_TURN_BUDGET.inputTokens, expected: 0 },
+  { reason: "repeated_error", calls: AUTOMATION_TURN_BUDGET.modelCalls - 1, tokens: 1000, expected: 1 },
+  { reason: "repeated_error", calls: AUTOMATION_TURN_BUDGET.modelCalls, tokens: 1000, expected: 0 },
+  { reason: "repeated_error", calls: 1, tokens: AUTOMATION_TURN_BUDGET.inputTokens, expected: 0 },
+] as const)(
+  "automatic authoring closes only inside its allocation ($reason, $calls calls, $tokens tokens)",
+  async ({ reason, calls, tokens, expected }) => {
+    const guard = createCodeAuthoringTurnBudget({
+      priorCalls: { calls, inputTokens: tokens },
+      finishedToolCalls: [],
+      selected: true,
+      nonPerson: true,
+      // Even a mislabelled caller cannot lift the automation allowance.
+      billable: true,
+    });
+    if (reason === "repeated_error")
+      for (let index = 0; index < 3; index++)
+        guard.noteToolCall({ name: "code_test", args: { codeId: "c_done" }, status: "completed", result: { ok: false, error: "same" } });
+    guard.noteToolCall({
+      name: "code_submit",
+      args: { codeId: "c_done" },
+      status: "completed",
+      result: { submission: { version: { id: "saved" } } },
+    });
+    let dispatched = 0;
+    const provider = guard.wrap({
+      ...fixture(() => {}),
+      async *stream(request) {
+        dispatched++;
+        expect(request.tools).toEqual([]);
+        yield { type: "block_start", blockId: "closing", index: 0, kind: "text" };
+        yield { type: "block_end", blockId: "closing", index: 0, block: { type: "text", text: "Submitted; no tools remain." } };
+        yield { type: "usage", usage: { input: 100, output: 1, total: 101 } };
+      },
+    });
+    await consume(provider);
+    expect(dispatched).toBe(expected);
+    if (expected) expect(guard.stopped()).toBeNull();
+    else expect(guard.stopped()).toMatchObject({ reason, drafts: 1, unsubmitted: 0 });
+    expect(guard.automationStopped()).toBeNull();
+    await consume(provider);
+    expect(dispatched).toBe(expected);
+  },
+);
+
+test("durable inference admission of an automatic closing attempt preserves its pause receipt", async () => {
+  const guard = createCodeAuthoringTurnBudget({
+    priorCalls: { calls: 0, inputTokens: 0 },
+    finishedToolCalls: [],
+    selected: true,
+    nonPerson: true,
+  });
+  for (let index = 0; index < 3; index++)
+    guard.noteToolCall({ name: "code_test", args: { codeId: "c_done" }, status: "completed", result: { ok: false, error: "same" } });
+  guard.noteToolCall({
+    name: "code_submit",
+    args: { codeId: "c_done" },
+    status: "completed",
+    result: { submission: { version: { id: "saved" } } },
+  });
+  const events = await Array.fromAsync(
+    guard
+      .wrap({
+        ...fixture(() => {}),
+        async *stream() {
+          throw new AiTurnInferenceLimit("output_tokens");
+        },
+      })
+      .stream({ messages: [] }),
+  );
+  expect(events.at(-1)).toMatchObject({ type: "block_end", block: { type: "text", text: "" } });
+  expect(guard.stopped()).toMatchObject({ reason: "repeated_error", drafts: 1, unsubmitted: 0 });
 });
