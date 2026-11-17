@@ -282,11 +282,12 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # Measured maxima from runs 41334867354, 41335243553, 41332285147, 41332198602
-      # and 41330725890 predict 13.6 min for the slowest of 5 integration shards
-      # (4 need 15.3 min).
+      # Mail runs each integration file as its own suite (#2055). Maxima from
+      # runs 43941042251, 43935309663, 43930423302, 43935202021, 43928309130,
+      # 43926823665, 43925976959 and 43925118899 total 70.9 min: 5 shards
+      # need 14.2 min, 6 need 11.8 min and leave room for growth.
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard: [1, 2, 3, 4, 5, 6]
     services:
       clickhouse:
         image: ghcr.io/k2b-dev/mirror/clickhouse/clickhouse-server:26.9.19.9@sha256:bdb5c911a23d92fd364e246ab20b5a0a485f00112f3663fa626b083fb46c146b
