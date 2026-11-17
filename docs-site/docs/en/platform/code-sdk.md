@@ -16,7 +16,8 @@ results come from [application capability manifests](/en/docs/platform/capabilit
 Third-party applications use the same path as built-in applications.
 
 Gustav's `code_sdk` index shows each method's policy classification. Inference
-calls (`core.ai.generate`, `core.ai.decide` and `core.ai.chat.send`) use `ai`,
+calls (`core.ai.generate` and `core.ai.decide`) use `ai`; `core.ai.chat.send` uses
+`ai_chat_you`, subject to the executed model and whole-turn budget checks,
 including inference Queries. Reading a stored chat run uses `read`; delivering
 a chat message retains its Action policy. The index, checker and runtime use
 the same inference classification.
@@ -846,7 +847,14 @@ export default app;
 
 `Chat23` is fictional. `text` contains 1–10,000 characters after trimming;
 optional `context` contains at most 10,000 characters of untrusted source data.
-Keep instructions in `text` and changing facts in `context`. For a prepared
+Keep instructions in `text` and changing facts in `context`. Saved Code must
+supply the input object directly at the call site. Its `text` must be a string
+literal or a const string initialized from fixed literals, including named imports of
+const strings. Event fields, query results, model output, mutable strings and
+dynamic templates are rejected with `code_chat_text_fixed`, even when a type
+assertion claims they are literals. Put those values in `context`. One-shot
+`code_run` calls are exempt from this static rule. Saved Code also cannot
+bind Send as a model tool, since the model would choose the instruction. For a prepared
 number, ask Gustav to confirm the supplied data in one sentence, without a new
 calculation. Every send can start an AI turn and incur its normal costs.
 
@@ -854,7 +862,10 @@ The Action returns `{ id, chatId, status, reason, origin }` promptly. Status is
 `queued`, `running`, `waiting`, `done`, `failed` or `cancelled`. A busy chat keeps
 the message in its existing queue, without consuming the person's draft. Read
 one later snapshot with `core.ai.chat.read({ id: "Chat23", message: sent.id })`;
-the Query returns `{ data: { chat, messages, message } }`. Finish the Code run
+the Query returns `{ data: { chat, messages, message } }`. An automatic budget
+stop remains in `messages` with `safetyStop.reason` (`model_calls`, `input_tokens`, `output_tokens` or `repeated_error`)
+and a localized notice in `text`. This also covers Code-authoring stops and
+keeps every returned message text nonempty. Finish the Code run
 when a person must answer; do not poll for approval.
 
 One required key identifies the intended message across Code runs for the same
@@ -881,13 +892,17 @@ again (`chat_chain_forbidden`). Retry, resume and queue promotion preserve the
 original initiator; missing trigger information never grants chaining authority.
 
 Only `ai.generate`, `ai.decide` and `ai.chat.send` count as Code AI operations.
-Chat reads use the `read` policy. Send currently uses the `ai` row, including its
-version approval. A sent turn uses the owner's normal Assistant allowance by
-actual usage, without passing the Code mandate to its tools or debiting the
-whole text-AI attempt allowance. Existing Code daily admission checks still
-apply; they do not reserve a whole future turn. See the
-[send contract](/en/docs/platform/capabilities#write-to-a-gustav-chat) for limits
-and error codes.
+`send` qualifies for automatic `ai_chat_you` only with a positive reference price
+and a fully reserved turn maximum. Zero-priced and unpriced models still require
+ordinary `ai` authority. See [Code policy](/en/docs/platform/code-policy#ai-in-a-personal-chat).
+Chat reads use `read`. A priced Code-started turn uses `ai_chat_you` and
+reserves its whole maximum against the Code and owner daily limits at execution.
+The maximum includes 192,000 input tokens, one 32,000-token call for the last
+round's estimation margin, and 12,000 output tokens. Compaction shares the
+allowance. A missing context window refuses a priced turn. Unpriced or
+zero-priced models require the ordinary `ai` rule and approval coverage; a pure
+`send` version under the default policy should use a priced model. The Code
+mandate never passes to the target chat's tools.
 
 ## Name an automation
 

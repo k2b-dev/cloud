@@ -392,6 +392,55 @@ suite("AI conversation store integration", () => {
     }
   });
 
+  test("automatic safety stop persists on the terminal answer, never on a compaction summary", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const conversationIds = [chat.id];
+    try {
+      const guard = createCodeAuthoringTurnBudget({
+        priorCalls: { calls: 16, inputTokens: 0 },
+        selected: false,
+        nonPerson: true,
+        finishedToolCalls: [],
+      });
+      const store = aiConversations.createSessionStore({ conversationId: chat.id, automationTurnStop: guard.automationStopped });
+      const loop = nessi({
+        input: "Prepare the briefing",
+        systemPrompt: "Fixture",
+        store,
+        provider: guard.wrap({
+          name: "fixture",
+          model: "fixture",
+          family: "openai-compatible",
+          capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: false },
+          async *stream() {
+            throw new Error("An exhausted automatic turn must not dispatch");
+          },
+        }),
+      });
+      try {
+        for await (const _ of loop) {
+          /* persist */
+        }
+      } finally {
+        loop.abort();
+      }
+      const answer = (await aiConversations.listMessages({ conversationId: chat.id })).at(-1)!;
+      expect(answer.message).toMatchObject({ role: "assistant", content: [] });
+      expect(answer.meta?.automationTurnStop).toEqual({ reason: "model_calls" });
+      expect(answer.meta?.codeAuthoringStop).toBeUndefined();
+      const fork = await aiConversations.forkConversation({ sourceConversationId: chat.id, ownerUserId: userId, throughSeq: answer.seq });
+      conversationIds.push(fork.id);
+      expect((await aiConversations.listMessages({ conversationId: fork.id })).at(-1)?.meta?.automationTurnStop).toEqual({
+        reason: "model_calls",
+      });
+      await store.append(assistantMessage("Summary"), { kind: "summary" });
+      expect((await aiConversations.listMessages({ conversationId: chat.id })).at(-1)?.meta?.automationTurnStop).toBeUndefined();
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
   test("resource presentation survives indexing, updates and user listings", async () => {
     const userId = await insertUser();
     const conversationIds: string[] = [];
