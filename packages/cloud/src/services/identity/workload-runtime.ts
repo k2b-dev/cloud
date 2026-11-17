@@ -233,6 +233,7 @@ export const startAppWorkloadBroker = async (
         log.error("Workload removal reconciliation failed; retrying");
       })
       .finally(() => {
+        // runtime-timer: revokes removed workload credentials; access removal never pauses.
         if (!stopped) timer = setTimeout(maintain, WORKLOAD_CHECK_INTERVAL_MS);
       });
   };

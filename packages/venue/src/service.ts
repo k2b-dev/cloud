@@ -673,7 +673,7 @@ const createVenueInTx = async (tx: SqlClient, input: VenueInput, user: UserLike)
 
 /** Every venue needs its own slug; the database enforces it with this constraint. */
 const VENUE_SLUG_CONSTRAINT = "venues_slug_key";
-const venueSlugTaken = () => fail(err.conflict("Venue slug"));
+const venueSlugTaken = () => fail(err.conflict("Venue slug already exists"));
 
 const createVenue = async (input: VenueInput, user: UserLike): Promise<Result<Venue>> => {
   try {
@@ -871,7 +871,7 @@ const deleteVenue = async (id: string): Promise<Result<void>> => {
 const grantAccess = async (venueId: string, principal: Principal, permission: PermissionLevel): Promise<Result<AccessEntry>> => {
   const existing = await listAccess(venueId);
   const duplicate = existing.find((entry) => JSON.stringify(entry.principal) === JSON.stringify(principal));
-  if (duplicate) return fail(err.conflict("Access entry"));
+  if (duplicate) return fail(err.conflict("Access entry already exists"));
 
   const created = await createAccess({ principal, permission });
   if (!created.ok) return created;
@@ -1031,7 +1031,7 @@ const updateOverride = async (venueId: string, id: string, input: DateOverrideIn
     if (isUniqueViolation(error)) return null;
     throw error;
   });
-  if (!rows) return fail(err.conflict("Opening-hour exception for this date"));
+  if (!rows) return fail(err.conflict("Opening-hour exception for this date already exists"));
   const row = rows[0];
   return row ? ok(mapOverride(row)) : fail(err.notFound("Date override"));
 };

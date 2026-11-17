@@ -48,6 +48,7 @@ export const railMessages = i18n.define({
       loadFailed: "Could not load app bar settings.",
       badge: ({ count }: { count: number }) => `${count} new`,
       badgeMany: "more than 99 new",
+      newInApps: "new in your apps",
     },
     de: {
       customize: "App-Leiste anpassen",
@@ -94,6 +95,7 @@ export const railMessages = i18n.define({
       loadFailed: "App-Leiste konnte nicht geladen werden.",
       badge: ({ count }) => `${count} neu`,
       badgeMany: "mehr als 99 neu",
+      newInApps: "Neues in deinen Apps",
     },
   },
 });

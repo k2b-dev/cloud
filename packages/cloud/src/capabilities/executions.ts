@@ -4,6 +4,7 @@ import { sql } from "../runtime/clients";
 import { REQUEST_IDLE_TIMEOUT_SECONDS } from "../server/request-timeout";
 import { pruneApprovalRequests } from "../services/approvals";
 import { logger } from "../services/logging";
+import { startRuntimeInterval } from "../services/runtime-lifecycle";
 import { CAPABILITY_CLAIM_RETENTION_HOURS, pruneCapabilityIdempotencyClaims } from "./claims";
 
 export {
@@ -299,15 +300,12 @@ export const pruneCapabilityExecutions = async (olderThan: Date): Promise<number
 export const CAPABILITY_EXECUTION_RETENTION_DAYS = 90;
 const PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-let pruneTimer: ReturnType<typeof setInterval> | null = null;
-let pruneRunning = false;
+let pruneInterval: ReturnType<typeof startRuntimeInterval> | null = null;
 
 /** Starts the retention sweep. Mirrors the mandate maintenance loop and is started once per Cloud runtime. */
 export const startCapabilityExecutionMaintenance = (): (() => void) => {
-  if (pruneTimer) return () => undefined;
+  if (pruneInterval) return () => undefined;
   const prune = async (): Promise<void> => {
-    if (pruneRunning) return;
-    pruneRunning = true;
     try {
       const removed = await pruneCapabilityExecutions(new Date(Date.now() - CAPABILITY_EXECUTION_RETENTION_DAYS * 86_400_000));
       if (removed > 0) log.info("Pruned expired capability executions", { removed });
@@ -317,15 +315,12 @@ export const startCapabilityExecutionMaintenance = (): (() => void) => {
       if (claims > 0) log.info("Pruned expired capability idempotency claims", { removed: claims });
     } catch (error) {
       log.error("Capability retention sweep failed", { error: error instanceof Error ? error.message : String(error) });
-    } finally {
-      pruneRunning = false;
     }
   };
-  void prune();
-  pruneTimer = setInterval(() => void prune(), PRUNE_INTERVAL_MS);
-  pruneTimer.unref?.();
+  const interval = startRuntimeInterval({ run: prune, intervalMs: PRUNE_INTERVAL_MS, onError: () => undefined });
+  pruneInterval = interval;
   return () => {
-    if (pruneTimer) clearInterval(pruneTimer);
-    pruneTimer = null;
+    if (pruneInterval === interval) pruneInterval = null;
+    void interval.stop();
   };
 };

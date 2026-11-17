@@ -194,7 +194,7 @@ const upstreamFailure = (status: number, body: unknown): Result<never> => {
     status === 404
       ? err.notFound("")
       : status === 409
-        ? err.conflict("")
+        ? err.conflict(message)
         : status === 400
           ? err.badInput("")
           : status === 401 || status === 403

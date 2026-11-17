@@ -109,6 +109,7 @@ export async function executeMachine(
   let polling: Promise<unknown> | undefined;
   let authorityLost = false;
   const check = () => sql.begin((db) => requireMachineExecution(db, id, currentIdentity, request.publishedVersion));
+  // runtime-timer: watchdog of one machine execution in flight; it ends that work when its authority is lost.
   const watchdog = setInterval(() => {
     if (polling) return;
     polling = check()

@@ -19,6 +19,7 @@ import {
   validateAiNextMessage,
 } from "./next-message";
 import * as nextMessageStore from "./next-message-store";
+import { AI_NEXT_MESSAGE_MIN_CHARS, aiNextMessageText } from "./next-message-text";
 import type { AiUserPrefs } from "./prefs";
 import { userResourceContext } from "./projects.test-fixture";
 import { buildBlocksFromMessages } from "./protocol";
@@ -137,6 +138,13 @@ describe("next message validation", () => {
     "1. Ja",
     "<b>Ja</b>",
     "~~Ja~~",
+    // A model's word for "no suggestion" is no suggestion, and neither is one shorter than six characters.
+    "null",
+    " NULL ",
+    "undefined",
+    "None",
+    "ok",
+    "Danke",
   ])("rejects %j", (value) => {
     expect(validateAiNextMessage(value, "last")).toBeNull();
   });
@@ -144,6 +152,16 @@ describe("next message validation", () => {
     expect(validateAiNextMessage("  ＪＡ,   antworte Jana! ", "ja antworte jana")).toBeNull();
     expect(validateAiNextMessage("Ja, entwirf die Antwort an Jana", "Was hat Jana gefragt?")).toBe("Ja, entwirf die Antwort an Jana");
     expect(validateAiNextMessage("😀".repeat(200), "last")).toHaveLength(400);
+  });
+  test("a suggestion needs six characters once trimmed, counted as Unicode characters", () => {
+    expect(AI_NEXT_MESSAGE_MIN_CHARS).toBe(6);
+    expect(validateAiNextMessage("  Danke ", "last")).toBeNull();
+    expect(validateAiNextMessage("Danke!", "last")).toBe("Danke!");
+    expect(validateAiNextMessage("😀".repeat(5), "last")).toBeNull();
+    expect(validateAiNextMessage("😀".repeat(6), "last")).toBe("😀".repeat(6));
+    // A stored suggestion is read through the same rule, so one saved as "null" before never shows.
+    expect(aiNextMessageText("null")).toBeNull();
+    expect(aiNextMessageText("Entwirf die Antwort")).toBe("Entwirf die Antwort");
   });
 });
 

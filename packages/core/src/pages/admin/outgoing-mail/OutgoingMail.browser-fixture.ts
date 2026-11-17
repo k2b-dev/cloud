@@ -46,7 +46,7 @@ const initial: OutgoingMailState = {
         profiles: [],
         logApps: [],
       },
-      { appId: "core", name: "Core", registered: true, declared: true, readDeclared: false, mode: "default", profiles: [], logApps: [] },
+      { appId: "core", name: "Cloud", registered: true, declared: true, readDeclared: false, mode: "default", profiles: [], logApps: [] },
     ],
   },
   log: { filter: {}, retention: { contentDays: 90, recordDays: 365 }, page: { items: [], page: 1, perPage: 25, total: 0, hasNext: false } },
@@ -134,7 +134,7 @@ export async function outgoingMailBrowserFixture() {
   pages.get("/admin/core/outgoing-mail", (c) => {
     const locale = c.req.query("locale") === "en" ? "en" : "de";
     c.req.raw.headers.set("x-cloud-locale", locale);
-    c.set("runtime", { apps: [{ id: "core", name: "Core", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
+    c.set("runtime", { apps: [{ id: "core", name: "Cloud", description: "Platform", icon: "ti ti-cloud", routes: ["/admin", "/"] }] });
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     const title = outgoingMailMessages.resolve([locale]).t.title;

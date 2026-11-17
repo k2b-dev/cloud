@@ -1,6 +1,14 @@
 import { CloudResourceRefSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
-import { AttachmentViewSchema, AuthorSchema, MessageBodySchema, MessageIdSchema } from "./service/contracts";
+import {
+  AttachmentViewSchema,
+  AuthorSchema,
+  MAX_MESSAGE_REFS,
+  MESSAGE_MAX_CODE_POINTS,
+  MessageBodySchema,
+  MessageIdSchema,
+  MessageQuoteSchema,
+} from "./service/contracts";
 
 export const DISCUSSION_PAGE_SIZE = 20;
 export const DISCUSSION_PREVIEW_LENGTH = 300;
@@ -27,6 +35,22 @@ export const DiscussionPostInputSchema = z.strictObject({
   ref: DiscussionItemSchema,
   body: MessageBodySchema.describe("Markdown text, at most 20,000 Unicode characters, with non-whitespace content."),
   replyTo: MessageIdSchema.optional().describe("Message ID to reply to, within this same item discussion."),
+  quotes: z
+    .array(
+      z.strictObject({
+        message: MessageIdSchema.describe("ID of a message in this same item discussion."),
+        text: z
+          .string()
+          .min(1)
+          .max(MESSAGE_MAX_CODE_POINTS * 2)
+          .describe(
+            "The visible words of the message, without Markdown marks such as ** or link targets; spacing may differ. The stored quote is the message's own text in whole words.",
+          ),
+      }),
+    )
+    .max(MAX_MESSAGE_REFS)
+    .optional()
+    .describe("Passages of earlier messages this message answers, at most 10 and together at most 20,000 Unicode characters."),
 });
 export const MessageEditInputSchema = z.strictObject({
   id: MessageIdSchema.describe("Own message ID from a chat.message resource ref."),
@@ -45,12 +69,28 @@ export const DiscussionMessageSchema = z.strictObject({
   via: z.enum(["assistant", "mcp"]).nullable(),
   replyTo: MessageIdSchema.nullable(),
 });
-export const DiscussionPreviewSchema = DiscussionMessageSchema.extend({ preview: z.string(), previewTruncated: z.boolean() });
+/** A list names what a message quotes but not the words; message.read returns them, so a page keeps its bound. */
+export const DiscussionPreviewSchema = DiscussionMessageSchema.extend({
+  preview: z.string(),
+  previewTruncated: z.boolean(),
+  quotes: z
+    .array(z.union([z.strictObject({ message: MessageIdSchema }), z.strictObject({ deleted: z.literal(true) })]))
+    .max(MAX_MESSAGE_REFS)
+    .describe(
+      "Messages it quotes, without their words; message.read returns the passages. { deleted: true } once a quoted passage is gone.",
+    ),
+});
 export const DiscussionListDataSchema = z.array(DiscussionPreviewSchema).max(DISCUSSION_PAGE_SIZE);
 export const DiscussionMessageDataSchema = DiscussionMessageSchema.extend({
   body: z.string().nullable(),
   refs: z.array(CloudResourceRefSchema).max(10),
   attachments: z.array(AttachmentViewSchema).max(10),
+  quotes: z
+    .array(MessageQuoteSchema)
+    .max(MAX_MESSAGE_REFS)
+    .describe(
+      "Passages of earlier messages it quotes, as they were when quoted; { deleted: true } once their message was deleted or changed so that the words are gone.",
+    ),
 });
 
 /** Ordinary Chat messages share the complete content projection, with their conversation as location. */

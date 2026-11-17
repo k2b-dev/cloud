@@ -1400,7 +1400,7 @@ export const aiConversations: AiConversationService = {
   },
   createConversation: async (input) => {
     const normalized = {
-      title: input.title?.trim() || "New chat",
+      title: input.title?.trim() || input.defaultTitle?.trim() || "New chat",
       description: input.description?.trim() ?? "",
       projectId: input.projectId ?? null,
       draft: input.draft ?? [],
@@ -1447,7 +1447,8 @@ export const aiConversations: AiConversationService = {
       return rowToConversation(rows[0]);
     };
     if (!input.requestId) return insert(sql);
-    const hash = capabilityRequestHash(normalized);
+    // The replay identity is what the caller asked for; a default title follows the request's locale and may differ.
+    const hash = capabilityRequestHash({ ...normalized, title: input.title?.trim() || "New chat" });
     return sql.begin(async (tx) => {
       const reserved = await tx<{ request_id: string }[]>`
         INSERT INTO ai.conversation_creations (owner_user_id, request_id, input_hash)

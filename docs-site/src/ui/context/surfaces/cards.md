@@ -28,8 +28,9 @@ holds the tile, the bold title, the description (such as a schedule), and
 below (such as what it did last); `footer` is the last line with `start` (a
 state with its sign and colour) and `end` (a quiet time such as "next run Mon,
 16.11." or "since 29.10."). Body and footer stand on the tile's edge, and the
-footer sits on the bottom edge, so cards in a row end level. The stacked card
-has a 10px radius, the island shadow, and no chevron; in `AppOverview.Cards`
+footer sits on the bottom edge, so cards in a row end level. Title and
+description wrap instead of ending in "…", so a long name or a schedule's end
+time stays visible. The stacked card has a 10px radius, the island shadow, and no chevron; in `AppOverview.Cards`
 stacked cards sit 14px apart. The whole card stays one link with one focus
 ring, so `aside`, `body`, and `footer` hold text and marks only, never links or
 buttons; pass a `DotStrip` without `links`. Type: title 14/600, description
