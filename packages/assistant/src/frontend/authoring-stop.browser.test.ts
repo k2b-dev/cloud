@@ -206,7 +206,7 @@ describe("the v10 pause card", () => {
                   expect(layout.button.width).toBeCloseTo(layout.card.width - 28, 0);
                   expect(layout.button.height).toBeGreaterThanOrEqual(40);
                 } else {
-                  expect(layout.button.height).toBeCloseTo(36, 0);
+                  expect(layout.button.height).toBeCloseTo(30, 0);
                 }
                 expect(await card.innerText()).not.toMatch(/code_|\.tsx?\b|[a-z]+_[a-z]+|Version 2/);
                 expect(await count(page)).toBe(0);

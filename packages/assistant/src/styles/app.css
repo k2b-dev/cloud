@@ -1321,7 +1321,7 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
   background: var(--k2b-surface-muted);
 }
 .k2b-ui .assistant-authoring-stop[data-card-icon] > .k2b-notice-card__icon { font-size: 1.0625rem; }
-.k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .125rem .75rem; }
+.k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .125rem .625rem; }
 .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__head { grid-column: 1; }
 .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__title { font-size: var(--k2b-type-14); font-weight: 400; line-height: 1.3125rem; }
 .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__body { grid-column: 1; margin: 0; }
@@ -1335,7 +1335,7 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button__busy { justify-content: flex-start; padding-inline-start: .25rem; }
 /* The v10 desktop action is outlined; on the phone it is the full-width primary action. */
 @container (width > 35rem) {
-  .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button { color: var(--k2b-text); background: var(--k2b-surface); border-color: var(--k2b-control-border-soft); }
+  .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button { min-height: 1.875rem; padding-block: 0; color: var(--k2b-text); background: var(--k2b-surface); border-color: var(--k2b-control-border-soft); }
   .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button:not(:disabled):hover { background: var(--k2b-edge-hover-bg); }
   .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button:focus-visible { outline-color: var(--k2b-focus-ring); outline-offset: var(--k2b-focus-offset); }
 }
