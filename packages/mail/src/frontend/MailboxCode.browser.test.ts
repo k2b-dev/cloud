@@ -184,7 +184,7 @@ if (shots) mkdirSync(shots, { recursive: true });
 const load = async (
   state: string,
   width: number,
-  options: { phone?: boolean; dark?: boolean; catchUp?: string; locale?: "de" | "en" } = {},
+  options: { phone?: boolean; dark?: boolean; catchUp?: string; locale?: "de" | "en"; usesBoundChat?: boolean } = {},
 ): Promise<Page> => {
   const page = await (await browser.newContext(contextFor(width))).newPage();
   await page.goto(server.url.href);
@@ -194,6 +194,7 @@ const load = async (
     locale: options.locale ?? "de",
     phone: options.phone,
     catchUp: options.catchUp,
+    usesBoundChat: options.usesBoundChat,
   });
   await settled(page);
   return page;
@@ -389,6 +390,32 @@ describe("Mailbox Code page in a browser", () => {
     } finally {
       chatBindingConflict = false;
       await page.context().close();
+    }
+  }, 60_000);
+
+  test("an unused archived chat binding adds no notice or needs-you state", async () => {
+    for (const width of [1440, 390]) {
+      for (const locale of ["de", "en"] as const) {
+        const page = await load("personal-chat-missing", width, { locale, dark: width === 390, usesBoundChat: false });
+        try {
+          expect(await page.locator(".cloud-code__state").getAttribute("data-tone")).toBe("ok");
+          expect(await page.getByRole("button", { name: locale === "de" ? "Chat wählen …" : "Choose a chat…", exact: true }).count()).toBe(
+            0,
+          );
+          expect(
+            await page.getByRole("button", { name: locale === "de" ? "Chat wiederherstellen" : "Restore chat", exact: true }).count(),
+          ).toBe(0);
+          expect(
+            await page
+              .locator(".k2b-notice-card")
+              .filter({ hasText: locale === "de" ? "ist archiviert" : "is archived" })
+              .count(),
+          ).toBe(0);
+          expect(await overflow(page)).toBe(0);
+        } finally {
+          await page.context().close();
+        }
+      }
     }
   }, 60_000);
 

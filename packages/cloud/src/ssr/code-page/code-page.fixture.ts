@@ -1076,6 +1076,18 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
                       },
                     },
               ]),
+              notices: list(
+                chatMissing
+                  ? [
+                      {
+                        code: "chat_missing" as const,
+                        severity: "block" as const,
+                        text: L("Diese Automation braucht einen Chat.", "This automation needs a chat."),
+                        consequence: L("Wähle einen Chat oder stelle diesen wieder her.", "Choose a chat or restore this one."),
+                      },
+                    ]
+                  : [],
+              ),
               timing: list([{ text: L("montags um 07:00", "Mondays at 07:00") }]),
             }),
             activity: null,

@@ -1334,6 +1334,41 @@ describe("the chat of personal Code", () => {
     expect(page).not.toContain("Chat wiederherstellen");
   });
 
+  test.each(["de", "en"])("an unused archived binding leaves the page clear (%s)", (locale) => {
+    for (const kind of ["page", "Chat app", "explicit Gustav chat"]) {
+      const data = codePageFixture("personal-chat-missing", locale);
+      if (data.state.kind !== "ready" || !data.state.words?.current) throw new Error("Expected personal fixture");
+      const words = data.state.words.current;
+      words.notices = { ...words.notices, items: words.notices.items.filter((notice) => notice.code !== "chat_missing") };
+      words.mayDo = {
+        ...words.mayDo,
+        items:
+          kind === "page"
+            ? []
+            : [
+                {
+                  text: kind,
+                  ...(kind === "explicit Gustav chat" ? { target: { ref: { type: "core.ai.chat", id: "Other433" }, text: kind } } : {}),
+                },
+              ],
+      };
+      const page = renderedText(
+        renderMarkup(() =>
+          createComponent(LocaleProvider, {
+            locale,
+            get children() {
+              return createComponent(CodePage, { data });
+            },
+          }),
+        ),
+        " ",
+      );
+      expect(page).not.toContain(locale === "de" ? "ist archiviert." : "is archived.");
+      expect(page).not.toContain(locale === "de" ? "Eingeschaltet, braucht dich" : "On, needs you");
+      expect(page).not.toContain(locale === "de" ? "Chat wiederherstellen" : "Restore chat");
+    }
+  });
+
   test("a missing chat says so above everything and offers to choose or restore one", () => {
     const page = text("personal-chat-missing");
     expect(page).toContain("Der Chat „Wochenbericht“ ist archiviert.");
@@ -1416,6 +1451,10 @@ test("personal Code without a chat offers its owner to choose one", () => {
   const quiet = codePageFixture("personal-chat-missing");
   if (quiet.state.kind !== "ready" || !quiet.state.chatBinding || !quiet.state.words?.current) throw new Error("Expected fixture");
   quiet.state.chatBinding = { ...quiet.state.chatBinding, revision: 0, chat: null };
+  quiet.state.words.current.notices = {
+    ...quiet.state.words.current.notices,
+    items: quiet.state.words.current.notices.items.filter((notice) => notice.code !== "chat_missing"),
+  };
   quiet.state.words.current.mayDo = {
     ...quiet.state.words.current.mayDo,
     items: quiet.state.words.current.mayDo.items.filter((row) => row.target?.ref.type !== "core.ai.chat"),

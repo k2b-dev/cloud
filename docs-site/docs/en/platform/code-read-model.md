@@ -54,6 +54,8 @@ to this Code. Ordinary Code read permission suffices.
   deleted, including before the first binding. Localized instructions explain
   how to choose another chat or restore the archived chat. This notice reflects
   the current binding; versions without `chat.send` receive no chat notice.
+  Consumers use this notice for missing-chat warnings instead of treating every
+  stored binding as a dependency.
 
 An unavailable target reader produces a neutral type label and no link;
 a reader's explicit refusal may say that the target is not visible. Within one

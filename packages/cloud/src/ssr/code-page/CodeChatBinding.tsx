@@ -39,17 +39,12 @@ export function CodeChatRowAction(props: { codeId: string; binding: CodeChatBind
   );
 }
 
-/**
- * The chat this personal Code is missing, or null: never bound while the running version writes to its chat
- * (`chat_unbound`; Core marks that row in "What it may do"), or its chat was archived or deleted (`chat_unavailable`).
- * Until the owner acts, the automation writes nothing, so the page says so and its state needs the person.
- */
+/** Core's current-version notice decides whether this binding is a dependency. */
 export const missingCodeChat = (state: CodePageReady) => {
   const binding = state.chatBinding;
-  if (!binding) return null;
+  if (!binding || !state.words?.current?.notices.items.some((notice) => notice.code === "chat_missing")) return null;
   if (binding.chat?.state === "unavailable") return binding.chat;
-  const usesChat = (state.words?.current?.mayDo.items ?? []).some((row) => row.target?.ref.type === "core.ai.chat");
-  return binding.chat === null && usesChat ? ({ state: "unbound" } as const) : null;
+  return binding.chat === null ? ({ state: "unbound" } as const) : null;
 };
 
 /**
