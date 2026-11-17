@@ -1104,10 +1104,10 @@ describe(`${browserName} the frame follows its content`, () => {
     try {
       await watch(page, "add", 8);
       await settled(page);
-      const before = await page.locator("dialog").evaluate((dialog) => dialog.offsetHeight);
+      const before = await page.locator("dialog").evaluate((dialog: HTMLDialogElement) => dialog.offsetHeight);
       await page.locator("[data-content]").evaluate((content) => content.remove());
       await settled(page);
-      expect(await page.locator("dialog").evaluate((dialog) => dialog.offsetHeight)).toBeLessThan(before - 150);
+      expect(await page.locator("dialog").evaluate((dialog: HTMLDialogElement) => dialog.offsetHeight)).toBeLessThan(before - 150);
     } finally {
       await page.context().close();
     }
@@ -1307,7 +1307,7 @@ describe(`${browserName} the frame follows its content`, () => {
       const result = await page.evaluate(async () => {
         const sets: Set<unknown>[] = [];
         const add = Set.prototype.add;
-        Set.prototype.add = function (value: unknown) {
+        Set.prototype.add = function (this: Set<unknown>, value: unknown) {
           if (value instanceof HTMLElement && value.hasAttribute("data-arrival-token") && !sets.includes(this)) sets.push(this);
           return add.call(this, value);
         };
@@ -1529,10 +1529,10 @@ describe(`${browserName} the frame follows its content`, () => {
       });
       await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
       await settled(page);
-      const before = await page.locator("dialog").evaluate((dialog) => dialog.offsetHeight);
+      const before = await page.locator("dialog").evaluate((dialog: HTMLDialogElement) => dialog.offsetHeight);
       await page.locator("[data-content]").evaluate((content) => content.remove());
       await settled(page);
-      expect(await page.locator("dialog").evaluate((dialog) => dialog.offsetHeight)).toBeLessThan(before - 100);
+      expect(await page.locator("dialog").evaluate((dialog: HTMLDialogElement) => dialog.offsetHeight)).toBeLessThan(before - 100);
     } finally {
       await page.context().close();
     }
