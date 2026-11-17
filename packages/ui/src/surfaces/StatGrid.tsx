@@ -27,7 +27,7 @@ export type StatGridProps = {
 
 const StatGridSizeContext = createContext<StatGridSize>("md");
 // A plain grid has no surface, so the surface context carries "plain" to its cells; a cell outside a grid stays a tile.
-const StatGridSurfaceContext = createContext<Accessor<StatGridSurface | "plain">>(() => "white");
+const StatGridSurfaceContext = createContext<Accessor<StatGridSurface | "plain">>((): StatGridSurface | "plain" => "white");
 
 export const useStatGridSize = (): StatGridSize => useContext(StatGridSizeContext);
 export const useStatGridSurface = (): Accessor<StatGridSurface | "plain"> => useContext(StatGridSurfaceContext);
