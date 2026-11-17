@@ -1,9 +1,41 @@
+import type { Message } from "@k2b/nessi";
 import { getApp } from "../_internal/registry";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { projectAiNextMessages } from "./next-message-store";
+import type { AiTurnBlock, AiWireEvent } from "./protocol";
 import { resolveAiTurnShortIds } from "./store";
 import type { AiConversation, AiStoredMessage } from "./types";
+
+/** Provider thinking remains in canonical history, never in public step details. */
+export const publicAiMessageContent = (message: Message): Message =>
+  message.role === "assistant"
+    ? { ...message, content: message.content.map((block) => (block.type === "thinking" ? { type: "thinking", thinking: "" } : block)) }
+    : message;
+
+/** Keep the step's identity, but no text or provider-specific thinking metadata. */
+export const publicAiTurnBlock = (block: AiTurnBlock): AiTurnBlock =>
+  block.kind === "thinking" ? { id: block.id, kind: "thinking", text: "" } : block;
+
+/** Applies to new events and retained events from an earlier executor version. */
+export const publicAiWireEvent = (event: AiWireEvent): AiWireEvent => {
+  switch (event.type) {
+    case "turn_started":
+      return event.blocks ? { ...event, blocks: event.blocks.map(publicAiTurnBlock) } : event;
+    case "block_set":
+      return { ...event, block: publicAiTurnBlock(event.block) };
+    case "block_delta":
+      return event.blockKind === "thinking" ? { ...event, delta: "" } : event;
+    case "message_saved":
+      return { ...event, message: { ...event.message, message: publicAiMessageContent(event.message.message) } };
+    case "turn_finished":
+      return event.messages
+        ? { ...event, messages: event.messages.map((message) => ({ ...message, message: publicAiMessageContent(message.message) })) }
+        : event;
+    default:
+      return event;
+  }
+};
 
 export const projectPublicAiStoredMessages = (
   messages: readonly AiStoredMessage[],
@@ -12,6 +44,7 @@ export const projectPublicAiStoredMessages = (
 ): AiStoredMessage[] =>
   messages.map((message) => ({
     ...message,
+    message: publicAiMessageContent(message.message),
     id: message.shortId,
     conversationId,
     loopId: message.loopId ? (turnShortIds.get(message.loopId) ?? null) : null,

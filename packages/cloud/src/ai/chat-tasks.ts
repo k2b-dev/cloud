@@ -32,6 +32,7 @@ import {
   chatTaskStopSentence,
 } from "./chat-task-reasons";
 import { buildBlocksFromMessages } from "./protocol";
+import { publicAiMessageContent } from "./public-projection";
 import { compactReviewMetaSql } from "./review-content";
 import { withAiShortIdForDb } from "./short-id";
 import { aiConversations } from "./store";
@@ -657,7 +658,11 @@ export const aiChatTasks = {
     const messages = row.turn_id
       ? await aiConversations.listTurnMessages({ conversationId: task.conversationId, loopId: row.turn_id, includeCompacted: true })
       : [];
-    return { task, occurrence: toOccurrence(row), messages };
+    return {
+      task,
+      occurrence: toOccurrence(row),
+      messages: messages.map((message) => ({ ...message, message: publicAiMessageContent(message.message) })),
+    };
   },
 
   validateGrants: validateTaskGrants,

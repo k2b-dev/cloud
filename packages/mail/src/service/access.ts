@@ -557,7 +557,7 @@ const grantMailboxAccessWithAuthority = async (params: {
       const created = await sql.begin(async (tx) => {
         if (!(await lockMailbox(params.mailboxId, tx))) unwrap(fail(err.notFound("Mailbox")));
         unwrap(await authorizeAccessManagement(params.context, params.mailboxId, params.authority, tx));
-        if (await getPrincipalGrant(params.mailboxId, params.principal, tx)) unwrap(fail(err.conflict("Mailbox access")));
+        if (await getPrincipalGrant(params.mailboxId, params.principal, tx)) unwrap(fail(err.conflict("Mailbox access already exists")));
 
         const created = unwrap(await createAccess({ principal: params.principal, permission: params.permission }, tx));
         await insertGrantLink(tx, params.mailboxId, created.id, scope);

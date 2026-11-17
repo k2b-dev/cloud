@@ -5,6 +5,7 @@ import {
   ChoiceSlider,
   ContextMenu,
   Dropdown,
+  dialogCore,
   NoticeCard,
   openFloatingWindow,
   prompts,
@@ -46,6 +47,17 @@ export function PrimaryScopeControls() {
           Open source
         </Button>
         <Button disabled>Unavailable</Button>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            void dialogCore.open((close) => <Button onClick={() => close()}>Continue working</Button>, {
+              primary: "blue",
+              ariaLabel: "Session question",
+            })
+          }
+        >
+          Session question
+        </Button>
       </div>
       <NoticeCard tone="info" icon>
         Suggestions are ready to review.

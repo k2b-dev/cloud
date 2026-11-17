@@ -22,7 +22,6 @@ import { assistantApi } from "../api/client";
 import { ContextStudio } from "../artifacts/ContextStudio";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
-import { openAssistantTaskRun } from "./AssistantActivitiesDialog";
 import {
   AssistantChatSidebarTab,
   ChatContextDetails,
@@ -47,6 +46,7 @@ import {
   openAssistantMarkdown,
 } from "./AssistantContextContent";
 import { AssistantTasksView, openAssistantTasksDialog } from "./AssistantTasksDialog";
+import { openTaskRun } from "./activities-dialog";
 import {
   assistantChatContextFor,
   assistantReferenceTitle,
@@ -197,8 +197,8 @@ function AssistantChatContextView(
   props: ContextNavigation & { state: AssistantChatContextState; onOpenApp?: (id: string, title: string, start?: boolean) => void },
 ) {
   const live = useAssistantLive();
-  const openRun = (taskId: string, occurrenceId: string) => void openAssistantTaskRun(taskId, occurrenceId, live);
   const locale = useLocale();
+  const openRun = (taskId: string, occurrenceId: string) => void openTaskRun(taskId, occurrenceId, live, locale());
   const text = useAssistantText();
   const copy = useAssistantCopy();
   const [search, setSearch] = createSignal("");

@@ -211,6 +211,7 @@ export const buildSearchIndexes = async (db: SQL = sql): Promise<BuildOutcome> =
     const mutex = searchIndexBuildMutex();
     const lease = await mutex.acquire({ resource: "send-log-search" });
     if (!lease) return "busy";
+    // runtime-timer: lease of a migration step during startup, which is not background work.
     const renewal = setInterval(() => void mutex.extend(lease).catch(() => false), SEARCH_INDEX_LEASE_MS / 3);
     renewal.unref();
     try {

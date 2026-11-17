@@ -83,6 +83,7 @@ import inputSlider from "./input/slider.md" with { type: "text" };
 import inputTagEditor from "./input/tag-editor.md" with { type: "text" };
 import inputTags from "./input/tags.md" with { type: "text" };
 import inputText from "./input/text.md" with { type: "text" };
+import inputTimeInput from "./input/time-input.md" with { type: "text" };
 import layoutAnchoredPopover from "./layout/anchored-popover.md" with { type: "text" };
 import layoutBottomSheet from "./layout/bottom-sheet.md" with { type: "text" };
 import layoutDetailPanel from "./layout/detail-panel.md" with { type: "text" };
@@ -135,6 +136,7 @@ const catalogContextSources = {
   "input/number": { file: "input/number.md", content: inputNumber },
   "input/date-picker": { file: "input/date-picker.md", content: inputDatePicker },
   "input/period-picker": { file: "input/period-picker.md", content: inputPeriodPicker },
+  "input/time-input": { file: "input/time-input.md", content: inputTimeInput },
   "input/rich-select": { file: "input/rich-select.md", content: inputRichSelect },
   "input/select": { file: "input/select.md", content: inputSelect },
   "input/choice-chips": { file: "input/choice-chips.md", content: inputChoiceChips },

@@ -214,6 +214,7 @@ function settled(quietMs: number, maxMs: number) {
     const tick = () => {
       const now = performance.now();
       if (now > until || (!inflight && now - lastSettled >= quietMs)) return resolve();
+      // runtime-timer: runs inside the artifact frame in the browser, never on the server.
       setTimeout(tick, 25);
     };
     tick();

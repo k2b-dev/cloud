@@ -98,6 +98,7 @@ const portableSections = [
       page("tag-editor", "Tag editing", "ti ti-tag", "Reusable tag presentation, entity management, and assignment composition."),
       page("date-picker", "Date pickers", "ti ti-calendar", "Date, date-time, and date-range selection with explicit timezone handling."),
       page("period-picker", "PeriodPicker", "ti ti-calendar-stats", "One control for the period a view shows: presets and a custom range."),
+      page("time-input", "TimeInput", "ti ti-clock", "A clock time alone as HH:mm, typed short, with a minute step and bounds."),
       page("color", "ColorInput", "ti ti-palette", "Native color selection with controlled value and optional transparency."),
       page("pin", "PinInput", "ti ti-password", "Grouped one-time-code entry with paste and arrow-key navigation."),
       page(

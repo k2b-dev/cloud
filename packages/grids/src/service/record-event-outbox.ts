@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { logger, stopRuntimeJobs, trace } from "@k2b/cloud/services";
+import { backgroundWork, logger, stopRuntimeJobs, trace } from "@k2b/cloud/services";
 import type { SqlClient } from "./audit";
 import { gridsLive } from "./live";
 import { type GridsRecordEvent, GridsRecordEventSchema, publishRecordEvent } from "./record-events";
@@ -392,6 +392,8 @@ let activeReconcile: Promise<number> | null = null;
 let reconcileRequested = false;
 
 const runReconcile = (): Promise<number> => {
+  // Maintenance stage „Ruhe“: rows wait in PostgreSQL; the first tick after resume publishes them.
+  if (backgroundWork.paused()) return Promise.resolve(0);
   if (activeReconcile) {
     reconcileRequested = true;
     return activeReconcile;
@@ -425,6 +427,7 @@ export const startRecordEventOutbox = async (): Promise<void> => {
     log.warn("Initial record event outbox reconcile failed", { error: error instanceof Error ? error.message : String(error) });
   });
   if (!reconcileTimer) {
+    // runtime-timer: runReconcile() starts nothing while backgroundWork.paused().
     reconcileTimer = setInterval(() => {
       void runReconcile().catch((error) => {
         log.warn("Record event outbox reconcile failed", { error: error instanceof Error ? error.message : String(error) });

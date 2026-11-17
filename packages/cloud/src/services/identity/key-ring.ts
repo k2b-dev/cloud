@@ -586,6 +586,7 @@ export const runIdentityKeyMaintenance = async (): Promise<void> => {
 
 export const startIdentityKeyMaintenance = (): (() => void) => {
   if (maintenanceTimer) return () => undefined;
+  // runtime-timer: identity key rotation that request authentication needs, also during maintenance.
   maintenanceTimer = setInterval(() => {
     void runIdentityKeyMaintenance().catch((error) => {
       identityMetrics.increment("rotation_failure");

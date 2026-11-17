@@ -55,6 +55,12 @@ those option objects. Prefer the complete option objects with `dialogCore`. Use
 a class export only when another compatible host asks for the panel class
 separately.
 
+Every frame rises 8 px and fades in when it opens, and sinks 4 px and fades
+out when it closes; the workspace frame only fades. The result, the focus
+return, and the page behind are there at once; only the frame's picture leaves
+afterwards, inert. Reduced motion makes both instant. See
+[Motion](/en/ui/motion).
+
 `surface="contained"` is the default modal treatment. `surface="floating"` is
 for a standalone placement on a page: the shell draws its own border, the
 header, body, and footer share a grey surface, and each section is a white card
@@ -229,6 +235,8 @@ while that handler is pending. `cancelBehavior: "ignore"` still disables native
 dismissal entirely.
 
 `dialogCore` owns the backdrop, focus handling, and Escape behavior. Do not create a second dialog frame around `PanelDialog`.
+Updating text inside an open dialog keeps the same frame and backdrop; it does
+not replay their entrance motion.
 
 ## API reference
 

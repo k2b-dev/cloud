@@ -39,3 +39,48 @@
   --k2b-focus-ring: var(--k2b-ai-accent);
   --k2b-focus-fill: color-mix(in srgb, var(--k2b-focus-ring) 55%, var(--k2b-surface));
 }
+
+/* A surface with a different purpose can restore the normal primary palette inside an AI area. */
+.k2b-ui [data-k2b-primary="blue"],
+.k2b-ui[data-k2b-primary="blue"] {
+  --k2b-action: var(--k2b-accent-700);
+  --k2b-action-hover: var(--k2b-accent-800);
+  --k2b-action-solid: var(--k2b-accent-700);
+  --k2b-action-solid-hover: var(--k2b-accent-800);
+  --k2b-focus-ring: var(--k2b-accent-500);
+  --k2b-edge-focus: var(--k2b-accent-700);
+  --k2b-selected: var(--k2b-accent-100);
+  --k2b-hover: var(--k2b-accent-50);
+  --k2b-info-surface: var(--k2b-accent-50);
+  --k2b-info-text: var(--k2b-accent-700);
+  --k2b-info-mark: var(--k2b-accent-500);
+  --k2b-widget-info-text: var(--k2b-info-text);
+  --k2b-widget-info-surface: var(--k2b-info-surface);
+  --k2b-widget-info-icon: var(--k2b-action);
+  --k2b-selection: rgb(29 78 216 / 0.35);
+  --k2b-focus-fill: color-mix(in srgb, var(--k2b-focus-ring) 45%, var(--k2b-surface));
+  --k2b-focus-inset: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-fill);
+  --k2b-link-accent: var(--k2b-action);
+  --k2b-detail-panel-accent: var(--k2b-action);
+  --k2b-row-selected: var(--k2b-selected);
+  --k2b-app-workspace-active: var(--k2b-action);
+  --k2b-app-workspace-selected: var(--k2b-selected);
+}
+
+:is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark .k2b-ui)[data-k2b-primary="blue"],
+:is(.k2b-ui[data-theme="dark"], .k2b-ui.k2b-dark, .dark) [data-k2b-primary="blue"] {
+  --k2b-action: var(--k2b-accent-300);
+  --k2b-action-hover: var(--k2b-accent-200);
+  --k2b-action-solid: var(--k2b-accent-600);
+  --k2b-action-solid-hover: var(--k2b-accent-700);
+  --k2b-focus-ring: var(--k2b-accent-400);
+  --k2b-edge-focus: var(--k2b-accent-300);
+  --k2b-selected: var(--k2b-accent-950);
+  --k2b-hover: #252c35;
+  --k2b-info-surface: var(--k2b-accent-950);
+  --k2b-info-text: var(--k2b-accent-300);
+  --k2b-info-mark: var(--k2b-accent-500);
+  --k2b-selection: rgb(147 197 253 / 0.35);
+  --k2b-focus-fill: color-mix(in srgb, var(--k2b-focus-ring) 55%, var(--k2b-surface));
+  --k2b-focus-inset: inset 0 0 0 var(--k2b-focus-width) var(--k2b-focus-fill);
+}

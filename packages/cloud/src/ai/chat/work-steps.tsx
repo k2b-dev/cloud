@@ -1,20 +1,24 @@
-import { Chat, useLocale } from "@k2b/ui";
-import { createContext, type JSX, Show, useContext } from "solid-js";
+import { Button, Chat, type ChatActivityMetaTone, useLocale } from "@k2b/ui";
+// From its own entry: this module loads on demand, and the main entry would keep the card in the island's first code.
+import { HoverCard } from "@k2b/ui/hover-card";
+import { children, createComputed, createContext, createMemo, createSignal, For, type JSX, on, Show, useContext } from "solid-js";
+import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
-import { AiAppTile } from "./answer-sources";
+import { useAiChatActions } from "./message-actions";
 import { aiToolIcon, displayToolName, isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
-import { AiToolActivity } from "./tool-disclosure";
-import { isFailedTool } from "./tool-groups";
+import { useToolActionCard } from "./tool-action";
+import { waitsForUser } from "./turn-layout";
 import { WebsiteReceipts, websiteReceipts } from "./web-tools";
 import { stepFailure } from "./work-summary";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
+type Messages = ReturnType<typeof aiChatMessages>;
 
 /**
- * Calls whose opened step still shows its own detail view: code tools, whose steps feat/code words as a progress of
- * their own, and image inspections, whose step shows the image. Every other call is a step in words.
+ * Calls whose step still shows its own detail view: code tools, whose steps feat/code words as a progress of their own,
+ * and image inspections, whose step shows the image. Every other call is a step in words.
  */
 export const keepsStepDetail = (name: string): boolean => name.startsWith("code_") || name === "view_image";
 
@@ -24,7 +28,7 @@ const resultSummary = (block: ToolBlock): string => {
 };
 
 /** Why a call did not go through, in the reader's words; the app's codes and messages stay in the data. */
-const failureReason = (block: ToolBlock, t: ReturnType<typeof aiChatMessages>): string => {
+const failureReason = (block: ToolBlock, t: Messages): string => {
   const kind = stepFailure(block);
   return kind === "denied"
     ? t.stepNoAccess
@@ -35,38 +39,140 @@ const failureReason = (block: ToolBlock, t: ReturnType<typeof aiChatMessages>): 
         : t.stepDidNotWork;
 };
 
-/**
- * Whether the turn went on after a step: some later block exists. Given by the opened work list, so a failed step says
- * "Went on without this result" only when something really followed it.
- */
-export const AiWorkFollowedContext = createContext<(id: string) => boolean>(() => false);
+/** The details of one step, for the card behind the ⓘ at the end of its row. */
+type StepCard = { label: string; title: string; detail?: string; content: JSX.Element; actions?: JSX.Element };
 
-/** What a call acts on when it has no sentence of its own: the path, name, query, or title it was given. */
+/**
+ * The ⓘ at the end of a step's row and the card with its details. A card with an action is a dialog that opens only on
+ * a press or Enter; one without opens on pointing and focus. It lives with the opened work, so it loads with it.
+ */
+function StepInfo(props: { card: StepCard; triggerRef?: (button: HTMLButtonElement) => void; liveDetails?: boolean }): JSX.Element {
+  return (
+    <HoverCard.Trigger
+      ref={props.triggerRef}
+      data-ai-live-detail={props.liveDetails ? "" : undefined}
+      triggerClass="k2b-chat-activity__info"
+      aria-label={props.card.label}
+      align="end"
+      width="24rem"
+      title={props.card.title}
+      detail={props.card.detail}
+      content={props.card.content}
+      actions={props.card.actions}
+    >
+      <i class="ti ti-info-circle" aria-hidden="true" />
+    </HoverCard.Trigger>
+  );
+}
+
+/** What the opened work knows about its turn, for each of its steps. */
+export type AiWorkContextValue = {
+  /** Whether the turn went on after a step, so a failed step says "Went on without this result" only when it did. */
+  followed: (id: string) => boolean;
+  /** How the turn ended when it did not end normally; a call still running then was stopped or cut off with it. */
+  ending: () => "stopped" | "failed" | null;
+  /** The running step's time on the work clock, formatted, while the turn works. */
+  liveDuration: () => string | undefined;
+  /** The turn, for a step that offers to check an outcome Cloud could not see. */
+  turnId: () => string | undefined;
+};
+
+export const AiWorkContext = createContext<AiWorkContextValue>({
+  followed: () => false,
+  ending: () => null,
+  liveDuration: () => undefined,
+  turnId: () => undefined,
+});
+
+/** A step's outcome as one word in the meta column, in its colour. A step that went through says nothing there. */
+export type AiStepOutcome = { word: string; tone?: ChatActivityMetaTone };
+
+export const stepOutcome = (
+  block: ToolBlock,
+  t: Messages,
+  ending: "stopped" | "failed" | null,
+  check: AiActionCheck | undefined,
+): AiStepOutcome | null => {
+  if (waitsForUser(block)) return { word: t.stepOutcomeWaiting, tone: "ai" };
+  if (block.status === "rejected") return { word: t.stepOutcomeRejected };
+  // A call still running or running in the browser on its own when the turn ended was stopped or cut off with it.
+  if (block.status === "running" || block.status === "awaiting_client")
+    return ending ? { word: ending === "stopped" ? t.stepOutcomeStopped : t.stepOutcomeCancelled } : null;
+  const failure = stepFailure(block);
+  // A check settles an unclear outcome: done went through, not done did not happen.
+  if (failure === "unknown" && check?.state === "done") return null;
+  if (failure === "unknown" && check?.state === "not_done") return { word: t.stepOutcomeNotDone, tone: "danger" };
+  if (failure === "unknown") return { word: t.stepOutcomeUnclear, tone: "warning" };
+  if (failure === "denied") return { word: t.stepOutcomeNoAccess, tone: "warning" };
+  return failure ? { word: t.stepOutcomeFailed, tone: "danger" } : null;
+};
+
+/** The file name of a path; a step never shows a path. */
+const basename = (value: string) => value.slice(value.lastIndexOf("/") + 1) || value;
+
+/** What a call acts on when it has no sentence of its own: the file, name, query, or title it was given. */
 const target = (block: ToolBlock): string => {
   const args = isRecord(block.args) ? block.args : {};
-  const value = [args.path, args.name, args.query, args.title].find((entry) => typeof entry === "string" && entry.trim());
+  if (typeof args.path === "string" && args.path.trim()) return basename(args.path.trim());
+  const value = [args.name, args.query, args.title].find((entry) => typeof entry === "string" && entry.trim());
   return typeof value === "string" ? value.trim() : "";
 };
 
-/** A step's app tile: the app's icon in its colour, or a neutral tile with the tool's icon. */
-export function AiStepTile(props: { block: ToolBlock }): JSX.Element {
-  return <AiAppTile icon={aiToolIcon(props.block.name, props.block.presentation?.appIcon)} accent={props.block.presentation?.appAccent} />;
+/**
+ * "Check status" in the card of a step whose outcome Cloud could not see. It asks the app once per press, like the
+ * question's own check; Gustav never repeats the step on its own. Only an app that declares a check offers it.
+ */
+function StepCheck(props: { block: ToolBlock; turnId: string; onChecked: (check: AiActionCheck) => void }): JSX.Element {
+  const locale = useLocale();
+  const actions = useAiChatActions();
+  const card = useToolActionCard(() => props.block);
+  const [checking, setChecking] = createSignal(false);
+  const [failed, setFailed] = createSignal(false);
+  const check = async (button: HTMLElement) => {
+    if (!actions.onCheckAction || checking()) return;
+    setChecking(true);
+    setFailed(false);
+    try {
+      const check = await actions.onCheckAction({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
+      // A settled outcome removes this button; the focus stays in the card, which now says what the check found.
+      if (check.state === "done" || check.state === "not_done") button.closest<HTMLElement>("[role=dialog]")?.focus();
+      props.onChecked(check);
+      if (check.state === "failed") setFailed(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setChecking(false);
+    }
+  };
+  return (
+    <Show when={card().hasCheck && actions.onCheckAction}>
+      <Button size="sm" variant="secondary" loading={checking()} onClick={(event) => void check(event.currentTarget)}>
+        {aiChatMessages(locale()).stepCheckStatus}
+      </Button>
+      <Show when={failed()}>
+        <p role="alert" class="ai-step-card__alert">
+          {aiChatMessages(locale()).stepCheckFailed}
+        </p>
+      </Show>
+    </Show>
+  );
 }
 
 /**
- * One step of the opened work, in words: the app tile, what the step did, and below it what came of it. A step that did
- * not go through says why and, when the turn went on after it, that it went on without the result.
+ * One step of the opened work: its icon in its app's colour, what it did in one line, its outcome as a word in meta,
+ * and an ⓘ whose card holds what came of it. A step that did not go through says why in the card and, when the turn
+ * went on after it, the consequence. The row itself never opens.
  */
 export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Element {
   const locale = useLocale();
-  const followed = useContext(AiWorkFollowedContext);
+  const work = useContext(AiWorkContext);
   const timeZone = useReaderTimeZone();
   const t = () => aiChatMessages(locale());
-  const failed = () => props.block.status !== "rejected" && isFailedTool(props.block);
+  const failure = () => (props.block.status === "rejected" ? null : stepFailure(props.block));
   // A finished Query says what it did: the app's past form, else its title marked done. The chat knows no app.
   const doneQuery = () => {
     const presentation = props.block.presentation;
-    if (presentation?.capabilityKind !== "query" || props.block.status !== "completed" || failed()) return null;
+    if (presentation?.capabilityKind !== "query" || props.block.status !== "completed" || failure()) return null;
     return presentation.doneTitle ?? t().stepDone({ title: presentation.title });
   };
   const sentence = () => {
@@ -80,27 +186,80 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
     return outcome ?? toolSubject(props.block, locale(), timeZone);
   };
   const label = () => sentence() ?? doneQuery() ?? props.block.presentation?.title ?? displayToolName(props.block.name, locale());
-  const detail = () => {
-    if (failed()) return [failureReason(props.block, t()), followed(props.block.id) ? t().stepWentOn : ""].join(" ").trim();
-    const waiting = props.block.status === "awaiting_client" || props.block.status === "awaiting_approval";
+  // The check this window asked for, until the stored one is as new or settled; the same rule as the question's card.
+  const [checked, setChecked] = createSignal<AiActionCheck | null>(null);
+  const check = () => {
+    const local = checked();
+    return local ? preferredActionCheck(props.block.check, local) : props.block.check;
+  };
+  const settled = () => check()?.state === "done" || check()?.state === "not_done";
+  const outcome = () => stepOutcome(props.block, t(), props.busy ? null : work.ending(), check());
+  // A call the browser runs on its own works like a running one; only a question or approval waits for the person.
+  const working = () => props.block.status === "running" || (props.block.status === "awaiting_client" && !waitsForUser(props.block));
+  const duration = () => (props.busy && working() ? work.liveDuration() : undefined);
+  const lines = createMemo(() => {
+    const kind = failure();
+    if (kind === "unknown")
+      return [
+        check()?.state === "done" ? t().stepCheckedDone : check()?.state === "not_done" ? t().stepCheckedNotDone : t().stepUnclearDetail,
+      ];
+    // "No access" already stands in the card's second line; any other failure says why first.
+    if (kind)
+      return [
+        kind === "denied" ? "" : failureReason(props.block, t()),
+        work.followed(props.block.id) ? t().stepConsequence({ consequence: t().stepWentOn }) : "",
+      ];
     return [
-      sentence() ? "" : target(props.block),
       props.block.status === "running" ? (props.block.progress ?? "") : "",
       props.block.status === "completed" ? resultSummary(props.block) : "",
-      waiting ? t().stepWaiting : props.block.status === "rejected" ? t().stepRejected : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  };
+    ];
+  });
+  const shown = () => lines().filter(Boolean);
+  const checkable = () => failure() === "unknown" && !settled() && work.turnId() !== undefined;
+  // A step that waits for the person leads to its approval or question, with the landing of "Waiting for you".
+  const chatActions = useAiChatActions();
+  const showable = () => waitsForUser(props.block) && Boolean(chatActions.onShowQuestion);
+  // Built once: the card keeps its content and its check button while the step updates around them.
+  const content = <For each={shown()}>{(line) => <p class="ai-step-card__line">{line}</p>}</For>;
+  const actions = (
+    <>
+      <Show when={checkable() ? work.turnId() : undefined}>
+        {(turnId) => <StepCheck block={props.block} turnId={turnId()} onChecked={setChecked} />}
+      </Show>
+      <Show when={showable()}>
+        <Button size="sm" variant="secondary" onClick={() => chatActions.onShowQuestion?.(props.block.id)}>
+          {props.block.status === "awaiting_approval" ? t().stepShowApproval : t().stepShowQuestion}
+        </Button>
+      </Show>
+    </>
+  );
+  const info = createMemo((): StepCard | undefined =>
+    shown().length > 0 || checkable() || showable()
+      ? {
+          label: t().stepDetails({ step: label() }),
+          title: label(),
+          detail: [outcome()?.word, duration()].filter(Boolean).join(" · ") || undefined,
+          content,
+          // Only a card with an action is a dialog; one without opens on hover and focus like any hint. A card that offered
+          // a check stays a dialog once the check settled it, so the focus stays in it with the result.
+          actions: (failure() === "unknown" && work.turnId() !== undefined) || showable() ? actions : undefined,
+        }
+      : undefined,
+  );
   return (
     <>
       <Chat.Activity
-        class={`ai-work-step${failed() ? " ai-work-step--failed" : ""}`}
-        wrap
-        leading={<AiStepTile block={props.block} />}
+        class="ai-work-step"
+        icon={aiToolIcon(props.block.name, props.block.presentation?.appIcon)}
+        accent={props.block.presentation?.appAccent}
         label={label()}
-        description={detail() || undefined}
-        busy={props.busy && props.block.status === "running"}
+        // A call without a sentence of its own names what it acts on after its name; the row stays one line.
+        description={sentence() ? undefined : target(props.block) || undefined}
+        meta={outcome()?.word}
+        metaTone={outcome()?.tone}
+        duration={duration()}
+        end={<Show when={info()}>{(card) => <StepInfo card={card()} />}</Show>}
+        busy={props.busy && working()}
       />
       <Show when={websiteReceipts(props.block).length > 0}>
         <WebsiteReceipts block={props.block} />
@@ -109,25 +268,63 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
   );
 }
 
-/** Thinking is a step: "Thought it over", with Gustav's tile. Its reasoning opens in place. */
+/**
+ * Gustav's own step in words, such as "Thought it over": the icon in the third grey, one line, and the whole text
+ * behind its ⓘ, where a long text scrolls. Used for what Gustav wrote between two steps.
+ */
+export function AiNoteStep(props: {
+  label: string;
+  busy: boolean;
+  icon?: string;
+  children?: JSX.Element;
+  liveDetails?: boolean;
+}): JSX.Element {
+  const locale = useLocale();
+  const work = useContext(AiWorkContext);
+  const details = children(() => props.children);
+  let trigger: HTMLButtonElement | undefined;
+  const hasDetails = createMemo(() => details.toArray().length > 0);
+  const returnToOverview = () => {
+    if (!trigger || trigger.ownerDocument.activeElement !== trigger) return;
+    trigger.closest(".ai-turn-work")?.querySelector<HTMLElement>(":scope > summary")?.focus({ preventScroll: true });
+  };
+  // Move keyboard focus before Show disposes the trigger and its open card. The overview's existing ring applies.
+  createComputed(
+    on(hasDetails, (visible) => {
+      if (!visible) returnToOverview();
+    }),
+  );
+  const content = <div class="ai-step-card__note">{details()}</div>;
+  return (
+    <Chat.Activity
+      class="ai-work-step"
+      icon={props.icon ?? "ti ti-bulb"}
+      label={props.label}
+      duration={props.busy ? work.liveDuration() : undefined}
+      end={
+        <Show when={hasDetails()}>
+          <StepInfo
+            triggerRef={(button) => (trigger = button)}
+            liveDetails={props.liveDetails}
+            card={{ label: aiChatMessages(locale()).stepDetails({ step: props.label }), title: props.label, content }}
+          />
+        </Show>
+      }
+      busy={props.busy}
+    />
+  );
+}
+
+/** Thinking is a step, with only its available duration in the card. Model text is never a reader summary. */
 export function AiThoughtStep(props: { block: Extract<AiTurnBlock, { kind: "thinking" }>; busy: boolean }): JSX.Element {
   const locale = useLocale();
+  const work = useContext(AiWorkContext);
   const t = () => aiChatMessages(locale());
-  const tile = () => <AiAppTile icon="ti ti-sparkles" accent="var(--k2b-ai-accent)" />;
+  const duration = () => (props.busy ? work.liveDuration() : undefined);
+  const label = () => (props.busy ? t().stepThinking : t().stepThought);
   return (
-    <Show
-      when={props.block.text.trim()}
-      fallback={<Chat.Activity class="ai-work-step" leading={tile()} label={t().stepThinking} busy={props.busy} />}
-    >
-      <AiToolActivity
-        blockId={props.block.id}
-        class="ai-work-step"
-        leading={tile()}
-        label={props.busy ? t().stepThinking : t().stepThought}
-        busy={props.busy}
-        bodyInset={false}
-        renderBody={() => <p class="ai-turn-steps__thought">{props.block.text.trim()}</p>}
-      />
-    </Show>
+    <AiNoteStep label={label()} busy={props.busy} liveDetails>
+      {duration() ? <p>{duration()}</p> : undefined}
+    </AiNoteStep>
   );
 }
