@@ -141,9 +141,9 @@ with the previous and next internal chat IDs and the new revision.
 
 `code_init` binds newly created personal Code to its authenticated originating
 chat at revision 1. Code created outside a chat starts unbound at revision 0.
-The binding is neither source text nor version state. A change of owner clears
-it and increases its revision; a new copy starts unbound. Only personal Code
-can have a binding. AI remains optional, so the stored UUID has no foreign key.
+The binding is neither source text nor version state. A Code's owner never
+changes, so the binding stays with the person who chose it; a new copy starts
+unbound. Only personal Code can have a binding. AI remains optional, so the stored UUID has no foreign key.
 
 An archived or deleted bound chat supplies `chat_missing` through Code attention.
 The version read model includes a blocking notice with `code: "chat_missing"`

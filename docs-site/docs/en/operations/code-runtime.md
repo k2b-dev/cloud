@@ -270,8 +270,8 @@ archiving, and automation refusals discard input, context and attachments.
 ## Personal Code chat bindings
 
 Core's additive Code migration adds a nullable chat UUID and binding revision.
-It requires no AI schema or foreign key. Changing the owner clears the binding
-and advances its revision. `chat.send` uses the ordinary chat handle with the
+It requires no AI schema or foreign key; a check keeps bindings on personal
+Code. `chat.send` uses the ordinary chat handle with the
 reserved ID `bound-chat`. Core resolves it inside Send for each personal Code
 call; the runner lease carries no chat ID. Missing bound chats appear as
 `chat_missing` in attention and fail with `chat_unavailable` during resolution. Explicit chat

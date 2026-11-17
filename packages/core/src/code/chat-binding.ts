@@ -68,21 +68,27 @@ export async function codeChatSchemaAvailable(db: SQL = sql): Promise<boolean> {
   const [row] = await db<{ available: boolean }[]>`SELECT to_regclass('ai.conversations') IS NOT NULL AS available`;
   return row?.available === true;
 }
-/** The same predicate supplies attention, the Code page and Waiting for you. Alias c is the Code row. */
-export async function codeChatMissingCondition(db: SQL = sql) {
-  const missing = (await codeChatSchemaAvailable(db))
+/**
+ * The same predicate supplies attention, the Code page and Waiting for you. Alias c is the Code row. Synchronous on
+ * purpose: a SQL fragment is thenable, so returning it from an async function would run it as a query of its own.
+ */
+export function codeChatMissingCondition(chatSchemaAvailable: boolean, db: SQL = sql) {
+  const missing = chatSchemaAvailable
     ? db`NOT EXISTS(SELECT 1 FROM ai.conversations chat WHERE chat.id=c.chat_conversation_id
         AND chat.created_by_user_id=c.owner_user_id AND chat.archived_at IS NULL)`
     : db`TRUE`;
   return db`(c.owner_kind='person' AND c.chat_conversation_id IS NOT NULL AND ${missing})`;
 }
 export async function codeChatMissing(codeId: string, db: SQL = sql): Promise<boolean> {
-  const condition = await codeChatMissingCondition(db);
+  const condition = codeChatMissingCondition(await codeChatSchemaAvailable(db), db);
   const [row] = await db<{ missing: boolean }[]>`SELECT ${condition} AS missing FROM code.codes c WHERE c.id=${codeId}`;
   return row?.missing === true;
 }
 type BindingChat = { short_id: string; title: string; project_id: string | null; archived_at: Date | null };
-async function readBindingChat(row: BindingRow, db: SQL): Promise<BindingChat | null> {
+async function readBindingChat(
+  row: Pick<BindingRow, "chat_conversation_id" | "owner_user_id">,
+  db: SQL,
+): Promise<BindingChat | null> {
   if (!row.chat_conversation_id || !(await codeChatSchemaAvailable(db))) return null;
   const [chat] = await db<BindingChat[]>`SELECT short_id,title,project_id,archived_at FROM ai.conversations
     WHERE id=${row.chat_conversation_id}::uuid AND created_by_user_id=${row.owner_user_id}::uuid`;
@@ -93,14 +99,18 @@ export async function readCodeChatBinding(codeId: string, db: SQL) {
   const [code] = await db<BindingRow[]>`SELECT * FROM code.codes WHERE id=${codeId}`;
   return code ? { code, chat: await readBindingChat(code, db) } : null;
 }
-/** Internal projection after Code read authorization. Names remain the viewer's canonical reader's responsibility. */
-export async function codeChatReadModelState(codeId: string, db: SQL = sql) {
-  const binding = await readCodeChatBinding(codeId, db);
-  const chat = binding?.code.owner_kind === "person" && !binding.chat?.archived_at ? binding.chat : null;
-  return {
-    missing: !!binding?.code.chat_conversation_id && !chat,
-    target: chat ? { type: "core.ai.chat", id: chat.short_id } : null,
-  };
+/**
+ * Internal projection after Code read authorization. Names remain the viewer's canonical reader's responsibility.
+ * The caller already read the Code row, so unbound or non-personal Code costs no statement here.
+ */
+export async function codeChatReadModelState(
+  code: Pick<BindingRow, "owner_kind" | "owner_user_id" | "chat_conversation_id">,
+  db: SQL = sql,
+) {
+  if (code.owner_kind !== "person" || !code.chat_conversation_id) return { missing: false, target: null };
+  const found = await readBindingChat(code, db);
+  const chat = found && !found.archived_at ? found : null;
+  return { missing: !chat, target: chat ? { type: "core.ai.chat", id: chat.short_id } : null };
 }
 /** Resolve only within a current personal Code run; ordinary literal destinations keep their identity. */
 export async function resolveCodeChatDestination(

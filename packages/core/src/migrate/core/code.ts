@@ -23,22 +23,11 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
         OR (owner_kind = 'resource' AND owner_user_id IS NULL AND owner_type IS NOT NULL AND owner_id IS NOT NULL AND owner_app_id IS NULL AND service_account_id IS NOT NULL)
         OR (owner_kind = 'app' AND owner_user_id IS NULL AND owner_type IS NULL AND owner_id IS NULL AND owner_app_id IS NOT NULL AND service_account_id IS NOT NULL))
     )`.simple();
+    // A Code's owner never changes (code.guard_identity), so a binding stays with the person who chose it.
     await tx`ALTER TABLE code.codes
-      ADD COLUMN IF NOT EXISTS chat_conversation_id UUID,
+      ADD COLUMN IF NOT EXISTS chat_conversation_id UUID CONSTRAINT codes_chat_binding_personal
+        CHECK (chat_conversation_id IS NULL OR owner_kind = 'person'),
       ADD COLUMN IF NOT EXISTS chat_binding_revision INTEGER NOT NULL DEFAULT 0 CHECK(chat_binding_revision>=0)`.simple();
-    await tx`CREATE OR REPLACE FUNCTION code.clear_chat_binding_on_owner_change() RETURNS trigger AS $$
-      BEGIN
-        IF TG_OP = 'UPDATE' AND (OLD.owner_kind IS DISTINCT FROM NEW.owner_kind OR OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id) THEN
-          NEW.chat_conversation_id := NULL;
-          NEW.chat_binding_revision := OLD.chat_binding_revision + 1;
-        END IF;
-        IF NEW.owner_kind <> 'person' AND NEW.chat_conversation_id IS NOT NULL THEN
-          RAISE EXCEPTION 'Only personal Code may bind a chat' USING ERRCODE='23514';
-        END IF;
-        RETURN NEW;
-      END $$ LANGUAGE plpgsql`.simple();
-    await tx`CREATE OR REPLACE TRIGGER codes_chat_binding_owner
-      BEFORE INSERT OR UPDATE ON code.codes FOR EACH ROW EXECUTE FUNCTION code.clear_chat_binding_on_owner_change()`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS codes_resource_owner ON code.codes(owner_type,owner_id) WHERE owner_kind = 'resource'`.simple();
     await tx`CREATE UNIQUE INDEX IF NOT EXISTS codes_app_owner ON code.codes(owner_app_id) WHERE owner_kind = 'app'`.simple();
     await tx`CREATE INDEX IF NOT EXISTS codes_person_owner ON code.codes(owner_user_id,id) WHERE owner_kind = 'person'`.simple();

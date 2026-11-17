@@ -1,7 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { z } from "zod";
 import { type CodeContext, CodeOwnerUnavailableError, codePermission, codePerson } from "./access";
-import { codeChatMissing, codeChatMissingCondition } from "./chat-binding";
+import { codeChatMissing, codeChatMissingCondition, codeChatSchemaAvailable } from "./chat-binding";
 import { type Code, CodeIdSchema, CodeOwnerSchema, CodeSchema } from "./contracts";
 import { type CodeRow, listCodes, mapCode } from "./store";
 
@@ -159,7 +159,7 @@ export const CODE_ATTENTION_CANDIDATES = 50;
  */
 export async function listCodeAttention(input: z.infer<typeof codeAttentionContracts.list.input>, context: CodeContext) {
   const viewer = codePerson(context);
-  const missingChat = await codeChatMissingCondition();
+  const missingChat = codeChatMissingCondition(await codeChatSchemaAvailable());
   const rows = await sql<(CodeRow & { last_run_at: Date | null })[]>`SELECT c.*,
       (SELECT max(r.ended_at) FROM code.runs r WHERE r.code_id = c.id) AS last_run_at
     FROM code.codes c

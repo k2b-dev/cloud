@@ -2,7 +2,7 @@ import { sql } from "@k2b/cloud";
 import type { AiOpenQuestion, AiOpenQuestions } from "@k2b/cloud/ai";
 import { buildAccessPrincipalCondition } from "@k2b/cloud/server";
 import { CodeDataError } from "./access";
-import { codeChatMissingCondition } from "./chat-binding";
+import { codeChatMissingCondition, codeChatSchemaAvailable } from "./chat-binding";
 import { requireCodeEventAccess } from "./event-access";
 import { type CodeManagerCandidate, currentChatManagers } from "./manager-recipients";
 import { CodeSubmissionOriginSchema, codeVersionChatAnchor } from "./review-contracts";
@@ -100,7 +100,7 @@ async function listCodeAttentionWaiting(input: { ownerUserId: string; locale: st
   const items: AiOpenQuestion[] = [];
   let count = 0,
     after = "";
-  const missingChat = await codeChatMissingCondition();
+  const missingChat = codeChatMissingCondition(await codeChatSchemaAvailable());
   const principal = buildAccessPrincipalCondition({
     subject: { type: "user", userId: input.ownerUserId },
     columns: {

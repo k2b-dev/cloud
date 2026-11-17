@@ -67,6 +67,10 @@
             "createdAt": "2030-01-07T09:00:00Z",
             "updatedAt": "2030-01-07T09:00:00Z"
           },
+          "view": {
+            "title": "Monday inbox review",
+            "permission": "write"
+          },
           "messages": [],
           "message": {
             "id": "44bd0000-0000-4000-8000-000000000009",

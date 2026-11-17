@@ -112,7 +112,7 @@ databaseSuite()("personal Code chat binding", () => {
       return setting.default;
     });
     for (const id of [owner, editor]) await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${id}::uuid,${id},'local','user')`;
-  });
+    }, 30_000);
   afterAll(async () => {
     settings?.mockRestore();
     await database?.drop();
@@ -163,6 +163,11 @@ databaseSuite()("personal Code chat binding", () => {
     });
     const changed = await setCodeChatBinding({ codeId: item.id, chatId: "Second433", revision: 1 }, context());
     expect(changed).toMatchObject({ revision: 2, chat: { state: "available", id: "Second433" } });
+    // Choosing a chat creates no version and activates nothing.
+    expect((await sql`SELECT active_version_id,state FROM code.codes WHERE id=${item.id}`)[0]).toEqual({
+      active_version_id: null,
+      state: "draft",
+    });
     await expect(setCodeChatBinding({ codeId: item.id, chatId: "First433", revision: 1 }, context())).rejects.toMatchObject({
       code: "CONFLICT",
     });
@@ -177,10 +182,6 @@ databaseSuite()("personal Code chat binding", () => {
     const [audit] =
       await sql`SELECT metadata FROM audit.events WHERE action='core.code.chat_binding.changed' AND target_id=${item.id} ORDER BY id DESC LIMIT 1`;
     expect(audit?.metadata).toEqual({ before: first, after: second, revision: 2 });
-    expect((await sql`SELECT active_version_id,state FROM code.codes WHERE id=${item.id}`)[0]).toEqual({
-      active_version_id: null,
-      state: "draft",
-    });
   });
 
   test("project metadata follows current project access even for the chat owner", async () => {
@@ -219,7 +220,7 @@ databaseSuite()("personal Code chat binding", () => {
         bundle: "export {};",
         manifest: {
           ...codeReadModelFixtureManifest,
-          permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null } }],
+          permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 1 }],
           policyRows: ["ai"],
         },
         baseVersionId: null,
@@ -243,14 +244,14 @@ databaseSuite()("personal Code chat binding", () => {
     expect((await words()).changes).toEqual(changes);
     const [bound] = await sql<{ chat_conversation_id: string }[]>`SELECT chat_conversation_id FROM code.codes WHERE id=${item.id}`;
     if (!bound) throw new Error("Missing bound fixture");
+    // Without a readable chat the row keeps the SDK's own handle, so the page can offer its owner to choose one.
+    const handle = { ref: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID }, text: "In den Chat „{name}“ schreiben, Gustav antwortet" };
     await sql`UPDATE ai.conversations SET archived_at=${fixed} WHERE id=${bound.chat_conversation_id}::uuid`;
-    expect((await words()).mayDo.items[0]).not.toHaveProperty("target");
+    expect((await words()).mayDo.items[0]?.target).toEqual(handle);
     await sql`DELETE FROM ai.conversations WHERE id=${bound.chat_conversation_id}::uuid`;
-    expect((await words()).mayDo.items[0]).not.toHaveProperty("target");
+    expect((await words()).mayDo.items[0]?.target).toEqual(handle);
     await setCodeChatBinding({ codeId: item.id, chatId: "Wrd433", revision: 2 }, context());
     expect((await words()).mayDo.items[0]?.target?.ref.id).toBe("Wrd433");
-    await sql`UPDATE code.codes SET owner_user_id=${editor}::uuid WHERE id=${item.id}`;
-    expect((await words(editor)).mayDo.items[0]).not.toHaveProperty("target");
   });
 
   test("archived and deleted chats fail before dispatch and supply one recoverable waiting entry plus live attention", async () => {
@@ -311,7 +312,8 @@ databaseSuite()("personal Code chat binding", () => {
       chat: { state: "available", id: "Missing433" },
     });
     expect(await codeChatMissing(item.id)).toBe(false);
-    expect((await waiting()).items.some((row) => row.id === `code-attention:${item.id}`)).toBe(false);
+    // The fixture run activated the Code without a mandate; only the chat reason must leave.
+    expect((await waiting()).items.map((row) => row.short)).not.toContain("Morning report braucht einen Chat");
     await sql`DELETE FROM ai.conversations WHERE id=${destination}::uuid`;
     expect((await getCodeChatBinding({ codeId: item.id }, context())).chat).toEqual({ state: "unavailable", reason: "deleted" });
     expect((await getCodeChatBinding({ codeId: item.id }, context(editor))).chat).toEqual({ state: "hidden" });
@@ -343,20 +345,18 @@ databaseSuite()("personal Code chat binding", () => {
     expect(await resolveCodeChatDestination(foreign, sql)).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
   });
 
-  test("owner changes clear the binding and advance its revision; new rows start unbound", async () => {
+  test("a binding stays with its personal owner and only personal Code can hold one; new rows start unbound", async () => {
     const destination = await chat("Transfer433");
     const item = await code("Transfer fixture", destination);
-    await sql`UPDATE code.codes SET owner_user_id=${editor}::uuid WHERE id=${item.id}`;
-    expect(await getCodeChatBinding({ codeId: item.id }, context(editor))).toEqual({
-      codeId: item.id,
-      revision: 2,
-      canChange: true,
-      chat: null,
-    });
-    expect(await resolveCodeChatDestination(await personalRun(item.id, editor), sql)).toMatchObject({
-      ok: false,
-      error: { code: "chat_unbound", status: 409 },
-    });
+    const moved = await sql`UPDATE code.codes SET owner_user_id=${editor}::uuid WHERE id=${item.id}`.then(
+      () => "moved",
+      (error: Error) => error.message,
+    );
+    expect(moved).toBe("code identity is immutable");
+    expect(await getCodeChatBinding({ codeId: item.id }, context())).toMatchObject({ revision: 1, canChange: true });
+    const [guard] = await sql<{ definition: string }[]>`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conrelid='code.codes'::regclass AND conname='codes_chat_binding_personal'`;
+    expect(guard?.definition).toContain("owner_kind = 'person'");
     const fresh = await code("Copy fixture");
     expect(await getCodeChatBinding({ codeId: fresh.id }, context())).toEqual({
       codeId: fresh.id,

@@ -34,10 +34,12 @@ export async function loadCodeVersionReadModel(
       expected_comparison_id: string | null;
       evidence: unknown;
       explanation: string | null;
+      chat_conversation_id: string | null;
     }[]
   >`SELECT (SELECT row_to_json(p) FROM (${codePolicySnapshotQuery(sql)}) p) AS policy,
     (SELECT COALESCE(jsonb_agg(g),'[]'::jsonb) FROM (${codePolicyGroupRowsQuery(code.owner.kind === "person" ? code.owner.userId : null, sql, input.versionId)}) g) AS memberships,
-    v.number,v.created_at,v.manifest,s.evidence,cmp.manifest AS comparison,cmp.id AS comparison_id,CASE WHEN ${input.comparisonVersionId !== undefined} THEN ${input.comparisonVersionId ?? null}::uuid ELSE (s.binding->>'comparisonVersionId')::uuid END AS expected_comparison_id,e.text AS explanation
+    v.number,v.created_at,v.manifest,s.evidence,cmp.manifest AS comparison,cmp.id AS comparison_id,CASE WHEN ${input.comparisonVersionId !== undefined} THEN ${input.comparisonVersionId ?? null}::uuid ELSE (s.binding->>'comparisonVersionId')::uuid END AS expected_comparison_id,e.text AS explanation,
+    (SELECT c.chat_conversation_id FROM code.codes c WHERE c.id=v.code_id) AS chat_conversation_id
     FROM code.versions v LEFT JOIN code.version_submissions s ON s.version_id=v.id
     LEFT JOIN code.versions cmp ON cmp.code_id=v.code_id AND cmp.id=CASE WHEN ${input.comparisonVersionId !== undefined}
       THEN ${input.comparisonVersionId ?? null}::uuid ELSE (s.binding->>'comparisonVersionId')::uuid END
@@ -50,7 +52,11 @@ export async function loadCodeVersionReadModel(
   const evidence = CodeVersionEvidenceSchema.safeParse(row.evidence);
   const policy = row.policy ? codePolicySnapshotFromRow({ ...row.policy, updated_at: new Date(row.policy.updated_at) }) : null;
   const membership = codePolicyGroupsFromRows(row.memberships);
-  const chatBinding = await codeChatReadModelState(code.id);
+  const chatBinding = await codeChatReadModelState({
+    owner_kind: code.owner.kind,
+    owner_user_id: code.owner.kind === "person" ? code.owner.userId : null,
+    chat_conversation_id: row.chat_conversation_id,
+  });
   const result = presentCodeVersion({
     personal: code.owner.kind === "person",
     versionId: input.versionId,
