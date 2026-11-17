@@ -15,6 +15,7 @@ import {
   steerMessageBlockId,
 } from "./protocol";
 import { messagesNeedChoiceContext, projectPublicAiStoredMessages, publicAiStoredMessages, viewHasChoice } from "./public-projection";
+import { publicAiToolBlock, publicAiToolEvent } from "./public-tool-input";
 import { capabilityResultView } from "./result-view";
 import { aiConversations } from "./store";
 import type { AiConversation } from "./types";
@@ -137,11 +138,13 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
   attempt: active.turn.attempt,
   status: active.turn.status,
   seq: active.liveSeq,
-  blocks: active.liveBlocks.map((block) =>
-    block.kind === "tool" && block.status === "completed" && !block.isError
-      ? { ...block, view: capabilityResultView(block.result) ?? undefined }
-      : block,
-  ),
+  blocks: active.liveBlocks
+    .map(publicAiToolBlock)
+    .map((block) =>
+      block.kind === "tool" && block.status === "completed" && !block.isError
+        ? { ...block, view: capabilityResultView(block.result) ?? undefined }
+        : block,
+    ),
   modelId: active.turn.modelId,
   createdAt: active.turn.createdAt,
   actionWaitMs: active.actionWaitMs,
@@ -157,7 +160,7 @@ type AiStreamSnapshot = {
   activeTurnId: string | null;
 };
 
-/** `locale` is the reader's: stored steps name their app as the catalog does now, in that language. */
+/** `locale` is the reader's; relayed Code approvals keep their review's turn locale. */
 export const loadAiStreamState = async (
   conversation: AiConversation,
   viewerUserId?: string | null,
@@ -414,7 +417,7 @@ export async function* streamAiConversationEvents(input: {
       if (message) yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId, message };
       continue;
     }
-    yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId };
+    yield publicAiToolEvent({ ...event, conversationId: input.conversation.shortId, turnId: publicTurnId });
   }
 }
 
@@ -424,7 +427,7 @@ export const __aiStreamTest = { needsSavedState, streamSnapshotThenTail };
 export const createAiConversationStreamResponse = (input: {
   conversation: AiConversation;
   viewerUserId?: string | null;
-  /** The reader's locale, for the app names of stored steps. */
+  /** Reader locale for stored step names; Code approvals keep the turn locale. */
   locale?: string;
   signal?: AbortSignal;
   heartbeatMs?: number;

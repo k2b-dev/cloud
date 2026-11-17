@@ -5,7 +5,7 @@ section: Operations
 order: 1194
 description: Export, freeze, upgrade and rebuild when Studio, Mail rules, automatic replies and routines give way to Code.
 tags: [operations, upgrades, code, migrations]
-updated: 2026-11-13
+updated: 2026-11-17
 ---
 
 # Upgrade to Code (Gustav release)
@@ -37,6 +37,21 @@ These stay as they are:
 
 The exact list of removed routes, commands, capabilities and settings is in
 [Removed in the Gustav release](/en/docs/reference/code-release-removals).
+
+## Chat history and stream clients
+
+Public chat REST responses and SSE events omit Code source fields, including
+`code_run.args.code`, `code_write.args.content`, project source maps, SDK
+declarations, source rows and raw diagnostic messages in Code tool results.
+Diagnostic codes and worded summaries remain available. This also applies to
+stored history, pending actions and stream snapshots. Clients must accept these
+fields being absent and use the remaining step status, review and application
+metadata to describe the work.
+
+No data migration is needed. Execution and model continuation retain the
+original arguments and results. Administrators can still read source in the
+dedicated Code approval review. Update custom chat clients alongside Cloud;
+chat reads no longer provide a source export.
 
 ## 1. Freeze
 

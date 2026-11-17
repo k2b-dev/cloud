@@ -137,6 +137,173 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
+  test("REST history omits lasting Code source and raw diagnostics, keeping words and turn locale", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Accept-Language": "en" };
+    const source = "export default () => 'rest-source-fixture'";
+    const literal = "rest-diagnostic-source-fixture";
+    const diagnostic = {
+      code: "TS2322",
+      message: `Type '"${literal}"' is not assignable to type '"allowed"'.`,
+      file: "code.ts",
+      line: 1,
+      column: 7,
+    };
+    const words = {
+      notices: [{ severity: "block", text: "The draft needs a correction.", consequence: "This version cannot be submitted." }],
+      mayDo: [],
+    };
+    const app = spyOn(registry, "getApp").mockResolvedValue({
+      id: "notebooks",
+      name: "Notebooks",
+      description: "Notes",
+      icon: "ti ti-app",
+      baseUrl: "http://notebooks:3000",
+      routes: ["/app/notebooks"],
+      presentation: { baseLocale: "en", translations: { de: { name: "Notizbücher" } } },
+    });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "fixture",
+        runConfig: { kind: "chat", input: "Notiz erstellen", locale: "de" },
+        userMessage: { role: "user", content: [{ type: "text", text: "Notiz erstellen" }] },
+      });
+      const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, modelId: "fixture" });
+      await store.append({
+        role: "assistant",
+        content: [
+          { type: "tool_call", id: "run", name: "code_run", args: { code: source } },
+          { type: "tool_call", id: "write", name: "code_write", args: { codeId: "ABCDEF", path: "code.ts", content: source } },
+          { type: "tool_call", id: "read", name: "code_read", args: { codeId: "ABCDEF" } },
+          { type: "tool_call", id: "pull", name: "code_pull", args: { codeId: "ABCDEF" } },
+          ...["code_check", "code_test", "code_simulate"].map((name) => ({
+            type: "tool_call" as const,
+            id: name,
+            name,
+            args: { codeId: "ABCDEF" },
+          })),
+        ],
+      });
+      for (const name of ["code_read", "code_pull"])
+        await store.append({
+          role: "tool_result",
+          callId: name === "code_read" ? "read" : "pull",
+          name,
+          result: { version: 1, files: { "code.ts": source } },
+        });
+      for (const name of ["code_check", "code_test", "code_simulate"]) {
+        const checked = { ok: false, diagnostics: [diagnostic], warnings: [diagnostic] };
+        await store.append({
+          role: "tool_result",
+          callId: name,
+          name,
+          result: name === "code_check" ? { version: 1, result: checked, words } : { version: 1, ...checked, words },
+        });
+      }
+      await recordAiToolReview({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "run",
+        review: { ...reviewFixture(), locale: "de" },
+        presentation: {
+          kind: "capability",
+          appId: "notebooks",
+          appName: "Notizbücher",
+          appIcon: "ti ti-app",
+          title: "Notiz erstellen",
+          capabilityKind: "action",
+        },
+      });
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/messages`, { headers });
+      expect(response.status).toBe(200);
+      const page = await response.json();
+      expect(JSON.stringify(page)).not.toContain(source);
+      expect(JSON.stringify(page)).not.toContain(literal);
+      for (const name of ["code_check", "code_test", "code_simulate"]) {
+        const result = page.messages.find(
+          (message: { message: { role: string; name?: string } }) =>
+            message.message.role === "tool_result" && message.message.name === name,
+        ).message.result;
+        expect(result.words).toEqual(words);
+        const checked = name === "code_check" ? result.result : result;
+        expect(checked.diagnostics).toEqual([{ code: "TS2322", file: "code.ts", line: 1, column: 7 }]);
+        expect(checked.warnings).toEqual(checked.diagnostics);
+      }
+      expect(
+        page.messages.find((message: { meta?: { toolPresentations?: unknown } }) => message.meta?.toolPresentations).meta.toolPresentations
+          .run,
+      ).toMatchObject({ appName: "Notizbücher", title: "Notiz erstellen" });
+      const canonical = JSON.stringify(await store.load());
+      expect(canonical).toContain(source);
+      expect(canonical).toContain(literal);
+    } finally {
+      app.mockRestore();
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
+  test("a resumed website approval's pending read does not reuse its parent Action review", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "fixture",
+        runConfig: { kind: "chat", input: "Read", locale: "de" },
+        userMessage: { role: "user", content: [{ type: "text", text: "Read" }] },
+      });
+      const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, modelId: "fixture" });
+      await store.append({
+        role: "assistant",
+        content: [{ type: "tool_call", id: "run", name: "code_run", args: { code: "export default () => 1" } }],
+      });
+      await recordAiToolReview({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "run",
+        review: reviewFixture(),
+        presentation: {
+          kind: "capability",
+          appId: "spaces",
+          appName: "Spaces",
+          appIcon: "ti ti-app",
+          title: "Create task",
+          capabilityKind: "action",
+        },
+      });
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId: "run-approval-1",
+        kind: "custom_approval",
+        status: "pending",
+        name: "code_run",
+        args: {},
+        message: "Read example.com?",
+        approvalScope: "https://example.com",
+        rememberToolName: AI_WEBSITE_APPROVAL_TOOL,
+        allowAlways: false,
+        allowChat: true,
+        resolvedEvent: null,
+      });
+      const response = await aiRoutes.request(`/conversations/${chat.shortId}/pending-actions/${turn.shortId}`, {
+        headers: { Authorization: `Bearer ${await createTestSession(userId)}` },
+      });
+      expect(response.status).toBe(200);
+      const actions = await response.json();
+      expect(actions).toHaveLength(1);
+      expect(actions[0]).not.toHaveProperty("review");
+      expect(JSON.stringify(actions)).not.toContain("Spaces");
+      expect((await aiConversations.listTurnToolReviews({ conversationId: chat.id, turnId: turn.id })).get("run")).toEqual(reviewFixture());
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("lost submission response and concurrent same-revision retries accept one turn, including compacted lookup", async () => {
     const userId = await insertUser();
     const stranger = await insertUser();
