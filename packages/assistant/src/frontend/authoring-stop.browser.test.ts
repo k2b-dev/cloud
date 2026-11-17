@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Browser, Page } from "playwright";
+import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { authoringStopReasons, authoringStopSaves } from "./authoring-stop.test-fixture";
 
@@ -12,6 +12,7 @@ const shots = process.env.AUTHORING_STOP_SCREENSHOTS?.trim();
 const appColors =
   "--app-accent:#8e1b6f;--app-ink-light:#8e1b6f;--app-ink-dark:#bf7dad;--app-selected-light:#f7eff5;--app-selected-dark:#231627;--app-selected-nav-light:#f4e8f1;--app-selected-nav-dark:#261629";
 let browser: Browser;
+const contexts = new Map<string, BrowserContext>();
 let assets: ReturnType<typeof Bun.serve>;
 beforeAll(async () => {
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
@@ -53,17 +54,23 @@ beforeAll(async () => {
     .map((file) => readFileSync(resolve(ui, "dist", file), "utf8").replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, "url($1/ui/"))
     .join("\n");
   const css = [fonts, "@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  const preloads = [...fonts.matchAll(/url\(["']?([^"')]+\.woff2)/g)]
+    .map((match) => match[1]!)
+    .filter((path) => /\/(?:ibm-plex-sans-latin-(?:400|600)-normal-|tabler-icons-)/.test(path))
+    .map((path) => `<link rel="preload" href="${path}" as="font" type="font/woff2" crossorigin>`)
+    .join("");
+  const cache = { "cache-control": "public, max-age=3600" };
   assets = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript" } });
-      if (url.pathname === "/harness.css") return new Response(css, { headers: { "content-type": "text/css" } });
-      if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", url.pathname.slice(4))));
+      if (url.pathname === "/harness.js") return new Response(script, { headers: { "content-type": "text/javascript", ...cache } });
+      if (url.pathname === "/harness.css") return new Response(css, { headers: { "content-type": "text/css", ...cache } });
+      if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(resolve(ui, "dist", url.pathname.slice(4))), { headers: cache });
       if (url.pathname === "/")
         return new Response(
-          `<!doctype html><html lang="${url.searchParams.get("lang")}" class="${url.searchParams.get("theme")}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div class="app-accent-scope" data-k2b-primary="ai" style="${appColors}"><script type="module" src="/harness.js"></script></div></body></html>`,
+          `<!doctype html><html lang="${url.searchParams.get("lang")}" class="${url.searchParams.get("theme")}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${preloads}<link rel="stylesheet" href="/harness.css"></head><body class="k2b-ui" style="margin:0"><div class="app-accent-scope" data-k2b-primary="ai" style="${appColors}"><script type="module" src="/harness.js"></script></div></body></html>`,
           { headers: { "content-type": "text/html" } },
         );
       return new Response("Not found", { status: 404 });
@@ -88,20 +95,31 @@ const open = async (
   save = "draft",
   mode = "ready",
 ) => {
-  const context = await browser.newContext({
-    viewport: { width, height: width < 600 ? 780 : 900 },
-    isMobile: width < 600,
-    hasTouch: width < 600,
-    reducedMotion: "reduce",
-    locale,
-  });
+  // Reuse each locale/device's HTTP cache; every page still starts with a fresh DOM and timeline.
+  const key = `${locale}/${width}`;
+  let context = contexts.get(key);
+  if (!context) {
+    context = await browser.newContext({
+      viewport: { width, height: width < 600 ? 780 : 900 },
+      isMobile: width < 600,
+      hasTouch: width < 600,
+      reducedMotion: "reduce",
+      locale,
+    });
+    contexts.set(key, context);
+  }
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
   const errors = pageErrors(page);
-  await page.goto(`${assets.url.origin}/?${new URLSearchParams({ lang: locale, theme, reason, save, mode })}`, { timeout: 30_000 });
-  await page.waitForFunction(() => "firstRect" in window);
-  await settled(page);
-  return { page, errors, close: () => context.close() };
+  try {
+    await page.goto(`${assets.url.origin}/?${new URLSearchParams({ lang: locale, theme, reason, save, mode })}`, { timeout: 30_000 });
+    await page.waitForFunction(() => "firstRect" in window);
+    await settled(page);
+    return { page, errors, close: () => page.close() };
+  } catch (error) {
+    await page.close();
+    throw new AggregateError([error, ...errors], `Could not open ${locale}/${width}/${theme}/${reason}/${save}/${mode}.`);
+  }
 };
 const boxes = (page: Page) =>
   page.evaluate(() => {
