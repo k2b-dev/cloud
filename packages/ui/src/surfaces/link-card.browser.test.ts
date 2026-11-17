@@ -37,7 +37,7 @@ render(() => [
   createComponent(AppOverview.Cards, { get children() { return [
     card("weekly", "Weekly report", "Mondays at 07:00", "Last: created 1 note \\u201eWeekly report 46\\u201c", state("ti ti-circle-check", "On", "ok"), "next run Mon, 16.11.", ["success", "success", "success", "success"]),
     card("prices", "Check fabric prices", "Daily at 06:30", "Last: the price list of fabrics-north.example could not be reached, the run stopped", state("ti ti-alert-circle", "Last run failed", "danger"), "today, 06:30", ["success", "success", "danger"]),
-    card("offers", "Follow up offers", "Fridays at 15:00", "Last: 3 offers followed up", state("ti ti-player-pause", "Paused", "paused"), "since 29.10.", ["success", "muted"]),
+    card("offers", "Follow up offers and ask the suppliers about the open delivery dates", "Every 15 minutes between 7:00 and 19:59", "Last: 3 offers followed up", state("ti ti-player-pause", "Paused", "paused"), "since 29.10.", ["success", "muted"]),
   ]; } }),
   createComponent(LinkCard, { href: "#team", icon: "ti ti-folder", title: "Team logistics", description: "128 files" }),
 ], document.getElementById("app"));
@@ -142,6 +142,35 @@ for (const width of [1440, 390]) {
             .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect()));
           expect(lefts[1]!.left - lefts[0]!.right).toBe(14);
         }
+      } finally {
+        await page.close();
+      }
+    });
+
+    test("a long title and schedule wrap instead of ending in an ellipsis, so the end time stays visible", async () => {
+      const page = await open(width);
+      try {
+        for (const part of ["title", "description"]) {
+          const shown = await page.locator(`.k2b-link-card[href="#offers"] .k2b-link-card__${part}`).evaluate((node) => {
+            const style = getComputedStyle(node);
+            const own = node.getBoundingClientRect();
+            const card = node.closest(".k2b-link-card")!.getBoundingClientRect();
+            return {
+              ellipsis: style.textOverflow === "ellipsis",
+              cut: node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1,
+              inside: own.right <= card.right,
+              lines: Math.round(own.height / Number.parseFloat(style.lineHeight)),
+            };
+          });
+          expect(shown.ellipsis).toBe(false);
+          expect(shown.cut).toBe(false);
+          expect(shown.inside).toBe(true);
+          // At this length the title needs more than one line at both widths.
+          if (part === "title") expect(shown.lines).toBeGreaterThan(1);
+        }
+        expect(await page.locator('.k2b-link-card[href="#offers"] .k2b-link-card__description').textContent()).toBe(
+          "Every 15 minutes between 7:00 and 19:59",
+        );
       } finally {
         await page.close();
       }

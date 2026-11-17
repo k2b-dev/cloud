@@ -117,7 +117,12 @@ describe("buildAdminGroups", () => {
       }),
     ]);
     const operations = groups.find((group) => group.label === "Operations")!;
-    expect(operations.links.map((link) => link.href)).toEqual(["/admin/apps", "/admin/rail", "/admin/observability"]);
+    expect(operations.links.map((link) => link.href)).toEqual([
+      "/admin/apps",
+      "/admin/rail",
+      "/admin/settings/maintenance",
+      "/admin/observability",
+    ]);
     expect(groups.some((group) => group.label === "Gateway" || group.label === "Observability")).toBe(false);
     expect(groups.some((group) => group.label === "Settings per app")).toBe(false);
     const links = groups.flatMap((group) => group.links);
@@ -131,7 +136,7 @@ describe("buildAdminGroups", () => {
         "Einrichten",
         ["Grundeinstellungen", "Speicher", "Anmeldung & Sicherheit", "Ausgehende Mail", "E-Mail-Vorlagen", "Ankündigungen", "KI"],
       ],
-      ["Betrieb", ["Apps", "App-Leiste"]],
+      ["Betrieb", ["Apps", "App-Leiste", "Wartungsmodus"]],
     ]);
   });
 

@@ -5,7 +5,7 @@ section: Server
 order: 230
 description: Keep business rules reusable and return explicit failures.
 tags: [server, services, result, errors]
-updated: 2026-10-04
+updated: 2026-11-16
 ---
 
 # Services and Result
@@ -78,7 +78,7 @@ Use `fail()` with one `err` helper:
 | `err.unauthenticated()` | `401` | `UNAUTHENTICATED` | `Authentication required` |
 | `err.forbidden()` | `403` | `FORBIDDEN` | `Insufficient permissions` |
 | `err.notFound(subject)` | `404` | `NOT_FOUND` | Adds `not found` |
-| `err.conflict(subject)` | `409` | `CONFLICT` | Adds `already exists` |
+| `err.conflict(message)` | `409` | `CONFLICT` | Uses the supplied sentence, such as `Email already exists` |
 | `err.internal()` | `500` | `INTERNAL` | `Internal server error` |
 
 Example:

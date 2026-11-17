@@ -723,6 +723,7 @@ export const createLiveEngine = (input: {
   /** Fills the ring with one replay of the recent events, then follows the topic. */
   const start = (): Promise<void> => {
     if (timers.length === 0) {
+      // runtime-timer: serves open live connections (request side); quiesce stops background work only.
       timers = [...(periodic ? [setInterval(() => void sweep(), LIVE_LIMITS.sweepMs)] : []), setInterval(progress, LIVE_LIMITS.progressMs)];
       for (const timer of timers) timer.unref?.();
     }

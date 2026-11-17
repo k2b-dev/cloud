@@ -477,6 +477,7 @@ export const createAiConversationStreamResponse = (input: {
         }
 
         if (heartbeatMs > 0) {
+          // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
           heartbeat = setInterval(() => {
             if (!enqueue(encodeSseHeartbeat())) return;
             input.watch?.refresh();

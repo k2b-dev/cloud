@@ -2,13 +2,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "@typescript/typescript6";
 import { workspacePackages } from "../workspace";
-import { isTestFile, listFiles, sourceFilePattern } from "./files";
+import { isTestFile, listFiles, parseSource, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
 export const checkSource = (file: string, source: string): Finding[] => {
   if (!source.includes("cookies")) return [];
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const findings: Finding[] = [];
+  const { sourceFile, findings } = parseSource(file, source);
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "cookies") {
       let statement: ts.Node = node;

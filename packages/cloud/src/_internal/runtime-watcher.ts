@@ -55,6 +55,7 @@ export const ensureRuntimeWatcher = (): Promise<void> => {
       ready = resolve;
       fail = reject;
     });
+    // runtime-timer: registry watcher that request routing reads; it never pauses.
     watcherTask = superviseRuntimeTask({
       name: "Runtime registry watcher",
       signal: controller.signal,

@@ -11,6 +11,8 @@ import {
   maintenanceOffSentence,
   maintenanceOnSentence,
   maintenanceProblemSentence,
+  maintenanceQuietLine,
+  maintenanceResumeSentence,
   maintenanceStatusLines,
   maintenanceUntilSentence,
   markMaintenanceWord,
@@ -130,6 +132,51 @@ test("cld admin maintenance calls Core's maintenance API and prints the sentence
     "Wartungsmodus beendet. Offene Seiten laden jetzt neu.",
   ]);
   await expect(invoke(["maintenance", "until", "00:00"])).rejects.toThrow();
+
+  calls.length = 0;
+  await invoke(["maintenance", "on"], { quiesce: true });
+  await invoke(["maintenance", "on"], { "no-quiesce": true });
+  expect(calls.map((call) => call.body)).toEqual([{ quiesce: true }, { quiesce: false }]);
+  expect(printed.at(-1)).toBe("Ruhe aus: Hintergrundarbeit läuft wieder.");
+  await expect(invoke(["maintenance", "on"], { quiesce: true, "no-quiesce": true })).rejects.toThrow("either --quiesce or --no-quiesce");
+  expect(calls).toHaveLength(2);
+});
+
+test("stage Ruhe adds one sentence to on and one line to status", () => {
+  const quiet = { quiet: 8, total: 9, busy: [{ id: "mail", name: "Mail", inFlight: 2, unreported: 0 }] };
+  expect(maintenanceOnSentence({ ...active, quiesce: true }, { locale: "de", now })).toBe(
+    "Wartungsmodus aktiviert. Geplant bis 14:30 Uhr. Ruhe: Hintergrundarbeit hält an.",
+  );
+  const { until: _until, ...noEnd } = active;
+  expect(maintenanceOnSentence({ ...noEnd, quiesce: true }, { locale: "en", now })).toBe(
+    "Maintenance mode on. Quiet: background work is stopping.",
+  );
+  expect(maintenanceStatusLines({ ...active, quiesce: true, quiet }, { locale: "de", now }).at(-1)).toBe(
+    "Ruhe: 8 von 9 Apps ruhig, Mail: 2 Aufgaben laufen noch",
+  );
+  expect(maintenanceStatusLines({ ...active, quiesce: false, quiet }, { locale: "de", now })).toHaveLength(3);
+  expect(maintenanceQuietLine(quiet, { locale: "en" })).toBe("Quiet: 8 of 9 apps quiet, Mail: 2 tasks still running");
+  expect(maintenanceQuietLine({ quiet: 9, total: 9, busy: [] }, { locale: "de" })).toBe("Ruhe: 9 von 9 Apps ruhig");
+  expect(maintenanceResumeSentence({ locale: "en" })).toBe("Quiet off: background work runs again.");
+});
+
+test("the quiet line names at most three busy apps, with running tasks and instances that have not reported", () => {
+  const busy = [
+    { id: "files", name: "Dateien", inFlight: 1, unreported: 0 },
+    { id: "mail", name: "Mail", inFlight: 2, unreported: 1 },
+    { id: "pulse", name: "Pulse", inFlight: 3, unreported: 0 },
+    { id: "spaces", name: "Spaces", inFlight: 1, unreported: 0 },
+    { id: "venue", name: "Venue", inFlight: 1, unreported: 0 },
+  ];
+  expect(maintenanceQuietLine({ quiet: 4, total: 9, busy }, { locale: "de" })).toBe(
+    "Ruhe: 4 von 9 Apps ruhig, Dateien: 1 Aufgabe läuft noch, Mail: 2 Aufgaben laufen noch und 1 Instanz ohne Rückmeldung, Pulse: 3 Aufgaben laufen noch, 2 weitere",
+  );
+  expect(maintenanceQuietLine({ quiet: 4, total: 9, busy }, { locale: "en" })).toBe(
+    "Quiet: 4 of 9 apps quiet, Dateien: 1 task still running, Mail: 2 tasks still running and 1 instance has not reported, Pulse: 3 tasks still running, 2 more",
+  );
+  const silent = { quiet: 8, total: 9, busy: [{ id: "mail", name: "Mail", inFlight: 0, unreported: 2 }] };
+  expect(maintenanceQuietLine(silent, { locale: "de" })).toBe("Ruhe: 8 von 9 Apps ruhig, Mail: 2 Instanzen ohne Rückmeldung");
+  expect(maintenanceQuietLine(silent, { locale: "en" })).toBe("Quiet: 8 of 9 apps quiet, Mail: 2 instances have not reported");
 });
 
 test("cld admin maintenance bypass prints the sentence and the link on its own line, or one sentence when off", async () => {

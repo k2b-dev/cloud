@@ -218,6 +218,8 @@ describe("@k2b/ui overlays return focus with the ring they were opened with", ()
           await page.keyboard.press("Escape");
           await settle(page);
           expect(await hasFocus(overlay.trigger(page))).toEqual({ focused: true, ring: false });
+          // A Lightbox fades out before its owner removes it; only then can the keys open it again.
+          await page.waitForFunction(() => document.querySelector(".k2b-lightbox") === null);
 
           // Keys pressed on a silently focused control do not light its ring.
           for (const key of overlay.keys) {
@@ -320,8 +322,8 @@ describe("@k2b/ui overlays return focus with the ring they were opened with", ()
       try {
         await pointerOpen(page, viewport, "lightbox", lightbox);
         await page.evaluate(() => document.querySelector<HTMLDialogElement>("dialog.k2b-lightbox")?.requestClose());
-        await settle(page);
-        expect(await page.evaluate(() => document.querySelector(".k2b-lightbox") === null)).toBe(true);
+        // The Lightbox fades out before its owner removes it.
+        await page.waitForFunction(() => document.querySelector(".k2b-lightbox") === null);
         expect(await hasFocus(lightbox.trigger(page))).toEqual({ focused: true, ring: false });
       } finally {
         await page.close();

@@ -52,6 +52,11 @@ export type AiChatActions = {
    * repeats the call itself. Resolves with the stored check; without it, an unknown outcome offers no new check.
    */
   onCheckAction?: (request: AiTurnActionRequest) => Promise<AiActionCheck>;
+  /**
+   * Brings the approval or question a step waits for into view and focuses it, the way "Waiting for you" lands on it.
+   * `anchor` is the step's block id, the question's `data-chat-anchor`. Without it, a waiting step offers no jump.
+   */
+  onShowQuestion?: (anchor: string) => void;
   onForkMessage?: ForkMessageHandler;
   onRetryMessage?: RetryMessageHandler;
   onRetrySteer?: RetrySteerHandler;

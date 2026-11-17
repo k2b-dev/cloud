@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "@typescript/typescript6";
-import { listFiles } from "./files";
+import { listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const testSources = /\.(?:test|spec)\.tsx?$|[.-](?:test-)?fixtures?\.tsx?$|^test-.*\.tsx?$/;
@@ -64,8 +64,7 @@ const isFixtureValue = (node: ts.Node): boolean => {
 /** Reports short random expressions in SQL values or declarations named shortId/short_id. */
 export const checkTestShortIdsSource = (file: string, source: string): Finding[] => {
   if (!/\b(?:randomUUID|randomUUIDv7|getRandomValues|testUuid|uuid|random|gen_random_uuid)\b/.test(source)) return [];
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const findings: Finding[] = [];
+  const { sourceFile, findings } = parseSource(file, source);
   const report = (position: number) => findings.push({ file, line: sourceFile.getLineAndCharacterOfPosition(position).line + 1, message });
   const visit = (node: ts.Node): void => {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {

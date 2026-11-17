@@ -55,6 +55,12 @@ those option objects. Prefer the complete option objects with `dialogCore`. Use
 a class export only when another compatible host asks for the panel class
 separately.
 
+Every frame rises 8 px and fades in when it opens, and sinks 4 px and fades
+out when it closes; the workspace frame only fades. The result, the focus
+return, and the page behind are there at once; only the frame's picture leaves
+afterwards, inert. Reduced motion makes both instant. See
+[Motion](/en/ui/motion).
+
 `surface="contained"` is the default modal treatment. `surface="floating"` is
 for a standalone placement on a page: the shell draws its own border, the
 header, body, and footer share a grey surface, and each section is a white card
