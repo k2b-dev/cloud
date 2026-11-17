@@ -213,7 +213,7 @@ export const addSpaceAccess = async (spaceId: string, accessId: string): Promise
     const error = e as { code?: string };
     if (error.code === "23505") {
       // unique_violation
-      return fail(err.conflict("Access entry"));
+      return fail(err.conflict("Access entry already exists"));
     }
     if (error.code === "23503") {
       // foreign_key_violation

@@ -185,7 +185,7 @@ export const submitForm = async (params: {
       !userInputIds.has(right.id) ||
       !formValidationFieldsCompatible(left, right, rule.operator)
     ) {
-      return fail({ ...err.conflict("Form validation"), message: t.validationChanged });
+      return fail(err.conflict(t.validationChanged));
     }
   }
 
@@ -213,8 +213,8 @@ export const submitForm = async (params: {
           FROM grids.form_submissions submission WHERE scope_hash = ${receipt.scope} AND key_hash = ${receipt.key}
         `;
         if (stored) {
-          if (stored.request_hash !== receipt.request) throw { ...err.conflict("Form submission"), message: t.submissionChanged };
-          if (!stored.available) throw { ...err.conflict("Form submission"), message: t.submissionRemoved };
+          if (stored.request_hash !== receipt.request) throw err.conflict(t.submissionChanged);
+          if (!stored.available) throw err.conflict(t.submissionRemoved);
           return stored.record_id;
         }
       }
@@ -238,7 +238,7 @@ export const submitForm = async (params: {
             AND deleted_at IS NULL ORDER BY id FOR UPDATE
         `;
         const current = locked.find((row) => row.id === params.record!.id && row.table_id === params.form.tableId);
-        if (!current || current.version !== params.record.version) throw { ...err.conflict("Form record"), message: t.recordChanged };
+        if (!current || current.version !== params.record.version) throw err.conflict(t.recordChanged);
       }
       const selections = [];
       for (const entry of formFields) {

@@ -154,7 +154,7 @@
     "@k2b/nessi": "1.2.0",
     "@k2b/ssr": "0.21.3",
     "@k2b/ui": "0.59.0",
-    "@k2b/stdlib": "0.32.0",
+    "@k2b/stdlib": "0.33.0",
     "@k2b/sync": "7.1.1",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
