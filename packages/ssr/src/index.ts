@@ -16,6 +16,7 @@ import { buildIslands, type DevSourcemap } from "./build";
 import { ISLAND_ID_LENGTH } from "./island-id";
 import { resolveIslandImport } from "./island-resolve";
 import { transform } from "./transform";
+import { TYPED_INPUT_SCRIPT } from "./typed-fields";
 
 export type { IslandErrorProps } from "./mount";
 
@@ -199,7 +200,8 @@ export const createConfig = <T extends object = object>(options: SsrOptions<T> =
     }
 
     const content = await htmlTemplate({
-      body,
+      // The typed-input listener comes first in the body, before any island markup a person can type into.
+      body: `<script>${TYPED_INPUT_SCRIPT}</script>${body}`,
       scripts,
       ...opts,
     });

@@ -2,7 +2,7 @@ import { lazySync } from "../_internal/process-sync";
 import { sql } from "../runtime/clients";
 import { get as getUser } from "../services/accounts/users";
 import { logger, trace } from "../services/logging";
-import { superviseRuntimeTask } from "../services/runtime-lifecycle";
+import { startRuntimeInterval, superviseRuntimeTask } from "../services/runtime-lifecycle";
 import { aiModelAccess } from "./model-access";
 import { aiProjects } from "./projects";
 import { AiTranscriptionError, describeTranscriptionFailure, type RunAiTranscriptionInput, runAiTranscription } from "./transcription";
@@ -78,6 +78,7 @@ export const processAiDictation = async (
       checking = false;
     }
   };
+  // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
   const timer = setInterval(() => void heartbeat(), 3_000);
   try {
     const [conversation] = await sql<
@@ -138,6 +139,7 @@ export const sweepAiDictations = async (): Promise<void> => {
 
 export const startAiDictationRuntime = (): (() => void) => {
   const controller = new AbortController();
+  // runtime-timer: supervises the Sync worker, which follows quiesce and retries its resume without a limit.
   void superviseRuntimeTask({
     name: "AI dictation worker",
     signal: controller.signal,
@@ -154,22 +156,13 @@ export const startAiDictationRuntime = (): (() => void) => {
     },
     onError: () => log.warn("Dictation worker unavailable; retrying"),
   });
-  let sweeping = false;
-  const sweep = async () => {
-    if (sweeping || controller.signal.aborted) return;
-    sweeping = true;
-    try {
-      await sweepAiDictations();
-    } catch {
-      log.warn("Dictation recovery unavailable; retrying");
-    } finally {
-      sweeping = false;
-    }
-  };
-  void sweep();
-  const timer = setInterval(() => void sweep(), 15_000);
+  const sweep = startRuntimeInterval({
+    run: () => sweepAiDictations(),
+    intervalMs: 15_000,
+    onError: () => log.warn("Dictation recovery unavailable; retrying"),
+  });
   return () => {
     controller.abort();
-    clearInterval(timer);
+    void sweep.stop();
   };
 };

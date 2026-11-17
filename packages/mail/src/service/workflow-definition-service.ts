@@ -586,7 +586,7 @@ export const createWorkflow = async (params: {
       return ok(detail);
     });
   } catch (error) {
-    if ((error as { code?: string }).code === "23505") return fail(err.conflict("Workflow name"));
+    if ((error as { code?: string }).code === "23505") return fail(err.conflict("Workflow name already exists"));
     return isServiceError(error) ? fail(error) : fail(err.internal("Failed to create workflow"));
   }
 };
@@ -683,7 +683,9 @@ export const updateWorkflowMetadata = async (params: {
     });
   } catch (error) {
     const result =
-      (error as { code?: string }).code === "23505" ? fail(err.conflict("Workflow name")) : fail(err.internal("Failed to update workflow"));
+      (error as { code?: string }).code === "23505"
+        ? fail(err.conflict("Workflow name already exists"))
+        : fail(err.internal("Failed to update workflow"));
     return recordWorkflowResult({ ...auditBase, result });
   }
 };

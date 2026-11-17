@@ -1,8 +1,11 @@
 import {
   APP_UNAVAILABLE_RETRY_AFTER_SECONDS,
+  formatUnavailableHeader,
   GATEWAY_STATUS_PATH,
   MAINTENANCE_RETRY_AFTER_SECONDS,
   type MaintenanceProblem,
+  UNAVAILABLE_HEADER,
+  type UnavailableSignal,
 } from "@k2b/cloud/contracts/maintenance";
 import { resolveLocale } from "@k2b/cloud/server/locale.ts";
 import type { AppUnavailableReason, Availability } from "./availability";
@@ -36,10 +39,18 @@ export const contentSecurityPolicy = (value: string): string =>
     "frame-ancestors 'none'",
   ].join("; ");
 
-const answer = (req: Request, retryAfter: number, problem: MaintenanceProblem, page: () => MaintenancePageModel): Response => {
+const answer = (
+  req: Request,
+  retryAfter: number,
+  signal: UnavailableSignal,
+  problem: MaintenanceProblem,
+  page: () => MaintenancePageModel,
+): Response => {
   const headers = new Headers({ "Retry-After": String(retryAfter), "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
   if (!wantsPage(req)) {
     headers.set("Content-Type", "application/problem+json");
+    // The reason also without a body (HEAD); the page answer is for navigations and needs none.
+    headers.set(UNAVAILABLE_HEADER, formatUnavailableHeader(signal));
     return new Response(req.method === "HEAD" ? null : JSON.stringify(problem), { status: 503, headers });
   }
   const value = nonce();
@@ -69,6 +80,7 @@ export const maintenanceAnswer = (req: Request, availability: Availability): Res
   return answer(
     req,
     MAINTENANCE_RETRY_AFTER_SECONDS,
+    { code: "maintenance" },
     {
       type: "about:blank",
       title: "Cloud is in maintenance",
@@ -94,14 +106,17 @@ export const appUnavailableAnswer = (
   availability: Availability,
   appId: string,
   { reason = availability.reasonFor(appId), cloudHost }: { reason?: AppUnavailableReason; cloudHost: boolean },
-): Response =>
-  answer(
+): Response => {
+  const locale = pageLocale(req, availability.branding().locale);
+  const app = availability.appView(appId, locale);
+  // Open pages name the app with this when their shell does not know it; an unknown app has no name but its id.
+  const appName = app.name !== appId ? { appName: app.name } : {};
+  return answer(
     req,
     APP_UNAVAILABLE_RETRY_AFTER_SECONDS,
-    { type: "about:blank", title: "App is unavailable", status: 503, code: "app_unavailable", appId },
+    { code: "app_unavailable", appId, reason },
+    { type: "about:blank", title: "App is unavailable", status: 503, code: "app_unavailable", appId, ...appName, reason },
     () => {
-      const locale = pageLocale(req, availability.branding().locale);
-      const app = availability.appView(appId, locale);
       const icon = image(app.icon);
       return {
         ...cloudModel(availability, locale),
@@ -112,6 +127,7 @@ export const appUnavailableAnswer = (
       };
     },
   );
+};
 
 /** `GET|HEAD /_cloud/gateway/status[?app=<id>]`: public, uncached, from memory only. */
 export const statusAnswer = (

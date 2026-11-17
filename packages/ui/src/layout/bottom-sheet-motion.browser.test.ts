@@ -369,9 +369,17 @@ describe("BottomSheet motion on a phone", () => {
         document
           .querySelector("dialog[open]")!
           .getAnimations()
-          .map((animation) => (animation instanceof CSSAnimation ? animation.animationName : "script")),
+          .map((animation) =>
+            animation instanceof CSSTransition
+              ? animation.transitionProperty
+              : animation instanceof CSSAnimation
+                ? animation.animationName
+                : "script",
+          ),
       );
-      expect(motion).toEqual(["k2b-sheet-dialog-enter"]);
+      // It rises and fades like every dialog; no sheet keyframes and no scripted slide.
+      expect(motion).toEqual(expect.arrayContaining(["opacity", "translate"]));
+      expect(motion.filter((name) => !["opacity", "translate", "overlay", "display"].includes(name))).toEqual([]);
       await settled(page);
       const box = await page.evaluate(() => {
         const rect = document.querySelector("dialog[open]")!.getBoundingClientRect();

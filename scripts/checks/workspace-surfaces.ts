@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "@typescript/typescript6";
 import { workspacePackages } from "../workspace";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const FILL = new Set(["flex-1", "grow", "size-full", "inset-0"]);
@@ -47,7 +47,8 @@ export const rule: Rule = {
     const findings: Finding[] = [];
     for (const file of roots.flatMap((root) => listFiles(root, /\.tsx$/)).sort()) {
       if (isTestFile(file) || /\.browser-(?:harness|fixture)\.tsx?$/.test(file)) continue;
-      const sourceFile = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const { sourceFile, findings: unparsed } = parseSource(file, readFileSync(file, "utf8"));
+      findings.push(...unparsed);
       const visit = (node: ts.Node, surface?: "standalone" | "workspace"): void => {
         if (ts.isJsxElement(node)) {
           const tag = node.openingElement.tagName.getText();

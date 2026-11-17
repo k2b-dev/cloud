@@ -34,6 +34,7 @@ export const acquire = async ({
   const slot = crypto.randomUUID();
   const granted = await redis.send("EVAL", [SLOT_SCRIPT, "1", key, slot, String(LEASE_MS), String(limit)]);
   if (granted !== 1) return null;
+  // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
   const heartbeat = setInterval(() => {
     void redis
       .send("EVAL", [SLOT_SCRIPT, "1", key, slot, String(LEASE_MS), "refresh"])

@@ -3550,6 +3550,7 @@ const startHydrationPublisher = (): void => {
         publishing = false;
       });
   };
+  // runtime-timer: the callback runs through a task tracker, which quiesce gates.
   hydrationPublisherTimer = setInterval(publish, 1_000);
   hydrationPublisherTimer.unref();
   publish();

@@ -81,6 +81,7 @@ export const coordinateWorkflowExecution = async <TInput, TClaim extends Workflo
     return renewal;
   };
 
+  // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
   const timer = setInterval(() => {
     if (!stopped) void heartbeat().catch(() => undefined);
   }, options.heartbeatMs);
