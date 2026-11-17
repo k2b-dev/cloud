@@ -1644,8 +1644,9 @@ export class AiTurnExecutor {
       // revisions author Code under the authoring allocation, like person turns.
       billable:
         quotaSubject !== null &&
+        isAssistantChatTurn(config) &&
         (!config.turnTrigger || config.turnTrigger.kind === "person" || Boolean(config.codeReview)) &&
-        (await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id)),
+        (await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id, settings)),
       onStop: (reason) => log.info("AI authoring turn reached its safety budget", { conversationId, turnId, reason }),
     });
     const turnPolicy = applyAiTurnPolicy({

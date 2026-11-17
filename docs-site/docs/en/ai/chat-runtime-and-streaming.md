@@ -1065,7 +1065,7 @@ tools`, both under `ai:executor` with the conversation and turn IDs.
 When Gustav invokes a lasting Code authoring tool or selects the authoring
 Skill, one turn can make at most 90 authoring model attempts, followed by at most
 one tool-free closing attempt after all existing drafts are submitted. Priced
-models with an effective finite Assistant cost limit have no additional cumulative
+models on Assistant chat turns with an effective finite cost limit have no additional cumulative
 input-token limit. All other models admit at most 5,760,000 cumulative input tokens,
 including instructions, conversation and tool schemas. Provider retries and
 automatic compaction share the turn's attempt and, when applicable, token allowance. Previously loaded tools alone do not activate
@@ -1087,6 +1087,8 @@ submitted work and any requested work not yet started. Cost admission still appl
 without an effective finite cost allowance, the closing request must fit the remaining
 token allowance. Only a successful closing answer removes the pause notice. A later
 edit, another unfinished draft, or insufficient closing allowance still requires a pause.
+A tool call, provider failure or rejected cost admission during that closing attempt
+persists the pause receipt and completes the turn. Cancellation keeps its normal abort behavior.
 
 At a bound with unfinished work, Gustav completes the current tool, skips remaining authoring tools
 in that response when the repair allowance is spent, and ends with a short

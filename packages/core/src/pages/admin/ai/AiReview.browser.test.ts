@@ -70,7 +70,7 @@ test("provider conflicts render, merge and discard without reading a cleared acc
 }, 30_000);
 
 test.each([false, true])(
-  "model merges preserve prices and discard invalid hidden cache prices (lower input=%s)",
+  "model merges forward hidden cache prices for server normalization (lower input=%s)",
   async (lowerInput) => {
     const model = catalog.models[0]!;
     const theirs = {
@@ -97,11 +97,40 @@ test.each([false, true])(
     expect(requests[1]).not.toHaveProperty("access");
     expect(requests[1]).toEqual(
       expect.objectContaining({
-        pricing: lowerInput ? { inputPerMillion: 0.01, outputPerMillion: theirs.pricing.outputPerMillion } : theirs.pricing,
+        pricing: { ...theirs.pricing, inputPerMillion: lowerInput ? 0.01 : theirs.pricing.inputPerMillion },
       }),
     );
     await page.getByRole("button", { name: "Discard my changes" }).click();
     expect(await page.getByRole("textbox", { name: /^Display name/ }).inputValue()).toBe(model.label);
+  },
+  30_000,
+);
+
+test.each(["model", "variant"] as const)(
+  "price errors stay in the server validation path (%s)",
+  async (kind) => {
+    const requests: unknown[] = [];
+    const model = catalog.models[0]!;
+    const variant = catalog.variants[2]!;
+    const path = kind === "model" ? `models/${model.id}` : `variants/${variant.id}`;
+    await page.route(`**/api/admin/core/ai/${path}`, async (route) => {
+      requests.push(route.request().postDataJSON());
+      await json(route, { message: "Invalid reference price." }, 400);
+    });
+    await goto(`sec=providers&p=cortecs&m=${model.id}`);
+    if (kind === "variant") {
+      await page.locator('[data-ai-variant="schnell"]').click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByRole("switch", { name: "Own prices", exact: true }).click();
+      await dialog.getByRole("spinbutton", { name: "Input", exact: true }).fill("1000001");
+      await dialog.getByRole("spinbutton", { name: "Output", exact: true }).fill("3");
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    } else {
+      await page.getByRole("spinbutton", { name: "Input", exact: true }).fill("1000001");
+      await save();
+    }
+    await page.getByText("Invalid reference price.", { exact: true }).waitFor();
+    expect(requests).toEqual([expect.objectContaining({ pricing: expect.objectContaining({ inputPerMillion: 1000001 }) })]);
   },
   30_000,
 );
@@ -228,7 +257,7 @@ test("empty model listing accepts a manual id and exposes a globally unique edit
 }, 30_000);
 
 test.each([false, true])(
-  "variant merge preserves overrides and discards invalid hidden cache prices (lower input=%s)",
+  "variant merge forwards price overrides for server normalization (lower input=%s)",
   async (lowerInput) => {
     const variant = catalog.variants[2]!;
     const requests: unknown[] = [];
@@ -259,9 +288,7 @@ test.each([false, true])(
     expect(requests[1]).toEqual(
       expect.objectContaining({
         revision: 4,
-        pricing: lowerInput
-          ? { inputPerMillion: 0.1, outputPerMillion: 3 }
-          : { inputPerMillion: 2, outputPerMillion: 3, cacheReadPerMillion: 0.2 },
+        pricing: { inputPerMillion: lowerInput ? 0.1 : 2, outputPerMillion: 3, cacheReadPerMillion: 0.2 },
         maxOutputTokens: 4000,
         hint: "Remote hint",
       }),

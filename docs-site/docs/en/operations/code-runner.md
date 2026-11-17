@@ -555,7 +555,7 @@ submission saves a version; activation remains a human action.
 
 Gustav's authoring turns now allow 90 authoring model attempts, including provider
 retries and compaction, plus one tool-free closing attempt after submission.
-Priced models with an effective finite Assistant cost limit use cost admission
+Priced models on Assistant chat turns with an effective finite cost limit use cost admission
 without an additional token allowance. Without such a limit (including disabled
 cost controls, unlimited grants or bypass), the 5,760,000-token allowance applies
 to priced models too, as it does to free and unpriced models. Repeated identical
@@ -572,7 +572,9 @@ when the provider has a discounted cache-read price. Missing prices or usage
 retain the ordinary input rate. Once all drafts are submitted, an authoring
 stop allows one closing model call without tools, subject to cost admission or the
 remaining token allowance. The answer identifies completed and unstarted work;
-only a successful closing answer suppresses the pause notice.
+only a successful closing answer suppresses the pause notice. A failed closing
+attempt, including rejected cost admission, persists the pause receipt and ends
+the turn normally; cancellation still aborts it.
 
 Chat mailbox and reply waits use NATS notifications on the existing Cloud
 connection. If a notification is lost, the 2-second fallback reads durable

@@ -632,7 +632,7 @@ suite("Assistant quota PostgreSQL boundaries", () => {
         for await (const _event of wrapped.stream({ messages: [], maxOutputTokens: 1 })) {
         }
       };
-      await expect(consume()).rejects.toMatchObject({ code: "quota_exhausted" });
+      await consume();
       expect(dispatched).toBe(0);
       expect(guard.stopped()).toMatchObject({ reason: "model_calls", unsubmitted: 0 });
     } finally {

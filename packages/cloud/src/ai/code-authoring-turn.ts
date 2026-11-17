@@ -300,11 +300,26 @@ export function createCodeAuthoringTurnBudget(input: {
                 (event.type === "block_end" && event.block.type === "tool_call"))
             )
               throw new AiTurnFailure("step_limit", "The model did not produce a final answer without tools.");
+            if (closing && event.type === "issue" && event.issue.kind === "provider_error")
+              throw new AiTurnFailure("model_unavailable", "The model could not produce the closing answer.");
             if (event.type === "block_end" && event.block.type === "text" && event.block.text.trim()) answered = true;
             if (event.type === "usage" && Number.isSafeInteger(event.usage.input) && event.usage.input >= 0) reported = event.usage.input;
             yield event;
           }
-          if (closing) closingAnswered = answered;
+          if (closing) {
+            closingAnswered = answered;
+            if (!answered) {
+              yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
+              yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text: "" } };
+            }
+          }
+        } catch (error) {
+          if (!closing || prepared.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+          // Without a terminal assistant block, nessi closes an unfinished turn
+          // as failed and the store never gets a message carrying the pause.
+          yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
+          yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text: "" } };
+          return;
         } finally {
           // Snapshots replace rather than add. Keep the estimate as a floor for missing/zero usage.
           inputTokens += Math.max(estimated, reported ?? estimated) - estimated;

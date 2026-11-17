@@ -741,11 +741,49 @@ test("the one closing attempt cannot request more tools or gain a retry", async 
   guard.noteToolCall(check("code_submit", { submission: { version: { id: "saved" } } }));
   const requests: ProviderRequest[] = [];
   const wrapped = guard.wrap(provider(requests));
-  await expect(consume(wrapped)).rejects.toMatchObject({ code: "step_limit" });
+  expect(await consume(wrapped)).toContainEqual({
+    type: "block_end",
+    blockId: "authoring-limit",
+    index: 0,
+    block: { type: "text", text: "" },
+  });
   await consume(wrapped);
   expect(requests).toHaveLength(1);
   expect(requests[0]?.tools).toEqual([]);
   expect(guard.stopped()).toMatchObject({ reason: "model_calls" });
+});
+
+test.each(["provider_error", "throw", "empty"] as const)(
+  "a failed closing attempt returns the local pause receipt (%s)",
+  async (failure) => {
+    const guard = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 0 } });
+    guard.noteToolCall(check("code_submit", { submission: { version: { id: "saved" } } }));
+    const wrapped = guard.wrap({
+      ...provider([]),
+      async *stream() {
+        if (failure === "provider_error")
+          yield { type: "issue", issue: { kind: "provider_error", message: "Unavailable", retryable: false } };
+        else if (failure !== "empty") throw new Error("Closing failed");
+      },
+    });
+    expect(await consume(wrapped)).toEqual([
+      { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" },
+      { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text: "" } },
+    ]);
+    expect(guard.stopped()).toMatchObject({ reason: "model_calls", unsubmitted: 0 });
+  },
+);
+
+test("an aborted closing attempt propagates cancellation", async () => {
+  const guard = budget({ priorCalls: { calls: CODE_AUTHORING_TURN_BUDGET.modelCalls, inputTokens: 0 } });
+  guard.noteToolCall(check("code_submit", { submission: { version: { id: "saved" } } }));
+  const wrapped = guard.wrap({
+    ...provider([]),
+    async *stream() {
+      throw new DOMException("Canceled", "AbortError");
+    },
+  });
+  await expect(consume(wrapped)).rejects.toMatchObject({ name: "AbortError" });
 });
 
 test("a later edit or a second unfinished draft still needs a pause after a successful submission", async () => {
