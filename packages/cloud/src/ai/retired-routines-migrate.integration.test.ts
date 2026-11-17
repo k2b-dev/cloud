@@ -5,6 +5,7 @@ const database = testInfra.database ? await useMigratedDatabase("retired_routine
 const { sql } = await import("../runtime/clients");
 const { migrateCloudAi } = await import("./migrate");
 const { aiConversations } = await import("./store");
+const { publicAiStoredMessages } = await import("./public-projection");
 afterAll(async () => {
   await database?.drop();
 });
@@ -30,6 +31,14 @@ databaseSuite()("scheduled routine retirement", () => {
       background: { taskId: "Task01", occurrenceId: "Run001", context: [] },
       mandate: { id: mandateId, revision: 1 },
     };
+    const thinking = "INTERNAL_INSTRUCTION code_Open42 22222222-2222-4222-8222-222222222222";
+    const archivedMessage = {
+      role: "assistant" as const,
+      content: [
+        { type: "thinking" as const, thinking, signature: "archived-signature" },
+        { type: "text" as const, text: "Preserved run log" },
+      ],
+    };
     await sql.begin(async (db) => {
       // Only the pre-upgrade fixture bypasses fences, before any workers exist.
       await db`DROP TRIGGER ai_retired_routine_turn ON ai.turns`;
@@ -52,7 +61,7 @@ databaseSuite()("scheduled routine retirement", () => {
         ${turnId}::uuid, 'running', 'Partial result', 'Original error')`;
       await db`INSERT INTO ai.task_messages(short_id, conversation_id, seq, kind, role, message, loop_id)
         VALUES ('Msg001', ${chat.id}::uuid, 1, 'message', 'assistant',
-          '{"role":"assistant","content":[{"type":"text","text":"Preserved run log"}]}'::jsonb, ${turnId})`;
+          ${JSON.stringify(archivedMessage)}::text::jsonb, ${turnId})`;
     });
     const evidence = async () => ({
       tasks: await sql`SELECT to_jsonb(row) - 'retired_mandate' AS row FROM ai.chat_tasks row`,
@@ -73,9 +82,18 @@ databaseSuite()("scheduled routine retirement", () => {
     expect(archive.retired_mandate.state).toBe("active");
     expect(archive.retired_mandate.policy.grants[0].kind).toBe("database");
     expect((await aiConversations.getTurn({ conversationId: chat.id, turnId }))?.status).toBe("aborted");
-    expect((await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turnId })).map((row) => row.message)).toEqual([
-      { role: "assistant", content: [{ type: "text", text: "Preserved run log" }] },
-    ]);
+    const archived = await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turnId });
+    expect(archived.map((row) => row.message)).toEqual([archivedMessage]);
+    const visible = await publicAiStoredMessages(archived, chat);
+    expect(visible[0]?.message).toEqual({
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "" },
+        { type: "text", text: "Preserved run log" },
+      ],
+    });
+    expect(JSON.stringify(visible)).not.toContain(thinking);
+    expect(JSON.stringify(visible)).not.toContain("archived-signature");
     expect(
       await aiConversations.claimTurn({
         conversationId: chat.id,
@@ -98,5 +116,5 @@ databaseSuite()("scheduled routine retirement", () => {
     await sql`DELETE FROM auth.users WHERE id=${owner!.id}::uuid`;
     expect(await evidence()).toEqual(before);
     expect((await sql`SELECT retired_mandate FROM ai.chat_tasks WHERE id=${taskId}::uuid`)[0]).toEqual(archive);
-  });
+  }, 30_000);
 });

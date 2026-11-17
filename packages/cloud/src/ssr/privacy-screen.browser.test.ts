@@ -313,6 +313,40 @@ describe("privacy screen", () => {
     }
   });
 
+  test("a dialog that holds the hint again after the one above it closed is usable", async () => {
+    timer = 0;
+    const { context, page } = await open();
+    try {
+      await ready(page);
+      await page.evaluate(() => {
+        const dialog = document.createElement("dialog");
+        dialog.id = "lower";
+        // Text of its own: the dialog covers as a whole while it holds the hint.
+        dialog.append("Gehalt 2026");
+        document.body.append(dialog);
+        dialog.showModal();
+      });
+      await shortcut(page);
+      expect(await covered(page)).toBe(true);
+      await page.evaluate(() => {
+        const upper = document.createElement("dialog");
+        upper.id = "upper";
+        upper.append("Bestätigen");
+        document.body.append(upper);
+        upper.showModal();
+      });
+      await page.waitForFunction(() => document.querySelector(".cloud-privacy-hint")?.parentElement?.id === "upper");
+      expect(await page.evaluate(() => document.querySelector<HTMLDialogElement>("#lower")!.inert)).toBe(true);
+      await page.evaluate(() => document.querySelector<HTMLDialogElement>("#upper")!.close());
+      await page.waitForFunction(() => document.querySelector(".cloud-privacy-hint")?.parentElement?.id === "lower");
+      expect(await page.evaluate(() => document.querySelector<HTMLDialogElement>("#lower")!.inert)).toBe(false);
+      await page.locator(".cloud-privacy-hint__continue").click();
+      expect(await covered(page)).toBe(false);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("the shared workstation's sign-out warning comes first and its Continue lifts the screen too", async () => {
     timer = 30;
     const { context, page } = await open();

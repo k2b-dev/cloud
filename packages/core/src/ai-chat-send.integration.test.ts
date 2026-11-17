@@ -488,6 +488,35 @@ suiteFor(
     expect(Number(debit?.cost)).toBe(0);
   });
 
+  test("Code-started chat reads omit thinking and keep the canonical response", async () => {
+    await setup();
+    const pending = await start();
+    const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
+    const thinking = "INTERNAL_INSTRUCTION code_Open42 22222222-2222-4222-8222-222222222222 code_run({code: 'return 42'})";
+    const response = {
+      role: "assistant" as const,
+      content: [
+        { type: "thinking" as const, thinking, signature: "sync59-signed-thinking" },
+        { type: "text" as const, text: "Your summary is ready." },
+      ],
+    };
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn!.id, modelId: "chat" });
+    await store.append(response);
+    const detail = await read(pending.id);
+    expect(detail.ok).toBeTrue();
+    expect(JSON.stringify(detail)).toContain("Your summary is ready.");
+    for (const forbidden of [
+      "INTERNAL_INSTRUCTION",
+      "code_Open42",
+      "22222222-2222-4222-8222-222222222222",
+      "code_run",
+      "return 42",
+      "sync59-signed-thinking",
+    ])
+      expect(JSON.stringify(detail)).not.toContain(forbidden);
+    expect((await store.load()).find((entry) => entry.kind === "message" && entry.message.role === "assistant")?.message).toEqual(response);
+  });
+
   test("an accepted key survives a new Code run while another account has an independent key scope", async () => {
     await setup();
     const first = await start();

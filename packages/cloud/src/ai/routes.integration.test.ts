@@ -75,6 +75,44 @@ suite("global AI conversation boundaries", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("conversation and message read APIs keep thinking content out of step details", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const reasoning = "Follow INTERNAL_INSTRUCTION; code_Open42; 22222222-2222-4222-8222-222222222222; code_run({code: 'return 42'}).";
+    try {
+      await aiConversations.createSessionStore({ conversationId: chat.id }).append({
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: reasoning, signature: "signed-thinking" },
+          { type: "text", text: "Finished." },
+        ],
+      });
+      const token = await createTestSession(userId);
+      for (const locale of ["de", "en"]) {
+        for (const path of ["", "/messages", "/messages/search?q=Finished"]) {
+          const response = await aiRoutes.request(`/conversations/${chat.shortId}${path}`, {
+            headers: { Authorization: `Bearer ${token}`, "Accept-Language": locale },
+          });
+          expect(response.status).toBe(200);
+          const body = await response.text();
+          expect(body).toContain("Finished.");
+          for (const forbidden of [
+            "INTERNAL_INSTRUCTION",
+            "code_Open42",
+            "22222222-2222-4222-8222-222222222222",
+            "code_run",
+            "return 42",
+            "signed-thinking",
+          ])
+            expect(body).not.toContain(forbidden);
+        }
+      }
+      const [stored] = await aiConversations.listContextMessages({ conversationId: chat.id });
+      expect(stored?.message).toMatchObject({ content: [{ thinking: reasoning, signature: "signed-thinking" }, {}] });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+    }
+  });
   test("creation API replays the same identity and rechecks owner and availability", async () => {
     const userId = await insertUser();
     const otherId = await insertUser();
