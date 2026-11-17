@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, settled } from "../../test/browser";
 import type {} from "../../test/run-log.browser-harness";
-import type { RunLogProps, RunStepEntry } from "./RunLog";
+import type { RunLogAction, RunLogProps, RunStepEntry } from "./RunLog";
 
 const ui = resolve(import.meta.dir, "../..");
 const repo = resolve(ui, "../..");
@@ -70,7 +70,8 @@ const open = async (width: number, options: { dark?: boolean; reduced?: boolean;
   await settled(page);
   return page;
 };
-const set = async (page: Page, props: RunLogProps) => {
+type BrowserRunLogProps = Omit<RunLogProps, "meta" | "actions"> & { meta?: string; actions?: readonly Omit<RunLogAction, "onClick">[] };
+const set = async (page: Page, props: BrowserRunLogProps) => {
   await page.evaluate((props) => window.__runLog.set(props), props);
   await settled(page);
 };
@@ -102,7 +103,7 @@ const steps: RunStepEntry[] = [
   { kind: "step", id: "write", at: AT, label: "Daten erfassen", status: "pending" },
 ];
 const logs = [{ kind: "log", id: "one", at: AT, level: "info", text: "PDF erhalten" }] as const;
-const base: RunLogProps = { state: "running", duration: 6000, meta: "heute, 16:42", entries: [...steps, ...logs] };
+const base: BrowserRunLogProps = { state: "running", duration: 6000, meta: "heute, 16:42", entries: [...steps, ...logs] };
 
 for (const width of [1440, 390])
   describe(`RunLog at ${width}px`, () => {
