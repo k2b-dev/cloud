@@ -350,6 +350,9 @@ const select = (page: Page, selector: string, passage: string) =>
     [selector, passage] as const,
   );
 
+/** "Quote" at the selection, apart from the actions of the messages. */
+const pill = (page: Page) => page.locator(".k2b-selection-toolbar").getByRole("button", { name: "Zitieren" });
+
 describe("Quoting in Gustav's chat", () => {
   for (const view of [desktop, phone])
     test(`at ${view.name} a passage of an answer joins the draft above the field and is saved with it`, async () => {
@@ -359,7 +362,7 @@ describe("Quoting in Gustav's chat", () => {
         const answer = ".ai-turn__text[data-answer]";
         await page.locator(answer).first().waitFor();
         await select(page, answer, PASSAGE);
-        const quote = page.getByRole("button", { name: "Zitieren" });
+        const quote = pill(page);
         await quote.waitFor();
         await quote.click();
         // The passage stands above the field with whose words it are, and the focus is in the field.
@@ -399,10 +402,10 @@ describe("Quoting in Gustav's chat", () => {
       expect(await quoted.textContent()).toContain("Gustav");
       await select(page, ".ai-user-quotes", PASSAGE);
       await settled(page);
-      expect(await page.getByRole("button", { name: "Zitieren" }).count()).toBe(0);
+      expect(await pill(page).count()).toBe(0);
       // The person's own words are a passage.
       await select(page, ".ai-user-text", "Strom und Internet");
-      await page.getByRole("button", { name: "Zitieren" }).click();
+      await pill(page).click();
       await page.locator(".k2b-chat-composer__quote").waitFor();
       expect(await page.locator(".k2b-chat-composer__quote").textContent()).toContain("Du");
     } finally {
