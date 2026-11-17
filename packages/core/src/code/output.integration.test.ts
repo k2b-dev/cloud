@@ -6,7 +6,7 @@ import { RUNNER_PATHS, RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import { LIVE_LIMITS } from "@k2b/cloud/events";
 import { accounts } from "@k2b/cloud/services";
 import { createSync, type Sync } from "@k2b/sync";
-import { createLocalJWKSet, exportJWK, generateKeyPair } from "jose";
+import { generateKeyPair } from "jose";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
@@ -99,14 +99,9 @@ suiteFor(
       now: new Date(fixed),
       signer: { kid, key: pair.privateKey, signUntil: new Date(claims.exp * 1000) },
     });
-    outputRoutes = createCodeRunnerRoutes({
-      token: {
-        issuer: claims.iss,
-        now: new Date(fixed),
-        key: createLocalJWKSet({ keys: [{ ...(await exportJWK(pair.publicKey)), alg: "RS256", use: "sig", kid }] }),
-      },
-    });
-    await openCodeOutput({ runId, codeId, generation: 1, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, 32768);
+    // No verifier overrides: pin the complete production HTTP path, even cold.
+    outputRoutes = createCodeRunnerRoutes();
+    await openCodeOutput({ runId, codeId, token, generation: 1, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, 32768);
   });
   afterAll(async () => {
     setSystemTime();
@@ -133,15 +128,16 @@ suiteFor(
         });
       expect(
         await meter.during(async () => {
-          expect((await request({ token: "forged", runId, generation: 1 }, "refused")).status).toBe(403);
+          expect((await request({ token: "forged", runId, generation: 1 }, "refused")).status).toBe(409);
+          expect((await request({ token, runId: "66666666-6666-4666-8666-666666666666", generation: 1 }, "wrong run")).status).toBe(409);
           expect((await request({ token, runId, generation: 2 }, "wrong attempt")).status).toBe(409);
           expect((await request({ token, runId, generation: 1 }, "first private-token")).status).toBe(204);
         }),
       ).toEqual([]);
       // Above cadence: count, discard, do not send another live bundle.
-      expect(await meter.during(() => receiveCodeOutput(claims, batch(2, "discarded")))).toEqual([]);
+      expect(await meter.during(() => receiveCodeOutput({ token, runId, generation: 1 }, batch(2, "discarded")))).toEqual([]);
       setSystemTime(fixed + 1000);
-      expect(await meter.during(() => receiveCodeOutput(claims, batch(3, "last")))).toEqual([]);
+      expect(await meter.during(() => receiveCodeOutput({ token, runId, generation: 1 }, batch(3, "last")))).toEqual([]);
       const tail = await replayCodeOutput(runId);
       expect(tail.lines).toEqual([
         {
@@ -155,7 +151,9 @@ suiteFor(
       ]);
       expect(tail.droppedLines).toBe(1);
       expect(tail.droppedBytes).toBeGreaterThan(0);
-      expect(await meter.during(() => receiveCodeOutput(claims, batch(3, "duplicate must not append")))).toEqual([]);
+      expect(await meter.during(() => receiveCodeOutput({ token, runId, generation: 1 }, batch(3, "duplicate must not append")))).toEqual(
+        [],
+      );
       expect(await replayCodeOutput(runId)).toEqual(tail);
       // The topic alone replays the accepted lines; cumulative counters cover rate-discarded input too.
       let replay = emptyCodeOutput();
@@ -178,7 +176,9 @@ suiteFor(
       expect(writes[0]).toMatch(/UPDATE code.runs SET console_output=/);
       const [saved] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${runId}::uuid`;
       expect(saved!.console_output).toEqual(tail);
-      await expect(receiveCodeOutput(claims, batch(4, "after terminal"))).rejects.toBeInstanceOf(RunnerLeaseLostError);
+      await expect(receiveCodeOutput({ token, runId, generation: 1 }, batch(4, "after terminal"))).rejects.toBeInstanceOf(
+        RunnerLeaseLostError,
+      );
     } finally {
       await meter.close();
     }
@@ -218,9 +218,16 @@ suiteFor(
     }
   });
   test("stale generations cannot publish into a newer attempt and earlier output is reset", async () => {
-    await openCodeOutput({ runId, codeId, generation: 2, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, 32768);
-    await expect(receiveCodeOutput(claims, batch(5, "stale"))).rejects.toBeInstanceOf(RunnerLeaseLostError);
-    const newer = { ...claims, generation: 2 };
+    const newerToken = `${token}.next-attempt`;
+    await openCodeOutput(
+      { runId, codeId, token: newerToken, generation: 2, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 },
+      32768,
+    );
+    await expect(receiveCodeOutput({ token, runId, generation: 1 }, batch(5, "stale"))).rejects.toBeInstanceOf(RunnerLeaseLostError);
+    await expect(receiveCodeOutput({ token, runId, generation: 2 }, batch(1, "old token, current generation"))).rejects.toBeInstanceOf(
+      RunnerLeaseLostError,
+    );
+    const newer = { token: newerToken, runId, generation: 2 };
     await receiveCodeOutput(newer, batch(1, "new attempt"));
     expect((await replayCodeOutput(runId)).lines).toEqual([{ level: "log", parts: [{ type: "text", text: "new attempt" }] }]);
     // Newline expansion adds structured per-line overhead. Both the broker frame
@@ -239,6 +246,25 @@ suiteFor(
       replay = applyCodeOutputEvent(replay, event.data);
     }
     expect(replay).toEqual(tail);
+  });
+  test("the pinned proof expires at the immutable run deadline, without SQL", async () => {
+    setSystemTime(fixed + 300_000);
+    const meter = await meterSql();
+    try {
+      expect(
+        await meter.during(async () => {
+          const response = await outputRoutes.request(RUNNER_PATHS.output, {
+            method: "POST",
+            body: JSON.stringify({ token: `${token}.next-attempt`, runId, generation: 2, batch: batch(5, "too late") }),
+            headers: { "Content-Type": "application/json" },
+          });
+          expect(response.status).toBe(409);
+        }),
+      ).toEqual([]);
+    } finally {
+      await meter.close();
+      setSystemTime(fixed);
+    }
   });
   test("30-day expiry deletes the stored output with its run", async () => {
     await sql`UPDATE code.runs SET state='succeeded',ended_at='2029-12-01T00:00:00Z' WHERE id=${runId}::uuid`;

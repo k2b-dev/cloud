@@ -38,9 +38,9 @@ import { dispatchCodeSecretHttp } from "./secret-http";
 /** Private runner-only routes. Every Core replica uses the same lease fence and signing key ring. */
 export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependencies, "appProof" | "token"> = {}) {
   const router = new Hono();
-  // The output-only channel authenticates the Core-issued lease token, held by
-  // the supervisor and never passed to the sandbox. Its shared lease cache is
-  // opened after durable admission and refreshed only by app-authenticated
+  // The output-only channel compares the supervisor-held Core token with its
+  // digest pinned at admission. The sandbox never receives this token. The
+  // shared lease cache opens after durable admission and is refreshed only by app-authenticated
   // heartbeats. Execution and enrollment still require the fresh app proof.
   // Reusing that SQL-backed app check here would add SQL for every output batch.
   router.post(RUNNER_PATHS.output, bodyLimit({ maxSize: LIVE_LIMITS.frameBytes }), async (c) => {
@@ -48,11 +48,8 @@ export function createCodeRunnerRoutes(options: Pick<CodeRunnerDispatchDependenc
     try {
       const parsed = RunnerOutputRequestSchema.safeParse(await c.req.json());
       if (!parsed.success) return c.json({ code: "code_invalid_output" }, 400);
-      const { token, runId, generation, batch } = parsed.data;
-      const claims = await verifyCodeRunToken(token, options.token);
-      if (!claims) return c.json({ code: "code_invalid_token" }, 403);
-      if (claims.runId !== runId || claims.generation !== generation) return c.json({ code: "runner_lease_lost" }, 409);
-      await receiveCodeOutput(claims, batch);
+      const { batch, ...proof } = parsed.data;
+      await receiveCodeOutput(proof, batch);
       return c.body(null, 204);
     } catch (error) {
       if (error instanceof RunnerLeaseLostError) return c.json({ code: "runner_lease_lost" }, 409);

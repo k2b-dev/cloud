@@ -379,7 +379,14 @@ export async function codeRunnerLease(
     { deadlineAt },
   );
   await openCodeOutput(
-    { runId: run.id, codeId: run.code_id, generation: run.generation, deadlineAt, leaseExpiresAt: renewed.lease_expires_at.getTime() },
+    {
+      runId: run.id,
+      codeId: run.code_id,
+      generation: run.generation,
+      deadlineAt,
+      leaseExpiresAt: renewed.lease_expires_at.getTime(),
+      token,
+    },
     run.payload_bytes,
   );
   return {

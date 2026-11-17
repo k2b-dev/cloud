@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { lazySync, redis, sql } from "@k2b/cloud";
 import {
   appendCodeOutput,
@@ -15,7 +16,7 @@ import {
   emptyCodeOutput,
 } from "@k2b/cloud/code";
 import type { CodeRunTokenClaims } from "@k2b/cloud/code/run-token";
-import { type RunnerLease, RunnerLeaseLostError } from "@k2b/cloud/code/runner";
+import { type RunnerLease, RunnerLeaseLostError, type RunnerLeaseProof } from "@k2b/cloud/code/runner";
 import { defineLive, LIVE_LIMITS } from "@k2b/cloud/events";
 import { purposeSecretCipher } from "@k2b/cloud/services";
 import type { SQL } from "bun";
@@ -39,6 +40,7 @@ const secretPurpose = "cloud.code.output-redactions.v1";
 const secretContext = (claims: Pick<CodeRunTokenClaims, "runId" | "generation">) => JSON.stringify([claims.runId, claims.generation]);
 const StateSchema = z.object({
   codeId: z.string(),
+  tokenDigest: z.string().regex(/^[a-f0-9]{64}$/),
   generation: z.number(),
   deadlineAt: z.number(),
   budget: z.number(),
@@ -47,6 +49,7 @@ const StateSchema = z.object({
   window: CodeOutputWindowSchema,
 });
 type State = z.infer<typeof StateSchema>;
+const tokenDigest = (token: string) => new Bun.CryptoHasher("sha256").update(token).digest("hex");
 const ttlAt = (deadlineAt: number) => deadlineAt + CODE_OUTPUT_TOPIC_CONFIG.retention.maxAgeMs;
 const CAS = `if redis.call('GET',KEYS[1])~=ARGV[1] then return 0 end
   if tonumber(redis.call('GET',KEYS[2]) or '0')<=tonumber(ARGV[4]) then return -1 end
@@ -54,11 +57,12 @@ const CAS = `if redis.call('GET',KEYS[1])~=ARGV[1] then return 0 end
 
 /** Issued only after the durable lease commit. A delayed replica cannot replace a newer generation. */
 export async function openCodeOutput(
-  lease: Pick<RunnerLease, "runId" | "codeId" | "generation" | "deadlineAt" | "leaseExpiresAt">,
+  lease: Pick<RunnerLease, "runId" | "codeId" | "generation" | "deadlineAt" | "leaseExpiresAt" | "token">,
   budget: number,
 ) {
   const state: State = {
     codeId: lease.codeId,
+    tokenDigest: tokenDigest(lease.token),
     generation: lease.generation,
     deadlineAt: lease.deadlineAt,
     budget,
@@ -111,7 +115,7 @@ export async function rememberCodeOutputSecrets(
     String(ttlAt(claims.exp * 1000)),
   ]);
 }
-async function replacementsFor(claims: CodeRunTokenClaims) {
+async function replacementsFor(claims: Pick<CodeRunTokenClaims, "runId" | "generation">) {
   const encrypted = z.array(z.string()).parse(await redis.send("HVALS", [secretKey(claims.runId, claims.generation)]));
   const replacements = new Map<string, string>();
   for (const item of encrypted) {
@@ -137,24 +141,29 @@ export function sanitizeCodeOutput(batch: CodeOutputBatch, replacements: Readonl
   );
 }
 
-/** No SQL on the output hot path: the signed proof and the shared, expiring lease cache fence every batch.
- * CAS preserves counters/window under racing replicas and heartbeats. The console joins flushes; conflicting batches fail without an unbounded retry loop.
+/** No SQL on the output hot path, including cold identity/settings caches. Pin the
+ * exact Core-issued token at admission; only its digest lives in this output cache.
+ * This supervisor-only proof grants output, never execution or reads. Heartbeats
+ * still require the app proof and durable lease check. No JWT/JWKS/settings read
+ * belongs here. CAS fences racing replicas, generations and terminal settlement.
  */
-export async function receiveCodeOutput(claims: CodeRunTokenClaims, raw: CodeOutputBatch) {
+export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutputBatch) {
   const batch = CodeOutputBatchSchema.parse(raw);
-  const lines = sanitizeCodeOutput(batch, await replacementsFor(claims));
-  const previous = await redis.get(key(claims.runId));
+  const previous = await redis.get(key(proof.runId));
   if (!previous) throw new RunnerLeaseLostError();
   const state = StateSchema.parse(JSON.parse(previous));
-  const expires = Number(await redis.get(leaseKey(claims.runId, claims.generation)));
+  const expires = Number(await redis.get(leaseKey(proof.runId, proof.generation)));
   const now = Date.now();
   if (
-    state.codeId !== claims.codeId ||
-    state.generation !== claims.generation ||
+    state.generation !== proof.generation ||
+    !timingSafeEqual(Buffer.from(state.tokenDigest, "hex"), Buffer.from(tokenDigest(proof.token), "hex")) ||
     !expires ||
-    Math.min(expires, state.deadlineAt, claims.exp * 1000) <= now
+    // signCodeRunToken floors the immutable deadline to whole seconds for exp.
+    Math.min(expires, Math.floor(state.deadlineAt / 1000) * 1000) <= now
   )
     throw new RunnerLeaseLostError();
+  const claims = { runId: proof.runId, generation: proof.generation, codeId: state.codeId };
+  const lines = sanitizeCodeOutput(batch, await replacementsFor(claims));
   if (batch.seq <= state.inputSeq) return;
   const limited = state.lastAt > 0 && now - state.lastAt < CODE_OUTPUT_INTERVAL_MS;
   const dropped = {

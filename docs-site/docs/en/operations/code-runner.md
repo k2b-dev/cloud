@@ -402,7 +402,7 @@ UTF-8 body through `signAppProof` from `@k2b/cloud/app-proof`. For execution and
 the enrolled `runner` identity, current key state, installation, body digest,
 and fresh nonce before granting work. For run-scoped routes, it must also
 verify `RunnerLeaseProof` against the current run generation and deadline.
-The output-only route verifies the Core-issued token and shared lease cache
+The output-only route compares the token with its admission-pinned digest and shared lease cache
 instead of the SQL-backed app grant check; see the output boundary below.
 
 `RunnerFetchRequest` carries `instanceId` and `freeSlots`.
@@ -637,9 +637,11 @@ lease token. The supervisor holds that token; sandbox code never receives it.
 This route authorizes output only. Enrollment, execution and heartbeats still
 check the runner app proof; the output route avoids that SQL-backed check per
 bundle. Revoking a runner stops its next heartbeat, and its output permission
-expires with the last admitted lease. Core checks the issued generation and the shared
-lease expiry cache, removes unsafe text, redacts known secret echoes, and
-bounds the window before publishing. Heartbeats refresh that cache only after
+expires with the last admitted lease. Core compares the token with its digest
+pinned after durable admission and checks the issued generation and shared
+lease expiry cache. This avoids identity settings or signing-key reads on the
+output path. Core removes unsafe text, redacts known secret echoes, and bounds
+the window before publishing. Heartbeats refresh that cache only after
 the durable lease check commits. Expiry, a newer generation or terminal
 settlement refuses further output. Revocation of execution authority continues
 to be checked on the normal bridge and heartbeat paths. The terminal report
