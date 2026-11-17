@@ -130,11 +130,13 @@ const [blocks, setBlocks] = createSignal<Record<string, { block: ToolBlock; phas
 const approvals: unknown[] = [];
 const continued: string[] = [];
 const checks: string[] = [];
+const shownQuestions: string[] = [];
 let release: (() => void) | null = null;
 Object.assign(window, {
   approvals,
   continued,
   checks,
+  shownQuestions,
   release: () => release?.(),
   patch: (key: string, patch: Partial<ToolBlock> & { phase?: AiTurnPhase }) =>
     setBlocks((current) => {
@@ -242,6 +244,7 @@ render(
               if (params.get("slow") === "1") await new Promise<void>((done) => (release = done));
             },
             onContinueTurn: (message) => void continued.push(message),
+            onShowQuestion: (anchor) => void shownQuestions.push(anchor),
             onCheckAction: async (request) => {
               checks.push(request.callId);
               return { state: "done", at: FIXTURE_AT };

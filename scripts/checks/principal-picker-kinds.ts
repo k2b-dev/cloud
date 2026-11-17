@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /** Restrictions belong to the owning identity contract, never an accidental picker default. */
@@ -15,7 +15,7 @@ const restrictions: Record<string, string> = {
 
 export const checkSource = (file: string, source: string): Finding[] => {
   if (isTestFile(file) || (!source.includes("PermissionEditor") && !source.includes("PrincipalPicker"))) return [];
-  const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const { sourceFile: parsed, findings } = parseSource(file, source);
   const pickerNames = new Set(["PermissionEditor", "PrincipalPicker"]);
   for (const statement of parsed.statements) {
     if (!ts.isImportDeclaration(statement)) continue;
@@ -25,7 +25,6 @@ export const checkSource = (file: string, source: string): Finding[] => {
       if (pickerNames.has((binding.propertyName ?? binding.name).text)) pickerNames.add(binding.name.text);
     }
   }
-  const findings: Finding[] = [];
   const visit = (node: ts.Node): void => {
     if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
       const tag = node.tagName.getText(parsed);

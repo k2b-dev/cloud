@@ -190,7 +190,17 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
         if (!panel || stopped) return;
         dispose ??= panel.installPanelSlot();
         if (request) panel.handlePanelRequest(request);
+        return true;
       };
+      // Keep a click on the server-rendered trigger while the controller's chunk is still loading.
+      const menuPlaceholder = document.querySelector<HTMLButtonElement>("[data-cloud-panel-menu] button");
+      const openMenu = () => {
+        void load().then((loaded) => {
+          if (loaded && !stopped && !menuPlaceholder?.isConnected)
+            document.querySelector<HTMLButtonElement>("[data-cloud-panel-menu] button")?.click();
+        });
+      };
+      menuPlaceholder?.addEventListener("click", openMenu);
       const request = (event: CustomEvent<PanelRequest>) => {
         const detail = event.detail;
         if (detail.action === "open") {
@@ -226,6 +236,7 @@ export default function ShellRuntime(props: ShellRuntimeProps) {
       onCleanup(() => {
         stopped = true;
         dispose?.();
+        menuPlaceholder?.removeEventListener("click", openMenu);
         window.removeEventListener("pageshow", restored);
         window.removeEventListener("cloud.panel.request", request);
         window.removeEventListener("keydown", key);

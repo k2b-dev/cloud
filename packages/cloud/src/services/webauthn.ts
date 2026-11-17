@@ -273,7 +273,7 @@ export const finishRegistration = async (params: {
       });
     });
   } catch (error) {
-    if (isUniqueViolation(error)) return fail(err.conflict("Passkey"));
+    if (isUniqueViolation(error)) return fail(err.conflict("Passkey already exists"));
     throw error;
   }
 };

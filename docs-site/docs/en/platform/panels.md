@@ -358,7 +358,9 @@ to install an application is what protects against a hostile one.
 The person chooses **Allow** or **Don't share** in the slot. They can later
 change **Share context** in the **⋯** menu, below **Panel from <App>**. A new
 answer applies from the moment Cloud has saved it; it does not recall context
-already seen.
+already seen. Clicking **⋯** while the panel controls are loading opens the menu
+once they are ready. While an answer is being saved, **Share context** stays
+disabled and becomes available again when the save finishes.
 
 - **Withdrawing** stops sharing at the click, before the save finishes. It also
   removes the context from the provider's current address, so reloading the

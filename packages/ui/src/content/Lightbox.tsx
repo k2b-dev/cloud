@@ -159,6 +159,8 @@ export default function Lightbox(props: LightboxProps): JSX.Element {
         : [...ZOOM_STEPS].reverse().find((candidate) => candidate < value - 0.001);
     if (next !== undefined) setZoom(next);
   };
+  // The owner mounts and removes the Lightbox, so it learns at once and can open the next file right away. It fades in
+  // like every large surface; it leaves without a fade, because a fade would keep the owner's state open meanwhile.
   const close = () => {
     if (dialog.open) dialog.close();
     returnFocus(opener, openerRing);
