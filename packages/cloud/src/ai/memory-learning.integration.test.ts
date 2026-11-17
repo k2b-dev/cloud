@@ -2,6 +2,7 @@ import { beforeAll, expect, test } from "bun:test";
 import type { z } from "zod";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
+import { AUTOMATION_TURN_BUDGET } from "./code-authoring-turn";
 import { aiMemories } from "./memories";
 import { learnAiMemoriesFromPrivateChats, listAiMemoryLearningCandidates } from "./memory-learning";
 import { aiMemoryLearningRuns } from "./memory-learning-runs";
@@ -131,10 +132,17 @@ databaseSuite()("AI memory learning (integration)", () => {
     try {
       await aiUserPrefs.update(userId, { memoryLearningEnabled: true });
       const candidate = await insertLearningTurn(userId);
-      await sql`UPDATE ai.turns SET run_config=run_config || ${JSON.stringify({
+      expect((await listAiMemoryLearningCandidates(100, 1_000_000)).some((item) => item.turnId === candidate.turnId)).toBe(true);
+      await sql`UPDATE ai.turns SET run_config=${JSON.stringify({
+        kind: "chat",
+        input: [],
         turnTrigger: { kind: "chat", id: "Source" },
-        inferenceBudget: { inputTokens: 512000, modelCalls: 16, unknownInputTokens: 64000 },
-      })}::jsonb WHERE id=${candidate.turnId}::uuid`;
+        inferenceBudget: {
+          inputTokens: AUTOMATION_TURN_BUDGET.inputTokens,
+          modelCalls: AUTOMATION_TURN_BUDGET.modelCalls,
+          unknownInputTokens: AUTOMATION_TURN_BUDGET.unknownInputTokens,
+        },
+      })}::text::jsonb WHERE id=${candidate.turnId}::uuid`;
       expect((await listAiMemoryLearningCandidates(100, 1_000_000)).some((item) => item.turnId === candidate.turnId)).toBe(false);
       let calls = 0;
       const summary = await learnAiMemoriesFromPrivateChats({

@@ -122,6 +122,14 @@ const start = async (context = ctx()) => {
   return data;
 };
 
+// Historical calls predate worker reservations. Exercise their real quota admission
+// and settlement, then attach the attribution that was already stored before upgrade.
+const beginLegacyCodeCall = async (profile: Parameters<typeof beginAiCall>[0], turnId: string, input: number, output: number) => {
+  const call = await beginAiCall(profile, { kind: "chat", task: "chat", subject: { type: "user", userId: owner } }, input, output);
+  await sql`UPDATE ai.inference_calls SET turn_id=${turnId}::uuid,code_id=${codeId} WHERE id=${call.id}::uuid`;
+  return call;
+};
+
 suiteFor(
   "database",
   "valkey",
@@ -643,7 +651,7 @@ suiteFor(
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).toBeNull();
   });
 
-  test("three cheap turns fit the daily USD budget and leave generate/decide allowance available", async () => {
+  test("three cheap legacy turns fit the daily USD budget and leave generate/decide allowance available", async () => {
     const { prepare, prepareTurn } = await setup();
     const profile = aiModelFixture({
       id: "fixture",
@@ -664,12 +672,7 @@ suiteFor(
       return prepareTurn(input);
     });
     const charge = async (turnId: string, input = 10_000, output = 10_000) => {
-      const call = await beginAiCall(
-        profile,
-        { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId },
-        input,
-        output,
-      );
+      const call = await beginLegacyCodeCall(profile, turnId, input, output);
       await finishAiCall(call.id, { input, output }, "ok");
     };
     for (let i = 0; i < 3; i++) {
@@ -715,23 +718,18 @@ suiteFor(
     expect(await sql`SELECT * FROM ai.queued_messages WHERE origin->>'runId'=${runId}`).toHaveLength(3);
   });
 
-  test.each(["code", "owner"] as const)("actual turn cost counts toward the existing %s daily Code USD budget", async (scope) => {
+  test.each(["code", "owner"] as const)("legacy turn cost counts toward the existing %s daily Code USD budget", async (scope) => {
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     const profile = aiModelFixture({
       id: "fixture",
-      pricing: { inputPerMillion: 1, outputPerMillion: 1 },
+      pricing: { inputPerMillion: 0.5, outputPerMillion: 0.5 },
       contextWindow: 128000,
       maxOutputTokens: 1000,
     });
-    const call = await beginAiCall(
-      profile,
-      { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
-      100_000,
-      100_000,
-    );
-    await finishAiCall(call.id, { input: 100_000, output: 100_000 }, "ok");
+    const call = await beginLegacyCodeCall(profile, turn!.id, 200_000, 200_000);
+    await finishAiCall(call.id, { input: 200_000, output: 200_000 }, "ok");
     await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${turn!.id}::uuid`;
     spyOn(codeSettings, "get").mockImplementation(async (key) =>
       key === (scope === "code" ? "core.code.ai_daily_budget_usd" : "core.code.ai_owner_daily_budget_usd") ? 0.2 : 1,
@@ -747,7 +745,7 @@ suiteFor(
     expect(Number(run?.cost)).toBe(0);
   });
 
-  test("unknown turn usage blocks another turn without adding a text-AI-only budget refusal", async () => {
+  test("unknown legacy turn usage blocks another turn without adding a text-AI-only budget refusal", async () => {
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
@@ -757,12 +755,7 @@ suiteFor(
       contextWindow: 128000,
       maxOutputTokens: 1000,
     });
-    const call = await beginAiCall(
-      profile,
-      { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
-      1,
-      1,
-    );
+    const call = await beginLegacyCodeCall(profile, turn!.id, 1, 1);
     await finishAiCall(call.id, undefined, "ok");
     await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${turn!.id}::uuid`;
     expect(await invoke(chat.shortId, ctx("unknown"))).toMatchObject({ ok: false, error: { code: "code_ai_owner_daily_budget_limit" } });
@@ -775,13 +768,13 @@ suiteFor(
     await sql.begin((db) => settleCodeAiBudget(claims, 1, "0", db));
   });
 
-  test("a live owner inference reservation counts until it settles to actual usage", async () => {
+  test("a live legacy owner inference reservation counts until it settles to actual usage", async () => {
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
     const profile = aiModelFixture({
       id: "fixture",
-      pricing: { inputPerMillion: 1, outputPerMillion: 1 },
+      pricing: { inputPerMillion: 0.5, outputPerMillion: 0.5 },
       contextWindow: 128000,
       maxOutputTokens: 1000,
     });
@@ -790,12 +783,7 @@ suiteFor(
       { scope: "*", hours: 24, anchor: "1970-01-01T00:00:00Z", grants: [{ principal: { type: "user", userId: owner }, limit: 1 }] },
     ];
     await sql`UPDATE ai.cost_config SET enabled=true,rules=${JSON.stringify(rules)}::text::jsonb WHERE singleton`;
-    const call = await beginAiCall(
-      profile,
-      { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
-      100_000,
-      100_000,
-    );
+    const call = await beginLegacyCodeCall(profile, turn!.id, 200_000, 200_000);
     chat = await aiConversations.createConversation({ ownerUserId: owner });
     spyOn(codeSettings, "get").mockResolvedValue(0.2);
     // The earlier turn's state no longer holds the owner; its live call still reserves.
@@ -805,7 +793,7 @@ suiteFor(
     } finally {
       await finishAiCall(call.id, { input: 10_000, output: 10_000 }, "ok");
     }
-    // Settlement retains the actual 0.02, releasing the other 0.18.
+    // Settlement retains the actual 0.01, releasing the other 0.19.
     expect(await invoke(chat.shortId, ctx("settled"))).toMatchObject({ ok: true });
   });
 
@@ -1557,9 +1545,9 @@ suiteFor(
       await meter.close();
     }
     await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${jobs[0]}::uuid`;
-    await sql`DELETE FROM auth.access WHERE id IN(SELECT access_id FROM ai.model_access WHERE model_id='fixture')`;
     const pending = await invoke(chat.shortId, ctx("revoked-model"));
     if (!pending.ok) throw new Error(pending.error.message);
+    await sql`DELETE FROM auth.access WHERE id IN(SELECT access_id FROM ai.model_access WHERE model_id='fixture')`;
     await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
     expect(await read(dataSchema.parse(pending.data.data).id)).toMatchObject({
       ok: true,

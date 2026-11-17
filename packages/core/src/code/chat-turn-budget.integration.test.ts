@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { aiConversations } from "@k2b/cloud/ai";
 import { AUTOMATION_TURN_BUDGET } from "@k2b/cloud/ai/runtime";
@@ -9,6 +9,7 @@ import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test
 import { admitCodeChatTurn } from "../ai-chat-budget";
 import { codeChatDailyUsage } from "./ai-budget";
 import { CodeChatBudgetError, reserveCodeChatTurnBudget, settleCodeChatTurnBudget } from "./chat-turn-budget";
+import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash } from "./store";
 
 const owner = "5a000000-0000-4000-8000-000000000001";
@@ -31,8 +32,10 @@ suiteFor(
   "nats",
 )("Code chat whole-turn budget", () => {
   let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
+  let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   beforeAll(async () => {
     database = await useMigratedDatabase("code_chat_turn_budget");
+    settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${owner}::uuid,'chat-budget-owner','local','user')`;
     const hashes = { source: codeSourceHash({}, "code.ts"), sdk: "a".repeat(64), bundle: codeBundleHash("") };
     const manifest = {
@@ -53,6 +56,7 @@ suiteFor(
       VALUES(${runId}::uuid,${codeId},${versionId}::uuid,'schedule','fixture','running',1000,10)`;
   });
   afterAll(async () => {
+    settings?.mockRestore();
     await database?.drop();
   });
 
