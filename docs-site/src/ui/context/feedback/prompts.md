@@ -218,7 +218,11 @@ const result = await prompts.dialog<"publish" | "draft">(
 );
 ```
 
-For a bare surface, the caller owns all visible panel structure. `DialogHeader` remains available for that structure. A prompt opened from inside another prompt is stacked above it; the underlying Solid state stays mounted until the nested prompt closes.
+For a bare surface, the caller owns all visible panel structure. `DialogHeader` remains available for that structure. A prompt opened from inside another prompt replaces it in the same frame; the underlying Solid state stays mounted until the nested prompt closes, so its inputs and scroll position are there again afterwards. See [One dialog replaces another](#one-dialog-replaces-another).
+
+## One dialog replaces another
+
+Dialogs never lie on top of each other. A dialog, prompt, or confirmation opened from an open dialog takes the same frame: the old content fades out in 80 ms, the frame changes to the new size in `--k2b-motion-morph` with `--k2b-ease-morph`, and the new content fades in from 110 ms, already at its final width, so it never rewraps. The backdrop stays. Focus moves into the new content at once, without waiting for the morph. Closing it, by its own button, Escape, or Back, runs the same morph backwards and returns focus to the control that opened it. A change that is interrupted turns around from where it is. On a phone, between sheets, only the height changes, from the bottom edge. With reduced motion the content and size change in one frame. The dialog announces the new level's title, and for an `alertdialog` its sentence too, through a live region inside the dialog. `panelDialogFixedOptions` keeps one size for flows that should not change size.
 
 A bare frame takes the height of its content, up to the dialog's height budget; only `size: "full"` gives it a fixed height. Content that needs a fixed height, such as a settings modal, sets that height itself, for example `height: min(86dvh, 40rem)`. A percentage such as `h-full` does not fill the dialog: the frame's height depends on the content, so the percentage has nothing to resolve against and the content keeps its own height.
 
@@ -516,7 +520,7 @@ const removeProject = async () => {
 
 All prompts accept an optional `signal: AbortSignal`. Aborting resolves the
 prompt as cancellation and closes only that prompt, including when another
-prompt is stacked above it. An already-aborted signal does not mount a dialog.
+prompt has replaced it. An already-aborted signal does not mount a dialog.
 Use this to tie a prompt to an operation or component lifetime; it does not
 confirm or submit the form. Normal dismissal and unmount remove the listener.
 
