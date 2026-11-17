@@ -39,42 +39,10 @@ test("the gate fails on every other result and names the jobs", async () => {
   }
 });
 
-test("UI shards and fixture checks share the UI path filter and both failures block the gate", async () => {
-  for (const id of ["ui", "ui-tests"]) {
-    expect(workflow.jobs[id]?.if).toBe("needs.changes.outputs.ui == 'true'");
-    expect(workflow.jobs[id]?.needs).toContain("changes");
-    expect(jobs).toContain(id);
-    expect(pathFiltered).toContain(id);
-    expect(await gate({ [id]: "failure" })).toEqual({ code: 1, stderr: `Jobs that did not pass: ${id} (failure)` });
-  }
-  expect(await gate({ ui: "skipped", "ui-tests": "skipped" })).toEqual({ code: 0, stderr: "" });
-  const commands = workflow.jobs.ui?.steps.map((step) => step.run).filter(Boolean);
-  expect(commands).toEqual([
-    "bun run --cwd packages/ui build",
-    "bun run --cwd packages/ui typecheck",
-    "bun run --cwd packages/ui fixture:typecheck",
-    "bun run --cwd packages/ui fixture:build",
-  ]);
-});
-
-test("the UI path filter exercises workflow, runner, and weight changes", () => {
-  const script = workflow.jobs.changes?.steps.map((step) => step.run ?? "").find((run) => run.includes('echo "ui='));
-  const pattern = /echo "ui=\$\(match '([^']+)'\)"/.exec(script ?? "")?.[1];
-  if (!pattern) throw new Error("missing UI path filter");
-  const filter = new RegExp(pattern);
-  for (const file of [
-    "packages/ui/src/control.tsx",
-    "packages/ssr/src/build.ts",
-    "fixtures/ui-ssr/src/Fixture.tsx",
-    ".github/workflows/ci.yml",
-    "scripts/run-tests.ts",
-    "scripts/run-tests.test.ts",
-    "scripts/test-weights.ts",
-    "scripts/test-weights.test.ts",
-    "scripts/test-weights.json",
-  ])
-    expect(filter.test(file)).toBeTrue();
-  expect(filter.test("packages/mail/src/service.ts")).toBeFalse();
+test("the UI build job does not repeat the unit shards' tests", () => {
+  const commands = workflow.jobs.ui?.steps.map((step) => step.run ?? "");
+  expect(commands).toBeDefined();
+  expect(commands?.some((command) => /\bbun (?:run .*\btest\b|test\b)/.test(command))).toBeFalse();
 });
 
 test("the gate fails when a job that must always run was skipped", async () => {

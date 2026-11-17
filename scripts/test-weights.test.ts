@@ -30,7 +30,6 @@ test("refreshes integration weights from both historical and sharded CI jobs", (
   expect(jobMode("integration")).toBe("integration");
   expect(jobMode("integration (3)")).toBe("integration");
   expect(jobMode("unit (2)")).toBe("unit");
-  expect(jobMode("ui-tests (3)")).toBe("unit");
   expect(jobMode("webkit (7)")).toBe("browser");
   expect(jobMode("grids (1)")).toBeUndefined();
   expect(jobMode("integration extra")).toBeUndefined();
@@ -44,7 +43,6 @@ test("imports completed suites from failed and budget-aborted jobs instead of se
     { id: 4, name: "unit (1)", conclusion: "cancelled" },
     { id: 5, name: "grids (1)", conclusion: "success" },
     { id: 6, name: "webkit (5)", conclusion: "skipped" },
-    { id: 7, name: "ui-tests (2)", conclusion: "success" },
   ];
   const logs: Record<number, string> = {
     1: "=== live-turn: 72.7s",
@@ -56,7 +54,6 @@ test("imports completed suites from failed and budget-aborted jobs instead of se
     ].join("\n"),
     3: "=== database: 23s",
     4: "=== package: 45s",
-    7: "=== @k2b/ui rest: 491.9s",
   };
   const read = (id: number) => {
     if (!(id in logs)) throw new Error(`unexpected log request: ${id}`);
@@ -70,12 +67,7 @@ test("imports completed suites from failed and budget-aborted jobs instead of se
     ]),
   );
   expect(times.integration).toEqual(new Map([["database", 23]]));
-  expect(times.unit).toEqual(
-    new Map([
-      ["package", 45],
-      ["@k2b/ui rest", 491.9],
-    ]),
-  );
+  expect(times.unit).toEqual(new Map([["package", 45]]));
   expect(collectJobTimes(jobs, read, ["browser"]).unit.size).toBe(0);
   expect(() => collectJobTimes([{ ...jobs[0], conclusion: null }], read)).toThrow("expected success, failure, timed_out, or cancelled");
 });

@@ -1248,22 +1248,10 @@ Grids certification runs in its own path-filtered job. Every integration shard
 gets fresh service containers, and `gate` requires the whole matrix to succeed.
 
 The path-filtered `ui` job builds and typechecks `@k2b/ui` and its standalone
-fixture. `ui-tests` runs the existing UI test parts and behavior tests in three
-shards on `ubuntu-24.04`, using the unit weights and the same 20-minute execution
-budget, 15-minute warning target, and 30-minute job limit. Both jobs run when
-`changes.outputs.ui` is true, and both are required by `gate`. The UI filter also
-includes changes to `ci.yml`, the test runner, and the weight files, so CI
-exercises changes to its own shard configuration.
-
-The UI part weights sum per-file maxima from three green UI jobs on November 17
-(runs 44140776114, 44150884582, 44158698744) and the completed tests of the
-budget-aborted job in run 44171436456. They include 13.3 seconds of measured
-build overhead per part and 9.4 seconds for the packed-consumer check in `rest`.
-With the existing behavior weight, three shards predict 785.0, 492.0, and
-615.9 seconds. The slowest leaves 115 seconds below the 15-minute target and
-415 seconds below the execution budget; two shards predict 969.3 seconds,
-above the target. Future `ui-tests` job timings refresh the unit table through
-`bun scripts/test-weights.ts --mode unit --run <id> <id> <id>`.
+fixture. UI tests run in the existing unfiltered `unit` shards, including the
+package's test parts, behavior suite, standalone fixture render test, and
+packed-consumer check. The `ui` job does not repeat them. `gate` requires both
+`unit` and, when `changes.outputs.ui` is true, `ui`.
 
 The unit, WebKit, integration, and Grids jobs run on the runner that the
 repository variable `CI_HEAVY_RUNNER` names, and on `ubuntu-24.04` when it is
@@ -1304,13 +1292,14 @@ budget unchanged. Refresh after browser suites grow or timings drift, even
 when the jobs still pass. An outdated table can balance predicted times while
 leaving actual times far apart.
 
-The runner tests check that every unit, WebKit, integration, and UI suite is
+The runner tests check that every unit, WebKit, and integration suite is
 assigned exactly once and each predicted shard fits its target. WebKit must
 fit 55% of its 20-minute execution budget. They also cover deterministic
-assignment and distributing unmeasured new files. The UI guard also expands the
-package test parts and behavior suite to verify that every file from the
-package test command and every behavior file runs
-exactly once and the packed-consumer check is retained. These
+assignment and distributing unmeasured new files. A UI coverage guard derives
+its expected files from `listTestFiles(packages/ui)` and expands the actual
+`unit` matrix's package parts and behavior commands. Every UI test file must
+run exactly once; adding a file outside the selected paths fails the guard.
+The packed-consumer check must also run once. These
 checks validate the measured plan rather than a future runner's speed.
 Importer tests cover failed jobs, unexecuted suites, and replacing old weights
 when the selected runs are faster. Actual times still depend on the runner: a whole
