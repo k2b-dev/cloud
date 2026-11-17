@@ -187,16 +187,22 @@ most 2,000 characters, and quotes count towards the draft's 20,000 characters.
 `from` is optional and only a hint for the composer. When the turn is submitted,
 Cloud checks that the message is in the conversation and that `text` stands in
 its visible text, compared without whitespace. An answer's visible text is the
-rendered Markdown of all text in its turn. Cloud checks at most 50,000 characters
-of an answer, as much as it keeps of one message for search; a quote of a longer
-answer returns HTTP 400. Cloud then sets `from` from that message: `assistant`
-for an answer, `user` for the person's own message, `automation` for a message
-an automation sent. A quote that fails returns HTTP 400 with the reason, and
-nothing is sent. The user message keeps the checked quotes in `meta.quotes`, the
+rendered Markdown of all text in its turn. Cloud checks answers of up to 50,000
+characters, counting a blank line between the turn's messages; that is as much as
+it keeps of one message for search. Cloud then sets `from` from that message:
+`assistant` for an answer, `user` for the person's own message, `automation` for
+a message an automation sent. A quote that fails returns HTTP 400, nothing is
+sent, and the response carries a stable `code` with a message in the request's
+language: `quote_missing` (the message is not in the conversation),
+`quote_not_quotable` (not an answer or a user message), `quote_mismatch` (the
+passage is not in the message), or `quote_too_long` (the answer is longer than
+50,000 characters). The user message keeps the checked quotes in `meta.quotes`, the
 only source a client reads them from. The model reads each quote as a text part
 Cloud writes. Text never counts as a quote: Cloud breaks quote markers in sent,
-edited, and steered text, and again in every user message it gives the model,
-unless `meta.quotes` holds that quote. Editing a queued message and retrying a
+edited, and steered text, and again in every user message it gives a model,
+unless `meta.quotes` holds that quote. Background models that read a chat, such as
+titles, search summaries, and memory learning, read only the person's own words,
+without quotes. Editing a queued message and retrying a
 message keep the checked quotes and apply the same bounds; the bounds count the
 person's words and the quoted passages, not attached items.
 
