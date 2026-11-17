@@ -187,7 +187,10 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     covered.add(element);
     // A dialog that hosts the hint blurs but stays usable: the hint in the top layer escapes the blur, not an inert
     // ancestor. Its other input lifts the screen like any click or key.
-    if (!element.hasAttribute("inert") && !element.contains(hint)) {
+    if (element.contains(hint)) {
+      // Covers stay from pass to pass: one that holds the hint again (a dialog above it closed) is usable again.
+      if (madeInert.delete(element)) element.removeAttribute("inert");
+    } else if (!element.hasAttribute("inert")) {
       element.setAttribute("inert", "");
       madeInert.add(element);
     }
