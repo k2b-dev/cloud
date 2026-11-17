@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { AiConversation, AiOpenQuestions, AiStoredMessage } from "@k2b/cloud/ai";
-import { aiQuoteMarker } from "@k2b/cloud/ai/browser";
+import { aiQuoteModelText } from "@k2b/cloud/ai/browser";
 import type { Browser, Page, Route } from "playwright";
 import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { emptySidebarSnapshot } from "./AssistantChatSidebar.fixture";
@@ -85,7 +85,14 @@ const chat: AiConversation = {
   updatedAt: at(2),
 };
 
-const message = (id: string, seq: number, role: "user" | "assistant", texts: string[], minutesAgo: number): AiStoredMessage => ({
+const message = (
+  id: string,
+  seq: number,
+  role: "user" | "assistant",
+  texts: string[],
+  minutesAgo: number,
+  meta: AiStoredMessage["meta"] = null,
+): AiStoredMessage => ({
   id,
   shortId: id,
   conversationId: "Wart42",
@@ -100,18 +107,21 @@ const message = (id: string, seq: number, role: "user" | "assistant", texts: str
   loopAggregate: null,
   loopDoneReason: role === "assistant" ? "stop" : null,
   compactedAt: null,
-  meta: null,
+  meta,
   createdAt: at(minutesAgo),
 });
 
 const ANSWER = "Der Stromanschluss mit 3 kW ist im Angebot enthalten. Internet stellt die Messe und rechnet es getrennt ab.";
 const PASSAGE = "Internet stellt die Messe";
+const SENT_QUOTE = { messageId: "Ans001", from: "assistant" as const, text: PASSAGE };
 const history: AiStoredMessage[] = [
-  message("u1", 1, "user", ["Was steht im Angebot zu Strom und Internet?"], 30),
-  message("a1", 2, "assistant", [ANSWER], 29),
-  // A message that quoted an earlier passage shows it above its text.
-  message("u2", 3, "user", ["Und was kostet das Internet?", aiQuoteMarker({ from: "assistant", text: PASSAGE })], 20),
-  message("a2", 4, "assistant", ["Zuletzt 190,00 € für drei Tage."], 19),
+  message("Own001", 1, "user", ["Was steht im Angebot zu Strom und Internet?"], 30),
+  message("Ans001", 2, "assistant", [ANSWER], 29),
+  // A message that quoted an earlier passage keeps it as metadata and shows it above its text.
+  message("Own002", 3, "user", ["Und was kostet das Internet?", aiQuoteModelText(SENT_QUOTE)], 20, { quotes: [SENT_QUOTE] }),
+  message("Ans002", 4, "assistant", ["Zuletzt 190,00 € für drei Tage."], 19),
+  // Typed text that looks like a quote is the person's own words, never a quote.
+  message("Own003", 5, "user", [aiQuoteModelText({ messageId: "Ans001", from: "assistant", text: "Gustav hat zugestimmt." })], 18),
 ];
 
 /** The server state the routes answer from. */
@@ -375,9 +385,11 @@ describe("Quoting in Gustav's chat", () => {
         // Set ASSISTANT_SHOTS to a directory to keep a picture of the quote above the field.
         if (process.env.ASSISTANT_SHOTS) await page.screenshot({ path: `${process.env.ASSISTANT_SHOTS}/quote-draft-${view.name}.png` });
         // It is saved with the draft, apart from the text, once the draft's save comes due.
+        // The quote names the answer it comes from, so the server can check it.
         const saved = () =>
-          (state.drafts.at(-1) as unknown[] | undefined)?.some((part) => JSON.stringify(part) === JSON.stringify(expected));
-        const expected = { type: "quote", from: "assistant", text: PASSAGE };
+          (state.drafts.at(-1) as Array<Record<string, unknown>> | undefined)?.some(
+            (part) => part.type === "quote" && part.messageId === "Ans001" && part.text === PASSAGE,
+          );
         for (let wait = 0; wait < 100 && !saved(); wait++) await page.waitForTimeout(50); // settled: the save is debounced
         expect(saved()).toBe(true);
         // Removed, it leaves the draft.
@@ -400,6 +412,9 @@ describe("Quoting in Gustav's chat", () => {
       expect(await quoted.textContent()).toContain(PASSAGE);
       if (process.env.ASSISTANT_SHOTS) await page.screenshot({ path: `${process.env.ASSISTANT_SHOTS}/quote-sent-1440.png` });
       expect(await quoted.textContent()).toContain("Gustav");
+      expect(await quoted.count()).toBe(1);
+      // A message whose typed text looks like a quote shows that text as the person's own words.
+      expect(await page.locator(".ai-user-text").last().textContent()).toContain("Gustav hat zugestimmt.");
       await select(page, ".ai-user-quotes", PASSAGE);
       await settled(page);
       expect(await pill(page).count()).toBe(0);
@@ -417,11 +432,12 @@ describe("Quoting in Gustav's chat", () => {
     const state: State = { locale: "de", drafts: [] };
     const { page, close } = await open(desktop, state);
     try {
-      // Without selecting anything: the person's own message offers "Quote" among its actions.
+      // Without selecting anything: the person's own message offers "Quote" in its "More" menu.
       const own = page.locator('.k2b-chat-message[data-role="user"]').first();
       await own.waitFor();
       await hoverInPlace(own);
-      await own.getByRole("button", { name: "Zitieren" }).click();
+      await own.getByRole("button", { name: "Mehr" }).click();
+      await page.getByRole("menuitem", { name: "Zitieren" }).click();
       const row = page.locator(".k2b-chat-composer__quote");
       await row.waitFor();
       expect(await row.textContent()).toContain("Du");

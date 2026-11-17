@@ -3,6 +3,7 @@ import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { sql } from "../runtime/clients";
 import { aiFileStore } from "./files-store";
 import {
+  AiQueuedMessageTooLarge,
   drainQueuedMessages,
   editQueuedMessage,
   enqueueChatMessage,
@@ -10,8 +11,9 @@ import {
   migrateAiMessageQueue,
   updateQueuedMessage,
 } from "./message-queue";
+import { aiQuoteModelText } from "./quote-markers";
 import { aiConversations } from "./store";
-import type { AiConversationService } from "./types";
+import type { AiConversationService, AiDraftContentPart } from "./types";
 
 const integration = testFor("database");
 // Uses the same local Postgres fixture contract as store.integration.test.ts.
@@ -136,3 +138,51 @@ integration(
   },
   30_000,
 );
+
+integration("an edit in the queue keeps the message's checked quotes and the bound of 20000 characters with them", async () => {
+  await migrateAiMessageQueue();
+  const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users(uid,provider,profile,display_name,mail,given_name,sn)
+    VALUES (${crypto.randomUUID()},'local','user','Queue quotes','queue-quotes@example.test','Queue','Quotes') RETURNING id`;
+  const chat = await aiConversations.createConversation({ ownerUserId: user!.id });
+  // Ten quotes of 1999 characters leave room for ten characters of the person's own words.
+  const quotes = Array.from({ length: 10 }, (_, index) => ({
+    messageId: `Ans${index}`,
+    from: "assistant" as const,
+    text: `${index}`.repeat(1_999),
+  }));
+  const content: AiDraftContentPart[] = [
+    { type: "text", text: "Kurz" },
+    ...quotes.map((quote) => ({ type: "quote" as const, messageId: quote.messageId, text: quote.text })),
+  ];
+  const userMessage = {
+    role: "user" as const,
+    content: [
+      { type: "text" as const, text: "Kurz" },
+      ...quotes.map((quote) => ({ type: "text" as const, text: aiQuoteModelText(quote) })),
+    ],
+  };
+  const id = crypto.randomUUID();
+  try {
+    const input: Parameters<AiConversationService["submitChatTurn"]>[0] = {
+      conversationId: chat.id,
+      modelId: "fixture",
+      runConfig: { kind: "chat", input: userMessage.content, toolSource: { kind: "none" }, quotes },
+      userMessage,
+      expectedDraftRevision: chat.draft.revision,
+      expectedProjectId: null,
+    };
+    await enqueueChatMessage(id, input, content);
+    await expect(editQueuedMessage(chat.id, id, "Etwas mehr Text")).rejects.toThrow(AiQueuedMessageTooLarge);
+    expect(await editQueuedMessage(chat.id, id, "Morgen?")).toBe(true);
+    const [row] = await sql<{ submission: { userMessage: { content: { text: string }[] }; runConfig: { quotes: unknown } } }[]>`
+      SELECT submission FROM ai.queued_messages WHERE id = ${id}::uuid`;
+    expect(row!.submission.runConfig.quotes).toEqual(quotes);
+    expect(row!.submission.userMessage.content.map((part) => part.text)).toEqual([
+      "Morgen?",
+      ...quotes.map((quote) => aiQuoteModelText(quote)),
+    ]);
+  } finally {
+    await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+    await sql`DELETE FROM auth.users WHERE id=${user!.id}::uuid`;
+  }
+});

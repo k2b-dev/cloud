@@ -42,10 +42,10 @@ describe("Cloud chat composer adapter", () => {
   test("a saved draft brings its quoted passages back above the field, apart from its text", () => {
     const draft = aiComposerDraft([
       { type: "text", text: "Was heißt das?" },
-      { type: "quote", from: "assistant", text: "Strom wird nach Verbrauch berechnet." },
+      { type: "quote", messageId: "Ans001", from: "assistant", text: "Strom wird nach Verbrauch berechnet." },
     ]);
     expect(draft.text).toBe("Was heißt das?");
-    expect(draft.quotes).toEqual([{ from: "assistant", text: "Strom wird nach Verbrauch berechnet." }]);
+    expect(draft.quotes).toEqual([{ messageId: "Ans001", from: "assistant", text: "Strom wird nach Verbrauch berechnet." }]);
     expect(draft.attachments).toEqual([]);
   });
   test("promotes long or overflowing pasted text to one plain-text file", () => {
