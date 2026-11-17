@@ -1,6 +1,14 @@
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import type { AiTurnBlock, AiWireEvent } from "./protocol";
 
+/** Compiler messages may quote source literals; public diagnostics keep their stable code and location. */
+const withoutDiagnosticMessages = (diagnostics: unknown[]): unknown[] =>
+  diagnostics.map((diagnostic) =>
+    diagnostic !== null && typeof diagnostic === "object"
+      ? Object.fromEntries(Object.entries(diagnostic).filter(([key]) => key !== "message"))
+      : diagnostic,
+  );
+
 /** Source maps, bundles, declarations and diff rows belong to execution, never to public Code details. */
 const withoutCodeSource = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(withoutCodeSource);
@@ -14,7 +22,11 @@ const withoutCodeSource = (value: unknown): unknown => {
       )
       .map(([key, item]) => [
         key,
-        ["project", "diff", "result", "error", "details", "items", "files"].includes(key) ? withoutCodeSource(item) : item,
+        ["diagnostics", "warnings"].includes(key) && Array.isArray(item)
+          ? withoutDiagnosticMessages(item)
+          : ["project", "diff", "result", "error", "details", "items", "files"].includes(key)
+            ? withoutCodeSource(item)
+            : item,
       ]),
   );
 };

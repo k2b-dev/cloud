@@ -970,7 +970,8 @@ Expanded Code run steps describe the work and its outcome in words. They do
 not display the module, raw output, or diagnostic logs. Public chat history,
 pending actions, and live snapshots omit Code source fields, including the
 `code_run` input's `code`, `code_write` content, project source maps, SDK
-declarations and source rows in Code tool results. Execution and model
+declarations, source rows and raw diagnostic messages in Code tool results.
+Diagnostic codes and worded summaries remain available. Execution and model
 continuation retain the original arguments and results. An approval inside a
 run names the target application from its stored approval and uses that
 application's catalog in the turn's request language. The administrator's

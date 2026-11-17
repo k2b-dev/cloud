@@ -16,6 +16,15 @@ test("follow-up and resumed provider requests retain original Code arguments and
     },
     { name: "code_read", args: { codeId: "ABCDEF" }, result: { version: 1, files: { "code.ts": source } } },
     { name: "code_pull", args: { codeId: "ABCDEF" }, result: { version: 1, files: { "code.ts": source } } },
+    ...["code_check", "code_test", "code_simulate"].map((name) => {
+      const checked = {
+        ok: false,
+        diagnostics: [
+          { code: "TS2322", message: `Type '${source}' is not assignable to type 'allowed'.`, file: "code.ts", line: 1, column: 7 },
+        ],
+      };
+      return { name, args: { codeId: "ABCDEF" }, result: name === "code_check" ? { result: checked } : checked };
+    }),
   ];
   for (const { name, args, result } of cases) {
     const requests: ProviderRequest[] = [];

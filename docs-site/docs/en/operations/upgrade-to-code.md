@@ -42,8 +42,9 @@ The exact list of removed routes, commands, capabilities and settings is in
 
 Public chat REST responses and SSE events omit Code source fields, including
 `code_run.args.code`, `code_write.args.content`, project source maps, SDK
-declarations and source rows in Code tool results. This also applies to stored
-history, pending actions and stream snapshots. Clients must accept these
+declarations, source rows and raw diagnostic messages in Code tool results.
+Diagnostic codes and worded summaries remain available. This also applies to
+stored history, pending actions and stream snapshots. Clients must accept these
 fields being absent and use the remaining step status, review and application
 metadata to describe the work.
 

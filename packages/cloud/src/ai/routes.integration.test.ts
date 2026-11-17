@@ -135,11 +135,23 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
-  test("REST history omits lasting Code source and keeps the approval in the turn locale", async () => {
+  test("REST history omits lasting Code source and raw diagnostics, keeping words and turn locale", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Accept-Language": "en" };
     const source = "export default () => 'rest-source-fixture'";
+    const literal = "rest-diagnostic-source-fixture";
+    const diagnostic = {
+      code: "TS2322",
+      message: `Type '"${literal}"' is not assignable to type '"allowed"'.`,
+      file: "code.ts",
+      line: 1,
+      column: 7,
+    };
+    const words = {
+      notices: [{ severity: "block", text: "The draft needs a correction.", consequence: "This version cannot be submitted." }],
+      mayDo: [],
+    };
     const app = spyOn(registry, "getApp").mockResolvedValue({
       id: "notebooks",
       name: "Notebooks",
@@ -164,6 +176,12 @@ suite("global AI conversation boundaries", () => {
           { type: "tool_call", id: "write", name: "code_write", args: { codeId: "ABCDEF", path: "code.ts", content: source } },
           { type: "tool_call", id: "read", name: "code_read", args: { codeId: "ABCDEF" } },
           { type: "tool_call", id: "pull", name: "code_pull", args: { codeId: "ABCDEF" } },
+          ...["code_check", "code_test", "code_simulate"].map((name) => ({
+            type: "tool_call" as const,
+            id: name,
+            name,
+            args: { codeId: "ABCDEF" },
+          })),
         ],
       });
       for (const name of ["code_read", "code_pull"])
@@ -173,6 +191,15 @@ suite("global AI conversation boundaries", () => {
           name,
           result: { version: 1, files: { "code.ts": source } },
         });
+      for (const name of ["code_check", "code_test", "code_simulate"]) {
+        const checked = { ok: false, diagnostics: [diagnostic], warnings: [diagnostic] };
+        await store.append({
+          role: "tool_result",
+          callId: name,
+          name,
+          result: name === "code_check" ? { version: 1, result: checked, words } : { version: 1, ...checked, words },
+        });
+      }
       await recordAiToolReview({
         conversationId: chat.id,
         turnId: turn.id,
@@ -191,11 +218,24 @@ suite("global AI conversation boundaries", () => {
       expect(response.status).toBe(200);
       const page = await response.json();
       expect(JSON.stringify(page)).not.toContain(source);
+      expect(JSON.stringify(page)).not.toContain(literal);
+      for (const name of ["code_check", "code_test", "code_simulate"]) {
+        const result = page.messages.find(
+          (message: { message: { role: string; name?: string } }) =>
+            message.message.role === "tool_result" && message.message.name === name,
+        ).message.result;
+        expect(result.words).toEqual(words);
+        const checked = name === "code_check" ? result.result : result;
+        expect(checked.diagnostics).toEqual([{ code: "TS2322", file: "code.ts", line: 1, column: 7 }]);
+        expect(checked.warnings).toEqual(checked.diagnostics);
+      }
       expect(
         page.messages.find((message: { meta?: { toolPresentations?: unknown } }) => message.meta?.toolPresentations).meta.toolPresentations
           .run,
       ).toMatchObject({ appName: "Notizbücher", title: "Notiz erstellen" });
-      expect(JSON.stringify(await store.load())).toContain(source);
+      const canonical = JSON.stringify(await store.load());
+      expect(canonical).toContain(source);
+      expect(canonical).toContain(literal);
     } finally {
       app.mockRestore();
       await sql`DELETE FROM ai.conversations WHERE id = ${chat.id}::uuid`;

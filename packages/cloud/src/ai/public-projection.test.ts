@@ -195,7 +195,7 @@ test("public history omits lasting Code inputs, projects and source results with
             },
           ],
         },
-        meta: { toolInterimResults: { call: { files: { "code.ts": source } } } },
+        meta: { toolInterimResults: { call: { files: { "code.ts": source }, diagnostics: [{ code: "TS2322", message: source }] } } },
       },
       {
         ...stored("result", "assistant", "turn"),
@@ -207,6 +207,8 @@ test("public history omits lasting Code inputs, projects and source results with
             version: 1,
             files: { "code.ts": source },
             declarations: source,
+            diagnostics: [{ code: "TS2322", message: source }],
+            warnings: [{ code: "code_warning", message: source }],
             diff: { files: [{ path: "code.ts", lines: [{ kind: "add", text: source }] }] },
           },
         },

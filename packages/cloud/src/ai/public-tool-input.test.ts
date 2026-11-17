@@ -235,3 +235,37 @@ test("public Code projection keeps runtime output and authored test data, includ
   const checked = { result: { bundle: source }, manifest: { hashes: { bundle: "checked-bundle-hash" } }, words: { notices: [] } };
   expect(publicAiToolResult("code_check", checked)).toEqual({ result: {}, manifest: checked.manifest, words: checked.words });
 });
+
+test("raw Code diagnostics omit source-bearing messages in public reads and resume blocks, retaining codes and words", () => {
+  const literal = "source-fixture";
+  const diagnostic = {
+    code: "TS2322",
+    message: `Type '"${literal}"' is not assignable to type '"allowed"'.`,
+    file: "code.ts",
+    line: 1,
+    column: 7,
+  };
+  const { message: _message, ...publicDiagnostic } = diagnostic;
+  const words = {
+    notices: [{ severity: "block", text: "The draft needs a correction.", consequence: "This version cannot be submitted." }],
+    mayDo: [],
+  };
+  for (const name of ["code_check", "code_test", "code_simulate"]) {
+    const checked = { ok: false, diagnostics: [diagnostic], warnings: [diagnostic] };
+    const result = name === "code_check" ? { version: 1, result: checked, words } : { version: 1, ...checked, words };
+    const canonical = structuredClone(result);
+    const projected = publicAiToolResult(name, result);
+    const publicChecked = { ok: false, diagnostics: [publicDiagnostic], warnings: [publicDiagnostic] };
+    expect(projected).toEqual(
+      name === "code_check" ? { version: 1, result: publicChecked, words } : { version: 1, ...publicChecked, words },
+    );
+    expect(JSON.stringify(projected)).not.toContain(literal);
+    const raw: AiTurnBlock = { ...block, name, args: {}, result };
+    for (const event of [
+      { ...base, type: "block_set" as const, block: raw },
+      { ...base, type: "turn_started" as const, blocks: [raw], modelId: "fixture", providerModel: "fixture" },
+    ])
+      expect(new TextDecoder().decode(encodeSseEvent(publicAiToolEvent(event)))).not.toContain(literal);
+    expect(result).toEqual(canonical);
+  }
+});
