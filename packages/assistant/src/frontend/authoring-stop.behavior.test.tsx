@@ -42,7 +42,10 @@ for (const locale of ["de", "en"]) {
     const [busy, setBusy] = createSignal(false);
     let reject = true;
     let release!: () => void;
-    const Timeline = () => <Chat.Timeline items={createAiChatTimeline({ messages: history, activeTurn: () => null })()} />;
+    const Timeline = () => {
+      const items = createAiChatTimeline({ messages: history, activeTurn: () => null });
+      return <Chat.Timeline items={items()} />;
+    };
     const dispose = render(
       () => (
         <LocaleProvider locale={locale}>

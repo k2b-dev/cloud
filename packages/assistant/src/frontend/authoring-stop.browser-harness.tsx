@@ -23,6 +23,10 @@ root.style.cssText = "max-width: 48rem; margin: 0 auto; padding: 24px 16px";
 // Measured with the typeface and icons loaded, as Cloud preloads them, so a rectangle change is the card's own and not a
 // font swap.
 await Promise.all(["400 14px 'IBM Plex Sans'", "600 14px 'IBM Plex Sans'", "16px tabler-icons"].map((font) => document.fonts.load(font)));
+const Timeline = () => {
+  const items = createAiChatTimeline({ messages: history, activeTurn: () => null });
+  return <Chat.Timeline items={items()} />;
+};
 render(
   () => (
     <LocaleProvider locale={locale}>
@@ -46,7 +50,7 @@ render(
         }}
       >
         <Chat>
-          <Chat.Timeline items={createAiChatTimeline({ messages: history, activeTurn: () => null })()} />
+          <Timeline />
         </Chat>
       </AiChatActionsProvider>
     </LocaleProvider>

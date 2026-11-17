@@ -183,11 +183,21 @@ describe("the v10 pause card", () => {
                     card: card.getBoundingClientRect().toJSON(),
                     textBottom: quiet.getBoundingClientRect().bottom,
                     reducedMotion: getComputedStyle(button).transitionDuration,
+                    buttonFill: getComputedStyle(button).backgroundColor,
+                    expectedFill: (() => {
+                      const probe = document.createElement("span");
+                      probe.style.background = innerWidth === 390 ? "var(--k2b-action-solid)" : "var(--k2b-surface)";
+                      card.append(probe);
+                      const color = getComputedStyle(probe).backgroundColor;
+                      probe.remove();
+                      return color;
+                    })(),
                   };
                 });
                 expect(layout.styles.map((style) => style.size)).toEqual([14, 13]);
                 expect(layout.styles.every((style) => style.weight === "400")).toBe(true);
                 for (const contrast of layout.contrast) expect(contrast).toBeGreaterThanOrEqual(4.5);
+                expect(layout.buttonFill).toBe(layout.expectedFill);
                 expect(layout.overflow).toBe(0);
                 expect(layout.pageOverflow).toBe(0);
                 for (const duration of layout.reducedMotion.split(",")) expect(parseFloat(duration)).toBeLessThanOrEqual(0.001);
@@ -242,6 +252,7 @@ describe("the v10 pause card", () => {
               await same();
               expect(await button.isDisabled()).toBe(true);
               expect(await count(page)).toBe(1);
+              expect(await button.locator(".k2b-button__label").evaluate((label) => getComputedStyle(label).opacity)).toBe("1");
               expect(await quiet(page).innerText()).toBe(locale === "de" ? "Gustav macht weiter …" : "Gustav is continuing …");
               if (capture) await shot(page, "sending", width);
               await finish(page, false);

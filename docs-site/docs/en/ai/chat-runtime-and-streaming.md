@@ -1127,8 +1127,8 @@ in that response when the repair allowance is spent, and ends with a short
 persisted receipt in the chat. Assistant renders it in English or German as one
 neutral notice: one sentence says Gustav is taking a break; a quiet line names
 the reason (the same problem repeated, the step limit or the work allowance)
-and whether a draft or version is saved. The pause has no checklist; the chat's
-task list already shows progress. The receipt contains counts, so it does not
+and whether a draft or version is saved. The pause has no checklist.
+The receipt contains counts, so it does not
 invent a saved version's number. This summary comes from settled tool results,
 not model prose; a later draft edit invalidates earlier passing checks. No
 additional model call writes the notice. Saved results and the server-held
