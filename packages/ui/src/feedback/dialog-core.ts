@@ -4,6 +4,7 @@ import { returnFocus, ringOnReturn } from "../internal/focus-return";
 import { getK2bPortalRoot } from "../internal/portal";
 import { applyUiScope, readUiScope } from "../internal/portal-scope";
 import { RenderErrorBoundary } from "../internal/render-error";
+import { keepScroll, restoreScroll } from "../internal/scroll-places";
 import { resolveUiMessages } from "../intl/messages";
 import type { FrameMotion } from "./dialog-frame-motion";
 import { isPointInsideToast } from "./toast-hit";
@@ -147,22 +148,19 @@ const applyAccessibleName = (dialog: HTMLDialogElement, entry: DialogStackEntry)
 };
 
 /**
- * The exit fade and the level change (morph, announcement, kept scroll places) load in one module when the first dialog
- * opens, so islands that open dialogs do not carry them in their first bundle. A dialog that closes before it arrived
- * leaves at once (state, focus and result never wait for it); a level that replaces another waits for it, and changes
- * without it only if it cannot load.
+ * The exit fade and the level change (morph, announcement) load in one module when the first dialog opens, so islands
+ * that open dialogs do not carry them in their first bundle. Nothing waits for it: a dialog that closes before it
+ * arrived leaves at once, a level that replaces another changes at once (with its scroll places kept) and says its name
+ * as soon as the module is there.
  */
 let frameMotion: typeof import("./dialog-frame-motion") | undefined;
 let frameMotionLoading: Promise<void> | undefined;
-let frameMotionFailed = false;
 const loadFrameMotion = (): Promise<void> =>
   (frameMotionLoading ??= import("./dialog-frame-motion").then(
     (module) => {
       frameMotion = module;
     },
-    () => {
-      frameMotionFailed = true;
-    },
+    () => {},
   ));
 
 const schedule = (callback: () => void): void => {
@@ -529,6 +527,17 @@ export const createDialogCore = () => {
     }
   };
 
+  /** A level that replaces another says its name; before the module has loaded, as soon as it has. */
+  const announceLevel = (role: DialogStackEntry["role"]) => {
+    if (state.motion) state.motion.announce(role);
+    else
+      void loadFrameMotion().then(() => {
+        if (!state.element || !frameMotion) return;
+        state.motion ??= frameMotion.createFrameMotion(state.element);
+        state.motion.announce(role);
+      });
+  };
+
   const popTop = (result?: unknown) => {
     const top = state.stack.pop();
     if (!top) return;
@@ -544,14 +553,16 @@ export const createDialogCore = () => {
       // The same morph as forward, backwards: the closed level fades out over the one below, which shows as it was.
       const motion = state.motion;
       // Back: the closed level moves before the shown one, which stays the dialog's last child.
+      keepScroll(top.container);
       motion?.begin(top.container, true);
       previous.container.style.display = "";
+      restoreScroll(previous.container);
       applyPresentation(previous);
       applyAccessibleName(dialog, previous);
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
       if (motion) motion.arrive(previous.container, discard);
       else discard();
-      motion?.announce(previous.role);
+      announceLevel(previous.role);
       schedule(() => {
         if (!focusUnclaimed(dialog)) return;
         if (top.opener?.isConnected) returnFocus(top.opener, top.openerRing);
@@ -643,16 +654,16 @@ export const createDialogCore = () => {
     }
     // A dialog that waited for history while islands were disposed would open over content it was never meant for.
     if (disposals !== requested) return Promise.resolve(undefined);
-    // A level that replaces another waits for the level change, which has loaded since the first open in all but the
-    // fastest cases: its announcement and kept scroll places never depend on timing.
-    if (state.stack.length > 0 && !frameMotion && !frameMotionFailed)
-      return loadFrameMotion().then(() => openAfter(view, options, requested, uiScope));
     const dialog = ensureDialogElement();
     if (!state.motion && frameMotion) state.motion = frameMotion.createFrameMotion(dialog);
     listen();
     const previousTop = state.stack[state.stack.length - 1];
     // The shown level fades out while the new one replaces it in the same frame; it is hidden once it has faded.
-    if (previousTop) state.motion?.begin(previousTop.container);
+    if (previousTop) {
+      // Its scroll places survive being hidden below the new level, and a move when it shows again.
+      keepScroll(previousTop.container);
+      state.motion?.begin(previousTop.container);
+    }
     const activeElement = document.activeElement;
 
     const panelClassName = options.panelClassName ?? DEFAULT_PANEL_CLASS;
@@ -749,7 +760,7 @@ export const createDialogCore = () => {
           };
           if (state.motion) state.motion.arrive(container, hide);
           else hide();
-          state.motion?.announce(entry.role);
+          announceLevel(entry.role);
         }
 
         if (state.stack.length === 1) {

@@ -265,6 +265,28 @@ describe(`${browserName} one dialog replaces another`, () => {
     }
   });
 
+  test("a new change while a closed level still fades out leaves only the two contents of that change", async () => {
+    const page = await load();
+    try {
+      await openEditor(page);
+      const contents = await page.evaluate(() => {
+        const dialog = document.querySelector("dialog")!;
+        document.querySelector<HTMLButtonElement>("[data-ask]")!.click();
+        document.querySelector<HTMLButtonElement>("[data-keep]")!.click();
+        document.querySelector<HTMLButtonElement>("[data-ask]")!.click();
+        return {
+          questions: dialog.querySelectorAll("[data-level='question']").length,
+          disposed: [...(window as unknown as MorphWindow).disposed],
+        };
+      });
+      expect(contents).toEqual({ questions: 1, disposed: ["question"] });
+      await settle(page);
+      expect(await page.evaluate(() => document.querySelectorAll("dialog [data-level='question']").length)).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   test("closing everything during a morph fades out from what the eye sees, without a jump", async () => {
     const page = await load();
     try {

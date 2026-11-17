@@ -9,6 +9,8 @@
  * frame stands alone above the page, so nothing beside it moves.
  */
 
+import { restoreScroll } from "../internal/scroll-places";
+
 export { afterExitTransitions } from "../internal/exit-motion";
 
 /** Shares of the morph: the old content fades out in the first 80 of 280 ms, the new one waits 110 ms, then fades in 140 ms. */
@@ -17,7 +19,7 @@ const ARRIVE_DELAY_SHARE = 110 / 280;
 const ARRIVE_SHARE = 140 / 280;
 
 type Anchor = "center" | "bottom" | "fixed";
-type Fade = { animation: Animation; done: () => void };
+type Fade = { animation: Animation; to: 0 | 1; done: () => void };
 
 export type FrameMotion = {
   /**
@@ -59,20 +61,6 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   requestAnimationFrame(() => {
     fresh = false;
   });
-  /** Scroll places of a level that is hidden or moved, given back when it shows again. */
-  const scrollPlaces = new WeakMap<HTMLElement, (readonly [HTMLElement, number, number])[]>();
-  const keepScroll = (level: HTMLElement) =>
-    scrollPlaces.set(
-      level,
-      [...level.querySelectorAll<HTMLElement>("*")]
-        .filter((element) => element.scrollTop > 0 || element.scrollLeft > 0)
-        .map((element) => [element, element.scrollTop, element.scrollLeft] as const),
-    );
-  const restoreScroll = (level: HTMLElement) => {
-    for (const [element, top, left] of scrollPlaces.get(level) ?? []) element.scrollTo({ top, left, behavior: "instant" });
-    scrollPlaces.delete(level);
-  };
-
   let frame: Animation | undefined;
   const fades = new Map<HTMLElement, Fade>();
 
@@ -100,13 +88,18 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     top: Number.parseFloat(getComputedStyle(dialog).top) || 0,
   });
 
+  /** Its exact laid-out size: `offsetWidth` rounds, and a content a fraction narrower can wrap differently. */
+  const laidOut = (element: HTMLElement) => {
+    const { width, height } = getComputedStyle(element);
+    return { width, height };
+  };
   /** Out of the flow, at the size it has now, so it neither moves nor takes room while it fades. */
   const hold = (element: HTMLElement) => {
-    const { offsetWidth, offsetHeight } = element;
+    const { width, height } = laidOut(element);
     element.style.position = "absolute";
     element.style.inset = "0 auto auto 0";
-    element.style.width = `${offsetWidth}px`;
-    element.style.height = `${offsetHeight}px`;
+    element.style.width = width;
+    element.style.height = height;
     element.inert = true;
     element.setAttribute("aria-hidden", "true");
   };
@@ -117,8 +110,9 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   };
   /** At its final size while the frame moves around it. */
   const pin = (element: HTMLElement) => {
-    element.style.width = `${element.offsetWidth}px`;
-    element.style.height = `${element.offsetHeight}px`;
+    const { width, height } = laidOut(element);
+    element.style.width = width;
+    element.style.height = height;
     element.style.flex = "none";
   };
 
@@ -138,7 +132,7 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       easing: "linear",
       fill: "both",
     });
-    fades.set(element, { animation, done });
+    fades.set(element, { animation, to, done });
     animation.onfinish = () => {
       if (fades.get(element)?.animation !== animation) return;
       fades.delete(element);
@@ -157,12 +151,11 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
 
   const begin: FrameMotion["begin"] = (leaving, back) => {
     started = { from: seen(), anchor: anchor(), leaving };
-    // The level's scroll places survive both its move and being hidden below a newer level.
-    keepScroll(leaving);
     endFrame();
     hold(leaving);
     if (!back) return;
-    // The shown level stays the dialog's last child, as sheets and tone rules expect; the closed one moves before it.
+    // The shown level stays the dialog's last child, as sheets and tone rules expect; the closed one moves before it,
+    // with the scroll places the dialog core kept for it.
     dialog.insertBefore(leaving, live.nextSibling);
     restoreScroll(leaving);
   };
@@ -188,8 +181,14 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     if (!change) return;
     const { from, leaving } = change;
     unhold(arriving);
-    // A lower level that shows again has its scroll places back.
-    restoreScroll(arriving);
+    // Only this change's two contents share the frame: one that still fades out from an earlier change is gone now
+    // (one that comes back turns its fade around below).
+    for (const [element, { animation, to, done }] of fades)
+      if (to === 0 && element !== leaving && element !== arriving) {
+        fades.delete(element);
+        animation.cancel();
+        done();
+      }
     const leave = () => {
       unhold(leaving);
       left();
