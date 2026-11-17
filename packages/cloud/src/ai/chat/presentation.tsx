@@ -170,8 +170,9 @@ const storedItems = (
   actions: AiChatActions,
   views: TurnViews,
   locale: string,
-  idle: boolean,
+  activeTurnId: string | null,
 ): ChatTimelineItem[] => {
+  const idle = activeTurnId === null;
   const timeline = buildAiMessageTimeline([...messages]);
   const lastItemOfLoop = new Map<string, number>();
   // A failed turn's notice ends its last item, which is its user message when the model never answered.
@@ -443,6 +444,7 @@ const storedItems = (
               last && (segmentPhase === "stopped" || silent) && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
                 ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
                 : undefined,
+            superseded: (activeTurnId !== null && activeTurnId !== item.loopId) || lastMessage?.id !== messages.at(-1)?.id,
             continuable:
               idle &&
               !(item.loopId && reviewLoops.has(item.loopId)) &&
@@ -631,8 +633,8 @@ export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<rea
   // While the stream reconnects or a model call waits for its retry, the live turn says so and its clock stands.
   const reconnecting = createMemo(() => source.activeTurn()?.providerRetry === true || source.reconnecting?.() === true);
   const clock = createActiveTurnClock(source, reconnecting);
-  const idle = createMemo(() => source.activeTurn() === null);
-  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), idle()));
+  const activeTurnId = createMemo(() => source.activeTurn()?.turnId ?? null);
+  const stored = createMemo(() => storedItems(source.messages(), actions, views, locale(), activeTurnId()));
   const active = createMemo(() => activeItems(source.activeTurn(), actions, views, clock, reconnecting(), locale()));
   return createMemo(() => {
     const items = [...stored(), ...active()];

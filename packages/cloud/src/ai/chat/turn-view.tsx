@@ -96,6 +96,8 @@ export type AiTurnSegment = {
   stopNotice?: AiStopNotice | null;
   /** The turn is the chat's newest and nothing runs, so a new message can pick up its work. */
   continuable?: boolean;
+  /** A newer message or another active turn has overtaken this stored segment. */
+  superseded?: boolean;
 };
 
 const isLive = (phase: AiTurnPhase) => phase === "running" || phase === "waiting";
@@ -1028,7 +1030,11 @@ export function AiTurnView(props: { segment: Accessor<AiTurnSegment>; disclosure
                 {untrack(() => {
                   const current = notice();
                   return current.kind === "code_authoring"
-                    ? hostActions.renderCodeAuthoringStop?.(current.state, () => props.segment().continuable === true)
+                    ? hostActions.renderCodeAuthoringStop?.(
+                        current.state,
+                        () => props.segment().continuable === true,
+                        () => props.segment().superseded === true,
+                      )
                     : null;
                 })}
               </Show>

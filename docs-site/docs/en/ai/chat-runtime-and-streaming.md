@@ -1125,10 +1125,11 @@ answer never extends that allocation.
 At a bound with unfinished work, Gustav completes the current tool, skips remaining authoring tools
 in that response when the repair allowance is spent, and ends with a short
 persisted receipt in the chat. Assistant renders it in English or German as one
-notice: the reason (the same problem repeated, the attempt limit or the input
-budget), what the receipt confirms as done (checks and example tests of drafts
-not yet submitted) and what is still open (checks, example tests and version
-saves), and whether a draft or version is saved. This summary comes from settled tool results,
+neutral notice: one sentence says Gustav is taking a break; a quiet line names
+the reason (the same problem repeated, the step limit or the work allowance)
+and whether a draft or version is saved. The pause has no checklist.
+The receipt contains counts, so it does not
+invent a saved version's number. This summary comes from settled tool results,
 not model prose; a later draft edit invalidates earlier passing checks. No
 additional model call writes the notice. Saved results and the server-held
 draft remain available. The receipt describes the state at the stop, rather
@@ -1136,9 +1137,16 @@ than promising indefinite draft retention. Forks omit this conversation-bound
 receipt because they do not copy its draft. **Continue** starts a new turn through the normal
 message send path only after a click; rendering, reconnecting and reloading
 never resume work. The action is disabled during other work and while sending;
-a failed send keeps the notice with a retry explanation. Stopping does not
+a failed send keeps the notice with a retry explanation. Sending, failure and
+temporary blocking use the quiet line's reserved space, keeping the card and
+its action in place. On narrow chat columns the action fills the row below
+the text and remains neutral with an outline in every width. Its place stays
+reserved while the receipt belongs to the newest turn, including before turn-end.
+A newer message or turn makes the receipt historical and releases that space;
+a historical pause offers no continuation action. Stopping does not
 submit or activate the draft. Hosts of `createAiChatTimeline` provide localized
-presentation with `AiChatActions.renderCodeAuthoringStop` and use
+presentation with `AiChatActions.renderCodeAuthoringStop`, whose reactive third
+argument reports whether a newer message or turn has superseded the receipt, and use
 `useAiChatActions()` from `@k2b/cloud/ai/ui` for the shared continuation action.
 Worker recovery restores provider usage and check failures for the whole turn,
 including archived messages. Missing provider input usage reserves 64,000

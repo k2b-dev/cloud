@@ -3,13 +3,19 @@ import { Chat, LocaleProvider } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import AssistantAuthoringStop from "./AssistantAuthoringStop";
-import { createStoppedAuthoringFixture } from "./authoring-stop.test-fixture";
+import { authoringStopReasons, authoringStopSaves, createStoppedAuthoringFixture } from "./authoring-stop.test-fixture";
 
 // The persisted stop in a Gustav chat column. `window.settleSend(ok)` answers the pending continue: a failure keeps the
 // card, a success appends the new request below it as the normal send path would.
-const locale = new URLSearchParams(location.search).get("lang") === "de" ? "de" : "en";
-const { messages } = await createStoppedAuthoringFixture(locale);
+const query = new URLSearchParams(location.search);
+const locale = query.get("lang") === "de" ? "de" : "en";
+const reason = authoringStopReasons.find((value) => value === query.get("reason")) ?? "input_tokens";
+const save = authoringStopSaves.find((value) => value === query.get("save")) ?? "draft";
+const { messages } = await createStoppedAuthoringFixture(locale, reason, save);
 const [history, setHistory] = createSignal(messages);
+const [busy, setBusy] = createSignal(query.get("mode") === "blocked");
+const [released, setReleased] = createSignal(query.get("mode") !== "settling");
+if (query.get("mode") === "retired") setHistory([...messages, { ...messages[0]!, id: "later", seq: 3, loopId: "later" }]);
 const continued: string[] = [];
 let settle: ((ok: boolean) => void) | undefined;
 const root = document.createElement("main");
@@ -18,29 +24,36 @@ root.style.cssText = "max-width: 48rem; margin: 0 auto; padding: 24px 16px";
 // Measured with the typeface and icons loaded, as Cloud preloads them, so a rectangle change is the card's own and not a
 // font swap.
 await Promise.all(["400 14px 'IBM Plex Sans'", "600 14px 'IBM Plex Sans'", "16px tabler-icons"].map((font) => document.fonts.load(font)));
+const Timeline = () => {
+  const items = createAiChatTimeline({ messages: history, activeTurn: () => null });
+  return <Chat.Timeline items={items()} />;
+};
 render(
   () => (
     <LocaleProvider locale={locale}>
       <AiChatActionsProvider
         actions={{
-          renderCodeAuthoringStop: (state, continuable) => <AssistantAuthoringStop state={state} continuable={continuable} />,
+          renderCodeAuthoringStop: (state, canContinue, superseded) => (
+            <AssistantAuthoringStop state={state} continuable={() => released() && canContinue()} superseded={superseded} />
+          ),
           onContinueTurn: (message) => {
             continued.push(message);
             return new Promise<void>((resolve, reject) => {
               settle = (ok) => {
                 if (!ok) return reject(new Error("fixture offline"));
                 setHistory([
-                  ...messages,
+                  ...history(),
                   { ...messages[0]!, id: "next", seq: 3, loopId: "next", message: { role: "user", content: [message] } },
                 ]);
                 resolve();
               };
             });
           },
+          actionDisabled: busy,
         }}
       >
         <Chat>
-          <Chat.Timeline items={createAiChatTimeline({ messages: history, activeTurn: () => null })()} />
+          <Timeline />
         </Chat>
       </AiChatActionsProvider>
     </LocaleProvider>
@@ -51,4 +64,10 @@ render(
 const firstRect = await new Promise<DOMRect | null>((resolve) =>
   requestAnimationFrame(() => resolve(document.querySelector(".assistant-authoring-stop")?.getBoundingClientRect() ?? null)),
 );
-Object.assign(window, { continued, firstRect: firstRect?.toJSON() ?? null, settleSend: (ok: boolean) => settle?.(ok) });
+Object.assign(window, {
+  continued,
+  firstRect: firstRect?.toJSON() ?? null,
+  settleSend: (ok: boolean) => settle?.(ok),
+  setBusy,
+  setContinuable: setReleased,
+});
