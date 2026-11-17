@@ -33,8 +33,8 @@ render(
     <LocaleProvider locale={locale}>
       <AiChatActionsProvider
         actions={{
-          renderCodeAuthoringStop: (state, canContinue) => (
-            <AssistantAuthoringStop state={state} continuable={() => released() && canContinue()} />
+          renderCodeAuthoringStop: (state, canContinue, superseded) => (
+            <AssistantAuthoringStop state={state} continuable={() => released() && canContinue()} superseded={superseded} />
           ),
           onContinueTurn: (message) => {
             continued.push(message);

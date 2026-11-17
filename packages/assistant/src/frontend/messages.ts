@@ -8,7 +8,7 @@ export const assistantMessages = i18n.define({
       authoringStopRepeatedTitle: "Gustav is taking a break. A hint from you will help.",
       authoringStopRepeated: "The same error came up several times",
       authoringStopTried: "This round’s work allowance is used up",
-      authoringStopSteps: "All steps in this round are done",
+      authoringStopSteps: "This round’s step limit has been reached",
       authoringStopNoDraft: "No draft yet",
       authoringStopSaved: ({ drafts }: { drafts: number }): string =>
         drafts === 1 ? "Draft saved, no version yet" : "Drafts saved, no versions yet",
@@ -336,7 +336,7 @@ export const assistantMessages = i18n.define({
       authoringStopRepeatedTitle: "Gustav macht eine Pause. Ein Hinweis von dir hilft weiter.",
       authoringStopRepeated: "Derselbe Fehler kam mehrmals",
       authoringStopTried: "Arbeitspensum der Runde erreicht",
-      authoringStopSteps: "Alle Schritte der Runde gemacht",
+      authoringStopSteps: "Schrittgrenze der Runde erreicht",
       authoringStopNoDraft: "Noch kein Entwurf",
       authoringStopSaved: ({ drafts }: { drafts: number }) =>
         drafts === 1 ? "Entwurf gespeichert, noch keine Version" : "Entwürfe gespeichert, noch keine Versionen",

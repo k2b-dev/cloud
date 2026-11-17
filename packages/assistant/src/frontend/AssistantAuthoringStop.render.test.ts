@@ -17,7 +17,7 @@ const [{ default: AssistantAuthoringStop }, { LocaleProvider }, { AiChatActionsP
   import("@k2b/ui"),
   import("@k2b/cloud/ai/ui"),
 ]);
-const render = (locale: string, state: AiCodeAuthoringStop, available = true, blocked = false) =>
+const render = (locale: string, state: AiCodeAuthoringStop, available = true, blocked = false, superseded = false) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -25,12 +25,16 @@ const render = (locale: string, state: AiCodeAuthoringStop, available = true, bl
         return createComponent(AiChatActionsProvider, {
           actions: { onContinueTurn: () => {}, actionDisabled: () => blocked },
           get children() {
-            return createComponent(AssistantAuthoringStop, { state, continuable: () => available });
+            return createComponent(AssistantAuthoringStop, { state, continuable: () => available, superseded: () => superseded });
           },
         });
       },
     }),
   );
+
+// Match the actual live regions, excluding the aria-hidden measurements that reserve their height.
+const liveText = (html: string, role: "status" | "alert") =>
+  (html.match(new RegExp(`<span role="${role}"[^>]*>([\\s\\S]*?)</span>`))?.[1] ?? "").replace(/<!--[\s\S]*?-->/g, "");
 
 describe("the v10 pause receipt", () => {
   for (const locale of ["de", "en"] as const) {
@@ -43,12 +47,12 @@ describe("the v10 pause receipt", () => {
           const reasonText = de
             ? {
                 input_tokens: "Arbeitspensum der Runde erreicht",
-                model_calls: "Alle Schritte der Runde gemacht",
+                model_calls: "Schrittgrenze der Runde erreicht",
                 repeated_error: "Derselbe Fehler kam mehrmals",
               }[reason]
             : {
                 input_tokens: "This round’s work allowance is used up",
-                model_calls: "All steps in this round are done",
+                model_calls: "This round’s step limit has been reached",
                 repeated_error: "The same error came up several times",
               }[reason];
           const saved = de
@@ -57,25 +61,33 @@ describe("the v10 pause receipt", () => {
           expect(html).toContain(`data-tone="neutral"`);
           expect(html).toContain(title);
           if (reason === "repeated_error") expect(html).toContain(de ? "Ein Hinweis von dir hilft weiter." : "A hint from you will help.");
-          expect(html).toContain(`${reasonText} · ${saved}`);
+          expect(liveText(html, "status")).toBe(`${reasonText} · ${saved}`);
+          expect(liveText(html, "alert")).toBe("");
           expect(html.match(/ti-player-pause/g)).toHaveLength(1);
           expect(html).not.toContain("k2b-chat-task");
           expect(html).not.toMatch(/code_|\.tsx?\b|unchecked|unsubmitted|Version 2/);
-          expect(html).toContain(`data-variant="primary"`);
+          expect(html).toContain(`data-variant="secondary"`);
         });
       }
     }
-    test(`${locale}: a historical pause has no continuation action`, () => {
+    test(`${locale}: the newest receipt reserves the action while unavailable`, () => {
       const html = render(locale, authoringStopState("input_tokens", "version"), false);
       const button = html.match(/<button\b[^>]*>/)?.[0];
       expect(button).toContain(`aria-hidden="true"`);
       expect(button).toContain("disabled");
       expect(html).toContain("assistant-authoring-stop__retired");
-      expect(html).toContain(locale === "de" ? "Version gespeichert" : "Version saved");
+      expect(liveText(html, "status")).toContain(locale === "de" ? "Version gespeichert" : "Version saved");
+    });
+    test(`${locale}: an overtaken receipt has no action or empty action space`, () => {
+      const html = render(locale, authoringStopState("input_tokens", "version"), false, false, true);
+      expect(html).not.toContain("<button");
+      expect(html).not.toContain("k2b-notice-card__actions");
+      expect(liveText(html, "status")).toContain(locale === "de" ? "Version gespeichert" : "Version saved");
     });
     test(`${locale}: another operation explains the disabled action in the quiet line`, () => {
       const html = render(locale, authoringStopState("model_calls", "none"), true, true);
-      expect(html).toContain(locale === "de" ? "Geht, sobald Gustav fertig ist." : "Available when Gustav is finished.");
+      expect(liveText(html, "status")).toBe(locale === "de" ? "Geht, sobald Gustav fertig ist." : "Available when Gustav is finished.");
+      expect(liveText(html, "alert")).toBe("");
       expect(html).toContain("disabled");
     });
   }
@@ -104,7 +116,7 @@ describe("the v10 pause receipt", () => {
     for (const locale of ["de", "en"] as const) {
       test(`${locale}: ${fixture.drafts} drafts / ${fixture.unsubmitted} without a version retain the saved facts`, () => {
         const state = { ...authoringStopState("output_tokens", "draft"), drafts: fixture.drafts, unsubmitted: fixture.unsubmitted };
-        expect(render(locale, state, false)).toContain(fixture[locale]);
+        expect(liveText(render(locale, state, false), "status")).toContain(fixture[locale]);
       });
     }
   }

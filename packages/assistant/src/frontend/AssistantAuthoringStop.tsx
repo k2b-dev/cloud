@@ -5,14 +5,15 @@ import { createSignal, For, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 
 /** A Cloud receipt, with one sentence and one quiet line. Continuing uses the normal send path. */
-export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringStop; continuable: () => boolean }) {
+export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringStop; continuable: () => boolean; superseded: () => boolean }) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const actions = useAiChatActions();
   const [sending, setSending] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
   const [sent, setSent] = createSignal(false);
-  const available = () => props.continuable() && Boolean(actions.onContinueTurn) && !sent();
+  let continueButton: HTMLButtonElement | undefined;
+  const available = () => !props.superseded() && props.continuable() && Boolean(actions.onContinueTurn) && !sent();
   const busy = () => Boolean(actions.actionDisabled?.());
   const disabled = () => !available() || busy() || sending();
   const title = () => (props.state.reason === "repeated_error" ? t().authoringStopRepeatedTitle : t().authoringStopTitle);
@@ -34,6 +35,7 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
           ? t().authoringStopSaved({ drafts: props.state.drafts })
           : t().authoringStopSubmitted({ drafts: props.state.drafts });
   const receipt = () => `${reason()} · ${saved()}`;
+  const showFailure = () => failed() && available() && !busy() && !sending();
   const quiet = () =>
     sending()
       ? t().authoringContinueSending
@@ -46,6 +48,7 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
             : receipt();
   const continueWork = async () => {
     if (disabled()) return;
+    const heldFocus = continueButton?.ownerDocument.activeElement === continueButton;
     setSending(true);
     setFailed(false);
     try {
@@ -55,9 +58,13 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
       setFailed(true);
     } finally {
       setSending(false);
+      // Native disabling can move focus to the body. Restore only our lost focus, never another control’s.
+      if (heldFocus && failed() && available() && continueButton?.ownerDocument.activeElement === continueButton?.ownerDocument.body) {
+        continueButton?.focus();
+      }
     }
   };
-  // A receipt can precede turn-end; keep the action’s place before and after it is available.
+  // Reserve the action while this is the latest receipt; an overtaken receipt becomes compact.
   return (
     <NoticeCard
       tone="neutral"
@@ -66,9 +73,10 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
       class="ai-turn__notice assistant-authoring-stop"
       title={title()}
       actions={
-        <Show when={Boolean(actions.onContinueTurn)}>
+        <Show when={!props.superseded() && Boolean(actions.onContinueTurn)}>
           <Button
-            variant="primary"
+            ref={(element) => { continueButton = element; }}
+            variant="secondary"
             size="md"
             class={!available() ? "assistant-authoring-stop__retired" : undefined}
             aria-hidden={!available() || undefined}
@@ -91,8 +99,11 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
             </span>
           )}
         </For>
-        <span role={failed() && available() && !busy() && !sending() ? "alert" : "status"} aria-atomic="true">
-          {quiet()}
+        <span role="status" aria-atomic="true">
+          {showFailure() ? "" : quiet()}
+        </span>
+        <span role="alert" aria-atomic="true">
+          {showFailure() ? t().authoringContinueFailed : ""}
         </span>
       </p>
     </NoticeCard>

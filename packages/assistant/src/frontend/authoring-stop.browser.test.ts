@@ -142,20 +142,20 @@ const boxes = (page: Page) =>
     return {
       card: box(".assistant-authoring-stop"),
       quiet: box(".assistant-authoring-stop__meta"),
-      button: box(".assistant-authoring-stop button"),
+      button: document.querySelector(".assistant-authoring-stop button") ? box(".assistant-authoring-stop button") : null,
     };
   });
-const quiet = (page: Page) => page.locator('.assistant-authoring-stop__meta > :not([aria-hidden="true"])');
+const quiet = (page: Page) => page.locator('.assistant-authoring-stop__meta > [role]:not(:empty)');
 const count = (page: Page) => page.evaluate(() => (window as unknown as { continued: string[] }).continued.length);
 const busy = (page: Page, value: boolean) =>
   page.evaluate((next) => (window as unknown as { setBusy: (busy: boolean) => void }).setBusy(next), value);
 const finish = (page: Page, ok: boolean) =>
   page.evaluate((next) => (window as unknown as { settleSend: (ok: boolean) => void }).settleSend(next), ok);
-const shot = async (page: Page, name: string, width: number) => {
+const shot = async (page: Page, name: string, width: number, theme: "light" | "dark" = "light") => {
   if (!shots) return;
   mkdirSync(shots, { recursive: true });
-  console.info(`PF1 geometry ${JSON.stringify({ name, width, ...(await boxes(page)) })}`);
-  await page.screenshot({ path: resolve(shots, `pause-${name}-light-${width}.png`) });
+  if (theme === "light") console.info(`PF1 geometry ${JSON.stringify({ name, width, ...(await boxes(page)) })}`);
+  await page.screenshot({ path: resolve(shots, `pause-${name}-${theme}-${width}.png`) });
 };
 
 describe("the v10 pause card", () => {
@@ -169,6 +169,7 @@ describe("the v10 pause card", () => {
               try {
                 const card = page.locator(".assistant-authoring-stop");
                 expect(await card.getAttribute("data-tone")).toBe("neutral");
+                expect(await card.locator("button").getAttribute("data-variant")).toBe("secondary");
                 expect(await card.locator(".k2b-chat-task-list").count()).toBe(0);
                 expect(await card.locator("i").count()).toBe(1);
                 expect(await card.locator(".k2b-notice-card__title").innerText()).toBe(
@@ -220,7 +221,7 @@ describe("the v10 pause card", () => {
                     buttonFill: getComputedStyle(button).backgroundColor,
                     expectedFill: (() => {
                       const probe = document.createElement("span");
-                      probe.style.background = innerWidth === 390 ? "var(--k2b-action-solid)" : "var(--k2b-surface)";
+                      probe.style.background = "var(--k2b-surface)";
                       card.append(probe);
                       const color = getComputedStyle(probe).backgroundColor;
                       probe.remove();
@@ -244,7 +245,7 @@ describe("the v10 pause card", () => {
                 }
                 expect(await card.innerText()).not.toMatch(/code_|\.tsx?\b|[a-z]+_[a-z]+|Version 2/);
                 expect(await count(page)).toBe(0);
-                if (locale === "de" && theme === "light") await shot(page, `${reason}-${save}`, width);
+                if (locale === "de") await shot(page, `${reason}-${save}`, width, theme);
                 expect(errors).toEqual([]);
               } finally {
                 await close();
@@ -269,6 +270,7 @@ describe("the v10 pause card", () => {
                   const next = await boxes(page);
                   near(next.card, initial.card);
                   near(next.quiet, initial.quiet);
+                  if (!next.button || !initial.button) throw new Error("The newest receipt must keep its action space.");
                   near(next.button, initial.button);
                 };
                 expect(await page.locator(".assistant-authoring-stop").getByRole("button").count()).toBe(0);
@@ -281,43 +283,65 @@ describe("the v10 pause card", () => {
                 expect(await quiet(page).innerText()).toBe(
                   locale === "de" ? "Geht, sobald Gustav fertig ist." : "Available when Gustav is finished.",
                 );
-                const capture = locale === "de" && theme === "light" && reason === "input_tokens" && save === "draft";
-                if (capture) await shot(page, "blocked", width);
+                const capture = locale === "de" && reason === "input_tokens" && save === "draft";
+                if (capture) await shot(page, "blocked", width, theme);
                 await busy(page, false);
                 await settled(page);
-                await button.click();
+                await button.focus();
+                await page.keyboard.press("Shift");
+                await page.keyboard.press("Enter");
                 // settled: the send intentionally stays pending until finish(page, …).
                 await same();
                 expect(await button.isDisabled()).toBe(true);
                 expect(await count(page)).toBe(1);
-                expect(await button.locator(".k2b-button__label").evaluate((label) => getComputedStyle(label).opacity)).toBe("1");
-                const indicatorGap = await button.evaluate((element) => {
-                  const label = element.querySelector(".k2b-button__label")!.getBoundingClientRect();
+                expect(await button.locator(".k2b-button__label").evaluate((label) => getComputedStyle(label).opacity)).toBe("0");
+                const spinner = await button.evaluate((element) => {
+                  const button = element.getBoundingClientRect();
                   const indicator = element.querySelector(".k2b-button__busy i")!.getBoundingClientRect();
-                  return label.left - indicator.right;
+                  return { x: indicator.x + indicator.width / 2 - button.x - button.width / 2,
+                    y: indicator.y + indicator.height / 2 - button.y - button.height / 2 };
                 });
-                expect(indicatorGap).toBeGreaterThanOrEqual(0);
-                expect(indicatorGap).toBeLessThanOrEqual(8);
+                expect(Math.abs(spinner.x)).toBeLessThan(0.5);
+                expect(Math.abs(spinner.y)).toBeLessThan(0.5);
                 expect(await quiet(page).innerText()).toBe(locale === "de" ? "Gustav macht weiter …" : "Gustav is continuing …");
-                if (capture) await shot(page, "sending", width);
+                if (capture) await shot(page, "sending", width, theme);
                 await finish(page, false);
-                await page.getByRole("alert").waitFor();
+                await page.getByRole("alert").filter({ hasText: locale === "de" ? "Das ging nicht." : "Could not continue." }).waitFor();
                 await same();
                 expect(await button.isEnabled()).toBe(true);
-                if (capture) await shot(page, "failed", width);
-                await button.focus();
+                expect(await button.evaluate((element) => element.ownerDocument.activeElement === element)).toBe(true);
+                if (capture) await shot(page, "failed", width, theme);
+                if (capture) expect(await page.getByRole("status").innerText()).toBe("");
                 await page.keyboard.press("Shift");
                 await same();
                 expect(await button.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+                if (capture && shots) await page.screenshot({ path: resolve(shots, `review-focus-${theme}-${width}.png`) });
                 await page.keyboard.press("Enter");
                 expect(await count(page)).toBe(2);
                 await finish(page, true);
                 await page
                   .getByText(locale === "de" ? "Setze die offene Arbeit fort." : "Continue the remaining work.", { exact: false })
                   .waitFor();
-                await same();
-                expect(await page.getByRole("button", { name: locale === "de" ? "Weiterarbeiten" : "Continue" }).count()).toBe(0);
-                if (capture) await shot(page, "retired", width);
+                await settled(page);
+                const historical = await boxes(page);
+                expect(historical.button).toBeNull();
+                expect(await page.locator(".assistant-authoring-stop .k2b-notice-card__actions").count()).toBe(0);
+                if (width === 390) expect(historical.card.height).toBeLessThan(initial.card.height);
+                else expect(historical.card.height).toBeLessThanOrEqual(initial.card.height);
+                expect(await page.getByRole("alert").innerText()).toBe("");
+                if (capture) await shot(page, "retired", width, theme);
+                // The durable history starts compact after reload, without a reserved action flashing first.
+                if (reason === "input_tokens" && save === "draft") {
+                  const url = new URL(page.url());
+                  url.searchParams.set("mode", "retired");
+                  await page.goto(url.toString());
+                  await page.waitForFunction(() => "firstRect" in window);
+                  await settled(page);
+                  const reloaded = await boxes(page);
+                  near(reloaded.card, historical.card);
+                  near(reloaded.card, await page.evaluate(() => (window as unknown as { firstRect: Box }).firstRect));
+                  expect(reloaded.button).toBeNull();
+                }
                 expect(errors).toEqual([]);
               } finally {
                 await close();
@@ -327,4 +351,26 @@ describe("the v10 pause card", () => {
       }
     }
   }
+  test("a failed send leaves focus on another control when the person has moved on", async () => {
+    for (const theme of ["light", "dark"] as const) for (const width of [1440, 390]) {
+      const { page, errors, close } = await open("de", width, theme);
+      try {
+        const button = page.getByRole("button", { name: "Weiterarbeiten" });
+        await button.focus();
+        await page.keyboard.press("Enter");
+        await page.evaluate(() => {
+          const input = document.createElement("input");
+          input.setAttribute("aria-label", "Other input");
+          document.body.append(input);
+          input.focus();
+        });
+        await finish(page, false);
+        await page.getByRole("alert").filter({ hasText: "Das ging nicht." }).waitFor();
+        expect(await page.getByRole("textbox", { name: "Other input" }).evaluate((input) => input.ownerDocument.activeElement === input)).toBe(true);
+        expect(await button.isEnabled()).toBe(true);
+        expect(errors).toEqual([]);
+      } finally { await close(); }
+    }
+  }, 90_000);
+
 });
