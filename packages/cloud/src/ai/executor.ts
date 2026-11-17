@@ -733,6 +733,48 @@ type AttemptOutcome =
   | { kind: "finished"; status: "completed" | "failed" | "aborted"; failure: AiTurnFailureInfo | null; timing?: LoopAggregate["timing"] }
   | { kind: "suspended" };
 
+const guardToolStart = (
+  tool: Extract<Tool, { kind: "server" }>,
+  input: { conversationId: string; turnId: string; toolName: string; signal: AbortSignal; interruption: AiTurnInterruption },
+): Extract<Tool, { kind: "server" }> => {
+  const { conversationId, turnId } = input;
+  return {
+    ...tool,
+    execute: async (args, context) => {
+      const signal = AbortSignal.any([input.signal, context.signal]);
+      const callId = context.callId ?? tool.def.name;
+      await input.interruption.waitForDecision(signal);
+      signal.throwIfAborted();
+      input.interruption.assertCanStart();
+      let started = await aiToolAudit.noteToolStarted({
+        conversationId,
+        turnId,
+        callId,
+        toolName: input.toolName,
+      });
+      signal.throwIfAborted();
+      while (!started) {
+        input.interruption.request();
+        await input.interruption.waitForDecision(signal);
+        signal.throwIfAborted();
+        input.interruption.assertCanStart();
+        started = await aiToolAudit.noteToolStarted({
+          conversationId,
+          turnId,
+          callId,
+          toolName: input.toolName,
+        });
+        signal.throwIfAborted();
+      }
+      // The audit may return before local withdrawal catches up with the database.
+      await input.interruption.waitForDecision(signal);
+      signal.throwIfAborted();
+      input.interruption.begin(callId);
+      return tool.execute(args, context);
+    },
+  };
+};
+
 export class AiTurnExecutor {
   constructor(private readonly config: ExecutorConfig) {}
 
@@ -1664,34 +1706,13 @@ export class AiTurnExecutor {
             (tool): Tool =>
               tool.kind !== "server"
                 ? tool
-                : {
-                    ...tool,
-                    execute: async (args, context) => {
-                      const callId = context.callId ?? tool.def.name;
-                      await interruption.waitForDecision(abortController.signal);
-                      interruption.assertCanStart();
-                      let started = await aiToolAudit.noteToolStarted({
-                        conversationId,
-                        turnId,
-                        callId,
-                        toolName: prepared.canonicalNames.get(tool.def.name) ?? tool.def.name,
-                      });
-                      while (!started && !abortController.signal.aborted) {
-                        interruption.request();
-                        await interruption.waitForDecision(abortController.signal);
-                        interruption.assertCanStart();
-                        started = await aiToolAudit.noteToolStarted({
-                          conversationId,
-                          turnId,
-                          callId,
-                          toolName: prepared.canonicalNames.get(tool.def.name) ?? tool.def.name,
-                        });
-                      }
-                      abortController.signal.throwIfAborted();
-                      interruption.begin(callId);
-                      return tool.execute(args, context);
-                    },
-                  },
+                : guardToolStart(tool, {
+                    conversationId,
+                    turnId,
+                    toolName: prepared.canonicalNames.get(tool.def.name) ?? tool.def.name,
+                    signal: abortController.signal,
+                    interruption,
+                  }),
           );
         } catch (error) {
           remember(aiTurnReasonFromThrown(error));
@@ -2759,6 +2780,7 @@ class StreamPipeline {
 }
 
 export const __aiExecutorTest = {
+  guardToolStart,
   createChatSteering,
   indexConversationToolSource,
   StreamPipeline,

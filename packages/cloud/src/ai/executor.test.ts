@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import {
+  defineTool,
   type Message,
   memoryStore,
   type NessiLoop,
@@ -7,9 +8,11 @@ import {
   type OutboundEvent,
   type Provider,
   type ProviderRequest,
+  type Tool,
   type ToolCallBlock,
   type ToolStreamIssue,
 } from "@k2b/nessi";
+import { z } from "zod";
 import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import type { CapabilityActionReview } from "../contracts/capabilities";
 import {
@@ -1781,4 +1784,148 @@ describe("Send now contract regressions", () => {
       now.mockRestore();
     }
   });
+});
+
+describe("Send now tool-start races", () => {
+  const startLoop = (tool: Tool) => {
+    const store = memoryStore();
+    let calls = 0;
+    const loop = nessi({
+      agentId: "fixture",
+      loopId: "turn",
+      input: "Run the effect",
+      systemPrompt: "",
+      store,
+      tools: [tool],
+      maxTurns: 2,
+      provider: {
+        name: "fixture",
+        family: "openai-compatible",
+        model: "fixture",
+        capabilities: { streaming: true, tools: true, images: false, thinking: false, usage: false },
+        async *stream() {
+          if (calls++ === 0) {
+            yield { type: "block_start", blockId: "call", index: 0, kind: "tool_call", callId: "effect", name: "effect" };
+            yield {
+              type: "block_end",
+              blockId: "call",
+              index: 0,
+              block: { type: "tool_call", id: "effect", name: "effect", args: {} },
+            };
+          }
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 }, finishReason: "stop" };
+        },
+      },
+    });
+    const result = Promise.withResolvers<Extract<OutboundEvent, { type: "tool_execution_end" }>>();
+    const finished = (async () => {
+      for await (const event of loop) if (event.type === "tool_execution_end") result.resolve(event);
+      return (await store.load()).flatMap(({ message }) => (message.role === "tool_result" ? [message] : []));
+    })();
+    return { result: result.promise, finished };
+  };
+
+  test("withdrawal during the audit wait resumes the same call without execution_failed", async () => {
+    const controller = new AbortController();
+    const interruption = new AiTurnInterruption(() => controller.abort());
+    const entered = Promise.withResolvers<void>();
+    const audited = Promise.withResolvers<boolean>();
+    const held = Promise.withResolvers<void>();
+    let executions = 0;
+    const audit = spyOn(aiToolAudit, "noteToolStarted").mockImplementation(() => {
+      entered.resolve();
+      return audited.promise;
+    });
+    const waitForDecision = interruption.waitForDecision.bind(interruption);
+    const wait = spyOn(interruption, "waitForDecision").mockImplementation((signal) => {
+      if (interruption.draining) held.resolve();
+      return waitForDecision(signal);
+    });
+    const tool = __aiExecutorTest.guardToolStart(
+      defineTool({ name: "effect", description: "Effect", inputSchema: z.object({}), timeoutMs: false }).server(async () => {
+        executions++;
+        return { done: true };
+      }),
+      { conversationId: "chat", turnId: "turn", toolName: "effect", signal: controller.signal, interruption },
+    );
+    const run = startLoop(tool);
+    try {
+      await entered.promise;
+      interruption.request();
+      // The database has already withdrawn the request: its audit succeeds.
+      // Local withdrawal arrives only after the audit has returned.
+      audited.resolve(true);
+      await Promise.race([held.promise, run.finished]);
+      interruption.withdraw();
+      const results = await run.finished;
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({ result: { done: true } });
+      expect(results[0]?.isError).not.toBe(true);
+      expect(executions).toBe(1);
+      expect(audit).toHaveBeenCalledTimes(1);
+    } finally {
+      interruption.withdraw();
+      audited.resolve(true);
+      await run.finished;
+      wait.mockRestore();
+      audit.mockRestore();
+    }
+  });
+
+  test.each(["initial barrier", "audit retry", "audit wait", "final barrier"] as const)(
+    "a tool timeout at %s cannot start the body after withdrawal",
+    async (phase) => {
+      const controller = new AbortController();
+      const interruption = new AiTurnInterruption(() => controller.abort());
+      const settled = Promise.withResolvers<void>();
+      const audited = Promise.withResolvers<boolean>();
+      let executions = 0;
+      let auditCalls = 0;
+      const audit = spyOn(aiToolAudit, "noteToolStarted").mockImplementation(async () => {
+        if (auditCalls++ === 0) {
+          if (phase === "audit wait") return audited.promise;
+          if (phase !== "initial barrier") interruption.request();
+          return phase !== "audit retry";
+        }
+        return true;
+      });
+      if (phase === "initial barrier") interruption.request();
+      const guarded = __aiExecutorTest.guardToolStart(
+        defineTool({ name: "effect", description: "Effect", inputSchema: z.object({}), timeoutMs: 20 }).server(async () => {
+          executions++;
+          return { done: true };
+        }),
+        { conversationId: "chat", turnId: "turn", toolName: "effect", signal: controller.signal, interruption },
+      );
+      const run = startLoop({
+        ...guarded,
+        execute: async (args, context) => {
+          try {
+            return await guarded.execute(args, context);
+          } finally {
+            settled.resolve();
+          }
+        },
+      });
+      try {
+        const result = await run.result;
+        interruption.withdraw();
+        audited.resolve(true);
+        await settled.promise;
+        const results = await run.finished;
+        expect(result).toMatchObject({ isError: true, result: expect.stringContaining("timed out") });
+        expect(results[0]?.reason).toBe("timeout");
+        expect(results).toHaveLength(1);
+        expect(executions).toBe(0);
+        expect(audit).toHaveBeenCalledTimes(phase === "initial barrier" ? 0 : 1);
+      } finally {
+        interruption.withdraw();
+        audited.resolve(true);
+        controller.abort();
+        await run.finished;
+        await settled.promise;
+        audit.mockRestore();
+      }
+    },
+  );
 });
