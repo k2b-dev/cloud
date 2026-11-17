@@ -53,7 +53,7 @@ const openModifyRetryDialog = (
         <PanelDialog.Body>
           <TextInput
             label={t.retryPrompt}
-            description={t.retryPromptHint}
+            description={entry.meta?.quotes?.length ? t.retryPromptHintQuotes : t.retryPromptHint}
             multiline
             lines={8}
             value={draft}
@@ -91,7 +91,8 @@ export const aiUserMessageText = (entry: AiStoredMessage): string => userVisible
 export function AiUserMessageQuotes(props: { entry: AiStoredMessage }): JSX.Element {
   const locale = useLocale();
   const t = () => aiChatMessages(locale());
-  const author = (from: AiQuoteSource) => (from === "assistant" ? "Gustav" : from === "user" ? t().quotedFromYou : t().quotedFromAutomation);
+  const author = (from: AiQuoteSource) =>
+    from === "assistant" ? "Gustav" : from === "user" ? t().quotedFromYou : t().quotedFromAutomation;
   // The checked quotes of the message are the only source; its text never names one.
   const quotes = () => props.entry.meta?.quotes ?? [];
   return (
