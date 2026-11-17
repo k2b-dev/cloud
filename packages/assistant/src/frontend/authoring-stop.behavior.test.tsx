@@ -23,9 +23,12 @@ domTest("a receipt arriving before the turn settles acquires its action when con
     dom.root,
   );
   try {
-    expect(dom.root.querySelector("button")).toBeNull();
+    const button = dom.root.querySelector("button")!;
+    expect(button.getAttribute("aria-hidden")).toBe("true");
+    expect(button.disabled).toBe(true);
     setContinuable(true);
-    expect(dom.root.querySelector("button")?.disabled).toBe(false);
+    expect(dom.root.querySelector("button")).toBe(button);
+    expect(button.disabled).toBe(false);
     setContinuable(false);
     expect(dom.root.querySelector("button")?.getAttribute("aria-hidden")).toBe("true");
   } finally {

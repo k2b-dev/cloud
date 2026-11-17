@@ -1140,7 +1140,9 @@ never resume work. The action is disabled during other work and while sending;
 a failed send keeps the notice with a retry explanation. Sending, failure and
 temporary blocking use the quiet line's reserved space, keeping the card and
 its action in place. On narrow chat columns the action fills the row below
-the text. A historical pause offers no continuation action. Stopping does not
+the text. Its place stays reserved when a receipt precedes turn-end and after
+it becomes historical; a historical pause offers no visible or keyboard-accessible
+continuation action. Stopping does not
 submit or activate the draft. Hosts of `createAiChatTimeline` provide localized
 presentation with `AiChatActions.renderCodeAuthoringStop` and use
 `useAiChatActions()` from `@k2b/cloud/ai/ui` for the shared continuation action.

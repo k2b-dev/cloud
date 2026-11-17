@@ -14,6 +14,7 @@ const save = authoringStopSaves.find((value) => value === query.get("save")) ?? 
 const { messages } = await createStoppedAuthoringFixture(locale, reason, save);
 const [history, setHistory] = createSignal(messages);
 const [busy, setBusy] = createSignal(query.get("mode") === "blocked");
+const [released, setReleased] = createSignal(query.get("mode") !== "settling");
 if (query.get("mode") === "retired") setHistory([...messages, { ...messages[0]!, id: "later", seq: 3, loopId: "later" }]);
 const continued: string[] = [];
 let settle: ((ok: boolean) => void) | undefined;
@@ -32,7 +33,9 @@ render(
     <LocaleProvider locale={locale}>
       <AiChatActionsProvider
         actions={{
-          renderCodeAuthoringStop: (state, continuable) => <AssistantAuthoringStop state={state} continuable={continuable} />,
+          renderCodeAuthoringStop: (state, canContinue) => (
+            <AssistantAuthoringStop state={state} continuable={() => released() && canContinue()} />
+          ),
           onContinueTurn: (message) => {
             continued.push(message);
             return new Promise<void>((resolve, reject) => {
@@ -61,4 +64,10 @@ render(
 const firstRect = await new Promise<DOMRect | null>((resolve) =>
   requestAnimationFrame(() => resolve(document.querySelector(".assistant-authoring-stop")?.getBoundingClientRect() ?? null)),
 );
-Object.assign(window, { continued, firstRect: firstRect?.toJSON() ?? null, settleSend: (ok: boolean) => settle?.(ok), setBusy });
+Object.assign(window, {
+  continued,
+  firstRect: firstRect?.toJSON() ?? null,
+  settleSend: (ok: boolean) => settle?.(ok),
+  setBusy,
+  setContinuable: setReleased,
+});

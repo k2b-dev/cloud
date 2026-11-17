@@ -1,7 +1,7 @@
 import type { AiCodeAuthoringStop } from "@k2b/cloud/ai";
 import { useAiChatActions } from "@k2b/cloud/ai/ui";
 import { Button, NoticeCard, useLocale } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 
 /** A Cloud receipt, with one sentence and one quiet line. Continuing uses the normal send path. */
@@ -13,8 +13,6 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
   const [failed, setFailed] = createSignal(false);
   const [sent, setSent] = createSignal(false);
   const available = () => props.continuable() && Boolean(actions.onContinueTurn) && !sent();
-  // Only a card that had an action reserves its place when a later turn removes that action.
-  const hadAction = createMemo((seen: boolean) => available() || seen, false);
   const busy = () => Boolean(actions.actionDisabled?.());
   const disabled = () => !available() || busy() || sending();
   const title = () => (props.state.reason === "repeated_error" ? t().authoringStopRepeatedTitle : t().authoringStopTitle);
@@ -59,6 +57,7 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
       setSending(false);
     }
   };
+  // A receipt can precede turn-end; keep the action’s place before and after it is available.
   return (
     <NoticeCard
       tone="neutral"
@@ -67,7 +66,7 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
       class="ai-turn__notice assistant-authoring-stop"
       title={title()}
       actions={
-        <Show when={hadAction()}>
+        <Show when={Boolean(actions.onContinueTurn)}>
           <Button
             variant="primary"
             size="md"

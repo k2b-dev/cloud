@@ -67,7 +67,10 @@ describe("the v10 pause receipt", () => {
     }
     test(`${locale}: a historical pause has no continuation action`, () => {
       const html = render(locale, authoringStopState("input_tokens", "version"), false);
-      expect(html).not.toContain("<button");
+      const button = html.match(/<button\b[^>]*>/)?.[0];
+      expect(button).toContain(`aria-hidden="true"`);
+      expect(button).toContain("disabled");
+      expect(html).toContain("assistant-authoring-stop__retired");
       expect(html).toContain(locale === "de" ? "Version gespeichert" : "Version saved");
     });
     test(`${locale}: another operation explains the disabled action in the quiet line`, () => {

@@ -227,7 +227,7 @@ describe("the v10 pause card", () => {
         test(`${locale}: ${reason} / ${save} keeps its geometry through blocking, sending, failure and retry`, async () => {
           for (const theme of ["light", "dark"] as const)
             for (const width of [1440, 390]) {
-              const { page, errors, close } = await open(locale, width, theme, reason, save);
+              const { page, errors, close } = await open(locale, width, theme, reason, save, "settling");
               try {
                 const initial = await boxes(page);
                 const same = async () => {
@@ -237,6 +237,9 @@ describe("the v10 pause card", () => {
                   near(next.quiet, initial.quiet);
                   near(next.button, initial.button);
                 };
+                expect(await page.locator(".assistant-authoring-stop").getByRole("button").count()).toBe(0);
+                await page.evaluate(() => (window as unknown as { setContinuable: (value: boolean) => void }).setContinuable(true));
+                await same();
                 const button = page.getByRole("button", { name: locale === "de" ? "Weiterarbeiten" : "Continue" });
                 await busy(page, true);
                 await same();
@@ -288,7 +291,7 @@ describe("the v10 pause card", () => {
       for (const width of [1440, 390]) {
         const { page, errors, close } = await open("de", width, theme, "input_tokens", "draft", "retired");
         try {
-          expect(await page.locator(".assistant-authoring-stop button").count()).toBe(0);
+          expect(await page.locator(".assistant-authoring-stop").getByRole("button").count()).toBe(0);
           expect(await quiet(page).innerText()).toBe("Arbeitspensum der Runde erreicht · Entwurf gespeichert, noch keine Version");
           if (theme === "light") await shot(page, "retired", width);
           expect(errors).toEqual([]);
