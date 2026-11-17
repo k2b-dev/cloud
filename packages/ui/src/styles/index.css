@@ -11087,6 +11087,16 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-period-picker__steps > .k2b-period-picker__trigger {
   flex: 0 1 auto;
+  padding-inline: 0.25rem;
+}
+
+/* In a report head the period reads as text. The existing field edge still marks focus and errors. */
+.k2b-ui .k2b-period-picker:not([data-invalid="true"]) .k2b-period-picker__steps > .k2b-period-picker__trigger:not(:focus-visible) {
+  border-color: transparent;
+}
+
+.k2b-ui .k2b-period-picker__steps > .k2b-period-picker__trigger:not(:disabled):not(:hover):not(:focus-visible) {
+  background: transparent;
 }
 
 .k2b-ui .k2b-period-picker__home {

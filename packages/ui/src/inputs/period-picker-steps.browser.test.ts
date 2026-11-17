@@ -84,23 +84,30 @@ describe("PeriodPicker steps", () => {
     const page = await load(1280, { value: { preset: "this-week" } });
     try {
       const before = await boxes(page);
+      expect(await shown(page)).toBe("2.–8. Nov. 2026");
+      expect(await page.locator(".k2b-period-picker__trigger").evaluate((button) => getComputedStyle(button).borderColor)).toBe(
+        "rgba(0, 0, 0, 0)",
+      );
       // The current period needs no way back; its place is kept.
       expect(await home(page).isVisible()).toBe(false);
       expect(await previous(page).getAttribute("aria-label")).toBe("Vorheriger Zeitraum");
       await previous(page).click();
       expect(await commits(page)).toEqual([{ preset: "last-week" }]);
       expect(await home(page).innerText()).toBe("Diese Woche");
+      expect(await shown(page)).toBe("26. Okt. – 1. Nov. 2026");
       expect(await home(page).isVisible()).toBe(true);
       await previous(page).click();
       expect((await commits(page)).at(-1)).toEqual({ start: "2026-10-19", end: "2026-10-25" });
       // A calendar week reads as one.
       expect(await shown(page)).toBe("19.–25. Okt. 2026");
+      await settled(page);
       expect(await boxes(page)).toEqual(before);
       await home(page).click();
       expect((await commits(page)).at(-1)).toEqual({ preset: "this-week" });
       expect(await home(page).isVisible()).toBe(false);
       await next(page).click();
       expect((await commits(page)).at(-1)).toEqual({ start: "2026-11-09", end: "2026-11-15" });
+      await settled(page);
       expect(await boxes(page)).toEqual(before);
     } finally {
       await page.close();
@@ -110,6 +117,7 @@ describe("PeriodPicker steps", () => {
   test("a month steps by whole months and reads as the month", async () => {
     const page = await load(1280, { value: { preset: "this-month" } });
     try {
+      expect(await shown(page)).toBe("November 2026");
       await previous(page).click();
       expect((await commits(page)).at(-1)).toEqual({ preset: "last-month" });
       await previous(page).click();

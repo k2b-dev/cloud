@@ -152,6 +152,14 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
     const unit = props.steps ? formatPeriodUnit(range, context().weekStartsOn, locale()) : undefined;
     return unit ? { label: unit, detail: "" } : numericRangeText(range);
   };
+  const triggerPresetText = (preset: PeriodPreset): PeriodText => {
+    const days = preset.resolve(context());
+    const unit =
+      props.steps && preset.key !== "all" && days.start && days.end
+        ? formatPeriodUnit({ start: days.start, end: days.end }, context().weekStartsOn, locale())
+        : undefined;
+    return unit ? { label: unit, detail: "" } : presetText(preset);
+  };
   const selectedPreset = () => {
     const current = value();
     return current && "preset" in current ? props.presets.find((preset) => preset.key === current.preset) : undefined;
@@ -161,14 +169,14 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
     if (!selected) return undefined;
     if ("preset" in selected) {
       const preset = selectedPreset();
-      return preset ? presetText(preset) : undefined;
+      return preset ? triggerPresetText(preset) : undefined;
     }
     return rangeText(selected);
   });
   const joined = (text: PeriodText) => (text.detail ? `${text.label} · ${text.detail}` : text.label);
   // Every text the trigger can show shares one grid cell, so it keeps the widest one's width.
   const widths = createMemo(() => [
-    ...props.presets.map((preset) => joined(presetText(preset))),
+    ...props.presets.map((preset) => joined(triggerPresetText(preset))),
     ...(custom() || props.steps ? [joined(numericRangeText(widePeriodRangeSample(context().today)))] : []),
     ...(props.steps ? unitSamples(context().today, context().weekStartsOn).map((range) => joined(rangeText(range))) : []),
     t().choosePeriod,

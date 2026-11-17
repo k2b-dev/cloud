@@ -87,7 +87,8 @@ year may be wider; right-aligned in a header it grows to the left.
 
 ## Step through periods
 
-With `steps`, two small arrows stand before the trigger and step to the
+With `steps`, the trigger reads as compact text, with the field edge visible
+for focus or errors. Two small arrows stand before it and step to the
 previous and next period, as in a report that people read week by week. After
 the trigger a text link leads back to the current period: **This week**,
 **This month**, **This quarter**, **This year**, **Today**, or **Current
@@ -104,8 +105,8 @@ keeps its place, so the row never moves while stepping.
 - A step that lands on the days of a preset in the list stores that preset,
   for example **Last week** one step before **This week**, so the value stays
   relative. Any other step stores explicit days.
-- A calendar week, month or year that the picker shows as explicit days reads
-  as that: **9.–15. Nov. 2026**, **October 2026**, **2025**.
+- A calendar week, month or year reads as that, whether stored as a preset
+  or explicit days: **9.–15. Nov. 2026**, **October 2026**, **2025**.
 - `min` and `max` are the first and last day there is anything to show. An
   arrow whose neighbour lies wholly before `min` or after `max` stays
   focusable, says why in its name and tooltip, for example **Next period:

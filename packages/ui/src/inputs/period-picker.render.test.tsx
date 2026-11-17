@@ -57,6 +57,16 @@ describe("PeriodPicker on the server", () => {
     expect(html).toContain('aria-expanded="false"');
   });
 
+  test("stepping names calendar periods the same way for presets and explicit days on the first render", () => {
+    expect(visible(render({ steps: true }))).toBe("November 2026");
+    expect(visible(render({ steps: true, value: { start: "2026-11-01", end: "2026-11-30" } }))).toBe("November 2026");
+    expect(visible(render({ steps: true, value: { preset: "this-week" } }))).toBe("2.–8. Nov. 2026");
+    expect(
+      visible(render({ steps: true, value: { preset: "this-week" }, dateConfig: { timeZone: "Europe/Berlin", weekStartsOn: 0 } })),
+    ).toBe("1.–7. Nov. 2026");
+    expect(visible(render({ steps: true, value: { preset: "all" } }))).toBe("Gesamt · seit 14.03.2019");
+  });
+
   test("shows explicit days with their count", () => {
     expect(visible(render({ value: { start: "2026-11-01", end: "2026-11-07" } }))).toBe("01.–07.11.2026 · 7 Tage");
     expect(visible(render({ value: { start: "2026-11-07", end: "2026-11-07" } }))).toBe("07.11.2026 · 1 Tag");
