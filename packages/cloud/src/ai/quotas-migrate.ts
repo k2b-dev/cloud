@@ -1,4 +1,54 @@
+import type { SQL } from "bun";
 import { sql } from "../runtime/clients";
+import { logger } from "../services/logging";
+
+const log = logger("ai:quotas");
+
+const readTurnIndex = async (db: SQL) => {
+  const [state] = await db<{ present: boolean; valid: boolean; building: boolean }[]>`
+    SELECT to_regclass('ai.inference_calls_all_turn') IS NOT NULL AS present,
+      EXISTS (SELECT 1 FROM pg_catalog.pg_index WHERE indexrelid = to_regclass('ai.inference_calls_all_turn')
+        AND indisvalid AND indisready AND indislive) AS valid,
+      EXISTS (SELECT 1 FROM pg_catalog.pg_stat_progress_create_index progress
+        WHERE progress.datname = pg_catalog.current_database()
+          AND (progress.relid = to_regclass('ai.inference_calls') OR progress.relid IS NULL)) AS building`;
+  return state ?? { present: false, valid: false, building: false };
+};
+
+const dropTurnIndex = (db: SQL) => db`DROP INDEX CONCURRENTLY IF EXISTS ai.inference_calls_all_turn`.simple();
+
+/** Outside transactions, on a reserved connection so snapshot waits cannot trap
+ * ordinary pool queries. Interrupted builds are replaced; active builds are
+ * left alone. Failure is logged and retried at the next migration, never thrown. */
+export async function ensureAiInferenceTurnIndex(db: SQL = sql): Promise<boolean> {
+  try {
+    const build = await db.reserve();
+    try {
+      const before = await readTurnIndex(build);
+      if (before.valid) return true;
+      if (before.building) return false;
+      if (before.present) await dropTurnIndex(build);
+      try {
+        await build`CREATE INDEX CONCURRENTLY IF NOT EXISTS inference_calls_all_turn ON ai.inference_calls(turn_id)`.simple();
+      } catch (error) {
+        const after = await readTurnIndex(build);
+        log.warn("Inference turn index build failed; retrying at the next migration", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (after.present && !after.valid && !after.building) await dropTurnIndex(build);
+        return after.valid;
+      }
+      return (await readTurnIndex(build)).valid;
+    } finally {
+      build.release();
+    }
+  } catch (error) {
+    log.warn("Inference turn index unavailable; retrying at the next migration", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
 
 export async function migrateAiQuotas() {
   await sql.begin(async (db) => {
@@ -61,6 +111,5 @@ export async function migrateAiQuotas() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), config JSONB NOT NULL
     )`;
   });
-  // Outside the schema transaction: keep inference writes available during upgrades.
-  await sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS inference_calls_all_turn ON ai.inference_calls(turn_id)`.simple();
+  await ensureAiInferenceTurnIndex();
 }

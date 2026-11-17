@@ -39,7 +39,10 @@ Code-attributed chat turns; a missing callback refuses execution.
 When adding `ai_chat_you` to an existing installation, startup copies the global
 `ai` requirement and its `admin`/`never` group overrides. Existing rules remain
 unchanged on restart. The all-turn inference index is built with `CONCURRENTLY`
-after the quota schema transaction, so inference writes remain available.
+after the quota schema transaction on a reserved connection, so ordinary pool
+queries and inference writes remain available. Startup replaces invalid indexes
+left by interrupted builds and leaves active builds alone. A failed build logs
+a warning and is retried at the next migration; it does not abort startup.
 
 The worker reserves a whole priced turn before its first model request, using
 the actual model profile. It locks owner and Code daily counters in that order,
