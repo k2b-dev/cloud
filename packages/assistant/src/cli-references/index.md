@@ -313,7 +313,7 @@ use the exact ID from `assistant approvals list` when revoking one.
 
 Useful options:
 
-- `--title <title>` names a newly created chat and preserves that title through the first message and automatic enrichment. `chats create --title <title>` does the same. The CLI trims the title and checks the 1 to 120 character limit before creating anything. The exact title `New chat` matches the default placeholder and keeps automatic naming.
+- `--title <title>` names a newly created chat and preserves that title through the first message and automatic enrichment. `chats create --title <title>` does the same. The CLI trims the title and checks the 1 to 120 character limit before creating anything. Without `--title`, the chat gets the default title in the CLI's locale, such as `New chat` or `Neuer Chat`; a `--title` equal to that default keeps automatic naming.
 - `--model <profile-id>` selects a model from `cld assistant models`.
 - `--project <project-id>` creates the new chat in an accessible Project.
 - Repeat `--attach <local-file>` for local images or documents. This flag does not accept a Cloud resource ID and refuses cld's own configuration.
@@ -404,13 +404,14 @@ Assistant agents can discover previous conversations through the closed-world
 `core.ai.chats.search`, `core.ai.chat.read`, and `core.ai.chat.search` Queries. They can inspect
 structured refs through `core.ai.chat.resources` and `core.ai.chats.resources`. When the user
 explicitly asks to send exact text to another owned chat, the agent may request
-the reviewed `core.ai.chat.message` Action. The approval names the target and text;
-delivery is durable, attributable to the source chat, same-user only, and
-asynchronous when the target is busy.
+the reviewed `core.ai.chat.send` Action from an unrestricted browser turn.
+The review names the target and full text. The target replies asynchronously.
+CLI and MCP can read; writing remains restricted until turns preserve their
+access limits.
 
 ## Routines became Code
 
-Scheduled chat routines and their management commands are retired. `cld assistant tasks export` still reads frozen definitions. Ask Gustav to rebuild an exported definition as personal Code with `app.schedule`, an explicit `timeZone`, and `core.ai.chat.run`. Review the Code and its grants before activation. Old runs cannot resume.
+Scheduled chat routines and their management commands are retired. `cld assistant tasks export` still reads frozen definitions. Ask Gustav to rebuild an exported definition as personal Code with `app.schedule`, an explicit `timeZone`, and `core.ai.chat.send`. Review the Code and its grants before activation. Old runs cannot resume.
 
 ## Conversation files
 

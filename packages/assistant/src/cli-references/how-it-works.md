@@ -315,7 +315,7 @@ remembers a rememberable approval, so use it only when the user asked for that.
 
 ## Routines became Code
 
-Scheduled chat routines and `cld assistant tasks` are retired. Ask Gustav to rebuild an exported definition as personal Code with `app.schedule`, an explicit `timeZone`, and `core.ai.chat.run`. Review the Code and its grants before activation. Old runs cannot resume.
+Scheduled chat routines and `cld assistant tasks` are retired. Ask Gustav to rebuild an exported definition as personal Code with `app.schedule`, an explicit `timeZone`, and `core.ai.chat.send`. Review the Code and its grants before activation. Old runs cannot resume.
 
 ## Instructions, Skills, memories, or knowledge
 

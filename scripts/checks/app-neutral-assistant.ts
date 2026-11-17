@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles, sourceFilePattern } from "./files";
+import { isTestFile, listFiles, parseSource, sourceFilePattern } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /**
@@ -77,8 +77,8 @@ const MATCHES = new Set(["startsWith", "endsWith", "includes", "match", "test", 
 const LOOKUPS = new Set(["includes", "indexOf", "has", "get"]);
 
 /** Places where presentation code treats one app differently from another by its id, name, or tool name. */
-export const appIdBranches = (fileName: string, source: string): { line: number; text: string }[] => {
-  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+export const appIdBranches = (fileName: string, source: string): { branches: { line: number; text: string }[]; findings: Finding[] } => {
+  const { sourceFile, findings } = parseSource(fileName, source);
   const found: { line: number; text: string }[] = [];
   const report = (node: ts.Node) =>
     found.push({ line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1, text: node.getText(sourceFile) });
@@ -102,7 +102,7 @@ export const appIdBranches = (fileName: string, source: string): { line: number;
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
-  return found;
+  return { branches: found, findings };
 };
 
 /**
@@ -124,7 +124,9 @@ export const rule: Rule = {
     });
     for (const file of files.sort()) {
       if (isTestFile(file)) continue;
-      for (const branch of appIdBranches(file, readFileSync(file, "utf8"))) {
+      const { branches, findings: unparsed } = appIdBranches(file, readFileSync(file, "utf8"));
+      findings.push(...unparsed);
+      for (const branch of branches) {
         findings.push({
           file,
           line: branch.line,

@@ -219,8 +219,8 @@ test("built-in SDK paths use camelCase and the Files export while preserving cap
     );
     expect(sdk.manifest.operations.some((op) => op.capability === `mail.conversation.status.set${suffix}`)).toBe(true);
   }
-  // message queues attributable inter-chat communication; deliver/run have different lifecycle contracts.
-  expect(sdk.manifest.operations.some((op) => op.capability === "core.ai.chat.message")).toBe(true);
+  // One writer queues attributable chat communication.
+  expect(sdk.manifest.operations.some((op) => op.capability === "core.ai.chat.send")).toBe(true);
 });
 
 // Read the published Fibel example itself, then run its checked bundle with real
@@ -235,7 +235,7 @@ test("the Fibel webhook keeps shipment claims after receipts expire and fences u
       sdk: generateCodeSdk(manifests, { mode: "personal" }),
       entry: "code.ts",
       files: { "code.ts": source },
-      aiOperations: ["core.ai.generate", "core.ai.decide", "core.ai.chat.run"],
+      aiOperations: ["core.ai.generate", "core.ai.decide", "core.ai.chat.send"],
       limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 },
     });
     expect(result.ok, JSON.stringify(result.ok ? [] : result.diagnostics)).toBe(true);

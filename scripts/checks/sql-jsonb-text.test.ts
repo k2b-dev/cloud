@@ -20,6 +20,17 @@ for (const source of [
 ])
   test(`rejects unsafe JSONB: ${source}`, () => expect(check(source)).toHaveLength(1));
 
+test("checks JSON casts after TypeScript generic arrows", () => {
+  const source = [
+    "const operation = async <T>(change: () => Promise<T>) => change();",
+    "const payload = JSON.stringify({ name: 'Chat' });",
+    "db`SELECT ${payload}::jsonb`;",
+    "db`SELECT ${JSON.stringify({ panels: [] })}::jsonb`;",
+  ].join("\n");
+  expect(check(source).map(({ line }) => line)).toEqual([3, 4]);
+  expect(check(source.replaceAll("::jsonb", "::text::jsonb"))).toEqual([]);
+});
+
 test("accepts explicit text casts, objects, literal SQL and examples", () => {
   expect(
     check(
@@ -28,6 +39,7 @@ test("accepts explicit text casts, objects, literal SQL and examples", () => {
         "db`SELECT '{}'::jsonb`;",
         'db`SELECT jsonb_build_object(${"key"})::jsonb`;',
         "db`SELECT CAST(${JSON.stringify(value)}::text AS jsonb)`;",
+        "db`SELECT to_jsonb(${JSON.stringify(value)}::text)`;",
         "const object = { a: 1 }; db`SELECT ${object}::jsonb`;",
         'const text = "{}"; function f(text: { a: number }) { return db`SELECT ${text}::jsonb`; }',
         "// db`SELECT ${JSON.stringify(value)}::jsonb`;",

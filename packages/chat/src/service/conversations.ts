@@ -445,6 +445,7 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
   const groups = members.filter((principal) => principal.type === "group");
   const allIds = [callerId, ...people];
   // Compare normalized meaning, including explicit duplicate creation, rather than transport field order.
+  // Intents retain canonical JSON text as a JSONB string, preserving the encoding of existing retry receipts.
   const payload = JSON.stringify({
     members: [...members].sort((a, b) => {
       const left = JSON.stringify(a);
@@ -476,7 +477,7 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
         // Serializes the absent-row case too; a waiting transaction reads the committed mapping.
         await db`SELECT pg_advisory_xact_lock(hashtextextended(${"chat.create_intent:" + callerId + ":" + data.createKey}, 0))`;
         const [intent] = await db<{ short_id: string; same_payload: boolean }[]>`
-          SELECT c.short_id, i.payload = ${payload}::jsonb AS same_payload FROM chat.create_intents i
+          SELECT c.short_id, i.payload = to_jsonb(${payload}::text) AS same_payload FROM chat.create_intents i
           JOIN chat.conversations c ON c.id = i.conversation_id
           WHERE i.user_id = ${callerId}::uuid AND i.create_key = ${data.createKey}::uuid`;
         if (intent) {
@@ -572,7 +573,7 @@ const create = async (input: ChatContext & { input: unknown }): Promise<Result<C
         });
       if (data.createKey)
         await db`INSERT INTO chat.create_intents (user_id, create_key, payload, conversation_id)
-          VALUES (${callerId}::uuid, ${data.createKey}::uuid, ${payload}::jsonb, ${row.id}::uuid)`;
+          VALUES (${callerId}::uuid, ${data.createKey}::uuid, to_jsonb(${payload}::text), ${row.id}::uuid)`;
       await record(db, input, row.short_id, "chat.conversation.create", { memberCount: row.member_count });
       const names = await titles([row], input, db);
       const latest = await lastMessages([row], input, db);

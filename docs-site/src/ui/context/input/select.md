@@ -86,6 +86,51 @@ browser. In `Select`, an option `color` replaces the icon with a color dot on th
 trigger and in the list. `MultiSelectInput` tints the option icon and the
 selected pill with it instead.
 
+### Show a visual in place of the description
+
+When a word in the second line is the difference that matters, such as where a
+customer comes from, give the option a `descriptionVisual`. It shows in place
+of the grey `description` text, for example as a colored `Tag`:
+
+```tsx
+const marketplace = () => (
+  <Tag color="#e8590c" size="sm">
+    Marketplace
+  </Tag>
+);
+
+<Select
+  label="Customer"
+  value={customer}
+  onValueChange={setCustomer}
+  searchable
+  options={[
+    { value: "c-104", label: "Anna Berger", description: "Marketplace", descriptionVisual: marketplace },
+    { value: "c-221", label: "Anna Berger", description: "Shop · Leipzig" },
+  ]}
+/>;
+```
+
+Every option list takes the same field and draws it the same way: `Select`,
+`AutocompleteSelect`, `MultiSelectInput`, `Combobox`, `SelectChip`,
+`RichSelect` (also in its phone sheet), `ChoiceList`, `Dropdown` actions and
+choices, `CommandList` items, the workspace sidebar switcher, and the results
+of `prompts.search`, where the text field is `desc`.
+
+- The visual shows only with a `description`. Search, filtering, and
+  typeahead match its text, and screen readers read it; the visual is hidden
+  from them, so every row with a visual still says the same in words.
+- The visual is exactly one line of the text it replaces tall, so a row with a
+  visual is as tall as a row with text and nothing shifts. Use a small `Tag`
+  (`size="sm"`), an icon, or a short run of them.
+- It is a function, so the list, the phone sheet, and every reopening each get
+  their own element. Island props must stay serializable, so create options
+  with a visual inside the island.
+- Several badges are one visual with several `Tag`s; there is no separate
+  `badges` field.
+- An unavailable row in `RichSelect` or `CommandList` shows its reason as text
+  instead of the visual.
+
 ### Filter one list by group
 
 Pass `groups` to `Select` or `MultiSelectInput` when a long option list benefits
@@ -328,8 +373,8 @@ See [shared field props](/en/ui/getting-started#shared-field-props) for `FieldPr
 
 ```ts
 type ChoiceOption<T extends string = string> = {
-  value: T; label: string; description?: string; icon?: string; color?: string; disabled?: boolean;
-  groups?: readonly string[];
+  value: T; label: string; description?: string; descriptionVisual?: () => JSX.Element;
+  icon?: string; color?: string; disabled?: boolean; groups?: readonly string[];
 };
 
 type SelectOption = ChoiceOption<string>;
@@ -340,6 +385,7 @@ type SelectSourceOption =
       id: string;
       label?: string;
       description?: string;
+      descriptionVisual?: () => JSX.Element;
       icon?: string;
       color?: string;
       groups?: readonly string[];

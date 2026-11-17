@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "@typescript/typescript6";
-import { listFiles } from "./files";
+import { listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const testFiles = /\.(?:test|test-fixture|browser-suite)\.tsx?$/;
@@ -11,8 +11,7 @@ const launches = new Set(["spawn", "spawnSync", "exec", "execSync", "execFile", 
 /** Test-local setup helpers can be called from a timed hook too, so check every function body. */
 export function checkTestNativeCompilersSource(file: string, source: string): Finding[] {
   if (!/\b(?:cc|c\+\+|gcc|g\+\+|clang|rustc|zig)/.test(source)) return [];
-  const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const findings: Finding[] = [];
+  const { sourceFile: tree, findings } = parseSource(file, source);
   const visit = (node: ts.Node, inFunction: boolean): void => {
     if (inFunction && ts.isCallExpression(node)) {
       const name = ts.isPropertyAccessExpression(node.expression) ? node.expression.name.text : node.expression.getText(tree);

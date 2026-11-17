@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /** Class tokens written in a JSX `class` value, including string parts of expressions. */
@@ -48,7 +48,8 @@ export const rule: Rule = {
     for (const file of sources) {
       const source = readFileSync(file, "utf8");
       if (!source.includes("k2b-")) continue;
-      const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const { sourceFile, findings: unparsed } = parseSource(file, source);
+      findings.push(...unparsed);
       const visit = (node: ts.Node): void => {
         if (ts.isJsxAttribute(node) && node.initializer && ["class", "bodyClass"].includes(node.name.getText(sourceFile))) {
           const unknown = classTokens(node.initializer).filter((token) => /^k2b-[\w-]+$/.test(token) && !defined.has(token));

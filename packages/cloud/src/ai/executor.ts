@@ -2272,6 +2272,7 @@ export class AiTurnExecutor {
         abortController.abort(timedOut ? new AiRunTimeout(turn.runBudgetMs ?? null) : undefined);
       }
     };
+    // runtime-timer: lease heartbeat of work already in flight; quiesce drains that work, so the lease must keep running.
     const timer = setInterval(() => void tick(), this.config.heartbeatMs);
     if (typeof timer === "object" && "unref" in timer) timer.unref();
     void tick();
@@ -2617,6 +2618,7 @@ class StreamPipeline {
     if (!this.snapshotDirty) return;
     const wait = AI_LIVE_SNAPSHOT_INTERVAL_MS - (Date.now() - this.lastSnapshotAt);
     if (wait > 0) {
+      // runtime-timer: saves the live state of a turn in flight; it ends with the turn.
       this.snapshotTimer ??= setTimeout(() => {
         this.snapshotTimer = undefined;
         void this.maybeSnapshot();

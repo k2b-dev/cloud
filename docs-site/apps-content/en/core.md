@@ -114,7 +114,7 @@ Skill Actions except `ai.skill.create` target `core.ai.skill`; omit `skillId`
 from `input`. Chat tools and MCP use the flat field `ai.skill`. Reference paths
 and grant IDs remain subordinate selectors, checked within that Skill.
 
-`ai.chat.message` and `ai.chat.run` target `core.ai.chat`; omit `chatId`
+`ai.chat.send` targets `core.ai.chat`; omit `chatId`
 from `input`. Chat tools and MCP use the flat field `ai.chat`. Scheduled chat
 routine Actions are removed. Skill creation acts at the application. Queries
 keep their existing inputs and permissions.

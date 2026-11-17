@@ -29,6 +29,7 @@ import { AI_MESSAGE_SEARCH_TEXT_MAX_CHARS } from "./limits";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
+import { queuedMessageHoldsChat } from "./queue-waits";
 import { type AiMessageQuote, aiCheckedQuotesOnly } from "./quote-markers";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
 import {
@@ -639,12 +640,14 @@ const copiedMessageMetaJson = () => sql`NULLIF(jsonb_strip_nulls(jsonb_build_obj
   'toolReviews', ${todoMetaJson()}->'toolReviews',
   'toolChecks', ${todoMetaJson()}->'toolChecks',
   'codeDecision', ${todoMetaJson()}->'codeDecision',
-  'codeReviewStart', ${todoMetaJson()}->'codeReviewStart'
+  'codeReviewStart', ${todoMetaJson()}->'codeReviewStart',
+  'writerOrigin', ${todoMetaJson()}->'writerOrigin',
+  'turnTrigger', ${todoMetaJson()}->'turnTrigger'
 )), '{}'::jsonb)`;
 
 // A background result arriving during an interactive turn becomes context on the next turn.
 const visibleToTurn = (turnId?: string) => sql`(
-  ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ?| ARRAY['scheduledTask','codeDelivery','codeDecision'], false) OR seq < ALL (
+  ${turnId ?? null}::text IS NULL OR NOT COALESCE(meta ?| ARRAY['scheduledTask','codeDecision'], false) OR seq < ALL (
     SELECT input_message.seq FROM ai.messages input_message
     WHERE input_message.loop_id = ${turnId ?? null} AND input_message.role = 'user'
   )
@@ -1455,6 +1458,12 @@ const conversationPlaceFilter = (place: import("./types").AiConversationPlaceFil
   return sql`conversation.place_type = ${place.slice(0, separator)} AND conversation.place_id = ${place.slice(separator + 1)}`;
 };
 
+/** Model rule: any text from a source without a signed-in session restricts the turn. It keeps running,
+ * but loses rights that need a person's session, such as writing to another chat. */
+const restrictTurnSource = (tx: SQL, input: { conversationId: string; turnId: string }) =>
+  tx`UPDATE ai.turns SET run_config=jsonb_set(run_config,'{sourceRestricted}','true'::jsonb)
+    WHERE id=${input.turnId}::uuid AND conversation_id=${input.conversationId}::uuid AND run_config->>'kind'='chat'`;
+
 export const aiConversations: AiConversationService = {
   getDraftSubmission: async ({ conversationId, ownerUserId, revision }) => {
     const [row] = await sql<{ message_id: string; turn_id: string | null }[]>`
@@ -1471,7 +1480,7 @@ export const aiConversations: AiConversationService = {
   },
   createConversation: async (input) => {
     const normalized = {
-      title: input.title?.trim() || "New chat",
+      title: input.title?.trim() || input.defaultTitle?.trim() || "New chat",
       description: input.description?.trim() ?? "",
       projectId: input.projectId ?? null,
       draft: input.draft ?? [],
@@ -1518,7 +1527,8 @@ export const aiConversations: AiConversationService = {
       return rowToConversation(rows[0]);
     };
     if (!input.requestId) return insert(sql);
-    const hash = capabilityRequestHash(normalized);
+    // The replay identity is what the caller asked for; a default title follows the request's locale and may differ.
+    const hash = capabilityRequestHash({ ...normalized, title: input.title?.trim() || "New chat" });
     return sql.begin(async (tx) => {
       const reserved = await tx<{ request_id: string }[]>`
         INSERT INTO ai.conversation_creations (owner_user_id, request_id, input_hash)
@@ -2458,7 +2468,7 @@ export const aiConversations: AiConversationService = {
             AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1
         `;
         const [pending] =
-          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
+          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND ${queuedMessageHoldsChat(tx)} LIMIT 1`;
         if (active || pending) return { ok: false as const, reason: "active_turn" as const };
       }
       await tx`UPDATE ai.conversations
@@ -2472,10 +2482,13 @@ export const aiConversations: AiConversationService = {
     return conversation ? { ok: true as const, conversation } : { ok: false as const, reason: "not_found" as const };
   },
 
-  archiveConversation: async (input) => {
-    // Archiving considers pending learning work once, just like learning being
-    // off at completion. Restoring cannot backfill these turns or receipts.
-    const rows = await sql<{ id: string }[]>`
+  archiveConversation: async (input) =>
+    sql.begin(async (tx) => {
+      // Same lock as turn submission and "done": a queued message cannot start while the chat is archived.
+      await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid FOR UPDATE`;
+      // Archiving considers pending learning work once, just like learning being
+      // off at completion. Restoring cannot backfill these turns or receipts.
+      const rows = await tx<{ id: string }[]>`
       WITH archived AS (
         UPDATE ai.conversations
         SET archived_at = now(), pinned_at = NULL
@@ -2488,7 +2501,7 @@ export const aiConversations: AiConversationService = {
             WHERE conversation_id = ai.conversations.id
               AND status IN ('queued', 'running', 'waiting_for_action')
           )
-          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND status IN ('pending','failed'))
+          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND ${queuedMessageHoldsChat(tx)})
         RETURNING id
       ), considered_turns AS (
         UPDATE ai.turns
@@ -2503,11 +2516,21 @@ export const aiConversations: AiConversationService = {
         SET reviewed_at = now()
         WHERE conversation_id IN (SELECT id FROM archived)
           AND reviewed_at IS NULL
+      ), withdrawn_code_messages AS (
+        -- A Code message still waiting for an allowance leaves with the chat; it never revives on restore.
+        UPDATE ai.queued_messages
+        SET status = 'cancelled', error = 'chat_archived', content = '[]'::jsonb,
+          submission = jsonb_build_object('runConfig', jsonb_build_object('send', submission#>'{runConfig,send}', 'turnTrigger', submission#>'{runConfig,turnTrigger}'))
+        WHERE conversation_id IN (SELECT id FROM archived)
+          AND status IN ('pending', 'failed') AND submission->'runConfig' ? 'codeOrigin'
+        RETURNING id
+      ), withdrawn_code_files AS (
+        DELETE FROM ai.queued_message_files WHERE message_id IN (SELECT id FROM withdrawn_code_messages)
       )
       SELECT id FROM archived
     `;
-    return Boolean(rows[0]);
-  },
+      return Boolean(rows[0]);
+    }),
 
   restoreConversation: async (input) => {
     // Restore never backfills: everything completed beforehand counts as considered,
@@ -3038,9 +3061,10 @@ export const aiConversations: AiConversationService = {
       WHERE conversation_id = ${input.conversationId}
         AND loop_id = ${input.loopId}
         AND (${input.includeCompacted ?? false} OR compacted_at IS NULL)
-      ORDER BY seq ASC
+      ORDER BY seq ${input.limit === undefined ? sql`ASC` : sql`DESC`}
+      ${input.limit === undefined ? sql`` : sql`LIMIT ${input.limit}`}
     `;
-    return projectAiMaps(rows.map(rowToMessage));
+    return projectAiMaps((input.limit === undefined ? rows : rows.reverse()).map(rowToMessage));
   },
 
   setMessageFeedback: async (input) => {
@@ -3256,6 +3280,32 @@ export const aiConversations: AiConversationService = {
         SELECT draft_revision, project_id, created_by_user_id, archived_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
       `;
       if (!conversation) throw new Error("Conversation not found.");
+      // The dispatcher's snapshot can predate archiving; an archived chat starts no queued turn.
+      if (input.queuedMessageId && conversation.archived_at) throw new Error("Conversation is archived.");
+      if (input.retrySourceTurnId) {
+        const [source] = await tx<{ run_config: AiTurnRunConfig | null }[]>`
+          SELECT run_config FROM ai.turns WHERE id=${input.retrySourceTurnId}::uuid AND conversation_id=${input.conversationId}::uuid`;
+        const config = source?.run_config ? parseJsonValue<AiTurnRunConfig>(source.run_config) : null;
+        input = {
+          ...input,
+          runConfig: {
+            ...input.runConfig,
+            // An edited retry is the person's own message; a plain retry keeps who wrote it.
+            writerOrigin:
+              input.retryEdited && input.runConfig.actor?.kind === "user"
+                ? { kind: "person" as const, id: input.runConfig.actor.user.id }
+                : config?.kind !== "compact"
+                  ? config?.writerOrigin
+                  : undefined,
+            // The initiator and send receipt stay for the chain rule and status. A person's retry runs on
+            // their own allowance, so the Code's budget attribution does not carry over.
+            turnTrigger: config?.kind !== "compact" ? config?.turnTrigger : undefined,
+            send: config?.kind !== "compact" ? config?.send : undefined,
+            codeOrigin: undefined,
+            ...(config?.kind !== "compact" && config?.sourceRestricted ? { sourceRestricted: true as const } : {}),
+          },
+        };
+      }
       let choice: ReturnType<typeof resolveAiChoice> | undefined;
       if (input.choice) {
         if (
@@ -3267,7 +3317,7 @@ export const aiConversations: AiConversationService = {
         const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid
           AND status IN ('queued', 'running', 'waiting_for_action') LIMIT 1`;
         const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
-          AND status IN ('pending', 'failed') LIMIT 1`;
+          AND ${queuedMessageHoldsChat(tx)} LIMIT 1`;
         if (busy || queued) throw new AiChoiceConflict("choice_busy");
         const rows = await choiceMessageRows(tx, input.conversationId);
         choice = resolveAiChoice(rows.map(rowToMessage), input.choice, input.runConfig.locale ?? "en", new Date().toISOString());
@@ -3286,15 +3336,19 @@ export const aiConversations: AiConversationService = {
       if (input.queuedMessageId) {
         const [head] = await tx<
           { id: string; status: string }[]
-        >`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY position LIMIT 1`;
+        >`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
+          AND ${queuedMessageHoldsChat(tx)}
+          ORDER BY position LIMIT 1`;
         const [busy] =
           await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
         if (!head || head.id !== input.queuedMessageId || head.status !== "pending" || busy)
           throw new Error("Queued message is no longer ready.");
       }
       if (!input.queuedMessageId) {
-        const [queued] =
-          await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') LIMIT 1`;
+        const [queued] = await tx`SELECT id FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid
+            AND ${queuedMessageHoldsChat(tx)}
+            LIMIT 1`;
+        // A Code message waiting for its allowance does not hold back the person.
         if (queued) throw new Error("Queued messages must be sent first.");
       }
       if (input.expectedDraftRevision !== undefined && Number(conversation.draft_revision) !== input.expectedDraftRevision) {
@@ -3377,6 +3431,8 @@ export const aiConversations: AiConversationService = {
           meta: {
             ...(input.expectedDraftRevision === undefined ? {} : { submittedDraftRevision: input.expectedDraftRevision }),
             ...(input.runConfig.codeOrigin ? { codeOrigin: input.runConfig.codeOrigin } : {}),
+            ...(input.runConfig.writerOrigin ? { writerOrigin: input.runConfig.writerOrigin } : {}),
+            ...(input.runConfig.turnTrigger ? { turnTrigger: input.runConfig.turnTrigger } : {}),
             ...(input.runConfig.quotes?.length ? { quotes: input.runConfig.quotes } : {}),
             ...(choice ? { choice: choice.provenance } : {}),
             ...(input.runConfig.codeReview ? { codeReviewStart: input.runConfig.codeReview } : {}),
@@ -3447,7 +3503,9 @@ export const aiConversations: AiConversationService = {
         `;
       }
       if (input.queuedMessageId) {
-        await tx`UPDATE ai.queued_messages SET status = 'submitted', submission = '{}'::jsonb, content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
+        await tx`UPDATE ai.queued_messages SET status = 'submitted',
+          submission = CASE WHEN submission->'runConfig' ? 'send' THEN jsonb_build_object('runConfig',jsonb_build_object('send',submission#>'{runConfig,send}','turnTrigger',submission#>'{runConfig,turnTrigger}')) ELSE '{}'::jsonb END,
+          content = '[]'::jsonb WHERE id = ${input.queuedMessageId}::uuid`;
         await tx`DELETE FROM ai.queued_message_files WHERE message_id = ${input.queuedMessageId}::uuid`;
       }
       return { turn, message: rowToMessage(messageRow) };
@@ -4138,20 +4196,27 @@ export const aiConversations: AiConversationService = {
     return rows.map(rowToPendingActionRecord);
   },
 
-  resolvePendingTurnAction: async (input) => {
-    const rows = await sql<PendingActionRow[]>`
-      UPDATE ai.pending_actions
-      SET status = 'resolved',
-          resolved_event = ${JSON.stringify(input.event)}::text::jsonb,
-          resolved_at = now()
-      WHERE conversation_id = ${input.conversationId}
-        AND turn_id = ${input.turnId}
-        AND call_id = ${input.callId}
-        AND status = 'pending'
-      RETURNING *
-    `;
-    return rows[0] ? rowToPendingActionRecord(rows[0]) : null;
-  },
+  resolvePendingTurnAction: async (input) =>
+    sql.begin(async (tx) => {
+      // Same order as completion: the turn first, then its pending actions. A finished turn takes no answer.
+      const [turn] = await tx<{ status: AiTurnStatus }[]>`SELECT status FROM ai.turns
+        WHERE id = ${input.turnId}::uuid AND conversation_id = ${input.conversationId}::uuid FOR UPDATE`;
+      if (!turn || !(["queued", "running", "waiting_for_action"] as AiTurnStatus[]).includes(turn.status)) return null;
+      const rows = await tx<PendingActionRow[]>`
+        UPDATE ai.pending_actions
+        SET status = 'resolved',
+            resolved_event = ${JSON.stringify(input.event)}::text::jsonb,
+            resolved_at = now()
+        WHERE conversation_id = ${input.conversationId}
+          AND turn_id = ${input.turnId}
+          AND call_id = ${input.callId}
+          AND status = 'pending'
+        RETURNING *
+      `;
+      // A tool result is text the turn reads; from a source without a signed-in session it restricts the turn.
+      if (rows[0] && input.event.type === "tool_result" && !input.signedInSession) await restrictTurnSource(tx, input);
+      return rows[0] ? rowToPendingActionRecord(rows[0]) : null;
+    }),
 
   markPendingTurnActionConsumedInline: async (input) => {
     await sql`
@@ -4204,6 +4269,8 @@ export const aiConversations: AiConversationService = {
       `;
       if (existing[0]) return { ok: true, steer: rowToTurnSteer(existing[0]) };
 
+      // Steering text from a source without a signed-in session restricts the turn it joins.
+      if (!input.signedInSession) await restrictTurnSource(tx, input);
       const rows = await tx<TurnSteerRow[]>`
         INSERT INTO ai.turn_steers (conversation_id, turn_id, seq, client_request_id, text)
         VALUES (

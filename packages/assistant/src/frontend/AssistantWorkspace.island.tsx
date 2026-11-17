@@ -62,7 +62,6 @@ import {
   dialogCore,
   LocaleProvider,
   NoticeCard,
-  openSpotlightSearch,
   Placeholder,
   prompts,
   reconcileChatMentions,
@@ -99,7 +98,6 @@ import { openAssistantCloudReference, resolveAssistantCloudResource } from "./As
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
 import AssistantPlaceBar, { type AssistantPlaceBarState } from "./AssistantPlaceBar";
-import { openAssistantCreateProjectDialog } from "./AssistantProjectsDialog";
 import AssistantProjectView from "./AssistantProjectView";
 import AssistantQueuedMessages, { type AssistantQueuedMessage } from "./AssistantQueuedMessages";
 import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
@@ -171,6 +169,7 @@ import {
   sendBesideComposer,
 } from "./composer-session";
 import { isPlainChat } from "./conversation-view";
+import { lazyAction } from "./lazy-action";
 import { assistantMessageAnchorSeq } from "./message-anchor";
 import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
@@ -189,6 +188,10 @@ type Status = AiPeopleModels & {
   liveDictationAvailable?: boolean;
   error: AiSettingsError | null;
 };
+
+/** Rarely used parts that load when someone opens them. */
+const projectPicker = lazyAction(() => import("./empty-chat-project-picker"));
+const createProjectForm = lazyAction(() => import("./AssistantProjectsDialog"));
 
 type InitialDetail = {
   conversation: AiConversation;
@@ -1325,7 +1328,7 @@ export default function AssistantWorkspace(props: Props) {
   });
   let questionJump = 0;
   /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
-  const jumpToQuestion = async (question: AiOpenQuestion) => {
+  const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor" | "href">) => {
     const jump = ++questionJump;
     // The question replaces any message the chat was opened at, also after a reload.
     const reveal = ++revealRequest;
@@ -1843,42 +1846,17 @@ export default function AssistantWorkspace(props: Props) {
   });
 
   const chooseEmptyChatProject = async () => {
-    const selected = await openSpotlightSearch<{ projectId: string | null }>({
-      title: t().chooseProjectTitle,
-      icon: "ti ti-folder-open",
-      placeholder: t().searchProjects,
-      minQueryLength: 0,
-      noResultsText: t().noMatchingProjects,
-      resolve: ({ query }) => {
-        const normalized = query.trim().toLocaleLowerCase();
-        return [
-          {
-            value: { projectId: null },
-            label: t().noProject,
-            desc: t().separateChat,
-            icon: "ti ti-message-circle",
-          },
-          ...projects()
-            .filter((project) => !normalized || `${project.name} ${project.description}`.toLocaleLowerCase().includes(normalized))
-            .map((project) => ({
-              value: { projectId: project.id },
-              label: project.name,
-              desc: project.description || t().sharedProjectContext,
-              icon: project.icon || "ti ti-folder",
-            })),
-        ];
-      },
-    });
-    if (!selected?.value || selected.value.projectId === emptyProjectId()) return;
+    const selected = await projectPicker(locale(), (module) => module.pickEmptyChatProject(t(), projects));
+    if (selected === undefined || selected.projectId === emptyProjectId()) return;
 
     setChoosingProject(true);
     try {
       const conversation = activeConversation();
       if (!conversation) {
-        if (selected.value.projectId) await createConversation(true, selected.value.projectId);
+        if (selected.projectId) await createConversation(true, selected.projectId);
         return;
       }
-      const updated = await assistantApi.updateConversationProject(conversation.id, selected.value.projectId);
+      const updated = await assistantApi.updateConversationProject(conversation.id, selected.projectId);
       setEmptyProjectId(updated.projectId);
       await Promise.all([
         chat.refreshActiveConversation(),
@@ -3287,7 +3265,8 @@ export default function AssistantWorkspace(props: Props) {
           creatingConversation={() => newConversation.loading() || composerPicking() > 0}
           onNewConversation={() => void createAndFocusConversation()}
           onCreateProject={async () => {
-            const project = await openAssistantCreateProjectDialog();
+            // Loaded when someone creates a project: the form stays out of the workspace bundle.
+            const project = await createProjectForm(locale(), (module) => module.openAssistantCreateProjectDialog());
             if (project) navigateTo(assistantProjectHref(basePath, project.id));
           }}
           onOpenProject={openProject}
@@ -3402,6 +3381,10 @@ export default function AssistantWorkspace(props: Props) {
                                     onCheckAction: (request) => chat.checkAction(request),
                                     onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
                                     onChoice: (request, blockId, ids) => chat.submitChoice(request, blockId, ids),
+                                    onShowQuestion: (anchor) => {
+                                      const conversationId = chat.activeConversationId();
+                                      if (conversationId) void jumpToQuestion({ conversationId, anchor });
+                                    },
                                     onApproval: async (request, input) => {
                                       if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
                                     },
