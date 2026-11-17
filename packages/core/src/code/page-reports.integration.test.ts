@@ -11,10 +11,10 @@ import * as railSnapshot from "@k2b/cloud/services/rail-snapshot";
 import * as adminStatus from "@k2b/cloud/ssr/admin-status";
 import * as layoutHelp from "@k2b/cloud/ssr/help";
 import * as panelConsent from "@k2b/cloud/ssr/panel-consent";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { createCodeAdminRoutes } from "../api/code-admin";
 import { createCodePageRoutes } from "../api/code-pages";
 import type { CoreNotificationSender } from "../notifications";
@@ -25,7 +25,7 @@ import { codePageVersionValue } from "./route-security";
 
 // Hosting renders the page through the SSR plugin, which must be in place before it loads.
 const root = mkdtempSync(join(tmpdir(), "core-code-page-reports-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { createCodeHostingRoutes } = await import("./hosting");
 

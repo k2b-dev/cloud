@@ -2,18 +2,18 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { solidTestPlugin } from "../../test/solid-test-plugin";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 // Which control a tap reaches depends on layout and paint order, which
 // happy-dom does not model, so a real engine renders the shipped stylesheet.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-touch-targets-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { MapView } = await import("../content/MapView");

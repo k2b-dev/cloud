@@ -2,15 +2,15 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { PWA_CANVAS_COLORS } from "../contracts/pwa";
 import { themeBootstrapScript } from "../shared/theme";
 import type { RuntimeContext } from "../ssr/runtime";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-pwa-head-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("./define-app");

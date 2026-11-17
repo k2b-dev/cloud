@@ -2,12 +2,12 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { PageOptions } from "../../src/_internal/define-app";
 import type { RailSnapshot } from "../../src/contracts/rail-preferences";
 import type { User } from "../../src/contracts/shared";
@@ -16,8 +16,8 @@ import type { RuntimeContext } from "../../src/ssr/runtime";
 
 const appRoot = import.meta.dir;
 const outdir = mkdtempSync(join(tmpdir(), "cloud-island-props-csp-"));
-const { plugin } = createConfig({ rootDir: appRoot, componentRoots: [] });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ rootDir: appRoot, componentRoots: [] });
+
 const { defineApp } = await import("../../src/_internal/define-app");
 const { person } = await import("../../src/_internal/define-app.test-fixture");
 const rail = await import("../../src/services/rail-snapshot");

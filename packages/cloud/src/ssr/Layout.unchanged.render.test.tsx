@@ -1,8 +1,8 @@
 import { afterAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { User } from "../contracts/shared";
 import type { RuntimeContext } from "./runtime";
 
@@ -12,8 +12,8 @@ import type { RuntimeContext } from "./runtime";
 // AccessDialog reads profile.userId for "You" independently of pageSwap. Keep the full HTML snapshot exact.
 setSystemTime(new Date("2026-10-01T12:00:00Z"));
 const uuid = spyOn(crypto, "randomUUID").mockReturnValue("11111111-1111-4111-8111-111111111111");
-const { plugin } = createConfig({ dev: true, rootDir: resolve(import.meta.dir, "../.."), componentRoots: [] });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: resolve(import.meta.dir, "../.."), componentRoots: [] });
+
 const { defineApp } = await import("../_internal/define-app");
 const { person } = await import("../_internal/define-app.test-fixture");
 const { default: Layout } = await import("./Layout");

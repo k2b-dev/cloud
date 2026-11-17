@@ -2,17 +2,17 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../ui/test/ssr-test-plugin";
 
 // Render the applications' actual standalone roots: no Cloud shell can constrain their height.
 const root = mkdtempSync(resolve(tmpdir(), "cloud-standalone-viewport-tests-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: weatherPage } = await import("../../weather/src/frontend/display/page");

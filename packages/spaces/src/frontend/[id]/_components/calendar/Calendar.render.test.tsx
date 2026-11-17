@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bu
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceColumn, SpaceItem } from "@/contracts";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { spaceMessages } from "../../messages";
 import { CALENDAR_NEUTRAL_COLOR, CALENDAR_PRIORITY_COLORS, calendarPersonColor } from "./colors";
 import { type CalendarColorBy, defaultCalendarFilter } from "./filter";
@@ -16,8 +16,8 @@ beforeEach(() => setSystemTime(new Date("2026-10-24T12:00:00Z")));
 afterEach(() => setSystemTime());
 
 const root = mkdtempSync(join(tmpdir(), "spaces-calendar-render-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: Calendar } = await import("./index");

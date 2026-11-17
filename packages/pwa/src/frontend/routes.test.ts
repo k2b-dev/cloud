@@ -8,14 +8,14 @@ import { announcements } from "@k2b/cloud/services/announcements";
 import * as iconSource from "@k2b/cloud/services/branding/app-icon-source";
 import * as staticAssets from "@k2b/cloud/services/pwa-assets";
 import { session } from "@k2b/cloud/services/session";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import serviceWorkerSource from "./service-worker.js" with { type: "text" };
 
 const root = mkdtempSync(join(tmpdir(), "pwa-shell-routes-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { shellRoutes } = await import("./index");
 

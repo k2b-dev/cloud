@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import type { AiTurnBlock } from "../protocol";
 
-const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir });
+
 const { CodeRunStepBody, isCodeRunStep } = await import("./code-run-step");
 const { LocaleProvider } = await import("@k2b/ui");
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;

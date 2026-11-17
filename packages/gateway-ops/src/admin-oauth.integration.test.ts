@@ -2,14 +2,14 @@ import { afterAll, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { assertAdminMutationsRejectReadOAuth, withAdminOAuth } from "../../../scripts/fixtures/admin-oauth";
 import { suiteFor } from "../../../scripts/fixtures/test-infra";
+import { registerSsrTestPlugin } from "../../ui/test/ssr-test-plugin";
 import "../../../scripts/fixtures/authorization-preload";
 
 const root = mkdtempSync(join(tmpdir(), "gateway-admin-routes-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { router } = await import("./router");
 

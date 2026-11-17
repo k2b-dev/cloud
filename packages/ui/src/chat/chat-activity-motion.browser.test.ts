@@ -2,17 +2,17 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, BrowserContextOptions } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 // Whether a busy label stays visible depends on which rule wins in the cascade, so a real engine renders the shipped
 // stylesheet.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-chat-activity-motion-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Chat } = await import("../index");
