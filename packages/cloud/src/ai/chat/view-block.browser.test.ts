@@ -4,6 +4,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { z } from "zod";
 import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { renderMarkdownSync } from "../../shared/markdown";
 import { cloudAiNumberFormatters } from "../chart-block";
@@ -516,8 +517,8 @@ beforeAll(async () => {
   const css = await styles.outputs[0]!.text();
   const harness = built.assets;
   chartModulePath = `/${built.chartEntry}`;
-  const { createConfig } = await import("@k2b/ssr");
-  Bun.plugin(createConfig({ dev: true, rootDir: resolve(import.meta.dir, "../../../..") }).plugin());
+  // The browser assets are built above; this server fragment needs no discovered islands.
+  registerSsrTestPlugin({ dev: true, rootDir: resolve(import.meta.dir, "../../../.."), componentRoots: [] });
   const { ChartHistory } = await import("./view-block-history.browser-harness");
   const { createComponent } = await import("solid-js");
   const { renderToString } = await import("solid-js/web");

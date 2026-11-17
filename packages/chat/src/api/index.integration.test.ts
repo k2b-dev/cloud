@@ -7,10 +7,10 @@ import type { CloudRuntime } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { serviceAccountCredentials } from "@k2b/cloud/services";
 import { createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import "../../../../scripts/fixtures/authorization-preload";
 import { migrate } from "../migrate";
 import { ChatHealthSchema, chatService } from "../service";
@@ -18,8 +18,8 @@ import { SYSTEM_READER_HEALTH_KEY } from "../service/system-notification-access"
 import chatApi from ".";
 
 const root = mkdtempSync(join(tmpdir(), "chat-api-integration-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { adminPages } = await import("../frontend");
 

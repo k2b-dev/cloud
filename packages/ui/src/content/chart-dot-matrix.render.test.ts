@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { dotMatrixFixtures } from "../../test/chart-dot-matrix-fixtures";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
-const { plugin } = createConfig({ dev: true, rootDir: import.meta.dir });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: import.meta.dir });
+
 const { default: Chart, chartRenderHeight, renderChartSvg } = await import("./Chart");
 test("dot matrix SSR embeds the same pure drawing as the first client render", () => {
   for (const spec of dotMatrixFixtures) {

@@ -1,23 +1,23 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 
 const packageCache = resolve(import.meta.dir, "../../../../node_modules/.cache");
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "grids-table-browser-"));
-const { plugin } = createConfig({
+registerSsrTestPlugin({
   dev: false,
   verbose: false,
   rootDir: root,
   componentRoots: [resolve(import.meta.dir, "../../../../test/fixtures")],
 });
-Bun.plugin(plugin());
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: WorkspaceFixture } = await import("./database-table.browser-fixture");
 const fieldNames = (await import("./database-table.fixture-data")).fields.map((field) => field.name);

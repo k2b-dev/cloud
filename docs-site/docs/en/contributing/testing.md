@@ -818,6 +818,23 @@ that module first, the replacement never takes effect. Even a skipped
 integration suite evaluates its static imports, so it can trigger this failure.
 The `module-mocks` check also rejects these import-time spies in shared suites.
 
+### Keep the test compiler consistent
+
+Server-rendering tests register their compiler with `registerSsrTestPlugin`
+from `packages/ui/test/ssr-test-plugin.ts`, passing the same `createConfig`
+options as their fixture, or passing its existing SSR configuration. This
+helper preserves the framework's island wrappers. Use the runner's
+`solid-dom-preload.ts` for browser behavior tests. DOM suites must not import
+the SSR helper or SSR preload. For server fragments without framework islands
+whose browser assets are built separately, pass `componentRoots: []`; other
+fixtures discover only their own island roots.
+
+The `test-solid-plugins` check rejects direct process-wide plugin registration
+in tests and test helpers. A different compiler can silently change components
+loaded by later files, even with `--isolate`. Compilers for a fixture bundle
+belong in that build's `Bun.build({ plugins: [...] })`; plugins in a script
+executed in a separate process stay in that process.
+
 ## Run integration tests
 
 Disposable PostgreSQL containers in CI, nightly, release smoke checks, and the local

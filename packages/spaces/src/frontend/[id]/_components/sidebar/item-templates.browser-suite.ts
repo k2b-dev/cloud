@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
@@ -10,6 +9,7 @@ import { renderToString } from "solid-js/web";
 import type { SpaceColumn, SpaceItem, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { checkFixtureSessionOrigin } from "../../../../../../../scripts/fixtures/session-origin";
 import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { formatTemplateDate, proposeTemplateDates, templateSchedule } from "../../../../presentation/item-templates";
 import { templateDraftSource } from "../shared/item-form/templates";
 
@@ -19,8 +19,8 @@ import { templateDraftSource } from "../shared/item-form/templates";
 const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cache");
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "spaces-templates-browser-"));
-const { plugin } = createConfig({ dev: false, verbose: false, rootDir: root, componentRoots: [import.meta.dir] });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: false, verbose: false, rootDir: root, componentRoots: [import.meta.dir] });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: ItemTemplatesFixture } = await import("./item-templates.browser-fixture");
 const { TemplateForm } = await import("../edit/TemplatesSection");

@@ -2,10 +2,10 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, spyOn, test }
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, settled } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // The way up is real layout and real navigation: which row shows where, what
 // collapses when space runs out, and where a click on "‹ Users" lands after
@@ -13,8 +13,8 @@ import { launchBrowser, settled } from "../../../ui/test/browser";
 // a real server, with the global stylesheet and the browser runtime Cloud
 // installs, across document navigations in one tab. All names are invented.
 const root = mkdtempSync(resolve(tmpdir(), "cloud-page-trail-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
 

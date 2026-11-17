@@ -2,12 +2,12 @@ import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, hoverInPlace, launchBrowser, settled } from "../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import {
   type CalendarRange,
   type CalendarSourceRead,
@@ -23,8 +23,8 @@ import { answerFor, ITEMS, NOW, SOURCES, TIME_ZONE, TODAY } from "./cloud-calend
 const packageCache = resolve(import.meta.dir, "../../../node_modules/.cache");
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "spaces-cloud-calendar-browser-"));
-const { plugin } = createConfig({ dev: false, verbose: false, rootDir: root, componentRoots: [import.meta.dir] });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: false, verbose: false, rootDir: root, componentRoots: [import.meta.dir] });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CloudCalendarFixture } = await import("./cloud-calendar.browser-fixture");
 

@@ -1,7 +1,7 @@
 import { afterEach, expect, mock, spyOn, test } from "bun:test";
-import { createConfig } from "@k2b/ssr";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
-Bun.plugin(createConfig({ dev: true, rootDir: process.cwd() }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: process.cwd() });
 const { prompts } = await import("@k2b/ui");
 const { assistantApi } = await import("../api/client");
 const { confirmAssistantArchive } = await import("./confirm-archive");

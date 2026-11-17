@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import postcss from "postcss";
 import { createComponent, type JSX } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import {
   APP_WORKSPACE_MAIN_MIN,
   APP_WORKSPACE_MAIN_MIN_HEIGHT,
@@ -21,8 +21,8 @@ import {
 import { fitFloatingWindowRect, layoutFloatingWindowDock, maximizedFloatingWindowRect } from "./floating-window-geometry";
 
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-advanced-layout-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: AppWorkspace } = await import("./AppWorkspace");
 const { LocaleProvider } = await import("../intl/locale");

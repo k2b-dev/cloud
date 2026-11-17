@@ -2,15 +2,15 @@ import { describe, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import type { MailListItem } from "./mail-navigation";
 import type { MailRowAssignee } from "./mail-row-assignees";
 
 const root = mkdtempSync(join(tmpdir(), "mail-conversation-row-render-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: MailConversationRow } = await import("./MailConversationRow.tsx");

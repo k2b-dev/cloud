@@ -2,15 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { User } from "../contracts/shared";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-profile-preferences-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("../_internal/define-app");

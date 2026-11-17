@@ -6,16 +6,16 @@ import { sql } from "@k2b/cloud";
 import type { RuntimeAppMeta } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { createTestAppSession, createTestSession } from "@k2b/cloud/services/session/session.test-fixture";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import "../../../../scripts/fixtures/authorization-preload";
 import { newShortId } from "../lib/short-id";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-pwa-integration-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { pwaRoutes } = await import("./index");
 const { app } = await import("../config");

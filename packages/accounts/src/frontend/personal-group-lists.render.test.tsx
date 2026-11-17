@@ -5,12 +5,12 @@ import { join } from "node:path";
 import { type BaseGroup, type CloudRuntime, DEFAULT_ACCOUNT_CATEGORY_POLICY, type User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "accounts-personal-lists-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: groupsPage } = await import("./groups/page");
 const { default: userPage } = await import("./users/detail/page");

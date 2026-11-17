@@ -4,19 +4,19 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
-import { createConfig } from "@k2b/ssr";
 import solid from "babel-preset-solid";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 // iOS Safari zooms the page when a focused field's text is smaller than 16 px.
 // Font size and the boxes around a field are layout results, which happy-dom
 // does not model, so a real engine renders the shipped stylesheet.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-touch-field-text-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { ChatComposer } = await import("../chat/ChatComposer");
