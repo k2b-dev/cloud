@@ -91,6 +91,7 @@ const load = async (options: BrowserContextOptions = desktop, fixed = false, she
     { fixed, sheet },
   );
   await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await settle(page);
   await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   return page;
@@ -127,6 +128,16 @@ const watch = (page: Page, change: "add" | "remove", lines = 3) =>
             footerBottom: footer?.getBoundingClientRect().bottom ?? rect.bottom,
           };
         };
+        // WebKit's first frames can arrive after a whole fold's duration. Hold animations as they start, so even
+        // that first sample sees the fold and its fade; then seek a quarter through and let them finish normally.
+        const animate = Element.prototype.animate;
+        const held: Animation[] = [];
+        Element.prototype.animate = function (this: Element, ...args: Parameters<Element["animate"]>) {
+          const animation = animate.apply(this, args);
+          animation.pause();
+          held.push(animation);
+          return animation;
+        };
         const before = box();
         if (change === "remove") motion.removeNotices();
         else motion.addNotice(Number(lines));
@@ -134,6 +145,7 @@ const watch = (page: Page, change: "add" | "remove", lines = 3) =>
         // The frame measures itself after layout and before the paint of this frame; read in the frame after it.
         requestAnimationFrame(() =>
           requestAnimationFrame(() => {
+            Element.prototype.animate = animate;
             const frameMotion = folds().length;
             // The notice's fade starts at 0 after a delay, read from the animation itself rather than at some moment.
             const notice = dialog.querySelector<HTMLElement>("[data-notice]");
@@ -142,7 +154,9 @@ const watch = (page: Page, change: "add" | "remove", lines = 3) =>
               fade instanceof KeyframeEffect
                 ? `${fade.getKeyframes()[0]?.opacity} after ${Number(fade.getTiming().delay) > 0 ? "a delay" : "none"}`
                 : null;
+            for (const animation of folds()) animation.currentTime = Number(animation.effect?.getComputedTiming().endTime) / 4;
             const samples: Sample[] = [box()];
+            for (const animation of held) animation.play();
             let still = 0;
             const sample = () => {
               samples.push(box());
