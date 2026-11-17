@@ -15,6 +15,7 @@ import type { withActiveIdentitySigner } from "../services/identity/key-ring";
 import { serviceAccountCredentials } from "../services/service-account-credentials";
 import {
   CAPABILITY_CLAIM_RETENTION_HOURS,
+  capabilityIdempotencyKeyHash,
   capabilityRequestHash,
   claimCapabilityIdempotency,
   completeCapabilityClaim,
@@ -210,6 +211,25 @@ suite("platform capability idempotency claims", () => {
     expect(conflict.body).toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
   });
 
+  test("a key starts a new call once its 24-hour claim window has passed", async () => {
+    const key = `window-${crypto.randomUUID()}`;
+    expect((await invoke({ key, fetch: succeeds })).status).toBe(200);
+    // Before the retention sweep removes it, an aged claim no longer holds the key.
+    await sql`UPDATE capabilities.idempotency_claims SET created_at=now()-interval '25 hours'
+      WHERE app_id='demo' AND capability='demo.add' AND key_hash=${capabilityIdempotencyKeyHash(key)}`;
+    let forwarded = 0;
+    const next = await invoke({
+      key,
+      input: { name: "second" },
+      fetch: async (...args) => {
+        forwarded += 1;
+        return succeeds(...args);
+      },
+    });
+    // A new call reaches the app instead of a conflict or a replay of yesterday's result.
+    expect(next.status).toBe(200);
+    expect(forwarded).toBe(1);
+  });
   test("personal Codes of one owner share the documented Action key scope", async () => {
     const owner = crypto.randomUUID();
     const user: User = {
