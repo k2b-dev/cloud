@@ -77,7 +77,7 @@ const text = (html: string) => {
   return plain.replace(/\s+/g, " ");
 };
 
-test("renders the timeline with dashed dividers, meta lines, and a bundle with its count", () => {
+test("renders the timeline with dashed dividers, avatars, time labels, and a bundle with its count", () => {
   const html = list();
   expect(html).toContain('class="k2b-activity"');
   expect(html).toContain('data-density="compact"');
@@ -89,14 +89,20 @@ test("renders the timeline with dashed dividers, meta lines, and a bundle with i
   expect(plain).toContain("Di., 10. Nov.");
   expect(plain).toContain("Vor über einer Woche");
   // Meta: time · distance · person, "automatisch" without a person; older entries with day and time.
-  expect(plain).toContain("08:31 · vor 8 Std. · automatisch");
-  expect(plain).toContain("14:05 · vor 2 Tagen · Jonas Weber");
-  expect(plain).toContain("27. Okt., 10:35 · vor 2 Wochen · Elif Kaya");
+  expect(plain).toContain("automatisch · Einladung unzustellbar");
+  expect(html).toContain("vor 8 Std.");
+  expect(html).not.toContain(" title=");
+  expect(html).toContain("k2b-activity__avatar");
+  expect(plain).toContain("Jonas Weber · Freigegeben");
+  expect(plain).toContain("14:05");
+  expect(plain).toContain("Elif Kaya · Entwurf 4-mal geändert");
+  expect(plain).toContain("27. Okt., 10:35");
   // Four drafts in a row on one day by one person are one row.
   expect(plain).toContain("Entwurf 4-mal geändert");
   expect(html).toContain('data-count="4"');
   expect(html.match(/class="k2b-activity__entry ?"/g)).toHaveLength(5);
-  // Only the icon carries the tone; "before → now" keeps the old value quiet.
+  // A failure keeps its status mark; a redundant success icon stays out of the sentence.
+  expect(html).not.toContain('class="ti ti-circle-check"');
   expect(html).toContain('data-tone="danger"');
   expect(html).toContain('<span class="k2b-activity__before">In Prüfung</span>');
   // The row is a focus target after a reload, never in the tab order.

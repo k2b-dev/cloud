@@ -104,11 +104,13 @@ describe("Notebooks overview", () => {
     expect(html).toContain("Launch plan");
     expect(html).toContain("Sofie");
     expect(html).toContain("Edited “Launch plan” in Product");
-    // Activity is the shared timeline: the sentence links to the note, the person stands in the meta line.
+    // Activity is the shared timeline: the sentence links to the note, the person starts the sentence.
     expect(html).toContain('class="k2b-activity"');
-    expect(html).toContain('<i class="ti ti-pencil"');
+    expect(html).not.toContain('<i class="ti ti-pencil"');
     expect(html).toMatch(/<a class="k2b-activity__text-link" href="\/app\/notebooks\/[^"]+">/);
-    expect(textOf(html)).toContain("12:00 · 2 hr. ago · Sofie");
+    expect(textOf(html)).toContain("Sofie · ");
+    expect(html).toContain("2 hr. ago");
+    expect(html).toContain("k2b-activity__avatar");
     expect(html).toContain('datetime="2026-08-20T10:00:00.000Z"');
     expect(html).not.toContain("k2b-detail-panel__header-icon");
     expect(html).toMatch(/<aside[^>]*id="k2b-workspace-detail-notebooks-overview-activity"(?![^>]*hidden)/);

@@ -123,10 +123,12 @@ describe("Spaces overview", () => {
     expect(html).not.toContain("k2b-app-workspace__switcher");
     expect(html).not.toContain("k2b-paper");
     expect(html).toContain("spaces-overview-work-row");
-    // Activity is the shared timeline: the sentence links to the item, the person stands in the meta line.
+    // Activity is the shared timeline: the sentence links to the item, the person starts the sentence.
     expect(html).toContain('class="k2b-activity"');
     expect(html).toContain('class="k2b-activity__text-link" href="/app/spaces/Space1?item=Item01"');
-    expect(textOf(html)).toContain("12:00 · 2 hr. ago · Sofie");
+    expect(textOf(html)).toContain("Sofie · ");
+    expect(html).toContain("2 hr. ago");
+    expect(html).toContain("k2b-activity__avatar");
     expect(html).not.toContain("spaces-overview-space-list");
     expect(html).toContain("Ship overview");
     expect(html).not.toContain("k2b-stat-grid");

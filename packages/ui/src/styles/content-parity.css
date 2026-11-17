@@ -7665,16 +7665,12 @@
 .k2b-ui .k2b-balance__part b { color: var(--k2b-text); font-variant-numeric: tabular-nums; font-weight: 600; }
 .k2b-ui .k2b-balance__op { color: var(--k2b-text-muted); font-weight: 600; }
 
-/*
- * ActivityList: the history as a vertical timeline, taken 1:1 from the Warenfluss building block "Verlauf". One grid
- * for both densities: icon 20 px, 12 px gap, the text column. Two type sizes: the sentence 14 px, everything else
- * 13 px. The rail is a vertical 2 px line through the middle of the icons; it starts at the newest entry and ends at
- * the oldest, and with `data-end="more"` it fades out. It pauses behind each icon instead of being covered, so no
- * surface has to match the one the list stands on. Dividers are dashed.
- */
+/* ActivityList: inset rows like the Mail list, using the shared control radius and row fills.
+   44px is Mail's single-line row height; the content padding matches FileGrid's list rows.
+   Text is never clipped. Long sentences grow within their row, including on a phone. */
 .k2b-ui .k2b-activity {
   margin: 0;
-  padding: 0;
+  padding: 0 0.5rem;
   list-style: none;
 }
 .k2b-ui .k2b-activity > li { position: relative; }
@@ -7683,20 +7679,18 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 9px;
+  left: calc(0.75rem + 11px);
   width: 2px;
   background: var(--k2b-border);
 }
-
-/* Dividers: today, yesterday, the days of the last week, then once "More than a week ago". */
 .k2b-ui .k2b-activity__day {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 0;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
   color: var(--k2b-text-muted);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: 13px;
+  line-height: 18px;
   white-space: nowrap;
 }
 .k2b-ui .k2b-activity__day::after {
@@ -7705,37 +7699,36 @@
   border-top: 1px dashed var(--k2b-border-strong);
 }
 .k2b-ui .k2b-activity__day-line {
-  width: 22px;
+  width: 24px;
   flex: none;
   border-top: 1px dashed var(--k2b-border-strong);
 }
 .k2b-ui .k2b-activity > .k2b-activity__day:first-child { padding-top: 0; }
 .k2b-ui .k2b-activity > .k2b-activity__day:first-child::before { display: none; }
-
-/* An entry; its hover area reaches 8 px past the column on both sides. */
 .k2b-ui .k2b-activity__entry {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  column-gap: 12px;
-  margin: 0 -8px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 0.75rem;
+  min-height: 2.75rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--k2b-radius-control);
 }
-.k2b-ui .k2b-activity__entry:hover { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-activity__entry:hover { background: var(--k2b-edge-hover-bg); }
 .k2b-ui .k2b-activity__entry[data-clickable] { cursor: pointer; }
-/* An entry's rail: above its icon (`::before`, 0 to 6 px) and below it (`::after`, from 26 px), so the icon box
-   (6 to 26 px) stays free. The first row has no rail above, the last none below. */
+.k2b-ui .k2b-activity__entry[data-expanded] { background: var(--k2b-row-selected); }
+/* The rail pauses behind the avatar and its optional status mark, on every surface. */
 .k2b-ui .k2b-activity > li.k2b-activity__entry::before {
   bottom: auto;
-  left: 17px;
-  height: 6px;
+  height: 0.5rem;
 }
 .k2b-ui .k2b-activity > li.k2b-activity__entry::after {
   content: "";
   position: absolute;
-  top: 26px;
+  top: 2rem;
   bottom: 0;
-  left: 17px;
+  left: calc(0.75rem + 11px);
   width: 2px;
   background: var(--k2b-border);
 }
@@ -7745,27 +7738,31 @@
   bottom: -12px;
   background: linear-gradient(var(--k2b-border) 30%, transparent);
 }
-
+.k2b-ui .k2b-activity__avatar {
+  position: relative;
+  display: block;
+  width: 24px;
+  height: 24px;
+}
 .k2b-ui .k2b-activity__icon {
+  position: absolute;
+  inset: auto -3px -3px auto;
   display: grid;
-  width: 20px;
-  height: 20px;
+  width: 14px;
+  height: 14px;
   place-items: center;
   border-radius: 50%;
   color: var(--k2b-text-muted);
-  font-size: 15px;
-}
-/* The glyph fills the icon's box, so the row's ink starts on the column edge like the section title. */
-.k2b-ui .k2b-activity__icon > i {
-  width: 100%;
-  text-align: center;
+  background: var(--k2b-surface);
+  font-size: 12px;
+  line-height: 1;
 }
 .k2b-ui .k2b-activity__icon[data-tone="success"] { color: var(--k2b-success-text); }
 .k2b-ui .k2b-activity__icon[data-tone="warning"] { color: var(--k2b-warning-text); }
 .k2b-ui .k2b-activity__icon[data-tone="danger"] { color: var(--k2b-danger-text); }
-.k2b-ui .k2b-activity__icon[data-placeholder] { background: var(--k2b-surface-muted); }
+.k2b-ui .k2b-activity__avatar[data-placeholder] { border-radius: 50%; background: var(--k2b-surface-muted); }
 
-.k2b-ui .k2b-activity__body { min-width: 0; }
+.k2b-ui .k2b-activity__body { min-width: 0; padding-top: 2px; }
 .k2b-ui .k2b-activity__text {
   color: var(--k2b-text);
   font-size: 14px;
@@ -7783,10 +7780,13 @@
   white-space: pre-line;
 }
 .k2b-ui .k2b-activity__before { color: var(--k2b-text-muted); }
-.k2b-ui .k2b-activity__meta {
-  margin-top: 2px;
+.k2b-ui .k2b-activity .k2b-activity__meta {
+  padding-top: 2px;
+  line-height: 20px;
+  text-align: right;
   color: var(--k2b-text-muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .k2b-ui .k2b-activity :where(a:not(.k2b-activity__action, .k2b-activity__text-link)) {
   color: var(--k2b-action);
@@ -7842,30 +7842,8 @@
   outline-offset: var(--k2b-focus-offset);
 }
 
-/* Wide: the same row, the meta line on the right of the first line; on large screens no wider than 80rem. Only the
-   wide list measures its own width: a compact list in a container sized by its content (a popover) keeps its width. */
-.k2b-ui .k2b-activity[data-density="wide"] {
-  container-type: inline-size;
-  max-width: 80rem;
-}
-.k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__entry { grid-template-columns: 20px minmax(0, 1fr) auto; }
-.k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__meta {
-  margin-top: 0;
-  line-height: 20px;
-  text-align: right;
-  white-space: nowrap;
-}
-/* Too narrow for the meta beside the sentence, such as a dialog on a phone: it goes below the text. */
-@container (max-width: 34rem) {
-  .k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__entry { grid-template-columns: 20px minmax(0, 1fr); }
-  .k2b-ui .k2b-activity[data-density="wide"] .k2b-activity__meta {
-    grid-column: 2;
-    margin-top: 2px;
-    line-height: 18px;
-    text-align: left;
-    white-space: normal;
-  }
-}
+/* Both densities keep the time on the right; it stays aligned while sentences wrap. */
+.k2b-ui .k2b-activity[data-density="wide"] { max-width: 80rem; }
 
 /* Focus after a reload (such as after "Send again"): visible with the keyboard only, inside the row. */
 .k2b-ui .k2b-activity__entry:focus { outline: none; }
@@ -7877,10 +7855,11 @@
 /* Loading: three quiet rows on the rail. */
 .k2b-ui .k2b-activity__placeholder {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 5px;
+  align-items: center;
+  min-width: 0;
+  height: 24px;
 }
+.k2b-ui .k2b-activity__placeholder > div { max-width: 100%; }
 .k2b-ui .k2b-activity__placeholder-line {
   height: 10px;
   border-radius: 5px;
@@ -7929,6 +7908,7 @@
   flex-direction: column;
   gap: 16px;
 }
+.k2b-ui .k2b-activity-dialog__filters { flex: none; min-width: 0; }
 .k2b-ui .k2b-activity-dialog__subtitle {
   margin: 0;
   color: var(--k2b-text-muted);

@@ -68,11 +68,13 @@ else {
     field.value = "halb getippt";
     const bundle = dom.root.querySelector("[data-bundle]");
     expect(bundle?.textContent).toBe("Entwurf 2-mal geändert");
-    expect(mail.querySelector(".k2b-activity__meta")?.textContent).toBe("16:20 · 11 min. ago · automatic");
+    expect(mail.querySelector("time [aria-hidden]")?.textContent).toBe("16:20");
 
+    expect(mail.querySelector("time .k2b-sr-only")?.textContent).toContain("11 min. ago");
     tick();
+    expect(mail.querySelector("time .k2b-sr-only")?.textContent).toContain("12 min. ago");
 
-    expect(mail.querySelector(".k2b-activity__meta")?.textContent).toBe("16:20 · 12 min. ago · automatic");
+    expect(mail.querySelector("time [aria-hidden]")?.textContent).toBe("16:20");
     expect(dom.root.querySelector("[data-field]")).toBe(field);
     expect(field.value).toBe("halb getippt");
     expect(dom.root.querySelector("[data-bundle]")).toBe(bundle);
@@ -91,7 +93,7 @@ else {
     dom.root.querySelector<HTMLElement>("[data-inside]")!.click();
     expect(sentence.getAttribute("aria-expanded")).toBe("true");
     // Selecting the time with the mouse ends in a click on the row; it must not fold.
-    const time = meta.querySelector("time")!.firstChild!;
+    const time = meta.querySelector("time [aria-hidden]")!.firstChild!;
     dom.document.getSelection()!.setBaseAndExtent(time, 0, time, 5);
     meta.click();
     expect(sentence.getAttribute("aria-expanded")).toBe("true");

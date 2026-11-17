@@ -187,6 +187,8 @@ test("the first browser render shows the server's rows, times, and dividers in a
     await page.waitForSelector('body[data-ready="true"]');
     await settled(page);
     expect(await markup()).toBe(server);
+    expect(await page.locator(".k2b-activity [title]").count()).toBe(0);
+    expect(await page.locator(".k2b-activity__avatar .k2b-avatar").count()).toBe(4);
     expect(await page.evaluate(() => Reflect.get(window, "serverRow") === document.querySelector(".k2b-activity__entry"))).toBe(true);
     expect(errors).toEqual([]);
     expect(hydrationMessages).toEqual([]);

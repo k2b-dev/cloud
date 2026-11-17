@@ -2,7 +2,7 @@
 
 `ActivityList` shows what happened to an object as a vertical timeline: the
 newest entry at the top, the start at the bottom. A 2 px rail runs through
-the middle of the icons. Dashed dividers name "Today", "Yesterday", and each
+the middle of the avatars. Dashed dividers name "Today", "Yesterday", and each
 day of the last week; everything older stands under one divider "More than a
 week ago".
 
@@ -39,13 +39,22 @@ const entry: ActivityEntry = {
 };
 ```
 
-- **One row:** the icon of the kind (20 px, grey, without a circle), one
-  sentence in 14 px, and the meta line "time · distance · person" in 13 px.
-  `actor` is a text of the application; without one the meta line reads
-  "automatic". Within the last week the meta names the time alone, before
-  that the day and the time.
-- **Tone:** only the icon carries it: `success` for a completion, `warning`
-  for a notice, `danger` only while an action is needed.
+- **One row:** a 24 px `Avatar`, the actor and sentence in 14 px, then the
+  time in 13 px on the right. String actors get initials; JSX actors keep
+  their text and a neutral person avatar. Without an actor, the row reads
+  "automatic" with a neutral system avatar. Within the last week the time
+  names the hour alone, before that the day and hour.
+- **Surface:** both sides keep the Mail list's 0.5rem inset. Rows use
+  `--k2b-radius-control`, the FileGrid list's 0.5rem / 0.75rem padding, and
+  Mail's 2.75rem single-line minimum height. Hover uses
+  `--k2b-edge-hover-bg`; folded-out details use `--k2b-row-selected`.
+  Hover, focus, and selection change only paint.
+- **Icons:** ordinary kind and success icons are redundant with the sentence
+  and stay hidden. Warning, danger, or an explicit `iconLabel` retain a
+  small status mark at the avatar, outside the text axis.
+- **Text:** sentences wrap in full, including on a phone. They have no
+  tooltip or native `title`. Dates expose their full instant and distance
+  as screen-reader text, without a hover hint.
 - **Rarely below:** one `detail` line (a result, the reason of a failure, a
   quote, or "before → now" with `ActivityList.Change`) and at most one
   `action`. An action with `href` is a link, otherwise a button.
@@ -72,19 +81,17 @@ const entry: ActivityEntry = {
 
 ## Densities
 
-- `density="compact"` (default) for a card or a side column: the meta line
-  under the sentence.
-- `density="wide"` for a dialog or a page: the meta line on the right of the
-  first line, the list at most 80rem wide. Narrower than 34rem, the meta goes
-  under the sentence again.
+- `density="compact"` (default) for a card or a side column.
+- `density="wide"` for a dialog or a page, at most 80rem wide.
+
+Both keep the avatar, sentence, and time in the same columns. Long sentences
+wrap beside the time; no content is clipped or hidden behind a tooltip.
 
 `limit` shows only the newest rows; the rail then fades out below them. Pass
 `more` when further pages follow, for example above a `LoadMore`.
 
-The rail pauses behind each icon instead of being covered, so the list looks
-the same on any surface: a page, a card, a dialog, or a sheet. Only the wide
-list measures its own width, so a compact list also fits a container sized
-by its content, such as a popover.
+The rail pauses behind each avatar instead of being covered, so the list looks
+the same on any surface: a page, a card, a dialog, or a sheet. The list also fits a container sized by its content, such as a popover.
 
 ## Time
 
@@ -111,8 +118,11 @@ timeline and replaces the empty text.
 `level={3}` when the card stands under a section heading of the page. "All
 N" counts rows, bundles as one. The dialog
 shows the list in the wide density, `subtitle` under its title, and a filter
-by `kinds`. The filter counts entries, not rows, shows only kinds with
-entries, and appears only from three choices on ("All" and two kinds).
+by `kinds`. The `ChoiceChips` filter counts entries, not rows, shows only kinds with
+entries, and appears only from three choices on ("All" and two kinds). The
+chips scroll horizontally on a phone. A compact `ScrollArea` keeps the
+history viewport at one height while filtering, so the heading and filters
+stay in place.
 
 Build `entries` in a getter, never in `createMemo`: sentences and details are
 JSX, and the card and the dialog each need nodes of their own.
@@ -138,7 +148,7 @@ opens the same dialog from anywhere, such as a menu entry "Show activity";
 
 The list is an ordered list named "History" (`label` changes it). Dividers
 are hidden from screen readers; each row's `<time>` carries the full instant
-as its tooltip. An icon with a meaning the sentence does not say takes
+and relative distance in screen-reader text. An icon with a meaning the sentence does not say takes
 `iconLabel`, such as "failed" on a red icon. A row with `href` renders its
 sentence as a link; a row with `onOpen` or `details` as a button, with
 `aria-expanded` for `details`. The loading state is a `role="status"`, the
