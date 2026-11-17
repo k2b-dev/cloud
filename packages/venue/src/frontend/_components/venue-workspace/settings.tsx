@@ -2,7 +2,7 @@ import { AccessSummary, openAccessDialog, type ResourceApiKey, ResourceApiKeys }
 import type { AccessEntry, PermissionLevel, Principal } from "@k2b/cloud/contracts";
 import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
-import { mutation, type MutationOutcome } from "@k2b/stdlib/solid";
+import { type MutationOutcome, mutation } from "@k2b/stdlib/solid";
 import {
   Button,
   CheckboxCard,

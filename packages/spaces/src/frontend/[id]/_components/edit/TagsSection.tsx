@@ -1,4 +1,4 @@
-import { mutation as mutations, type MutationOutcome } from "@k2b/stdlib/solid";
+import { type MutationOutcome, mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, SettingsGroup, TagEditor } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { SpaceTag } from "@/contracts";
