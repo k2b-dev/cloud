@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, mock, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import type { InboundEvent, Message, OutboundEvent, Provider } from "@k2b/nessi";
 import { openAICompatible } from "@k2b/nessi/ai";
 import { ok } from "@k2b/stdlib";
@@ -30,6 +30,7 @@ import { AI_WEBSITE_APPROVAL_TOOL, aiTurnAllowsRememberedApprovals, rememberAiTo
 import * as capabilityExecution from "./capability-execution";
 import { aiChatMessages } from "./chat/messages";
 import { aiTurnErrorText } from "./chat/turn-error";
+import { CODE_AUTHORING_TURN_BUDGET } from "./code-authoring-turn";
 import { DEFAULT_COMPACTION_PROMPT } from "./compaction";
 import { __aiExecutorTest, AiTurnExecutor } from "./executor";
 import { aiFileStore } from "./files-store";
@@ -43,7 +44,7 @@ import { aiProjects } from "./projects";
 import { type AiTurnBlock, type AiWireEvent, buildBlocksFromMessages } from "./protocol";
 import { createAiProvider } from "./provider";
 import { withProviderErrors } from "./provider-errors";
-import { AiQuotaError } from "./quotas";
+import { AiQuotaError, aiQuotas } from "./quotas";
 import { capabilityResultView, modelCapabilityResult } from "./result-view";
 import { readReviewContent } from "./review-content";
 import { listPendingAiTurnActions } from "./runtime";
@@ -437,6 +438,107 @@ suite("AI executor integration", () => {
   useRegisteredTestApp("core", { kind: "signedIn" });
   useRegisteredTestApp("demo", { kind: "signedIn" });
   useRegisteredTestApp("spaces", { kind: "signedIn" });
+  test.each([false, true])(
+    "paid authoring without a trigger retains tokens unless a finite cost limit applies (enabled=%s)",
+    async (costEnabled) => {
+      setSystemTime(new Date("2030-01-01T12:00:00.000Z"));
+      const userId = await insertUser();
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId, preloadTools: ["code_init"] });
+      const oldConfig = await aiQuotas.config();
+      let dispatched = 0;
+      const provider = syntheticProvider(async function* (request) {
+        // The large usage snapshot can trigger ordinary history compaction;
+        // count chat dispatches separately from that accounted summary call.
+        if (request.systemPrompt?.includes(DEFAULT_COMPACTION_PROMPT)) {
+          yield { type: "block_end", blockId: "summary", index: 0, block: { type: "text", text: "A Code draft was created." } };
+          yield { type: "usage", usage: { input: 1, output: 1, total: 2 } };
+          return;
+        }
+        dispatched++;
+        if (dispatched === 1) {
+          yield { type: "block_end", blockId: "init", index: 0, block: { type: "tool_call", id: "init", name: "code_init", args: {} } };
+        } else {
+          yield { type: "block_end", blockId: "answer", index: 0, block: { type: "text", text: "The draft is ready." } };
+        }
+        yield {
+          type: "usage",
+          usage: { input: CODE_AUTHORING_TURN_BUDGET.inputTokens, output: 1, total: CODE_AUTHORING_TURN_BUDGET.inputTokens + 1 },
+        };
+      });
+      provider.capabilities = { ...provider.capabilities, tools: true };
+      const validated = await fakeValidateWithProvider(provider)({ input: "Build Code" });
+      const profile: AiModelProfile = {
+        ...validated.resolved.profile,
+        capabilities: ["tools"],
+        pricing: { inputPerMillion: 0.01, outputPerMillion: 0.01 },
+      };
+      const state = { ...validated.settings, profiles: [profile] };
+      const settingRead = spyOn(settings, "readAiSettingsState").mockResolvedValue(state);
+      const init = defineAiTool({
+        name: "code_init",
+        description: "Create a draft",
+        inputSchema: z.object({}),
+        outputSchema: z.object({ version: z.literal(1), draft: z.object({ codeId: z.string() }) }),
+        approval: "never",
+      }).server(async () => ({ version: 1 as const, draft: { codeId: "c_budget" } }));
+      try {
+        await aiQuotas.save(
+          {
+            ...oldConfig,
+            enabled: costEnabled,
+            rules: [
+              {
+                scope: "*",
+                hours: 168,
+                anchor: "1970-01-01T00:00:00.000Z",
+                grants: [{ principal: { type: "authenticated" }, limit: 100 }],
+              },
+            ],
+          },
+          userId,
+        );
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: conversation.id,
+          modelId: MODEL_ID,
+          runConfig: {
+            kind: "chat",
+            input: "Build Code",
+            actor: { kind: "user", user: actorUser(userId) },
+            toolSource: { kind: "default" },
+          },
+          userMessage: userMessage("Build Code"),
+        });
+        // A persisted pre-trigger turn follows the person allocation too.
+        await sql`UPDATE ai.turns SET run_config=run_config-'turnTrigger',deadline=${new Date(Date.now() + 60_000)} WHERE id=${turn.id}::uuid`;
+        const claim = await aiConversations.claimTurn({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          leaseOwner: "cost-budget-exec",
+          leaseMs: 30000,
+          from: "queue",
+          maxAttempts: 5,
+          runBudgetMs: 60000,
+        });
+        await createExecutor(
+          "cost-budget-exec",
+          undefined,
+          async () => ({ settings: state, resolved: { ...validated.resolved, profile } }),
+          undefined,
+          [init],
+        ).run({ conversationId: conversation.id, turnId: turn.id, claim: claim!, signal: new AbortController().signal });
+        expect(dispatched).toBe(costEnabled ? 2 : 1);
+        const last = (await aiConversations.listMessages({ conversationId: conversation.id })).at(-1)!;
+        expect(last.meta?.codeAuthoringStop?.reason).toBe(costEnabled ? undefined : "input_tokens");
+        expect((await aiConversations.getTurn({ conversationId: conversation.id, turnId: turn.id }))?.status).toBe("completed");
+      } finally {
+        settingRead.mockRestore();
+        await aiQuotas.save({ ...oldConfig, revision: (await aiQuotas.config()).revision }, userId);
+        await sql`DELETE FROM ai.conversations WHERE id=${conversation.id}::uuid`;
+        await sql`DELETE FROM auth.users WHERE id=${userId}::uuid`;
+        setSystemTime();
+      }
+    },
+  );
   const resumeModes = ["unchanged", "changed", "revoked", "used", "rejected_empty", "approved_empty", "failed_empty"] as const;
   test.each([...resumeModes])("resumed capability approval binds the live review (%s)", async (mode) => {
     const userId = await insertUser();

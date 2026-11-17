@@ -31,5 +31,5 @@ test("cache reads use their configured price exactly once, with a conservative u
   );
   expect(() => aiCostUnits(pricing, 10, 0, 11)).toThrow();
   expect(() => aiCostUnits(pricing, 10, 0, -1)).toThrow();
-  expect(AiModelPricingSchema.safeParse({ ...pricing, cacheReadPerMillion: 3 }).success).toBe(false);
+  expect(AiModelPricingSchema.parse({ ...pricing, cacheReadPerMillion: 3 })).toEqual({ inputPerMillion: 2, outputPerMillion: 10 });
 });

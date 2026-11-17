@@ -10,10 +10,12 @@ export const AiModelPricingSchema = z
     cacheReadPerMillion: AiPriceSchema.optional(),
   })
   .strict()
-  .refine((price) => price.cacheReadPerMillion === undefined || price.cacheReadPerMillion <= price.inputPerMillion, {
-    path: ["cacheReadPerMillion"],
-    message: "The cache-read price cannot exceed the ordinary input price.",
-  });
+  .transform(({ cacheReadPerMillion, ...price }) => ({
+    ...price,
+    // Cache prices are hidden in the ordinary price editor. Lowering the input
+    // price must remain saveable and use that lower ordinary rate as fallback.
+    ...(cacheReadPerMillion !== undefined && cacheReadPerMillion <= price.inputPerMillion ? { cacheReadPerMillion } : {}),
+  }));
 export type AiModelPricing = z.infer<typeof AiModelPricingSchema>;
 
 /** Explicit free prices are measured as zero and need no spending guard. */

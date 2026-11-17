@@ -11,7 +11,6 @@ import { approvalAssurance, approvalScopeFromToolName, approvals } from "../serv
 import { createHelpReader } from "../services/help";
 import { logger, trace } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
-import { hasBillableAiPricing } from "../shared/ai-costs";
 import type { AiModelRequest } from "../shared/ai-models";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { normalizeLocale } from "../shared/locale";
@@ -85,6 +84,7 @@ import {
 import { retryTransientProviderErrors } from "./provider-retry";
 import { publicAiToolBlock, publicAiToolInput, publicAiToolResult } from "./public-tool-input";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
+import { aiQuotas } from "./quotas";
 import { collectConversationResourceObservations } from "./resource-refs";
 import { capabilityResultView } from "./result-view";
 import { assertInteractiveChatTurn } from "./retired-routines";
@@ -1642,7 +1642,10 @@ export class AiTurnExecutor {
       selected: loadedSkills.some((skill) => skill.name === "code-authoring"),
       // Automatic chat turns keep their separate allocation (#3623). Review
       // revisions author Code under the authoring allocation, like person turns.
-      billable: hasBillableAiPricing(resolved.profile.pricing) && (config.turnTrigger?.kind === "person" || Boolean(config.codeReview)),
+      billable:
+        quotaSubject !== null &&
+        (!config.turnTrigger || config.turnTrigger.kind === "person" || Boolean(config.codeReview)) &&
+        (await aiQuotas.assertAllowed(quotaSubject, resolved.profile.id)),
       onStop: (reason) => log.info("AI authoring turn reached its safety budget", { conversationId, turnId, reason }),
     });
     const turnPolicy = applyAiTurnPolicy({

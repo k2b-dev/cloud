@@ -1063,9 +1063,10 @@ tools`, both under `ai:executor` with the conversation and turn IDs.
 ### Code authoring safety budget
 
 When Gustav invokes a lasting Code authoring tool or selects the authoring
-Skill, one turn can make at most 90 model attempts. Priced models use the
-configured Assistant cost allowances, with no additional cumulative input-token
-limit. Free and unpriced models admit at most 5,760,000 cumulative input tokens,
+Skill, one turn can make at most 90 authoring model attempts, followed by at most
+one tool-free closing attempt after all existing drafts are submitted. Priced
+models with an effective finite Assistant cost limit have no additional cumulative
+input-token limit. All other models admit at most 5,760,000 cumulative input tokens,
 including instructions, conversation and tool schemas. Provider retries and
 automatic compaction share the turn's attempt and, when applicable, token allowance. Previously loaded tools alone do not activate
 the allowance in a later turn. Admission reserves the input estimate; reported input replaces it when higher. These
@@ -1080,9 +1081,12 @@ does not reset that error count. Successful fixtures that deliberately test
 an error do not count as failures. A response containing several checks cannot
 run more identical failing checks than this allowance.
 
-When all drafts in the turn have been submitted, reaching an authoring bound
-ends the turn normally without a pause notice or another provider call. A later
-edit or another unfinished draft still requires a pause.
+When all drafts in the turn have been submitted, reaching an authoring
+bound permits exactly one closing model call without tools. Gustav describes the
+submitted work and any requested work not yet started. Cost admission still applies;
+without an effective finite cost allowance, the closing request must fit the remaining
+token allowance. Only a successful closing answer removes the pause notice. A later
+edit, another unfinished draft, or insufficient closing allowance still requires a pause.
 
 At a bound with unfinished work, Gustav completes the current tool, skips remaining authoring tools
 in that response when the repair allowance is spent, and ends with a short
@@ -1117,13 +1121,16 @@ The attempt allocation uses the default 30-minute turn and the provider's
 60-second first-byte timeout as reference windows: one call and the existing
 two malformed-response repair attempts per window give `30 × 3 = 90` attempts.
 This is an operational capacity allocation; streaming calls can take longer or
-shorter than a minute, and the configured turn deadline still applies. Free and
-unpriced models receive 90 half-reference-window inputs: `90 × 64,000 =
+shorter than a minute, and the configured turn deadline still applies. Models
+without an effective cost limit receive 90 half-reference-window inputs: `90 × 64,000 =
 5,760,000` tokens. A half-window also estimates a recovered call without usage
 and reserves room before compaction, whose source is bounded to 60,000 characters.
 The repeated-error allowance remains an initial attempt plus two retries.
-Disabling Assistant cost allowances is an operator choice; it leaves the
-attempt, repeated-error and time guards in place for priced authoring.
+The token allowance is lifted only when `aiQuotas.assertAllowed` confirms a finite
+cost limit without bypass for the executed model and subject. Disabled cost limits,
+unlimited grants, bypasses, free models and missing prices retain the 5,760,000-token
+allowance. A missing turn trigger follows the person allocation, including service
+accounts and agents acting for a delegated user; review revisions do too.
 
 After a successful check of a Code's draft, later requests replace its earlier
 SDK dumps with a short reload note. The complete results stay in conversation

@@ -188,8 +188,12 @@ A model patch can set shared prices or parameters:
 ```
 
 Set the optional `cacheReadPerMillion` through the CLI or model API to charge
-provider-reported cache reads at their discounted price. It must not exceed
-`inputPerMillion`. Input usage already includes those cached tokens; Cloud
+provider-reported cache reads at their discounted price. When it exceeds
+`inputPerMillion`, Cloud discards it and uses the ordinary input rate. This keeps
+lowering an input price in Administration saveable even when a hidden cache price
+was configured through the CLI/API. Variants inherit the model cache-read price
+unless they supply their own; an inherited price above the variant input rate is
+also discarded. Input usage already includes those cached tokens; Cloud
 charges them once, at the cache-read price. If the price or measured cache count
 is absent, the ordinary input price applies. Admission reserves an uncached
 request because a future cache hit is unknown; settlement releases that reserve

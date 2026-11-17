@@ -6,6 +6,7 @@ import {
   type AiModel,
   AiModelIconSchema,
   type AiModelIcon as AiModelIconSetting,
+  AiModelPricingSchema,
   AiModelSchema,
   type AiModelSlot,
   type AiModelUsage,
@@ -227,7 +228,11 @@ export default function AiModelDetail(props: {
         value.priced &&
         value.inputPerMillion !== null &&
         value.outputPerMillion !== null
-          ? { ...base().pricing, inputPerMillion: value.inputPerMillion, outputPerMillion: value.outputPerMillion }
+          ? AiModelPricingSchema.parse({
+              ...base().pricing,
+              inputPerMillion: value.inputPerMillion,
+              outputPerMillion: value.outputPerMillion,
+            })
           : null,
       enabled: value.enabled,
     };

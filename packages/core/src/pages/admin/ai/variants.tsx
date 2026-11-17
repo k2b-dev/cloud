@@ -1,4 +1,11 @@
-import { type AiModel, type AiModelSlot, type AiModelVariant, type AiProvider, AiVariantSchema } from "@k2b/cloud/shared";
+import {
+  type AiModel,
+  AiModelPricingSchema,
+  type AiModelSlot,
+  type AiModelVariant,
+  type AiProvider,
+  AiVariantSchema,
+} from "@k2b/cloud/shared";
 import {
   Button,
   Disclosure,
@@ -108,7 +115,11 @@ function VariantDialog(props: {
       hint: value.hint.trim(),
       pricing:
         value.ownPrice && value.inputPerMillion !== null && value.outputPerMillion !== null
-          ? { ...base()?.pricing, inputPerMillion: value.inputPerMillion, outputPerMillion: value.outputPerMillion }
+          ? AiModelPricingSchema.parse({
+              ...base()?.pricing,
+              inputPerMillion: value.inputPerMillion,
+              outputPerMillion: value.outputPerMillion,
+            })
           : null,
       maxOutputTokens: value.ownOut ? value.maxOutputTokens : null,
       showInPicker: value.showInPicker,

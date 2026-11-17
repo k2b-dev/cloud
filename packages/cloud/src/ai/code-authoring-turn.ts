@@ -1,25 +1,32 @@
 import { type CompactFn, estimateTokens, type Message, type Provider, type ProviderRequest, type Tool } from "@k2b/nessi";
-import type { AiTurnPolicyToolCall } from "./turn-policy";
+import { CORE_SETTINGS } from "../services/settings/core-settings";
+import { PROVIDER_TIMEOUTS } from "./provider";
+import { AiTurnFailure } from "./turn-failure";
+import { AI_MODEL_REPAIR_TURNS, type AiTurnPolicyToolCall } from "./turn-policy";
 import type { AiCodeAuthoringStop } from "./types";
 
+const authoringModelCalls =
+  ((CORE_SETTINGS["ai.turn_timeout_minutes"].default * 60_000) / PROVIDER_TIMEOUTS.firstByteMs) * (1 + AI_MODEL_REPAIR_TURNS);
 /**
  * Authoring is paid through ordinary Assistant cost admission, not saved Code's
- * F7 budget. Priced models therefore have no additional cumulative token cap.
+ * F7 budget. Only an effective finite cost allowance replaces the token cap.
  *
- * Loop backstop: the default 30-minute turn (runtime.ts) contains 30 provider
+ * Loop backstop: the registry's default 30-minute turn contains 30 provider
  * first-byte timeout windows (PROVIDER_TIMEOUTS.firstByteMs = 60s). Allocate
  * one normal call plus the existing two malformed-call repair attempts per
  * window: 30 * 3 = 90 attempts, including retries and compaction. This is a
  * capacity allocation, not an assumption that every call takes one minute.
- * Free/unpriced models get that many half-reference-window inputs (64k, the
+ * Without an effective cost allowance, use half-reference-window inputs (64k, the
  * existing unknown-usage/compaction reserve): 90 * 64k = 5.76M tokens.
+ * Fully submitted drafts permit one additional tool-free closing attempt,
+ * subject to cost admission or the remaining token allowance.
  */
 export const CODE_AUTHORING_TURN_BUDGET = {
-  inputTokens: 30 * (1 + 2) * (128_000 / 2),
+  inputTokens: authoringModelCalls * (128_000 / 2),
   unknownInputTokens: 128_000 / 2,
-  modelCalls: 30 * (1 + 2),
+  modelCalls: authoringModelCalls,
   // Initial failure plus the same two repair attempts allowed for malformed model calls.
-  identicalErrorRetries: 2,
+  identicalErrorRetries: AI_MODEL_REPAIR_TURNS,
 } as const;
 
 const authoringNames = new Set([
@@ -118,12 +125,14 @@ export function createCodeAuthoringTurnBudget(input: {
   priorCalls: { calls: number; inputTokens: number };
   finishedToolCalls: readonly AiTurnPolicyToolCall[];
   selected: boolean;
-  /** The executed model has a positive reference price; cost admission owns spending. */
+  /** Cost admission enforces a finite allowance for the executed model and subject, without bypass. */
   billable?: boolean;
   onStop?: (reason: "model_calls" | "input_tokens" | "repeated_error") => void;
 }) {
   let active = input.selected;
   let stopped: AiCodeAuthoringStop | null = null;
+  let closingCallUsed = false;
+  let closingAnswered = false;
   const receipts = new Map<string | number, AiTurnPolicyToolCall>();
   const progress = () => {
     let completedSteps = 0;
@@ -198,9 +207,9 @@ export function createCodeAuthoringTurnBudget(input: {
           : null;
   return {
     noteToolCall,
-    // A submitted draft has already been handed over. Only unfinished authoring
-    // belongs in the pause card, even if the final prose would exceed a limit.
-    stopped: () => (stopped && (stopped.drafts === 0 || stopped.unsubmitted > 0) ? stopped : null),
+    // Keep this at the accessor so every stop path, including inference admission,
+    // preserves a receipt unless the one tool-free closing call actually answered.
+    stopped: () => (stopped && !(stopped.drafts > 0 && stopped.unsubmitted === 0 && closingAnswered) ? stopped : null),
     // Compaction's source is bounded to 60k characters; a half-window reserves
     // room for that source, its instructions, and the next chat admission.
     // Never let a locally generated stop become a persisted conversation summary.
@@ -240,9 +249,10 @@ export function createCodeAuthoringTurnBudget(input: {
     wrap: (provider: Provider, purpose: "chat" | "compaction" = "chat"): Provider => ({
       ...provider,
       async *stream(request) {
-        const prepared = active ? { ...request, messages: projectCodeAuthoringContext(request.messages) } : request;
-        const estimated = codeAuthoringInputTokens(prepared);
+        let prepared = active ? { ...request, messages: projectCodeAuthoringContext(request.messages) } : request;
+        let estimated = codeAuthoringInputTokens(prepared);
         const reason = active ? stopReason(estimated) : null;
+        let closing = false;
         if (reason) {
           // An oversized custom compaction prompt must never persist the stop as a summary.
           if (purpose === "compaction") return;
@@ -251,24 +261,50 @@ export function createCodeAuthoringTurnBudget(input: {
             ...progress(),
           };
           input.onStop?.(reason);
-          // A local terminal response costs no additional model call and cannot request more tools.
-          // This boundary runs only after all tools of the previous response have settled.
-          // Persist an empty terminal message with structured metadata. The host
-          // renders its localized notice atomically; no streamed prose is replaced.
-          const text = "";
-          yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
-          yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text } };
-          return;
+          const finalRequest = {
+            ...prepared,
+            tools: [],
+            systemPrompt: `${prepared.systemPrompt ?? ""}\nCode authoring has reached its ${reason} safety limit. Do not call any tools. Give one final answer: describe the submitted work and explicitly name any requested work that is unfinished or not yet started. Do not imply that unstarted work is complete.`,
+          };
+          const finalEstimate = codeAuthoringInputTokens(finalRequest);
+          closing =
+            !closingCallUsed &&
+            stopped.drafts > 0 &&
+            stopped.unsubmitted === 0 &&
+            (input.billable || inputTokens + finalEstimate <= CODE_AUTHORING_TURN_BUDGET.inputTokens);
+          if (closing) {
+            closingCallUsed = true;
+            prepared = finalRequest;
+            estimated = finalEstimate;
+          } else {
+            // A local terminal response costs no additional model call and cannot request more tools.
+            // This boundary runs only after all tools of the previous response have settled.
+            // Persist an empty terminal message with structured metadata. The host
+            // renders its localized notice atomically; no streamed prose is replaced.
+            const text = "";
+            yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
+            yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text } };
+            return;
+          }
         }
         calls++;
         // Reserve before dispatch, including retries and providers that omit usage.
         inputTokens += estimated;
         let reported: number | undefined;
+        let answered = false;
         try {
           for await (const event of provider.stream(prepared)) {
+            if (
+              closing &&
+              ((event.type === "block_start" && event.kind === "tool_call") ||
+                (event.type === "block_end" && event.block.type === "tool_call"))
+            )
+              throw new AiTurnFailure("step_limit", "The model did not produce a final answer without tools.");
+            if (event.type === "block_end" && event.block.type === "text" && event.block.text.trim()) answered = true;
             if (event.type === "usage" && Number.isSafeInteger(event.usage.input) && event.usage.input >= 0) reported = event.usage.input;
             yield event;
           }
+          if (closing) closingAnswered = answered;
         } finally {
           // Snapshots replace rather than add. Keep the estimate as a floor for missing/zero usage.
           inputTokens += Math.max(estimated, reported ?? estimated) - estimated;

@@ -553,21 +553,26 @@ pool; adding chat tools does not move user-code execution into Core. A busy
 or unavailable runner produces the shared versioned failure result. Chat
 submission saves a version; activation remains a human action.
 
-Gustav's authoring turns now allow 90 model attempts, including provider retries
-and compaction. Priced models use the existing Assistant cost admission without
-an additional token allowance; free and unpriced models retain a 5,760,000-token
-turn allowance. Repeated identical errors still stop after two repair retries.
+Gustav's authoring turns now allow 90 authoring model attempts, including provider
+retries and compaction, plus one tool-free closing attempt after submission.
+Priced models with an effective finite Assistant cost limit use cost admission
+without an additional token allowance. Without such a limit (including disabled
+cost controls, unlimited grants or bypass), the 5,760,000-token allowance applies
+to priced models too, as it does to free and unpriced models. Repeated identical
+errors still stop after two repair retries.
 These limits are separate from the F7 budgets of AI invoked by saved Code.
-Configure Assistant usage allowances to bound authoring spending; disabling
-those allowances leaves priced authoring bounded by calls, errors and time.
+Configure a finite Assistant usage allowance to replace the token limit with
+cost admission. Call, repeated-error and time guards remain in either case.
 See [Code authoring safety budget](/en/docs/ai/chat-runtime-and-streaming#code-authoring-safety-budget).
 
 Deploy Core and the platform together for cache-aware cost accounting. The AI
 migration adds the measured cache-read count; no backfill or budget reset is
 required. Configure `cacheReadPerMillion` through the model or variant CLI/API
 when the provider has a discounted cache-read price. Missing prices or usage
-retain the ordinary input rate. A completed submission ends normally even when
-its closing model response would exceed the authoring allowance.
+retain the ordinary input rate. Once all drafts are submitted, an authoring
+stop allows one closing model call without tools, subject to cost admission or the
+remaining token allowance. The answer identifies completed and unstarted work;
+only a successful closing answer suppresses the pause notice.
 
 Chat mailbox and reply waits use NATS notifications on the existing Cloud
 connection. If a notification is lost, the 2-second fallback reads durable

@@ -375,8 +375,10 @@ suite("AI conversation store integration", () => {
           model: "stub",
           family: "openai-compatible",
           capabilities: { streaming: true, tools: false, images: false, thinking: false, usage: false },
-          async *stream() {
-            throw new Error("An exhausted turn must not dispatch");
+          async *stream(request) {
+            expect(submitted).toBe(true);
+            expect(request.tools).toEqual([]);
+            yield { type: "block_end", blockId: "done", index: 0, block: { type: "text", text: "The version is submitted." } };
           },
         }),
       });
@@ -389,7 +391,10 @@ suite("AI conversation store integration", () => {
       }
       const messages = await aiConversations.listMessages({ conversationId: source.id });
       const last = messages.at(-1)!;
-      expect(last.message).toMatchObject({ role: "assistant", content: [] });
+      expect(last.message).toMatchObject({
+        role: "assistant",
+        content: submitted ? [{ type: "text", text: "The version is submitted." }] : [],
+      });
       if (submitted) {
         expect(guard.stopped()).toBeNull();
         expect(last.meta?.codeAuthoringStop).toBeUndefined();
