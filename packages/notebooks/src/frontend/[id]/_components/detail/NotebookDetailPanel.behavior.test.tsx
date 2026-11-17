@@ -105,10 +105,10 @@ describe("Notebook detail panel recovery and pagination", () => {
   const lastRow = () => rows().at(-1);
   // The note's own creation row is the only row without a log id.
   const created = () => rows().find((row) => !row.hasAttribute("data-activity-id")) ?? null;
-  // The person of each logged row stands last in its meta line; the note's own creation row has no log id.
+  // Each logged row starts its sentence with the person; the note's own creation row has no log id.
   const authors = () =>
-    [...dom.root.querySelectorAll(".notebook-activity [data-activity-id] .k2b-activity__meta")].map((meta) =>
-      meta.textContent?.split(" · ").at(-1),
+    [...dom.root.querySelectorAll(".notebook-activity [data-activity-id] .k2b-activity__text > span:first-child")].map((actor) =>
+      actor.textContent?.replace(/\s*·\s*$/, "").trim(),
     );
 
   test("shared reopen and editor toolbar keep one persisted visibility state", async () => {

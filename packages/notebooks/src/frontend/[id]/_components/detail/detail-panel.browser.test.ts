@@ -362,7 +362,7 @@ for (const width of [1440, 390]) {
   test(`${width}: activity, presence and disclosure keep earlier content in place`, async () => {
     const { page, release } = await open(width, true);
     try {
-      expect(await page.locator(".notebook-activity .k2b-activity__placeholder").count()).toBe(3);
+      expect(await page.locator(".notebook-activity .k2b-activity__placeholder-line").count()).toBe(3);
       const tracked = [header, `${contents} > .k2b-section__header`, ".k2b-discussion__item"];
       const before = await Promise.all(tracked.map((selector) => box(page, selector)));
       release();

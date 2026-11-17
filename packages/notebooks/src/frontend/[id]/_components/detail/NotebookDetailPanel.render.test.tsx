@@ -241,7 +241,7 @@ describe("Notebook note detail panel", () => {
   test("activity initially shows the timeline's quiet loading rows", () => {
     inspect({}, (document) => {
       expect(document.querySelector('.notebook-activity [role="status"]')).not.toBeNull();
-      expect(document.querySelectorAll(".notebook-activity .k2b-activity__placeholder")).toHaveLength(3);
+      expect(document.querySelectorAll(".notebook-activity .k2b-activity__placeholder-line")).toHaveLength(3);
     });
   });
 });
