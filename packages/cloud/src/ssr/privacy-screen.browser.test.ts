@@ -4,14 +4,14 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { transformAsync } from "@babel/core";
 import typescript from "@babel/preset-typescript";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { hoverInPlace, launchBrowser, pageErrors } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-privacy-screen-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 setDefaultTimeout(30_000);
 const railSnapshot = await import("../services/rail-snapshot");

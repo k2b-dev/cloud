@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { GeoPlaceSearchInput } from "../contracts/geo";
 import { GeoRouteResolvedStopSchema } from "../contracts/geo-route";
 import { GeoapifyAdapter } from "../services/geo/geoapify";
@@ -59,8 +60,7 @@ export async function startMapBrowserFixture() {
   const assets = new Map(await Promise.all(build.outputs.map(async (asset) => [basename(asset.path), await asset.arrayBuffer()] as const)));
   const states = new Map<string, AiMapStored>();
   const followups = new Map<string, AiMapToolResult[]>();
-  const { createConfig } = await import("@k2b/ssr");
-  Bun.plugin(createConfig({ dev: true, rootDir: fixtureDir }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: fixtureDir });
   const { renderMapFixture } = await import("./map-ssr.test-fixture");
   const calls: string[] = [];
   const commands: unknown[] = [];

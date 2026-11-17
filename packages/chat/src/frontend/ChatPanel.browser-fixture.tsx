@@ -4,20 +4,20 @@ import { tmpdir } from "node:os";
 import { relative, resolve } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import type { RuntimeContext } from "@k2b/cloud/ssr";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { buildIslandClosure } from "../../../../scripts/fixtures/island-closure";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { assistantPanelFixture } from "../../../assistant/src/frontend/AssistantPanel.test-fixture";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { startChatHarness, viewer } from "./ChatWorkspace.browser-fixture";
 import { panelResourceChat } from "./panel-resource";
 
 /** Public Layout/PanelLayout with the actual Chat workspace and its existing synthetic REST/live fixture. */
 export async function startConversationPanelFixture() {
   const root = mkdtempSync(resolve(tmpdir(), "conversation-panel-"));
-  const { plugin } = createConfig({ dev: true, rootDir: root });
-  Bun.plugin(plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
+
   const [{ defineApp }, { Layout, PanelLayout }, { default: ChatWorkspace }, { default: AssistantWorkspace }, settings, help, consent] =
     await Promise.all([
       import("@k2b/cloud"),

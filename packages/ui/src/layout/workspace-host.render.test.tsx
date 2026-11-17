@@ -2,13 +2,13 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-workspace-host-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: directory });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: directory });
+
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const { default: AppWorkspace, appWorkspaceDetailElementId } = await import("./AppWorkspace");
 const { LocaleProvider } = await import("../intl/locale");

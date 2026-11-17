@@ -2,16 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { renderedText, withoutComments } from "../../../../scripts/fixtures/rendered-markup";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { FeatCodeMarkProps } from "./FeatCodeMark";
 
 // Solid's server transform, as the app server compiles the component.
 const root = mkdtempSync(resolve(tmpdir(), "cloud-feat-code-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { FEAT_CODE_NAME, FeatCodeMark } = await import("./FeatCodeMark");
 

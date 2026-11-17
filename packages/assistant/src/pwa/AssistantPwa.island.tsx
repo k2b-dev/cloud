@@ -985,7 +985,9 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                 <AiChatActionsProvider
                   actions={{
                     // The same version card as the workspace: on a phone it says where switching on works.
-                    renderCodeAuthoringStop: (state, continuable, superseded) => <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />,
+                    renderCodeAuthoringStop: (state, continuable, superseded) => (
+                      <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
+                    ),
                     renderCodeDecision: (entry) => (
                       <AssistantCodeDecisionEntry entry={entry} messages={chat.messages} timeZone={props.timeZone} />
                     ),

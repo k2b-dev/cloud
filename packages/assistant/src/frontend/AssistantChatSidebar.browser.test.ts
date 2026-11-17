@@ -2,11 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, hoverInPlace, launchBrowser } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import { emptySidebarSnapshot, fileResult, minutesAgo, SIDEBAR_NOW, sidebarSnapshot, source, upload } from "./AssistantChatSidebar.fixture";
 
@@ -18,7 +18,7 @@ const root = mkdtempSync(resolve(tmpdir(), "assistant-chat-sidebar-browser-"));
 const serovalLink = resolve(import.meta.dir, "../../node_modules/seroval");
 const createdSerovalLink = !existsSync(serovalLink);
 if (createdSerovalLink) symlinkSync(resolve(import.meta.dir, "../../../cloud/node_modules/seroval"), serovalLink, "dir");
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 const { SidebarHarness } = await import("./AssistantChatSidebar.browser-fixture");
 
 const ui = resolve(import.meta.dir, "../../../ui");

@@ -63,7 +63,9 @@ for (const locale of ["de", "en"]) {
         <LocaleProvider locale={locale}>
           <AiChatActionsProvider
             actions={{
-              renderCodeAuthoringStop: (state, continuable, superseded) => <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />,
+              renderCodeAuthoringStop: (state, continuable, superseded) => (
+                <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
+              ),
               actionDisabled: busy,
               onContinueTurn: async (message) => {
                 continued.push(message);
@@ -85,7 +87,8 @@ for (const locale of ["de", "en"]) {
       dom.root,
     );
     const button = () => dom.root.querySelector<HTMLButtonElement>(".assistant-authoring-stop button")!;
-    const quiet = () => Array.from(dom.root.querySelectorAll('.assistant-authoring-stop__meta > [role]'), (node) => node.textContent).join("");
+    const quiet = () =>
+      Array.from(dom.root.querySelectorAll(".assistant-authoring-stop__meta > [role]"), (node) => node.textContent).join("");
     try {
       expect(continued).toEqual([]);
       expect(dom.root.querySelector(".k2b-chat-task-list")).toBeNull();
@@ -148,18 +151,23 @@ for (const newer of ["message", "same-loop-message", "turn"] as const) {
       const items = createAiChatTimeline({ messages: history, activeTurn });
       return <Chat.Timeline items={items()} />;
     };
-    const dispose = render(() => (
-      <LocaleProvider locale="de">
-        <AiChatActionsProvider actions={{
-          onContinueTurn: () => {},
-          renderCodeAuthoringStop: (state, continuable, superseded) => (
-            <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
-          ),
-        }}>
-          <Timeline />
-        </AiChatActionsProvider>
-      </LocaleProvider>
-    ), dom.root);
+    const dispose = render(
+      () => (
+        <LocaleProvider locale="de">
+          <AiChatActionsProvider
+            actions={{
+              onContinueTurn: () => {},
+              renderCodeAuthoringStop: (state, continuable, superseded) => (
+                <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
+              ),
+            }}
+          >
+            <Timeline />
+          </AiChatActionsProvider>
+        </LocaleProvider>
+      ),
+      dom.root,
+    );
     try {
       const card = dom.root.querySelector(".assistant-authoring-stop");
       const button = card?.querySelector("button");

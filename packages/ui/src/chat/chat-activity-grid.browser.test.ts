@@ -2,19 +2,19 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import type { ChatActivityProps } from "../index";
 
 // Whether the right columns of a list of steps end on one edge depends on the shipped grid, so a real engine lays out
 // rows with and without meta, duration, ⓘ, and chevron at phone and desktop widths. The card behind the ⓘ is
 // `HoverCard`'s own contract (hover-card*.browser.test.ts); the chat's gallery tests it on real steps.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-chat-activity-grid-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Chat, HoverCard } = await import("../index");

@@ -2,19 +2,19 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import type { SettingFieldDef } from "./CoreSettingsForm.island";
 
 // #1303: the unreadable notice and badge come from the server render, fit a phone, and read in light and dark.
 const root = mkdtempSync(join(tmpdir(), "core-unreadable-settings-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CoreSettingsForm } = await import("./CoreSettingsForm.island.tsx");
 const { buildFontAssets } = await import("../../../../../scripts/font-assets");

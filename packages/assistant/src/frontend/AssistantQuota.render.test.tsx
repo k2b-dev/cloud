@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AiChatQuotaBalance, AiChatQuotaSnapshot } from "@k2b/cloud/shared";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "assistant-quota-render-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const [{ Chat, LocaleProvider }, { createAssistantQuotaSections, quotaState }] = await Promise.all([
   import("@k2b/ui"),

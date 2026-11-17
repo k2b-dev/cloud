@@ -444,8 +444,7 @@ const storedItems = (
               last && (segmentPhase === "stopped" || silent) && answerPrompt && !answerPrompt.compactedAt && actions.onRetryMessage
                 ? () => actions.onRetryMessage?.(answerPrompt, { mode: "retry" })
                 : undefined,
-            superseded:
-              (activeTurnId !== null && activeTurnId !== item.loopId) || lastMessage?.id !== messages.at(-1)?.id,
+            superseded: (activeTurnId !== null && activeTurnId !== item.loopId) || lastMessage?.id !== messages.at(-1)?.id,
             continuable:
               idle &&
               !(item.loopId && reviewLoops.has(item.loopId)) &&

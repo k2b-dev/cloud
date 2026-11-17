@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type CodePageTree, validateCodePage } from "@k2b/cloud/code";
-import { createConfig } from "@k2b/ssr";
 import { AppWorkspace } from "@k2b/ui";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
@@ -11,6 +10,7 @@ import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { meterType } from "../../../../scripts/fixtures/type-meter";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { CODE_NEWSLETTER_DEMO_SOURCE } from "./page.newsletter-demo";
 import { codePageFixture } from "./page.test-fixture";
 import { buildCodePage } from "./page.test-source";
@@ -20,7 +20,7 @@ import { provenanceMessages } from "./provenance-messages";
 // The real renderer with the real stylesheet: the server's page, the island that replaces it, and every request it
 // sends. A fake event source stands in for platform events.
 const root = mkdtempSync(join(tmpdir(), "core-code-page-browser-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: CodePageHost } = await import("./PageHost");
 const { buildFontAssets } = await import("../../scripts/font-assets");

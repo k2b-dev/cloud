@@ -145,7 +145,7 @@ const boxes = (page: Page) =>
       button: document.querySelector(".assistant-authoring-stop button") ? box(".assistant-authoring-stop button") : null,
     };
   });
-const quiet = (page: Page) => page.locator('.assistant-authoring-stop__meta > [role]:not(:empty)');
+const quiet = (page: Page) => page.locator(".assistant-authoring-stop__meta > [role]:not(:empty)");
 const count = (page: Page) => page.evaluate(() => (window as unknown as { continued: string[] }).continued.length);
 const busy = (page: Page, value: boolean) =>
   page.evaluate((next) => (window as unknown as { setBusy: (busy: boolean) => void }).setBusy(next), value);
@@ -298,15 +298,20 @@ describe("the v10 pause card", () => {
                 const spinner = await button.evaluate((element) => {
                   const button = element.getBoundingClientRect();
                   const indicator = element.querySelector(".k2b-button__busy i")!.getBoundingClientRect();
-                  return { x: indicator.x + indicator.width / 2 - button.x - button.width / 2,
-                    y: indicator.y + indicator.height / 2 - button.y - button.height / 2 };
+                  return {
+                    x: indicator.x + indicator.width / 2 - button.x - button.width / 2,
+                    y: indicator.y + indicator.height / 2 - button.y - button.height / 2,
+                  };
                 });
                 expect(Math.abs(spinner.x)).toBeLessThan(0.5);
                 expect(Math.abs(spinner.y)).toBeLessThan(0.5);
                 expect(await quiet(page).innerText()).toBe(locale === "de" ? "Gustav macht weiter …" : "Gustav is continuing …");
                 if (capture) await shot(page, "sending", width, theme);
                 await finish(page, false);
-                await page.getByRole("alert").filter({ hasText: locale === "de" ? "Das ging nicht." : "Could not continue." }).waitFor();
+                await page
+                  .getByRole("alert")
+                  .filter({ hasText: locale === "de" ? "Das ging nicht." : "Could not continue." })
+                  .waitFor();
                 await same();
                 expect(await button.isEnabled()).toBe(true);
                 expect(await button.evaluate((element) => element.ownerDocument.activeElement === element)).toBe(true);
@@ -352,25 +357,29 @@ describe("the v10 pause card", () => {
     }
   }
   test("a failed send leaves focus on another control when the person has moved on", async () => {
-    for (const theme of ["light", "dark"] as const) for (const width of [1440, 390]) {
-      const { page, errors, close } = await open("de", width, theme);
-      try {
-        const button = page.getByRole("button", { name: "Weiterarbeiten" });
-        await button.focus();
-        await page.keyboard.press("Enter");
-        await page.evaluate(() => {
-          const input = document.createElement("input");
-          input.setAttribute("aria-label", "Other input");
-          document.body.append(input);
-          input.focus();
-        });
-        await finish(page, false);
-        await page.getByRole("alert").filter({ hasText: "Das ging nicht." }).waitFor();
-        expect(await page.getByRole("textbox", { name: "Other input" }).evaluate((input) => input.ownerDocument.activeElement === input)).toBe(true);
-        expect(await button.isEnabled()).toBe(true);
-        expect(errors).toEqual([]);
-      } finally { await close(); }
-    }
+    for (const theme of ["light", "dark"] as const)
+      for (const width of [1440, 390]) {
+        const { page, errors, close } = await open("de", width, theme);
+        try {
+          const button = page.getByRole("button", { name: "Weiterarbeiten" });
+          await button.focus();
+          await page.keyboard.press("Enter");
+          await page.evaluate(() => {
+            const input = document.createElement("input");
+            input.setAttribute("aria-label", "Other input");
+            document.body.append(input);
+            input.focus();
+          });
+          await finish(page, false);
+          await page.getByRole("alert").filter({ hasText: "Das ging nicht." }).waitFor();
+          expect(
+            await page.getByRole("textbox", { name: "Other input" }).evaluate((input) => input.ownerDocument.activeElement === input),
+          ).toBe(true);
+          expect(await button.isEnabled()).toBe(true);
+          expect(errors).toEqual([]);
+        } finally {
+          await close();
+        }
+      }
   }, 90_000);
-
 });

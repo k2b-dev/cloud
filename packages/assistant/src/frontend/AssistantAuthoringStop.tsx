@@ -5,7 +5,11 @@ import { createSignal, For, Show } from "solid-js";
 import { assistantMessages } from "./messages";
 
 /** A Cloud receipt, with one sentence and one quiet line. Continuing uses the normal send path. */
-export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringStop; continuable: () => boolean; superseded: () => boolean }) {
+export default function AssistantAuthoringStop(props: {
+  state: AiCodeAuthoringStop;
+  continuable: () => boolean;
+  superseded: () => boolean;
+}) {
   const locale = useLocale();
   const t = () => assistantMessages.resolve([locale()]).t;
   const actions = useAiChatActions();
@@ -75,7 +79,9 @@ export default function AssistantAuthoringStop(props: { state: AiCodeAuthoringSt
       actions={
         <Show when={!props.superseded() && Boolean(actions.onContinueTurn)}>
           <Button
-            ref={(element) => { continueButton = element; }}
+            ref={(element) => {
+              continueButton = element;
+            }}
             variant="secondary"
             size="md"
             class={!available() ? "assistant-authoring-stop__retired" : undefined}

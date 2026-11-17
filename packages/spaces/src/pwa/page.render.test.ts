@@ -6,18 +6,18 @@ import type { RuntimeAppMeta, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { announcements } from "@k2b/cloud/services/announcements";
 import { session } from "@k2b/cloud/services/session";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { createDomTestHarness } from "../../../ui/test/dom";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import * as overview from "../service/overview";
 import * as pwaSpace from "./space";
 import * as pwaTask from "./task";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-pwa-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { pwaRoutes } = await import("./index");
 const { app } = await import("../config");

@@ -3,15 +3,14 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AiCodeAuthoringStop } from "@k2b/cloud/ai";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { authoringStopReasons, authoringStopSaves, authoringStopState } from "./authoring-stop.test-fixture";
 
 // Use the same compiler as neighbouring page renders (#3632), including their island boundaries.
 const root = mkdtempSync(join(tmpdir(), "assistant-authoring-stop-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 const [{ default: AssistantAuthoringStop }, { LocaleProvider }, { AiChatActionsProvider }] = await Promise.all([
   import("./AssistantAuthoringStop"),
   import("@k2b/ui"),

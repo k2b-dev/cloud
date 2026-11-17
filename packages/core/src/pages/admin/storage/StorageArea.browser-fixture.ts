@@ -12,9 +12,9 @@ import {
   StorageBucketUpdateSchema,
   type StorageBucketUsage,
 } from "@k2b/cloud/contracts/storage-buckets";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import type { StorageSelection } from "./view";
 
@@ -166,7 +166,7 @@ const USAGE: Record<string, StorageBucketUsage> = {
 export async function storageAreaBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-storage-host-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const { renderToString } = await import("solid-js/web");
   const { createComponent } = await import("solid-js");
   const { StorageView } = await import("./view");

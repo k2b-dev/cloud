@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { basename, resolve } from "node:path";
 import type { GeoAddress } from "@k2b/cloud/contracts/geo";
 import { serializeGeoDocument } from "@k2b/cloud/geo/document";
-import { createConfig } from "@k2b/ssr";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { renderNotebookBook } from "../../lib/book-renderer";
 import { fictionalMap, fictionalRouteMap, mapProvenance } from "../../lib/map.test-fixture";
 import { buildNotePdfHtml } from "../../service/note-pdf";
@@ -13,8 +13,8 @@ const notebookAccent =
   "--app-accent:#eab308;--app-ink-light:#886805;--app-ink-dark:#eab308;--app-selected-light:#fefaee;--app-selected-dark:#2f2b18;--app-selected-nav-light:#fdf7e6;--app-selected-nav-dark:#363018";
 export async function createNotebookMapFixtureServer(port = 0) {
   const directory = mkdtempSync(resolve(tmpdir(), "notebook-maps-browser-"));
-  const { plugin } = createConfig({ dev: true, rootDir: directory });
-  Bun.plugin(plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: directory });
+
   const available = {
     configured: true,
     cloud: { exhausted: false, resetsAt: "2026-11-01T00:00:00Z" },

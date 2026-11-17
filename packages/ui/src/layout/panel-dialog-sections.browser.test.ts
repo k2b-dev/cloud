@@ -2,17 +2,17 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 // Tints, insets and where a title sits are layout, which happy-dom does not
 // model, so a real engine renders the shipped stylesheet.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-panel-dialog-sections-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: PanelDialog } = await import("./PanelDialog");

@@ -2,13 +2,13 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { prompts } from "@k2b/ui";
 import { createRoot } from "solid-js";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import type { PulseSource } from "../../contracts";
 
 const root = mkdtempSync(join(tmpdir(), "pulse-source-controller-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { createSourceController } = await import("./source-controller");
 
