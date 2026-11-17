@@ -199,9 +199,13 @@ for (const spelling of replacements.keys()) {
       expect(first.dropped.lines).toBe(1);
       expect(first.dropped.bytes).toBe(Buffer.byteLength(JSON.stringify(muted)));
       expect(first.pending?.text).toBe(spelling.slice(0, middle));
-      const result = boundary === "batch"
-        ? redactOutput([continuation], redactor, OutputRedactionPendingSchema.parse(JSON.parse(JSON.stringify(first.pending))), false, { lost: false, skip: first.skip })
-        : redactOutput([muted, continuation], redactor, lost.pending, false, { lost: false, skip: lost.skip });
+      const result =
+        boundary === "batch"
+          ? redactOutput([continuation], redactor, OutputRedactionPendingSchema.parse(JSON.parse(JSON.stringify(first.pending))), false, {
+              lost: false,
+              skip: first.skip,
+            })
+          : redactOutput([muted, continuation], redactor, lost.pending, false, { lost: false, skip: lost.skip });
       expect(result.entries.flatMap((entry) => entry.text)).toEqual([
         { type: "secret", name: "TOKEN" },
         { type: "text", text: "!" },
@@ -232,9 +236,19 @@ test("harden suppressed candidates through mismatch, finalization and repeated g
   ]);
 });
 
-for (const fragments of [["abc", "defghi!"], ["ab", "c", "def", "ghi!"], ["abc", "x!"], ["abc", ""]]) {
+for (const fragments of [
+  ["abc", "defghi!"],
+  ["ab", "c", "def", "ghi!"],
+  ["abc", "x!"],
+  ["abc", ""],
+]) {
   test(`harden overlapping deferred areas across ${JSON.stringify(fragments)}`, () => {
-    const redactor = compileOutputRedaction(new Map([["abc", "[secret:FIRST]"], ["bcdefghi", "[secret:SECOND]"]]));
+    const redactor = compileOutputRedaction(
+      new Map([
+        ["abc", "[secret:FIRST]"],
+        ["bcdefghi", "[secret:SECOND]"],
+      ]),
+    );
     let pending: OutputRedactionPending = null;
     const parts = [];
     for (const text of fragments) {
@@ -246,7 +260,11 @@ for (const fragments of [["abc", "defghi!"], ["ab", "c", "def", "ghi!"], ["abc",
     parts.push(...redactOutput([], redactor, pending, true).entries.flatMap((entry) => entry.text));
     expect(parts).toEqual([
       { type: "secret", name: "FIRST" },
-      ...(fragments.at(-1) === "x!" ? [{ type: "text", text: "x!" }] : fragments.at(-1) ? [{ type: "text", text: "!" }] : []),
+      ...(fragments.at(-1) === "x!"
+        ? [{ type: "text" as const, text: "x!" }]
+        : fragments.at(-1)
+          ? [{ type: "text" as const, text: "!" }]
+          : []),
     ]);
   });
 }

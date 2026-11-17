@@ -20,7 +20,12 @@ import { defineLive, LIVE_LIMITS } from "@k2b/cloud/events";
 import { purposeSecretCipher } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
-import { compileOutputRedaction, type OutputRedactor, OutputRedactionPendingSchema as PendingSchema, redactOutput } from "./output-redaction";
+import {
+  compileOutputRedaction,
+  type OutputRedactor,
+  OutputRedactionPendingSchema as PendingSchema,
+  redactOutput,
+} from "./output-redaction";
 import { secretEchoReplacements } from "./secret-echo";
 
 /** Same bounded broker budget as the AI stream; one shared topic, partitioned by run, never one stream per run. */

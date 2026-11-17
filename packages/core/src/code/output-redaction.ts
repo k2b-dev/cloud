@@ -1,6 +1,7 @@
-import { type CodeOutputBatch, type CodeOutputKnownEntry, CodeOutputBatchSchema, cleanCodeOutput, codeOutputParts } from "@k2b/cloud/code";
+import { type CodeOutputBatch, CodeOutputBatchSchema, type CodeOutputKnownEntry, cleanCodeOutput, codeOutputParts } from "@k2b/cloud/code";
 
 import { z } from "zod";
+
 type RedactedOutputEntry = Omit<CodeOutputKnownEntry, "id">;
 type Match = { length: number; marker: string };
 type Node = {
@@ -187,7 +188,9 @@ export function redactOutput(
     for (const fragment of fragments) {
       if (position + fragment.text.length > metadataAt) {
         held = {
-          kind: fragment.kind, level: fragment.level, at: fragment.at,
+          kind: fragment.kind,
+          level: fragment.level,
+          at: fragment.at,
           text: text.slice(heldAt),
           name: retained ? retained.marker.slice("[secret:".length, -1) : name!,
           ...(hiddenUntil > heldAt ? { hidden: hiddenUntil - heldAt } : {}),
@@ -199,11 +202,13 @@ export function redactOutput(
     }
   }
   start = 0;
-  entries.push(...fragments.flatMap((fragment, index) => {
-    const before = start;
-    start += fragment.text.length;
-    if (!emitted[index] && (fragment.suppressed || (held && before >= end))) return [];
-    return [{ kind: fragment.kind, level: fragment.level, at: fragment.at, text: codeOutputParts(cleanCodeOutput(emitted[index]!)) }];
-  }));
+  entries.push(
+    ...fragments.flatMap((fragment, index) => {
+      const before = start;
+      start += fragment.text.length;
+      if (!emitted[index] && (fragment.suppressed || (held && before >= end))) return [];
+      return [{ kind: fragment.kind, level: fragment.level, at: fragment.at, text: codeOutputParts(cleanCodeOutput(emitted[index]!)) }];
+    }),
+  );
   return { entries, pending: held, skip, dropped };
 }
