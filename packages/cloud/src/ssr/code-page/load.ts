@@ -22,6 +22,7 @@ import { AttentionSchema } from "./attention-schema";
 import { loadCodeRunCallsForDetail } from "./calls";
 import {
   AutomationListSchema,
+  CodeChatBindingSchema,
   CodeListSchema,
   type CodePageAutomation,
   type CodePageData,
@@ -328,13 +329,19 @@ const loadReady = async (
 ): Promise<CodePageReady> => {
   const catalog = catalogCache(getLocale(c), requestAuthority(c));
   const code = listed;
-  const [versionsResult, runsResult, attentionResult, automationResult] = await Promise.all([
+  const [versionsResult, runsResult, attentionResult, automationResult, chatBinding] = await Promise.all([
     invoke(coreQuery("code.version.list", { codeId: code.id, limit: PAGE }), VersionListSchema),
     invoke(coreQuery("code.run.list", { codeId: code.id, limit: RUN_STRIP }), RunListSchema),
     // The same answer the owner's navigation gets, so its dot and this page agree.
     invoke(coreQuery("code.attention", { owner: codeOwner }), AttentionSchema).catch(() => null),
     // Only the next run comes from here; without it the row simply does not name one.
     invoke(coreQuery("code.automation.list", { codeId: code.id }), AutomationListSchema).catch(() => null),
+    // Personal Code writes to one chat; the page names it and lets its owner choose another one.
+    codeOwner.kind === "person"
+      ? invoke(coreQuery("code.chat_binding.read", { codeId: code.id }), CodeChatBindingSchema)
+          .then((result) => (result.ok ? result.data.data : null))
+          .catch(() => null)
+      : Promise.resolve(undefined),
   ]);
   const receipts = versionsResult.ok ? versionsResult.data.data.items : [];
   const latest = receipts[0];
@@ -810,6 +817,7 @@ const loadReady = async (
     versionSelected: tab === "versions" && Boolean(versionParam && uuid.safeParse(versionParam).success),
     sourceTab: tab === "code" ? sourceTab : null,
     recentReaders,
+    ...(chatBinding === undefined ? {} : { chatBinding }),
   };
 };
 

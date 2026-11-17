@@ -37,6 +37,10 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
   if (data.state.kind !== "ready") return data;
   data.dates.now = "2026-11-14T12:49:04.000Z";
   const state = data.state;
+  // These head scenarios create reports and pages, not chat messages. The base personal fixture also covers chat.send.
+  delete state.chatBinding;
+  if (state.words?.current)
+    state.words.current.mayDo.items = state.words.current.mayDo.items.filter((row) => row.target?.ref.type !== "core.ai.chat");
   const de = locale === "de";
   data.owner = { kind: "person", ref: null, title: de ? "Wochenbericht Vertrieb" : "Weekly sales report", typeTitle: null };
   const schedules = (state.automations ?? []).filter((item) => item.kind === "schedule").slice(0, 2);

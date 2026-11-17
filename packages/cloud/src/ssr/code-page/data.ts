@@ -186,6 +186,34 @@ export const ActivationSchema = z.object({
 });
 export type CodeActivationStatus = z.infer<typeof ActivationSchema>;
 export const StartSchema = z.object({ runId: z.string(), duplicate: z.boolean() });
+/**
+ * The chat personal Code writes to with `chat.send` (Core's `code.chat_binding.read`). Only the owner reads the chat's
+ * title and may change it; others learn only that one is bound. Resource Code has none.
+ */
+export const CodeChatBindingSchema = z.object({
+  codeId: z.string(),
+  revision: z.number().int(),
+  canChange: z.boolean(),
+  chat: z
+    .discriminatedUnion("state", [
+      z.object({
+        state: z.literal("available"),
+        id: z.string(),
+        title: z.string(),
+        project: z.object({ id: z.string(), title: z.string() }).nullable(),
+        href: z.string(),
+      }),
+      z.object({
+        state: z.literal("unavailable"),
+        reason: z.enum(["archived", "deleted"]),
+        id: z.string().optional(),
+        title: z.string().optional(),
+      }),
+      z.object({ state: z.literal("hidden") }),
+    ])
+    .nullable(),
+});
+export type CodeChatBinding = z.infer<typeof CodeChatBindingSchema>;
 export const AutomationListSchema = z.object({
   items: z.array(
     z.object({
@@ -396,6 +424,8 @@ export type CodePageReady = {
    * way the server named the first ones; a type without an entry stays unnamed.
    */
   recentReaders?: Record<string, string>;
+  /** Personal Code's chat for `chat.send`; null when it could not be read, absent for resource Code. */
+  chatBinding?: CodeChatBinding | null;
   code: z.infer<typeof CodeSchema>;
   permission: "editor" | "reader";
   versions: CodePageVersion[];

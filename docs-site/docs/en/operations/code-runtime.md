@@ -110,6 +110,12 @@ ordinary chat messages and turns retain their own history. Keep the normal AI wo
 recover after a failed wake-up. A waiting turn appears in the chat and remains
 subject to its normal wait and execution limits.
 
+A personal Code using `chat.send` needs a chat even before its first binding.
+Its owner can recover from the Code page or Waiting for you. A binding change
+during send admission returns `chat_busy` (409) without queuing a message;
+retry with the same idempotency key to use the current chat. Messages already
+queued keep their destination. This requires no additional configuration.
+
 ## File transfers
 
 Core now transfers a Code FileRef directly between capability providers.
@@ -281,3 +287,16 @@ uses the same first matching GET route as hosting, including earlier public
 or parameter routes. Unknown checker page evidence retains the private
 literal GET/ALL fallback. Live run identity reads use the existing authorized
 metadata list in coalesced snapshots; live events remain payload-free.
+
+## Personal Code chat bindings
+
+Core's additive Code migration adds a nullable chat UUID and binding revision.
+It requires no AI schema or foreign key; a check keeps bindings on personal
+Code. `chat.send` uses the ordinary chat handle with the
+reserved ID `bound-chat`. Core resolves it inside Send for each personal Code
+call; the runner lease carries no chat ID. Missing bound chats appear as
+`chat_missing` in attention and fail with `chat_unavailable` during resolution. Explicit chat
+handles return `NOT_FOUND` (404) for missing, archived or foreign chats.
+For a missing bound chat, restore it or have the personal Code owner choose
+another active chat through
+[`code.chat_binding.set`](/en/docs/platform/code-data-model#choose-a-personal-codes-chat).

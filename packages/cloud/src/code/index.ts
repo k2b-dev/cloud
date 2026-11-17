@@ -20,6 +20,7 @@ export type {
   CodeUser,
   KnownCodeErrorCode,
 } from "./authoring-types";
+export { CODE_BOUND_CHAT_ID } from "./bound-chat";
 export { requireCodeCapabilityDeclared } from "./capability-set";
 export type { CodeCheckHost } from "./checker";
 export { checkCode } from "./checker";

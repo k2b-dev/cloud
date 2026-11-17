@@ -284,6 +284,11 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
             limit: "Maximale Anzahl der auf dieser Seite geprüften Code-Kandidaten; höchstens 20.",
           },
         },
+        "code.chat_binding.read": {
+          title: "Chat des Codes lesen",
+          description: "Liest Chat-Bezug und Revision. Chat-Titel bleiben für den Besitzer privat.",
+          input: codeIdInput,
+        },
         "code.read": {
           title: "Code lesen",
           description: "Liest Besitzer, feste Code-ID und aktuelle Berechtigung.",
@@ -493,6 +498,12 @@ export const coreCapabilityPresentation: CapabilityPresentationCatalog = {
         },
       },
       actions: {
+        "code.chat_binding.set": {
+          title: "Chat des Codes wählen",
+          description: "Nur der Besitzer darf einen eigenen aktiven Chat wählen. Bereits eingereihte Nachrichten behalten ihr Ziel.",
+          input: { chatId: "Kurze ID deines eigenen aktiven Chats.", revision: "Aktuelle Revision aus code.chat_binding.read." },
+        },
+
         "code.event.catchup": {
           title: "Code für vorhandene Ereignisse nachholen",
           description:

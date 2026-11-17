@@ -2,6 +2,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, ButtonLink, NoticeCard, Tag, toast } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { openPanel } from "../../browser/panel";
+import { CodeChatMissing, CodeChatRowAction } from "./CodeChatBinding";
 import { CodeDatabaseStatus } from "./CodeDatabaseStatus";
 import { RunNow } from "./CodeLaunch";
 import { type CodeLive, CodeLiveStrip, EffectRows } from "./CodeLiveStrip";
@@ -321,17 +322,32 @@ function MayDo(props: { data: CodePageData; state: CodePageReady; text: PageText
               const parts = splitRow(row.text);
               // The place as quiet text, never a link (v12 picture 19): its kind and its name, "Postfach info@…".
               const place = () => placeText(row, parts.rest, props.state, props.data.owner.title);
+              // Personal Code's chat: Core names it for the owner and says how it answers; the owner may choose another.
+              // Only personal Code reads a binding (`undefined` otherwise); `null` means Core could not answer.
+              const chatRow = () => row.target?.ref.type === "core.ai.chat" && props.state.chatBinding !== undefined;
               return (
                 <Row
                   icon={iconClass(row.icon, "ti ti-apps")}
                   tile="app"
                   title={parts.head}
                   sub={
-                    <>
-                      {row.app}
-                      <Show when={row.app && place()}>{" · "}</Show>
-                      {place()}
-                    </>
+                    <Show
+                      when={row.note}
+                      fallback={
+                        <>
+                          {row.app}
+                          <Show when={row.app && place()}>{" · "}</Show>
+                          {place()}
+                        </>
+                      }
+                    >
+                      {(note) => note()}
+                    </Show>
+                  }
+                  extra={
+                    <Show when={chatRow()}>
+                      <CodeChatRowAction codeId={props.state.code.id} binding={props.state.chatBinding ?? null} text={props.text} />
+                    </Show>
                   }
                 />
               );
@@ -476,6 +492,9 @@ export function CodeOverview(props: {
       </Show>
       <Show when={props.state.code.needsReconfirmation}>
         <NoticeCard tone="warning" title={t().reconfirmTitle} detail={t().reconfirmDescription} />
+      </Show>
+      <Show when={props.state.chatBinding}>
+        {(binding) => <CodeChatMissing codeId={props.state.code.id} binding={binding()} state={props.state} text={props.text} />}
       </Show>
       <Show when={props.state.versionsFailed}>
         <NoticeCard
