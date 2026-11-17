@@ -540,7 +540,11 @@
   }
 
   .mail-recipient-control[data-invalid="true"] {
-    border-color: var(--color-red-500);
+    border-color: var(--k2b-danger-500);
+  }
+
+  .mail-recipient-control[data-invalid="true"] input {
+    color: var(--k2b-danger-text);
   }
 
   .mail-recipient-control[data-disabled="true"] {
@@ -555,7 +559,6 @@
     box-shadow: var(--ui-shadow-float);
   }
 
-  .mail-recipient-pill-shell:has(:focus-visible),
   .mail-recipient-edit:focus {
     border-color: var(--ui-field-focus-border);
     background: var(--ui-field-focus);
@@ -564,6 +567,7 @@
 
   .mail-recipient-pill:focus-visible {
     outline: none;
+    box-shadow: var(--ui-focus);
   }
 
   .mail-recipient-edit {
