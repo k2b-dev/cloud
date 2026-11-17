@@ -1,7 +1,18 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, type ChatAction, type ChatAttachment, dialogCore, PanelDialog, panelDialogOptions, TextInput } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import {
+  Button,
+  type ChatAction,
+  type ChatAttachment,
+  dialogCore,
+  MessageQuote,
+  PanelDialog,
+  panelDialogOptions,
+  TextInput,
+  useLocale,
+} from "@k2b/ui";
+import { createSignal, For, type JSX, Show } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
+import type { AiQuoteSource } from "../quote-markers";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
 import type { AiChatActions } from "./message-actions";
 import {
@@ -22,7 +33,8 @@ const openModifyRetryDialog = (
 ) => {
   const t = aiChatMessages(locale);
   void dialogCore.open<void>((close) => {
-    const [draft, setDraft] = createSignal(userVisibleTextFromMessage(entry.message));
+    // The edited words go without the message's quotes, which the server keeps as it checked them.
+    const [draft, setDraft] = createSignal(userVisibleTextFromMessage(entry.message, entry.meta?.quotes));
     const content = () => userContentWithEditedVisibleText(entry.message, draft());
     const retryMutation = mutation.create<void, AiUserContentPart[]>({
       mutation: async (nextContent) => onRetryMessage(entry, { content: nextContent }),
@@ -41,7 +53,7 @@ const openModifyRetryDialog = (
         <PanelDialog.Body>
           <TextInput
             label={t.retryPrompt}
-            description={t.retryPromptHint}
+            description={entry.meta?.quotes?.length ? t.retryPromptHintQuotes : t.retryPromptHint}
             multiline
             lines={8}
             value={draft}
@@ -70,7 +82,27 @@ const openModifyRetryDialog = (
   }, panelDialogOptions);
 };
 
-export const aiUserMessageText = (entry: AiStoredMessage): string => userVisibleTextFromMessage(entry.message);
+export const aiUserMessageText = (entry: AiStoredMessage): string => userVisibleTextFromMessage(entry.message, entry.meta?.quotes);
+
+/**
+ * The passages a user message quotes, above its text: each as the marked passage the composer showed, with whose words
+ * it are. Nothing when the message quotes nothing.
+ */
+export function AiUserMessageQuotes(props: { entry: AiStoredMessage }): JSX.Element {
+  const locale = useLocale();
+  const t = () => aiChatMessages(locale());
+  const author = (from: AiQuoteSource) =>
+    from === "assistant" ? "Gustav" : from === "user" ? t().quotedFromYou : t().quotedFromAutomation;
+  // The checked quotes of the message are the only source; its text never names one.
+  const quotes = () => props.entry.meta?.quotes ?? [];
+  return (
+    <Show when={quotes().length}>
+      <div class="k2b-message-quotes">
+        <For each={quotes()}>{(quote) => <MessageQuote quote={{ author: author(quote.from), text: quote.text }} />}</For>
+      </div>
+    </Show>
+  );
+}
 
 export const aiUserMessageAttachments = (entry: AiStoredMessage, actions: AiChatActions = {}): ChatAttachment[] => [
   ...textAttachmentSummariesFromMessage(entry.message).map((attachment, index) => ({
@@ -103,6 +135,17 @@ export const createAiUserMessageActions = (entry: AiStoredMessage, actions: AiCh
 
   if (copyText) {
     result.push({ id: "copy", label: t.actionCopy, icon: "ti ti-copy", copyText });
+  }
+  // The person's own words, as a whole; a message an automation wrote is no passage of theirs.
+  const ownText = entry.meta?.codeOrigin ? "" : userVisibleTextFromMessage(entry.message, entry.meta?.quotes);
+  if (actions.onQuote && ownText) {
+    result.push({
+      id: "quote",
+      label: t.actionQuote,
+      icon: "ti ti-quote",
+      overflow: true,
+      onSelect: () => actions.onQuote!({ messageId: entry.shortId, from: "user", text: ownText }),
+    });
   }
   // Answering again and its variants sit under the answer; here the message can be edited and sent again.
   if (!entry.compactedAt && actions.onRetryMessage) {

@@ -6,10 +6,11 @@ import type {
   AiOpenQuestion,
   AiOpenQuestions,
   AiProject,
+  AiQuoteDraft,
   AiSettingsError,
   AiStoredMessage,
 } from "@k2b/cloud/ai";
-import { createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { aiQuotesWith, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
 import { createAiChatController } from "@k2b/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
@@ -41,7 +42,7 @@ import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand
 import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
 import { chooseFiles } from "@k2b/cloud/browser/files";
 import { askPanelConsent, closePanel, getContext, onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
-import { reloadOnce } from "@k2b/cloud/browser/reload";
+import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
 import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
 import { pastedCloudLink, type ResolvedCloudResourceUrl, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
 import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
@@ -56,6 +57,7 @@ import {
   Button,
   ButtonLink,
   Chat,
+  ChatComposerQuotes,
   type ChatMention,
   dialogCore,
   LocaleProvider,
@@ -266,6 +268,9 @@ type ProjectViewState = {
 
 /** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
 const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) => ({ default: module.ChatWorkspace })));
+// "Quote" at a selection loads with the first selection in the chat; a chunk an update replaced reloads the page
+// instead of breaking the chat. A draft's quote rows render from the first frame, so a saved draft never shifts.
+const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
@@ -535,6 +540,18 @@ export default function AssistantWorkspace(props: Props) {
   const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
   const [timelineViewport, setTimelineViewport] = createSignal<HTMLDivElement>();
   const [timelineContent, setTimelineContent] = createSignal<HTMLDivElement>();
+  // "Quote" loads with the first text selected in the chat and then follows every selection there itself.
+  const [quoting, setQuoting] = createSignal(false);
+  onMount(() => {
+    const select = () => {
+      const selection = document.getSelection();
+      if (!selection || selection.isCollapsed || !timelineContent()?.contains(selection.anchorNode)) return;
+      document.removeEventListener("selectionchange", select);
+      setQuoting(true);
+    };
+    document.addEventListener("selectionchange", select);
+    onCleanup(() => document.removeEventListener("selectionchange", select));
+  });
   let scrollToMessageAnchor: ((anchorId: string | number) => boolean) | undefined;
 
   let revealRequest = 0;
@@ -634,6 +651,23 @@ export default function AssistantWorkspace(props: Props) {
   };
   const [composerMentions, setComposerMentions] = createSignal<Record<string, readonly ChatMention[]>>({});
   const mentionsFor = (key: string) => composerMentions()[key] ?? [];
+  // Passages the draft quotes, saved with it like its attachments.
+  const [composerQuotes, setComposerQuotes] = createSignal<Record<string, readonly AiQuoteDraft[]>>({});
+  const quotesFor = (key: string) => composerQuotes()[key] ?? [];
+  const setQuotesFor = (key: string, quotes: readonly AiQuoteDraft[]) => {
+    editComposerSession(session(key));
+    touchSession();
+    setComposerQuotes((all) => ({ ...all, [key]: quotes }));
+  };
+  /** A passage joins the chat's draft: a cut one or a full draft says so, and the answer is written in the field. */
+  const addQuote = (quote: AiQuoteDraft) => {
+    const key = composerSessionKey();
+    const next = aiQuotesWith(quotesFor(key), quote);
+    if (next.full) return void toast(t().quotesFull, { iconClass: "ti ti-info-circle" });
+    if (next.cut) toast(t().quoteCut, { iconClass: "ti ti-info-circle" });
+    setQuotesFor(key, next.quotes);
+    focusComposer();
+  };
   const setMentionsFor = (key: string, mentions: readonly ChatMention[]) => {
     editComposerSession(session(key));
     touchSession();
@@ -659,6 +693,7 @@ export default function AssistantWorkspace(props: Props) {
     setComposerDrafts((current) => ({ ...current, [key]: restored.text }));
     setComposerAttachments((current) => ({ ...current, [key]: restored.attachments }));
     setComposerMentions((current) => ({ ...current, [key]: restored.mentions }));
+    setComposerQuotes((current) => ({ ...current, [key]: restored.quotes }));
     const local = session(key);
     for (const restored of pastedLinkRestores.get(local) ?? []) restored();
     local.editGeneration++;
@@ -733,13 +768,19 @@ export default function AssistantWorkspace(props: Props) {
     return next;
   };
   type ComposerOverride = { text: string; mentions: readonly ChatMention[] };
+  /** The composer's input with the draft's quotes, which the composer itself does not know. */
+  const withQuotes = (key: string, input: AiComposerSendInput): AiComposerSendInput =>
+    quotesFor(key).length ? { ...input, quotes: [...quotesFor(key)] } : input;
   const composerInput = (key: string, override?: ComposerOverride) =>
-    aiComposerSendInput({
-      intent: "send",
-      text: override?.text ?? composerDraft(key),
-      mentions: override?.mentions ?? mentionsFor(key),
-      attachments: aiChatAttachments(composerAttachmentsFor(key)),
-    });
+    withQuotes(
+      key,
+      aiComposerSendInput({
+        intent: "send",
+        text: override?.text ?? composerDraft(key),
+        mentions: override?.mentions ?? mentionsFor(key),
+        attachments: aiChatAttachments(composerAttachmentsFor(key)),
+      }),
+    );
   /**
    * Only a save the server rejected for its revision is a conflict. Any other failure, such as an unreachable app,
    * leaves the saved draft as it was: the composer keeps its unsaved text and says that saving failed.
@@ -1161,6 +1202,7 @@ export default function AssistantWorkspace(props: Props) {
     const text = composerDraft(key);
     const files = composerAttachmentsFor(key);
     mentionsFor(key);
+    quotesFor(key);
     if (!session(key).dirty || session(key).conflict) return;
     if (!chat.activeConversationId() && !text && !files.length) return;
     // At a place, typing creates nothing: the first sent message creates the chat (O2). The draft stays local until then,
@@ -1572,13 +1614,18 @@ export default function AssistantWorkspace(props: Props) {
       ? (queuedMessages.data() ?? []).map((message) => ({
           ...message,
           editableText: aiComposerDraft(message.content).text,
+          // The person's own words and attachments; a quote is no word of theirs and stays out of the line.
           text: message.content
-            .map((part) =>
-              part.type === "text"
-                ? part.text
-                : part.type === "file" || part.type === "project-file"
-                  ? part.path
-                  : (part.title ?? part.ref.id),
+            .flatMap((part) =>
+              part.type === "quote"
+                ? []
+                : [
+                    part.type === "text"
+                      ? part.text
+                      : part.type === "file" || part.type === "project-file"
+                        ? part.path
+                        : (part.title ?? part.ref.id),
+                  ],
             )
             .join(" · "),
         }))
@@ -2468,6 +2515,20 @@ export default function AssistantWorkspace(props: Props) {
                   }
                 />
               </Show>
+              <Show when={quotesFor(sessionKey()).length}>
+                <ChatComposerQuotes
+                  quotes={quotesFor(sessionKey()).map((quote, index) => ({
+                    id: `${index}:${quote.text}`,
+                    author: quote.from === "user" ? t().quotedFromYou : "Gustav",
+                    text: quote.text,
+                    onRemove: () =>
+                      setQuotesFor(
+                        sessionKey(),
+                        quotesFor(sessionKey()).filter((_, position) => position !== index),
+                      ),
+                  }))}
+                />
+              </Show>
             </>
           }
           draftKey={composerIdentity(sessionKey())}
@@ -2685,10 +2746,11 @@ export default function AssistantWorkspace(props: Props) {
             composerProps.projectId
               ? sendProjectMessage(composerProps.projectId, aiComposerSendInput(input))
               : input.intent === "queue" || (input.intent === "send" && Boolean(queuedMessages.data()?.length))
-                ? queueMessage(aiComposerSendInput(input))
+                ? queueMessage(withQuotes(sessionKey(), aiComposerSendInput(input)))
                 : input.intent === "steer"
-                  ? steer(input.text)
-                  : send(aiComposerSendInput(input))
+                  ? // Steering is words only: the draft's quotes stay above the field for the next message.
+                    steer(input.text)
+                  : send(withQuotes(sessionKey(), aiComposerSendInput(input)))
           }
           onStop={
             !projectComposer() && chat.activeTurn()
@@ -2853,31 +2915,36 @@ export default function AssistantWorkspace(props: Props) {
     });
 
     return (
-      <Chat.Timeline
-        class="ai-message-list-container h-full"
-        conversationKey={chat.activeConversationId()}
-        items={items()}
-        loading={chat.loadingConversation()}
-        hasMore={chat.hasMoreHistory()}
-        loadingOlder={chat.loadingOlder()}
-        onLoadOlder={chat.loadOlderMessages}
-        emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
-        viewportRef={setTimelineViewport}
-        contentRef={setTimelineContent}
-        scrollToAnchorRef={(scrollToAnchor) => {
-          scrollToMessageAnchor = scrollToAnchor;
-        }}
-        onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
-        navigation={
-          <AiChatTurnNavigator
-            entries={chat.timeline()}
-            loading={chat.timelineLoading()}
-            viewport={timelineViewport}
-            content={timelineContent}
-            loadThrough={chat.loadHistoryThroughSeq}
-          />
-        }
-      />
+      <>
+        <Chat.Timeline
+          class="ai-message-list-container h-full"
+          conversationKey={chat.activeConversationId()}
+          items={items()}
+          loading={chat.loadingConversation()}
+          hasMore={chat.hasMoreHistory()}
+          loadingOlder={chat.loadingOlder()}
+          onLoadOlder={chat.loadOlderMessages}
+          emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
+          viewportRef={setTimelineViewport}
+          contentRef={setTimelineContent}
+          scrollToAnchorRef={(scrollToAnchor) => {
+            scrollToMessageAnchor = scrollToAnchor;
+          }}
+          onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
+          navigation={
+            <AiChatTurnNavigator
+              entries={chat.timeline()}
+              loading={chat.timelineLoading()}
+              viewport={timelineViewport}
+              content={timelineContent}
+              loadThrough={chat.loadHistoryThroughSeq}
+            />
+          }
+        />
+        <Show when={quoting() && timelineContent()}>
+          {(root) => <QuoteSelection root={root()} label={t().quoteSelection} onQuote={addQuote} />}
+        </Show>
+      </>
     );
   };
 
@@ -3295,6 +3362,7 @@ export default function AssistantWorkspace(props: Props) {
                               fallback={
                                 <AiChatActionsProvider
                                   actions={{
+                                    onQuote: addQuote,
                                     renderCodeAuthoringStop: (state, continuable) => (
                                       <AssistantAuthoringStop state={state} continuable={continuable} />
                                     ),

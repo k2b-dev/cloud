@@ -13959,7 +13959,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-align: start;
 }
 
-.k2b-ui .k2b-message-row[data-own] .k2b-message-quote {
+/* The reader's own message, in a message row or a chat message, lifts its quotes lighter than its tint. */
+.k2b-ui :is(.k2b-message-row[data-own], .k2b-chat-message[data-role="user"]) .k2b-message-quote {
   background: color-mix(in srgb, var(--k2b-surface) 70%, transparent);
 }
 

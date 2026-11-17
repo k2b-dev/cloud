@@ -60,6 +60,7 @@ const submissionContent = (input: AiComposerSendInput) =>
     content: input.content,
     draftContent: input.draftContent,
     resources: input.resources,
+    quotes: input.quotes,
     storedFiles: input.storedFiles,
   });
 export const sameComposerSubmission = (current: AiComposerSendInput, submitted: AiComposerSendInput): boolean =>

@@ -13,8 +13,10 @@ import {
 import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import type { ApprovalDraftResult } from "../../contracts/approvals";
 import type { CloudResourceRef } from "../../contracts/capabilities";
+import { markdown } from "../../shared";
 import type { AiActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
+import { type AiQuoteDraft, aiQuoteVisibleTextOfHtml } from "../quote-markers";
 import type { AiCodeAuthoringStop, AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import {
   type AiForkMessageInput,
@@ -86,6 +88,8 @@ export type AiChatActions = {
   onForkMessage?: ForkMessageHandler;
   onRetryMessage?: RetryMessageHandler;
   onRetrySteer?: RetrySteerHandler;
+  /** Quotes a message as a whole: where no text can be selected, on touch screens and from the keyboard. */
+  onQuote?: (quote: AiQuoteDraft) => void;
   /**
    * Continue after a failed turn. Send `message`, a visible request in the reader's language to pick up where the
    * turn stopped, through the host's normal send path. Without it, a failed turn shows its reason only.
@@ -432,6 +436,22 @@ export function createAssistantMessageActions(props: {
       { id: "details", label: t.actionMoreDetailed, icon: "ti ti-list-details", overflow: true, onSelect: retry("details") },
       { id: "concise", label: t.actionMoreConcise, icon: "ti ti-align-left", overflow: true, onSelect: retry("concise") },
     );
+  if (actions.onQuote && props.copyText)
+    result.push({
+      id: "quote",
+      label: t.actionQuote,
+      icon: "ti ti-quote",
+      overflow: true,
+      // The answer as the reader sees it, not its Markdown source: the same words a selection would quote.
+      onSelect: () =>
+        actions.onQuote!({
+          messageId: props.entry.shortId,
+          from: "assistant",
+          text: aiQuoteVisibleTextOfHtml(markdown.renderSync(props.copyText, { locale: locale() }))
+            .replace(/\s+/gu, " ")
+            .trim(),
+        }),
+    });
   if (actions.onForkMessage)
     result.push({
       id: "fork",

@@ -25,10 +25,12 @@ import {
   projectMigratedCapabilityCalls,
 } from "./capability-targets-history";
 import { aiTurnErrorText } from "./chat/turn-error";
+import { AI_MESSAGE_SEARCH_TEXT_MAX_CHARS } from "./limits";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
 import { queuedMessageHoldsChat } from "./queue-waits";
+import { type AiMessageQuote, aiCheckedQuotesOnly } from "./quote-markers";
 import { collectRecentSentResourceRefs, RECENT_SENT_CONVERSATION_SCAN_LIMIT, RECENT_SENT_MESSAGE_SCAN_LIMIT } from "./recent-sent-refs";
 import {
   compactCapabilityReview,
@@ -58,6 +60,7 @@ import type {
   AiInterChatMessage,
   AiPendingTurnAction,
   AiPendingTurnActionRecord,
+  AiQuoteSourceRow,
   AiStoredMessage,
   AiToolPresentation,
   AiTurn,
@@ -90,7 +93,6 @@ const choiceMessageRows = (db: SQL, conversationId: string): Promise<MessageRow[
 const SWEEP_STALE_QUEUED_MS = 15_000;
 /** A queued turn this old that never started is failed outright. */
 const SWEEP_DEAD_QUEUED_MS = 30 * 60_000;
-const SEARCH_TEXT_MAX_CHARS = 50_000;
 const CONVERSATION_BM25_INDEX = "ai.conversations_search_bm25_idx";
 const MESSAGE_BM25_INDEX = "ai.messages_search_bm25_idx";
 const SEARCH_CAPABILITY_ERROR_CODES = new Set(["0A000", "42704", "42883", "55000"]);
@@ -949,7 +951,7 @@ const messageSearchText = (message: Message): string => {
     .filter(Boolean)
     .join("\n")
     .trim();
-  return text.slice(0, SEARCH_TEXT_MAX_CHARS);
+  return text.slice(0, AI_MESSAGE_SEARCH_TEXT_MAX_CHARS);
 };
 
 /**
@@ -2966,6 +2968,89 @@ export const aiConversations: AiConversationService = {
     return projectAiMaps(rows.map(rowToMessage).map(aiCodeDecisionContext));
   },
 
+  listQuoteSources: async (input) => {
+    if (input.messageIds.length === 0) return [];
+    const ids = toPgTextArray([...input.messageIds]);
+    // One statement. Of a quoted answer only its non-empty text parts are read, and only when the whole answer, its
+    // parts and the blank line between its messages, stays within the bound: the length is summed before any text
+    // leaves the database, and a longer answer returns one row that says so, without text.
+    // The work per quoted turn needs no bound of its own: it reads a turn of the person's own chat that the chat view
+    // loads in full each time it opens, at most ten quotes per send, each turn once.
+    const rows = await sql<
+      {
+        part: "quoted" | "answer" | "over";
+        short_id: string | null;
+        role: string;
+        loop_id: string | null;
+        seq: number;
+        message: Message | null;
+        quotes: AiMessageQuote[] | null;
+        automation: boolean;
+        text: string | null;
+      }[]
+    >`
+      WITH quoted AS (
+        SELECT short_id, role, loop_id, seq, message, meta
+        FROM ai.messages
+        WHERE conversation_id = ${input.conversationId} AND kind = 'message' AND short_id = ANY(${ids}::text[])
+      ),
+      -- The quoted answers' messages: those of a quoted turn through the (conversation_id, loop_id, seq) index, and a
+      -- quoted answer outside any turn by its own id. Nothing outside the chat or these turns is read.
+      answer_messages AS (
+        SELECT m.loop_id::text AS answer_key, m.seq, m.message
+        FROM ai.messages m
+        WHERE m.conversation_id = ${input.conversationId} AND m.loop_id IS NOT NULL
+          AND m.loop_id IN (SELECT loop_id FROM quoted WHERE role = 'assistant' AND loop_id IS NOT NULL)
+          AND m.kind = 'message' AND m.role = 'assistant'
+        UNION ALL
+        SELECT m.short_id, m.seq, m.message
+        FROM ai.messages m
+        WHERE m.conversation_id = ${input.conversationId} AND m.short_id = ANY(${ids}::text[])
+          AND m.loop_id IS NULL AND m.kind = 'message' AND m.role = 'assistant'
+      ),
+      parts AS (
+        SELECT a.answer_key, a.seq, c.ord, c.part->>'text' AS text
+        FROM answer_messages a
+        CROSS JOIN LATERAL jsonb_array_elements(
+          CASE WHEN jsonb_typeof(a.message->'content') = 'array' THEN a.message->'content' ELSE '[]'::jsonb END
+        ) WITH ORDINALITY AS c(part, ord)
+        WHERE c.part->>'type' = 'text' AND c.part->>'text' <> ''
+      ),
+      answers AS (
+        SELECT answer_key, SUM(length(text)) + 2 * (COUNT(DISTINCT seq) - 1) AS length
+        FROM parts
+        GROUP BY answer_key
+      )
+      SELECT 'quoted' AS part, short_id, role, loop_id, seq, 0::bigint AS ord,
+        CASE WHEN role = 'user' THEN message END AS message,
+        CASE WHEN role = 'user' THEN meta->'quotes' END AS quotes,
+        COALESCE(role = 'user' AND meta->'codeOrigin' IS NOT NULL, false) AS automation,
+        NULL AS text
+      FROM quoted
+      UNION ALL
+      SELECT 'answer', p.answer_key, 'assistant', NULL, p.seq, p.ord, NULL, NULL, false, p.text
+      FROM parts p JOIN answers a USING (answer_key)
+      WHERE a.length <= ${AI_MESSAGE_SEARCH_TEXT_MAX_CHARS}
+      UNION ALL
+      SELECT 'over', answer_key, 'assistant', NULL, 0, 0, NULL, NULL, false, NULL
+      FROM answers
+      WHERE length > ${AI_MESSAGE_SEARCH_TEXT_MAX_CHARS}
+      ORDER BY seq ASC, ord ASC
+    `;
+    return rows.map((row): AiQuoteSourceRow => {
+      if (row.part === "answer") return { part: "answer", key: row.short_id ?? "", seq: row.seq, text: row.text ?? "" };
+      if (row.part === "over") return { part: "over", key: row.short_id ?? "" };
+      return {
+        part: "quoted",
+        shortId: row.short_id ?? "",
+        role: row.role,
+        loopId: row.loop_id,
+        message: row.message,
+        quotes: row.quotes ?? undefined,
+        automation: row.automation,
+      };
+    });
+  },
   listTurnMessages: async (input) => {
     const rows = await sql<MessageRow[]>`
       SELECT id, short_id, conversation_id, seq, kind, message, loop_id, model_profile_id, provider_model,
@@ -3348,6 +3433,7 @@ export const aiConversations: AiConversationService = {
             ...(input.runConfig.codeOrigin ? { codeOrigin: input.runConfig.codeOrigin } : {}),
             ...(input.runConfig.writerOrigin ? { writerOrigin: input.runConfig.writerOrigin } : {}),
             ...(input.runConfig.turnTrigger ? { turnTrigger: input.runConfig.turnTrigger } : {}),
+            ...(input.runConfig.quotes?.length ? { quotes: input.runConfig.quotes } : {}),
             ...(choice ? { choice: choice.provenance } : {}),
             ...(input.runConfig.codeReview ? { codeReviewStart: input.runConfig.codeReview } : {}),
             modelRequest: input.runConfig.model,
@@ -4288,7 +4374,8 @@ export const aiConversations: AiConversationService = {
             seq: row.seq,
             kind: row.kind,
             meta: row.meta,
-            message:
+            // Only the quotes Cloud checked reach the model as quotes; any other marker is broken here.
+            message: aiCheckedQuotesOnly(
               input.turnInput !== undefined && input.turnId === row.loopId && row.message.role === "user" && !row.meta?.steerId
                 ? {
                     role: "user" as const,
@@ -4298,6 +4385,8 @@ export const aiConversations: AiConversationService = {
                         : input.turnInput.map((part) => (typeof part === "string" ? { type: "text" as const, text: part } : part)),
                   }
                 : row.message,
+              row.meta?.quotes,
+            ),
           })),
         ),
       );

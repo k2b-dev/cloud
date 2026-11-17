@@ -813,12 +813,19 @@ describe("Waiting for you", () => {
         }, band);
         // Text of the conversation lies behind the band, so the comparison below means something.
         expect(behind).toBe(true);
+        // Only what lies behind the row counts: the row itself steps out of the picture, keeping its place and the mask, so
+        // the browser's text rendering of its chips, which can change with what lies under them, compares nothing.
+        await page.addStyleTag({ content: "nav.assistant-waiting { visibility: hidden !important; }" });
+        await settled(page);
         const shown = await page.screenshot({ clip: band });
         await page.addStyleTag({ content: ".k2b-chat-timeline__content { visibility: hidden !important; }" });
         await settled(page);
         const without = await page.screenshot({ clip: band });
         expect(shown.equals(without)).toBe(true);
-        await page.evaluate(() => document.querySelector("style:last-of-type")?.remove());
+        await page.evaluate(() => {
+          document.querySelector("style:last-of-type")?.remove();
+          document.querySelector("style:last-of-type")?.remove();
+        });
         await settled(page);
 
         // The same place without a row: a floating control never jumps with another one.

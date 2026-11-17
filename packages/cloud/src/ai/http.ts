@@ -8,17 +8,33 @@ import { AiModelRequestSchema } from "../shared/ai-models";
 import { aiAttachmentMarker } from "./attachments";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
 import { hasAiChoiceProvenance } from "./choices";
-import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
+import { AI_DRAFT_QUOTE_MAX_ITEMS, AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import { AI_LOCAL_TOOL_NAMES, AiLocalClientSchema, AiLocalContextSchema } from "./local-tool-contracts";
 import { AiQuotaError } from "./quotas";
+import { AiQuoteDraftSchema, aiNeutralizeQuoteMarkers } from "./quote-markers";
 import { AiResourceMarkerSchema } from "./resource-markers";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { AI_SKILL_NAME_MAX_CHARS, AI_SKILL_NAME_PATTERN } from "./skill-format";
 import { AI_MESSAGE_FEEDBACK_REASONS, type AiClientToolId, type AiDraftContentPart, type AiUserContentPart } from "./types";
 import { isAiSettingsError } from "./validate";
 
+/**
+ * Why `content` breaks the bounds of one message, or null: at most 20000 characters of text, quoted passages included,
+ * at most the attachment limit, and at most ten quotes. Drafts, edited queued messages and retries share it.
+ */
+export const aiDraftContentProblem = (content: readonly AiDraftContentPart[]): string | null => {
+  const text = content.reduce((length, part) => length + (part.type === "text" || part.type === "quote" ? part.text.length : 0), 0);
+  if (text > 20_000) return "A message holds at most 20000 characters, quotes included.";
+  if (content.filter((part) => part.type !== "text" && part.type !== "quote").length > AI_TURN_ATTACHMENT_MAX_ITEMS)
+    return `A message can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items.`;
+  if (content.filter((part) => part.type === "quote").length > AI_DRAFT_QUOTE_MAX_ITEMS)
+    return `A message can quote at most ${AI_DRAFT_QUOTE_MAX_ITEMS} passages.`;
+  return null;
+};
+
 export const AiDraftContentPartSchema = z.discriminatedUnion("type", [
-  z.strictObject({ type: z.literal("text"), text: z.string().max(20_000) }),
+  // Typed text never passes for a quote Cloud checked.
+  z.strictObject({ type: z.literal("text"), text: z.string().max(20_000).transform(aiNeutralizeQuoteMarkers) }),
   AiResourceMarkerSchema.extend({ type: z.literal("resource"), inline: z.boolean().optional() }).strict(),
   z
     .object({
@@ -35,19 +51,17 @@ export const AiDraftContentPartSchema = z.discriminatedUnion("type", [
     path: z.string().min(1).max(500).startsWith("/project/"),
     inline: z.boolean().optional(),
   }),
+  AiQuoteDraftSchema.extend({ type: z.literal("quote") }).strict(),
 ]);
 
 export const AiConversationDraftInputSchema = z
   .object({
-    content: z.array(AiDraftContentPartSchema).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1),
+    content: z.array(AiDraftContentPartSchema).max(AI_TURN_ATTACHMENT_MAX_ITEMS * 2 + 1 + AI_DRAFT_QUOTE_MAX_ITEMS),
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.content.reduce((length, part) => length + (part.type === "text" ? part.text.length : 0), 0) > 20_000)
-      context.addIssue({ code: "custom", path: ["content"], message: "Draft text exceeds 20000 characters" });
-    if (value.content.filter((part) => part.type !== "text").length > AI_TURN_ATTACHMENT_MAX_ITEMS) {
-      context.addIssue({ code: "custom", path: ["content"], message: `A draft can attach at most ${AI_TURN_ATTACHMENT_MAX_ITEMS} items` });
-    }
+    const problem = aiDraftContentProblem(value.content);
+    if (problem) context.addIssue({ code: "custom", path: ["content"], message: problem });
   });
 
 export const AiInitialConversationDraftInputSchema = z
@@ -127,11 +141,12 @@ export const AiSaveConversationDraftInputSchema = AiConversationDraftInputSchema
 export type AiDraftContentPartInput = z.infer<typeof AiDraftContentPartSchema> & AiDraftContentPart;
 
 export const AiUserContentPartSchema = z.union([
-  z.string().trim().min(1).max(20000),
+  // Typed text never passes for a quote Cloud checked.
+  z.string().trim().min(1).max(20000).transform(aiNeutralizeQuoteMarkers),
   z
     .object({
       type: z.literal("text"),
-      text: z.string().trim().min(1).max(20000),
+      text: z.string().trim().min(1).max(20000).transform(aiNeutralizeQuoteMarkers),
     })
     .strict(),
   // Attachment already uploaded to the conversation file store.
@@ -206,7 +221,8 @@ export const AiSubmitConversationDraftInputSchema = z
   });
 
 export const AiSteerInputSchema = z.strictObject({
-  message: z.string().trim().min(1).max(20000),
+  // Steered words are the person's own, like a sent message: a typed quote marker never passes for a checked quote.
+  message: z.string().trim().min(1).max(20000).transform(aiNeutralizeQuoteMarkers),
   clientRequestId: z.string().trim().min(1).max(120),
 });
 
