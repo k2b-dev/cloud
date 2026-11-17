@@ -24,7 +24,7 @@ import { readCodeDetails } from "./database";
 import { simulateCodeEvent } from "./event-preview";
 import { listCodeRunsWithEvents } from "./events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
-import { type CodePolicyRow, codePolicyRow } from "./policy-contracts";
+import { type CodePolicyRow, codePolicyRow, isCodeAiOperation } from "./policy-contracts";
 import { readCodeReview, waitCodeReview } from "./review";
 import { cancelCodeReviewRevision } from "./review-chat";
 import { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
@@ -131,7 +131,9 @@ async function describeCheck(
     const manifest = catalog.data.manifest;
     const localId = permission.operation.slice(appId.length + 1);
     const query = manifest.queries.some((operation) => operation.localId === localId);
-    policyRows.add(codePolicyRow(query ? "query" : "action", capabilityActionPolicy(manifest, localId)));
+    policyRows.add(
+      codePolicyRow(isCodeAiOperation(permission.operation) ? "ai" : query ? "query" : "action", capabilityActionPolicy(manifest, localId)),
+    );
     if (!presentation) continue;
     let title: string | null = null,
       typeTitle: string | null = null;

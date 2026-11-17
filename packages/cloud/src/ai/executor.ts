@@ -1543,6 +1543,7 @@ export class AiTurnExecutor {
             turnId,
             ownerUserId: user.id,
             input: config.input,
+            quotes: config.quotes,
             instructions: [settings.globalInstructions, config.project?.instructions, memory?.text],
             skillOffers: skillCatalogOffered && skillCreatorAvailable && loadedSkills.length === 0,
             memoryOffers: memoryToolEnabled,

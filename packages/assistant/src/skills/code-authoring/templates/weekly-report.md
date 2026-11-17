@@ -1,6 +1,6 @@
 # Template: weekly report
 
-Weekly report in personal Code: every Monday at 08:00 Berlin time, read the open and overdue tasks of one Space, let AI write a short report and deliver it to the owner's Gustav chat. Delivery is automatic; AI use needs a Cloud administrator's approval of the version by default.
+Weekly report in personal Code: every Monday at 08:00 Berlin time, read the open and overdue tasks of one Space, let AI write a short report and deliver it to the owner's Gustav chat. Gustav answers in that chat; AI use needs a Cloud administrator's approval of the version by default.
 
 Owner: personal Code. Copy it into `code.ts`, replace the fictional IDs and names, then check, test and submit as usual.
 
@@ -43,7 +43,7 @@ app.schedule({ cron: "0 8 * * 1", timeZone: "Europe/Berlin", name: "weekly-repor
     }
 
     const occurrence = scheduledAt ?? runId;
-    await core.ai.chat(CHAT_ID).deliver({ text, idempotencyKey: `weekly-report:${occurrence}` });
+    await core.ai.chat(CHAT_ID).send({ text: "Present the supplied weekly report and confirm it briefly. Do not recalculate it.", context: text, idempotencyKey: `weekly-report:${occurrence}` });
   });
 
 export default app;

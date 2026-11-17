@@ -74,7 +74,7 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   for (const text of [
     "one lasting fact or preference, such as reports always as PDF: personalization memory",
     "a personalization workflow default",
-    "work that should run at a set time: reviewed personal Code using `app.schedule` (Cloud's default time zone unless `timeZone` is set), then `core.ai.chat(id).run`",
+    "work that should run at a set time: reviewed personal Code using `app.schedule` (Cloud's default time zone unless `timeZone` is set), then `core.ai.chat(id).send`",
     "lasting Code, using the code-authoring Skill",
 
     "name the subject, such as the team or the report, not only the output format",
@@ -98,11 +98,11 @@ test("Assistant skills retain workflow and capability guidance", async () => {
   const assistant = inputs.find((candidate) => candidate.name === "cloud-assistant");
   // Phrasings like "like last time" match the user's words, not app names, so the description must name them.
   expect(assistant?.description).toContain('Also use when a request refers to earlier work, such as "like last time"');
-  for (const text of ["runtime Chat ID", "core.ai.chat.search", "core.ai.chat.message"]) {
+  for (const text of ["runtime Chat ID", "core.ai.chat.search", "core.ai.chat.send"]) {
     expect(assistant?.instructions).toContain(text);
   }
   const coreSource = await Bun.file(new URL("../../core/src/capabilities.ts", import.meta.url)).text();
-  const declaredCoreCapabilities = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)": \{/gm)].map((match) => `core.${match[1]!}`));
+  const declaredCoreCapabilities = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)":/gm)].map((match) => `core.${match[1]!}`));
   for (const match of [assistant?.instructions].join("\n").matchAll(/`(core\.[a-z0-9.-]+)`/g) ?? []) {
     expect(declaredCoreCapabilities.has(match[1]!)).toBeTrue();
   }
@@ -110,7 +110,7 @@ test("Assistant skills retain workflow and capability guidance", async () => {
 
 test("Skills load only Core capabilities that exist", async () => {
   const coreSource = await Bun.file(new URL("../../core/src/capabilities.ts", import.meta.url)).text();
-  const declared = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)": \{/gm)].map((match) => `core.${match[1]!}`));
+  const declared = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)":/gm)].map((match) => `core.${match[1]!}`));
   const loaded = Object.fromEntries(SKILLS.map((skill) => [skill.name, aiSkillLoadTools(skill.extraFrontmatter)]));
   expect(loaded["assistant-code-mode"]).toEqual(["code_run"]);
   expect(loaded["code-authoring"]).toEqual([

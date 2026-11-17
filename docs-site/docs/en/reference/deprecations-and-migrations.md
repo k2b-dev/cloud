@@ -5,13 +5,25 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-08
+updated: 2026-11-16
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## One chat-writing capability
+
+`ai.chat.send` replaces `ai.chat.run`, `ai.chat.deliver` and the published
+`ai.chat.message` (since `cloud-v0.10.0`). This is part of the breaking Code
+release (#3010). Replace `{ prompt }` with `{ text, context? }`, refresh the
+generated SDK, and read accepted-message state with
+`ai.chat.read({ id: chatId, message: sent.id })` instead of `ai.chat.run.read`.
+Every send may start Gustav; delivery without a model response is removed.
+Review shows the destination and full text. See the
+[send contract](/en/docs/platform/capabilities#write-to-a-gustav-chat) and
+[operator cutover](/en/docs/operations/code-runtime#upgrade-chat-writing-to-send).
 
 ## Capability views replace table presentations and review previews
 
@@ -93,6 +105,22 @@ images. Automatic replies (out-of-office, office-hours and reference
 acknowledgements) have no replacement. Ask Gustav to rebuild supported rules as
 mailbox Code, then review, preview and activate it explicitly. See the
 [Mail cutover guide](/en/docs/operations/mail-automation-upgrade).
+
+## Conflict errors take the whole sentence
+
+`err.conflict(message)` from `@k2b/cloud/server` (and `@k2b/stdlib` 0.33.0,
+which it passes through) now uses its argument as the whole message and adds
+nothing. Before, it added ` already exists`, which turned sentences such as
+`Task changed; read it and retry` into `Task changed; read it and retry already
+exists`.
+
+Applications that passed only a subject write the sentence out with the same
+meaning: `err.conflict("API key")` becomes `err.conflict("API key already
+exists")`, and a revision conflict reads, for example, `Template changed;
+reload it and retry`. Calls that already pass a sentence need no change. For
+operators nothing changes beyond the wording of some 409 messages. Built-in
+applications are updated; check third-party applications when they move to
+this Cloud version.
 
 ## Saved signed bar rows render again
 

@@ -200,6 +200,8 @@
   --k2b-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* small marks only: check, switch knob, badge */
   --k2b-ease-morph: cubic-bezier(0.2, 0, 0, 1); /* with --k2b-motion-morph: a soft start and a long, calm landing */
   --k2b-ease-in: ease-in; /* something leaves: it speeds up as it goes */
+  --k2b-shift-in: 8px; /* how far a surface that arrives travels, such as a dialog rising into place */
+  --k2b-shift-out: 4px; /* how far a surface that leaves travels */
   /* Moments of work in progress. Each follows a change of state; only "running" loops. */
   --k2b-motion-glide: 380ms; /* the highlight of the current step glides to the next row */
   --k2b-motion-check: 260ms; /* a check springs open when a step is done */
@@ -326,6 +328,8 @@
     --k2b-motion-word-out: 0ms;
     --k2b-motion-word-in: 0ms;
     --k2b-motion-word-hold: 0ms;
+    --k2b-shift-in: 0px;
+    --k2b-shift-out: 0px;
   }
   .k2b-ui,
   .k2b-ui::before,
@@ -371,6 +375,8 @@ html[data-k2b-motion="reduced"] .k2b-ui {
   --k2b-motion-word-out: 0ms;
   --k2b-motion-word-in: 0ms;
   --k2b-motion-word-hold: 0ms;
+  --k2b-shift-in: 0px;
+  --k2b-shift-out: 0px;
 }
 html[data-k2b-motion="reduced"] .k2b-ui,
 html[data-k2b-motion="reduced"] .k2b-ui::before,
@@ -13953,7 +13959,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   text-align: start;
 }
 
-.k2b-ui .k2b-message-row[data-own] .k2b-message-quote {
+/* The reader's own message, in a message row or a chat message, lifts its quotes lighter than its tint. */
+.k2b-ui :is(.k2b-message-row[data-own], .k2b-chat-message[data-role="user"]) .k2b-message-quote {
   background: color-mix(in srgb, var(--k2b-surface) 70%, transparent);
 }
 
@@ -20769,7 +20776,50 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     border-bottom: 1px solid var(--k2b-border-strong);
     border-radius: var(--k2b-radius-dialog);
     box-shadow: var(--k2b-shadow-float);
-    animation-name: k2b-sheet-dialog-enter;
+    /* As a dialog it rises and fades like every dialog (feedback-parity.css), not as a sheet. */
+    animation: none;
+    opacity: 0;
+    translate: 0 var(--k2b-dialog-shift-out);
+    transition:
+      opacity var(--k2b-motion-fast) var(--k2b-ease-out),
+      translate var(--k2b-motion-fast) var(--k2b-ease-out);
+  }
+  @supports (overlay: auto) {
+    .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive {
+      transition:
+        opacity var(--k2b-motion-fast) var(--k2b-ease-out),
+        translate var(--k2b-motion-fast) var(--k2b-ease-out),
+        overlay var(--k2b-motion-fast) allow-discrete,
+        display var(--k2b-motion-fast) allow-discrete;
+    }
+    .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive::backdrop {
+      transition:
+        opacity var(--k2b-motion-fast) linear,
+        overlay var(--k2b-motion-fast) allow-discrete,
+        display var(--k2b-motion-fast) allow-discrete;
+    }
+  }
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive[open] {
+    opacity: 1;
+    translate: 0 0;
+    transition-duration: var(--k2b-motion-base);
+  }
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive::backdrop {
+    opacity: 0;
+    transition: opacity var(--k2b-motion-fast) linear;
+  }
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive[open]::backdrop {
+    opacity: 1;
+    transition-duration: var(--k2b-motion-base);
+  }
+  @starting-style {
+    .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive[open]:not([data-no-enter]) {
+      opacity: 0;
+      translate: 0 var(--k2b-dialog-shift-in);
+    }
+    .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive[open]:not([data-no-enter])::backdrop {
+      opacity: 0;
+    }
   }
   .k2b-ui .k2b-bottom-sheet-frame.is-adaptive > .k2b-bottom-sheet-viewport {
     max-height: min(86dvh, var(--k2b-dialog-available-height));
@@ -20791,13 +20841,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
     transform: none;
   }
 }
-@keyframes k2b-sheet-dialog-enter {
-  from { transform: translate(-50%, calc(-50% + 8px)); opacity: 0; }
-  to { transform: translate(-50%, -50%); opacity: 1; }
-}
 @media (prefers-reduced-motion: reduce) {
-  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame,
-  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame.is-adaptive { animation: none; }
+  .k2b-ui .k2b-dialog.k2b-bottom-sheet-frame { animation: none; }
 }
 
 .k2b-ui .k2b-navigation__list { list-style: none; margin: 0; padding: 0; }

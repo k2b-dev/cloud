@@ -36,6 +36,7 @@ export { CODE_RUNTIME_TOOL_NAMES, CodeResourceId, CodeRuntimeInput, parseCodeToo
 export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
 /** Trusted runtime host: refresh the current conversation owner before calling a permission-aware service. */
 export { resolveAiCapabilityActor } from "./capability-execution";
+export { type AiChatOrigin, AiChatOriginSchema, type AiChatTurnTrigger } from "./chat-origin";
 export { getAiChatQuotas } from "./chat-quotas";
 export {
   ChatTaskExportEntrySchema,
@@ -302,6 +303,7 @@ export {
 } from "./protocol";
 export { createAiProvider } from "./provider";
 export { AiQuotaError } from "./quotas";
+export type { AiMessageQuote, AiQuoteDraft, AiQuoteSource } from "./quote-markers";
 export { isConversationResourceCursor } from "./resource-refs";
 export { describeAiResourceTypeCounts } from "./resource-type-counts";
 export type { AiRoutes } from "./routes";

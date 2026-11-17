@@ -430,7 +430,7 @@ export const createSenderIdentity = async (params: {
     if (result.ok) mailLive.wake();
     return result;
   } catch (error) {
-    if ((error as { code?: string } | null)?.code === "23505") return fail(err.conflict("Sender identity"));
+    if ((error as { code?: string } | null)?.code === "23505") return fail(err.conflict("Sender identity already exists"));
     if (isServiceError(error)) return fail(error);
     return fail(err.internal("Failed to create sender identity"));
   }
@@ -593,7 +593,7 @@ export const updateSenderIdentity = async (params: {
     if (result.ok && changed) mailLive.wake();
     return result;
   } catch (error) {
-    if ((error as { code?: string } | null)?.code === "23505") return fail(err.conflict("Sender identity"));
+    if ((error as { code?: string } | null)?.code === "23505") return fail(err.conflict("Sender identity already exists"));
     if (isServiceError(error)) return fail(error);
     return fail(err.internal("Failed to update sender identity"));
   }

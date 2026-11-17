@@ -55,17 +55,17 @@ Use its existing patterns:
   instant or cron and IANA timezone. Never approximate DST with a fixed UTC
   offset. Completed/expired tasks stay historical unless the person requests
   a new time. Preserve prompts, schemas, choices and recorded budgets.
-- **Open-ended routines:** use the [Start a Gustav turn pattern](ai.md#start-a-gustav-turn).
-  Personal Code belongs to the exported owner and schedules `core.ai.chat(chatId).run`
-  with the exact exported `prompt` in their original `targetChat`. Optional
+- **Open-ended routines:** use the [Write to a Gustav chat](ai.md#write-to-a-gustav-chat).
+  Personal Code belongs to the exported owner and schedules `core.ai.chat(chatId).send`
+  with the exact exported instructions as `text` in their original `targetChat`. Optional
   `context` contains untrusted source data. Keep tool choices in the agent turn;
   a text generator, delivery-only call or precompiled tool sequence is not an
-  equivalent replacement. Follow the pattern's admission, human waits, busy-chat
-  refusal and actual-usage rules. Read a later snapshot through
-  `core.ai.chat(chatId).run.read`; as a Query, its state is in `data`, while the start
+  equivalent replacement. Follow the pattern's admission, human waits, queue
+  admission and actual-usage rules. Read a later snapshot through
+  `core.ai.chat.read`; as a Query, its state is in `data`, while the start
   Action's reply remains direct. Do not poll for a human.
 - **Targets and rights:** an Assistant `targetChat` is a Gustav chat, different
-  from a general Chat conversation. Deterministic output uses `core.ai.chat(chatId).deliver`
+  from a general Chat conversation. Deterministic output uses `core.ai.chat(chatId).send` with fixed instructions and the output as `context`
   for the original chat; use `chat.message.post` only for an explicitly chosen
   general Chat target. Open-ended turns report themselves; do not post a second
   copy. Exported grants/mandates never become shares. Follow [Access](access.md).

@@ -48,6 +48,7 @@ import {
   MatchText,
   MessageEventGroup,
   MessageEventRow,
+  MessageQuote,
   MessageRow,
   type MessageRowAttachment,
   type MessageRowStatus,
@@ -1823,6 +1824,41 @@ const MessageRowsDemo = () => {
   );
 };
 
+/** One quoted passage outside a MessageRow, as an assistant chat shows it: author and passage, a long one, one to jump back from. */
+const MessageQuoteDemo = () => {
+  const [jumps, setJumps] = createSignal(0);
+  const long =
+    "The stand gets one power socket with 3 kW, included in the offer. Internet comes from the fair, billed separately per day, and the cable run to the stand is ordered with it no later than two weeks before the build-up starts.";
+  return (
+    <DemoCard
+      id="message-quote"
+      chip={{ kind: "component", name: "MessageQuote", from: "@k2b/ui" }}
+      description="A quoted passage for a message that is not a MessageRow. It shows the passage in at most two lines and its author below; a long passage ends with an ellipsis. With onSelect it is a button that jumps back to the original."
+      code={`<div class="k2b-message-quotes">
+  <MessageQuote quote={{ author: "Gustav", text: passage }} />
+  <MessageQuote quote={{ author: "Lea Muster", text: passage, onSelect: () => jumpTo(id) }} />
+</div>`}
+    >
+      <div style={{ display: "grid", gap: "0.75rem", "max-width": "28rem" }}>
+        <div class="k2b-message-quotes">
+          <MessageQuote quote={{ author: "Gustav", text: "The power socket with 3 kW is included in the offer." }} />
+        </div>
+        <div class="k2b-message-quotes">
+          <MessageQuote quote={{ author: "Lea Muster", text: long }} />
+        </div>
+        <div class="k2b-message-quotes">
+          <MessageQuote
+            quote={{ author: "Ben Schulz", text: "I send my notes by four.", onSelect: () => setJumps((count) => count + 1) }}
+          />
+        </div>
+        <p class="text-xs text-dimmed" aria-live="polite">
+          {jumps() ? `Jumped back to the original ${jumps()} times.` : "Select the last quote to jump back to its original."}
+        </p>
+      </div>
+    </DemoCard>
+  );
+};
+
 type QuoteEntry = { id: string; author: string; own?: boolean; text: string; quotes?: { id: string; author: string; text: string }[] };
 /** Select part of a message, quote it, and answer: the quotes stand above the field and then above the sent text. */
 const MessageQuotesDemo = () => {
@@ -2776,6 +2812,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <MessageRowsDemo />
       <MessageQuotesDemo />
+      <MessageQuoteDemo />
     </DemoGrid>
   ),
   "reaction-bar": () => <ReactionBarDemos />,

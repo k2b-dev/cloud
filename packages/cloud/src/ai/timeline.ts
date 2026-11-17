@@ -40,9 +40,7 @@ const isAssistantPart = (entry: AiStoredMessage): boolean =>
 const sameLoop = (entry: AiStoredMessage, loopId: string | null): boolean => (loopId ? entry.loopId === loopId : entry.loopId === null);
 /** Each delivered background result is its own answer, also when deliveries follow each other. */
 const sameBackgroundResult = (entry: AiStoredMessage, first: AiStoredMessage): boolean =>
-  (entry.meta?.scheduledTask?.occurrenceId ?? null) === (first.meta?.scheduledTask?.occurrenceId ?? null) &&
-  (entry.meta?.codeDelivery?.runId ?? null) === (first.meta?.codeDelivery?.runId ?? null) &&
-  (entry.meta?.codeDelivery?.effectKey ?? null) === (first.meta?.codeDelivery?.effectKey ?? null);
+  (entry.meta?.scheduledTask?.occurrenceId ?? null) === (first.meta?.scheduledTask?.occurrenceId ?? null);
 
 const assistantActionEntry = (entries: AiStoredMessage[]): AiStoredMessage | null => {
   const assistantEntries = entries.filter((entry) => entry.kind === "message" && entry.message.role === "assistant");

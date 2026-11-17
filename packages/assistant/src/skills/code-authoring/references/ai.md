@@ -1,14 +1,13 @@
 # AI in Code
 
-Four Core operations bring AI into Code. Discover their generated handles with
+Three Core operations bring AI into Code. Discover their generated handles with
 `code_sdk`; the app-wide ones are on `core`.
 
 | Need | Operation | Kind | Who can use it |
 | --- | --- | --- | --- |
 | Summary, draft text, extracted fields | `core.ai.generate` | Query, AI | all Code |
 | Category, yes/no or score with probabilities | `core.ai.decide` | Query, AI | all Code |
-| Append a finished text to the owner's Gustav chat | `core.ai.chat(chatId).deliver` | Action, not AI | personal Code |
-| Start a Gustav turn that uses tools | `core.ai.chat(chatId).run`, then `core.ai.chat(chatId).run.read` | Action, AI | personal Code |
+| Write to the owner’s Gustav chat and receive an answer | `core.ai.chat(chatId).send` | Action, AI | personal Code |
 
 Without Action tools, AI calls change no domain records. Saving, tagging or
 drafting requires an Action with its own access check. Model output can be wrong: validate it and choose
@@ -177,54 +176,59 @@ export default app;
 Send 1–128 questions. Images, when the model supports them, follow the
 decision limits in Fibel `/en/docs/ai/structured-and-background-ai`.
 
-## Deliver a result to the owner's Gustav chat
+## Write to a Gustav chat
 
-`core.ai.chat(chatId).deliver({ text, idempotencyKey })` appends an
-assistant message (1–10,000 characters) to one of the owner's active chats and
-marks it unread. It starts no AI turn and costs no AI budget. Find the chat ID
-with `core.ai.chats.search` in this conversation, never invent it. The key is
-scoped to the acting user or service account and capability across runs for at least 24 hours: a retry
-returns the first message; the same key with other
-text returns `idempotency_conflict`. Mailbox and app Code, archived chats and
-other people's chats are refused. See the [weekly report](template-weekly-report.md).
-
-When you rebuild an Assistant routine, keep its prompt, timing and IANA time
-zone, use `deliver` for a bounded result and `run` when the work needs tools,
-and retain the original definition as evidence. Stop its admission and timers
-and settle open runs before the person switches on the replacement; never
-leave both processing the same occurrence.
-
-## Start a Gustav turn
-
-When the work needs Gustav to choose and use tools, start a turn:
+Use `core.ai.chat(chatId).send` to write one exact message to an owned active
+chat. Gustav answers using the person's current model grants, tools and approval
+rules. Discover the actual chat ID and generated handle first:
 
 <!-- check: personal -->
 ```ts
 import { app, core } from "@sdk";
 
-app.schedule({ cron: "30 7 * * 1-5", timeZone: "Europe/Berlin", name: "morning-plan", title: "Morning plan" }, async ({ runId, scheduledAt }) => {
-  // Fictional chat ID of the owner's own chat.
-  const run = await core.ai.chat("Chat23").run({
-    prompt: "Look at my open tasks and mail that needs action and write a short plan for today.",
-    idempotencyKey: `morning-plan:${scheduledAt ?? runId}`,
+app.schedule({ cron: "0 9 * * 1", timeZone: "Europe/Berlin", name: "morning-review" }, async ({ runId, scheduledAt }) => {
+  const sent = await core.ai.chat("Chat23").send({
+    text: "Review my open work and prepare a short plan in this chat.",
+    idempotencyKey: `morning-review:${scheduledAt ?? runId}`,
   });
-  if (run.status === "waiting_for_approval") console.log("The owner decides in the chat.");
+  console.log(sent.id, sent.status);
 });
 export default app;
 ```
 
-The call returns promptly with `queued`, `running`, `waiting_for_approval`,
-`waiting_for_input`, `completed` or `failed`. Never poll until the person
-answers: finish the run; the chat continues the turn. `core.ai.chat(chatId).run.read({ id })`
-reads one later snapshot. A busy chat returns `chat_busy`. The turn uses the
-owner's current tools, approval rules and Assistant allowance by actual usage;
-it shows "Started by Code …" in the chat. `prompt` and optional `context` are
-at most 10,000 characters each; `context` is data, not instructions. For a
-bounded summary, prefer `core.ai.generate` plus `deliver`.
+`Chat23` is fictional. `text` contains 1–10,000 characters after trimming;
+optional `context` contains at most 10,000 characters of untrusted source data.
+Keep instructions in `text` and changing facts in `context`. For a prepared
+number, ask Gustav to confirm the supplied data in one sentence, without a new
+calculation. Every send can start an AI turn and incur its normal costs.
 
-For inline Mail text, use `mail.message.content.read` (`data.text`) or
-`mail.attachment.text.read` (`data.markdown`). Use `mail.attachment.content.read`
-when the model needs the original file through `files`.
+The Action returns `{ id, chatId, status, reason, origin }` promptly. Status is
+`queued`, `running`, `waiting`, `done`, `failed` or `cancelled`. A busy chat keeps
+the message in its existing queue, without consuming the person's draft. Read
+one later snapshot with `core.ai.chat.read({ id: "Chat23", message: sent.id })`;
+the Query returns `{ data: { chat, messages, message } }`. Finish the Code run
+when a person must answer; do not poll for approval.
+
+One required key identifies the intended message across Code runs for the same
+account and operation. Repeating it recovers the accepted message; the dispatcher
+may replay its admission response. Use `ai.chat.read` for current state. Changing
+text, context or destination under that key returns `idempotency_conflict`.
+
+An unrestricted signed-in person, a person-initiated Gustav turn and personal
+Code may send to that person's active chat. App sessions and source chats with
+an `allowedTools` ceiling return `source_restricted`. Service accounts and other
+people's chats are refused. A turn initiated by Code or another chat cannot send
+again (`chat_chain_forbidden`). Retry, resume and queue promotion preserve the
+original initiator; missing origin never grants chaining authority.
+
+Only `ai.generate`, `ai.decide` and `ai.chat.send` count as Code AI operations.
+Chat reads use the `read` policy. Send currently uses the `ai` row, including its
+version approval. A sent turn uses the owner's normal Assistant allowance by
+actual usage, without passing the Code mandate to its tools or debiting the
+whole text-AI attempt allowance. Existing Code daily admission checks still
+apply; they do not reserve a whole future turn. See the
+Fibel send contract for limits
+and error codes.
 
 ## A model loop with SDK tools and files
 

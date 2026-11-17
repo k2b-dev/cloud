@@ -39,7 +39,7 @@ confirmation in Cloud; the editor shows the chat link. See
 Scheduled Assistant chat routines and their controls are retired. Existing chat
 messages remain readable. Export definitions before upgrading, then ask Gustav
 to rebuild reviewed personal Code with `app.schedule`, an explicit `timeZone`
-and `core.ai.chat.run`. Activation and current grants require a fresh review.
+and `core.ai.chat.send`. Activation and current grants require a fresh review.
 See [Routines became Code](/en/docs/operations/routines-to-code).
 
 ## Project access and linked Skills

@@ -24,7 +24,7 @@ type Row = { host: string; app_id: string; redirect_to: string | null; created_a
 type Dependencies = { db?: SQL; getApp?: typeof getApp; cloudUrl?: () => string | Promise<string>; probe?: typeof checkAppDomain };
 const normalizeHost = (value: string) => (value.includes("\\") ? null : normalizeAppDomainHost(value));
 const invalid = (code: string, message: string) => fail({ ...err.badInput(message), code });
-const conflict = (code: string, message: string) => fail({ ...err.conflict("App domain"), code, message });
+const conflict = (code: string, message: string) => fail({ ...err.conflict(message), code });
 const notFound = () => fail({ ...err.notFound("App domain"), code: "APP_DOMAIN_NOT_FOUND" });
 const authorized = (input: AppInput): Result<void> => {
   if (!input.actor.roles.includes("admin")) return fail(err.forbidden("Administrator access required"));

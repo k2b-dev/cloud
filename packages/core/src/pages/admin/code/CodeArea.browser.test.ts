@@ -258,6 +258,7 @@ test("requesting changes asks for a text in a dialog that names who gets it, kee
   await dialog.getByText("3 Kommentare am Code gehen mit.").waitFor();
   // The decision dialog is Cloud's administration, not AI: it never carries the approval's AI colour scope.
   expect(await page.evaluate(() => document.querySelector("dialog[open]")?.closest("[data-k2b-primary]") === null)).toBe(true);
+  await settled(page);
   const buttons = await dialog.getByRole("button", { name: "Änderungen anfordern" }).boundingBox();
   await dialog.getByRole("button", { name: "Änderungen anfordern" }).click();
   await dialog.getByText("Schreib kurz, was sich ändern soll.").waitFor();

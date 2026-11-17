@@ -30,8 +30,8 @@ cutover procedure; already dispatched external effects cannot be undone by a mig
 
 Give Gustav the exported definition and ask for personal Code. Preserve the
 prompt, destination chat and explicit IANA time zone. Use `app.schedule` with
-`timeZone`, then `core.ai.chat.run` to start a normal owner-authorized chat
-turn, or `core.ai.chat.deliver` to post a prepared result without starting AI.
+`timeZone`, then `core.ai.chat.send` to start a normal owner-authorized chat
+turn. Prepared results go in `context` with fixed instructions in `text`; Gustav answers briefly.
 Review the schedule, inputs and
 grants before activating the Code. No definition imports authority or activates
 a replacement automatically.

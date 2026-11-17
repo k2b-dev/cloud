@@ -130,8 +130,8 @@ export const listRecordChanges = async (params: {
   if (params.cursor && !boundary) return fail(err.badInput(messages.invalidChangeFeedCursor));
 
   const cutoff = new Date((params.now ?? new Date()).getTime() - RECORD_CHANGE_FEED_RETENTION_DAYS * 24 * 60 * 60 * 1_000);
-  // `err.conflict` phrases a duplicate ("… already exists"); this is a rescan instruction.
-  const expired = fail({ code: "CONFLICT", message: messages.expiredChangeFeedCursor, status: 409 });
+  // A rescan instruction, as a whole sentence: `err.conflict` takes it as given.
+  const expired = fail(err.conflict(messages.expiredChangeFeedCursor));
   if (boundary === "expired" || (boundary && new Date(boundary.occurredAt).getTime() < cutoff.getTime())) return expired;
 
   // Every transaction below this horizon has ended, so no change can still

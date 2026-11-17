@@ -6,6 +6,7 @@ import {
   AI_SKILL_NAME_PATTERN,
   AI_SKILL_REFERENCE_MAX_CHARS,
   AI_SKILL_REFERENCE_PATH_PATTERN,
+  AiChatOriginSchema,
   type AiConversation,
   type AiConversationResourceRef,
   AiOpenQuestionsSchema,
@@ -43,11 +44,10 @@ import { coreUserEvents, coreUserEventTypes } from "@k2b/cloud/services/core-use
 import { principalLabel } from "@k2b/cloud/shared";
 import { err, fail, i18n, ok } from "@k2b/stdlib";
 import { z } from "zod";
-import { aiChatDeliveryAction } from "./ai-chat-delivery";
-import { aiChatRunAction, aiChatRunReadQuery } from "./ai-chat-run";
+import { aiChatSendAction } from "./ai-chat-send";
+import { aiChatSendData, chatSendSnapshot } from "./ai-chat-send-result";
 import { aiDecisionQuery } from "./ai-decision-capability";
 import { aiGenerationQuery } from "./ai-generation-capability";
-import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 import { coreCapabilityMessages } from "./capability-messages";
 import { coreCapabilityPresentation } from "./capability-presentation";
 import { CodeDataError, codePerson } from "./code/access";
@@ -192,7 +192,6 @@ const resourceCursorSchema = (scope: "conversation" | "user") =>
     .refine((value) => isConversationResourceCursor(value, scope), "Invalid resource cursor")
     .optional()
     .describe("Opaque cursor returned by the previous resource page.");
-const CHAT_MESSAGE_TOOL_NAME = aiCapabilityId(CORE_APP_ID, "ai.chat.message");
 const referenceMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -291,6 +290,7 @@ const VisibleMessageSchema = z
     role: z.enum(["user", "assistant", "summary"]),
     text: z.string().min(1).max(MAX_MESSAGE_TEXT_CHARS),
     truncated: z.boolean(),
+    origin: AiChatOriginSchema.optional(),
     createdAt: z.string(),
   })
   .strict();
@@ -299,6 +299,7 @@ const ChatMessagesDataSchema = z
   .object({
     chat: ChatSummarySchema,
     messages: z.array(VisibleMessageSchema).max(40),
+    message: aiChatSendData.optional(),
   })
   .strict();
 
@@ -324,19 +325,6 @@ const ChatsResourcesDataSchema = z
     }).strict(),
   )
   .max(50);
-
-const ChatMessageInputSchema = z
-  .object({
-    text: z.string().trim().min(1).max(10_000).describe("Exact message to send to the target chat."),
-  })
-  .strict();
-const ChatMessageDataSchema = z
-  .object({
-    id: ChatIdSchema,
-    status: z.enum(["queued", "delivered"]),
-    targetChatId: ChatIdSchema,
-  })
-  .strict();
 
 const SkillIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character Skill ID.");
 const SkillNameSchema = z
@@ -572,6 +560,7 @@ const visibleMessage = (stored: AiStoredMessage) => {
     role: stored.kind === "summary" ? ("summary" as const) : message.role,
     text: text.slice(0, MAX_MESSAGE_TEXT_CHARS),
     truncated: text.length > MAX_MESSAGE_TEXT_CHARS,
+    ...(stored.meta?.writerOrigin ? { origin: stored.meta.writerOrigin } : {}),
     createdAt: stored.createdAt,
   };
 };
@@ -638,7 +627,6 @@ export const aiCapabilities = defineCapabilities({
       run: (input, context) => runCodeQuery(context, (ctx) => readCodeEventCatchup(codeTargetId(context), input.operationId, ctx)),
     },
 
-    "ai.chat.run.read": aiChatRunReadQuery,
     "ai.open_questions": {
       title: "Read what waits for you",
       description: "Read your current authorized questions and Code next steps in one bounded list. Resolved entries disappear.",
@@ -1047,7 +1035,7 @@ export const aiCapabilities = defineCapabilities({
     "ai.chats.search": {
       title: "Search AI conversations",
       description:
-        "Normal entry for finding the current user's AI conversations by text or exact Cloud resource refs. Use returned core.ai.chat refs with ai.chat.read, ai.chat.search, ai.chat.resources or ai.chat.message.",
+        "Normal entry for finding the current user's AI conversations by text or exact Cloud resource refs. Use returned core.ai.chat refs with ai.chat.read, ai.chat.search, ai.chat.resources or ai.chat.send.",
       input: ChatsSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -1068,13 +1056,36 @@ export const aiCapabilities = defineCapabilities({
       title: "Read an AI conversation",
       description:
         "Read visible text from one core.ai.chat ref returned by ai.chats.search or a Core Action. Use ai.chat.search for text lookup inside the known chat and ai.chat.resources for referenced Cloud resources.",
-      input: ChatReadInputSchema,
+      input: ChatReadInputSchema.extend({ message: z.uuid().optional().describe("Message ID returned by ai.chat.send.") }),
       data: ChatMessagesDataSchema,
       openWorld: false,
       async run(input, context) {
         if (!context.user) return fail(err.forbidden("AI conversations require a user-backed actor"));
         const chat = await readableOwnedChat(input.id, context.user.id);
         if (!chat) return fail(err.notFound("Chat"));
+        if (input.message) {
+          const sent = await chatSendSnapshot(chat.id, chat.shortId, input.message);
+          if (!sent.ok) return sent;
+          const messages = sent.data.turnId
+            ? await aiConversations.listTurnMessages({
+                conversationId: chat.id,
+                loopId: sent.data.turnId,
+                includeCompacted: true,
+                limit: input.limit,
+              })
+            : [];
+          return ok({
+            data: {
+              chat: chatSummary(chat),
+              message: sent.data.data,
+              messages: messages.flatMap((message) => visibleMessage(message) ?? []).slice(-input.limit),
+            },
+            refs: [chatReference(chat)],
+            links: [{ rel: "open" as const, href: chatHref(chat.shortId) }],
+            // The send status shows the turn's latest messages; it has no further page.
+            page: capabilityPage(),
+          });
+        }
         const beforeSeq = input.cursor === undefined ? undefined : Number(input.cursor);
         if (beforeSeq !== undefined && (!Number.isSafeInteger(beforeSeq) || beforeSeq <= 0)) return fail(err.badInput("Invalid cursor"));
         const page = await aiConversations.listMessagesPage({ conversationId: chat.id, beforeSeq, limit: input.limit });
@@ -1228,7 +1239,7 @@ export const aiCapabilities = defineCapabilities({
       review: (input, context) => reviewSavedCatchup(input.operationId, context, "catchup_cancel"),
       run: (input, context) => runCodeQuery(context, (ctx) => cancelCodeEventCatchup(codeTargetId(context), input.operationId, ctx)),
     },
-    "ai.chat.run": aiChatRunAction,
+    "ai.chat.send": aiChatSendAction,
     "code.run": {
       title: "Run Code",
       description: "Start the active checked Code entrypoint. Reuse the request key to recover its receipt; use a new key to run again.",
@@ -1909,77 +1920,6 @@ export const aiCapabilities = defineCapabilities({
           if (error instanceof AiSkillAppForbiddenError) return fail(err.forbidden(error.message));
           throw error;
         }
-      },
-    },
-    "ai.chat.deliver": aiChatDeliveryAction,
-    "ai.chat.message": {
-      target: "ai.chat",
-      title: "Message another AI conversation",
-      description: "Queue one attributable message for another owned AI conversation after reviewing the exact target and text.",
-      input: ChatMessageInputSchema,
-      data: ChatMessageDataSchema,
-      destructive: false,
-      openWorld: false,
-      idempotency: "required",
-      async review(input, context) {
-        if (!context.user) return fail(err.forbidden("AI conversations require a user-backed actor"));
-        const target = await ownedChat(chatTargetId(context), context.user.id);
-        if (!target) return fail(err.notFound("Chat"));
-        const { t } = coreCapabilityMessages(context.locale);
-        return ok({
-          message: t.chatMessage({ chat: `${target.title} (${target.shortId})` }),
-          details: [
-            { label: t.targetChat, value: `${target.title} (${target.shortId})` },
-            { label: t.message, value: input.text, display: "block" },
-          ],
-          links: [{ rel: "open", href: chatHref(target.shortId), title: t.openTargetChat }],
-        });
-      },
-      async run(input, context) {
-        if (!context.user) return fail(err.forbidden("AI conversations require a user-backed actor"));
-        if (!context.idempotencyKey) return fail(err.badInput("Idempotency-Key is required"));
-        const origin = await aiConversations.getCapabilityInvocationOrigin({
-          idempotencyKey: context.idempotencyKey,
-          toolName: CHAT_MESSAGE_TOOL_NAME,
-        });
-        if (!origin) return fail(err.forbidden("Inter-chat messages require an AI conversation turn"));
-        const created = await aiConversations.createInterChatMessage({
-          sourceConversationId: origin.conversationId,
-          sourceTurnId: origin.turnId,
-          sourceCallId: origin.callId,
-          targetChatId: chatTargetId(context),
-          actorUserId: context.user.id,
-          text: input.text,
-          idempotencyKey: context.idempotencyKey,
-        });
-        if (!created.ok) {
-          if (created.reason === "same_chat") return fail(err.badInput("Choose another chat"));
-          if (created.reason === "recursive")
-            return fail(err.forbidden("A turn started by an inter-chat message cannot message another chat"));
-          return fail(err.notFound("Chat"));
-        }
-        if (created.message.status === "failed") return fail(err.conflict("The target chat could not accept the message"));
-        const delivery =
-          created.message.status === "delivered" ? null : await deliverPendingAiMessages(created.message.targetConversationId);
-        const status = created.message.status === "delivered" ? "delivered" : (delivery?.get(created.message.id) ?? "queued");
-        if (status === "failed") return fail(err.conflict("The target chat could not accept the message"));
-        return ok({
-          data: { id: created.message.shortId, status, targetChatId: created.message.targetChatId },
-          summary:
-            status === "delivered"
-              ? coreCapabilityMessages(context.locale).t.chatMessageSent({ title: created.message.targetTitle })
-              : coreCapabilityMessages(context.locale).t.chatMessageQueued({ title: created.message.targetTitle }),
-          refs: [
-            {
-              type: "core.ai.chat",
-              id: created.message.targetChatId,
-              title: created.message.targetTitle,
-              preview: referenceMessages.resolve([context.locale]).t.chat,
-              icon: "ti ti-message-chatbot",
-            },
-          ],
-          links: [{ rel: "open", href: chatHref(created.message.targetChatId) }],
-        });
       },
     },
   },

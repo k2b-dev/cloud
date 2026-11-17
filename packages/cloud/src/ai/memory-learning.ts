@@ -5,7 +5,7 @@ import { sql } from "../runtime/clients";
 import { coreSettings } from "../services";
 import { logger } from "../services/logging";
 import { normalizeLocale } from "../shared/locale";
-import { parseAiAttachmentMarkers } from "./attachments";
+import { aiUserWordsForModel } from "./chat/message-utils";
 import { AiBackgroundAdmissionError, AiBackgroundCostError } from "./inference-calls";
 import { type AiBackgroundMemoryProposal, aiMemories } from "./memories";
 import { type AiMemoryLearningChange, aiMemoryLearningRuns } from "./memory-learning-runs";
@@ -243,13 +243,9 @@ export const buildMemoryLearningTranscript = (messages: AiStoredMessage[]): stri
         stored.meta?.codeOrigin
       )
         return [];
-      return message.content.flatMap((part) => {
-        if (typeof part === "string") return part.trim() ? [part.trim()] : [];
-        if (part.type !== "text") return [];
-        const text = parseAiAttachmentMarkers(part.text).text.trim();
-        if (!text || text.startsWith("[Attached Cloud resource ")) return [];
-        return [text];
-      });
+      // Only the person's own visible words are evidence: never a quote, an attached item, or a marker.
+      const text = aiUserWordsForModel(stored);
+      return text ? [text] : [];
     })
     .join("\n\n");
 

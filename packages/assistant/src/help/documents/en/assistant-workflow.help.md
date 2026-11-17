@@ -42,6 +42,7 @@ Chats automatically move to **Done** after seven days without use. Sending a mes
 :::reference
 - **Stop:** Stop aborts the running Gustav turn for the open chat.
 - **Retry:** Retry reruns a user message and replaces later messages in that chat branch.
+- **Quote:** Select text in a finished answer or in your message and choose **Quote**. To quote a whole message, choose **Quote** in the message's **…** menu. The quote stays above the message field until you send; **Remove quote** takes it away. A message has at most 10 quotes of 2,000 characters each.
 - **Continue:** When an answer stops because a step or the model service failed, the chat says why. **Continue** asks Gustav to resume where it stopped; the results so far are kept.
 - **Continue in a new chat:** Creates a new chat copied through the selected answer.
 - **Response details:** Shows the model, time, and token usage of one answer.
@@ -92,7 +93,7 @@ history. It can search the current chat, find and read another owned chat, and
 find structured Cloud resources previously used in either scope.
 
 If you explicitly ask Gustav to tell, ask, notify, forward, or send exact
-text to another chat, it can request the `core.ai.chat.message` Action. The approval
+text to another chat, it can request the `core.ai.chat.send` Action. The approval
 prompt shows the target and exact text before anything is queued. Delivered
 messages appear in the target history with their source chat; they are not
 shown as messages authored by you.

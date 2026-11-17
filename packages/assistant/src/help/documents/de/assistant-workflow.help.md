@@ -42,6 +42,7 @@ Nach sieben Tagen ohne Nutzung erscheinen Chats automatisch unter **Fertig**. Al
 :::reference
 - **Beenden:** Beendet die laufende Antwort von Gustav im geöffneten Chat.
 - **Erneut versuchen:** Führt eine Benutzernachricht erneut aus und ersetzt spätere Nachrichten dieses Chat-Zweigs.
+- **Zitieren:** Markiere Text in einer fertigen Antwort oder in deiner Nachricht und wähle **Zitieren**. Um eine ganze Nachricht zu zitieren, wähle im Menü **…** der Nachricht **Zitieren**. Das Zitat steht über dem Eingabefeld, bis du sendest; mit **Zitat entfernen** nimmst du es weg. Eine Nachricht hat höchstens 10 Zitate mit je 2.000 Zeichen.
 - **Weiterarbeiten:** Wenn eine Antwort wegen eines fehlgeschlagenen Schritts oder eines Fehlers beim KI-Dienst endet, zeigt der Chat den Grund. **Weiterarbeiten** lässt Gustav dort fortfahren, wo er aufgehört hat; die bisherigen Ergebnisse bleiben erhalten.
 - **In neuem Chat fortsetzen:** Erstellt einen neuen Chat, der bis einschließlich der ausgewählten Antwort kopiert wird.
 - **Details zur Antwort:** Zeigt Modell, Zeit und Token-Verbrauch einer Antwort.
@@ -92,7 +93,7 @@ Aktion. Ohne Ergebnisprüfung gibt es keine Schaltfläche zum Wiederholen.
 
 Gustav kann seine verfügbaren Capabilities verwenden, wenn deine Anfrage vom Chatverlauf abhängt. Er kann den aktuellen Chat durchsuchen, einen anderen eigenen Chat finden und lesen sowie strukturierte Cloud-Ressourcen suchen, die in einem der beiden Bereiche verwendet wurden.
 
-Wenn du Gustav ausdrücklich bittest, einer anderen Unterhaltung einen genauen Text mitzuteilen, sie danach zu fragen, sie zu benachrichtigen oder Text weiterzuleiten oder zu senden, kann er die Aktion `core.ai.chat.message` anfordern. Vor dem Einreihen zeigt die Freigabeaufforderung das Ziel und den genauen Text. Zugestellte Nachrichten erscheinen mit ihrem Quell-Chat im Zielverlauf. Sie werden nicht als von dir verfasste Nachrichten dargestellt.
+Wenn du Gustav ausdrücklich bittest, einer anderen Unterhaltung einen genauen Text mitzuteilen, sie danach zu fragen, sie zu benachrichtigen oder Text weiterzuleiten oder zu senden, kann er die Aktion `core.ai.chat.send` anfordern. Vor dem Einreihen zeigt die Freigabeaufforderung das Ziel und den genauen Text. Zugestellte Nachrichten erscheinen mit ihrem Quell-Chat im Zielverlauf. Sie werden nicht als von dir verfasste Nachrichten dargestellt.
 
 ## Audio und Diktieren {icon="microphone"}
 
