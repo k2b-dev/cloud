@@ -645,7 +645,12 @@ suiteFor(
 
   test("three cheap turns fit the daily USD budget and leave generate/decide allowance available", async () => {
     const { prepare, prepareTurn } = await setup();
-    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 }, contextWindow: 128000, maxOutputTokens: 1000 });
+    const profile = aiModelFixture({
+      id: "fixture",
+      pricing: { inputPerMillion: 1, outputPerMillion: 1 },
+      contextWindow: 128000,
+      maxOutputTokens: 1000,
+    });
     const state = aiSettingsFixture({ profiles: [profile] });
     spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(state);
     const subject = { type: "user" as const, userId: owner };
@@ -714,7 +719,12 @@ suiteFor(
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
-    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 }, contextWindow: 128000, maxOutputTokens: 1000 });
+    const profile = aiModelFixture({
+      id: "fixture",
+      pricing: { inputPerMillion: 1, outputPerMillion: 1 },
+      contextWindow: 128000,
+      maxOutputTokens: 1000,
+    });
     const call = await beginAiCall(
       profile,
       { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
@@ -741,7 +751,12 @@ suiteFor(
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
-    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 }, contextWindow: 128000, maxOutputTokens: 1000 });
+    const profile = aiModelFixture({
+      id: "fixture",
+      pricing: { inputPerMillion: 1, outputPerMillion: 1 },
+      contextWindow: 128000,
+      maxOutputTokens: 1000,
+    });
     const call = await beginAiCall(
       profile,
       { kind: "chat", task: "chat", subject: { type: "user", userId: owner }, turnId: turn!.id },
@@ -764,7 +779,12 @@ suiteFor(
     await setup();
     await start();
     const turn = await aiConversations.getLatestTurn({ conversationId: chat.id });
-    const profile = aiModelFixture({ id: "fixture", pricing: { inputPerMillion: 1, outputPerMillion: 1 }, contextWindow: 128000, maxOutputTokens: 1000 });
+    const profile = aiModelFixture({
+      id: "fixture",
+      pricing: { inputPerMillion: 1, outputPerMillion: 1 },
+      contextWindow: 128000,
+      maxOutputTokens: 1000,
+    });
     spyOn(aiModelSettings, "readAiSettingsState").mockResolvedValue(aiSettingsFixture({ profiles: [profile] }));
     const rules = [
       { scope: "*", hours: 24, anchor: "1970-01-01T00:00:00Z", grants: [{ principal: { type: "user", userId: owner }, limit: 1 }] },

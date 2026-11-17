@@ -63,7 +63,10 @@ test("input admission covers instructions and schemas; higher reported input exh
     guard.wrap({
       ...base,
       async *stream() {
-        yield { type: "usage", usage: { input: AUTOMATION_TURN_BUDGET.inputTokens, output: 1, total: AUTOMATION_TURN_BUDGET.inputTokens + 1 } };
+        yield {
+          type: "usage",
+          usage: { input: AUTOMATION_TURN_BUDGET.inputTokens, output: 1, total: AUTOMATION_TURN_BUDGET.inputTokens + 1 },
+        };
       },
     }),
   );

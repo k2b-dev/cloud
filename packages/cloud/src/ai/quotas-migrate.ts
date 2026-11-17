@@ -46,7 +46,7 @@ export async function migrateAiQuotas() {
     await db`CREATE INDEX IF NOT EXISTS inference_calls_started ON ai.inference_calls(started_at)`;
     await db`CREATE INDEX IF NOT EXISTS inference_calls_turn ON ai.inference_calls(turn_id,started_at,id) WHERE kind='chat'`;
     // All attributed inference, including tools, shares one turn allowance.
-    await db`CREATE INDEX IF NOT EXISTS inference_calls_turn ON ai.inference_calls(turn_id)`;
+    await db`CREATE INDEX IF NOT EXISTS inference_calls_all_turn ON ai.inference_calls(turn_id)`;
     await db`CREATE INDEX IF NOT EXISTS inference_calls_compaction_turn ON ai.inference_calls(turn_id) WHERE task='chat-compaction'`;
     await db`CREATE INDEX IF NOT EXISTS inference_calls_user ON ai.inference_calls(user_id,started_at)`;
     await db`CREATE INDEX IF NOT EXISTS inference_calls_service ON ai.inference_calls(service_account_id,started_at)`;

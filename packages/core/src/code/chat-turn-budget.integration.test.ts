@@ -85,6 +85,73 @@ suiteFor(
     await sql`DELETE FROM ai.inference_calls WHERE user_id=${owner}::uuid`;
   };
 
+  test("two measured briefings fit the same day after each turn settles its actual usage", async () => {
+    await reset();
+    const briefing = { ...profile, pricing: { inputPerMillion: 2.5, outputPerMillion: 10 }, maxOutputTokens: 4096 };
+    for (let index = 0; index < 2; index++) {
+      const entry = await turn();
+      await aiConversations.claimTurn({
+        ...entry,
+        leaseOwner: "briefing-worker",
+        leaseMs: 30000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 30000,
+      });
+      await reserve(entry.turnId, codeId, briefing);
+      const [counter] = await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget
+        WHERE scope_kind='owner'`;
+      expect(Number(counter!.cost)).toBe(index === 0 ? 0.68 : 0.961625);
+      // Measured median: 101,434 input and 2,804 output tokens over six calls.
+      for (let round = 0; round < 6; round++) {
+        const input = round === 5 ? 21_434 : 16_000;
+        const output = round === 5 ? 804 : 400;
+        const attempt = await beginAiCall(briefing, { ...entry, userId: owner, kind: "chat", task: "chat" }, input, 4096);
+        await finishAiCall(attempt.id, { input, output }, "ok");
+      }
+      await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${entry.turnId}::uuid`;
+      await sql.begin((db) => settleCodeChatTurnBudget(entry.turnId, db));
+      const [settled] = await sql<{ reserved: string; cost: string }[]>`SELECT reserved::text,cost::text
+        FROM code.chat_turn_budgets WHERE turn_id=${entry.turnId}::uuid`;
+      expect(Number(settled!.reserved)).toBe(0.68);
+      expect(Number(settled!.cost)).toBe(0.281625);
+      expect(Number(settled!.reserved)).toBeGreaterThanOrEqual(Number(settled!.cost));
+    }
+    const counters = await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget`;
+    expect(counters.map((row) => Number(row.cost))).toEqual([0.56325, 0.56325]);
+  });
+
+  test("one call of input estimation margin and the whole output allowance stay covered by the reservation", async () => {
+    await reset();
+    const entry = await turn();
+    const briefing = { ...profile, pricing: { inputPerMillion: 2.5, outputPerMillion: 10 }, maxOutputTokens: 4096 };
+    await aiConversations.claimTurn({
+      ...entry,
+      leaseOwner: "margin-worker",
+      leaseMs: 30000,
+      from: "queue",
+      maxAttempts: 5,
+      runBudgetMs: 30000,
+    });
+    await reserve(entry.turnId, codeId, briefing);
+    const context = { ...entry, userId: owner, kind: "chat" as const, task: "chat" };
+    for (let round = 0; round < 10; round++) {
+      const attempt = await beginAiCall(briefing, context, 19_000, 4096);
+      await finishAiCall(attempt.id, { input: 19_000, output: 800 }, "ok");
+    }
+    const last = await beginAiCall(briefing, context, 1000, 4096);
+    expect(last.maxOutputTokens).toBe(4000);
+    await finishAiCall(last.id, { input: AUTOMATION_TURN_BUDGET.reserveInputTokens, output: 4000 }, "ok");
+    await expect(beginAiCall(briefing, context, 1, 4096)).rejects.toMatchObject({ code: "automation_turn_limit", reason: "input_tokens" });
+    await sql`UPDATE ai.turns SET status='completed',completed_at=clock_timestamp() WHERE id=${entry.turnId}::uuid`;
+    await sql.begin((db) => settleCodeChatTurnBudget(entry.turnId, db));
+    const [settled] = await sql<{ reserved: string; cost: string }[]>`SELECT reserved::text,cost::text
+      FROM code.chat_turn_budgets WHERE turn_id=${entry.turnId}::uuid`;
+    expect(Number(settled!.reserved)).toBe(0.68);
+    expect(Number(settled!.cost)).toBe(0.675);
+    expect(Number(settled!.reserved)).toBeGreaterThanOrEqual(Number(settled!.cost));
+  });
+
   test("actual-model admission fences owner, version, state and worker lease; zero price requires ordinary AI approval", async () => {
     await reset();
     const user = await accounts.users.get({ id: owner });
@@ -140,7 +207,7 @@ suiteFor(
   test("turn aggregation has an unfiltered turn index", async () => {
     const [index] = await sql<
       { indexdef: string }[]
-    >`SELECT indexdef FROM pg_indexes WHERE schemaname='ai' AND indexname='inference_calls_turn'`;
+    >`SELECT indexdef FROM pg_indexes WHERE schemaname='ai' AND indexname='inference_calls_all_turn'`;
     expect(index?.indexdef).toContain("(turn_id)");
     expect(index?.indexdef).not.toContain("WHERE");
   });
@@ -283,12 +350,7 @@ suiteFor(
     expect(claim).not.toBeNull();
     const context = { kind: "chat" as const, task: "chat", subject: { type: "user" as const, userId: owner }, turnId: turn.id };
     // No automatic allowance: the requested ceiling passes through unchanged.
-    const large = await beginAiCall(
-      { ...profile, maxOutputTokens: 20_000 },
-      context,
-      10,
-      AUTOMATION_TURN_BUDGET.maxOutputTokens * 5,
-    );
+    const large = await beginAiCall({ ...profile, maxOutputTokens: 20_000 }, context, 10, AUTOMATION_TURN_BUDGET.maxOutputTokens * 5);
     expect(large.maxOutputTokens).toBe(AUTOMATION_TURN_BUDGET.maxOutputTokens * 5);
     await finishAiCall(large.id, { input: 10, output: 1 }, "ok");
     const unbounded = await beginAiCall({ ...profile, maxOutputTokens: undefined, outputTokenLimit: undefined }, context, 10);

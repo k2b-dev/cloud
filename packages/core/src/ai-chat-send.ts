@@ -76,9 +76,9 @@ const result = async (conversationId: string, chatId: string, id: string) => {
       })
     : snapshot;
 };
-/** Until the whole-turn reservation of slice 6 lands, the daily checks see only booked or running
- * inference. At most one waiting Code message or unfinished Code turn per owner, across all chats and
- * Codes, keeps them exact. Send/start lock Chat → owner → Code NOWAIT → run/budget rows.
+/** At most one waiting Code message or unfinished Code turn per owner, across all chats and
+ * Codes, serializes admission until the worker reserves the turn's actual model.
+ * Send/start lock Chat → owner → Code NOWAIT → run/budget rows.
  * Review locks Code → Chat, so no path holding Chat may wait for Code. */
 export const lockOwnerCodeChats = (owner: string, db: SQL) =>
   db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.owner:${owner}`},0))`;

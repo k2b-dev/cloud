@@ -2416,7 +2416,7 @@ export class AiTurnExecutor {
         modelId: resolved.profile.id,
         providerType: resolved.profile.provider,
         additionalInstructions: settings.compactionInstructions,
-        maxOutputTokens: resolved.profile.maxOutputTokens ?? (config.codeOrigin ? resolved.profile.outputTokenLimit : undefined),
+        maxOutputTokens: resolved.profile.maxOutputTokens,
         signal: abortController.signal,
         // Manual /compact means "make the context small": summarize everything
         // except the latest loop, so the marker lands right above the newest

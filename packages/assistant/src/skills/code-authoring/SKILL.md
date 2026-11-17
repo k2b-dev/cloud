@@ -186,7 +186,7 @@ secret binding](references/access.md#webhooks-r1-ohne-secret).
   performing an effect. Resolve each `code_route_unchecked` and
   `code_route_before_middleware` warning from `code_check`, or tell the
   person why the page is meant for every member.
-- Saved Code must call `chat.send` with an inline input whose `text` is a
+- Saved Code must call `core.ai.chat(chatId).send` with an inline input whose `text` is a
   fixed string literal or a const string initialized from fixed literals.
   Changing values, including event fields, numbers, query results and model
   output, belong in `context`. A const binding to changing data is not fixed.

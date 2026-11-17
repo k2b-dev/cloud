@@ -1,7 +1,7 @@
 import { createSettingsAPI } from "@k2b/cloud/services";
 
-/** Existing defaults stay at USD 1 until the measured automation budget is decided.
- * Both daily scopes share one default so that decision changes one line. */
+/** The measured automatic-turn allocation fits the existing USD 1 daily default.
+ * Both daily scopes use the same default. */
 export const CODE_AI_DEFAULT_DAILY_BUDGET_USD = 1;
 export const CODE_AI_DEFAULT_ATTEMPT_BUDGET_USD = 1;
 

@@ -5,7 +5,7 @@ section: Operations
 order: 1253
 description: Configure Code execution budgets and inspect durable policy pause work.
 tags: [operations, code, policy, settings]
-updated: 2026-11-15
+updated: 2026-11-17
 ---
 
 # Code policy operations
@@ -43,12 +43,15 @@ reservation. Ordinary rounds, background compaction and attributed tool inferenc
 settle against it; the daily ledger excludes covered turns to avoid double
 charging. The terminal callback releases unused funds, and the runtime sweep
 recovers a missed callback. Unpriced and zero-priced models require the ordinary
-`ai` policy; a priced profile without known context and output limits cannot start.
+`ai` policy; a priced profile without a known context window cannot start.
 Admission also checks the maximum before queuing a new send. With the unchanged
 USD 1 defaults, a 128k-context model priced at USD 2.50/10 per million and capped
-at 16k output needs USD 4.16, so it cannot start even on an empty day. This is
-`code_ai_turn_exceeds_daily_budget`, not the person's chat quota. Use a less
-expensive profile or explicitly configure daily budgets that fit its maximum.
+at 4,096 output tokens per call reserves USD 0.68: 192,000 input tokens plus
+32,000 tokens of input estimation margin, and 12,000 output tokens across the
+turn. After a typical briefing costs USD 0.28, another turn can reserve its
+maximum that day. A maximum above either daily limit returns
+`code_ai_turn_exceeds_daily_budget`, independently of the person's chat quota.
+Choose a less expensive profile or configure daily budgets that fit its maximum.
 
 An existing synchronous generate/decide call may reserve the owner's remaining
 day allowance. A chat that starts while it is reserved fails visibly and

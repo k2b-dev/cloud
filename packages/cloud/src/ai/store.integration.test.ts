@@ -406,6 +406,7 @@ suite("AI conversation store integration", () => {
       const store = aiConversations.createSessionStore({ conversationId: chat.id, automationTurnStop: guard.automationStopped });
       const loop = nessi({
         input: "Prepare the briefing",
+        systemPrompt: "Fixture",
         store,
         provider: guard.wrap({
           name: "fixture",
