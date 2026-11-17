@@ -430,7 +430,7 @@ export type AiConversationTimelineEntry = {
 
 /**
  * Why a turn failed, as a stable code. `limitMinutes` comes with `time_limit` when the turn had a run time limit.
- * Codes are never translated; clients word them in the reader's language.
+ * Codes are never translated; clients word platform reasons, while hosts supply their own localized message.
  */
 export type AiTurnErrorCode =
   | "model_unavailable"
@@ -438,12 +438,11 @@ export type AiTurnErrorCode =
   | "tool_failed"
   | "quota_exhausted"
   | "automation_turn_limit"
-  | "code_ai_turn_exceeds_daily_budget"
-  | "code_ai_daily_budget_limit"
-  | "code_ai_owner_daily_budget_limit"
-  | "code_ai_budget_unknown"
-  | "code_ai_budget_changed"
-  | "code_ai_budget_settled"
+  | "host_budget_limit"
+  | "host_budget_unknown"
+  | "host_budget_changed"
+  | "host_budget_settled"
+  | "host_rejected"
   | "context_full"
   | "time_limit"
   | "step_limit"
@@ -453,7 +452,12 @@ export type AiTurnErrorCode =
   | "not_allowed"
   | "failed";
 
-export type AiTurnError = { code: AiTurnErrorCode; limitMinutes?: number };
+export type AiTurnError = {
+  code: AiTurnErrorCode;
+  limitMinutes?: number;
+  /** Final localized explanation authored by the host for host_* failures, never provider diagnostics. */
+  message?: string;
+};
 
 export type AiTurnStatus = "queued" | "running" | "waiting_for_action" | "completed" | "failed" | "aborted";
 

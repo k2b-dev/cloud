@@ -259,11 +259,21 @@ export const startCoreServices = async (
         if (notice.status === "rejected") throw notice.reason;
       },
       onTurnFinalized: async ({ turnId, status, kind }) => {
-        await Promise.allSettled([
-          ...(status === "completed" && kind === "chat" ? [aiNotifications.notifyTurnCompleted(turnId)] : []),
-          finishCodeReviewRevision(turnId, status),
-          settleCodeChatTurn(turnId),
-        ]);
+        const tasks = [
+          ...(status === "completed" && kind === "chat"
+            ? [{ name: "completion notification", run: () => aiNotifications.notifyTurnCompleted(turnId) }]
+            : []),
+          { name: "Code review finalization", run: () => finishCodeReviewRevision(turnId, status) },
+          { name: "Code chat budget settlement", run: () => settleCodeChatTurn(turnId) },
+        ];
+        const results = await Promise.allSettled(tasks.map((task) => task.run()));
+        for (const [index, result] of results.entries())
+          if (result.status === "rejected")
+            logger("core:ai").warn("Turn finalization callback failed", {
+              turnId,
+              task: tasks[index]!.name,
+              error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+            });
       },
     });
     await aiMaintenanceJobs.start();

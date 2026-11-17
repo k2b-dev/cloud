@@ -3297,9 +3297,10 @@ export const aiConversations: AiConversationService = {
                 : config?.kind !== "compact"
                   ? config?.writerOrigin
                   : undefined,
-            // The initiator and send receipt stay for the chain rule and status. A person's retry runs on
-            // their own allowance, so the Code's budget attribution does not carry over.
-            turnTrigger: config?.kind !== "compact" ? config?.turnTrigger : undefined,
+            // The current actor starts this retry on their own allowance. Retain the receipt
+            // for status, but neither the original trigger nor Code budget attribution.
+            turnTrigger:
+              input.runConfig.actor?.kind === "user" ? { kind: "person" as const, id: input.runConfig.actor.user.id } : undefined,
             send: config?.kind !== "compact" ? config?.send : undefined,
             codeOrigin: undefined,
             ...(config?.kind !== "compact" && config?.sourceRestricted ? { sourceRestricted: true as const } : {}),

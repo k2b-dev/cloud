@@ -36,13 +36,22 @@ table in the Code backup: it survives deletion of the corresponding chat or
 Code. The worker requires Core's `beforeChatTurn` admission callback for
 Code-attributed chat turns; a missing callback refuses execution.
 
+When adding `ai_chat_you` to an existing installation, startup copies the global
+`ai` requirement and its `admin`/`never` group overrides. Existing rules remain
+unchanged on restart. The all-turn inference index is built with `CONCURRENTLY`
+after the quota schema transaction, so inference writes remain available.
+
 The worker reserves a whole priced turn before its first model request, using
 the actual model profile. It locks owner and Code daily counters in that order,
 the same as synchronous generation. Suspended and resumed turns keep their
 reservation. Ordinary rounds, background compaction and attributed tool inference all
 settle against it; the daily ledger excludes covered turns to avoid double
 charging. The terminal callback releases unused funds, and the runtime sweep
-recovers a missed callback. Unpriced and zero-priced models require the ordinary
+recovers a missed callback. A failed call without response bytes uses zero or
+its recorded estimate instead of retaining a whole unknown-usage reservation.
+Successful calls without measured usage remain fail-closed: estimated or missing
+usage retains the reservation. With USD 0.68 reserved, two such turns cannot fit
+the USD 1 day; the two-briefing example requires measured provider usage. Unpriced and zero-priced models require the ordinary
 `ai` policy; a priced profile without a known context window cannot start.
 Admission also checks the maximum before queuing a new send. With the unchanged
 USD 1 defaults, a 128k-context model priced at USD 2.50/10 per million and capped

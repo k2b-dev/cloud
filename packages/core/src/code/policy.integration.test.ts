@@ -156,6 +156,23 @@ databaseSuite()("Core Code policy preview and durable pauses", () => {
     ).toBe(true);
   });
 
+  test.each(["custom", "admin"] as const)("forward migration preserves %s AI approval defaults and group overrides", async (preset) => {
+    await sql`DELETE FROM code.policy_rules WHERE row='ai_chat_you'`;
+    await sql`UPDATE code.policy SET preset=${preset} WHERE singleton`;
+    await sql`UPDATE code.policy_rules SET value='admin' WHERE row='ai' AND group_id IS NULL`;
+    await sql`INSERT INTO code.policy_rules(group_id,row,value) VALUES(${parent}::uuid,'ai','admin'),(${child}::uuid,'ai','never')`;
+    await migratePolicy();
+    const chatRules = await sql<
+      { group_id: string | null; value: string }[]
+    >`SELECT group_id,value FROM code.policy_rules WHERE row='ai_chat_you'`;
+    expect(chatRules).toContainEqual({ group_id: null, value: "admin" });
+    expect(chatRules).toContainEqual({ group_id: parent, value: "admin" });
+    expect(chatRules).toContainEqual({ group_id: child, value: "never" });
+    const after = await readCodePolicySnapshot();
+    await migratePolicy();
+    expect(await readCodePolicySnapshot()).toEqual(after);
+  });
+
   test("forward migration preserves a populated policy", async () => {
     const before = await readCodePolicySnapshot();
     await migratePolicy();

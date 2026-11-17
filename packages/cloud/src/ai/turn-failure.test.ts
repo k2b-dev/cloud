@@ -303,10 +303,14 @@ for (const kind of ["invalid-arguments", "unknown-tool"] as const)
     expect(issues.map(aiIssueDiagnostic)).toContainEqual({ code: "tool_execution_error", message: "AI tool execution failed." });
   });
 
-test("Code cost admission is distinct from the person's chat quota and gives a recovery path", () => {
-  expect(aiTurnErrorCanContinue({ code: "code_ai_turn_exceeds_daily_budget" })).toBeFalse();
-  expect(aiTurnErrorText({ code: "code_ai_turn_exceeds_daily_budget" }, "en")).toContain("less expensive model");
-  expect(aiTurnErrorText({ code: "code_ai_turn_exceeds_daily_budget" }, "de")).toContain("günstigeres Modell");
-  expect(aiTurnErrorText({ code: "code_ai_owner_daily_budget_limit" }, "de")).toContain("Tagesbudget des Codes");
-  expect(aiTurnErrorText({ code: "code_ai_budget_unknown" }, "en")).toContain("known context and output limits");
+test("hosts supply their own localized explanation without leaking diagnostics", () => {
+  const failure = new AiTurnFailure("host_rejected", "private host diagnostic", "This workspace needs an allowance.");
+  const reason = aiTurnReasonFromThrown(failure);
+  expect(reason).toEqual({ error: { code: "host_rejected", message: "This workspace needs an allowance." } });
+  expect(aiTurnErrorCanContinue(reason.error)).toBeFalse();
+  expect(aiTurnErrorText(reason.error, "en")).toBe("This workspace needs an allowance.");
+  expect(aiTurnErrorText({ code: "host_budget_limit", message: "Le budget de cet espace est épuisé." }, "fr")).toBe(
+    "Le budget de cet espace est épuisé.",
+  );
+  expect(aiTurnErrorText({ code: "host_budget_unknown" }, "en")).not.toContain("Code");
 });

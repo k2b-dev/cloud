@@ -1,12 +1,13 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { aiConversations } from "@k2b/cloud/ai";
 import { AUTOMATION_TURN_BUDGET } from "@k2b/cloud/ai/runtime";
 import { accounts } from "@k2b/cloud/services";
+import * as logging from "@k2b/cloud/services";
 import { aiModelFixture, beginAiCall, finishAiCall } from "../../../../scripts/fixtures/code-platform";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
-import { admitCodeChatTurn } from "../ai-chat-budget";
+import { admitCodeChatTurn, settleCodeChatTurn, sweepCodeChatTurnBudgets } from "../ai-chat-budget";
 import { codeChatDailyUsage } from "./ai-budget";
 import { CodeChatBudgetError, reserveCodeChatTurnBudget, settleCodeChatTurnBudget } from "./chat-turn-budget";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -34,6 +35,7 @@ suiteFor(
   let database: Awaited<ReturnType<typeof useMigratedDatabase>>;
   let settings: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   beforeAll(async () => {
+    setSystemTime(new Date("2026-11-15T12:00:00Z"));
     database = await useMigratedDatabase("code_chat_turn_budget");
     settings = spyOn(codeSettings, "get").mockImplementation(async (key) => CODE_SETTINGS[key].default);
     await sql`INSERT INTO auth.users(id,uid,provider,profile) VALUES(${owner}::uuid,'chat-budget-owner','local','user')`;
@@ -56,6 +58,7 @@ suiteFor(
       VALUES(${runId}::uuid,${codeId},${versionId}::uuid,'schedule','fixture','running',1000,10)`;
   });
   afterAll(async () => {
+    setSystemTime();
     settings?.mockRestore();
     await database?.drop();
   });
@@ -73,7 +76,7 @@ suiteFor(
   const reserve = (turnId: string, codeId: string, nextProfile = profile, nextLimits = limits) =>
     sql.begin(async (db) => {
       await db`SELECT id FROM ai.turns WHERE id=${turnId}::uuid FOR UPDATE`;
-      await reserveCodeChatTurnBudget({ turnId, codeId, ownerUserId: owner, profile: nextProfile }, db, nextLimits);
+      await reserveCodeChatTurnBudget({ turnId, codeId, ownerUserId: owner, profile: nextProfile }, db, nextLimits, new Date());
     });
   const call = async (turnId: string, codeId: string, kind: "chat" | "background", cost: string | null) => {
     const id = `5a000000-0000-4000-8001-${String(++sequence).padStart(12, "0")}`;
@@ -156,6 +159,118 @@ suiteFor(
     expect(Number(settled!.reserved)).toBeGreaterThanOrEqual(Number(settled!.cost));
   });
 
+  test("a rejected call without response bytes releases its reservation and a second turn fits", async () => {
+    await reset();
+    const briefing = { ...profile, pricing: { inputPerMillion: 2.5, outputPerMillion: 10 }, maxOutputTokens: 4096 };
+    const entry = await turn();
+    await aiConversations.claimTurn({
+      ...entry,
+      leaseOwner: "refused-worker",
+      leaseMs: 30000,
+      from: "queue",
+      maxAttempts: 5,
+      runBudgetMs: 30000,
+    });
+    await reserve(entry.turnId, codeId, briefing);
+    const context = { ...entry, userId: owner, kind: "chat" as const, task: "chat" };
+    const attempt = await beginAiCall(briefing, context, 1000, 4096);
+    await finishAiCall(attempt.id, undefined, "failed", { error: "429 rate limited" });
+    const [refused] = await sql<{ cost: string }[]>`SELECT cost::text FROM ai.inference_calls WHERE id=${attempt.id}::uuid`;
+    expect(Number(refused!.cost)).toBe(0);
+    // Rejected calls still consume a slot, but not a whole model window.
+    const retry = await beginAiCall(briefing, context, 1000, 4096);
+    await finishAiCall(retry.id, { input: 0, output: 0 }, "failed");
+    await sql`UPDATE ai.turns SET status='failed' WHERE id=${entry.turnId}::uuid`;
+    await settleCodeChatTurn(entry.turnId);
+    expect(
+      (await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget`).map((row) => Number(row.cost)),
+    ).toEqual([0, 0]);
+    const second = await turn();
+    await reserve(second.turnId, codeId, briefing);
+    expect(
+      (await sql<{ cost: string }[]>`SELECT reference_cost::text AS cost FROM code.ai_daily_budget`).map((row) => Number(row.cost)),
+    ).toEqual([0.68, 0.68]);
+  });
+
+  test.each([undefined, { input: 1000, output: 10, estimated: true }])(
+    "unmeasured successful usage stays fail-closed (%j)",
+    async (usage) => {
+      await reset();
+      const briefing = { ...profile, pricing: { inputPerMillion: 2.5, outputPerMillion: 10 }, maxOutputTokens: 4096 };
+      const entry = await turn();
+      await aiConversations.claimTurn({
+        ...entry,
+        leaseOwner: "unknown-worker",
+        leaseMs: 30000,
+        from: "queue",
+        maxAttempts: 5,
+        runBudgetMs: 30000,
+      });
+      await reserve(entry.turnId, codeId, briefing);
+      const attempt = await beginAiCall(briefing, { ...entry, kind: "chat", task: "chat" }, 1000, 4096);
+      await finishAiCall(attempt.id, usage, "ok", { firstByteMs: 1 });
+      await sql`UPDATE ai.turns SET status='completed' WHERE id=${entry.turnId}::uuid`;
+      await settleCodeChatTurn(entry.turnId);
+      const second = await turn();
+      await expect(reserve(second.turnId, codeId, briefing)).rejects.toMatchObject({ code: "code_ai_owner_daily_budget_limit" });
+    },
+  );
+
+  test("non-text input uses the catalog context bound and cannot spend the turn reserve", async () => {
+    await reset();
+    const entry = await turn();
+    await aiConversations.claimTurn({
+      ...entry,
+      leaseOwner: "file-worker",
+      leaseMs: 30000,
+      from: "queue",
+      maxAttempts: 5,
+      runBudgetMs: 30000,
+    });
+    await reserve(entry.turnId, codeId);
+    const context = { ...entry, kind: "chat" as const, task: "chat" };
+    const first = await beginAiCall(profile, context, 64_001, 1000);
+    await finishAiCall(first.id, { input: 64_001, output: 10 }, "ok");
+    await expect(beginAiCall(profile, context, 1, 1000, undefined, true)).rejects.toMatchObject({ reason: "input_tokens" });
+    await sql`UPDATE ai.inference_calls SET input=64000 WHERE id=${first.id}::uuid`;
+    const atLimit = await beginAiCall(profile, context, 1, 1000, undefined, true);
+    await finishAiCall(atLimit.id, { input: 128000, output: 10 }, "ok");
+  });
+
+  test("a malformed settlement row cannot block later rows in the sweep", async () => {
+    await reset();
+    const broken = await turn();
+    const healthy = await turn();
+    await sql.begin((db) =>
+      reserveCodeChatTurnBudget({ turnId: broken.turnId, codeId, ownerUserId: owner, profile }, db, { ...limits, code: 2, owner: 2 }, new Date()),
+    );
+    await sql.begin((db) =>
+      reserveCodeChatTurnBudget({ turnId: healthy.turnId, codeId, ownerUserId: owner, profile }, db, { ...limits, code: 2, owner: 2 }, new Date()),
+    );
+    const badCall = await call(broken.turnId, codeId, "chat", null);
+    await sql`UPDATE ai.inference_calls SET pricing='{"inputPerMillion":"invalid"}' WHERE id=${badCall}::uuid`;
+    await call(healthy.turnId, codeId, "chat", "0.1");
+    await sql`UPDATE ai.turns SET status='completed' WHERE id IN (${broken.turnId}::uuid,${healthy.turnId}::uuid)`;
+    const warn = mock(() => {});
+    const log = spyOn(logging, "logger").mockReturnValue({ warn, error: () => {}, info: () => {}, debug: () => {} });
+    try {
+      await sweepCodeChatTurnBudgets();
+      expect(warn).toHaveBeenCalledWith("Code chat budget settlement failed", expect.objectContaining({ turnId: broken.turnId }));
+    } finally { log.mockRestore(); }
+    expect(await sql`SELECT 1 FROM code.chat_turn_budgets WHERE turn_id=${broken.turnId}::uuid AND settled_at IS NULL`).toHaveLength(1);
+    expect(await sql`SELECT 1 FROM code.chat_turn_budgets WHERE turn_id=${healthy.turnId}::uuid AND settled_at IS NOT NULL`).toHaveLength(
+      1,
+    );
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(() => settleCodeChatTurn(healthy.turnId));
+      expect(statements).toHaveLength(3); // BEGIN, the unlocked existence check, COMMIT.
+      expect(statements.some((statement) => statement.includes("cost_config"))).toBe(false);
+    } finally {
+      await meter.close();
+    }
+  });
+
   test("actual-model admission fences owner, version, state and worker lease; zero price requires ordinary AI approval", async () => {
     await reset();
     const user = await accounts.users.get({ id: owner });
@@ -199,6 +314,12 @@ suiteFor(
       admitCodeChatTurn({ ...input, profile: { ...profile, pricing: { inputPerMillion: 0, outputPerMillion: 0 } } }),
     ).rejects.toThrow("code_approval_required");
     await admitCodeChatTurn(input);
+    await expect(
+      admitCodeChatTurn({ ...input, runConfig: { ...runConfig, locale: "de" }, profile: { ...profile, maxOutputTokens: 2000 } }),
+    ).rejects.toMatchObject({
+      code: "host_budget_changed",
+      userMessage: expect.stringContaining("Preis"),
+    });
     expect(await sql`SELECT 1 FROM code.chat_turn_budgets WHERE turn_id=${entry.turnId}::uuid`).toHaveLength(1);
   });
   test("deleted source turns cannot dispatch additional inference", async () => {

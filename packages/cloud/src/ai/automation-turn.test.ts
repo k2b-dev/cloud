@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { memoryStore, type Provider, type ProviderRequest, type StoreEntry } from "@k2b/nessi";
-import { AUTOMATION_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
+import { AUTOMATION_TURN_BUDGET, createCodeAuthoringTurnBudget, isAutomaticAiChatTurn } from "./code-authoring-turn";
 import { retryTransientProviderErrors } from "./provider-retry";
 import { AiTurnInferenceLimit } from "./turn-failure";
 
@@ -186,4 +186,30 @@ test("turns a person starts keep the model's own compaction threshold", async ()
   const authoring = createCodeAuthoringTurnBudget({ priorCalls: { calls: 0, inputTokens: 0 }, finishedToolCalls: [], selected: true });
   expect(await compactionRequest(authoring, 40_000)).toBe(0.1);
   expect(await compactionRequest(authoring, 70_000)).toBe(1);
+});
+
+test("only explicit automatic triggers use the automatic allocation; reviews keep authoring", () => {
+  expect(isAutomaticAiChatTurn({})).toBe(false);
+  expect(isAutomaticAiChatTurn({ turnTrigger: { kind: "person", id: "person" } })).toBe(false);
+  expect(isAutomaticAiChatTurn({ turnTrigger: { kind: "automation", id: "code" } })).toBe(true);
+  expect(isAutomaticAiChatTurn({ turnTrigger: { kind: "chat", id: "source" } })).toBe(true);
+  expect(
+    isAutomaticAiChatTurn({ turnTrigger: { kind: "automation", id: "code" }, codeReview: { codeId: "code", versionId: "version" } }),
+  ).toBe(false);
+});
+
+test("a review revision keeps the authoring allocation and compaction threshold", async () => {
+  const review = { codeReview: { codeId: "code", versionId: "version" }, turnTrigger: { kind: "automation" as const, id: "code" } };
+  let calls = 0;
+  const guard = createCodeAuthoringTurnBudget({
+    priorCalls: { calls: 0, inputTokens: 0 },
+    finishedToolCalls: [],
+    selected: true,
+    nonPerson: isAutomaticAiChatTurn(review),
+  });
+  for (let i = 0; i < AUTOMATION_TURN_BUDGET.modelCalls + 1; i++) await consume(guard.wrap(fixture(() => calls++)));
+  expect(calls).toBe(AUTOMATION_TURN_BUDGET.modelCalls + 1);
+  expect(guard.stopped()).toBeNull();
+  expect(await compactionRequest(guard, 40_000)).toBe(0.1);
+  expect(await compactionRequest(guard, 70_000)).toBe(1);
 });

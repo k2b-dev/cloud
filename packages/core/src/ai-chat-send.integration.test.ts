@@ -370,7 +370,7 @@ suiteFor(
     ).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
     expect(prepare).not.toHaveBeenCalled();
   });
-  test("retry cannot replace the immutable initiator, send ID, or source restriction", async () => {
+  test("retry/edit uses the current actor while preserving the send ID and source restriction", async () => {
     await setup();
     const sent = await start();
     const original = await aiConversations.getLatestTurn({ conversationId: chat.id });
@@ -391,7 +391,7 @@ suiteFor(
     });
     expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: retry.turn.id })).toMatchObject({
       writerOrigin: sent.origin,
-      turnTrigger: { kind: "automation", id: codeId },
+      turnTrigger: { kind: "person", id: owner },
       send: { id: sent.id },
       sourceRestricted: true,
     });
@@ -399,7 +399,7 @@ suiteFor(
     // The person's retry runs on their own allowance: no Code budget attribution carries over.
     const retried = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: retry.turn.id });
     expect(retried && retried.kind !== "compact" ? retried.codeOrigin : "compact").toBeUndefined();
-    // Editing the text before retrying makes the person its writer; initiator and receipt stay.
+    // Editing makes the person its writer as well; the receipt and restriction stay.
     await sql`UPDATE ai.turns SET status='completed' WHERE id=${retry.turn.id}::uuid`;
     const edited = await aiConversations.submitChatTurn({
       conversationId: chat.id,
@@ -411,7 +411,7 @@ suiteFor(
     });
     expect(await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: edited.turn.id })).toMatchObject({
       writerOrigin: { kind: "person", id: owner },
-      turnTrigger: { kind: "automation", id: codeId },
+      turnTrigger: { kind: "person", id: owner },
       send: { id: sent.id },
     });
   });

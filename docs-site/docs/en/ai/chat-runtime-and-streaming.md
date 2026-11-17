@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-11-15
+updated: 2026-11-17
 ---
 
 # Chat runtime and streaming
@@ -1062,8 +1062,13 @@ tools`, both under `ai:executor` with the conversation and turn IDs.
 
 ### Automatic turn safety budget
 
-Every turn whose immutable trigger is not a person has an independent input,
-call and output allowance, including turns without a recorded trigger.
+Only turns with an explicit non-person trigger (such as an automation or another
+chat) have the automatic input, call and output allowance. Missing triggers,
+including legacy turns, keep person limits. Agents and service accounts, also
+with a delegated user, are treated like people unless an explicit non-person
+trigger says otherwise. Code review revisions retain `CODE_AUTHORING_TURN_BUDGET`;
+they acquire neither an automatic inference allocation nor its per-call output
+ceiling or 32k compaction threshold.
 `AUTOMATION_TURN_BUDGET` allows 192,000 cumulative input tokens, 12 model
 attempts and 12,000 output tokens, with at most 4,096 output tokens per call,
 regardless of the model's price. The values come from a measurement of twenty
@@ -1253,11 +1258,13 @@ enqueue with `enqueueExistingAiTurn` only after committing. Core uses this seam
 for queue promotion. `runConfig.writerOrigin` attributes the writer; names and
 links are resolved when displaying it. It grants no authority. The separate
 `runConfig.turnTrigger` records the immutable initiator (`person`, `automation`
-or `chat`, plus stable ID). The trusted host sets both fields, and
-`submitChatTurn` copies them from the original turn on retry. Queue promotion,
-resume and `code_run` retain the trigger. The chain rule reads only
-`turnTrigger`; neither writer attribution nor the current actor supplies a
-missing trigger. Missing triggers are never treated as person-initiated turns.
+or `chat`, plus stable ID). The trusted host sets both fields. Queue promotion,
+resume and `code_run` retain the trigger. Retry and edit start a new turn from
+the current actor: a user actor gets a person trigger; other actors omit it and
+keep person budget limits. A plain retry keeps the writer, while editing makes
+the message the person's own. The send receipt stays, but Code budget attribution
+is cleared. For send authority, the chain rule reads only the recorded
+`turnTrigger`; a missing trigger never grants person-initiated send authority.
 `sourceRestricted` retains a limited entry point; app sessions and source chats with `allowedTools` cannot use
 `send` to widen authority. `runConfig.send` identifies the accepted queue entry
 and its account-scoped idempotency key, independently of the queue's personal
@@ -1301,3 +1308,10 @@ Answering a choice starts a new person-triggered turn; its Query uses that new
 turn's invocation lease. Background memory learning skips turns with a bounded
 inference allocation, so it cannot reopen their ended reservation. Normal personal calls without a source
 turn keep the optional nested-invocation lease behavior.
+
+Host admission failures use general `host_budget_*` or `host_rejected` codes.
+The host supplies the final localized `AiTurnFailure.userMessage`; Cloud stores
+it as `AiTurnError.message` and renders it without interpreting host domains.
+A failed call without response bytes uses zero or its recorded estimate; other
+unknown usage stays fail-closed. Provider diagnostics remain log-only. Third-party hosts can supply their own
+explanations through the same contract.

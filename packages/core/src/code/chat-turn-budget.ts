@@ -61,7 +61,7 @@ type Limits = { code: number; owner: number; timeZone: string };
 /** Caller holds the worker's turn fence. All inference admission takes owner
  * then Code day locks, the same order as generate/decide. A reservation is
  * durable and separate from the run: the run can end before its chat starts. */
-export async function reserveCodeChatTurnBudget(input: Admission, db: SQL, limits: Limits): Promise<void> {
+export async function reserveCodeChatTurnBudget(input: Admission, db: SQL, limits: Limits, at?: Date): Promise<void> {
   const maximum = codeChatTurnMaximum(input.profile);
   if (maximum === null) throw new CodeChatBudgetError("code_ai_budget_unknown");
   const output = codeChatCallOutputTokens(input.profile);
@@ -107,7 +107,7 @@ export async function reserveCodeChatTurnBudget(input: Admission, db: SQL, limit
   assertCodeChatTurnFits(input.profile, limits);
   // Match Postgres json_build_array(... )::text used by synchronous admission.
   const [period] = await db<{ day: string; owner_key: string }[]>`SELECT
-    (clock_timestamp() AT TIME ZONE ${limits.timeZone})::date::text AS day,
+    (COALESCE(${at ?? null}::timestamptz,clock_timestamp()) AT TIME ZONE ${limits.timeZone})::date::text AS day,
     json_build_array('person',${input.ownerUserId}::text)::text AS owner_key`;
   const day = period!.day;
   const key = period!.owner_key;
@@ -137,6 +137,10 @@ export async function reserveCodeChatTurnBudget(input: Admission, db: SQL, limit
 /** Idempotent finalization, also called by the runtime sweep. Keep the maximum
  * when a priced attempt has unknown usage; never silently refill the day. */
 export async function settleCodeChatTurnBudget(turnId: string, db: SQL): Promise<void> {
+  // A finalized callback and the sweep usually find settled rows. Avoid the
+  // global inference fence unless there is still work; recheck after locking.
+  const unsettled = await db`SELECT 1 FROM code.chat_turn_budgets WHERE turn_id=${turnId}::uuid AND settled_at IS NULL`;
+  if (!unsettled.length) return;
   // Fence provider admission and final usage before releasing any remainder.
   await db`SELECT singleton FROM ai.cost_config WHERE singleton FOR UPDATE`;
   const [reservation] = await db<{ code_id: string; owner_key: string; day: string; reserved: string }[]>`SELECT
@@ -145,7 +149,7 @@ export async function settleCodeChatTurnBudget(turnId: string, db: SQL): Promise
   const active = await db`SELECT 1 FROM ai.turns WHERE id=${turnId}::uuid AND status NOT IN ('completed','failed','aborted')`;
   if (active.length) return;
   const [calls] = await db<{ cost: string; unknown: number; live: number }[]>`SELECT COALESCE(sum(cost),0)::text AS cost,
-    count(*) FILTER(WHERE (cost IS NULL OR estimated) AND (COALESCE((pricing->>'inputPerMillion')::numeric,0)>0 OR COALESCE((pricing->>'outputPerMillion')::numeric,0)>0))::int AS unknown,
+    count(*) FILTER(WHERE (cost IS NULL OR estimated) AND NOT(status='failed' AND first_byte_ms IS NULL) AND (COALESCE((pricing->>'inputPerMillion')::numeric,0)>0 OR COALESCE((pricing->>'outputPerMillion')::numeric,0)>0))::int AS unknown,
     count(*) FILTER(WHERE finished_at IS NULL AND lease_expires_at>now())::int AS live
     FROM ai.inference_calls WHERE turn_id=${turnId}::uuid`;
   if (calls!.live) return;

@@ -44,7 +44,12 @@ import { aiChatMessages } from "./chat/messages";
 import { isFailedTool } from "./chat/tool-groups";
 import { aiTurnErrorText } from "./chat/turn-error";
 import { createChoiceCapabilityOrigin, projectAiChoices, viewChoice } from "./choices";
-import { AUTOMATION_TURN_BUDGET, CODE_AUTHORING_TURN_BUDGET, createCodeAuthoringTurnBudget } from "./code-authoring-turn";
+import {
+  AUTOMATION_TURN_BUDGET,
+  CODE_AUTHORING_TURN_BUDGET,
+  createCodeAuthoringTurnBudget,
+  isAutomaticAiChatTurn,
+} from "./code-authoring-turn";
 import { aiCodeReviewToolAllowed } from "./code-review-turn";
 import { createCloudCompactFn } from "./compaction";
 import { CLOUD_AI_CODE_AUTHORING_TOOL_NAMES, createAiTurnCodeAndClientTools, createConfiguredDefaultCloudAiTools } from "./default-tools";
@@ -1002,7 +1007,7 @@ export class AiTurnExecutor {
         runConfig: config,
         profile: validated.resolved.profile,
       });
-      if (!config.codeOrigin && config.turnTrigger?.kind !== "person")
+      if (!config.codeOrigin && isAutomaticAiChatTurn(config))
         await installAiTurnInferenceAllocation({ turnId, conversationId, leaseOwner: this.config.leaseOwner });
     } catch (error) {
       signal.removeEventListener("abort", onSignal);
@@ -1648,7 +1653,7 @@ export class AiTurnExecutor {
     const remember = (reason: AiTurnFailureReason | null) => {
       failureReason.current = reason;
     };
-    const nonPerson = config.turnTrigger?.kind !== "person";
+    const nonPerson = isAutomaticAiChatTurn(config);
     const allocation = nonPerson ? AUTOMATION_TURN_BUDGET : CODE_AUTHORING_TURN_BUDGET;
     const inputTokenCeiling = config.codeOrigin ? resolved.profile.contextWindow : undefined;
     const usage = await readAiTurnCallUsage(turnId, inputTokenCeiling);
@@ -1662,7 +1667,7 @@ export class AiTurnExecutor {
           ? [{ ...block, name: providerNamesByCallId.get(block.callId) ?? block.name }]
           : [],
       ),
-      selected: loadedSkills.some((skill) => skill.name === "code-authoring"),
+      selected: Boolean(config.codeReview) || loadedSkills.some((skill) => skill.name === "code-authoring"),
       nonPerson,
       inputTokenCeiling,
       onStop: (reason) => log.info("AI chat turn reached its safety budget", { conversationId, turnId, reason }),

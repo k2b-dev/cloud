@@ -92,12 +92,12 @@ on the original admission day. Unknown or estimated priced usage retains the res
 A sweep recovers missed finalization after a worker crash. Deleting a chat,
 Code or run does not restore a day's spend.
 
-Existing installations acquire the new automatic row, preserving `off` and
-existing default/group AI vetoes. F3=B deliberately gives priced bounded chat
-turns an automatic row even when a group's ordinary `ai` rule is `admin`; an
-`ai=never` veto is copied. Operators who also require approval for these bounded
-chat turns must set `ai_chat_you=admin`. Operators can set this row to `admin` or
-`never`; the ordinary pause preview and worker include it.
+Existing installations receive `ai_chat_you` with their existing default `ai`
+requirement: `admin` stays `admin`, `never` stays `never`, and `automatic` stays
+`automatic`. Group overrides requiring approval or forbidding AI are copied to
+the new row. The off preset remains forbidden. Existing `ai_chat_you` rules are
+preserved on restart. Operators can then edit the row through the normal policy
+settings.
 
 ## Resolve groups
 

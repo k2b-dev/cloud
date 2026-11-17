@@ -7,6 +7,8 @@ export class AiTurnFailure extends Error {
   constructor(
     readonly code: AiTurnErrorCode,
     message: string,
+    /** Final localized host wording, honored only for host_* codes. */
+    readonly userMessage?: string,
   ) {
     super(message);
   }
@@ -42,7 +44,8 @@ const isSettingsError = (error: unknown): boolean =>
 
 /** The reason behind an error that Cloud threw while it prepared or drove a turn. */
 export const aiTurnReasonFromThrown = (error: unknown): AiTurnFailureReason => {
-  if (error instanceof AiTurnFailure) return { error: { code: error.code } };
+  if (error instanceof AiTurnFailure)
+    return { error: { code: error.code, ...(error.code.startsWith("host_") && error.userMessage ? { message: error.userMessage } : {}) } };
   const code = error instanceof Error && "code" in error ? error.code : null;
   // A quota whose usage could not be measured blocks the next turn like a used-up one, until it resets.
   if (QUOTA_CODES.has(code)) return { error: { code: "quota_exhausted" } };

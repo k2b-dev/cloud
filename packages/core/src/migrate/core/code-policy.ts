@@ -35,14 +35,14 @@ export async function migrate(db: SQL = sql): Promise<void> {
       if (added.length)
         await tx`UPDATE code.policy SET preset='custom',revision=revision+1,updated_by=NULL,updated_at=clock_timestamp() WHERE singleton`;
     }
-    // Bounded personal chat turns have their own operator-visible row. Preserve an
-    // installation-wide off preset; all other presets acquire the approved default.
+    // Bounded personal chat turns have their own operator-visible row. Preserve the
+    // existing AI requirement, including group approval requirements.
     const chatRow = await tx`INSERT INTO code.policy_rules(group_id,row,value)
-      SELECT NULL,'ai_chat_you',CASE WHEN preset='off' OR EXISTS(SELECT 1 FROM code.policy_rules WHERE group_id IS NULL AND row='ai' AND value='never') THEN 'never' ELSE 'automatic' END FROM code.policy WHERE singleton
+      SELECT NULL,'ai_chat_you',CASE WHEN preset='off' OR EXISTS(SELECT 1 FROM code.policy_rules WHERE group_id IS NULL AND row='ai' AND value='never') THEN 'never' ELSE COALESCE((SELECT value FROM code.policy_rules WHERE group_id IS NULL AND row='ai'),'never') END FROM code.policy WHERE singleton
       ON CONFLICT DO NOTHING RETURNING id`;
     if (chatRow.length)
       await tx`INSERT INTO code.policy_rules(group_id,row,value)
-      SELECT group_id,'ai_chat_you','never' FROM code.policy_rules WHERE row='ai' AND value='never' AND group_id IS NOT NULL
+      SELECT group_id,'ai_chat_you',value FROM code.policy_rules WHERE row='ai' AND value IN ('admin','never') AND group_id IS NOT NULL
       ON CONFLICT DO NOTHING`;
     if (chatRow.length) await tx`UPDATE code.policy SET revision=revision+1,updated_by=NULL,updated_at=clock_timestamp() WHERE singleton`;
     // Normalize historical defaults and overrides without widening any authority.

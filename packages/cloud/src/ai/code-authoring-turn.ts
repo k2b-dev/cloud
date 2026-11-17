@@ -1,7 +1,7 @@
 import { type CompactFn, estimateTokens, type Message, type Provider, type ProviderRequest, type Tool } from "@k2b/nessi";
 import { AiTurnInferenceLimit } from "./turn-failure";
 import type { AiTurnPolicyToolCall } from "./turn-policy";
-import type { AiAutomationTurnStop, AiCodeAuthoringStop } from "./types";
+import type { AiAutomationTurnStop, AiChatTurnRunConfig, AiCodeAuthoringStop } from "./types";
 
 /**
  * Authoring has no F7 attempt allowance: F7 covers AI invoked BY saved Code.
@@ -44,6 +44,10 @@ export const AUTOMATION_TURN_BUDGET = {
   /** Automatic turns compact a chat history above this size; person turns keep the model's fill threshold. */
   compactAboveTokens: 32_000,
 } as const;
+
+/** Missing triggers retain legacy/person behavior; review revisions use authoring's allocation. */
+export const isAutomaticAiChatTurn = (config: Pick<AiChatTurnRunConfig, "turnTrigger" | "codeReview">): boolean =>
+  !config.codeReview && config.turnTrigger !== undefined && config.turnTrigger.kind !== "person";
 
 const authoringNames = new Set([
   "code_init",
@@ -141,7 +145,7 @@ export function createCodeAuthoringTurnBudget(input: {
   priorCalls: { calls: number; inputTokens: number };
   finishedToolCalls: readonly AiTurnPolicyToolCall[];
   selected: boolean;
-  /** Missing or non-person triggers are bounded from the first provider attempt. */
+  /** Only an explicit non-person trigger uses the automatic allocation. */
   nonPerson?: boolean;
   /** Priced Code uses the model window for attempts with unknown input usage. */
   inputTokenCeiling?: number;

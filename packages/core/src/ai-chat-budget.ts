@@ -1,6 +1,7 @@
 import { sql } from "@k2b/cloud";
 import { type AiChatTurnAdmission, AiTurnFailure } from "@k2b/cloud/ai/runtime";
-import { coreSettings } from "@k2b/cloud/services";
+import { coreSettings, logger } from "@k2b/cloud/services";
+import { codeChatBudgetMessages } from "./code/chat-budget-messages";
 import { CodeChatBudgetError, reserveCodeChatTurnBudget, settleCodeChatTurnBudget } from "./code/chat-turn-budget";
 import { codeChatModelPolicyRow } from "./code/policy-contracts";
 import { codeSettings } from "./code/settings";
@@ -48,7 +49,21 @@ export const admitCodeChatTurn: AiChatTurnAdmission = async (input) => {
       );
     });
   } catch (error) {
-    if (error instanceof CodeChatBudgetError) throw new AiTurnFailure(error.code, error.code);
+    if (error instanceof CodeChatBudgetError) {
+      const code =
+        error.code === "code_ai_budget_unknown"
+          ? "host_budget_unknown"
+          : error.code === "code_ai_budget_changed"
+            ? "host_budget_changed"
+            : error.code === "code_ai_budget_settled"
+              ? "host_budget_settled"
+              : "host_budget_limit";
+      throw new AiTurnFailure(
+        code,
+        error.code,
+        codeChatBudgetMessages(input.runConfig.locale ?? (await coreSettings.get<string>("app.locale")) ?? "en").reason(error.code),
+      );
+    }
     if (error instanceof CodeVersionError) throw new AiTurnFailure("not_allowed", error.code);
     throw error;
   }
@@ -63,5 +78,14 @@ export async function settleCodeChatTurn(turnId: string): Promise<void> {
 export async function sweepCodeChatTurnBudgets(): Promise<void> {
   const rows = await sql<{ turn_id: string }[]>`SELECT b.turn_id FROM code.chat_turn_budgets b LEFT JOIN ai.turns t ON t.id=b.turn_id
     WHERE b.settled_at IS NULL AND (t.id IS NULL OR t.status IN ('completed','failed','aborted')) ORDER BY b.created_at,b.turn_id LIMIT 100`;
-  for (const row of rows) await settleCodeChatTurn(row.turn_id);
+  for (const row of rows) {
+    try {
+      await settleCodeChatTurn(row.turn_id);
+    } catch (error) {
+      logger("core:code-chat-budget").warn("Code chat budget settlement failed", {
+        turnId: row.turn_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
 }
