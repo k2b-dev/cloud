@@ -1330,9 +1330,11 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .k2b-ui .assistant-authoring-stop__meta > span { grid-area: 1 / 1; }
 .k2b-ui .assistant-authoring-stop__measure,
 .k2b-ui .assistant-authoring-stop__retired { visibility: hidden; }
-/* Keep the action's wording alongside the shared busy indicator, in its unchanged button box. */
+/* A shared grid cell keeps the busy indicator next to the centred wording, including on full-width phone actions. */
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button { display: inline-grid; grid-template-columns: max-content; justify-content: center; }
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button__label { grid-area: 1 / 1; }
 .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button__label:has(+ .k2b-button__busy) { opacity: 1; translate: .5rem 0; }
-.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button__busy { justify-content: flex-start; padding-inline-start: .25rem; }
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button__busy { position: static; grid-area: 1 / 1; justify-content: flex-start; translate: -.75rem 0; }
 /* The v10 desktop action is outlined; on the phone it is the full-width primary action. */
 @container (width > 35rem) {
   .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-button { min-height: 1.875rem; padding-block: 0; color: var(--k2b-text); background: var(--k2b-surface); border-color: var(--k2b-control-border-soft); }

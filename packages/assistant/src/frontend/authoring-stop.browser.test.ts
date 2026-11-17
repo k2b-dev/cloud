@@ -257,6 +257,13 @@ describe("the v10 pause card", () => {
                 expect(await button.isDisabled()).toBe(true);
                 expect(await count(page)).toBe(1);
                 expect(await button.locator(".k2b-button__label").evaluate((label) => getComputedStyle(label).opacity)).toBe("1");
+                const indicatorGap = await button.evaluate((element) => {
+                  const label = element.querySelector(".k2b-button__label")!.getBoundingClientRect();
+                  const indicator = element.querySelector(".k2b-button__busy i")!.getBoundingClientRect();
+                  return label.left - indicator.right;
+                });
+                expect(indicatorGap).toBeGreaterThanOrEqual(0);
+                expect(indicatorGap).toBeLessThanOrEqual(8);
                 expect(await quiet(page).innerText()).toBe(locale === "de" ? "Gustav macht weiter …" : "Gustav is continuing …");
                 if (capture) await shot(page, "sending", width);
                 await finish(page, false);
