@@ -10,6 +10,8 @@ import { isPointInsideToast } from "./toast-hit";
 export type DialogClose<T> = (result?: T) => void;
 
 export type OpenDialogOptions = {
+  /** Override the opener's primary palette for a dialog with its own purpose, such as a global session warning. */
+  primary?: "blue" | "ai";
   /** Close only this dialog when its owning operation is cancelled. */
   signal?: AbortSignal;
   panelClassName?: string;
@@ -605,7 +607,8 @@ export const createDialogCore = () => {
 
   const open = <T>(view: DialogRender<T>, options: OpenDialogOptions = {}): Promise<T | undefined> => {
     if (typeof document === "undefined") throw new Error("@k2b/ui dialogs can only be opened in the browser");
-    return openAfter(view, options, disposals, readUiScope());
+    const scope = readUiScope();
+    return openAfter(view, options, disposals, { ...scope, primary: options.primary ?? scope.primary });
   };
 
   const openAfter = <T>(

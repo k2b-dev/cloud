@@ -358,6 +358,7 @@ forms, and search should use `prompts`.
 type DialogClose<T> = (result?: T) => void;
 
 type OpenDialogOptions = {
+  primary?: "blue" | "ai";
   signal?: AbortSignal; panelClassName?: string; contentClassName?: string;
   initialFocus?: "first-input" | "none" | ((dialog: HTMLDialogElement) => HTMLElement | null);
   cancelBehavior?: "resolve-undefined" | "ignore"; ariaLabel?: string;
@@ -385,6 +386,12 @@ Use `role: "alertdialog"` for a consequential confirmation that requires a
 response. Pass `ariaDescribedBy` with the ID of its consequence text so assistive
 technology announces it when the dialog opens. Ordinary dialogs keep the default
 `dialog` role. Both are labelled by their heading unless `ariaLabel` supplies a name.
+
+Dialogs inherit their opener's [primary scope](../primary-scope). Use
+`primary: "blue"` for an ordinary global question that can appear over AI work;
+`primary: "ai"` explicitly chooses the AI palette. The dialog keeps the inherited
+light or dark theme in either case. A warning tone changes the frame and icon,
+while the main action keeps the chosen primary palette.
 
 `dialogCore.open` resolves when that dialog closes. Escape/backdrop resolves
 `undefined` by default; `cancelBehavior="ignore"` disables those dismissals.
