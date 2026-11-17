@@ -123,7 +123,8 @@ that version is active and the Code is enabled. Waiting versions do not expose
 Open yet. Paused pages explain why Open is unavailable.
 
 **Run now** stays available in **When it runs** and shares its pending state
-with the head. Only editors may start schedule and manual automations;
+with the head. A pending menu start disables only its own entry, which says
+**Starting …**; other entries keep their actions and independent receipts. Only editors may start schedule and manual automations;
 event handlers and routes are excluded. Starting keeps the current page and
 shows **Run is starting.** with **View run**. The situation replaces **Last**
 with **Starting** or **Running now**, including elapsed time from the browser
@@ -137,8 +138,10 @@ received during the snapshot are preserved.
 
 A failed start offers **Try again** with the original idempotency key, so an
 uncertain response cannot create a duplicate run. A pause rejection refreshes
-the canonical Code state; a version approval rejection links to Versions.
-When a run started on this page fails, a persistent toast reports its reason
+the canonical Code state and names the person who paused it when the current
+pause audit entry and directory visibility allow that name. A version approval
+rejection links to Versions and keeps **Run now** available.
+When a run started on this page fails, a persistent **The run failed: …** toast reports its reason
 and links to the run. The head changes in place; the full attention notice
 appears on the next load.
 

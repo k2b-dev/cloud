@@ -301,10 +301,20 @@ function ReadyPage(props: {
 }) {
   const t = props.text.t;
   const [currentCode, setCurrentCode] = createSignal(props.state.code);
+  const [snapshotAt, setSnapshotAt] = createSignal(Date.parse(props.data.dates.now));
   const pageState = (): CodePageReady => ({ ...props.state, code: currentCode() });
   const editor = () => pageState().permission === "editor";
   const live = createCodeLive(pageState());
-  const run = createRunAction({ data: props.data, state: pageState, live, text: props.text, reconcile: setCurrentCode });
+  const run = createRunAction({
+    data: props.data,
+    state: pageState,
+    live,
+    text: props.text,
+    reconcile: (code) => {
+      setSnapshotAt(Date.now());
+      setCurrentCode(code);
+    },
+  });
   onMount(() => {
     const stop = props.onLive ? props.onLive(live.feed) : followLive(props.data, pageState(), live, props.text);
     if (stop) onCleanup(stop);
@@ -384,9 +394,14 @@ function ReadyPage(props: {
     const active = pageState().active;
     const code = pageState().code;
     if (paused())
-      return code.pausedAt
-        ? t().headPausedOn({ version: active?.number ?? null, date: props.text.short(code.pausedAt) })
-        : t().headPaused({ version: active?.number ?? null });
+      return code.pausedBy?.name &&
+        code.pausedAt &&
+        snapshotAt() - Date.parse(code.pausedAt) >= 0 &&
+        snapshotAt() - Date.parse(code.pausedAt) < 60_000
+        ? t().headPausedSince({ name: code.pausedBy.name })
+        : code.pausedAt
+          ? t().headPausedOn({ version: active?.number ?? null, date: props.text.short(code.pausedAt) })
+          : t().headPaused({ version: active?.number ?? null });
     if (!active) return t().headNoVersion;
     // When and by whom the running version was switched on (Bild 19); older Core answers name its author instead.
     if (code.activatedAt)

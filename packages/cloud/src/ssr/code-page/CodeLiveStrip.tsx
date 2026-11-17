@@ -72,7 +72,7 @@ function Legend(props: { text: PageText; running: boolean }) {
       {item("danger", t().legendFailed)}
       {item("muted", t().legendSkipped)}
       <span class="cloud-code__legend-item" style={{ visibility: props.running ? "visible" : "hidden" }} aria-hidden={!props.running}>
-        {item("running", t().runCurrentlyRunning)}
+        {item("running", t().legendRunning)}
       </span>
     </span>
   );
@@ -149,7 +149,10 @@ export function CodeLiveStrip(props: {
   // Read one snapshot: nested JSX conditions become separate memos and may otherwise see a removed active run.
   const lastLabel = () => {
     const run = active();
-    return run ? (run.state === "queued" ? t().runStarting : t().runCurrentlyRunning) : t().lastLabel;
+    if (!run) return t().lastLabel;
+    const label = run.state === "queued" ? t().runStarting : t().runCurrentlyRunning;
+    const ownWaiting = run.state === "running" && props.live.runs().some((item) => item.state === "queued" && item.startedHere);
+    return ownWaiting ? `${label} · ${t().runOwnQueued}` : run.startedHere ? `${label} · ${t().runByYou}` : label;
   };
   const [now, setNow] = createSignal(Date.parse(props.data.dates.now));
   onMount(() => {

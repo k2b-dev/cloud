@@ -385,7 +385,10 @@ function MayDo(props: { data: CodePageData; state: CodePageReady; text: PageText
 /** Pages and addresses only when the automation has some (Mockup PAGES). */
 function Pages(props: { state: CodePageReady; text: PageText }) {
   const t = props.text.t;
-  const routes = () => (props.state.automations ?? []).filter((automation) => automation.kind === "route" && automation.route);
+  const routes = () =>
+    [...(props.state.automations ?? [])]
+      .filter((automation) => automation.kind === "route" && automation.route)
+      .sort((a, b) => Number(b.pageLink?.isRoot ?? false) - Number(a.pageLink?.isRoot ?? false));
   return (
     <Show when={routes().length > 0}>
       <Island class="cloud-code__pages" title={t().pagesTitle} meta={String(routes().length)}>
@@ -416,6 +419,7 @@ function Pages(props: { state: CodePageReady; text: PageText }) {
                   <>
                     <Show when={opensPage(automation) && props.state.code.state === "active"}>
                       <ButtonLink size="sm" variant="ghost" href={automation.pageLink!.href}>
+                        <i class="ti ti-browser" aria-hidden="true" />
                         {t().launchOpen}
                       </ButtonLink>
                     </Show>

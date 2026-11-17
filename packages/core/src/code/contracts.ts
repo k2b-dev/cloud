@@ -116,6 +116,7 @@ export const CodeSchema = z
     activeVersionId: z.uuid().nullable(),
     activatedAt: timestamp.nullable().optional(),
     activatedBy: z.object({ name: z.string() }).strict().nullable().optional(),
+    pausedBy: z.object({ name: z.string() }).strict().nullable().optional(),
     pausedAt: timestamp.nullable().optional(),
     needsReconfirmation: z.boolean().optional(),
     pauseReason: z.string().nullable(),

@@ -9,6 +9,7 @@ import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
+import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
@@ -103,6 +104,7 @@ databaseSuite()("Core Code data and Query authorization", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code");
     await migrateAuth();
+    await migrateAudit();
     await migrateEvents();
     await migrateAppEvents();
     await migrateCode();
@@ -191,6 +193,15 @@ databaseSuite()("Core Code data and Query authorization", () => {
     expect((await readCode(automation.id, guest)).code.activatedBy).toBeNull();
     await sql`UPDATE code.codes SET state='paused' WHERE id=${automation.id}`;
     const paused = (await readCode(automation.id, ctx(ids.owner))).code.pausedAt;
+    expect((await readCode(automation.id, ctx(ids.reader))).code.pausedBy).toBeNull();
+    await sql`UPDATE code.codes SET pause_reason='manual' WHERE id=${automation.id}`;
+    // Match the exact current transaction timestamp, including sub-millisecond database precision.
+    await sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,created_at)
+      SELECT 'core.code.paused','allowed',${ids.owner}::uuid,'code',id,paused_at FROM code.codes WHERE id=${automation.id}`;
+    expect((await readCode(automation.id, ctx(ids.reader))).code.pausedBy).toEqual({ name: "Visible activator" });
+    expect((await readCode(automation.id, guest)).code.pausedBy).toBeNull();
+    await sql`UPDATE code.codes SET pause_reason='policy_changed' WHERE id=${automation.id}`;
+    expect((await readCode(automation.id, ctx(ids.reader))).code.pausedBy).toBeNull();
     expect(paused).not.toBeNull();
     await sql`UPDATE code.codes SET title='Still paused' WHERE id=${automation.id}`;
     expect((await listCodes({ limit: 20 }, ctx(ids.owner))).items.find((item) => item.id === automation.id)?.pausedAt).toBe(paused);

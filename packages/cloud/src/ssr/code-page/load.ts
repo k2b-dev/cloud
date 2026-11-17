@@ -763,6 +763,7 @@ const loadReady = async (
       activatedAt: code.activatedAt ?? null,
       activatedBy: code.activatedBy ?? null,
       pausedAt: code.pausedAt ?? null,
+      pausedBy: code.pausedBy ?? null,
     },
     permission: code.permission,
     versions,

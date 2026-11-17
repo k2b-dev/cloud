@@ -41,11 +41,17 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
   data.owner = { kind: "person", ref: null, title: de ? "Wochenbericht Vertrieb" : "Weekly sales report", typeTitle: null };
   const schedules = (state.automations ?? []).filter((item) => item.kind === "schedule").slice(0, 2);
   const schedule = schedules[0] ?? { entrypoint: "report", kind: "schedule" as const, cron: "0 8 * * 1", isNew: false, lastRun: null };
+  schedule.entrypoint = "wochenbericht";
+  schedule.cron = "0 8 * * 1";
+  schedule.timeZone = data.dates.timeZone;
+  schedule.nextRunAt = "2026-11-16T07:00:00.000Z";
   schedule.title = de ? "Erstellt den Wochenbericht" : "Creates the weekly report";
   schedule.timingText = de ? "montags um 08:00" : "Mondays at 08:00";
   const second: CodePageAutomation = {
     ...schedule,
     entrypoint: "reminder",
+    cron: "0 16 * * 5",
+    nextRunAt: "2026-11-20T15:00:00.000Z",
     title: de ? "Erinnert an offene Aufgaben" : "Reminds about open tasks",
     timingText: de ? "freitags um 16:00" : "Fridays at 16:00",
   };
@@ -74,6 +80,7 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
   const event: CodePageAutomation = {
     ...schedule,
     entrypoint: "event:received",
+    nextRunAt: null,
     kind: "event",
     cron: null,
     title: de ? "Ordnet eingehende Nachrichten ein" : "Sorts incoming messages",
@@ -104,7 +111,7 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
             : name === "schedules"
               ? [schedule, second, event]
               : name === "manual"
-                ? [{ ...schedule, kind: "manual", cron: null, timingText: undefined, title: undefined, lastRun: null }]
+                ? [{ ...schedule, kind: "manual", cron: null, timingText: undefined, title: undefined, nextRunAt: null, lastRun: null }]
                 : [schedule];
   if (name === "mailbox")
     data.owner = {
@@ -113,7 +120,10 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
       title: "info@beispiel.de",
       typeTitle: de ? "Postfach" : "Mailbox",
     };
-  if (name.startsWith("reader") || name === "paused-reader") state.permission = "reader";
+  if (name.startsWith("reader") || name === "paused-reader") {
+    state.permission = "reader";
+    data.owner.runsAs = { name: "Lena" };
+  }
   if (name === "paused" || name === "paused-reader") state.code = { ...state.code, state: "paused" };
   if (name === "manual") {
     state.runs = { items: [], nextCursor: null };

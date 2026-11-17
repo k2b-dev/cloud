@@ -9,9 +9,13 @@ import type { CodeRunAction } from "./run-action";
 export const runItems = (state: CodePageReady, text: PageText, run: CodeRunAction): DropdownAction[] =>
   runnable(state).map((automation) => ({
     label: automation.title ?? sentence(timing(automation, text), text.locale()),
-    description: automation.title ? sentence(timing(automation, text), text.locale()) : undefined,
-    icon: run.loading() && run.entrypoint() === automation.entrypoint ? "ti ti-loader-2 cloud-code__spin" : "ti ti-player-play",
-    disabled: run.loading(),
+    description: run.pending(automation.entrypoint)
+      ? text.t().runStartingAction
+      : automation.title
+        ? sentence(timing(automation, text), text.locale())
+        : undefined,
+    icon: run.pending(automation.entrypoint) ? "ti ti-loader-2 cloud-code__spin" : "ti ti-player-play",
+    disabled: run.pending(automation.entrypoint),
     action: () => run.start(automation),
   }));
 
@@ -62,7 +66,7 @@ export function CodeLaunch(props: { state: CodePageReady; text: PageText; run: C
       <Show
         when={pages()[0]}
         fallback={
-          <Show when={runs().length > 0 && !props.run.approvalRequired()}>
+          <Show when={runs().length > 0}>
             <Show
               when={runs().length > 1}
               fallback={
@@ -131,7 +135,7 @@ export function RunNow(props: { state: CodePageReady; text: PageText; run: CodeR
   const t = props.text.t;
   const runs = () => runnable(props.state);
   return (
-    <Show when={runs().length && !props.run.approvalRequired()}>
+    <Show when={runs().length}>
       <Show
         when={runs().length > 1}
         fallback={

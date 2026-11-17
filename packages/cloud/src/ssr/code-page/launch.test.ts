@@ -32,3 +32,27 @@ test("only editors of an active Code can start current manual and scheduled entr
   state.code.state = "paused";
   expect(runnable(state)).toEqual([]);
 });
+
+test("head fixtures keep recurring dates, unscheduled triggers and reader identity consistent", () => {
+  for (const name of ["manual", "events", "schedules", "reader", "reader-page", "reader-waiting", "paused-reader"] as const) {
+    const data = headActionFixture(name);
+    if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
+    for (const item of data.state.automations ?? []) {
+      if (item.kind === "event" || item.kind === "manual") expect(item.nextRunAt).toBeNull();
+      if (item.kind === "schedule") {
+        const next = new Date(item.nextRunAt!);
+        expect(next.getTime()).toBeGreaterThan(Date.parse(data.dates.now));
+        expect(
+          new Intl.DateTimeFormat("en", {
+            timeZone: data.dates.timeZone,
+            weekday: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+          }).format(next),
+        ).toBe(item.entrypoint === "reminder" ? "Fri 16:00" : "Mon 08:00");
+      }
+    }
+    if (data.state.permission === "reader") expect(data.owner.runsAs).toEqual({ name: "Lena" });
+  }
+});

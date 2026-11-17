@@ -371,7 +371,13 @@ for (const refusal of ["paused", "approval", "conflict"] as const) {
           ok: true,
           data: capabilityResultSchema(schema).parse({
             data: {
-              code: { ...code, state: refusal === "paused" ? "paused" : "active", owner: { kind: "person", userId: "fixture-user" } },
+              code: {
+                ...code,
+                state: refusal === "paused" ? "paused" : "active",
+                pausedBy: refusal === "paused" ? { name: "Lena" } : null,
+                pausedAt: "2026-11-14T12:49:04.000Z",
+                owner: { kind: "person", userId: "fixture-user" },
+              },
               permission: "editor",
             },
           }),
@@ -393,9 +399,12 @@ for (const refusal of ["paused", "approval", "conflict"] as const) {
       expect(notice.mock.calls[0]?.[1]?.duration).toBe(0);
       if (refusal === "paused") {
         expect(page.control("Resume")).toBeDefined();
+        expect(notice.mock.calls[0]?.[0]).toBe("Not started: Lena has since paused the automation.");
         expect(page.dom.root.querySelector(".cloud-code__state")?.textContent).toContain("Paused");
         expect(notice.mock.calls[0]?.[1]?.action).toBeNull();
       } else if (refusal === "approval") {
+        expect(page.control("Run now")).toBeDefined();
+        expect(notice.mock.calls[0]?.[0]).toBe("Not started: This version needs a new approval first.");
         expect(notice.mock.calls[0]?.[1]?.action).toMatchObject({ label: "View version", href: `${data.href}?tab=versions` });
       } else {
         expect(page.dom.root.querySelector(".cloud-code__state")?.textContent).not.toContain("Paused");
@@ -412,6 +421,9 @@ for (const refusal of ["paused", "approval", "conflict"] as const) {
 test.skipIf(isServer)("a terminal live hint before the start receipt stays terminal and reports only the own failed run once", async () => {
   const { client, toast } = modules!;
   const data = codePageFixture("personal", "en");
+  if (data.state.kind !== "ready" || !data.state.runs) throw new Error("Expected loaded runs");
+  // One preceding run exercises this race; the browser matrix covers the complete history and geometry.
+  data.state.runs.items = data.state.runs.items.slice(0, 1);
   const runId = "00000000-0000-4000-8000-999900000001";
   let complete: (() => void) | undefined;
   const invoke = spyOn(client, "invokeCapabilityWithDataSchema").mockImplementation(async (invocation, schema) => {
@@ -457,7 +469,7 @@ test.skipIf(isServer)("a terminal live hint before the start receipt stays termi
     expect(page.dom.root.querySelector(".cloud-code__state")?.getAttribute("data-tone")).toBe("danger");
     expect(invoke.mock.calls.filter(([invocation]) => invocation.capabilityId === "code.run.words")).toHaveLength(1);
     expect(notice.mock.calls[0]).toMatchObject([
-      "The daily limit was reached.",
+      "The run failed: The daily limit was reached.",
       { duration: 0, action: { label: "View run", href: `${data.href}?tab=runs&run=${runId}` } },
     ]);
     feed!.run(failed);
@@ -478,6 +490,8 @@ for (const permission of ["reader", "editor"] as const) {
     if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
     const state = data.state;
     state.permission = permission;
+    if (!state.runs) throw new Error("Expected loaded runs");
+    state.runs.items = state.runs.items.slice(0, 1);
     state.words = undefined;
     const entries = state.automations!.filter((item) => item.kind === "schedule");
     const ids = ["00000000-0000-4000-8000-999900000010", "00000000-0000-4000-8000-999900000011"];
@@ -569,7 +583,10 @@ test.skipIf(isServer)("a refused identity snapshot leaves recovery and repeated 
     error: { code: "FORBIDDEN", message: "Hidden", status: 403 },
   });
   const error = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
-  const page = mount(headActionFixture("schedule", "en"));
+  const data = headActionFixture("schedule", "en");
+  if (data.state.kind !== "ready" || !data.state.runs) throw new Error("Expected loaded runs");
+  data.state.runs.items = data.state.runs.items.slice(0, 1);
+  const page = mount(data);
   const hint = CodeRunEventSchema.parse({
     type: "code.run",
     runId: "00000000-0000-4000-8000-999900000012",
