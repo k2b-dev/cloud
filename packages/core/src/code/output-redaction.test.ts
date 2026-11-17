@@ -283,3 +283,79 @@ test("harden bounded deferred areas through repetitive overlapping input", () =>
     { type: "text", text: "!" },
   ]);
 });
+
+test("ordinary output resumes after a preceding batch gap at a resolved boundary", () => {
+  const redactor = compileOutputRedaction(
+    secretEchoReplacements([{ name: "TOKEN", value: "private-token", sent: "Bearer private-token" }]),
+  );
+  const first = redactOutput([line("first private-token")], redactor);
+  expect(first.pending).toBeNull();
+  const last = { ...line("last"), at: "2030-01-02T00:00:01.000Z" };
+  const result = redactOutput([last], redactor, first.pending, false, { lost: true, skip: 0, lossBeforeBatch: true });
+  expect(result.entries).toEqual([{ ...last, text: [{ type: "text", text: "last" }] }]);
+  expect(result.dropped).toEqual({ lines: 0, bytes: 0 });
+  expect(result.pending).toBeNull();
+  expect(result.skip).toBe(0);
+});
+
+for (const spelling of replacements.keys()) {
+  test(`harden preceding-gap continuations for ${Buffer.from(spelling).toString("hex")}`, () => {
+    const redactor = compileOutputRedaction(replacements);
+    for (let cut = 1; cut < spelling.length; cut++) {
+      const suffix = spelling.slice(cut);
+      const result = redactOutput([line(suffix)], redactor, null, false, { lost: true, skip: 0, lossBeforeBatch: true });
+      expect(result.entries).toEqual([]);
+      expect(result.dropped.lines).toBe(1);
+      // A partial continuation must also wait for the rest, even before it is a suffix.
+      const partial = redactOutput([line(suffix.slice(0, 1))], redactor, null, false, { lost: true, skip: 0, lossBeforeBatch: true });
+      expect(partial.entries).toEqual([]);
+    }
+  });
+}
+
+test("harden preceding-gap resumption with a deterministic linear comparison bound", () => {
+  const spelling = "a".repeat(6000) + "b";
+  const text = "a".repeat(10 * 1024) + "c";
+  const redactor = compileOutputRedaction(new Map([[spelling, "[secret:TOKEN]"]]));
+  let comparisons = 0;
+  const original = String.prototype.charCodeAt;
+  const lookup = spyOn(String.prototype, "charCodeAt").mockImplementation(function (this: string, index) {
+    comparisons++;
+    return original.call(this, index);
+  });
+  let result: ReturnType<typeof redactOutput>;
+  let work: number;
+  try {
+    result = redactOutput([line(text)], redactor, null, false, { lost: true, skip: 0, lossBeforeBatch: true });
+    work = comparisons;
+  } finally {
+    lookup.mockRestore();
+  }
+  // One unit read and one comparison per position; each fallback decreases the
+  // matched length, so total charCodeAt calls are at most three per input unit.
+  expect(work).toBeLessThanOrEqual(3 * (text.length + spelling.length));
+  expect(result.entries.flatMap((entry) => entry.text)).toEqual([{ type: "text", text }]);
+});
+
+test("harden unresolved and internally incomplete batches when ordinary text follows", () => {
+  const redactor = compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]]));
+  const pending = redactOutput([line("abcd")], redactor).pending;
+  const unresolved = redactOutput([line("last")], redactor, pending, false, { lost: true, skip: 0, lossBeforeBatch: true });
+  expect(unresolved.entries.flatMap((entry) => entry.text)).toEqual([{ type: "secret", name: "TOKEN" }]);
+  expect(unresolved.dropped.lines).toBe(1);
+  const internal = redactOutput([line("last")], redactor, null, false, { lost: true, skip: 0, lossBeforeBatch: false });
+  expect(internal.entries).toEqual([]);
+  expect(internal.dropped.lines).toBe(1);
+});
+
+test("harden preceding-gap continuations inside UTF-16 pairs", () => {
+  const value = "abcd😀efgh";
+  const redactor = compileOutputRedaction(new Map([[value, "[secret:TOKEN]"]]));
+  for (let cut = 1; cut < value.length; cut++) {
+    const suffix = value.slice(cut);
+    const result = redactOutput([line(suffix)], redactor, null, false, { lost: true, skip: 0, lossBeforeBatch: true });
+    expect(result.entries).toEqual([]);
+    const partial = redactOutput([line(suffix.slice(0, 1))], redactor, null, false, { lost: true, skip: 0, lossBeforeBatch: true });
+    expect(partial.entries).toEqual([]);
+  }
+});

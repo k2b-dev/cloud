@@ -33,9 +33,11 @@ export function compileOutputRedaction(replacements: ReadonlyMap<string, string>
     },
   };
   let longest = 0;
+  const spellings: string[] = [];
   for (const [raw, marker] of replacements) {
     const value = cleanCodeOutput(raw);
     if (!value) continue;
+    spellings.push(value);
     longest = Math.max(longest, value.length);
     let node = root;
     // Match string units: a transported fragment may end inside a surrogate pair.
@@ -62,10 +64,44 @@ export function compileOutputRedaction(replacements: ReadonlyMap<string, string>
       queue.push(child);
     }
   }
-  return { root, longest };
+  return { root, longest, spellings };
 }
 export type OutputRedactor = ReturnType<typeof compileOutputRedaction>;
 type Span = { start: number; end: number; marker: string; prior?: boolean };
+
+/** A missing batch may end anywhere in a spelling. Check whether this batch's
+ * prefix could continue it, including a continuation still awaiting later text.
+ * KMP scans the bounded spellings and input once, without enumerating suffixes.
+ */
+function couldContinueOutput(text: string, spellings: readonly string[]) {
+  if (!text.length) return true;
+  const failure = new Uint32Array(text.length);
+  for (let index = 1; index < text.length; index++) {
+    const unit = text.charCodeAt(index);
+    let matched = failure[index - 1]!;
+    let next = text.charCodeAt(matched);
+    while (matched > 0 && unit !== next) {
+      matched = failure[matched - 1]!;
+      next = text.charCodeAt(matched);
+    }
+    failure[index] = matched + Number(unit === next);
+  }
+  for (const spelling of spellings) {
+    let matched = 0;
+    for (let index = 0; index < spelling.length; index++) {
+      const unit = spelling.charCodeAt(index);
+      let next = text.charCodeAt(matched);
+      while (matched > 0 && unit !== next) {
+        matched = failure[matched - 1]!;
+        next = text.charCodeAt(matched);
+      }
+      if (unit === next) matched++;
+      if (matched === text.length) return true;
+    }
+    if (matched > 0) return true;
+  }
+  return false;
+}
 
 function mergeSpan(spans: Span[], span: Span) {
   // Each span is pushed/popped once. Shorter terminal suffixes are contained in
@@ -113,31 +149,41 @@ export function redactOutput(
   redactor: OutputRedactor,
   pending: OutputRedactionPending = null,
   final = false,
-  continuity: { lost: boolean; skip: number } = { lost: false, skip: 0 },
+  continuity: { lost: boolean; skip: number; lossBeforeBatch?: boolean } = { lost: false, skip: 0 },
 ): { entries: RedactedOutputEntry[]; pending: OutputRedactionPending; skip: number; dropped: { lines: number; bytes: number } } {
   const entries: RedactedOutputEntry[] = [];
   const dropped = { lines: 0, bytes: 0 };
   let skip = continuity.skip;
+  const hadPending = pending !== null;
   if (pending && ((final && !input.length) || continuity.lost)) {
     if ((pending.hidden ?? 0) < pending.text.length || pending.covered)
       entries.push({ kind: pending.kind, level: pending.level, at: pending.at, text: [{ type: "secret", name: pending.name }] });
     pending = null;
   }
-  const suppressBatch = continuity.lost && redactor.longest > 0;
+  const cleaned = input.flatMap(({ kind, level, at, text }) =>
+    text.split(/\r\n|\n|\r/).map((text) => ({ kind, level, at, text: cleanCodeOutput(text) })),
+  );
+  // With a resolved previous boundary and loss known to precede this whole batch,
+  // unrelated text can resume immediately. Unknown positions and open candidates
+  // keep the conservative suppression, including scanning its hidden end candidate.
+  const resumes =
+    continuity.lost &&
+    continuity.lossBeforeBatch &&
+    !hadPending &&
+    skip === 0 &&
+    !couldContinueOutput(cleaned.map((fragment) => fragment.text).join(""), redactor.spellings);
+  const suppressBatch = continuity.lost && redactor.longest > 0 && !resumes;
   const fragments = [
     ...(pending ? [{ ...pending, suppressed: (pending.hidden ?? 0) === pending.text.length && !pending.covered }] : []),
-    ...input.flatMap(({ kind, level, at, text }) =>
-      text.split(/\r\n|\n|\r/).map((text) => {
-        const fragment = { kind, level, at, text: cleanCodeOutput(text) };
-        const suppressed = suppressBatch || skip > 0;
-        if (suppressed) {
-          if (!suppressBatch) skip = Math.max(0, skip - fragment.text.length);
-          dropped.lines++;
-          dropped.bytes += Buffer.byteLength(JSON.stringify(fragment));
-        }
-        return { ...fragment, suppressed };
-      }),
-    ),
+    ...cleaned.map((fragment) => {
+      const suppressed = suppressBatch || skip > 0;
+      if (suppressed) {
+        if (!suppressBatch) skip = Math.max(0, skip - fragment.text.length);
+        dropped.lines++;
+        dropped.bytes += Buffer.byteLength(JSON.stringify(fragment));
+      }
+      return { ...fragment, suppressed };
+    }),
   ];
   if (suppressBatch) skip = redactor.longest - 1;
   // Suppression is a leading region (the affected batch or following entries).

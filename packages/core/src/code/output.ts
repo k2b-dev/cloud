@@ -283,6 +283,9 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
     // failed delivery and saturated loss counters without touching the hot-path fence.
     lost: batch.droppedLines > 0 || batch.droppedBytes > 0 || counts.seq > state.inputSeq || batch.seq > state.inputSeq + 1,
     skip: state.redactionSkip,
+    // Core cadence/sequence gaps precede this batch; supervisor counters cannot
+    // locate a gap within it. Preserve that distinction when resuming output.
+    lossBeforeBatch: batch.droppedLines === 0 && batch.droppedBytes === 0,
   });
   // Identity belongs to the accepted stream position, survives window eviction and
   // replay, and needs neither caller-selected keys nor another persistence model.
