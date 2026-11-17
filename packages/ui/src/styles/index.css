@@ -8994,6 +8994,92 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   }
 }
 
+/* Compact ChoiceList: one quiet frame, full-width rows and inline additions.
+   Details follow the entire frame, so opening them never moves any row. */
+.k2b-ui .k2b-choice-list[data-variant="list"] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-control);
+  background: var(--k2b-surface);
+}
+
+.k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option {
+  min-height: 2.375rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0;
+  box-shadow: none;
+  transition: background-color var(--k2b-motion-fast) var(--k2b-ease-out);
+}
+
+.k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option + .k2b-choice-list__option {
+  border-top: 1px solid var(--k2b-border);
+}
+
+.k2b-ui .k2b-choice-list[data-variant="list"] .k2b-choice-list__radio {
+  margin-top: 0;
+}
+
+.k2b-ui .k2b-choice-list[data-variant="list"] .k2b-choice-list__text {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.375rem;
+  row-gap: 0;
+  overflow-wrap: anywhere;
+}
+
+.k2b-ui .k2b-choice-list[data-variant="list"] .k2b-choice-list__label {
+  min-width: 0;
+  max-width: 100%;
+  font-weight: 400;
+}
+
+.k2b-ui .k2b-choice-list[data-variant="list"] .k2b-choice-list__description {
+  min-width: 0;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+/* The chosen row is quietly tinted: half the platform selection, so it reads as chosen without weight. */
+.k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option[aria-checked="true"] {
+  background: color-mix(in srgb, var(--k2b-selected) 50%, var(--k2b-surface));
+}
+
+.k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option[aria-checked="true"] .k2b-choice-list__label {
+  font-weight: 600;
+}
+
+.k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option:focus-visible {
+  outline: var(--k2b-focus-width) solid var(--k2b-edge-focus);
+  outline-offset: calc(-1 * var(--k2b-focus-width));
+}
+
+/* Keep the reason readable: muted ink replaces the cards' opacity reduction. */
+.k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option:disabled {
+  color: var(--k2b-text-secondary);
+  background: var(--k2b-surface-muted);
+  opacity: 1;
+}
+
+.k2b-ui .k2b-choice-list[data-variant="list"] + .k2b-choice-list__details {
+  padding: 0;
+}
+
+@media (pointer: coarse) {
+  .k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option {
+    min-height: 2.75rem;
+  }
+}
+
+@media (forced-colors: active) {
+  .k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option:focus-visible {
+    outline-color: CanvasText;
+  }
+}
+
 /* ChoiceTiles: a preview over its label; choosing changes only paint, so no tile moves. */
 .k2b-ui .k2b-choice-tiles__group {
   display: grid;
