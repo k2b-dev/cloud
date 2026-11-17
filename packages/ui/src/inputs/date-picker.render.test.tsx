@@ -42,6 +42,10 @@ describe("@k2b/ui complete date picker migration", () => {
     expect(filterTimeInput("09:3")).toBe("09:3");
     expect(normalizeTimeInput("25:90")).toBe("23:59");
     expect(normalizeTimeInput("7")).toBe("07:00");
+    // A typed one-digit hour keeps its meaning: "9:30" used to become 93:0 and then 23:00.
+    expect(filterTimeInput("9:30")).toBe("09:30");
+    expect(filterTimeInput("9:")).toBe("09");
+    expect(filterTimeInput("0930")).toBe("09:30");
     expect(isCompleteTime("09:30")).toBe(true);
     expect(isCompleteTime("24:00")).toBe(false);
     expect(isCompleteTime("09:60")).toBe(false);

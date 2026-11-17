@@ -13,6 +13,11 @@ const inputMessages = i18n.define({
       useTransparent: "Use transparent",
       pinDigit: ({ index, total }: { index: number; total: number }) => `PIN digit ${index} of ${total}`,
       resetTo: ({ value }: { value: string }) => `Reset to ${value}`,
+      timeLetters: "hh:mm",
+      notATime: "Not a time. Example: 09:30",
+      timeRequired: "Enter a time.",
+      earliestTime: ({ time }: { time: string }) => `${time} at the earliest.`,
+      latestTime: ({ time }: { time: string }) => `${time} at the latest.`,
     },
     de: {
       decreaseValue: "Wert verringern",
@@ -23,6 +28,11 @@ const inputMessages = i18n.define({
       useTransparent: "Transparent verwenden",
       pinDigit: ({ index, total }) => `PIN-Ziffer ${index} von ${total}`,
       resetTo: ({ value }) => `Zurücksetzen auf ${value}`,
+      timeLetters: "hh:mm",
+      notATime: "Keine Uhrzeit. Beispiel: 09:30",
+      timeRequired: "Bitte eine Uhrzeit eingeben.",
+      earliestTime: ({ time }) => `Frühestens ${time}.`,
+      latestTime: ({ time }) => `Spätestens ${time}.`,
     },
   },
 });
