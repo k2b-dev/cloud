@@ -2084,6 +2084,8 @@ export const aiConversations: AiConversationService = {
       ${interChatMessageSelect()}
       WHERE message.status = 'pending'
         AND (${input.targetConversationId ?? null}::uuid IS NULL OR message.target_conversation_id = ${input.targetConversationId ?? null}::uuid)
+        -- Held chats must not fill the bounded background batch and starve deliveries to other chats.
+        AND (${input.targetConversationId ?? null}::uuid IS NOT NULL OR target.queue_held_at IS NULL)
         AND (${input.targetConversationId ?? null}::uuid IS NOT NULL OR NOT EXISTS (
           SELECT 1
           FROM ai.turns active_turn
@@ -2306,10 +2308,17 @@ export const aiConversations: AiConversationService = {
     return conversation ? { ok: true as const, conversation } : { ok: false as const, reason: "not_found" as const };
   },
 
-  archiveConversation: async (input) => {
-    // Archiving considers pending learning work once, just like learning being
-    // off at completion. Restoring cannot backfill these turns or receipts.
-    const rows = await sql<{ id: string }[]>`
+  archiveConversation: async (input) =>
+    sql.begin(async (tx) => {
+      // Read the active turn in a fresh statement after acquiring the promotion lock. A single UPDATE could wait on
+      // an in-flight promotion and then keep its older NOT EXISTS snapshot, archiving a chat whose turn just started.
+      const [chat] = await tx`SELECT id FROM ai.conversations WHERE id=${input.conversationId}::uuid
+      AND (${input.ownerUserId ?? null}::uuid IS NULL OR created_by_user_id=${input.ownerUserId ?? null}::uuid)
+      AND archived_at IS NULL FOR UPDATE`;
+      if (!chat) return false;
+      // Archiving considers pending learning work once, just like learning being
+      // off at completion. Restoring cannot backfill these turns or receipts.
+      const rows = await tx<{ id: string }[]>`
       WITH archived AS (
         UPDATE ai.conversations
         SET archived_at = now(), pinned_at = NULL
@@ -2348,8 +2357,8 @@ export const aiConversations: AiConversationService = {
       )
       SELECT id FROM archived
     `;
-    return Boolean(rows[0]);
-  },
+      return Boolean(rows[0]);
+    }),
 
   restoreConversation: async (input) => {
     // Restore never backfills: everything completed beforehand counts as considered,
@@ -3001,17 +3010,31 @@ export const aiConversations: AiConversationService = {
 
   submitChatTurn: async (input) => {
     return await sql.begin(async (tx) => {
-      const [conversation] = await tx<{ draft_revision: number | string; project_id: string | null }[]>`
-        SELECT draft_revision, project_id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
+      const [conversation] = await tx<
+        {
+          draft_revision: number | string;
+          project_id: string | null;
+          queue_held_at: Date | string | null;
+        }[]
+      >`
+        SELECT draft_revision, project_id, queue_held_at FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE
       `;
       if (!conversation) throw new Error("Conversation not found.");
       if (input.queuedMessageId) {
         const [head] = await tx<
-          { id: string; status: string }[]
-        >`SELECT id, status FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY send_requested_at NULLS LAST, position LIMIT 1`;
+          { id: string; status: string; send_requested_at: Date | string | null }[]
+        >`SELECT id, status, send_requested_at FROM ai.queued_messages WHERE conversation_id = ${input.conversationId}::uuid AND status IN ('pending','failed') ORDER BY send_requested_at NULLS LAST, position LIMIT 1`;
         const [busy] =
           await tx`SELECT id FROM ai.turns WHERE conversation_id = ${input.conversationId}::uuid AND NOT COALESCE(run_config ? 'background', false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
-        if (!head || head.id !== input.queuedMessageId || head.status !== "pending" || busy)
+        // Selection precedes quota/context awaits. Recheck the hold and this entry's current Send now request under
+        // the chat lock, so a stale selection cannot start after Stop or after that request was withdrawn.
+        if (
+          !head ||
+          head.id !== input.queuedMessageId ||
+          head.status !== "pending" ||
+          busy ||
+          (conversation.queue_held_at && !head.send_requested_at)
+        )
           throw new Error("Queued message is no longer ready.");
       }
       if (!input.queuedMessageId) {
@@ -3361,7 +3384,10 @@ export const aiConversations: AiConversationService = {
     const reason = input.reason ?? "user";
     // A person's Stop also holds the chat's queue in the same statement: nothing starts by itself afterwards.
     const rows = await (options?.db ?? sql)<TurnRow[]>`
-      WITH stopped AS (
+      WITH locked_chat AS MATERIALIZED (
+        -- Match completion/promotion lock order. Other cancellation reasons do not change the chat hold.
+        SELECT id FROM ai.conversations WHERE id = ${input.conversationId} AND ${reason} = 'user' FOR NO KEY UPDATE
+      ), stopped AS (
       UPDATE ai.turns
       SET cancel_requested_at = COALESCE(cancel_requested_at, now()),
           cancellation_reason = CASE WHEN ${reason} = 'routine_deleted' THEN ${reason}
@@ -3371,6 +3397,7 @@ export const aiConversations: AiConversationService = {
             ELSE COALESCE(cancellation_reason, ${reason}) END
       WHERE id = ${input.turnId}
         AND conversation_id = ${input.conversationId}
+        AND (${reason} <> 'user' OR conversation_id = (SELECT id FROM locked_chat))
         AND status IN ('queued', 'running', 'waiting_for_action')
       RETURNING status, lease_owner, lease_expires_at, id, conversation_id, attempt, model_profile_id, created_at, completed_at, error
       ), held AS (

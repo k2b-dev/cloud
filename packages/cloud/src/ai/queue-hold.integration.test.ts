@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
+import { inLockOrder } from "../../../../scripts/fixtures/lock-order";
 import { testFor } from "../../../../scripts/fixtures/test-infra";
+import { testShortId } from "../../../../scripts/fixtures/test-short-id";
 import { sql } from "../runtime/clients";
 import {
   drainQueuedMessages,
@@ -61,6 +63,7 @@ const fixture = async () => {
   return {
     chat,
     userId: user!.id,
+    turnId: turn!.id,
     person,
     automation,
     add,
@@ -89,6 +92,84 @@ integration("after a person's Stop no turn starts by itself, also 8 s later, and
     expect(f.jobs).toEqual([]);
     expect(await f.started()).toBe(0);
     expect((await listQueuedMessages(f.chat.id)).map(({ id }) => id)).toEqual([f.person, f.automation]);
+  } finally {
+    await f.close();
+  }
+});
+
+integration("inter-chat work waits after Stop and leaves the background batch until the person resumes", async () => {
+  const f = await fixture();
+  const source = await aiConversations.createConversation({ ownerUserId: f.userId });
+  try {
+    const turn = await aiConversations.createCompactionTurn({
+      conversationId: source.id,
+      modelId: "fixture",
+      runConfig: { kind: "compact" },
+    });
+    const created = await aiConversations.createInterChatMessage({
+      sourceConversationId: source.id,
+      sourceTurnId: turn.id,
+      sourceCallId: "hold-delivery",
+      targetChatId: f.chat.shortId,
+      actorUserId: f.userId,
+      text: "Please check the stock.",
+      idempotencyKey: `hold-delivery-${source.id}`,
+    });
+    if (!created.ok) throw new Error("Fixture inter-chat message was not created");
+    await f.stop();
+    expect((await aiConversations.listPendingInterChatMessages()).map(({ id }) => id)).not.toContain(created.message.id);
+    expect(
+      await aiConversations.deliverInterChatMessage({
+        messageId: created.message.id,
+        modelId: "fixture",
+        runConfig: { kind: "chat", input: "Please check the stock.", toolSource: { kind: "none" } },
+        userMessage: { role: "user", content: [{ type: "text", text: "Please check the stock." }] },
+      }),
+    ).toEqual({ delivered: false, reason: "busy" });
+    expect(await f.started()).toBe(0);
+    await f.add("Jetzt bitte weiter.");
+    expect((await aiConversations.listPendingInterChatMessages()).map(({ id }) => id)).toContain(created.message.id);
+  } finally {
+    await sql`DELETE FROM ai.conversations WHERE id=${source.id}::uuid`;
+    await f.close();
+  }
+});
+
+integration("a routine cancellation leaves the normal queue flow intact", async () => {
+  const f = await fixture();
+  try {
+    expect(
+      (
+        await aiConversations.requestTurnAbort({
+          conversationId: f.chat.id,
+          turnId: f.turnId,
+          reason: "routine_paused",
+        })
+      ).found,
+    ).toBe(true);
+    await sql`UPDATE ai.turns SET status='aborted', completed_at=now() WHERE id=${f.turnId}::uuid`;
+    await f.drain();
+    expect(f.jobs).toHaveLength(1);
+    expect((await listQueuedMessages(f.chat.id)).map(({ id }) => id)).toEqual([f.automation]);
+  } finally {
+    await f.close();
+  }
+});
+
+integration("a candidate selected before Stop cannot promote after the stopped turn ends", async () => {
+  const f = await fixture();
+  try {
+    const [candidate] = await sql<{ submission: Submission }[]>`
+      SELECT submission FROM ai.queued_messages WHERE id=${f.person}::uuid`;
+    await f.stop();
+    await expect(aiConversations.submitChatTurn({ ...candidate!.submission, queuedMessageId: f.person })).rejects.toThrow(
+      "Queued message is no longer ready.",
+    );
+    expect(await f.started()).toBe(0);
+    expect((await listQueuedMessages(f.chat.id)).map(({ id, state }) => ({ id, state }))).toEqual([
+      { id: f.person, state: "pending" },
+      { id: f.automation, state: "pending" },
+    ]);
   } finally {
     await f.close();
   }
@@ -130,10 +211,54 @@ integration("a new message of the person resumes the queue in its order; an auto
   }
 });
 
+integration("Stop and completion acquire the chat before the turn, without a lock-order inversion", async () => {
+  const f = await fixture();
+  try {
+    const results = await inLockOrder<unknown>(
+      async (holder) => {
+        await holder`SELECT id FROM ai.conversations WHERE id=${f.chat.id}::uuid FOR UPDATE`;
+      },
+      [
+        () => aiConversations.completeTurn({ conversationId: f.chat.id, turnId: f.turnId, status: "completed" }),
+        () => aiConversations.requestTurnAbort({ conversationId: f.chat.id, turnId: f.turnId, reason: "user" }),
+      ],
+    );
+    expect(results).toEqual(["completed", { found: false }]);
+  } finally {
+    await f.close();
+  }
+});
+
+integration("archive rechecks a promotion committed while it waited for the chat lock", async () => {
+  const f = await fixture();
+  try {
+    await f.stop();
+    await requestQueuedMessageSendNow(f.chat.id, f.person);
+    const [archived] = await inLockOrder(
+      async (holder) => {
+        await holder`SELECT id FROM ai.conversations WHERE id=${f.chat.id}::uuid FOR UPDATE`;
+        const [turn] = await holder<{ id: string }[]>`INSERT INTO ai.turns(short_id,conversation_id,status)
+          VALUES(${testShortId()},${f.chat.id}::uuid,'queued') RETURNING id`;
+        await holder`UPDATE ai.queued_messages SET status='submitted',submitted_turn_id=${turn!.id}::uuid,
+          submission='{}'::jsonb,content='[]'::jsonb WHERE id=${f.person}::uuid`;
+      },
+      [() => aiConversations.archiveConversation({ conversationId: f.chat.id, ownerUserId: f.userId })],
+    );
+    expect(archived).toBe(false);
+    expect(await aiConversations.getConversation({ conversationId: f.chat.id })).not.toBeNull();
+    expect((await listQueuedMessages(f.chat.id)).map(({ id }) => id)).toEqual([f.automation]);
+  } finally {
+    await f.close();
+  }
+});
+
 integration("archiving a chat with queued entries lets them lapse (#108)", async () => {
   const f = await fixture();
   try {
     await f.stop();
+    const bytes = new TextEncoder().encode("Fictional attachment");
+    await sql`INSERT INTO ai.queued_message_files(message_id,path,bytes,media_type,size,origin,updated_at,version)
+      VALUES(${f.person}::uuid,'note.txt',${bytes},'text/plain',${bytes.length},'upload',now(),1)`;
     expect(await aiConversations.archiveConversation({ conversationId: f.chat.id, ownerUserId: f.userId })).toBe(true);
     expect(await listQueuedMessages(f.chat.id)).toEqual([]);
     const lapsed = await sql<{ status: string; error: string | null }[]>`
@@ -142,6 +267,11 @@ integration("archiving a chat with queued entries lets them lapse (#108)", async
       { status: "cancelled", error: "chat_archived" },
       { status: "cancelled", error: "chat_archived" },
     ]);
+    const files = await sql`SELECT message_id FROM ai.queued_message_files WHERE message_id=${f.person}::uuid`;
+    expect(files).toEqual([]);
+    const retained = await sql`SELECT id FROM ai.queued_messages WHERE conversation_id=${f.chat.id}::uuid
+      AND (submission <> '{}'::jsonb OR content <> '[]'::jsonb)`;
+    expect(retained).toEqual([]);
     await f.drain();
     expect(f.jobs).toEqual([]);
   } finally {
