@@ -185,7 +185,8 @@ describe(`${browserName} one dialog replaces another`, () => {
           }),
       );
       expect(widths.length).toBeGreaterThan(2);
-      expect(new Set(widths.map(Math.round)).size).toBe(1);
+      // Exact, not rounded: WebKit reports a fractional width with float noise, and a rounded .5 flips.
+      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(0.5);
     } finally {
       await page.context().close();
     }
@@ -352,9 +353,14 @@ describe(`${browserName} one dialog replaces another`, () => {
         const motion = window as unknown as MorphWindow;
         document.querySelector<HTMLButtonElement>("[data-ask]")!.click();
         motion.closeAll();
-        return { editor: document.querySelector("[data-level='editor']") !== null, disposed: [...motion.disposed] };
+        return {
+          exits: CSS.supports("overlay", "auto"),
+          editor: document.querySelector("[data-level='editor']") !== null,
+          disposed: [...motion.disposed],
+        };
       });
-      expect(during).toEqual({ editor: true, disposed: [] });
+      // An engine without `overlay` (WebKit) cannot fade a closed dialog out of the top layer: it leaves at once.
+      if (during.exits) expect(during).toEqual({ exits: true, editor: true, disposed: [] });
       await page.waitForFunction(() => !document.querySelector("dialog"));
       expect((await page.evaluate(() => (window as unknown as MorphWindow).disposed)).sort()).toEqual(["editor", "question"]);
     } finally {
