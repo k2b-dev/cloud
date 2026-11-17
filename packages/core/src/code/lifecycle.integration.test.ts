@@ -217,7 +217,7 @@ suiteFor(
     const proof = { runId: f.runId, generation: 1, token: "fixture-lifecycle-proof" };
     const deadlineAt = Date.UTC(2030, 0, 2);
     await openCodeOutput({ ...proof, codeId: f.id, deadlineAt, leaseExpiresAt: deadlineAt }, 32768);
-    await receiveCodeOutput(proof, { seq: 1, lines: [{ level: "log", text: "before owner deletion" }], droppedLines: 0, droppedBytes: 0 });
+    await receiveCodeOutput(proof, { seq: 1, entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before owner deletion" }], droppedLines: 0, droppedBytes: 0 });
     expect((await deleteMailbox(context(user), f.mailboxId)).ok).toBe(true);
     const meter = await meterSql();
     try {
@@ -232,7 +232,7 @@ suiteFor(
     expect(run!.state).toBe("cancelled");
     expect(run!.console_output).toEqual(await replayCodeOutput(f.runId));
     expect(run!.console_output).not.toBeNull();
-    await expect(receiveCodeOutput(proof, { seq: 2, lines: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
+    await expect(receiveCodeOutput(proof, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
       RunnerLeaseLostError,
     );
     await drainDeletion();

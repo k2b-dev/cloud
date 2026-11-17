@@ -324,7 +324,10 @@ test("shared workerd keeps console output and uncaught stacks bound to their own
         async (operation, input) => {
           expect(operation).toBe(CODE_OUTPUT_OPERATION);
           const batch = CodeOutputBatchSchema.parse(input);
-          received.set(run.runId, [...(received.get(run.runId) ?? []), ...batch.lines.map((line) => line.text)]);
+          expect(batch.entries.every((entry) => entry.kind === "log" && Number.isFinite(Date.parse(entry.at)))).toBe(true);
+          for (const entry of batch.entries)
+            if (entry.text.includes("sandbox stack right")) expect(entry.level).toBe("error");
+          received.set(run.runId, [...(received.get(run.runId) ?? []), ...batch.entries.map((line) => line.text)]);
           return null;
         },
         signal,
@@ -349,7 +352,7 @@ test("harden supervisor output pacing for direct calls in the native isolate", a
   const now = Date.UTC(2030, 0, 2);
   setSystemTime(now);
   const source = `export async function main(input, cloud) {
-    for (let seq=1; seq<=100; seq++) await cloud.call('runtime.output', { seq, lines: [{level:'log',text:'fixture'}], droppedLines:0, droppedBytes:0 });
+    for (let seq=1; seq<=100; seq++) await cloud.call('runtime.output', { seq, entries: [{kind:'log',at:'2030-01-02T00:00:00.000Z',level:'log',text:'fixture'}], droppedLines:0, droppedBytes:0 });
     await cloud.call('done', null);
   }`;
   const run = lease({ runId: "paced-native", bundleHash: bundleHash(source), deadlineAt: now + 5000, leaseExpiresAt: now + 5000 });

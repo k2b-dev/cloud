@@ -819,11 +819,14 @@ For editor-only [Code live details](/en/docs/platform/code-runs#follow-calls-and
 `@k2b/cloud/code` exports `CodeCallEventSchema`, `codeDetailsKey`, the
 `CodeOutput*` schemas/types (`CodeOutputWindowSchema` and its type are also
 available from browser-safe `@k2b/cloud/contracts`), `emptyCodeOutput`, `appendCodeOutput` and
-`applyCodeOutputEvent`. `@k2b/cloud/ssr/code-live` exports
+`applyCodeOutputEvent` and `isCodeOutputLogEntry`. The discriminated
+`CodeOutputKnownEntrySchema` describes known kinds; `CodeOutputEntrySchema`
+also preserves unknown kinds as opaque objects. `@k2b/cloud/ssr/code-live` exports
 `followCodeDetails`, `CodeDetailEvent` and `CodeDetailPositions`. Its resync
 callback returns positions for the active runs in the replacement snapshot.
-Core supplies sanitized parts;
-browser consumers render only text and named secret markers.
+Core supplies structured `entries` with `kind`, `level`, `at` and sanitized
+`text` parts. Browser consumers narrow known kinds before rendering text and
+named secret markers, retaining unknown kinds for identical window accounting.
 `@k2b/cloud/events` exports `LIVE_LIMITS` and `defineLive` includes
 `publishTransient` for committed observations; see
 [Live updates](/en/docs/automation/live-updates#publish-a-committed-observation-without-sql).

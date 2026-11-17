@@ -30,7 +30,7 @@ test("harden run positions to the active snapshot and clear them when observatio
       runId,
       generation: 1,
       seq,
-      lines: [],
+      entries: [],
       droppedLines: 0,
       droppedBytes: 0,
       budget: 32768,
@@ -51,8 +51,10 @@ test("harden run positions to the active snapshot and clear them when observatio
     for (let index = 0; index < 1000; index++)
       await current().apply([event(`22222222-2222-4222-8222-${String(index).padStart(12, "0")}`, 1)]);
     expect(seen).toEqual([]);
-    await current().apply([event(id, 1)]);
+    const future = event(id, 1);
+    await current().apply([{ ...future, data: { ...future.data, entries: [{ kind: "future-kind", state: "done" }] } }]);
     expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ entries: [{ kind: "future-kind", state: "done" }] });
     snapshot = {};
     await current().resync();
     await current().apply([event(id, 2)]);

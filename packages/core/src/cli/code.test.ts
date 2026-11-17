@@ -785,10 +785,12 @@ Laufinhalte erfordern Bearbeitungsrechte."
     consoleOutput: {
       generation: 1,
       seq: 1,
-      lines: [
+      entries: [
         {
+          kind: "log",
+          at: "2030-01-02T00:00:00.000Z",
           level: "log",
-          parts: [
+          text: [
             { type: "text", text: "Started " },
             { type: "secret", name: "TOKEN" },
           ],

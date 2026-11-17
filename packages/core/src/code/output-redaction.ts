@@ -1,6 +1,6 @@
-import { type CodeOutputBatch, type CodeOutputLine, cleanCodeOutput, codeOutputParts } from "@k2b/cloud/code";
+import { type CodeOutputBatch, type CodeOutputKnownEntry, cleanCodeOutput, codeOutputParts } from "@k2b/cloud/code";
 
-type Fragment = CodeOutputBatch["lines"][number];
+type Fragment = CodeOutputBatch["entries"][number];
 type Node = { next: Map<string, Node>; marker?: string; descendant?: string };
 export type OutputRedactionPending = (Fragment & { name: string }) | null;
 
@@ -35,16 +35,16 @@ export type OutputRedactor = ReturnType<typeof compileOutputRedaction>;
  * across lines; finalization emits a named marker, never a possible secret prefix.
  */
 export function redactOutput(
-  input: CodeOutputBatch["lines"],
+  input: CodeOutputBatch["entries"],
   redactor: OutputRedactor,
   pending: OutputRedactionPending = null,
   final = false,
-): { lines: CodeOutputLine[]; pending: OutputRedactionPending } {
+): { entries: CodeOutputKnownEntry[]; pending: OutputRedactionPending } {
   if (final && pending && input.length === 0)
-    return { lines: [{ level: pending.level, parts: [{ type: "secret", name: pending.name }] }], pending: null };
+    return { entries: [{ kind: pending.kind, level: pending.level, at: pending.at, text: [{ type: "secret", name: pending.name }] }], pending: null };
   const fragments = [
     ...(pending ? [pending] : []),
-    ...input.flatMap(({ level, text }) => text.split(/\r\n|\n|\r/).map((text) => ({ level, text: cleanCodeOutput(text) }))),
+    ...input.flatMap(({ kind, level, at, text }) => text.split(/\r\n|\n|\r/).map((text) => ({ kind, level, at, text: cleanCodeOutput(text) }))),
   ];
   const text = fragments.map((line) => line.text).join("");
   const emitted = fragments.map(() => "");
@@ -69,7 +69,14 @@ export function redactOutput(
     if (end === text.length && node.next.size && end > offset) {
       if (final) emitted[line] += node.descendant!;
       else {
-        held = { level: fragments[line]!.level, text: text.slice(offset), name: node.descendant!.slice("[secret:".length, -1) };
+        const fragment = fragments[line]!;
+        held = {
+          kind: fragment.kind,
+          level: fragment.level,
+          at: fragment.at,
+          text: text.slice(offset),
+          name: node.descendant!.slice("[secret:".length, -1),
+        };
         heldAt = offset;
       }
       break;
@@ -84,11 +91,11 @@ export function redactOutput(
   }
   let start = 0;
   return {
-    lines: fragments.flatMap((fragment, index) => {
+    entries: fragments.flatMap((fragment, index) => {
       const before = start;
       start += fragment.text.length;
       if (held && before >= heldAt && !emitted[index]) return [];
-      return [{ level: fragment.level, parts: codeOutputParts(cleanCodeOutput(emitted[index]!)) }];
+      return [{ kind: fragment.kind, level: fragment.level, at: fragment.at, text: codeOutputParts(cleanCodeOutput(emitted[index]!)) }];
     }),
     pending: held,
   };

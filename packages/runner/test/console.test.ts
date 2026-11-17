@@ -23,9 +23,9 @@ test("a run owns its console; error stacks travel only through its bounded outpu
   await output.finish();
   expect(batches).toHaveLength(1);
   expect(batches[0]!.operation).toBe(CODE_OUTPUT_OPERATION);
-  expect(batches[0]!.batch.lines[0]).toEqual({ level: "log", text: 'hello {"answer":42}' });
-  expect(batches[0]!.batch.lines.some((line) => line.level === "error" && line.text.includes("sandbox failure"))).toBe(true);
-  expect(batches[0]!.batch.lines.some((line) => line.text.includes("console.test.ts"))).toBe(true);
+  expect(batches[0]!.batch.entries[0]).toEqual({ kind: "log" as const, at: new Date().toISOString(), level: "log", text: 'hello {"answer":42}' });
+  expect(batches[0]!.batch.entries.some((line) => line.level === "error" && line.text.includes("sandbox failure"))).toBe(true);
+  expect(batches[0]!.batch.entries.some((line) => line.text.includes("console.test.ts"))).toBe(true);
 });
 test("oversized lines and a full buffer are counted and dropped, keeping the same frame limit", async () => {
   setSystemTime(fixed);
@@ -65,8 +65,8 @@ test("two concurrent runs cannot mix console lines, even with one shared bridge"
   outputs[0]!.console.log("only a");
   outputs[1]!.console.error("only b");
   await Promise.all(outputs.map((output) => output.finish()));
-  expect(received.get("a")![0]!.lines).toEqual([{ level: "log", text: "only a" }]);
-  expect(received.get("b")![0]!.lines).toEqual([{ level: "error", text: "only b" }]);
+  expect(received.get("a")![0]!.entries).toEqual([{ kind: "log" as const, at: new Date().toISOString(), level: "log", text: "only a" }]);
+  expect(received.get("b")![0]!.entries).toEqual([{ kind: "log" as const, at: new Date().toISOString(), level: "error", text: "only b" }]);
 });
 test("a failed asynchronous flush joins cleanly and reports a stable failure", async () => {
   setSystemTime(fixed);
@@ -80,4 +80,18 @@ test("a failed asynchronous flush joins cleanly and reports a stable failure", a
   );
   output.console.log("line");
   await expect(output.finish()).rejects.toThrow("code_output_unavailable");
+});
+
+test("console methods capture log metadata before the bundle is flushed", async () => {
+  setSystemTime(fixed);
+  const batches: CodeOutputBatch[] = [];
+  const output = createCodeConsole({ call: async (_operation: string, batch: CodeOutputBatch) => { batches.push(batch); } }, limits);
+  for (const level of ["log", "info", "debug", "warn", "error"] as const) output.console[level](level);
+  setSystemTime(fixed + 250);
+  output.console.warn("later\ncontinuation");
+  await output.finish();
+  expect(batches[0]!.entries).toEqual([
+    ...["log", "info", "debug", "warn", "error"].map((level) => ({ kind: "log", level, at: new Date(fixed).toISOString(), text: level })),
+    ...["later", "continuation"].map((text) => ({ kind: "log", level: "warn", at: new Date(fixed + 250).toISOString(), text })),
+  ]);
 });

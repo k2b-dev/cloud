@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { bindProcessSync, redis, sql, unbindProcessSync } from "@k2b/cloud";
-import { applyCodeOutputEvent, emptyCodeOutput } from "@k2b/cloud/code";
+import { applyCodeOutputEvent, emptyCodeOutput, isCodeOutputLogEntry } from "@k2b/cloud/code";
 import { type CodeRunTokenClaims, signCodeRunToken } from "@k2b/cloud/code/run-token";
 import { RUNNER_PATHS, RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import { LIVE_LIMITS } from "@k2b/cloud/events";
@@ -64,7 +64,7 @@ suiteFor(
         `core:code-output:v1:${runId}:drops:${generation}`,
       ]),
     ]);
-  const batch = (seq: number, text: string) => ({ seq, lines: [{ level: "log" as const, text }], droppedLines: 0, droppedBytes: 0 });
+  const batch = (seq: number, text: string) => ({ seq, entries: [{ kind: "log" as const, at: new Date().toISOString(), level: "log" as const, text }], droppedLines: 0, droppedBytes: 0 });
   beforeAll(async () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("code_output");
@@ -158,15 +158,15 @@ suiteFor(
       setSystemTime(fixed + 1000);
       expect(await meter.during(() => receiveCodeOutput({ token, runId, generation: 1 }, batch(3, "last")))).toEqual([]);
       const tail = await replayCodeOutput(runId);
-      expect(tail.lines).toEqual([
+      expect(tail.entries).toEqual([
         {
-          level: "log",
-          parts: [
+          kind: "log" as const, at: new Date(fixed).toISOString(), level: "log",
+          text: [
             { type: "text", text: "first " },
             { type: "secret", name: "TOKEN" },
           ],
         },
-        { level: "log", parts: [{ type: "text", text: "last" }] },
+        { kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "last" }] },
       ]);
       expect(tail.droppedLines).toBe(1);
       expect(tail.droppedBytes).toBeGreaterThan(0);
@@ -248,11 +248,11 @@ suiteFor(
     );
     const newer = { token: newerToken, runId, generation: 2 };
     await receiveCodeOutput(newer, batch(1, "too soon in the same run"));
-    expect((await replayCodeOutput(runId)).lines).toEqual([]);
+    expect((await replayCodeOutput(runId)).entries).toEqual([]);
     expect((await replayCodeOutput(runId)).droppedLines).toBe(1);
     setSystemTime(fixed + 2000);
     await receiveCodeOutput(newer, batch(2, "new attempt"));
-    expect((await replayCodeOutput(runId)).lines).toEqual([{ level: "log", parts: [{ type: "text", text: "new attempt" }] }]);
+    expect((await replayCodeOutput(runId)).entries).toEqual([{ kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "new attempt" }] }]);
     // Newline expansion adds structured per-line overhead. Both the broker frame
     // and the retained tail must stay bounded after that expansion, with counted loss.
     for (let seq = 3; seq <= 5; seq++) {
@@ -260,7 +260,7 @@ suiteFor(
       await receiveCodeOutput(newer, batch(seq, "x\n".repeat(LIVE_LIMITS.frameBytes / 4)));
     }
     const tail = await replayCodeOutput(runId);
-    expect(Buffer.byteLength(JSON.stringify(tail.lines))).toBeLessThanOrEqual(32768);
+    expect(Buffer.byteLength(JSON.stringify(tail.entries))).toBeLessThanOrEqual(32768);
     expect(tail.droppedLines).toBeGreaterThan(0);
     expect(tail.droppedBytes).toBeGreaterThan(0);
     let replay = emptyCodeOutput();
@@ -294,14 +294,14 @@ suiteFor(
       await rememberCodeOutputSecrets({ ...claims, ...proof }, inserted);
       const middle = Math.floor(spelling.length / 2);
       await receiveCodeOutput(proof, batch(1, spelling.slice(0, middle)));
-      expect((await replayCodeOutput(proof.runId)).lines.flatMap((line) => line.parts)).toEqual([]);
+      expect((await replayCodeOutput(proof.runId)).entries.filter(isCodeOutputLogEntry).flatMap((line) => line.text)).toEqual([]);
       const raw = await redis.get(`core:code-output:v1:${proof.runId}`);
       expect(raw).not.toContain(spelling.slice(0, middle));
       setSystemTime(fixed + 1000);
       await receiveCodeOutput(proof, batch(2, spelling.slice(middle)));
       // An unpadded spelling can still prefix a padded spelling; finalization resolves it.
       await persistCodeOutput(proof.runId);
-      expect((await replayCodeOutput(proof.runId)).lines.flatMap((line) => line.parts)).toEqual([{ type: "secret", name: "TOKEN" }]);
+      expect((await replayCodeOutput(proof.runId)).entries.filter(isCodeOutputLogEntry).flatMap((line) => line.text)).toEqual([{ type: "secret", name: "TOKEN" }]);
     }
     setSystemTime(fixed);
     const proof = await attempt();
@@ -313,7 +313,7 @@ suiteFor(
     } finally {
       await meter.close();
     }
-    expect((await replayCodeOutput(proof.runId)).lines).toEqual([{ level: "log", parts: [{ type: "secret", name: "TOKEN" }] }]);
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual([{ kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "secret", name: "TOKEN" }] }]);
   });
   test("harden bounded replacement admission, deduplication and compiled revision reuse", async () => {
     setSystemTime(fixed);
@@ -346,7 +346,7 @@ suiteFor(
       // Required earlier entries remain available after a refused addition.
       setSystemTime(fixed + 3000);
       await receiveCodeOutput(proof, batch(4, entry.value));
-      expect((await replayCodeOutput(proof.runId)).lines.flatMap((line) => line.parts).at(-1)).toEqual({ type: "secret", name: "TOKEN" });
+      expect((await replayCodeOutput(proof.runId)).entries.filter(isCodeOutputLogEntry).flatMap((line) => line.text).at(-1)).toEqual({ type: "secret", name: "TOKEN" });
     } finally {
       compile.mockRestore();
     }
@@ -372,7 +372,7 @@ suiteFor(
     }
     await expect(rememberCodeOutputSecrets(scoped, [entry])).rejects.toMatchObject({ code: "code_http_output_redaction_unavailable" });
     await persistCodeOutput(proof.runId);
-    expect((await replayCodeOutput(proof.runId)).lines).toEqual([{ level: "log", parts: [{ type: "secret", name: "TOKEN" }] }]);
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual([{ kind: "log" as const, at: new Date(fixed).toISOString(), level: "log", text: [{ type: "secret", name: "TOKEN" }] }]);
   });
   test("harden above-cadence counters without rewriting the retained window or compiling replacements", async () => {
     setSystemTime(fixed);
@@ -406,7 +406,7 @@ suiteFor(
     await renewCodeOutput({ ...claims, ...proof }, fixed + 300_000);
     await openCodeOutput({ ...proof, codeId, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, 32768);
     await expect(receiveCodeOutput(proof, batch(2, "closed"))).rejects.toBeInstanceOf(RunnerLeaseLostError);
-    expect((await replayCodeOutput(proof.runId)).lines).toEqual([{ level: "log", parts: [{ type: "text", text: "retained" }] }]);
+    expect((await replayCodeOutput(proof.runId)).entries).toEqual([{ kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "retained" }] }]);
     const delayed = await attempt();
     await redis.send("DEL", [`core:code-output:v1:${delayed.runId}`, `core:code-output:v1:${delayed.runId}:lease:1`]);
     await closeCodeOutput(delayed.runId, 1);

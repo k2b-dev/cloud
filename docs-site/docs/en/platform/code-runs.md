@@ -299,17 +299,41 @@ still reveal it. Only authorized Code editors can view the output.
 
 Possible secret prefixes wait in a bounded, encrypted
 redaction buffer across lines and bundles. An unresolved final fragment becomes
-a named secret marker; deferred fragments can be combined into one line.
+a named secret marker; deferred fragments can be combined into one entry with the original timestamp and level.
 
 `core.code.run.read` returns `contents.consoleOutput` on the first call page
 (`cursor: 0`), or `null` on later pages. Readers still get `contents: null`.
 The same permission-aware service serves API, CLI and agent calls. SSR exposes
 the window as `CodePageRunDetail.consoleOutput`.
 
-The window contains `generation`, `seq`, `lines`, `droppedLines` and
+Stored snapshots and live deltas carry an `entries` array of structured records.
+The current discriminated record is:
+
+```ts
+type LogEntry = {
+  kind: "log",
+  level: "log" | "info" | "debug" | "warn" | "error",
+  at: string, // ISO 8601 UTC timestamp captured by the invocation's console
+  text: Array<{ type: "text", text: string } | { type: "secret", name: string }>
+};
+```
+
+`console.log` produces `kind: "log", level: "log"`; the other console methods
+keep their level. `console.error` and uncaught errors with stacks use
+`level: "error"`. Multiline text produces entries with the same timestamp.
+The timestamp describes capture time, not trusted execution order; `generation`
+and `seq` order transport deltas.
+
+Readers retain unknown `kind` values as opaque objects in the same bounded
+window and skip their rendering. Use `isCodeOutputLogEntry` from
+`@k2b/cloud/code` before reading log fields. Malformed known entries are
+rejected. This extensible JSON format allows future kinds, including steps,
+without a database migration; no step API is available yet.
+
+The window contains `generation`, `seq`, `entries`, `droppedLines` and
 `droppedBytes`. It keeps whole recent lines within the run's pinned
 `core.code.payload_bytes` budget (32 KiB by default), measured as UTF-8 JSON
-of the structured lines. Fixed metadata is outside that budget. Oversized
+of the structured entries. Fixed metadata is outside that budget. Oversized
 lines, earlier lines displaced from the window, and excess batches contribute
 to the loss counters. `droppedLines` is the number needed for an “N earlier
 lines missing” notice. These counters describe dropped output, not execution

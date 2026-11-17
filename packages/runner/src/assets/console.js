@@ -3,14 +3,14 @@ export function createCodeConsole(cloud, limits) {
   const encoder = new TextEncoder();
   const bytes = (value) => encoder.encode(JSON.stringify(value)).length;
   const sum = (a, b) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
-  let lines = [],
+  let entries = [],
     droppedLines = 0,
     droppedBytes = 0,
     seq = 0;
   let sending,
     lastAt = 0,
     failed = false;
-  const batch = () => ({ seq: seq + 1, lines, droppedLines, droppedBytes });
+  const batch = () => ({ seq: seq + 1, entries, droppedLines, droppedBytes });
   const drop = (line) => {
     droppedLines = sum(droppedLines, 1);
     droppedBytes = sum(droppedBytes, bytes(line));
@@ -29,27 +29,28 @@ export function createCodeConsole(cloud, limits) {
     } catch {
       text = "[unprintable]";
     }
+    const at = new Date().toISOString();
     for (const textLine of text.split(/\r\n|\n|\r/)) {
-      const line = { level, text: textLine };
-      if (bytes({ ...batch(), lines: [line] }) > limits.bytes) {
+      const line = { kind: "log", level, at, text: textLine };
+      if (bytes({ ...batch(), entries: [line] }) > limits.bytes) {
         drop(line);
         continue;
       }
-      lines.push(line);
-      while (lines.length && bytes(batch()) > limits.bytes) drop(lines.shift());
+      entries.push(line);
+      while (entries.length && bytes(batch()) > limits.bytes) drop(entries.shift());
     }
   };
   const send = async () => {
-    if ((!lines.length && !droppedLines && !droppedBytes) || Date.now() - lastAt < limits.intervalMs) return;
-    const value = { seq: ++seq, lines, droppedLines, droppedBytes };
-    lines = [];
+    if ((!entries.length && !droppedLines && !droppedBytes) || Date.now() - lastAt < limits.intervalMs) return;
+    const value = { seq: ++seq, entries, droppedLines, droppedBytes };
+    entries = [];
     droppedLines = 0;
     droppedBytes = 0;
     lastAt = Date.now();
     try {
       await cloud.call(limits.operation, value);
     } catch {
-      for (const line of value.lines) drop(line);
+      for (const line of value.entries) drop(line);
       droppedLines = sum(droppedLines, value.droppedLines);
       droppedBytes = sum(droppedBytes, value.droppedBytes);
       failed = true;
@@ -76,7 +77,7 @@ export function createCodeConsole(cloud, limits) {
     async finish() {
       clearInterval(timer);
       await sending;
-      if (lines.length || droppedLines || droppedBytes) {
+      if (entries.length || droppedLines || droppedBytes) {
         const remaining = limits.intervalMs - (Date.now() - lastAt);
         if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
         await flush();

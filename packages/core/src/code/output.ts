@@ -83,7 +83,7 @@ export async function openCodeOutput(
   };
   await redis.send("EVAL", [
     // Replace only our encoded timestamp: re-encoding the state with Lua cjson
-    // would turn its empty line array into an object.
+    // would turn its empty entries array into an object.
     `if redis.call('GET',KEYS[2])=='0' then return 0 end
     local old=redis.call('GET',KEYS[1]); local next=ARGV[2]
     if old then
@@ -191,10 +191,12 @@ async function redactorFor(claims: Pick<CodeRunTokenClaims, "runId" | "generatio
   return redactor;
 }
 export function sanitizeCodeOutput(batch: CodeOutputBatch, replacements: ReadonlyMap<string, string>) {
-  return redactOutput(batch.lines, compileOutputRedaction(replacements), null, true).lines;
+  return redactOutput(batch.entries, compileOutputRedaction(replacements), null, true).entries;
 }
 const PendingSchema = z.object({
-  level: CodeOutputBatchSchema.shape.lines.element.shape.level,
+  kind: CodeOutputBatchSchema.shape.entries.element.shape.kind,
+  level: CodeOutputBatchSchema.shape.entries.element.shape.level,
+  at: CodeOutputBatchSchema.shape.entries.element.shape.at,
   text: z.string(),
   name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/),
 });
@@ -257,10 +259,10 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
       String(
         sum(
           batch.droppedLines,
-          batch.lines.reduce((total, line) => sum(total, line.text.split(/\r\n|\n|\r/).length), 0),
+          batch.entries.reduce((total, line) => sum(total, line.text.split(/\r\n|\n|\r/).length), 0),
         ),
       ),
-      String(sum(batch.droppedBytes, Buffer.byteLength(JSON.stringify(batch.lines)))),
+      String(sum(batch.droppedBytes, Buffer.byteLength(JSON.stringify(batch.entries)))),
       String(ttlAt(state.deadlineAt)),
       String(Number.MAX_SAFE_INTEGER),
     ]);
@@ -273,8 +275,8 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
   const pending = state.pending
     ? PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))))
     : null;
-  const redacted = redactOutput(batch.lines, await redactorFor(claims, state.deadlineAt, state.redactionRevision), pending);
-  const lines = redacted.lines;
+  const redacted = redactOutput(batch.entries, await redactorFor(claims, state.deadlineAt, state.redactionRevision), pending);
+  const entries = redacted.entries;
   const dropped = { lines: batch.droppedLines, bytes: batch.droppedBytes };
   // Reserve the maximum encoded counter/sequence widths, derived from the safe-integer wire schema.
   // Trim in linear time before windowing: one raw text can contain many newline-separated lines.
@@ -290,12 +292,12 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
         budget: state.budget,
       }),
     ) - Buffer.byteLength(JSON.stringify([]));
-  const frame = appendCodeOutput(emptyCodeOutput(state.generation), lines, LIVE_LIMITS.frameBytes - envelopeBytes, dropped);
-  const nextWindow = appendCodeOutput({ ...withDrops(state, counts), seq: state.window.seq + 1 }, frame.lines, state.budget, {
+  const frame = appendCodeOutput(emptyCodeOutput(state.generation), entries, LIVE_LIMITS.frameBytes - envelopeBytes, dropped);
+  const nextWindow = appendCodeOutput({ ...withDrops(state, counts), seq: state.window.seq + 1 }, frame.entries, state.budget, {
     lines: frame.droppedLines,
     bytes: frame.droppedBytes,
   });
-  const event: CodeOutputEvent = { ...nextWindow, lines: frame.lines, type: "code.output", runId: claims.runId, budget: state.budget };
+  const event: CodeOutputEvent = { ...nextWindow, entries: frame.entries, type: "code.output", runId: claims.runId, budget: state.budget };
   const next: State = {
     ...state,
     inputSeq: batch.seq,
@@ -381,7 +383,7 @@ export async function closeCodeOutput(runId: string, generation?: number): Promi
     const pending = PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))));
     window = appendCodeOutput(
       { ...window, seq: window.seq + 1 },
-      [{ level: pending.level, parts: [{ type: "secret", name: pending.name }] }],
+      [{ kind: pending.kind, level: pending.level, at: pending.at, text: [{ type: "secret", name: pending.name }] }],
       state.budget,
     );
   }

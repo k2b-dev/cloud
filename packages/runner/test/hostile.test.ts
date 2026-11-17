@@ -205,7 +205,7 @@ test("giant call input is refused before the supervisor callback and giant resul
   ).toBe("succeeded");
   expect(outputErrors).toEqual(["runner_bridge_unavailable"]);
   expect(outputBatches).toHaveLength(1);
-  expect(outputBatches[0]!.lines).toEqual([]);
+  expect(outputBatches[0]!.entries).toEqual([]);
   expect(outputBatches[0]!.droppedLines).toBe(2);
   expect(outputBatches[0]!.droppedBytes).toBeGreaterThan(config.bridgeBytes * 2);
 }, 10_000);
