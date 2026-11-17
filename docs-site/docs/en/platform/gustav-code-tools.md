@@ -41,6 +41,14 @@ workflow, the page building blocks, mail events, schedules, AI, what each
 app's Actions allow unattended, tests and common errors, plus complete
 templates. Every example in it passes the real checker in CI.
 
+When an authoring turn reaches its attempt or input-token allocation, or the
+same error repeats, Gustav shows a **Gustav is taking a break** card.
+It explains why he is waiting for you and lists completed and remaining work.
+The saved-state line distinguishes a safe working draft from a submitted
+version, including when only some drafts have versions. These allocations
+are not a statement about monetary cost. **Continue** resumes only when you
+choose it.
+
 ## The version card
 
 After `code_submit`, the chat shows one card for the newest version, below
