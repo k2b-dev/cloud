@@ -45,14 +45,15 @@ const html = (state: CodePageFixtureState, locale = "de") =>
     }),
   );
 /** Visible text only: server scripts and the reserved widths of status words stay out. */
-const text = (state: CodePageFixtureState, locale = "de") =>
+const visibleText = (markup: string, separator = " ") =>
   renderedText(
     new HTMLRewriter()
       .on("script", { element: (element) => void element.remove() })
       .on('[aria-hidden="true"]', { element: (element) => void element.remove() })
-      .transform(html(state, locale)),
-    " ",
+      .transform(markup),
+    separator,
   ).replaceAll(/\s+/g, " ");
+const text = (state: CodePageFixtureState, locale = "de") => visibleText(html(state, locale));
 
 describe("Code page: overview (Bild 19 to 21)", () => {
   test("the head says the state in one large word, the place and version in one quiet line, and offers Gustav and More", () => {
@@ -1388,7 +1389,7 @@ describe("the chat of personal Code", () => {
                 },
               ],
       };
-      const page = renderedText(
+      const page = visibleText(
         renderMarkup(() =>
           createComponent(LocaleProvider, {
             locale,
@@ -1427,7 +1428,7 @@ describe("the chat of personal Code", () => {
         canChange: false,
         chat: state === "personal" ? { state: "hidden" } : { state: "unavailable", reason: "archived" },
       };
-      const page = renderedText(
+      const page = visibleText(
         renderMarkup(() =>
           createComponent(LocaleProvider, {
             locale: "de",
@@ -1456,7 +1457,7 @@ test("personal Code without a chat offers its owner to choose one", () => {
     const data = codePageFixture("personal-chat-missing");
     if (data.state.kind !== "ready" || !data.state.chatBinding) throw new Error("Expected a bound personal fixture");
     data.state.chatBinding = { ...data.state.chatBinding, revision: 0, canChange, chat: null };
-    return renderedText(
+    return visibleText(
       renderMarkup(() =>
         createComponent(LocaleProvider, {
           locale: "de",
@@ -1495,7 +1496,7 @@ test("personal Code without a chat offers its owner to choose one", () => {
     ...quiet.state.words.current.mayDo,
     items: quiet.state.words.current.mayDo.items.filter((row) => row.target?.ref.type !== "core.ai.chat"),
   };
-  const page = renderedText(
+  const page = visibleText(
     renderMarkup(() =>
       createComponent(LocaleProvider, {
         locale: "de",
@@ -1515,7 +1516,7 @@ test("a chat binding that could not be read says so at the chat row, without a n
   const data = codePageFixture("personal");
   if (data.state.kind !== "ready") throw new Error("Expected a ready fixture");
   data.state.chatBinding = null;
-  const page = renderedText(
+  const page = visibleText(
     renderMarkup(() =>
       createComponent(LocaleProvider, {
         locale: "de",
