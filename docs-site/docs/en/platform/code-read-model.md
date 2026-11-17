@@ -49,10 +49,11 @@ to this Code. Ordinary Code read permission suffices.
   types, without raw structured payloads.
 - `notices` contains a sentence and consequence for each checker finding.
   Technical codes and source coordinates remain available to CLI clients.
-  In the owner's projection, an archived or deleted bound chat adds a blocking notice with
-  `code: "chat_missing"` and localized instructions to choose another chat or
-  restore the archived chat. A version that uses the bound chat without a first
-  binding receives the same notice. This notice reflects the current binding.
+  In the owner's projection, a version using `chat.send` receives a blocking
+  notice with `code: "chat_missing"` when its bound chat is missing, archived or
+  deleted, including before the first binding. Localized instructions explain
+  how to choose another chat or restore the archived chat. This notice reflects
+  the current binding; versions without `chat.send` receive no chat notice.
 
 An unavailable target reader produces a neutral type label and no link;
 a reader's explicit refusal may say that the target is not visible. Within one

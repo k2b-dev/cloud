@@ -864,10 +864,11 @@ Read its revision and state through
 bound chat was archived or deleted, or is no longer the owner's active chat.
 Both return HTTP 409 during bound-chat resolution, before queuing a message.
 Choose another own active chat or restore the
-archived chat. A missing bound chat supplies the `chat_missing` attention reason
-and a recoverable notice on the Code page and in Waiting for you. This also
-applies when the running version, or the newest version before activation,
-uses `chat.send` but the Code has never had a chat.
+archived chat. When the running version, or the newest version before activation,
+uses `chat.send`, a missing, archived or deleted bound chat supplies the
+`chat_missing` attention reason and a recoverable notice on the Code page and in
+Waiting for you. This also applies before the first binding. Code that does not
+use `chat.send` needs no bound chat.
 Explicit chat handles return `NOT_FOUND` (404) for missing, archived or foreign
 chats, keeping those targets hidden. If a resolved bound chat becomes unavailable
 during preparation, the subsequent chat lookup also returns `NOT_FOUND`.

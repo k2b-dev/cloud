@@ -81,7 +81,7 @@ export function codeChatMissingCondition(chatSchemaAvailable: boolean, db: SQL =
   const usesBoundChat = db`COALESCE((SELECT v.manifest->'permissions' FROM code.versions v WHERE v.code_id=c.id
     ORDER BY (v.id=c.active_version_id) IS TRUE DESC,v.number DESC LIMIT 1)
     @> '[{"operation":"core.ai.chat.send","target":{"type":"core.ai.chat","id":null}}]'::jsonb,false)`;
-  return db`(c.owner_kind='person' AND (c.chat_conversation_id IS NOT NULL OR ${usesBoundChat}) AND ${missing})`;
+  return db`(c.owner_kind='person' AND ${usesBoundChat} AND ${missing})`;
 }
 export async function codeChatMissing(codeId: string, db: SQL = sql): Promise<boolean> {
   const condition = codeChatMissingCondition(await codeChatSchemaAvailable(db), db);
@@ -108,15 +108,15 @@ export async function readCodeChatBinding(codeId: string, db: SQL) {
 }
 /**
  * Internal projection for the authenticated personal owner. The caller authorizes and probes schema availability.
- * Names remain the canonical reader's responsibility. Unbound or non-personal Code costs no statement here.
+ * Names remain the canonical reader's responsibility. Unused, unbound or non-personal bindings cost no statement here.
  */
 export async function codeChatReadModelState(
   code: Pick<BindingRow, "owner_kind" | "owner_user_id" | "chat_conversation_id">,
   options: { usesBoundChat: boolean; chatSchemaAvailable: boolean },
   db: SQL = sql,
 ) {
-  if (code.owner_kind !== "person") return { missing: false, target: null };
-  if (!code.chat_conversation_id) return { missing: options.usesBoundChat, target: null };
+  if (code.owner_kind !== "person" || !options.usesBoundChat) return { missing: false, target: null };
+  if (!code.chat_conversation_id) return { missing: true, target: null };
   const found = await readBindingChat(code, options.chatSchemaAvailable, db);
   const chat = found && !found.archived_at ? found : null;
   return { missing: !chat, target: chat ? { type: "core.ai.chat", id: chat.short_id } : null };

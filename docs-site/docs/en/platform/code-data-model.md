@@ -145,14 +145,15 @@ The binding is neither source text nor version state. A Code's owner never
 changes, so the binding stays with the person who chose it; a new copy starts
 unbound. Only personal Code can have a binding. AI remains optional, so the stored UUID has no foreign key.
 
-An archived or deleted bound chat supplies `chat_missing` through Code attention
-for its owner. A personal Code that has never had a binding also needs a chat
-when its running version, or its newest version before activation, uses `chat.send`.
+Personal Code needs a chat only when its running version, or its newest version
+before activation, uses `chat.send`. A missing, archived or deleted bound chat
+then supplies `chat_missing` through Code attention for its owner.
 The version read model includes a blocking notice with `code: "chat_missing"`
 and a localized recovery sentence. The existing `ai.open_questions` feed carries
 one `kind: "code_attention"` item with “<title> needs a chat” and an `href` to the
 Code page. Consumers use this existing feed for Waiting for you, including Code
 without a submitted version; they do not synthesize a second waiting item.
+An unused binding supplies no chat notice or waiting item.
 
 ## Read through Core Queries
 

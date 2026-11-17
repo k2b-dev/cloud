@@ -324,6 +324,52 @@ databaseSuite()("personal Code chat binding", () => {
     expect(await codeChatMissing(unused.id)).toBe(false);
   });
 
+  test.each(["page", "Chat app"])("an archived init binding is irrelevant to Code using only %s", async (kind) => {
+    const destination = await chat(kind === "page" ? "Page433" : "App433");
+    const initialized = await codeAuthoringServices.init(
+      { title: `Unused binding ${kind}` },
+      { ...context(), submissionOrigin: { kind: "ai_chat", conversationId: destination, automaticAfterReview: false } },
+    );
+    const codeId = initialized.config.codeId;
+    const version = await createCodeVersion(
+      {
+        codeId,
+        sourceFiles: { "code.ts": "export {};" },
+        bundle: "export {};",
+        manifest: {
+          ...codeReadModelFixtureManifest,
+          entrypoints: kind === "page" ? [] : codeReadModelFixtureManifest.entrypoints,
+          permissions: kind === "page" ? [] : [{ operation: "chat.message.post", file: "code.ts", line: 1 }],
+          policyRows: [],
+        },
+        baseVersionId: null,
+      },
+      context(),
+    );
+    await sql`UPDATE ai.conversations SET archived_at=${fixed} WHERE id=${destination}::uuid`;
+    const words = () => loadCodeVersionReadModel({ codeId, versionId: version.id }, context());
+    const meter = await meterSql();
+    let statements: string[];
+    try {
+      statements = await meter.during(words);
+    } finally {
+      await meter.close();
+    }
+    const attention = await readCodeAttention({ owner: { kind: "person", userId: owner } }, context());
+    const listed = await listCodeAttention({}, context());
+    const waiting = await listCodeWaiting({ ownerUserId: owner, locale: "de", timeZone: "UTC" }, new AbortController().signal);
+    expect({
+      missing: await codeChatMissing(codeId),
+      notice: (await words()).notices.items.some((notice) => notice.code === "chat_missing"),
+      attention: attention.items.find((item) => item.codeId === codeId)?.reasons,
+      listed: listed.items.some((item) => item.code.id === codeId && item.reasons.includes("chat_missing")),
+      waiting: waiting.items.some((item) => item.id === `code-attention:${codeId}`),
+      chatReads: statements.filter((statement) =>
+        statement.startsWith("SELECT short_id,title,project_id,archived_at FROM ai.conversations"),
+      ),
+    }).toEqual({ missing: false, notice: false, attention: [], listed: false, waiting: false, chatReads: [] });
+  });
+
   test("archived and deleted chats fail before dispatch and supply one recoverable waiting entry plus live attention", async () => {
     const destination = await chat("Missing433");
     const item = await code("Morning report", destination);
@@ -335,7 +381,11 @@ databaseSuite()("personal Code chat binding", () => {
         codeId: item.id,
         sourceFiles: { "code.ts": "export {};" },
         bundle: "export {};",
-        manifest: { ...codeReadModelFixtureManifest, permissions: [], policyRows: [] },
+        manifest: {
+          ...codeReadModelFixtureManifest,
+          permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 1 }],
+          policyRows: ["ai"],
+        },
         baseVersionId: null,
       },
       context(),
