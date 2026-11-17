@@ -1619,12 +1619,17 @@ A turn never sends into its own chat. A send whose invocation source cannot be c
 now returns `409 source_unavailable`; repeat the same call later. A key holds
 for 24 hours per person, like every Action key; after that, the same key queues
 a new message. When the person retries a sent message, the retry runs on the
-person's allowance; the initiator stays for the chain rule.
+person's allowance with a new person trigger. A plain retry keeps the original
+writer; editing makes the person its writer. Both retain the send receipt and
+source restriction, without carrying Code budget attribution.
 
-Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.
-Chat reads are `read`; send retains the `ai` version-approval rule until the
-reserved per-turn budget policy is available. The Action's ordinary policy is
-`silent: "you"`.
+Code classifies `ai.generate` and `ai.decide` as `ai`, `ai.chat.send` as
+`ai_chat_you`, and chat reads as `read`. The executed model needs a positive
+reference price for automatic `ai_chat_you`. A missing/zero price still needs
+ordinary `ai` authority and approval coverage. The Action's ordinary policy is
+`silent: "you"`. A priced Code turn reserves its whole maximum against Code
+and owner daily budgets before execution; compaction shares this reservation.
+See [Code policy](/en/docs/platform/code-policy#ai-in-a-personal-chat).
 
 Turn admission uses the owner's normal interactive Assistant budget. Each
 provider call reserves only affordable input/output and settles to its actual

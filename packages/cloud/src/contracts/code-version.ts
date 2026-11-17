@@ -94,6 +94,7 @@ export const CODE_POLICY_ROWS = [
   "ask_sensitive",
   "ask_app_asks",
   "ai",
+  "ai_chat_you",
   "internet",
   "public_routes",
 ] as const;
@@ -164,7 +165,13 @@ export const CodeCheckedVersionManifestSchema = CodePolicyManifestSchema.extend(
       ctx.addIssue({ code: "custom", message: "Internet classification missing from policyRows" });
     if (manifest.secrets?.length && !manifest.policyRows.includes("internet"))
       ctx.addIssue({ code: "custom", message: "Secret bindings require internet classification" });
-    if (manifest.ai && !manifest.policyRows.includes("ai"))
+    if (
+      manifest.ai &&
+      !manifest.policyRows.includes("ai") &&
+      (!manifest.policyRows.includes("ai_chat_you") ||
+        !manifest.permissions.some((permission) => permission.operation === "core.ai.chat.send") ||
+        manifest.permissions.some((permission) => ["core.ai.generate", "core.ai.decide"].includes(permission.operation)))
+    )
       ctx.addIssue({ code: "custom", message: "AI classification missing from policyRows" });
   });
 /** Checker evidence enriched by the trusted host for submission, activation, CLI and chat tools. */

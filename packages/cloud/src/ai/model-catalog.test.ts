@@ -166,3 +166,28 @@ test("runtime catalog reads use key existence and never decrypt provider headers
     query.mockRestore();
   }
 });
+
+test("variant prices inherit the model cache price unless overridden, dropping cache prices above input", () => {
+  const priced = { ...model, pricing: { inputPerMillion: 2, outputPerMillion: 4, cacheReadPerMillion: 0.2 } };
+  const variant = AiVariantSchema.parse({
+    slug: "deep",
+    id: "chat:deep",
+    modelId: "chat",
+    label: "Deep",
+    pricing: { inputPerMillion: 1, outputPerMillion: 3 },
+    ...metadata,
+  });
+  expect(flattenAiModelVariant(provider, priced, variant).pricing).toEqual({
+    inputPerMillion: 1,
+    outputPerMillion: 3,
+    cacheReadPerMillion: 0.2,
+  });
+  expect(
+    flattenAiModelVariant(provider, priced, { ...variant, pricing: { ...variant.pricing!, cacheReadPerMillion: 0.1 } }).pricing
+      ?.cacheReadPerMillion,
+  ).toBe(0.1);
+  expect(flattenAiModelVariant(provider, priced, { ...variant, pricing: { inputPerMillion: 0.05, outputPerMillion: 3 } }).pricing).toEqual({
+    inputPerMillion: 0.05,
+    outputPerMillion: 3,
+  });
+});

@@ -24,7 +24,7 @@ import { readCodeDetails } from "./database";
 import { simulateCodeEvent } from "./event-preview";
 import { listCodeRunsWithEvents } from "./events";
 import { effectiveCodePolicy, previewCodePolicy, readCodePolicy, updateCodePolicy } from "./policy";
-import { type CodePolicyRow, codePolicyRow, isCodeAiOperation } from "./policy-contracts";
+import { type CodePolicyRow, codeOperationPolicyRow, isCodeAiOperation } from "./policy-contracts";
 import { readCodeReview, waitCodeReview } from "./review";
 import { cancelCodeReviewRevision } from "./review-chat";
 import { createRunnerCodeCheckHost, createRunnerCodeTestingHost } from "./runner-jobs";
@@ -117,7 +117,7 @@ async function describeCheck(
 ): Promise<CodeAuthoringData<"check">> {
   if (!result.ok) return { version: 1, result, manifest: null, permissions: [] };
   const policyRows = new Set<CodePolicyRow>();
-  if (result.manifest.ai) policyRows.add("ai");
+  if (result.manifest.ai && !result.permissions.some((permission) => isCodeAiOperation(permission.operation))) policyRows.add("ai");
   if (result.manifest.entrypoints.some((entry) => entry.route?.public)) policyRows.add("public_routes");
   if (result.manifest.internet?.length) policyRows.add("internet");
   const permissions: CodeAuthoringPermission[] = [];
@@ -131,9 +131,7 @@ async function describeCheck(
     const manifest = catalog.data.manifest;
     const localId = permission.operation.slice(appId.length + 1);
     const query = manifest.queries.some((operation) => operation.localId === localId);
-    policyRows.add(
-      codePolicyRow(isCodeAiOperation(permission.operation) ? "ai" : query ? "query" : "action", capabilityActionPolicy(manifest, localId)),
-    );
+    policyRows.add(codeOperationPolicyRow(permission.operation, query ? "query" : "action", capabilityActionPolicy(manifest, localId)));
     if (!presentation) continue;
     let title: string | null = null,
       typeTitle: string | null = null;

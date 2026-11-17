@@ -24,7 +24,7 @@ import { CodeDataError } from "./access";
 import { codeAiReferenceCost, codeAiReservesAttemptBudget, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
 import { publishCodeCallHint } from "./live";
 import { codePolicyGroupRowsQuery, codePolicyGroupsFromRows, codePolicySnapshotFromRow, codePolicySnapshotQuery } from "./policy";
-import { codePolicyRow, isCodeAiOperation } from "./policy-contracts";
+import { codeOperationPolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
 import { type CodeEffectEvidence, CodeEffectEvidenceSchema } from "./read-model/effects";
 import { codeSettings } from "./settings";
@@ -161,7 +161,7 @@ export async function authorizeCodeCall(
   const { code, version, manifest } = locked ?? (await lockCall(call, db));
   if (call.kind !== "internet" && call.kind !== "database") requireCodeCapabilityDeclared(call.call, manifest.permissions);
   if (call.kind === "database" && manifest.database !== true) denied("code_db_undeclared", 403);
-  const row = call.kind === "database" ? null : codePolicyRow(isCodeAiOperation(call.call.capability) ? "ai" : call.kind, call.policy);
+  const row = call.kind === "database" ? null : codeOperationPolicyRow(call.call.capability, call.kind, call.policy);
   if (row === "ask_sends" || manifest.policyRows.includes("ask_sends")) denied("code_sends_not_yet");
   if (
     manifest.policyRows.some((row) => row.startsWith("ask_")) ||

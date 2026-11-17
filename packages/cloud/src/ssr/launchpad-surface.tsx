@@ -11,6 +11,7 @@ export function openLaunchpadSurface(context: AppLaunchpadContext) {
   }
   void dialogCore.open<void>((close) => <AppLaunchpadPanel apps={context.apps} legalLinks={context.legalLinks} close={close} />, {
     panelClassName: "k2b-dialog k2b-dialog--large is-bare",
+    primary: "blue",
     contentClassName: "k2b-dialog__viewport is-bare",
     initialFocus: (dialog) => dialog.querySelector<HTMLAnchorElement>("a[href]"),
   });

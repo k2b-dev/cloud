@@ -50,7 +50,7 @@ beforeAll(async () => {
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import ShellRuntime from "./ShellRuntime.island";
-render(() => createComponent(ShellRuntime, { browserSession: window.__browserSession }), document.createElement("div"));
+render(() => createComponent(ShellRuntime, { browserSession: window.__browserSession, privacy: { timerSeconds: 0, name: "Cloud" } }), document.createElement("div"));
 `,
     },
     target: "browser",
@@ -89,10 +89,7 @@ render(() => createComponent(ShellRuntime, { browserSession: window.__browserSes
       if (!response.headers.get("content-type")?.includes("text/html")) return response;
       const markup = (await response.text())
         .replace(/<script type="module"[^>]*>[^<]*solid-island[^<]*<\/script>/g, "")
-        .replace(
-          "</head>",
-          `<style>${css}</style><style>*,*::before,*::after{transition:none!important;animation:none!important}</style></head>`,
-        )
+        .replace("</head>", `<style>${css}</style></head>`)
         .replace("</body>", `<script src="/shell-runtime.js"></script></body>`);
       return new Response(markup, { headers: { "content-type": "text/html; charset=utf-8" } });
     },
@@ -149,6 +146,108 @@ const forward = async (ms: number, page: Page) => {
   await sync(page);
 };
 const warning = (page: Page) => page.getByRole("alertdialog", { name: "You will be signed out soon" });
+
+for (const width of [1440, 390]) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`the session warning stays blue over an AI page at ${width}px (${theme})`, async () => {
+      const context = await browser.newContext({ viewport: { width, height: 900 }, locale: "en", timezoneId: "UTC" });
+      try {
+        const page = await openTab(context, 75);
+        await page.evaluate((theme) => {
+          document.body.dataset.k2bPrimary = "ai";
+          document.body.dataset.theme = theme;
+          document.querySelector("textarea")?.focus();
+        }, theme);
+        await forward(16_000, page);
+        await warning(page).waitFor();
+        expect(await warning(page).getAttribute("data-k2b-primary")).toBe("blue");
+        expect(
+          await warning(page)
+            .locator("[data-cloud-idle-continue]")
+            .evaluate((button) => getComputedStyle(button).backgroundColor),
+        ).toBe(theme === "light" ? "rgb(29, 78, 216)" : "rgb(37, 99, 235)");
+      } finally {
+        await context.close();
+      }
+    });
+  }
+}
+
+test("countdown text keeps the privacy cover and dialog backdrop stable across ticks", async () => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "en", timezoneId: "UTC" });
+  try {
+    const page = await openTab(context, 75);
+    await page.waitForFunction(() => document.querySelector('[data-cloud-privacy="keep"][aria-live]'));
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("cloud.privacy.request", { detail: { action: "on" } })));
+    await page.waitForFunction(() => document.documentElement.dataset.cloudPrivacy === "on");
+    await forward(16_000, page);
+    await warning(page).waitFor();
+    await page.evaluate(() => {
+      for (const animation of document.getAnimations().filter((animation) => animation.timeline === document.timeline)) animation.finish();
+    });
+    const probe = await page.evaluateHandle(() => {
+      const dialog = document.querySelector<HTMLDialogElement>("dialog[open]")!;
+      const covered = Array.from(document.querySelectorAll<HTMLElement>("[data-cloud-privacy-covered]"));
+      const changes: string[] = [];
+      const motion: string[] = [];
+      const observer = new MutationObserver((records) => {
+        for (const record of records) {
+          if (record.target === dialog || (record.target instanceof HTMLElement && covered.includes(record.target))) {
+            changes.push(record.attributeName!);
+          }
+        }
+      });
+      observer.observe(document.body, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-cloud-privacy-covered", "inert", "open"],
+      });
+      const started = (event: Event) => {
+        const pseudo = event instanceof TransitionEvent || event instanceof AnimationEvent ? event.pseudoElement : "";
+        motion.push(`${event.type}:${pseudo}`);
+      };
+      for (const type of ["transitionrun", "animationstart"]) document.addEventListener(type, started, true);
+      return {
+        read: () => ({
+          changes,
+          motion,
+          sameDialog: dialog === document.querySelector("dialog[open]"),
+          filters: covered.map((element) => getComputedStyle(element).filter),
+          inert: covered.every((element) => element.inert),
+          backdrop: getComputedStyle(dialog, "::backdrop").backdropFilter,
+          animations: document.getAnimations().filter((animation) => animation.timeline === document.timeline).length,
+        }),
+        stop: () => {
+          observer.disconnect();
+          for (const type of ["transitionrun", "animationstart"]) document.removeEventListener(type, started, true);
+        },
+      };
+    });
+    let previous = await warning(page).textContent();
+    try {
+      for (let tick = 0; tick < 4; tick++) {
+        await page.clock.runFor(1_000);
+        const state = await probe.evaluate((probe) => probe.read());
+        expect(state.filters.length).toBeGreaterThan(0);
+        expect(state.filters.every((filter) => filter === "blur(14px) saturate(0.7)")).toBe(true);
+        expect(state.inert).toBe(true);
+        expect(state.sameDialog).toBe(true);
+        expect(state.backdrop).toBe("blur(8px)");
+        expect(state.animations).toBe(0);
+        expect(state.changes).toEqual([]);
+        expect(state.motion).toEqual([]);
+        const text = await warning(page).textContent();
+        expect(text).not.toBe(previous);
+        previous = text;
+      }
+    } finally {
+      await probe.evaluate((probe) => probe.stop());
+      await probe.dispose();
+    }
+  } finally {
+    await context.close();
+  }
+});
 /** The next message the tabs exchange, heard in `page`; a tab announces a new deadline once it has applied it. */
 const nextMessage = (page: Page) =>
   page.evaluate(

@@ -1,24 +1,61 @@
 import { type CompactFn, estimateTokens, type Message, type Provider, type ProviderRequest, type Tool } from "@k2b/nessi";
-import type { AiTurnPolicyToolCall } from "./turn-policy";
-import type { AiCodeAuthoringStop } from "./types";
+import { CORE_SETTINGS } from "../services/settings/core-settings";
+import { PROVIDER_TIMEOUTS } from "./provider";
+import { AiTurnFailure, AiTurnInferenceLimit } from "./turn-failure";
+import { AI_MODEL_REPAIR_TURNS, type AiTurnPolicyToolCall } from "./turn-policy";
+import type { AiAutomationTurnStop, AiChatTurnRunConfig, AiCodeAuthoringStop } from "./types";
 
+const authoringModelCalls =
+  ((CORE_SETTINGS["ai.turn_timeout_minutes"].default * 60_000) / PROVIDER_TIMEOUTS.firstByteMs) * (1 + AI_MODEL_REPAIR_TURNS);
 /**
- * Authoring has no F7 attempt allowance: F7 covers AI invoked BY saved Code.
- * Coordinator-confirmed operational allocation (#3323): four 128k request
- * windows = 512k input per interactive turn. A representative request gets a
- * quarter-window (32k), hence 512k / 32k = 16 provider attempts, including
- * retries and compaction. Reserve half a window (64k) for unknown usage and
- * compaction admission. These are operational allocations, not model limits.
- * This independent safety budget also covers free/unpriced models; ordinary
- * Assistant cost admission still applies to every actual provider attempt.
+ * Authoring is paid through ordinary Assistant cost admission, not saved Code's
+ * F7 budget. Only an effective finite cost allowance replaces the token cap.
+ *
+ * Loop backstop: the registry's default 30-minute turn contains 30 provider
+ * first-byte timeout windows (PROVIDER_TIMEOUTS.firstByteMs = 60s). Allocate
+ * one normal call plus the existing two malformed-call repair attempts per
+ * window: 30 * 3 = 90 attempts, including retries and compaction. This is a
+ * capacity allocation, not an assumption that every call takes one minute.
+ * Without an effective cost allowance, use half-reference-window inputs (64k, the
+ * existing unknown-usage/compaction reserve): 90 * 64k = 5.76M tokens.
+ * Fully submitted drafts permit one additional tool-free closing attempt,
+ * subject to cost admission or the remaining token allowance.
  */
 export const CODE_AUTHORING_TURN_BUDGET = {
-  inputTokens: 4 * 128_000,
+  inputTokens: authoringModelCalls * (128_000 / 2),
   unknownInputTokens: 128_000 / 2,
-  modelCalls: (4 * 128_000) / (128_000 / 4),
+  modelCalls: authoringModelCalls,
   // Initial failure plus the same two repair attempts allowed for malformed model calls.
-  identicalErrorRetries: 2,
+  identicalErrorRetries: AI_MODEL_REPAIR_TURNS,
 } as const;
+
+/** Allocation for a turn that a person did not start (automation, chat chain).
+ * Measured on 16.11.2026 with the R1 default model: 20 morning briefings in
+ * fresh chats used 101k input tokens (median), 173k (p95) and 178k (max) over
+ * 6 (median) to 9 model calls; one call returned at most 2.8k and one turn at
+ * most 5.1k output tokens. A one-sentence number post costs one call and reads
+ * the chat history (57k before, 10k after compaction). The input and call
+ * allowances cover every measured briefing; the output caps give twice the
+ * measured maximum. Chat calls, provider retries and compaction share it.
+ */
+export const AUTOMATION_TURN_BUDGET = {
+  inputTokens: 192_000,
+  modelCalls: 12,
+  /** Ceiling for a single model call, sent to the provider. */
+  maxOutputTokens: 4096,
+  /** Ceiling for all calls of the turn together. */
+  outputTokens: 12_000,
+  /** One representative call: reserved for an input estimate that undershoots on the last call. */
+  reserveInputTokens: 32_000,
+  /** Charged per attempt that reports no usage, when the model's context window is unknown. */
+  unknownInputTokens: 64_000,
+  /** Automatic turns compact a chat history above this size; person turns keep the model's fill threshold. */
+  compactAboveTokens: 32_000,
+} as const;
+
+/** Missing triggers retain legacy/person behavior; review revisions use authoring's allocation. */
+export const isAutomaticAiChatTurn = (config: Pick<AiChatTurnRunConfig, "turnTrigger" | "codeReview">): boolean =>
+  !config.codeReview && config.turnTrigger !== undefined && config.turnTrigger.kind !== "person";
 
 const authoringNames = new Set([
   "code_init",
@@ -116,10 +153,21 @@ export function createCodeAuthoringTurnBudget(input: {
   priorCalls: { calls: number; inputTokens: number };
   finishedToolCalls: readonly AiTurnPolicyToolCall[];
   selected: boolean;
-  onStop?: (reason: "model_calls" | "input_tokens" | "repeated_error") => void;
+  /** Cost admission enforces a finite allowance for the executed model and subject, without bypass. */
+  billable?: boolean;
+  /** Only an explicit non-person trigger uses the automatic allocation. */
+  nonPerson?: boolean;
+  /** Priced Code uses the model window for attempts with unknown input usage. */
+  inputTokenCeiling?: number;
+  onStop?: (reason: "model_calls" | "input_tokens" | "output_tokens" | "repeated_error") => void;
 }) {
-  let active = input.selected;
+  let authoring = input.selected;
+  const active = () => input.nonPerson || authoring;
+  const allocation = input.nonPerson ? AUTOMATION_TURN_BUDGET : CODE_AUTHORING_TURN_BUDGET;
   let stopped: AiCodeAuthoringStop | null = null;
+  let closingCallUsed = false;
+  let closingAnswered = false;
+  let automationStop: AiAutomationTurnStop | null = null;
   const receipts = new Map<string | number, AiTurnPolicyToolCall>();
   const progress = () => {
     let completedSteps = 0;
@@ -175,8 +223,8 @@ export function createCodeAuthoringTurnBudget(input: {
     // supersedes the wrapper's provisional success, for the stop snapshot.
     receipts.set(call.callId ?? receipts.size, call);
     if (call.callId && seenCalls.has(call.callId)) return;
-    if (authoringNames.has(call.name) || (call.name === "load_skill" && record(call.result)?.name === "code-authoring")) active = true;
-    if (!active) return;
+    if (authoringNames.has(call.name) || (call.name === "load_skill" && record(call.result)?.name === "code-authoring")) authoring = true;
+    if (!authoring) return;
     const keys = failureKeys(call);
     // Output validation follows the tool wrapper. A provisional success must
     // not hide a later failed result from nessi for that same call ID.
@@ -185,27 +233,30 @@ export function createCodeAuthoringTurnBudget(input: {
   };
   for (const call of input.finishedToolCalls) noteToolCall(call);
   const stopReason = (estimate: number) =>
-    [...errors.values()].some((count) => count > CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries)
+    authoring && [...errors.values()].some((count) => count > CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries)
       ? "repeated_error"
-      : calls >= CODE_AUTHORING_TURN_BUDGET.modelCalls
+      : calls >= allocation.modelCalls
         ? "model_calls"
-        : inputTokens + estimate > CODE_AUTHORING_TURN_BUDGET.inputTokens
+        : (input.nonPerson || !input.billable) && inputTokens + estimate > allocation.inputTokens
           ? "input_tokens"
           : null;
   return {
     noteToolCall,
-    stopped: () => stopped,
+    // Keep this at the accessor so every stop path, including inference admission,
+    // preserves a receipt unless the one tool-free closing call actually answered.
+    stopped: () => (stopped && !(stopped.drafts > 0 && stopped.unsubmitted === 0 && closingAnswered) ? stopped : null),
+    automationStopped: () => automationStop,
     // Compaction's source is bounded to 60k characters; a half-window reserves
     // room for that source, its instructions, and the next chat admission.
     // Never let a locally generated stop become a persisted conversation summary.
     compact:
       (compact: CompactFn): CompactFn =>
       (context) => {
-        if (active && stopReason(CODE_AUTHORING_TURN_BUDGET.unknownInputTokens)) return null;
+        if (active() && stopReason(allocation.unknownInputTokens)) return null;
         // Large-window models may reach the turn allowance before their normal
         // fill threshold. Compact history early so a later turn can continue.
-        const largeHistory =
-          active && estimateTokens(context.entries.map((entry) => entry.message)) > CODE_AUTHORING_TURN_BUDGET.unknownInputTokens;
+        const threshold = input.nonPerson ? AUTOMATION_TURN_BUDGET.compactAboveTokens : allocation.unknownInputTokens;
+        const largeHistory = active() && estimateTokens(context.entries.map((entry) => entry.message)) > threshold;
         return compact(largeHistory ? { ...context, fillRatio: Math.max(1, context.fillRatio ?? 0) } : context);
       },
     tools: (tools: Tool[]): Tool[] =>
@@ -215,7 +266,7 @@ export function createCodeAuthoringTurnBudget(input: {
           : {
               ...tool,
               async execute(args, context) {
-                active = true;
+                authoring = true;
                 if ([...errors.values()].some((count) => count > CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries))
                   return {
                     version: 1,
@@ -234,38 +285,89 @@ export function createCodeAuthoringTurnBudget(input: {
     wrap: (provider: Provider, purpose: "chat" | "compaction" = "chat"): Provider => ({
       ...provider,
       async *stream(request) {
-        const prepared = active ? { ...request, messages: projectCodeAuthoringContext(request.messages) } : request;
-        const estimated = codeAuthoringInputTokens(prepared);
-        const reason = active ? stopReason(estimated) : null;
+        let prepared = authoring ? { ...request, messages: projectCodeAuthoringContext(request.messages) } : request;
+        let estimated = codeAuthoringInputTokens(prepared);
+        const reason = active() ? stopReason(estimated) : null;
+        let closing = false;
         if (reason) {
           // An oversized custom compaction prompt must never persist the stop as a summary.
           if (purpose === "compaction") return;
-          stopped = {
-            reason,
-            ...progress(),
-          };
+          if (input.nonPerson && !authoring && reason !== "repeated_error") automationStop = { reason };
+          else stopped = { reason, ...progress() };
           input.onStop?.(reason);
-          // A local terminal response costs no additional model call and cannot request more tools.
-          // This boundary runs only after all tools of the previous response have settled.
-          // Persist an empty terminal message with structured metadata. The host
-          // renders its localized notice atomically; no streamed prose is replaced.
-          const text = "";
-          yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
-          yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text } };
-          return;
+          const finalRequest = {
+            ...prepared,
+            tools: [],
+            systemPrompt: `${prepared.systemPrompt ?? ""}\nCode authoring has reached its ${reason} safety limit. Do not call any tools. Give one final answer: describe the submitted work and explicitly name any requested work that is unfinished or not yet started. Do not imply that unstarted work is complete.`,
+          };
+          const finalEstimate = codeAuthoringInputTokens(finalRequest);
+          closing = Boolean(
+            authoring &&
+              stopped &&
+              !closingCallUsed &&
+              (!input.nonPerson || calls < allocation.modelCalls) &&
+              stopped.drafts > 0 &&
+              stopped.unsubmitted === 0 &&
+              ((!input.nonPerson && input.billable) || inputTokens + finalEstimate <= allocation.inputTokens),
+          );
+          if (closing) {
+            closingCallUsed = true;
+            prepared = finalRequest;
+            estimated = finalEstimate;
+          } else {
+            // A local terminal response costs no additional model call and cannot request more tools.
+            // This boundary runs only after all tools of the previous response have settled.
+            // Persist an empty terminal message with structured metadata. The host
+            // renders its localized notice atomically; no streamed prose is replaced.
+            const text = "";
+            yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
+            yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text } };
+            return;
+          }
         }
         calls++;
         // Reserve before dispatch, including retries and providers that omit usage.
         inputTokens += estimated;
         let reported: number | undefined;
+        let answered = false;
         try {
           for await (const event of provider.stream(prepared)) {
+            if (
+              closing &&
+              ((event.type === "block_start" && event.kind === "tool_call") ||
+                (event.type === "block_end" && event.block.type === "tool_call"))
+            )
+              throw new AiTurnFailure("step_limit", "The model did not produce a final answer without tools.");
+            if (closing && event.type === "issue" && event.issue.kind === "provider_error")
+              throw new AiTurnFailure("model_unavailable", "The model could not produce the closing answer.");
+            if (event.type === "block_end" && event.block.type === "text" && event.block.text.trim()) answered = true;
             if (event.type === "usage" && Number.isSafeInteger(event.usage.input) && event.usage.input >= 0) reported = event.usage.input;
             yield event;
           }
+          if (closing) {
+            closingAnswered = answered;
+            if (!answered) {
+              yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
+              yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text: "" } };
+            }
+          }
+        } catch (error) {
+          if (prepared.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+          if (!closing) {
+            if (!(error instanceof AiTurnInferenceLimit) || !input.nonPerson) throw error;
+            if (purpose === "compaction") return;
+            if (authoring) stopped = { reason: error.reason, ...progress() };
+            else automationStop = { reason: error.reason };
+            input.onStop?.(error.reason);
+          }
+          // Without a terminal assistant block, nessi closes an unfinished turn
+          // as failed and the store never gets a message carrying the pause.
+          yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
+          yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text: "" } };
+          return;
         } finally {
           // Snapshots replace rather than add. Keep the estimate as a floor for missing/zero usage.
-          inputTokens += Math.max(estimated, reported ?? estimated) - estimated;
+          inputTokens += Math.max(estimated, reported && reported > 0 ? reported : (input.inputTokenCeiling ?? estimated)) - estimated;
         }
       },
     }),
