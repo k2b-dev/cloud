@@ -32,7 +32,7 @@ window.openSheet = (adaptive = false, detents = false) => void dialogCore.open((
   } }),
 ]; } }), adaptive ? bottomSheetAdaptiveOptions : bottomSheetOptions);
 window.openForm = (fixed = false, top = false, previewMode) => void dialogCore.open((close, context) => {
-  window.placeAt = (x, y) => context.setPosition(x === null ? null : { x, y });
+  window.placeAt = (x, y) => context.setPosition(typeof x === "object" ? x : { x, y });
   window.setModal = context.setModal;
   const [saving, setSaving] = createSignal(false);
   window.setSaving = setSaving;
@@ -89,7 +89,7 @@ type HeightWindow = Window & {
   openPicker: () => void;
   openForm: (fixed?: boolean, top?: boolean, previewMode?: "flow" | "overlay") => void;
   openSheet: (adaptive?: boolean, detents?: boolean) => void;
-  placeAt: (x: number | null, y?: number) => void;
+  placeAt: (x: number | null | { x: number; y: number }, y?: number) => void;
   setModal: (modal: boolean) => void;
   setSaving: (saving: boolean) => void;
   addNotice: (lines?: number) => void;
@@ -1149,27 +1149,34 @@ describe(`${browserName} the frame follows its content`, () => {
       }
     });
 
-  test("focused loading content takes its natural smaller height without a fold", async () => {
-    const page = await load();
-    try {
-      await watch(page, "add", 8);
-      const result = await page.evaluate(async () => {
-        const motion = window as unknown as HeightWindow;
-        document.querySelector<HTMLInputElement>("[data-content] input")!.focus();
-        const dialog = document.querySelector("dialog")!;
-        const before = dialog.offsetHeight;
-        document.querySelector("[data-content]")!.setAttribute("aria-busy", "true");
-        motion.removeNotices();
-        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
-        return { before, after: dialog.offsetHeight, folding: dialog.hasAttribute("data-k2b-frame-motion") };
-      });
-      expect(result.folding).toBe(false);
-      expect(result.before - result.after).toBeCloseTo(160, 0);
-      await settled(page);
-    } finally {
-      await page.context().close();
-    }
-  });
+  for (const pressed of [false, true])
+    test(`loading content takes its smaller natural height with text focus or a pressed footer (${pressed})`, async () => {
+      const page = await load();
+      try {
+        await watch(page, "add", 8);
+        // settled: loading takes its natural height even while a pointer defers an ordinary focusout fold.
+        const result = await page.evaluate(async (pressed) => {
+          const motion = window as unknown as HeightWindow;
+          document.querySelector<HTMLInputElement>("[data-content] input")!.focus();
+          const dialog = document.querySelector("dialog")!;
+          if (pressed) {
+            const save = dialog.querySelector<HTMLButtonElement>(".k2b-panel-dialog__footer button")!;
+            save.dispatchEvent(new PointerEvent("pointerdown", { pointerId: 9, bubbles: true }));
+            save.focus();
+          }
+          const before = dialog.offsetHeight;
+          document.querySelector("[data-content]")!.setAttribute("aria-busy", "true");
+          motion.removeNotices();
+          for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+          return { before, after: dialog.offsetHeight, folding: dialog.hasAttribute("data-k2b-frame-motion") };
+        }, pressed);
+        expect(result.folding).toBe(false);
+        expect(result.before - result.after).toBeCloseTo(160, 0);
+        await settled(page);
+      } finally {
+        await page.context().close();
+      }
+    });
 
   test("pinch zoom geometry is ignored, including the next content measurement", async () => {
     const page = await load();
@@ -1247,8 +1254,8 @@ describe(`${browserName} the frame follows its content`, () => {
         animation.play();
         viewport.dispatchEvent(new Event("resize"));
         for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
-        const fold = dialog.getAnimations().find((item) => item.effect instanceof KeyframeEffect && item.effect.target === dialog)!;
-        fold.finish();
+        const fold = dialog.getAnimations().find((item) => item.effect instanceof KeyframeEffect && item.effect.target === dialog);
+        fold?.finish();
         await new Promise(requestAnimationFrame);
         return { follows, bottom: dialog.getBoundingClientRect().bottom };
       });
@@ -1505,6 +1512,49 @@ describe(`${browserName} the frame follows its content`, () => {
       });
       expect(result.top).toBe("");
       expect(result.bottom).toBeCloseTo(844, 0);
+    } finally {
+      await page.context().close();
+    }
+  });
+  test("removing the last stretched text root also signals the empty body's natural size", async () => {
+    const page = await (await browser.newContext(desktop)).newPage();
+    try {
+      await page.setContent(`<html><head><style>${css}</style></head><body class="k2b-ui"></body></html>`);
+      await page.addScriptTag({ content: script });
+      await page.evaluate(() => {
+        (window as unknown as HeightWindow).openForm();
+        const content = document.querySelector<HTMLElement>("[data-content]")!;
+        content.style.cssText = "display:flex;flex-direction:column;flex:1 1 auto";
+        content.textContent = "Wrapping text without an element child. ".repeat(200);
+      });
+      await page.waitForSelector("[data-k2b-dialog-live]", { state: "attached" });
+      await settled(page);
+      const before = await page.locator("dialog").evaluate((dialog) => dialog.offsetHeight);
+      await page.locator("[data-content]").evaluate((content) => content.remove());
+      await settled(page);
+      expect(await page.locator("dialog").evaluate((dialog) => dialog.offsetHeight)).toBeLessThan(before - 100);
+    } finally {
+      await page.context().close();
+    }
+  });
+  test("a changed reused position object still wins over a running fold", async () => {
+    const page = await load();
+    try {
+      // settled: the held fold must stop for changed coordinates even when the caller reuses its object.
+      const result = await page.evaluate(async () => {
+        const motion = window as unknown as HeightWindow;
+        const point = { x: 90, y: 120 };
+        motion.placeAt(point);
+        motion.holdMotion();
+        motion.addNotice();
+        for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+        const dialog = document.querySelector("dialog")!;
+        const fold = dialog.getAnimations()[0]!;
+        point.x = 130;
+        motion.placeAt(point);
+        return { left: dialog.style.left, state: fold.playState };
+      });
+      expect(result).toEqual({ left: "130px", state: "idle" });
     } finally {
       await page.context().close();
     }

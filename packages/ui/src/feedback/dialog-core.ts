@@ -48,7 +48,7 @@ export type DialogRender<T> = (
     dialog: HTMLDialogElement;
     /** Switch this entry between a modal and a modeless window without remounting. */
     setModal: (modal: boolean) => void;
-    /** Set viewport coordinates, or restore the panel stylesheet position with null. */
+    /** Set viewport coordinates, or restore stylesheet positioning with null. Repeating the current value preserves running motion. */
     setPosition: (position: { x: number; y: number } | null) => void;
     /** Route Escape/backdrop through the same guarded handler as Cancel and X. */
     setDismissHandler: (handler: () => void | Promise<void>) => void;
@@ -762,7 +762,7 @@ export const createDialogCore = () => {
                       state.motion?.position();
                       dialog.style.inset = "";
                     }
-                    entry.position = position;
+                    entry.position = position ? { ...position } : null;
                     applyPresentation(entry);
                   },
                   requestDismiss: () => requestDismiss(entry),

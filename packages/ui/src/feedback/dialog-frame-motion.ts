@@ -226,7 +226,9 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   };
 
   const fold = () => {
-    if (!level || started || frameKind === "morph" || (focusFold && pointers.size)) return;
+    if (!level || started || frameKind === "morph") return;
+    const loading = busy || loadingChange || isBusy();
+    if (focusFold && pointers.size && firstRest && !initialMeasure && !loading) return;
     focusFold = false;
     // A child already animating its height owns that motion. Measure its final height once, rather than folding
     // the frame towards intermediate samples and then folding it a second time.
@@ -262,7 +264,6 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     }
     const added = arrived;
     arrived = new Set();
-    const loading = busy || loadingChange || isBusy();
     busy = isBusy();
     loadingChange = false;
     const wasResize = resized;
@@ -420,11 +421,11 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
   const changes =
     typeof MutationObserver === "function"
       ? new MutationObserver((records) => {
-          // Once per batch, keep only live observation targets. Losing a natural root (including the last
+          // Once per batch, keep only live observation targets. Losing an observed root (including the last
           // body child) is itself a size signal; the held shells cannot report that removal for us.
           for (const target of watched)
             if (!target.isConnected || !level?.contains(target)) {
-              if (!shells.has(target)) changed();
+              changed();
               sizes?.unobserve(target);
               watched.delete(target);
             }
