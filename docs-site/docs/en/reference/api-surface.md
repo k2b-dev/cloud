@@ -271,7 +271,10 @@ and `accountCategoryLabel`. See
 [Account types](/en/docs/operations/account-categories) for their use.
 
 The platform-owned `@k2b/cloud/code` entry exports `CodeCheckResultSchema`
-and the remote form of `CodeCheckHost`. Core consumers use
+and the remote form of `CodeCheckHost`. It also exports `CODE_BOUND_CHAT_ID`
+(`"bound-chat"`), the personal SDK chat handle's reserved destination; see
+[Write to Gustav](/en/docs/platform/code-sdk#write-to-your-gustav-chat).
+Core consumers use
 `createCodeCheckRequest`, `createRunnerCodeCheckHost`, and
 `createRunnerCodeTestingHost` from `packages/core/src/code/index.ts`; see
 [Code checker](/en/docs/platform/code-checker#use-the-core-runner-host) and

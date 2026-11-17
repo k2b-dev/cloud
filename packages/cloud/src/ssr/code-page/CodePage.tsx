@@ -6,6 +6,7 @@ import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { CodeActivityReadModelSchema } from "../../contracts/code-read-model";
 import { openActivationDialog, switchOnReady } from "./CodeActivation";
+import { missingCodeChat } from "./CodeChatBinding";
 import { type CodeLive, type CodeLiveFeed, createCodeLive } from "./CodeLiveStrip";
 import { CodeLede, CodeOverview, lastFinishedRun } from "./CodeOverview";
 import { copyHandle } from "./CodeRefusalNotice";
@@ -173,7 +174,10 @@ const bigState = (state: CodePageReady, t: CodePageMessages): { tone: Tone; icon
   if (state.code.state === "paused") return { tone: "warn", icon: "ti ti-player-pause", label: t.statePaused };
   if (state.code.state === "deleting") return { tone: "muted", icon: "ti ti-trash", label: t.stateDeleting };
   if (state.code.state !== "active" || !state.active) return { tone: "muted", icon: "ti ti-circle-dashed", label: t.stateOff };
-  if (lastFinishedRun(state)?.state === "failed") return { tone: "danger", icon: "ti ti-alert-circle", label: t.stateNeedsYou };
+  // A failed run, or a chat that personal Code writes to but no longer has: it writes nothing until its owner acts.
+  // Someone who cannot choose a chat is not needed for it.
+  if (lastFinishedRun(state)?.state === "failed" || (missingCodeChat(state) && state.chatBinding?.canChange))
+    return { tone: "danger", icon: "ti ti-alert-circle", label: t.stateNeedsYou };
   return { tone: "ok", icon: "ti ti-circle-check", label: t.stateOn };
 };
 

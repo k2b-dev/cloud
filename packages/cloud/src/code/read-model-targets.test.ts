@@ -90,6 +90,54 @@ test("denial, failure, missing readers and malformed slots never create a name o
   expect(calls).toBe(0);
 });
 
+test.each(["de", "en"])("bound chat names come only from the viewer's canonical reader in %s", async (locale) => {
+  const input = model(locale);
+  const text = locale === "de" ? "In einen Chat schreiben, Gustav antwortet" : "Write to a chat, Gustav answers";
+  const note =
+    locale === "de" ? "KI · mit deinen Rechten, zählt auf dein Kontingent" : "AI · with your rights, counts toward your allowance";
+  input.mayDo.items = [
+    {
+      text,
+      note,
+      target: {
+        ref: { type: "core.ai.chat", id: "cHt234" },
+        text: locale === "de" ? "In den Chat „{name}“ schreiben, Gustav antwortet" : "Write to the chat “{name}”, Gustav answers",
+      },
+    },
+  ];
+  for (const owner of [true, false]) {
+    const calls: unknown[] = [];
+    const invoke: Parameters<typeof nameCodeGrantTargets>[1] = async (invocation, schema) => {
+      calls.push(invocation);
+      return owner
+        ? {
+            ok: true,
+            data: {
+              data: schema.parse({ view: { title: "Private report", permission: "write" } }),
+              links: [{ rel: "open", href: "/app/assistant?conversation=cHt234" }],
+            },
+          }
+        : { ok: false, error: { code: "NOT_FOUND", message: "Chat not found", status: 404 } };
+    };
+    const result = await nameCodeGrantTargets(input, invoke, (type) => (type === "core.ai.chat" ? "ai.chat.read" : null));
+    expect(calls).toEqual([{ appId: "core", capabilityId: "ai.chat.read", kind: "query", input: { id: "cHt234" } }]);
+    expect(result.mayDo.items[0]?.note).toBe(note);
+    if (owner) {
+      expect(result.mayDo.items[0]).toMatchObject({
+        text:
+          locale === "de"
+            ? "In den Chat „Private report“ schreiben, Gustav antwortet"
+            : "Write to the chat “Private report”, Gustav answers",
+        href: "/app/assistant?conversation=cHt234",
+      });
+    } else {
+      expect(result.mayDo.items[0]?.text).toBe(text);
+      expect(result.mayDo.items[0]).not.toHaveProperty("href");
+      expect(JSON.stringify(result)).not.toContain("Private report");
+    }
+  }
+});
+
 test("grant readers deduplicate exact refs and keep the 50-row bound", async () => {
   const input = model();
   input.mayDo.items = Array.from({ length: 50 }, () => ({ ...input.mayDo.items[1]! }));

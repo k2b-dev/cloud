@@ -1,4 +1,4 @@
-import type { CodeTestLimits } from "@k2b/cloud/code";
+import { CODE_BOUND_CHAT_ID, type CodeTestLimits } from "@k2b/cloud/code";
 import { describeCodeTiming } from "@k2b/cloud/code/schedule";
 import {
   CODE_READ_MODEL_LIST_LIMIT,
@@ -96,6 +96,7 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
 
 /** Only checked facts enter this projection. Model titles and explanations are deliberately absent from facts(). */
 export function presentCodeVersion(input: {
+  personal: boolean;
   versionId: string;
   number: number;
   submittedAt: string;
@@ -108,6 +109,7 @@ export function presentCodeVersion(input: {
   locale: string;
   limits: Pick<CodeTestLimits, "cases">;
   policy?: Partial<Record<CodePolicyRow, CodePolicyValue>>;
+  boundChat?: { type: string; id: string } | null;
 }): CodeVersionReadModel {
   const { t, locale } = codeReadModelMessages.resolve([input.locale]);
   const { manifest, names } = input;
@@ -123,8 +125,24 @@ export function presentCodeVersion(input: {
   const restrictedText = !denied && targets.some((ref) => names.target(ref).unavailable) ? t.unresolvedDescription : t.restricted;
   const mayDo = [
     ...new Map(
-      manifest.permissions.map(({ operation, target }) => {
+      manifest.permissions.map(({ operation, target }): [string, CodeVersionReadModel["mayDo"]["items"][number]] => {
         const action = names.operation(operation);
+        if (input.personal && operation === "core.ai.chat.send" && target?.type === "core.ai.chat" && target.id === null)
+          return [
+            stable({ operation, target }),
+            {
+              text: t.chatSend,
+              note: t.chatSendNote,
+              // Without a readable bound chat the row still carries the SDK's own handle, so the page finds the chat
+              // row and offers its owner to choose one; no reader names that handle, so the safe sentence stays.
+              target: {
+                ref: input.boundChat ?? { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID },
+                text: t.chatSendNamed({ name: "{name}" }),
+              },
+              ...(action.app ? { app: action.app } : {}),
+              ...(action.icon ? { icon: action.icon } : {}),
+            },
+          ];
         const place = names.target(target ?? { type: "app", id: operation.split(".")[0]! });
         const deferredRef =
           place.unavailable && target && target.id !== null && !/[{}]/.test(action.title) ? { type: target.type, id: target.id } : null;

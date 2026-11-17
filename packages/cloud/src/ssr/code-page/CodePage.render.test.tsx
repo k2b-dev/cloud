@@ -1347,6 +1347,178 @@ test("?tab=code renders the code tab on the server", () => {
   expect(markup).toMatch(/class="k2b-code-diff__line"/);
 });
 
+// Automations v5, 4.4: personal Code names its chat in "What it may do"; only the owner may choose another one.
+describe("the chat of personal Code", () => {
+  test("names the chat and offers the owner another one", () => {
+    const page = text("personal");
+    expect(page).toContain("In den Chat „Wochenbericht“ schreiben, Gustav antwortet");
+    expect(page).toContain("KI · mit deinen Rechten, zählt auf dein Kontingent");
+    expect(page).toContain("Anderen Chat wählen");
+    expect(page).not.toContain("Chat wiederherstellen");
+  });
+
+  test.each(["de", "en"])("an unused archived binding leaves the page clear (%s)", (locale) => {
+    for (const kind of ["page", "Chat app", "explicit Gustav chat"]) {
+      const data = codePageFixture("personal-chat-missing", locale);
+      if (data.state.kind !== "ready" || !data.state.words?.current) throw new Error("Expected personal fixture");
+      const words = data.state.words.current;
+      words.notices = { ...words.notices, items: words.notices.items.filter((notice) => notice.code !== "chat_missing") };
+      words.mayDo = {
+        ...words.mayDo,
+        items:
+          kind === "page"
+            ? []
+            : [
+                {
+                  text: kind,
+                  ...(kind === "explicit Gustav chat" ? { target: { ref: { type: "core.ai.chat", id: "Other433" }, text: kind } } : {}),
+                },
+              ],
+      };
+      const page = renderedText(
+        renderMarkup(() =>
+          createComponent(LocaleProvider, {
+            locale,
+            get children() {
+              return createComponent(CodePage, { data });
+            },
+          }),
+        ),
+        " ",
+      );
+      expect(page).not.toContain(locale === "de" ? "ist archiviert." : "is archived.");
+      expect(page).not.toContain(locale === "de" ? "Eingeschaltet, braucht dich" : "On, needs you");
+      expect(page).not.toContain(locale === "de" ? "Chat wiederherstellen" : "Restore chat");
+    }
+  });
+
+  test("a missing chat says so above everything and offers to choose or restore one", () => {
+    const page = text("personal-chat-missing");
+    expect(page).toContain("Der Chat „Wochenbericht“ ist archiviert.");
+    expect(page).toContain("Die Automation schreibt nichts, bis du einen Chat wählst oder diesen wiederherstellst.");
+    expect(page).toContain("Chat wählen …");
+    expect(page).toContain("Chat wiederherstellen");
+    expect(page).toContain("In einen Chat schreiben, Gustav antwortet");
+    expect(page.indexOf("Der Chat „Wochenbericht“ ist archiviert.")).toBeLessThan(page.indexOf("Was sie darf"));
+    // It writes nothing until the person acts, so its state needs them, like a failed run (v5 a-code/chat-fehlt).
+    expect(page).toContain("Eingeschaltet, braucht dich");
+    expect(text("personal")).not.toContain("Eingeschaltet, braucht dich");
+  });
+
+  test("someone who does not own it learns who can choose a chat, without controls or the chat's name", () => {
+    for (const state of ["personal", "personal-chat-missing"] as const) {
+      const data = codePageFixture(state);
+      if (data.state.kind !== "ready" || !data.state.chatBinding) throw new Error("Expected a bound personal fixture");
+      data.state.chatBinding = {
+        ...data.state.chatBinding,
+        canChange: false,
+        chat: state === "personal" ? { state: "hidden" } : { state: "unavailable", reason: "archived" },
+      };
+      const page = renderedText(
+        renderMarkup(() =>
+          createComponent(LocaleProvider, {
+            locale: "de",
+            get children() {
+              return createComponent(CodePage, { data });
+            },
+          }),
+        ),
+        " ",
+      );
+      expect(page).not.toContain("Anderen Chat wählen");
+      expect(page).not.toContain("Chat wählen …");
+      expect(page).not.toContain("Chat wiederherstellen");
+      if (state === "personal-chat-missing") {
+        expect(page).toContain("Der Chat dieser Automation fehlt.");
+        expect(page).toContain("Nur die Person, der die Automation gehört, kann einen Chat wählen.");
+      }
+    }
+  });
+});
+
+// `chat_unbound` needs a way out: personal Code that writes to its chat but has none offers its owner to choose one,
+// in the notice and under the chat row, through the same dialog and action at revision 0.
+test("personal Code without a chat offers its owner to choose one", () => {
+  const unbound = (canChange: boolean) => {
+    const data = codePageFixture("personal-chat-missing");
+    if (data.state.kind !== "ready" || !data.state.chatBinding) throw new Error("Expected a bound personal fixture");
+    data.state.chatBinding = { ...data.state.chatBinding, revision: 0, canChange, chat: null };
+    return renderedText(
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale: "de",
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      ),
+      " ",
+    );
+  };
+  const owner = unbound(true);
+  expect(owner).toContain("Diese Automation hat noch keinen Chat.");
+  expect(owner).toContain("Die Automation schreibt nichts, bis du einen Chat wählst.");
+  expect(owner).toContain("Eingeschaltet, braucht dich");
+  // Once in the notice, once under the chat row of "What it may do"; nothing to restore.
+  expect(owner.split("Chat wählen …").length - 1).toBe(2);
+  expect(owner).not.toContain("Anderen Chat wählen");
+  expect(owner).not.toContain("Chat wiederherstellen");
+  expect(owner.indexOf("Diese Automation hat noch keinen Chat.")).toBeLessThan(owner.indexOf("Was sie darf"));
+  const other = unbound(false);
+  expect(other).toContain("Diese Automation hat noch keinen Chat.");
+  expect(other).toContain("Nur die Person, der die Automation gehört, kann einen Chat wählen.");
+  expect(other).not.toContain("Chat wählen …");
+  // Someone who cannot choose a chat is not needed for it.
+  expect(other).not.toContain("Eingeschaltet, braucht dich");
+  // Personal Code that never writes to a chat shows no notice at all.
+  const quiet = codePageFixture("personal-chat-missing");
+  if (quiet.state.kind !== "ready" || !quiet.state.chatBinding || !quiet.state.words?.current) throw new Error("Expected fixture");
+  quiet.state.chatBinding = { ...quiet.state.chatBinding, revision: 0, chat: null };
+  quiet.state.words.current.notices = {
+    ...quiet.state.words.current.notices,
+    items: quiet.state.words.current.notices.items.filter((notice) => notice.code !== "chat_missing"),
+  };
+  quiet.state.words.current.mayDo = {
+    ...quiet.state.words.current.mayDo,
+    items: quiet.state.words.current.mayDo.items.filter((row) => row.target?.ref.type !== "core.ai.chat"),
+  };
+  const page = renderedText(
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data: quiet });
+        },
+      }),
+    ),
+    " ",
+  );
+  expect(page).not.toContain("Diese Automation hat noch keinen Chat.");
+  expect(page).not.toContain("Chat wählen …");
+});
+
+// The chat row never goes quiet: when Core cannot say which chat it is, the row says so with a way to read it again.
+test("a chat binding that could not be read says so at the chat row, without a notice", () => {
+  const data = codePageFixture("personal");
+  if (data.state.kind !== "ready") throw new Error("Expected a ready fixture");
+  data.state.chatBinding = null;
+  const page = renderedText(
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    ),
+    " ",
+  );
+  expect(page).toContain("In welchen Chat sie schreibt, konnte nicht geladen werden.");
+  expect(page).toContain("Erneut versuchen");
+  expect(page).not.toContain("Anderen Chat wählen");
+  expect(page).not.toContain("Eingeschaltet, braucht dich");
+});
+
 // Rundgang 6, Fable 8: a new week without counted effects says so where the two numbers stand, above the latest results.
 test("a week without counted effects says so in place of the numbers", () => {
   const data = codePageFixture("week-start");

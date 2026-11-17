@@ -229,6 +229,8 @@ type Scenario = {
   activation?: { answered: Promise<void>; status: { state: string; failure: { reason: string } | null } };
   /** One personal Code with the shared Code page. */
   detail?: boolean;
+  /** Which shared fixture that page shows; the overview without one. */
+  detailState?: "personal" | "personal-chat-missing";
   /** Waiting for you, with one chat question and Code of a place that needs the person. */
   waiting?: boolean;
   /** One card of My apps has a title and a schedule longer than one line. */
@@ -315,7 +317,7 @@ const propsOf = (scenario: Scenario, url: URL) => ({
           today: { runs: 9, failed: 1 },
         }
       : {}),
-    ...(scenario.detail ? { detail: personalCodePage() } : {}),
+    ...(scenario.detail ? { detail: personalCodePage(scenario.detailState) } : {}),
   },
   initialCodeBlock: scenario.panel
     ? {
@@ -583,8 +585,8 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
 };
 
 /** Personal Code on the shared Code page, from the shared fixture with fictional data. */
-const personalCodePage = () => ({
-  ...codePageFixture("overview", "de"),
+const personalCodePage = (state: "overview" | "personal" | "personal-chat-missing" = "overview") => ({
+  ...codePageFixture(state, "de"),
   owner: { kind: "person" as const, ref: null, title: "Wochenbericht Vertrieb", typeTitle: null },
   href: "/app/assistant/code/c_woche1",
 });
@@ -1145,6 +1147,35 @@ describe("Gustav", () => {
       }
     }
   }, 120_000);
+
+  // Automations v5, 4.4: personal Code names the chat it writes to; a missing chat says so above the page with a way out.
+  test("personal Code names its chat, and a missing chat offers its owner to choose or restore one", async () => {
+    for (const view of [desktop, phone]) {
+      for (const detailState of ["personal", "personal-chat-missing"] as const) {
+        for (const theme of view === desktop ? (["light", "dark"] as const) : (["light"] as const)) {
+          const h = await open(view, { detail: true, detailState }, { path: "/app/assistant/code/c_woche1", theme });
+          try {
+            const page = h.page.locator(".cloud-code");
+            await page.getByRole("heading", { level: 1, name: "Wochenbericht Vertrieb" }).waitFor();
+            const may = page.locator(".cloud-code__may");
+            if (detailState === "personal") {
+              await may.getByText("In den Chat „Wochenbericht“ schreiben, Gustav antwortet").waitFor();
+              expect(await may.getByRole("button", { name: "Anderen Chat wählen" }).count()).toBe(1);
+            } else {
+              await page.getByText("Der Chat „Wochenbericht“ ist archiviert.").waitFor();
+              expect(await page.getByRole("button", { name: "Chat wählen …" }).count()).toBeGreaterThan(0);
+              expect(await page.getByRole("button", { name: "Chat wiederherstellen" }).count()).toBe(1);
+            }
+            expect(await h.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+            await shot(h.page, `g3-${detailState}-${view.name}-${theme}`);
+            expect(h.errors).toEqual([]);
+          } finally {
+            await h.close();
+          }
+        }
+      }
+    }
+  }, 180_000);
 
   test("Waiting for you lists chat questions and Code of a place the person administers", async () => {
     for (const view of [desktop, phone]) {

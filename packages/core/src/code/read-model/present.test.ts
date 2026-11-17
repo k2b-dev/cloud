@@ -15,6 +15,7 @@ const names: ReadModelNames = {
 };
 const present = (overrides: Partial<Parameters<typeof presentCodeVersion>[0]> = {}) =>
   presentCodeVersion({
+    personal: false,
     versionId: "00000000-0000-4000-8000-000000000001",
     number: 1,
     submittedAt: "2026-11-14T09:00:00.000Z",
@@ -203,4 +204,45 @@ test("an unavailable static grant carries an independent reader reference and lo
     present({ manifest: dynamic, names: { ...names, target: () => ({ name: "Space", readable: false, unavailable: true }) } }).mayDo
       .items[0],
   ).not.toHaveProperty("target");
+});
+
+test.each(["de", "en"])("bound chat grants defer names and preserve permission comparisons in %s", (locale) => {
+  const dynamic = {
+    ...manifest,
+    permissions: [{ ...manifest.permissions[0]!, operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null } }],
+  };
+  const input = { personal: true, manifest: dynamic, comparison: dynamic, locale, explanation: null };
+  const boundChat = { type: "core.ai.chat", id: "cHt234" };
+  const model = present({ ...input, boundChat });
+  expect(model.mayDo.items).toEqual([
+    {
+      text: locale === "de" ? "In einen Chat schreiben, Gustav antwortet" : "Write to a chat, Gustav answers",
+      note: locale === "de" ? "KI · mit deinen Rechten, zählt auf dein Kontingent" : "AI · with your rights, counts toward your allowance",
+      target: {
+        ref: boundChat,
+        text: locale === "de" ? "In den Chat „{name}“ schreiben, Gustav antwortet" : "Write to the chat “{name}”, Gustav answers",
+      },
+    },
+  ]);
+  expect(CodeVersionReadModelSchema.parse(model)).toEqual(model);
+  expect(model.changes).toEqual(present(input).changes);
+  expect(model.changes.state).toBe("same");
+  const nonPersonal = present({ ...input, personal: false, boundChat });
+  expect(nonPersonal.mayDo.items[0]).not.toHaveProperty("note");
+  expect(nonPersonal.mayDo.items[0]).not.toHaveProperty("target");
+  for (const boundChat of [undefined, null]) {
+    const unbound = present({ ...input, boundChat });
+    expect(unbound.mayDo.items[0]?.text).toBe(model.mayDo.items[0]?.text);
+    // The SDK's own handle marks the chat row for the page; it names no chat.
+    expect(unbound.mayDo.items[0]?.target?.ref).toEqual({ type: "core.ai.chat", id: "bound-chat" });
+  }
+  const literal = present({
+    ...input,
+    boundChat,
+    manifest: {
+      ...dynamic,
+      permissions: [{ ...manifest.permissions[0]!, operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: "Other1" } }],
+    },
+  });
+  expect(JSON.stringify(literal.mayDo)).not.toContain(boundChat.id);
 });

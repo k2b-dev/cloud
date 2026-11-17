@@ -15,6 +15,22 @@ checks every actual call before forwarding it to a capability provider. A
 checked manifest supplies review evidence; it grants no execution authority.
 The provider still resolves the subject's current resource access.
 
+## Resolve the bound personal chat
+
+The personal SDK's `chat` is an ordinary `core.ai.chat` handle with the fixed
+ID `CODE_BOUND_CHAT_ID` (`"bound-chat"`), exported by `@k2b/cloud/code`.
+Calls carry this target through the normal bridge without additional fields. The actual destination never enters the bundle or runner lease.
+
+Core resolves that ID inside Send's review and execution phases, requiring a
+current personal Code run and its owner. No binding returns `chat_unbound`;
+an archived, deleted or no longer owned bound chat returns `chat_unavailable`.
+Both errors have HTTP status 409 and arise during resolution, before queuing. Other callers receive `FORBIDDEN`.
+Literal chat IDs are used directly. If their target is not an own active chat,
+Send returns `NOT_FOUND` (404), keeping missing, archived and foreign targets
+hidden. If a bound chat becomes unavailable after resolution, subsequent chat
+lookups also return `NOT_FOUND`. Normal declaration, mandate, policy, approval,
+authority and chain checks still apply.
+
 ## One-off chat authority
 
 The platform-owned `@k2b/cloud/code/chat-run` export defines the private

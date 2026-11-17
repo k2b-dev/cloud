@@ -1230,11 +1230,11 @@ test("personal scheduled Code generates a summary and posts it into the owner's 
     ],
     { mode: "personal" },
   );
-  const source = `import { app, core, chat } from "@sdk";
+  const source = `import { app, core, _chat } from "@sdk";
 app.schedule({ at: "2026-12-01T09:15:30+01:00", timeZone: "Europe/Berlin", name: "reminder", title: "Send summary" }, async () => {
   const { data: result } = await core.ai.generate({ task: "daily.summary", prompt: "Summarize the supplied notes.", input: { notes: "Delivery received." }, output: { type: "text", maxChars: 1200 } });
   if (typeof result.output !== "object" || result.output === null || !("text" in result.output) || typeof result.output.text !== "string") throw new Error("Unexpected summary output");
-  await chat.message.post({ conversation: "Chat01", body: result.output.text, idempotencyKey: "summary-2026-12-01" });
+  await _chat.message.post({ conversation: "Chat01", body: result.output.text, idempotencyKey: "summary-2026-12-01" });
 });
 export default app;`;
   const checked = await check(source, { sdk, aiOperations: ["core.ai.generate"], limits: { ...CODE_CHECK_LIMITS, checkMs: 60_000 } });
