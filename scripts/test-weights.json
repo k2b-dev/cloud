@@ -504,9 +504,9 @@
     "@k2b/speedtest": 5.3,
     "@k2b/ssr": 33.6,
     "@k2b/ui behavior": 138.6,
-    "@k2b/ui layout-content": 747.1,
-    "@k2b/ui rest": 441,
-    "@k2b/ui styles-inputs-chat": 458.1,
+    "@k2b/ui layout-content": 785.0,
+    "@k2b/ui rest": 492.0,
+    "@k2b/ui styles-inputs-chat": 477.3,
     "@k2b/ui-ssr-fixture": 13.5,
     "workspace root scripts": 57.8,
     "workspace root tests": 8.5

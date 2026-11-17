@@ -65,9 +65,9 @@ export const refreshSuiteWeights = (suites: TestSuite[], previous: Record<string
       .map(([name, seconds]) => [name, Math.round(seconds * 10) / 10] as const),
   );
 
-/** Both the old single integration job and the matrix jobs use the integration table. */
+/** UI test parts share the unit table; historical single jobs and matrix jobs use the same mode. */
 export const jobMode = (name: string): keyof TestWeights | undefined => {
-  const match = /^(unit|webkit|integration)(?: \(\d+\))?$/.exec(name);
+  const match = /^(unit|ui-tests|webkit|integration)(?: \(\d+\))?$/.exec(name);
   return match ? (match[1] === "webkit" ? "browser" : match[1] === "integration" ? "integration" : "unit") : undefined;
 };
 

@@ -5,7 +5,9 @@ import { z } from "zod";
 import { hasIntegrationTarget } from "./fixtures/test-infra-env";
 import {
   behaviorIgnore,
+  behaviorTest,
   discoverTestSuites,
+  listTestFiles,
   parseArgs,
   planShards,
   runTestCommand,
@@ -410,7 +412,7 @@ test("keeps the Mail workflow kernel in Cloud's isolated CI integration suites w
   expect(source.indexOf(mailPreload)).toBeLessThan(source.indexOf('await import("../../../mail/src/'));
 });
 
-for (const mode of ["unit", "webkit", "integration"] as const) {
+for (const mode of ["unit", "webkit", "integration", "ui-tests"] as const) {
   test(`CI ${mode} shards cover the selection exactly once and fit the measured budget`, async () => {
     const matrixJob = z.object({
       "timeout-minutes": z.number(),
@@ -419,7 +421,13 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     });
     const workflow = z
       .object({
-        jobs: z.object({ unit: matrixJob, webkit: matrixJob, integration: matrixJob, gate: z.object({ needs: z.array(z.string()) }) }),
+        jobs: z.object({
+          unit: matrixJob,
+          webkit: matrixJob,
+          integration: matrixJob,
+          "ui-tests": matrixJob,
+          gate: z.object({ needs: z.array(z.string()) }),
+        }),
       })
       .parse(Bun.YAML.parse(await Bun.file(join(workspaceRoot, ".github/workflows/ci.yml")).text()));
     const job = workflow.jobs[mode];
@@ -432,6 +440,7 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     expect(options.integration).toBe(mode === "integration");
     expect(Boolean(options.browser)).toBe(mode === "webkit");
     if (options.integration) expect(options.exclude).toBe("grids");
+    if (mode === "ui-tests") expect(options.filters).toEqual(["packages/ui"]);
     expect(options.shard?.total).toBe(shards.length);
     expect(shards).toEqual(Array.from({ length: shards.length }, (_, index) => index + 1));
     expect(job.strategy["fail-fast"]).toBeFalse();
@@ -444,7 +453,7 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     const names = selected.flat().map((suite) => suite.name);
     expect(names.toSorted()).toEqual(all.map((suite) => suite.name).toSorted());
     expect(new Set(names).size).toBe(all.length);
-    const weights = (await import("./test-weights.json")).default[mode === "webkit" ? "browser" : mode];
+    const weights = (await import("./test-weights.json")).default[mode === "webkit" ? "browser" : mode === "ui-tests" ? "unit" : mode];
     for (const shard of selected) {
       expect(shard.length).toBeGreaterThan(0);
       // WebKit's measured p95 slowdown is 1.61x; reserve its full 2-minute warm-up:
@@ -472,6 +481,48 @@ for (const mode of ["unit", "webkit", "integration"] as const) {
     expect(workflow.jobs.gate.needs).toContain(mode);
   });
 }
+
+test("CI UI test parts preserve every package-test and behavior file exactly once, including the packed-consumer check", async () => {
+  const cwd = join(workspaceRoot, "packages/ui");
+  const files = await listTestFiles(cwd);
+  const { scripts } = z.object({ scripts: z.record(z.string(), z.string()) }).parse(await Bun.file(join(cwd, "package.json")).json());
+  const filesForScript = (script: string): string[] => {
+    const command = script.split(" && ").find((part) => part.startsWith("bun test "));
+    if (!command) throw new Error(`missing bun test command: ${script}`);
+    // These scripts use paths and ignore patterns. Reject other flags rather than silently losing coverage.
+    const args = [...command.matchAll(/'([^']*)'|(\S+)/g)].map((match) => match[1] ?? match[2]!);
+    const paths: string[] = [];
+    const ignores: Bun.Glob[] = [];
+    for (let index = 2; index < args.length; index += 1) {
+      const arg = args[index]!;
+      if (arg === "--path-ignore-patterns") ignores.push(new Bun.Glob(args[++index]!));
+      else {
+        expect(arg.startsWith("-")).toBeFalse();
+        paths.push(arg);
+      }
+    }
+    return files.filter(
+      (file) => paths.some((path) => file === path || file.startsWith(`${path}/`)) && !ignores.some((glob) => glob.match(file)),
+    );
+  };
+  const expected = [...filesForScript(scripts.test!), ...files.filter((file) => behaviorTest.test(file))];
+  const suites = await discoverTestSuites(workspaceRoot, { integration: false, filters: ["packages/ui"] });
+  const selected: string[] = [];
+  let packedChecks = 0;
+  for (const suite of suites) {
+    if (suite.name === "@k2b/ui behavior") {
+      selected.push(...suite.command.filter((arg) => behaviorTest.test(arg)).map((file) => file.slice(cwd.length + 1)));
+      continue;
+    }
+    const script = scripts[suite.command[2]!];
+    if (!script) throw new Error(`missing UI test part: ${suite.name}`);
+    if (script.includes("bun run scripts/check-packed-consumer.ts")) packedChecks += 1;
+    selected.push(...filesForScript(script));
+  }
+  expect(packedChecks).toBe(1);
+  expect(selected.toSorted()).toEqual(expected.toSorted());
+  expect(new Set(selected).size).toBe(expected.length);
+});
 
 test("a shard's time asks for fresh weights before it fails", () => {
   expect(shardTimeNotice("shard 1/5", 14.9, 20)).toBeUndefined();
