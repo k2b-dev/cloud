@@ -76,6 +76,8 @@ type HistoryProps = {
   entries: RecordHistoryEntry[];
   fields: Field[];
   dateConfig?: DateContext;
+  /** Server time for the same history on the server and the first browser render. */
+  now?: string;
   onOpenRecord?: (recordId: string, deleted: boolean) => void;
   /** `wide` for a dialog: the meta line on the right. Defaults to the compact density of the detail panel. */
   density?: ActivityDensity;
@@ -177,6 +179,7 @@ export function RecordHistoryList(props: HistoryProps) {
         density={props.density}
         more={props.more}
         dateConfig={props.dateConfig}
+        now={props.now}
         label={t().history}
       />
     </Show>

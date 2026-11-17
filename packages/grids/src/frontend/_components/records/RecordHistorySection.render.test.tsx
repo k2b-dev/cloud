@@ -32,7 +32,13 @@ const entry = (overrides: Partial<PublicRecordHistoryEntry>): PublicRecordHistor
 const history = [
   entry({ id: "00000000-0000-4000-8000-000000000002", action: "finalized", userDisplayName: null, createdAt: "2026-11-12T15:00:00.000Z" }),
   entry({ diff: { Fld001: { old: "Open", new: "Done" } } }),
-  entry({ id: "00000000-0000-4000-8000-000000000003", action: "created", userId: null, userDisplayName: null, createdAt: "2026-11-12T09:00:00.000Z" }),
+  entry({
+    id: "00000000-0000-4000-8000-000000000003",
+    action: "created",
+    userId: null,
+    userDisplayName: null,
+    createdAt: "2026-11-12T09:00:00.000Z",
+  }),
 ];
 
 const render = (props: Partial<Parameters<typeof RecordHistoryList>[0]> = {}) =>
@@ -62,7 +68,7 @@ describe("Record history", () => {
     expect(plain).toContain("Changed: Status");
     expect(plain).toContain("14:00 · 1 hr. ago · Mira Lang");
     // Without a person: the system or an anonymous actor; a deleted account keeps its own words.
-    expect(plain).toContain("09:00 · 6 hr. ago · System or anonymous");
+    expect(plain).toContain("09:00 · 6 hr. ago · System or anonymous actor");
     expect(plain).toContain("15:00 · 31 min. ago · Deleted user");
     // One fixed icon per action; only a finalized record carries a tone.
     expect(html).toContain('<i class="ti ti-pencil"');
@@ -70,6 +76,19 @@ describe("Record history", () => {
     // The before and after of a field fold out from its row and are not rendered until then.
     expect(html).toMatch(/<button type="button" class="k2b-activity__text-button" aria-expanded="false"/);
     expect(plain).not.toContain("Open → Done");
+  });
+
+  test("keeps the server clock when the browser starts across midnight", () => {
+    const serverTime = "2026-11-12T23:59:00.000Z";
+    setSystemTime(new Date("2026-11-13T00:01:00.000Z"));
+    try {
+      const html = textOf(render({ now: serverTime }));
+      expect(html).toContain("Today");
+      expect(html).not.toContain("Yesterday");
+      expect(html).toContain("14:00 · 9 hr. ago · Mira Lang");
+    } finally {
+      setSystemTime(new Date(NOW));
+    }
   });
 
   test("offers Open record only where the caller may open records", () => {
