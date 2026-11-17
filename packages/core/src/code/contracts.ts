@@ -3,6 +3,7 @@ import {
   CloudResourceRefSchema,
   CODE_BRIDGE_REFUSAL_KINDS,
   CodeOutputWindowSchema,
+  CodePageLinksSchema,
 } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
@@ -121,6 +122,7 @@ export const CodeSchema = z
     activeVersionId: z.uuid().nullable(),
     activatedAt: timestamp.nullable().optional(),
     activatedBy: z.object({ name: z.string() }).strict().nullable().optional(),
+    pausedBy: z.object({ name: z.string() }).strict().nullable().optional(),
     pausedAt: timestamp.nullable().optional(),
     needsReconfirmation: z.boolean().optional(),
     pauseReason: z.string().nullable(),
@@ -277,7 +279,12 @@ export const codeQueryContracts = {
       })
       .strict(),
     data: z
-      .object({ version: CodeVersionSchema, content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).nullable() })
+      .object({
+        version: CodeVersionSchema,
+        content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).nullable(),
+        /** Page selection from this immutable manifest, only for manifest reads; null when no checked manifest exists. */
+        pages: CodePageLinksSchema.nullable(),
+      })
       .strict(),
   },
   runList: {

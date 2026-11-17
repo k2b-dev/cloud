@@ -28,6 +28,10 @@ export const codeReadModelMessages = i18n.define({
       chatSend: "Write to a chat, Gustav answers",
       chatSendNamed: ({ name }: { name: string }) => `Write to the chat “${name}”, Gustav answers`,
       chatSendNote: "AI · with your rights, counts toward your allowance",
+      chatSendNoteOther: ({ name }: { name: string | null }) =>
+        name
+          ? `AI · with ${name}’s rights, counts toward ${name}’s allowance`
+          : "AI · with the owner’s rights, counts toward their allowance",
       eventTiming: ({ event, place }: { event: string; place: string }) => `When the event “${event}” occurs · ${place}.`,
       manual: "When you run it",
       route: ({ audience }: { audience: string }) => `When someone opens a page · ${audience}`,
@@ -114,6 +118,12 @@ export const codeReadModelMessages = i18n.define({
       chatSend: "In einen Chat schreiben, Gustav antwortet",
       chatSendNamed: ({ name }) => `In den Chat „${name}“ schreiben, Gustav antwortet`,
       chatSendNote: "KI · mit deinen Rechten, zählt auf dein Kontingent",
+      chatSendNoteOther: ({ name }) => {
+        const whose = name ? `${name}${/[sßxz]$/i.test(name) ? "’" : "s"}` : "der Person, der die Automation gehört";
+        return name
+          ? `KI · mit ${whose} Rechten, zählt auf ${whose} Kontingent`
+          : `KI · mit den Rechten ${whose}, zählt auf deren Kontingent`;
+      },
       eventTiming: ({ event, place }) => `Wenn das Ereignis „${event}“ eintritt · ${place}.`,
       manual: "Wenn du sie ausführst",
       route: ({ audience }) => `Wenn jemand eine Seite öffnet · ${audience}`,

@@ -1,15 +1,19 @@
-import { documentNavigate, refreshCurrentPath } from "@k2b/ssr/nav";
-import { Button, ButtonLink, Dropdown, NoticeCard, Tag, toast } from "@k2b/ui";
+import { refreshCurrentPath } from "@k2b/ssr/nav";
+import { Button, ButtonLink, NoticeCard, Tag, toast } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { openPanel } from "../../browser/panel";
-import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { CodeChatMissing, CodeChatRowAction } from "./CodeChatBinding";
 import { CodeDatabaseStatus } from "./CodeDatabaseStatus";
+import { RunNow } from "./CodeLaunch";
 import { type CodeLive, CodeLiveStrip, EffectRows } from "./CodeLiveStrip";
 import { CodeVersionApproval } from "./CodeVersionApproval";
-import { type CodePageAutomation, type CodePageData, type CodePageReady, StartSchema } from "./data";
+import type { CodePageAutomation, CodePageData, CodePageReady } from "./data";
+import { opensPage, routeHref, routeTitle, timing } from "./launch";
 import { Island, iconClass, ModelMark, type PageText, personal, Row, runStatus, Status, sentence, splitRow, withQuery } from "./page-kit";
-import { describeCodeTiming } from "./schedule";
+import type { CodeRunAction } from "./run-action";
+
+export { timing } from "./launch";
+
 import { targetKey } from "./targets";
 
 /** "When it runs" shows this many triggers before "Show n more". */
@@ -184,77 +188,7 @@ export const placeText = (
   return kind && !name.startsWith(`${kind} `) ? `${kind} ${name}` : name;
 };
 
-/** A manual or scheduled automation that runs now with the running version. */
-const runnable = (state: CodePageReady) =>
-  (state.automations ?? []).filter((automation) => !automation.isNew && (automation.kind === "schedule" || automation.kind === "manual"));
-
-/** "Run now": one button for one automation, else a menu with each one by its name. */
-function RunNow(props: { data: CodePageData; state: CodePageReady; text: PageText }) {
-  const t = props.text.t;
-  const [starting, setStarting] = createSignal(false);
-  const name = (automation: CodePageAutomation) => automation.title ?? sentence(timing(automation, props.text), props.text.locale());
-  const start = async (automation: CodePageAutomation) => {
-    if (starting()) return;
-    setStarting(true);
-    const result = await invokeCapabilityWithDataSchema(
-      {
-        appId: "core",
-        capabilityId: "code.run",
-        kind: "action",
-        target: { type: "core.code", id: props.state.code.id },
-        input: { entrypoint: automation.entrypoint, input: null },
-        idempotencyKey: crypto.randomUUID(),
-      },
-      StartSchema,
-    );
-    setStarting(false);
-    if (!result.ok) return toast.error(result.error.message);
-    toast.success(t().runStarted);
-    documentNavigate(withQuery(props.data.href, { tab: "runs", run: result.data.data.runId }));
-  };
-  const items = () => runnable(props.state);
-  return (
-    <Show when={props.state.permission === "editor" && props.state.code.state === "active" && items().length > 0}>
-      <Show
-        when={items().length > 1}
-        fallback={
-          <Button type="button" size="sm" variant="ghost" loading={starting()} onClick={() => void start(items()[0]!)}>
-            <i class="ti ti-player-play" aria-hidden="true" />
-            {t().runNow}
-          </Button>
-        }
-      >
-        <Dropdown.Root
-          items={items().map((automation) => ({
-            label: name(automation),
-            icon: "ti ti-player-play",
-            action: () => void start(automation),
-          }))}
-          label={t().runNow}
-          position="bottom-right"
-          phone="sheet"
-        >
-          <Dropdown.Trigger type="button" size="sm" variant="ghost" label={t().runNow} aria-busy={starting() ? "true" : undefined}>
-            <i class="ti ti-player-play" aria-hidden="true" />
-            {t().runNow}
-            <i class="ti ti-chevron-down" aria-hidden="true" />
-          </Dropdown.Trigger>
-        </Dropdown.Root>
-      </Show>
-    </Show>
-  );
-}
-
-/** When an automation runs, in words: the read model's sentence, else the schedule, never its stable name. */
-export const timing = (automation: CodePageAutomation, text: PageText): string => {
-  const t = text.t();
-  if (automation.timingText) return automation.timingText;
-  const scheduled = describeCodeTiming(automation, text.locale());
-  if (scheduled) return scheduled;
-  return automation.kind === "event" ? t.triggerEvent : t.manualStart;
-};
-
-function When(props: { data: CodePageData; state: CodePageReady; text: PageText }) {
+function When(props: { data: CodePageData; state: CodePageReady; text: PageText; live: CodeLive; run: CodeRunAction }) {
   const t = props.text.t;
   const [all, setAll] = createSignal(false);
   const rows = () => (props.state.automations ?? []).filter((automation) => automation.kind !== "route");
@@ -263,17 +197,21 @@ function When(props: { data: CodePageData; state: CodePageReady; text: PageText 
   const trail = (automation: CodePageAutomation): JSX.Element => {
     if (automation.isNew) return null;
     if (paused()) return <Status tone="warn" icon="ti ti-player-pause" label={t().statePaused} />;
-    const run = automation.lastRun;
+    const run = props.live.runs().find((run) => run.entrypoint === automation.entrypoint) ?? automation.lastRun;
     return (
       <>
-        <Show when={run} fallback={<Status tone="muted" icon="ti ti-minus" label={t().whenNever} />}>
+        <Show when={run} keyed fallback={<Status tone="muted" icon="ti ti-minus" label={t().whenNever} />}>
           {(last) => (
             <Status
-              {...runStatus(last().state, t())}
+              {...runStatus(last.state, t())}
               label={
-                last().state === "failed"
-                  ? t().whenFailed({ when: props.text.moment(last().createdAt) })
-                  : props.text.moment(last().createdAt)
+                last.state === "queued"
+                  ? t().runStarting
+                  : last.state === "running"
+                    ? t().runCurrentlyRunning
+                    : last.state === "failed"
+                      ? t().whenFailed({ when: props.text.moment(last.createdAt) })
+                      : props.text.moment(last.createdAt)
               }
             />
           )}
@@ -289,13 +227,16 @@ function When(props: { data: CodePageData; state: CodePageReady; text: PageText 
       class="cloud-code__when"
       title={t().whenTitle}
       meta={props.state.automations ? String(rows().length) : undefined}
-      actions={<RunNow data={props.data} state={props.state} text={props.text} />}
+      actions={<RunNow state={props.state} text={props.text} run={props.run} />}
       state={props.state.automations ? "ready" : "error"}
       errorMessage={t().partFailed}
       onRetry={() => refreshCurrentPath()}
       loadingRows={2}
     >
-      <Show when={rows().length > 0} fallback={<p class="cloud-code__quiet-line">{t().whenEmpty}</p>}>
+      <Show
+        when={rows().length > 0}
+        fallback={<p class="cloud-code__quiet-line">{(props.state.automations ?? []).some(opensPage) ? t().whenPages : t().whenEmpty}</p>}
+      >
         <ul class="cloud-code__rows">
           <For each={shown()}>
             {(automation) => (
@@ -460,7 +401,10 @@ function MayDo(props: { data: CodePageData; state: CodePageReady; text: PageText
 /** Pages and addresses only when the automation has some (Mockup PAGES). */
 function Pages(props: { state: CodePageReady; text: PageText }) {
   const t = props.text.t;
-  const routes = () => (props.state.automations ?? []).filter((automation) => automation.kind === "route" && automation.route);
+  const routes = () =>
+    [...(props.state.automations ?? [])]
+      .filter((automation) => automation.kind === "route" && automation.route)
+      .sort((a, b) => Number(b.pageLink?.isRoot ?? false) - Number(a.pageLink?.isRoot ?? false));
   return (
     <Show when={routes().length > 0}>
       <Island class="cloud-code__pages" title={t().pagesTitle} meta={String(routes().length)}>
@@ -470,7 +414,7 @@ function Pages(props: { state: CodePageReady; text: PageText }) {
               <Row
                 icon={automation.route!.public ? "ti ti-bolt" : "ti ti-browser"}
                 tile="page"
-                title={automation.title ?? automation.route!.path}
+                title={routeTitle(automation, props.text)}
                 after={
                   <Show when={automation.route!.public}>
                     <Tag size="sm" icon="ti ti-world" class="cloud-code__public-tag">
@@ -478,11 +422,48 @@ function Pages(props: { state: CodePageReady; text: PageText }) {
                     </Tag>
                   </Show>
                 }
-                sub={automation.route!.public ? t().pagePublic : t().pageMembers}
+                sub={
+                  automation.route!.public
+                    ? t().pagePublic
+                    : !["GET", "ALL"].includes(automation.route!.method)
+                      ? t().pageInput
+                      : automation.route!.page === false
+                        ? t().pageData
+                        : t().pageMembers
+                }
+                trail={
+                  <>
+                    <Show when={opensPage(automation) && props.state.code.state === "active"}>
+                      <ButtonLink size="sm" variant="ghost" href={automation.pageLink!.href}>
+                        <i class="ti ti-browser" aria-hidden="true" />
+                        {t().launchOpen}
+                      </ButtonLink>
+                    </Show>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(new URL(routeHref(props.state.code.id, automation), location.origin).href);
+                          toast.success(t().addressCopied);
+                        } catch {
+                          toast.error(t().addressCopyFailed);
+                        }
+                      }}
+                    >
+                      <i class="ti ti-copy" aria-hidden="true" />
+                      {t().addressCopy}
+                    </Button>
+                  </>
+                }
               />
             )}
           </For>
         </ul>
+        <Show when={props.state.code.state === "paused"}>
+          <p class="cloud-code__foot">{t().pagesPaused}</p>
+        </Show>
       </Island>
     </Show>
   );
@@ -494,6 +475,7 @@ export function CodeOverview(props: {
   state: CodePageReady;
   text: PageText;
   live: CodeLive;
+  run: CodeRunAction;
   onActivate: () => void;
   footer?: JSX.Element;
 }) {
@@ -557,7 +539,7 @@ export function CodeOverview(props: {
             </div>
           </Show>
           <div class="cloud-code__o1">
-            <When data={props.data} state={props.state} text={props.text} />
+            <When data={props.data} state={props.state} text={props.text} live={props.live} run={props.run} />
           </div>
           <div class="cloud-code__o5">
             <Pages state={props.state} text={props.text} />

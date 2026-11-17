@@ -9,9 +9,11 @@ import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiCapabilities } from "../capabilities";
 import { migrate as migrateAppEvents } from "../migrate/core/app-events";
+import { migrate as migrateAudit } from "../migrate/core/audit";
 import { migrate as migrateAuth } from "../migrate/core/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
 import { migrate as migrateActivation } from "../migrate/core/code-activation";
+import { migrate as migratePolicy } from "../migrate/core/code-policy";
 import { migrate as migrateScheduling } from "../migrate/core/code-scheduling";
 import { migrate as migrateEvents } from "../migrate/core/events";
 import * as access from "./access";
@@ -20,6 +22,7 @@ import { clearCodeAttentionCache, readCodeAttention } from "./attention";
 import { codeAuthoringServices } from "./authoring";
 import { type Code, codeQueryContracts } from "./contracts";
 import { loadCodeActivityReadModel, readCodeActivityData } from "./read-model/activity";
+import { codeReadModelFixtureManifest } from "./read-model/fixtures";
 import { loadCodeRunReadModel } from "./read-model/run";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { loadCodeSourceTab } from "./source-tab";
@@ -102,10 +105,12 @@ databaseSuite()("Core Code data and Query authorization", () => {
     setSystemTime(fixed);
     database = await useFreshDatabase("core_code");
     await migrateAuth();
+    await migrateAudit();
     await migrateEvents();
     await migrateAppEvents();
     await migrateCode();
     await migrateActivation(); // Forward on an empty identity database.
+    await migratePolicy(); // Pause attribution reads the policy migration's reason columns.
     for (const [name, id] of Object.entries(ids))
       await sql`INSERT INTO auth.users(id,uid,provider,profile,admin) VALUES(${id}::uuid,${name},'local','user',${name === "admin"})`;
     // Forward migration over an already populated identity database.
@@ -190,6 +195,15 @@ databaseSuite()("Core Code data and Query authorization", () => {
     expect((await readCode(automation.id, guest)).code.activatedBy).toBeNull();
     await sql`UPDATE code.codes SET state='paused' WHERE id=${automation.id}`;
     const paused = (await readCode(automation.id, ctx(ids.owner))).code.pausedAt;
+    expect((await readCode(automation.id, ctx(ids.reader))).code.pausedBy).toBeNull();
+    await sql`UPDATE code.codes SET pause_reason='manual' WHERE id=${automation.id}`;
+    // Match the exact current transaction timestamp, including sub-millisecond database precision.
+    await sql`INSERT INTO audit.events(action,outcome,actor_user_id,target_type,target_id,created_at)
+      SELECT 'core.code.paused','allowed',${ids.owner}::uuid,'code',id,paused_at FROM code.codes WHERE id=${automation.id}`;
+    expect((await readCode(automation.id, ctx(ids.reader))).code.pausedBy).toEqual({ name: "Visible activator" });
+    expect((await readCode(automation.id, guest)).code.pausedBy).toBeNull();
+    await sql`UPDATE code.codes SET pause_reason='policy_changed' WHERE id=${automation.id}`;
+    expect((await readCode(automation.id, ctx(ids.reader))).code.pausedBy).toBeNull();
     expect(paused).not.toBeNull();
     await sql`UPDATE code.codes SET title='Still paused' WHERE id=${automation.id}`;
     expect((await listCodes({ limit: 20 }, ctx(ids.owner))).items.find((item) => item.id === automation.id)?.pausedAt).toBe(paused);
@@ -776,6 +790,60 @@ databaseSuite()("Core Code data and Query authorization", () => {
     expect(personal.serviceAccountId).toBeNull();
     await expect(readCodeVersion({ codeId: personal.id, versionId, offset: 0, length: 100 }, ctx(ids.owner))).rejects.toThrow("not found");
     await expect((async () => await sql`UPDATE code.codes SET id='c_changed' WHERE id=${personal.id}`)()).rejects.toThrow("immutable");
+  });
+  test("page projections stay authorized and pinned to the requested immutable version", async () => {
+    const own = await createCode({ owner: { kind: "person", userId: ids.owner }, title: "Page links" }, ctx(ids.owner));
+    const first = await createCodeVersion(
+      {
+        codeId: own.id,
+        sourceFiles: { "code.ts": "export default 1" },
+        bundle: "1",
+        baseVersionId: null,
+        manifest: {
+          ...codeReadModelFixtureManifest,
+          entrypoints: [
+            {
+              kind: "route",
+              entrypoint: "home",
+              file: "code.ts",
+              line: 1,
+              cron: null,
+              route: { method: "GET", path: "/", public: false, page: true },
+            },
+          ],
+        },
+      },
+      ctx(ids.owner),
+    );
+    const second = await createCodeVersion(
+      {
+        codeId: own.id,
+        sourceFiles: { "code.ts": "export default 2" },
+        bundle: "2",
+        baseVersionId: first.id,
+        manifest: { ...codeReadModelFixtureManifest, entrypoints: [] },
+      },
+      ctx(ids.owner),
+    );
+    const input = { codeId: own.id, versionId: first.id, offset: 0, length: 100, content: { kind: "manifest" as const } };
+    const german = await readCodeVersion(input, { ...ctx(ids.owner), locale: "de-AT" });
+    expect(german.pages).toEqual({
+      versionId: first.id,
+      homeUrl: `/code/${own.id}/`,
+      pages: [{ entrypoint: "home", title: null, path: "/", isRoot: true, href: `/code/${own.id}/` }],
+    });
+    expect((await readCodeVersion(input, ctx(ids.owner))).pages).toEqual(german.pages);
+    expect((await readCodeVersion({ ...input, versionId: second.id }, ctx(ids.owner))).pages).toEqual({
+      versionId: second.id,
+      homeUrl: null,
+      pages: [],
+    });
+    expect((await readCodeVersion({ ...input, content: undefined }, ctx(ids.owner))).pages).toBeNull();
+    await expect(readCodeVersion(input, ctx(ids.stranger))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(readCodeVersion({ ...input, codeId: code.id }, ctx(ids.owner))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    const query = await aiCapabilities.queries["code.version.read"].run(input, { ...context(ids.owner), locale: "de" });
+    expect(query.ok).toBe(true);
+    if (query.ok) expect(codeQueryContracts.versionRead.data.parse(query.data.data).pages).toEqual(german.pages);
   });
   test("versions preserve exact UTF-8 source/bundle and hashes, reject stale base and in-place changes", async () => {
     const version = await readCodeVersion(

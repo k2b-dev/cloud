@@ -22,6 +22,13 @@ classification and the first target-refused ordinal together. Keep both tables
 in the same backup so that a refused call remains available after recovery,
 even when the runner crashed before completing its run.
 
+Code detail snapshots can name the person who manually paused the automation
+from the existing `audit.events` record for that exact pause timestamp. The
+lookup uses the target/time index after Code authorization and follows the
+same directory visibility as activation names. Missing or pruned audit records
+leave the name absent; policy pauses never inherit a previous person's name.
+Admission checks and live run events do not read the audit table.
+
 Source files and exact bundles live in Postgres with their immutable versions.
 They are not container files or runner caches. Configure their admission
 budgets through the `core.code.*` administrator settings documented in the

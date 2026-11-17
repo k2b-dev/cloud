@@ -1614,6 +1614,15 @@ databaseSuite()("C8 immutable versions, comparisons and platform decisions", () 
     await activate(code, first);
     const next = await submitCodeVersion(input(code, "pending", first.version.id), author);
     expect(await setCodePaused(code.id, true, author)).toEqual({ state: "paused" });
+    const originalName =
+      (await sql<{ display_name: string | null }[]>`SELECT display_name FROM auth.users WHERE id=${authorId}::uuid`)[0]?.display_name ??
+      null;
+    await sql`UPDATE auth.users SET display_name='Lena' WHERE id=${authorId}::uuid`;
+    try {
+      expect((await readCode(code.id, author)).code.pausedBy).toEqual({ name: "Lena" });
+    } finally {
+      await sql`UPDATE auth.users SET display_name=${originalName} WHERE id=${authorId}::uuid`;
+    }
     expect(await setCodePaused(code.id, true, author)).toEqual({ state: "paused" });
     expect(await setCodePaused(code.id, false, author)).toEqual({ state: "active" });
     expect(await findCode(code.id)).toMatchObject({ activeVersionId: first.version.id, pauseReason: null });

@@ -17,7 +17,8 @@ import * as coreLocation from "../../services/identity/core-origin";
 import { buildProjectedUser } from "../../services/session/user";
 import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { CODE_PAGE_FIXTURE_STATES, type CodePageFixtureState, codePageFixture } from "./code-page.fixture";
-import type { CodePageInvoke } from "./data";
+import { type CodePageData, type CodePageInvoke, VersionReadSchema } from "./data";
+import { headActionFixture } from "./head-action.fixture";
 import { codePageMessages } from "./messages";
 import { nameRecentResults } from "./recent-names";
 import { describeCodeSchedule } from "./schedule";
@@ -45,14 +46,15 @@ const html = (state: CodePageFixtureState, locale = "de") =>
     }),
   );
 /** Visible text only: server scripts and the reserved widths of status words stay out. */
-const text = (state: CodePageFixtureState, locale = "de") =>
+const visibleText = (markup: string, separator = " ") =>
   renderedText(
     new HTMLRewriter()
       .on("script", { element: (element) => void element.remove() })
       .on('[aria-hidden="true"]', { element: (element) => void element.remove() })
-      .transform(html(state, locale)),
-    " ",
+      .transform(markup),
+    separator,
   ).replaceAll(/\s+/g, " ");
+const text = (state: CodePageFixtureState, locale = "de") => visibleText(html(state, locale));
 
 describe("Code page: overview (Bild 19 to 21)", () => {
   test("the head says the state in one large word, the place and version in one quiet line, and offers Gustav and More", () => {
@@ -345,17 +347,19 @@ describe("Code page: personal Code (CODE_P)", () => {
   });
 });
 
-test.each(["de", "en"])("%s: no state shows source, identifiers or an unqualified status word", (locale) => {
+for (const locale of ["de", "en"]) {
   // The code tab is the one place for source (3p); its field carries its own exemption.
-  for (const state of CODE_PAGE_FIXTURE_STATES.filter((name) => name !== "code")) {
-    const visible = renderedText(
-      new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
-      "\n",
-    );
-    expect(codeSurfaceFindings(`${locale}/${state}`, visible)).toEqual([]);
-    for (const word of ["Passt", "Fertig", "Done", "OK"]) expect(visible.split(/\s+/)).not.toContain(word);
-  }
-});
+  describe(`${locale}: no state shows source, identifiers or an unqualified status word`, () => {
+    test.each(CODE_PAGE_FIXTURE_STATES.filter((name) => name !== "code"))("%s", (state) => {
+      const visible = renderedText(
+        new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
+        "\n",
+      );
+      expect(codeSurfaceFindings(`${locale}/${state}`, visible)).toEqual([]);
+      for (const word of ["Passt", "Fertig", "Done", "OK"]) expect(visible.split(/\s+/)).not.toContain(word);
+    });
+  });
+}
 
 test("English copy", () => {
   const page = text("overview", "en");
@@ -672,7 +676,7 @@ describe("Code page loader", () => {
     cloudTimeZone?: string,
     roles: string[] = ["user"],
     /** Version words Core answers instead of the default, and other apps' answers by `app.capability`. */
-    overrides: { words?: (versionId: string) => unknown; apps?: Record<string, unknown>; spaces?: CatalogApp } = {},
+    overrides: { pages?: unknown; words?: (versionId: string) => unknown; apps?: Record<string, unknown>; spaces?: CatalogApp } = {},
   ) => {
     const appCalls: string[] = [];
     const coreCalls: string[] = [];
@@ -690,7 +694,15 @@ describe("Code page loader", () => {
         invocation.capabilityId === "code.version.words" && overrides.words
           ? overrides.words(input.versionId ?? V4)
           : core(permission, run, firstCall, checkedManifest)(invocation.capabilityId, input);
-      return { ok: true, data: capabilityResultSchema(schema).parse({ data }) };
+      return {
+        ok: true,
+        data: capabilityResultSchema(schema).parse({
+          data:
+            invocation.capabilityId === "code.version.read" && overrides.pages !== undefined
+              ? { ...VersionReadSchema.parse(data), pages: overrides.pages }
+              : data,
+        }),
+      };
     });
     const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockImplementation(async (appId) => ({
       ok: true,
@@ -731,6 +743,32 @@ describe("Code page loader", () => {
       fetched.mockRestore();
     }
   };
+
+  test("manifest reads carry Core's page selection and titles unchanged; another version's projection is ignored", async () => {
+    const checkedManifest = {
+      ...manifest,
+      entrypoints: [{ kind: "route", entrypoint: "home", route: { method: "GET", path: "/", public: false, page: true }, cron: null }],
+    };
+    const pages = {
+      versionId: V4,
+      homeUrl: "/code/c_3mfa/",
+      pages: [{ entrypoint: "home", title: "Vom Server benannt", path: "/", isRoot: true, href: "/code/c_3mfa/" }],
+    };
+    const { data } = await load("reader", "", failedRun, policyCall, checkedManifest, undefined, ["user"], { pages });
+    if (data.state.kind !== "ready") throw new Error("Expected ready page");
+    expect(data.state.pages).toEqual(pages);
+    expect(data.state.automations![0]!.pageLink).toEqual(pages.pages[0]);
+    const missing = await load("reader", "", failedRun, policyCall, checkedManifest);
+    if (missing.data.state.kind !== "ready") throw new Error("Expected ready page");
+    expect(missing.data.state.pages).toBeNull();
+    expect(missing.data.state.automations![0]!.pageLink).toBeUndefined();
+    const stale = await load("reader", "", failedRun, policyCall, checkedManifest, undefined, ["user"], {
+      pages: { ...pages, versionId: "00000000-0000-4000-8000-000000000005" },
+    });
+    if (stale.data.state.kind !== "ready") throw new Error("Expected ready page");
+    expect(stale.data.state.pages).toBeNull();
+    expect(stale.data.state.automations![0]!.pageLink).toBeUndefined();
+  });
 
   // #77: Core's owner check spent its one child Query on the mailbox, so it could not read the Space and kept only
   // its reference. The page reads that target itself, as the person, through the same readers as the latest results.
@@ -1375,7 +1413,7 @@ describe("the chat of personal Code", () => {
                 },
               ],
       };
-      const page = renderedText(
+      const page = visibleText(
         renderMarkup(() =>
           createComponent(LocaleProvider, {
             locale,
@@ -1414,7 +1452,7 @@ describe("the chat of personal Code", () => {
         canChange: false,
         chat: state === "personal" ? { state: "hidden" } : { state: "unavailable", reason: "archived" },
       };
-      const page = renderedText(
+      const page = visibleText(
         renderMarkup(() =>
           createComponent(LocaleProvider, {
             locale: "de",
@@ -1443,7 +1481,7 @@ test("personal Code without a chat offers its owner to choose one", () => {
     const data = codePageFixture("personal-chat-missing");
     if (data.state.kind !== "ready" || !data.state.chatBinding) throw new Error("Expected a bound personal fixture");
     data.state.chatBinding = { ...data.state.chatBinding, revision: 0, canChange, chat: null };
-    return renderedText(
+    return visibleText(
       renderMarkup(() =>
         createComponent(LocaleProvider, {
           locale: "de",
@@ -1482,7 +1520,7 @@ test("personal Code without a chat offers its owner to choose one", () => {
     ...quiet.state.words.current.mayDo,
     items: quiet.state.words.current.mayDo.items.filter((row) => row.target?.ref.type !== "core.ai.chat"),
   };
-  const page = renderedText(
+  const page = visibleText(
     renderMarkup(() =>
       createComponent(LocaleProvider, {
         locale: "de",
@@ -1502,7 +1540,7 @@ test("a chat binding that could not be read says so at the chat row, without a n
   const data = codePageFixture("personal");
   if (data.state.kind !== "ready") throw new Error("Expected a ready fixture");
   data.state.chatBinding = null;
-  const page = renderedText(
+  const page = visibleText(
     renderMarkup(() =>
       createComponent(LocaleProvider, {
         locale: "de",
@@ -1536,4 +1574,70 @@ test("a week without counted effects says so in place of the numbers", () => {
   expect(page).toContain("Diese Woche noch nichts gezählt. Darunter stehen die letzten Ergebnisse.");
   expect(page).toContain("Lieferung Polsterei Weber");
   expect(page.indexOf("Diese Woche noch nichts gezählt.")).toBeLessThan(page.indexOf("Lieferung Polsterei Weber"));
+});
+
+test.each(["de", "en"])("personal readers see the owner's resources and neutral page triggers (%s)", (locale) => {
+  const render = (data: CodePageData) =>
+    visibleText(
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      ),
+    );
+  for (const state of ["reader", "reader-page", "reader-waiting", "paused-reader"] as const) {
+    const page = render(headActionFixture(state, locale));
+    expect(page).not.toMatch(/deine Postfächer|dein Kontingent|Deine Seiten|your mailboxes|your quota|your allowance/);
+    if (state !== "reader-waiting") {
+      expect(page).toContain(locale === "de" ? "Lenas Postfächer" : "Lena’s mailboxes");
+      expect(page).toContain(locale === "de" ? "zählt auf Lenas Kontingent" : "counts against Lena’s quota");
+    }
+    if (state === "reader-page" || state === "paused-reader")
+      expect(page).toContain(locale === "de" ? "Die Seiten laufen, wenn jemand sie öffnet." : "The pages run when someone opens them.");
+  }
+  // The real shared read model supplies this note already localized for the viewer; rendering preserves it.
+  const data = codePageFixture("personal", locale, "Lena");
+  if (data.state.kind !== "ready") throw new Error("Expected personal fixture");
+  data.state.permission = "reader";
+  if (data.state.chatBinding) data.state.chatBinding.canChange = false;
+  const page = render(data);
+  expect(page).toContain(
+    locale === "de" ? "KI · mit Lenas Rechten, zählt auf Lenas Kontingent" : "AI · with Lena’s rights, counts toward Lena’s allowance",
+  );
+  expect(page).not.toMatch(/deine Postfächer|dein Kontingent|your mailboxes|your quota|your allowance/);
+});
+
+test("last and next starts share the request's timezone, including a DST change", () => {
+  for (const [timeZone, last, next] of [
+    ["Europe/Berlin", "Mo, 19.10., 08:00", "Mo, 16.11., 08:00"],
+    ["America/New_York", "Mo, 19.10., 02:00", "Mo, 16.11., 02:00"],
+  ] as const) {
+    const data = headActionFixture("schedule");
+    if (data.state.kind !== "ready" || !data.state.runs) throw new Error("Expected schedule fixture with run history");
+    data.dates.timeZone = timeZone;
+    const run = { ...data.state.runs.items[0]!, createdAt: "2026-10-19T06:00:00.000Z" };
+    data.state.runs.items = [run];
+    data.state.automations![0]!.lastRun = run;
+    const markup = renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    );
+    let trail = "";
+    new HTMLRewriter()
+      .on(".cloud-code__when .cloud-code__row-trail", {
+        text(chunk) {
+          trail += chunk.text;
+        },
+      })
+      .transform(markup);
+    expect(trail).toContain(last);
+    expect(trail).toContain(next);
+  }
 });

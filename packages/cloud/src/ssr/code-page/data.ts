@@ -6,6 +6,7 @@ import type { CloudResourceRef } from "../../contracts/capabilities";
 import { CODE_BRIDGE_REFUSAL_KINDS, type CodeBridgeRefusalKind } from "../../contracts/code-call";
 import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
 import type { CodeActivityReadModel, CodeRunReadModel, CodeVersionReadModel } from "../../contracts/code-read-model";
+import { type CodePageLinks, CodePageLinksSchema } from "../../contracts/code-routes";
 import type { CodeSourceTabInitial } from "./source-tab-load";
 import type { CodeOperationLabels } from "./targets";
 
@@ -35,6 +36,7 @@ const CodeSchema = z.object({
   activeVersionId: z.string().nullable(),
   activatedAt: z.string().nullable().optional(),
   activatedBy: z.object({ name: z.string() }).nullable().optional(),
+  pausedBy: z.object({ name: z.string() }).nullable().optional(),
   pausedAt: z.string().nullable().optional(),
   needsReconfirmation: z.boolean().optional(),
   pauseReason: z.string().nullable(),
@@ -71,6 +73,7 @@ const VersionReceiptSchema = z.object({
 });
 export const VersionListSchema = z.object({ items: z.array(VersionReceiptSchema), nextBefore: z.number().int().nullable() });
 export const VersionReadSchema = z.object({
+  pages: CodePageLinksSchema.nullable().optional(),
   version: VersionSchema,
   content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).nullable(),
 });
@@ -89,7 +92,7 @@ export const ManifestSchema = z.object({
   entrypoints: z.array(
     z.object({
       kind: z.enum(["schedule", "manual", "event", "route"]),
-      route: z.object({ method: z.string(), path: z.string(), public: z.boolean() }).optional(),
+      route: z.object({ method: z.string(), path: z.string(), public: z.boolean(), page: z.boolean().optional() }).optional(),
       event: z.object({ type: z.string(), version: z.number(), place: z.object({ type: z.string(), id: z.string() }) }).optional(),
       entrypoint: z.string(),
       title: z.string().optional(),
@@ -321,7 +324,8 @@ export type CodePageAutomation = {
   /** Reviewed human title; absent on older versions. */
   title?: string;
   kind: "schedule" | "manual" | "event" | "route";
-  route?: { method: string; path: string; public: boolean };
+  pageLink?: CodePageLinks["pages"][number];
+  route?: { method: string; path: string; public: boolean; page?: boolean };
   event?: CodePageEvent;
   cron: string | null;
   at?: string;
@@ -435,6 +439,8 @@ export type CodePageReady = {
   /** The newest version awaiting approval or activation, when newer than the running one. */
   waiting: CodePageVersion | null;
   automations: CodePageAutomation[] | null;
+  /** Core’s version-bound page projection; never inferred again in the browser. */
+  pages?: CodePageLinks | null;
   /** Core's attention reasons for this Code, the same answer the owner's navigation uses; null when unavailable. */
   attentionReasons: string[] | null;
   /** Full declared lists for the running and waiting versions; null means the manifest could not be read. */

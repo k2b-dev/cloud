@@ -95,6 +95,12 @@ chat binding as a naming hint in its owner's projection when that chat is active
 }
 ```
 
+The allowance note describes the execution owner, never the person reading a
+shared Code. Owners see “your rights” and “your allowance”; other members see
+the owner's directory name (for example, “Lena’s allowance”). Without directory
+access the note refers to the owner without a name. This adds no SQL statement
+to the existing version snapshot and does not expose the bound chat.
+
 The existing `nameCodeGrantTargets` helper resolves this hint through the
 catalog's `core.ai.chat` reader, `ai.chat.read`. Its authorized `data.view`
 contains the title and permission. Only the chat owner receives the title;

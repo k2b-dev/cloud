@@ -238,10 +238,21 @@ databaseSuite()("personal Code chat binding", () => {
       });
       expect(JSON.stringify(model.mayDo)).not.toContain("Chat Wrd433");
     }
+    await sql`UPDATE auth.users SET display_name='Lena' WHERE id=${owner}::uuid`;
     const reader = await words(editor);
-    expect(reader.mayDo.items[0]).toMatchObject({ text: "In einen Chat schreiben, Gustav antwortet" });
+    expect(reader.mayDo.items[0]).toMatchObject({
+      text: "In einen Chat schreiben, Gustav antwortet",
+      note: "KI · mit Lenas Rechten, zählt auf Lenas Kontingent",
+    });
     expect(reader.mayDo.items[0]?.target?.ref.id).toBe(CODE_BOUND_CHAT_ID);
     expect(JSON.stringify(reader)).not.toContain("Wrd433");
+    const guestContext = context(editor);
+    if (guestContext.authority.actor.kind !== "user") throw new Error("Expected person");
+    guestContext.authority.actor.user.roles = [];
+    guestContext.authority.actor.user.profile = "guest";
+    const guest = await loadCodeVersionReadModel({ codeId: item.id, versionId: version.id }, guestContext);
+    expect(guest.mayDo.items[0]?.note).toBe("KI · mit den Rechten der Person, der die Automation gehört, zählt auf deren Kontingent");
+    expect(JSON.stringify(guest.mayDo)).not.toContain("Lena");
     const changes = (await words()).changes;
     await chat("Rbd433");
     await setCodeChatBinding({ codeId: item.id, chatId: "Rbd433", revision: 1 }, context());

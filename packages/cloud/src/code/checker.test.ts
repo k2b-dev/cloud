@@ -117,6 +117,7 @@ export default app;`,
   );
   if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
   const expected = ["mail.message.content.read", "mail.attachment.text.read", "mail.attachment.content.read"];
+  expect(result.manifest.entrypoints[0]?.route?.page).toBe(false);
   expect(result.permissions.map(({ operation }) => operation)).toEqual(expected);
   const calls: string[] = [];
   const module = await import(`data:text/javascript;base64,${Buffer.from(result.bundle).toString("base64")}`);
@@ -993,6 +994,7 @@ app.get("/", c => c.page(
     { method: "GET", path: "/", query: "", params: {}, contentType: "text/plain", body: "", user: null },
     { call: async () => null },
   );
+  expect(result.manifest.entrypoints[0]?.route?.page).toBe(true);
   // Authors compose blocks; the description below is only the transport Core checks and draws.
   expect(validateCodePage(response.tree, "c_fixture")).toEqual({
     version: 1,

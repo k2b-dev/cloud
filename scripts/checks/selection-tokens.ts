@@ -27,6 +27,11 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Action: before an app's first start, creating its key is the page's one main action.",
   },
   {
+    file: "packages/cloud/src/ssr/code-page/CodePage.tsx",
+    subject: 'variant={changeFilled() ? "primary" : "secondary"}',
+    reason: "Action: opening Gustav becomes the main recovery action when the Code needs attention or has no launch action.",
+  },
+  {
     file: "packages/pulse/src/frontend/workspace/base-settings-dialog.tsx",
     subject: 'background: "var(--k2b-selected)",',
     reason:

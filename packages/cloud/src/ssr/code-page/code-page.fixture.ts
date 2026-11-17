@@ -450,6 +450,7 @@ const ready = (overrides: Partial<CodePageReady> = {}, words: Partial<CodePageWo
     proposal: null,
     attentionReasons: null,
     internet: { active: ["https://bank.example", "https://status.example"], waiting: [] },
+    pages: { versionId: v4.id, homeUrl: null, pages: [] },
     automations: automations(items),
     targets,
     refusal: null,
@@ -578,12 +579,19 @@ type LegacyState =
   | "activated";
 export type CodePageFixtureState = NewState | LegacyState;
 
-export const codePageFixture = (state: CodePageFixtureState, locale = "de"): CodePageData => {
+export const codePageFixture = (state: CodePageFixtureState, locale = "de", ownerName?: string): CodePageData => {
   lang = locale.startsWith("de") ? "de" : "en";
   const personalOwner = state.startsWith("personal");
+  const whose = ownerName ? `${ownerName}${/[sßxz]$/i.test(ownerName) ? "’" : "s"}` : null;
   const base: Omit<CodePageData, "state" | "tab"> = {
     owner: personalOwner
-      ? { kind: "person", ref: null, title: L("Wochenbericht Vertrieb", "Weekly sales report"), typeTitle: null, runsAs: null }
+      ? {
+          kind: "person",
+          ref: null,
+          title: L("Wochenbericht Vertrieb", "Weekly sales report"),
+          typeTitle: null,
+          runsAs: ownerName ? { name: ownerName } : null,
+        }
       : { ...owner, typeTitle: L("Postfach", "Mailbox") },
     href: personalOwner ? "/app/assistant/code/c_woche1" : "/app/mail/Mb4kd2/code",
     canManageOwner: true,
@@ -693,6 +701,19 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
         ...base,
         tab: "overview",
         state: ready({
+          pages: {
+            versionId: versions().v4.id,
+            homeUrl: "/code/c_3mfa/rueckruf",
+            pages: [
+              {
+                entrypoint: "route:rueckruf",
+                title: L("Rückruf bestätigen", "Confirm callback"),
+                path: "/rueckruf",
+                isRoot: false,
+                href: "/code/c_3mfa/rueckruf",
+              },
+            ],
+          },
           internet: { active: ["https://api.buchhaltung-beispiel.de", "https://bank.example", "https://status.example"], waiting: [] },
           secretOrigins: { "https://api.buchhaltung-beispiel.de": ["BUCHHALTUNG_TOKEN"] },
           databaseUsed: true,
@@ -700,6 +721,13 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
           automations: [
             ...automations(runs()),
             {
+              pageLink: {
+                entrypoint: "route:rueckruf",
+                title: L("Rückruf bestätigen", "Confirm callback"),
+                path: "/rueckruf",
+                isRoot: false,
+                href: "/code/c_3mfa/rueckruf",
+              },
               entrypoint: "route:rueckruf",
               title: L("Rückruf bestätigen", "Confirm callback"),
               kind: "route",
@@ -1032,20 +1060,34 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
               description: {
                 state: "visible",
                 text: L(
-                  "Fasst jeden Montag deine offenen Angebote zusammen und legt den Bericht als Notiz im Notizbuch Vertrieb ab.",
-                  "Every Monday it sums up your open offers and files the report as a note in the Sales notebook.",
+                  ownerName
+                    ? `Fasst jeden Montag die offenen Angebote von ${ownerName} zusammen und legt den Bericht als Notiz im Notizbuch Vertrieb ab.`
+                    : "Fasst jeden Montag deine offenen Angebote zusammen und legt den Bericht als Notiz im Notizbuch Vertrieb ab.",
+                  ownerName
+                    ? `Every Monday it sums up ${ownerName}’s open offers and files the report as a note in the Sales notebook.`
+                    : "Every Monday it sums up your open offers and files the report as a note in the Sales notebook.",
                 ),
                 modelLabel: "",
               },
               mayDo: list([
-                { text: L("Mails lesen · deine Postfächer", "Read mail · your mailboxes"), app: "Mail", icon: "tabler:mail" },
+                {
+                  text: L(
+                    whose ? `Mails lesen · ${whose} Postfächer` : "Mails lesen · deine Postfächer",
+                    ownerName ? `Read mail · ${ownerName}’s mailboxes` : "Read mail · your mailboxes",
+                  ),
+                  app: "Mail",
+                  icon: "tabler:mail",
+                },
                 {
                   text: L("Notizen anlegen · Notizbuch Vertrieb", "Create notes · Sales notebook"),
                   app: "Notebooks",
                   icon: "tabler:notebook",
                 },
                 {
-                  text: L("Gustav fragen · zählt auf dein Kontingent", "Ask Gustav · counts against your quota"),
+                  text: L(
+                    whose ? `Gustav fragen · zählt auf ${whose} Kontingent` : "Gustav fragen · zählt auf dein Kontingent",
+                    ownerName ? `Ask Gustav · counts against ${ownerName}’s quota` : "Ask Gustav · counts against your quota",
+                  ),
                   app: L("KI", "AI"),
                   icon: "tabler:sparkles",
                 },
@@ -1053,7 +1095,14 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
                 chatMissing
                   ? {
                       text: L("In einen Chat schreiben, Gustav antwortet", "Write to a chat, Gustav answers"),
-                      note: L("KI · mit deinen Rechten, zählt auf dein Kontingent", "AI · with your rights, counts toward your allowance"),
+                      note: L(
+                        whose
+                          ? `KI · mit ${whose} Rechten, zählt auf ${whose} Kontingent`
+                          : "KI · mit deinen Rechten, zählt auf dein Kontingent",
+                        ownerName
+                          ? `AI · with ${ownerName}’s rights, counts toward ${ownerName}’s allowance`
+                          : "AI · with your rights, counts toward your allowance",
+                      ),
                       app: "Gustav",
                       icon: "tabler:message-chatbot",
                       // Core marks the row with the SDK's own handle; no reader names it.
@@ -1067,7 +1116,14 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
                         "In den Chat „Wochenbericht“ schreiben, Gustav antwortet",
                         "Write to the chat “Weekly report”, Gustav answers",
                       ),
-                      note: L("KI · mit deinen Rechten, zählt auf dein Kontingent", "AI · with your rights, counts toward your allowance"),
+                      note: L(
+                        whose
+                          ? `KI · mit ${whose} Rechten, zählt auf ${whose} Kontingent`
+                          : "KI · mit deinen Rechten, zählt auf dein Kontingent",
+                        ownerName
+                          ? `AI · with ${ownerName}’s rights, counts toward ${ownerName}’s allowance`
+                          : "AI · with your rights, counts toward your allowance",
+                      ),
                       app: "Gustav",
                       icon: "tabler:message-chatbot",
                       target: {
