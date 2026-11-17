@@ -25,6 +25,7 @@ import { type CodeContext, CodeDataError } from "./access";
 import * as authoringChecks from "./authoring-check";
 import { createCodeBridgeHost } from "./bridge";
 import * as origins from "./origins";
+import { openCodeOutput } from "./output";
 import { dispatchCodeSecretHttp } from "./secret-http";
 import {
   CODE_SECRET_PURPOSE,
@@ -39,7 +40,7 @@ import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, readCodeRun } from "./store";
 import { decideCodeVersion, diffCodeVersion, startCodeVersionApprovals, submitCodeVersion } from "./versions";
 
-const fixed = new Date("2026-11-01T12:00:00Z");
+const fixed = new Date("2030-01-02T12:00:00Z");
 const authorId = "11111111-1111-4111-8111-111111111111",
   reviewerId = "22222222-2222-4222-8222-222222222222";
 const person = (id: string): User => ({
@@ -215,6 +216,10 @@ suiteFor(
       mandateRevision: mandate.data.revision,
       bundleHash: submission.binding.bundleHash,
     };
+    await openCodeOutput(
+      { ...claims, token: "fixture-output-proof", deadlineAt: claims.exp * 1000, leaseExpiresAt: claims.exp * 1000 },
+      32768,
+    );
     return { claims, submission };
   }
   const request = (url = destination.origin + "/v1/items") =>
@@ -239,6 +244,19 @@ suiteFor(
           send,
         ),
     );
+  test("harden secret dispatch admission against the retained redaction byte budget", async () => {
+    const { codeId, binding } = await fixture();
+    const { claims } = await running(codeId, binding);
+    let sent = false;
+    const req = request();
+    req.headers.authorization = `${"x".repeat(CODE_SETTINGS["core.code.payload_bytes"].default / 4)} [secret:API]`;
+    const response = await publicCall(claims, req, async () => {
+      sent = true;
+      return { status: 204, headers: {}, body: new Uint8Array() };
+    });
+    expect(await response.json()).toMatchObject({ ok: false, error: { code: "code_http_output_redaction_limit" } });
+    expect(sent).toBe(false);
+  });
   test("requests without a secret require the exact version origin, including the effective port", async () => {
     const { codeId, binding } = await fixture();
     const { claims } = await running(codeId, binding);

@@ -642,8 +642,9 @@ pinned after durable admission and checks the issued generation and shared
 lease expiry cache. This avoids identity settings or signing-key reads on the
 output path. Core removes unsafe text, redacts known secret echoes, and bounds
 the window before publishing. Heartbeats refresh that cache only after
-the durable lease check commits. Expiry, a newer generation or terminal
-settlement refuses further output. Revocation of execution authority continues
+the durable lease check commits. Expiry, retry, visitor cancellation, owner deletion, a newer generation or
+terminal settlement closes the attempt output fence. A heartbeat or delayed
+admission does not reopen a closed attempt. Revocation of execution authority continues
 to be checked on the normal bridge and heartbeat paths. The terminal report
 still carries only an outcome and never exception text. Host and provider
 exceptions still do not enter the sandbox as raw text.
@@ -651,9 +652,16 @@ exceptions still do not enter the sandbox as raw text.
 No new setting is introduced. `core.code.payload_bytes` also bounds the
 structured console window, pinned when the run is admitted. Reducing this
 setting reduces retained console output as well as accepted input sizes.
+The same admitted byte budget bounds encrypted, deduplicated HTTP redaction
+entries. Further secret-bearing requests are refused with
+`code_http_output_redaction_limit` if their required entries cannot fit;
+existing entries stay available for the attempt. Compiled matching state is
+reused until those entries change. Unresolved prefixes remain encrypted and
+bounded by the longest replacement; finalization emits named markers.
 `LIVE_LIMITS.frameBytes` is the bundle limit, and the existing AI snapshot
-interval supplies the console bundling cadence. Core counts and discards
-excess bundles. One shared output topic uses the AI stream's existing
+interval supplies the console bundling cadence. The trusted supervisor
+aggregates excess lines into loss counters before HTTP. Core counts and discards
+excess bundles before redaction, updating only bounded counters. One shared output topic uses the AI stream's existing
 15-minute / 256-MiB broker retention budget; it is partitioned by run.
 
 The output hot path uses NATS and Valkey, with no SQL per line or bundle.

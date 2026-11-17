@@ -292,7 +292,9 @@ name }` parts. Other parts are `{ type: "text", text }`. Render text parts
 with text nodes, and secret parts by name; never use HTML or a terminal
 interpreter. The replacement spellings match HTTP response redaction,
 including supported encodings; arbitrary transformations by remote services
-cannot be recognized.
+cannot be recognized. Possible secret prefixes wait in a bounded, encrypted
+redaction buffer across lines and bundles. An unresolved final fragment becomes
+a named secret marker; deferred fragments can be combined into one line.
 
 `core.code.run.read` returns `contents.consoleOutput` on the first call page
 (`cursor: 0`), or `null` on later pages. Readers still get `contents: null`.
@@ -309,19 +311,23 @@ lines missing” notice. These counters describe dropped output, not execution
 failure.
 
 Each raw bundle, including the runner's proof envelope, fits
-`LIVE_LIMITS.frameBytes`. The runner joins flushes and waits at least the AI
+`LIVE_LIMITS.frameBytes`. The trusted supervisor joins submissions and waits at least the AI
 stream's existing snapshot interval between bundles; Core discards excess
 bundles and counts their lines and bytes. This cadence spans all attempts of
 the same run. Sanitized NATS deltas obey the same frame limit. `followCodeDetails` from `@k2b/cloud/ssr/code-live` requests a
 covering snapshot on admission, reconnect or a sequence gap. Apply deltas
 with `applyCodeOutputEvent` from `@k2b/cloud/code`; replace the window on a
-snapshot. Render only this bounded window, so the live, replayed and stored
+snapshot. The resync callback returns `CodeDetailPositions` for the currently
+observed active runs. Snapshot replacement and disposal remove old positions.
+Render only this bounded window, so the live, replayed and stored
 tails agree.
 
 Late arrivals replay the run's dedicated NATS topic. A shared cache repairs
 publication gaps or topic retention with a covering snapshot. Terminal
 settlement freezes output admission and stores the window once in the run
-row; output batches issue zero SQL. The row and its output expire together
+row. Retry, visitor cancellation and owner deletion close the attempt fence
+too; retry retains a frozen snapshot until the next attempt starts. Output
+for every retained terminal run is stored once; output batches issue zero SQL. The row and its output expire together
 after 30 days. A new attempt starts a new output generation; output is not an
 execution journal. Loss of the shared cache can lose the active window.
 A forcibly terminated isolate can lose its last unflushed bundle.

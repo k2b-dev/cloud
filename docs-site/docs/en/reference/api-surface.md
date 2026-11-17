@@ -820,7 +820,9 @@ For editor-only [Code live details](/en/docs/platform/code-runs#follow-calls-and
 `CodeOutput*` schemas/types (`CodeOutputWindowSchema` and its type are also
 available from browser-safe `@k2b/cloud/contracts`), `emptyCodeOutput`, `appendCodeOutput` and
 `applyCodeOutputEvent`. `@k2b/cloud/ssr/code-live` exports
-`followCodeDetails` and `CodeDetailEvent`. Core supplies sanitized parts;
+`followCodeDetails`, `CodeDetailEvent` and `CodeDetailPositions`. Its resync
+callback returns positions for the active runs in the replacement snapshot.
+Core supplies sanitized parts;
 browser consumers render only text and named secret markers.
 `@k2b/cloud/events` exports `LIVE_LIMITS` and `defineLive` includes
 `publishTransient` for committed observations; see

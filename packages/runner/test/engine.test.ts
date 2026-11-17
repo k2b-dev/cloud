@@ -340,3 +340,61 @@ test("shared workerd keeps console output and uncaught stacks bound to their own
     await engine.close();
   }
 }, 10_000);
+
+test("harden supervisor output pacing for direct calls in the native isolate", async () => {
+  const { setSystemTime } = await import("bun:test");
+  const { CODE_OUTPUT_INTERVAL_MS } = await import("@k2b/cloud/code");
+  const { Runner } = await import("../src/runner");
+  const { bundleHash } = await import("../src/cache");
+  const now = Date.UTC(2030, 0, 2);
+  setSystemTime(now);
+  const source = `export async function main(input, cloud) {
+    for (let seq=1; seq<=100; seq++) await cloud.call('runtime.output', { seq, lines: [{level:'log',text:'fixture'}], droppedLines:0, droppedBytes:0 });
+    await cloud.call('done', null);
+  }`;
+  const run = lease({ runId: "paced-native", bundleHash: bundleHash(source), deadlineAt: now + 5000, leaseExpiresAt: now + 5000 });
+  let fetched = false;
+  const sent: { at: number; dropped: number }[] = [];
+  const engine = new WorkerdEngine();
+  const runner = new Runner(
+    {
+      configure: async () => ({ ...config, slots: 1 }),
+      fetch: async (_, signal) => {
+        if (!fetched) {
+          fetched = true;
+          return { runs: [run] };
+        }
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve();
+          else signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return { runs: [] };
+      },
+      bundle: async () => source,
+      heartbeat: async () => ({ leaseExpiresAt: now + 5000 }),
+      output: async ({ batch }) => {
+        sent.push({ at: Date.now(), dropped: batch.droppedLines });
+      },
+      call: async () => {
+        setSystemTime(now + CODE_OUTPUT_INTERVAL_MS);
+        return { ok: true, data: null };
+      },
+      complete: async ({ outcome }) => {
+        expect(outcome).toBe("succeeded");
+        runner.stop();
+      },
+    },
+    engine,
+  );
+  try {
+    await runner.start();
+    expect(sent).toEqual([
+      { at: now, dropped: 0 },
+      { at: now + CODE_OUTPUT_INTERVAL_MS, dropped: 99 },
+    ]);
+  } finally {
+    runner.stop();
+    await engine.close();
+    setSystemTime();
+  }
+}, 10000);

@@ -17,14 +17,18 @@ import { migrate as migrateEvents } from "../migrate/core/events";
 import { migrate as migrateSettings } from "../migrate/core/settings";
 import { codeLiveChannels, publishCodeCallHint } from "./live";
 import {
+  closeCodeOutput,
   codeOutputTopic,
   openCodeOutput,
   persistCodeOutput,
   receiveCodeOutput,
   rememberCodeOutputSecrets,
+  renewCodeOutput,
   replayCodeOutput,
 } from "./output";
+import * as redaction from "./output-redaction";
 import { createCodeRunnerRoutes } from "./runner-routes";
+import { secretEchoReplacements } from "./secret-echo";
 import { expireCodeRuns, readCodeRun } from "./store";
 
 const owner = "11111111-1111-4111-8111-111111111111";
@@ -44,12 +48,20 @@ suiteFor(
   let claims: CodeRunTokenClaims;
   let outputRoutes: ReturnType<typeof createCodeRunnerRoutes>;
   let token: string;
+  const extraRuns: string[] = [];
   const clearFixture = () =>
     redis.send("DEL", [
+      ...extraRuns.flatMap((id) => [
+        `core:code-output:v1:${id}`,
+        `core:code-output:v1:${id}:lease:1`,
+        `core:code-output:v1:${id}:secrets:1`,
+        `core:code-output:v1:${id}:drops:1`,
+      ]),
       `core:code-output:v1:${runId}`,
       ...[1, 2].flatMap((generation) => [
         `core:code-output:v1:${runId}:lease:${generation}`,
         `core:code-output:v1:${runId}:secrets:${generation}`,
+        `core:code-output:v1:${runId}:drops:${generation}`,
       ]),
     ]);
   const batch = (seq: number, text: string) => ({ seq, lines: [{ level: "log" as const, text }], droppedLines: 0, droppedBytes: 0 });
@@ -250,6 +262,149 @@ suiteFor(
       replay = applyCodeOutputEvent(replay, event.data);
     }
     expect(replay).toEqual(tail);
+  });
+  async function attempt(budget = 32768) {
+    const id = `77777777-7777-4777-8777-${String(extraRuns.length + 1).padStart(12, "0")}`;
+    extraRuns.push(id);
+    await redis.send("DEL", [
+      `core:code-output:v1:${id}`,
+      `core:code-output:v1:${id}:lease:1`,
+      `core:code-output:v1:${id}:secrets:1`,
+      `core:code-output:v1:${id}:drops:1`,
+    ]);
+    await sql`INSERT INTO code.runs(id,code_id,version_id,trigger,entrypoint,payload_bytes,calls_limit,state,generation)
+      VALUES(${id}::uuid,${codeId},${versionId}::uuid,'manual','run',${budget},200,'running',1)`;
+    const proof = { runId: id, generation: 1, token: `fixture-${id}` };
+    await openCodeOutput({ ...proof, codeId, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, budget);
+    return proof;
+  }
+  test("harden output continuity and finalization across transport boundaries", async () => {
+    const value = 'abcdefgh /+"value';
+    const inserted = [{ name: "TOKEN", value, sent: `Bearer ${value}` }];
+    for (const spelling of secretEchoReplacements(inserted).keys()) {
+      setSystemTime(fixed);
+      const proof = await attempt();
+      await rememberCodeOutputSecrets({ ...claims, ...proof }, inserted);
+      const middle = Math.floor(spelling.length / 2);
+      await receiveCodeOutput(proof, batch(1, spelling.slice(0, middle)));
+      expect((await replayCodeOutput(proof.runId)).lines.flatMap((line) => line.parts)).toEqual([]);
+      const raw = await redis.get(`core:code-output:v1:${proof.runId}`);
+      expect(raw).not.toContain(spelling.slice(0, middle));
+      setSystemTime(fixed + 1000);
+      await receiveCodeOutput(proof, batch(2, spelling.slice(middle)));
+      // An unpadded spelling can still prefix a padded spelling; finalization resolves it.
+      await persistCodeOutput(proof.runId);
+      expect((await replayCodeOutput(proof.runId)).lines.flatMap((line) => line.parts)).toEqual([{ type: "secret", name: "TOKEN" }]);
+    }
+    setSystemTime(fixed);
+    const proof = await attempt();
+    await rememberCodeOutputSecrets({ ...claims, ...proof }, inserted);
+    await receiveCodeOutput(proof, batch(1, "abcd"));
+    const meter = await meterSql();
+    try {
+      expect(await meter.during(() => persistCodeOutput(proof.runId))).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
+    expect((await replayCodeOutput(proof.runId)).lines).toEqual([{ level: "log", parts: [{ type: "secret", name: "TOKEN" }] }]);
+  });
+  test("harden bounded replacement admission, deduplication and compiled revision reuse", async () => {
+    setSystemTime(fixed);
+    const budget = LIVE_LIMITS.frameBytes;
+    const proof = await attempt(budget);
+    const scoped = { ...claims, ...proof };
+    const entry = { name: "TOKEN", value: "fixture-private-value", sent: "Bearer fixture-private-value" };
+    const compile = spyOn(redaction, "compileOutputRedaction");
+    try {
+      await rememberCodeOutputSecrets(scoped, [entry]);
+      const key = `core:code-output:v1:${proof.runId}:secrets:1`;
+      const before = await redis.send("HGETALL", [key]);
+      await receiveCodeOutput(proof, batch(1, "ordinary"));
+      expect(compile).toHaveBeenCalledTimes(1);
+      await rememberCodeOutputSecrets(scoped, [entry]);
+      expect(await redis.send("HGETALL", [key])).toEqual(before);
+      setSystemTime(fixed + 1000);
+      await receiveCodeOutput(proof, batch(2, "ordinary"));
+      expect(compile).toHaveBeenCalledTimes(1);
+      await rememberCodeOutputSecrets(scoped, [{ ...entry, sent: `Other ${entry.value}` }]);
+      setSystemTime(fixed + 2000);
+      await receiveCodeOutput(proof, batch(3, "ordinary"));
+      expect(compile).toHaveBeenCalledTimes(2);
+      await expect(rememberCodeOutputSecrets(scoped, [{ ...entry, sent: "x".repeat(budget) }])).rejects.toMatchObject({
+        code: "code_http_output_redaction_limit",
+      });
+      expect(Number(await redis.send("HGET", [key, "bytes"]))).toBeLessThanOrEqual(budget);
+      const fields = await redis.send("HGETALL", [key]);
+      expect(Buffer.byteLength(JSON.stringify(fields))).toBeLessThan(budget);
+      // Required earlier entries remain available after a refused addition.
+      setSystemTime(fixed + 3000);
+      await receiveCodeOutput(proof, batch(4, entry.value));
+      expect((await replayCodeOutput(proof.runId)).lines.flatMap((line) => line.parts).at(-1)).toEqual({ type: "secret", name: "TOKEN" });
+    } finally {
+      compile.mockRestore();
+    }
+  });
+  test("harden replacement-cache recovery while preserving masked final fragments", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    const scoped = { ...claims, ...proof };
+    const entry = { name: "TOKEN", value: "fixture-private-value", sent: "Bearer fixture-private-value" };
+    await rememberCodeOutputSecrets(scoped, [entry]);
+    await receiveCodeOutput(proof, batch(1, "fixt"));
+    await redis.send("DEL", [`core:code-output:v1:${proof.runId}:secrets:1`]);
+    setSystemTime(fixed + 1000);
+    const meter = await meterSql();
+    try {
+      expect(
+        await meter.during(async () => {
+          await expect(receiveCodeOutput(proof, batch(2, "ure-private-value"))).rejects.toThrow("code_output_redaction_unavailable");
+        }),
+      ).toEqual([]);
+    } finally {
+      await meter.close();
+    }
+    await expect(rememberCodeOutputSecrets(scoped, [entry])).rejects.toMatchObject({ code: "code_http_output_redaction_unavailable" });
+    await persistCodeOutput(proof.runId);
+    expect((await replayCodeOutput(proof.runId)).lines).toEqual([{ level: "log", parts: [{ type: "secret", name: "TOKEN" }] }]);
+  });
+  test("harden above-cadence counters without rewriting the retained window or compiling replacements", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    await receiveCodeOutput(proof, batch(1, "first"));
+    const raw = await redis.get(`core:code-output:v1:${proof.runId}`);
+    const compile = spyOn(redaction, "compileOutputRedaction");
+    try {
+      const meter = await meterSql();
+      try {
+        expect(await meter.during(() => receiveCodeOutput(proof, batch(2, "discarded")))).toEqual([]);
+      } finally {
+        await meter.close();
+      }
+      expect(await redis.get(`core:code-output:v1:${proof.runId}`)).toBe(raw);
+      expect(compile).not.toHaveBeenCalled();
+      expect((await replayCodeOutput(proof.runId)).droppedLines).toBe(1);
+      setSystemTime(fixed + 1000);
+      await receiveCodeOutput(proof, batch(2, "discarded"));
+      expect(await redis.get(`core:code-output:v1:${proof.runId}`)).toBe(raw);
+      expect(compile).not.toHaveBeenCalled();
+    } finally {
+      compile.mockRestore();
+    }
+  });
+  test("harden closed fences against renewal and delayed admission while retaining replay", async () => {
+    setSystemTime(fixed);
+    const proof = await attempt();
+    await receiveCodeOutput(proof, batch(1, "retained"));
+    await closeCodeOutput(proof.runId, 1);
+    await renewCodeOutput({ ...claims, ...proof }, fixed + 300_000);
+    await openCodeOutput({ ...proof, codeId, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, 32768);
+    await expect(receiveCodeOutput(proof, batch(2, "closed"))).rejects.toBeInstanceOf(RunnerLeaseLostError);
+    expect((await replayCodeOutput(proof.runId)).lines).toEqual([{ level: "log", parts: [{ type: "text", text: "retained" }] }]);
+    const delayed = await attempt();
+    await redis.send("DEL", [`core:code-output:v1:${delayed.runId}`, `core:code-output:v1:${delayed.runId}:lease:1`]);
+    await closeCodeOutput(delayed.runId, 1);
+    await openCodeOutput({ ...delayed, codeId, deadlineAt: fixed + 300_000, leaseExpiresAt: fixed + 300_000 }, 32768);
+    await expect(receiveCodeOutput(delayed, batch(1, "delayed"))).rejects.toBeInstanceOf(RunnerLeaseLostError);
   });
   test("the pinned proof expires at the immutable run deadline, without SQL", async () => {
     setSystemTime(fixed + 300_000);
