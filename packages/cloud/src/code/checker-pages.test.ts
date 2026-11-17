@@ -60,6 +60,11 @@ app.get("/dynamic", c => {
   return responses[c.user ? 0 : 1]!();
 });
 app.get("/mixed", c => c.user ? c.text("data") : new Promise<Response>(resolve => resolve(c.page(<Page title="Home"><Text>Hello</Text></Page>))));
+const stateful = app.use<{ response: Response }>("/state", async (c, next) => {
+  c.set("response", c.page(<Page title="Home"><Text>Hello</Text></Page>));
+  return next();
+});
+stateful.get("/state", c => c.get("response"));
 app.get("/data", async c => { if (c.user) return c.json({ ok: true }); return c.text("Data"); });
 app.get("/redirect", c => c.redirect("/data"));
 app.get("/conditional-data", c => c.user ? c.json({ ok: true }) : c.text("Data"));
@@ -67,6 +72,6 @@ export default app;`,
     },
   });
   expect(result.diagnostics).toEqual([]);
-  expect(result.entrypoints.map((entry) => entry.route?.page)).toEqual([undefined, undefined, undefined, false, false, false]);
-  for (const entry of result.entrypoints.slice(0, 3)) expect(entry.route).not.toHaveProperty("page");
+  expect(result.entrypoints.map((entry) => entry.route?.page)).toEqual([undefined, undefined, undefined, undefined, false, false, false]);
+  for (const entry of result.entrypoints.slice(0, 4)) expect(entry.route).not.toHaveProperty("page");
 });
