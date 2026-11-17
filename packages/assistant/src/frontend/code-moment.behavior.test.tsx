@@ -107,13 +107,22 @@ else
     // The Code page, whose first automation last ran at that moment.
     const data = fixture!.codePageFixture("overview", "de");
     if (data.state.kind !== "ready") throw new Error("The overview fixture is ready");
-    const [first, ...rest] = data.state.automations ?? [];
+    const state = data.state;
+    const [first, ...rest] = state.automations ?? [];
     if (!first?.lastRun) throw new Error("The overview fixture's first automation has a last run");
     const page = mount(() =>
       createComponent(codePage!.default, {
         data: {
           ...data,
-          state: { ...data.state, automations: [{ ...first, lastRun: { ...first.lastRun!, createdAt: INSTANT } }, ...rest] },
+          state: {
+            ...state,
+            automations: [{ ...first, lastRun: { ...first.lastRun!, createdAt: INSTANT } }, ...rest],
+            // The live overview starts from the run list; both snapshots describe this same immutable run.
+            runs: state.runs && {
+              ...state.runs,
+              items: state.runs.items.map((run) => (run.id === first.lastRun!.id ? { ...run, createdAt: INSTANT } : run)),
+            },
+          },
         },
       }),
     );

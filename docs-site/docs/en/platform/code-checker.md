@@ -144,6 +144,9 @@ functions do not count. This is display evidence, not an authorization or a
 promise that every response is HTML. Older manifests omit it; the Code page
 keeps their existing GET/ALL opening behavior. Newly checked data routes carry
 `page: false` and offer only their address.
+The runtime registration comparison checks method, path, public access and
+layout; it excludes the checker-only `page` flag. Both page and data handlers
+must still execute through the checked bundle.
 
 The source hash covers `JSON.stringify({ entry, files })`, with `files` holding
 `[path, source]` pairs sorted by path. The SDK hash covers the `GeneratedCodeSdk`
