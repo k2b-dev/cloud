@@ -472,7 +472,7 @@ export const integrityCapabilities = defineCapabilities({
             if (!confirmed.ok) return confirmed;
             const issued = await documentIssuanceService.completeQueryDocument(await confirmationRequest(input, context));
             if (!issued.ok) return issued;
-            if ("kind" in issued.data) return fail(err.conflict("Confirmation required."));
+            if ("kind" in issued.data) return fail(err.conflict("This document needs a confirmation before it is issued."));
             const [document] = await projectDocuments([issued.data]);
             return ok({ data: DocumentCapabilityDataSchema.parse(document), refs: [{ type: "grids.document", id: issued.data.shortId }] });
           }),

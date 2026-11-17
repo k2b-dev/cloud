@@ -339,7 +339,7 @@ describe("@k2b/ui Cloud feedback parity", () => {
     expect(adaptive).toMatch(/\.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive \{[^}]*top:\s*50%;/);
     expect(adaptive).toMatch(/\.k2b-bottom-sheet-frame\.is-adaptive \.k2b-bottom-sheet__handle \{\s*display:\s*none;/);
     expect(indexCss).toMatch(
-      /@media \(prefers-reduced-motion: reduce\) \{\s*\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame,\s*\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame\.is-adaptive \{\s*animation:\s*none;/,
+      /@media \(prefers-reduced-motion: reduce\) \{\s*\.k2b-ui \.k2b-dialog\.k2b-bottom-sheet-frame \{\s*animation:\s*none;/,
     );
   });
 

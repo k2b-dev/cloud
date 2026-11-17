@@ -323,7 +323,7 @@ export const toAiErrorResponse = (c: Context<AuthContext>, error: unknown) => {
     );
   }
   const message = error instanceof Error ? error.message : "AI request failed";
-  if (message.includes("idx_ai_turns_one_active")) return respond(c, fail(err.conflict("Running turn")));
+  if (message.includes("idx_ai_turns_one_active")) return respond(c, fail(err.conflict("Running turn already exists")));
   return respond(c, fail(err.internal(message)));
 };
 

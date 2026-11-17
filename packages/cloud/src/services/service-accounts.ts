@@ -144,7 +144,7 @@ export const createResourceBound = async (params: {
     return row ? ok(mapServiceAccount(row)) : fail(err.internal("Failed to create service account"));
   } catch (error) {
     if (isForeignKeyViolation(error)) return fail(err.notFound("Creator"));
-    if (isUniqueViolation(error, RESOURCE_BOUND_UNIQUE_CONSTRAINT)) return fail(err.conflict("Resource service account"));
+    if (isUniqueViolation(error, RESOURCE_BOUND_UNIQUE_CONSTRAINT)) return fail(err.conflict("Resource service account already exists"));
     throw error;
   }
 };
@@ -169,7 +169,7 @@ export const createStandalone = async (params: {
     return row ? ok(mapServiceAccount(row)) : fail(err.internal("Failed to create service account"));
   } catch (error) {
     if (isForeignKeyViolation(error)) return fail(err.notFound("Creator"));
-    if (isUniqueViolation(error, STANDALONE_NAME_UNIQUE_CONSTRAINT)) return fail(err.conflict("Service account name"));
+    if (isUniqueViolation(error, STANDALONE_NAME_UNIQUE_CONSTRAINT)) return fail(err.conflict("Service account name already exists"));
     throw error;
   }
 };
