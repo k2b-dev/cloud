@@ -146,7 +146,10 @@ export const normalizeTimeInput = (value: string): string => {
 
 export const filterTimeInput = (value: string): string => {
   // A typed one-digit hour such as "9:30" is 09:30, not the digits 930.
-  const digits = value.replace(/^(\d)[:.]/, "0$1").replace(/\D/g, "").slice(0, 4);
+  const digits = value
+    .replace(/^(\d)[:.]/, "0$1")
+    .replace(/\D/g, "")
+    .slice(0, 4);
   return digits.length <= 2 ? digits : `${digits.slice(0, 2)}:${digits.slice(2)}`;
 };
 
