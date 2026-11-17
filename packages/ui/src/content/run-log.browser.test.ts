@@ -85,6 +85,7 @@ const still = (page: Page) =>
     [...document.querySelectorAll("#test-root .k2b-run-log")].every((node) =>
       node
         .getAnimations({ subtree: true })
+        .filter((animation) => animation.timeline === document.timeline)
         .every((animation) => animation.playState !== "running" || animation.effect?.getTiming().iterations === Number.POSITIVE_INFINITY),
     ),
   );
