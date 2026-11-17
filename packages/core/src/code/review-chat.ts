@@ -271,7 +271,6 @@ export async function startCodeReviewRevision(versionId: string) {
       input: text,
       userMessage: { role: "user", content: [{ type: "text", text }] },
       actor: context.authority.actor,
-      turnTrigger: context.authority.actor.kind === "user" ? { kind: "person", id: context.authority.actor.user.id } : undefined,
       locale: work.locale,
       modelPolicy: personalAiModelPolicy,
       toolSource: { kind: "none" },
