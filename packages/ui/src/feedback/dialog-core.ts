@@ -160,7 +160,10 @@ const loadFrameMotion = (): Promise<void> =>
     (module) => {
       frameMotion = module;
     },
-    () => {},
+    () => {
+      // A failed chunk request may succeed on the next open.
+      frameMotionLoading = undefined;
+    },
   ));
 
 const schedule = (callback: () => void): void => {
@@ -527,24 +530,29 @@ export const createDialogCore = () => {
     }
   };
 
-  /** A level that replaces another says its name; before the module has loaded, as soon as it has. */
-  const announceLevel = (role: DialogStackEntry["role"]) => {
-    if (state.motion) state.motion.announce(role);
-    else
+  /** A level that replaces another says its name; before the module has loaded, as soon as it has, if it still shows. */
+  const announceLevel = (entry: DialogStackEntry) => {
+    if (state.motion) state.motion.announce(entry.role);
+    else {
+      const element = state.element;
       void loadFrameMotion().then(() => {
-        if (!state.element || !frameMotion) return;
-        state.motion ??= frameMotion.createFrameMotion(state.element);
-        state.motion.announce(role);
+        if (!element || state.element !== element || state.stack.at(-1) !== entry || !frameMotion) return;
+        state.motion ??= frameMotion.createFrameMotion(element);
+        state.motion.announce(entry.role);
       });
+    }
   };
 
-  const popTop = (result?: unknown) => {
+  /** Closes the shown level. `below` are the levels under it that close with it (lowest last): they leave with the frame. */
+  const popTop = (result?: unknown, below: DialogStackEntry[] = []) => {
     const top = state.stack.pop();
     if (!top) return;
     releaseHistory(top);
     const discard = () => {
-      top.dispose?.();
-      top.container.remove();
+      for (const entry of [top, ...below]) {
+        entry.dispose?.();
+        entry.container.remove();
+      }
     };
 
     const dialog = state.element;
@@ -553,7 +561,7 @@ export const createDialogCore = () => {
       // The same morph as forward, backwards: the closed level fades out over the one below, which shows as it was.
       const motion = state.motion;
       // Back: the closed level moves before the shown one, which stays the dialog's last child.
-      keepScroll(top.container);
+      keepScroll(top.container, dialog);
       motion?.begin(top.container, true);
       previous.container.style.display = "";
       restoreScroll(previous.container);
@@ -562,7 +570,7 @@ export const createDialogCore = () => {
       applyCancelBehavior(dialog, () => void requestDismiss(previous), previous.cancelBehavior);
       if (motion) motion.arrive(previous.container, discard);
       else discard();
-      announceLevel(previous.role);
+      announceLevel(previous);
       schedule(() => {
         if (!focusUnclaimed(dialog)) return;
         if (top.opener?.isConnected) returnFocus(top.opener, top.openerRing);
@@ -602,8 +610,10 @@ export const createDialogCore = () => {
       if (!left) leaving = finish;
       // After the Escape that closed it: WebKit lights the ring of whatever
       // that key press leaves focused.
+      // Focus returns to where the whole dialog was opened from, not into a level that closed with it.
+      const first = below.at(-1) ?? top;
       schedule(() => {
-        if (top.opener?.isConnected && focusUnclaimed(dialog)) returnFocus(top.opener, top.openerRing);
+        if (first.opener?.isConnected && focusUnclaimed(dialog)) returnFocus(first.opener, first.openerRing);
       });
     } else discard();
 
@@ -661,7 +671,7 @@ export const createDialogCore = () => {
     // The shown level fades out while the new one replaces it in the same frame; it is hidden once it has faded.
     if (previousTop) {
       // Its scroll places survive being hidden below the new level, and a move when it shows again.
-      keepScroll(previousTop.container);
+      keepScroll(previousTop.container, dialog);
       state.motion?.begin(previousTop.container);
     }
     const activeElement = document.activeElement;
@@ -760,7 +770,7 @@ export const createDialogCore = () => {
           };
           if (state.motion) state.motion.arrive(container, hide);
           else hide();
-          announceLevel(entry.role);
+          announceLevel(entry);
         }
 
         if (state.stack.length === 1) {
@@ -798,13 +808,12 @@ export const createDialogCore = () => {
   };
 
   const close: DialogCore["close"] = (result) => {
-    // Only the shown level closes visibly; the levels below it were never on screen and leave without a morph.
-    const below = state.stack.splice(0, Math.max(0, state.stack.length - 1));
-    popTop(result);
-    for (const entry of below.reverse()) {
+    // Only the shown level closes visibly, without a morph; the levels below leave with the frame, since one that
+    // still fades out from a level change is part of the picture that fades.
+    const below = state.stack.splice(0, Math.max(0, state.stack.length - 1)).reverse();
+    popTop(result, below);
+    for (const entry of below) {
       releaseHistory(entry);
-      entry.dispose?.();
-      entry.container.remove();
       entry.resolve?.(undefined);
     }
   };

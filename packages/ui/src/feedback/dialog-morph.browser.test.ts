@@ -35,7 +35,18 @@ const question = (close) => {
   onCleanup(() => window.disposed.push("question"));
   return body;
 };
+/** Unstructured content that the frame itself scrolls. */
+const plain = () => {
+  const body = document.createElement("div");
+  body.dataset.level = "plain";
+  // Its button stands below the first screen, where the test scrolls to: focus that returns to it does not scroll.
+  body.innerHTML = "<div style='height:320px'>Long text</div><button type='button' data-plain-ask>Cancel</button><div style='height:2000px'>More text</div>";
+  body.querySelector("[data-plain-ask]").onclick = () => window.ask();
+  onCleanup(() => window.disposed.push("plain"));
+  return body;
+};
 window.openEditor = () => void dialogCore.open(editor, panelDialogWideOptions);
+window.openPlain = () => void dialogCore.open(plain);
 window.closeAll = () => dialogCore.close();
 window.ask = () =>
   void dialogCore.open(question, { role: "alertdialog", ariaDescribedBy: "discard-sentence" }).then((value) => window.results.push(value));
@@ -48,6 +59,7 @@ type MorphWindow = Window & {
   disposed: string[];
   results: string[];
   openEditor: () => void;
+  openPlain: () => void;
   ask: () => void;
   closeAll: () => void;
 };
@@ -282,6 +294,84 @@ describe(`${browserName} one dialog replaces another`, () => {
       expect(contents).toEqual({ questions: 1, disposed: ["question"] });
       await settle(page);
       expect(await page.evaluate(() => document.querySelectorAll("dialog [data-level='question']").length)).toBe(1);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("the new level's size limits do not cut the frame's old size at the first frame", async () => {
+    const page = await load();
+    try {
+      await openEditor(page);
+      // settled: the first frame of the morph is the subject.
+      const sizes = await page.evaluate(() => {
+        const limit = document.createElement("style");
+        limit.textContent = ".k2b-ui .k2b-dialog:has([data-level='question']) { max-height: 60px; max-width: 200px; }";
+        document.head.append(limit);
+        const dialog = document.querySelector("dialog")!;
+        const from = { width: dialog.offsetWidth, height: dialog.offsetHeight };
+        document.querySelector<HTMLButtonElement>("[data-ask]")!.click();
+        return { from, first: { width: dialog.offsetWidth, height: dialog.offsetHeight } };
+      });
+      expect(sizes.from.height).toBeGreaterThan(60);
+      expect(sizes.first).toEqual(sizes.from);
+      await settle(page);
+      expect(await page.evaluate(() => document.querySelector("dialog")!.offsetHeight)).toBeLessThan(sizes.from.height);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("a frame that scrolls its content itself swaps at once and keeps that level's scroll place", async () => {
+    const page = await load();
+    try {
+      await page.evaluate(() => (window as unknown as MorphWindow).openPlain());
+      await settle(page);
+      const scrolled = await page.evaluate(() => {
+        const dialog = document.querySelector("dialog")!;
+        dialog.scrollTop = 300;
+        return dialog.scrollTop;
+      });
+      expect(scrolled).toBe(300);
+      await page.evaluate(() => document.querySelector<HTMLButtonElement>("[data-plain-ask]")!.click());
+      expect(await page.evaluate(() => document.querySelector<HTMLElement>("dialog")!.dataset.k2bFrameMotion)).toBeUndefined();
+      await settle(page);
+      await page.click("[data-keep]");
+      await settle(page);
+      expect(await page.evaluate(() => document.querySelector("dialog")!.scrollTop)).toBe(300);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("closing everything just after a change keeps the old content's picture until the frame has left", async () => {
+    const page = await load();
+    try {
+      await openEditor(page);
+      const during = await page.evaluate(() => {
+        const motion = window as unknown as MorphWindow;
+        document.querySelector<HTMLButtonElement>("[data-ask]")!.click();
+        motion.closeAll();
+        return { editor: document.querySelector("[data-level='editor']") !== null, disposed: [...motion.disposed] };
+      });
+      expect(during).toEqual({ editor: true, disposed: [] });
+      await page.waitForFunction(() => !document.querySelector("dialog"));
+      expect((await page.evaluate(() => (window as unknown as MorphWindow).disposed)).sort()).toEqual(["editor", "question"]);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  test("closing everything returns focus to where the dialog was opened from", async () => {
+    const page = await load();
+    try {
+      await page.focus("#opener");
+      await openEditor(page);
+      await page.focus("[data-ask]");
+      await page.evaluate(() => document.querySelector<HTMLButtonElement>("[data-ask]")!.click());
+      await settle(page);
+      await page.evaluate(() => (window as unknown as MorphWindow).closeAll());
+      await page.waitForFunction(() => document.activeElement?.id === "opener");
     } finally {
       await page.context().close();
     }

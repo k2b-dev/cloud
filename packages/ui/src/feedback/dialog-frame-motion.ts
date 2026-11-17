@@ -147,10 +147,12 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
     delete dialog.dataset.k2bFrameMotion;
   };
 
-  let started: { from: ReturnType<typeof seen>; anchor: Anchor; leaving: HTMLElement } | undefined;
+  let started: { from: ReturnType<typeof seen>; anchor: Anchor; leaving: HTMLElement; scrolled: boolean } | undefined;
+  /** The frame scrolls its contents itself, as unstructured content does. */
+  const scrolled = () => dialog.scrollTop > 0 || dialog.scrollLeft > 0;
 
   const begin: FrameMotion["begin"] = (leaving, back) => {
-    started = { from: seen(), anchor: anchor(), leaving };
+    started = { from: seen(), anchor: anchor(), leaving, scrolled: scrolled() };
     endFrame();
     hold(leaving);
     if (!back) return;
@@ -194,18 +196,25 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       left();
     };
     const duration = animatable() ? token("--k2b-motion-morph") : 0;
-    // Between a sheet and a centred dialog there is no shared edge to morph from.
-    if (!duration || anchor() !== change.anchor) {
+    // Between a sheet and a centred dialog there is no shared edge to morph from. A frame that scrolls itself swaps at
+    // once too: its contents stand in its scrolled space, which a moving size would cut or shift.
+    if (!duration || anchor() !== change.anchor || change.scrolled || scrolled()) {
       fade(leaving, 0, 0, 0, leave);
       fade(arriving, 1, 0, 0, () => {});
       return;
     }
     const to = seen();
     pin(arriving);
-    const size = (geometry: typeof from) =>
-      change.anchor === "center"
-        ? { width: `${geometry.width}px`, height: `${geometry.height}px`, top: `${geometry.top}px` }
-        : { width: `${geometry.width}px`, height: `${geometry.height}px` };
+    // The new level's own size limits would cut the old size at the first frame: the motion sets both sizes itself.
+    const size = (geometry: typeof from) => ({
+      width: `${geometry.width}px`,
+      height: `${geometry.height}px`,
+      minWidth: "0",
+      minHeight: "0",
+      maxWidth: "none",
+      maxHeight: "none",
+      ...(change.anchor === "center" ? { top: `${geometry.top}px` } : {}),
+    });
     dialog.dataset.k2bFrameMotion = "";
     const animation = dialog.animate([size(from), size(to)], { duration, easing: curve("--k2b-ease-morph", "ease-out") });
     frame = animation;
@@ -215,6 +224,8 @@ export const createFrameMotion = (dialog: HTMLDialogElement): FrameMotion => {
       if (frame !== animation) return;
       endFrame();
       for (const property of ["width", "height", "flex"] as const) arriving.style.removeProperty(property);
+      // A sheet measures its rests again at the frame's new size.
+      dialog.dispatchEvent(new Event("k2b-frame-resize"));
     };
     fade(leaving, 0, duration * LEAVE_SHARE, 0, leave);
     fade(arriving, 1, duration * ARRIVE_SHARE, duration * ARRIVE_DELAY_SHARE, () => {});

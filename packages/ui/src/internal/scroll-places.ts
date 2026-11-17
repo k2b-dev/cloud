@@ -1,10 +1,13 @@
-/** Scroll places of a dialog level that is hidden or moved, given back when it shows again. */
+/**
+ * Scroll places of a dialog level that is hidden or moved, given back when it shows again: its own scrollers and the
+ * frame's, when the frame itself scrolls the level.
+ */
 const places = new WeakMap<HTMLElement, (readonly [HTMLElement, number, number])[]>();
 
-export const keepScroll = (level: HTMLElement) =>
+export const keepScroll = (level: HTMLElement, frame: HTMLElement) =>
   places.set(
     level,
-    [...level.querySelectorAll<HTMLElement>("*")]
+    [frame, level, ...level.querySelectorAll<HTMLElement>("*")]
       .filter((element) => element.scrollTop > 0 || element.scrollLeft > 0)
       .map((element) => [element, element.scrollTop, element.scrollLeft] as const),
   );
