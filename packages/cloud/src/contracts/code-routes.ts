@@ -54,22 +54,12 @@ export function codeOwnPath(codeId: string, path: string): string {
   return pathname === base || pathname.startsWith(`${base}/`) ? path : base + path;
 }
 
-/** Displayable page evidence; admission and the handler still decide whether the request succeeds. */
-export function isCodePageRoute(route: { method: string; path: string; public: boolean; page?: boolean } | undefined): boolean {
-  return (
-    !!route && !route.public && route.page !== false && (route.method === "GET" || route.method === "ALL") && !route.path.includes(":")
-  );
-}
-
-/** Current manifest entries as openable pages, home first. Shared by the Code head and version handoffs. */
-export function codePageLinks<T extends { kind: string; route?: { method: string; path: string; public: boolean; page?: boolean } }>(
-  codeId: string,
-  entries: readonly T[],
-) {
-  const pages = entries.filter((entry) => entry.kind === "route" && isCodePageRoute(entry.route));
-  const home = pages.find((entry) => entry.route!.path === "/") ?? pages[0];
-  return (home ? [home, ...pages.filter((entry) => entry !== home)] : []).map((entry) => ({
-    entry,
-    href: codeOwnPath(codeId, entry.route!.path),
-  }));
-}
+/** Server-projected links for one immutable version; links do not grant page admission. */
+export const CodePageLinksSchema = z
+  .object({
+    versionId: z.string(),
+    homeUrl: z.string().nullable(),
+    pages: z.array(z.object({ entrypoint: z.string(), title: z.string(), href: z.string() }).strict()),
+  })
+  .strict();
+export type CodePageLinks = z.infer<typeof CodePageLinksSchema>;

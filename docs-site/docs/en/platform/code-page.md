@@ -106,11 +106,18 @@ only for a non-public GET or ALL route without named path segments whose
 checker metadata allows a page. The root route `/` is the home page and reads
 **Home page** when it has no title; otherwise the first eligible route in
 manifest order is the home page. Data routes and routes that only accept
-input offer Copy address. Applications that hand off to a newly activated
-version use `codePageLinks(codeId, manifest.entrypoints)` from
-`@k2b/cloud/contracts`: the first result's `href` is the home page, or the
-array is empty when there is no eligible page. Pass the active manifest;
-waiting versions do not expose pages yet. Paused pages explain why Open is unavailable.
+input offer Copy address. Core's server-only `describeCodePages(codeId,
+{ id: versionId, manifest }, locale)` in `packages/core/src/code/page-links.ts`
+is the single selection for the Code page and version handoffs. It returns
+`{ versionId, homeUrl, pages: [{ entrypoint, title, href }] }`; `homeUrl` is null
+when no route qualifies. Titles use the request locale. Authorize the Code and
+version read before calling it: the function projects a checked manifest and
+grants no access. `core.code.version.read` includes this projection as `pages`
+when reading manifest content (null otherwise). The Code page uses that result
+for its head and overview, without repeating eligibility or home selection in
+the browser. Handoffs may project a submitted version, but only offer Open after
+that version is active and the Code is enabled. Waiting versions do not expose
+Open yet. Paused pages explain why Open is unavailable.
 
 **Run now** stays available in **When it runs** and shares its pending state
 with the head. Only editors may start schedule and manual automations;

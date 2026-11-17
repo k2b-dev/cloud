@@ -1,4 +1,4 @@
-import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceRefSchema, CODE_BRIDGE_REFUSAL_KINDS } from "@k2b/cloud/contracts";
+import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceRefSchema, CODE_BRIDGE_REFUSAL_KINDS, CodePageLinksSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const CodeEventDeliverySchema = z
@@ -272,7 +272,12 @@ export const codeQueryContracts = {
       })
       .strict(),
     data: z
-      .object({ version: CodeVersionSchema, content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).nullable() })
+      .object({
+        version: CodeVersionSchema,
+        content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).nullable(),
+        /** Page selection from this immutable manifest, only for manifest reads; null when no checked manifest exists. */
+        pages: CodePageLinksSchema.nullable(),
+      })
       .strict(),
   },
   runList: {

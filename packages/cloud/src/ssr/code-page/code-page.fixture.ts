@@ -450,6 +450,7 @@ const ready = (overrides: Partial<CodePageReady> = {}, words: Partial<CodePageWo
     proposal: null,
     attentionReasons: null,
     internet: { active: ["https://bank.example", "https://status.example"], waiting: [] },
+    pages: { versionId: v4.id, homeUrl: null, pages: [] },
     automations: automations(items),
     targets,
     refusal: null,
@@ -692,6 +693,11 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
         ...base,
         tab: "overview",
         state: ready({
+          pages: {
+            versionId: versions().v4.id,
+            homeUrl: "/code/c_3mfa/rueckruf",
+            pages: [{ entrypoint: "route:rueckruf", title: L("Rückruf bestätigen", "Confirm callback"), href: "/code/c_3mfa/rueckruf" }],
+          },
           internet: { active: ["https://api.buchhaltung-beispiel.de", "https://bank.example", "https://status.example"], waiting: [] },
           secretOrigins: { "https://api.buchhaltung-beispiel.de": ["BUCHHALTUNG_TOKEN"] },
           databaseUsed: true,
@@ -699,6 +705,7 @@ export const codePageFixture = (state: CodePageFixtureState, locale = "de"): Cod
           automations: [
             ...automations(runs()),
             {
+              pageLink: { entrypoint: "route:rueckruf", title: L("Rückruf bestätigen", "Confirm callback"), href: "/code/c_3mfa/rueckruf" },
               entrypoint: "route:rueckruf",
               title: L("Rückruf bestätigen", "Confirm callback"),
               kind: "route",

@@ -5,6 +5,7 @@ import type { CloudResourceRef } from "../../contracts/capabilities";
 import { CODE_BRIDGE_REFUSAL_KINDS, type CodeBridgeRefusalKind } from "../../contracts/code-call";
 import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
 import type { CodeActivityReadModel, CodeRunReadModel, CodeVersionReadModel } from "../../contracts/code-read-model";
+import { type CodePageLinks, CodePageLinksSchema } from "../../contracts/code-routes";
 import type { CodeSourceTabInitial } from "./source-tab-load";
 import type { CodeOperationLabels } from "./targets";
 
@@ -70,6 +71,7 @@ const VersionReceiptSchema = z.object({
 });
 export const VersionListSchema = z.object({ items: z.array(VersionReceiptSchema), nextBefore: z.number().int().nullable() });
 export const VersionReadSchema = z.object({
+  pages: CodePageLinksSchema.nullable().optional(),
   version: VersionSchema,
   content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).nullable(),
 });
@@ -290,6 +292,7 @@ export type CodePageAutomation = {
   /** Reviewed human title; absent on older versions. */
   title?: string;
   kind: "schedule" | "manual" | "event" | "route";
+  pageLink?: CodePageLinks["pages"][number];
   route?: { method: string; path: string; public: boolean; page?: boolean };
   event?: CodePageEvent;
   cron: string | null;
@@ -402,6 +405,8 @@ export type CodePageReady = {
   /** The newest version awaiting approval or activation, when newer than the running one. */
   waiting: CodePageVersion | null;
   automations: CodePageAutomation[] | null;
+  /** Core’s version-bound page projection; never inferred again in the browser. */
+  pages?: CodePageLinks | null;
   /** Core's attention reasons for this Code, the same answer the owner's navigation uses; null when unavailable. */
   attentionReasons: string[] | null;
   /** Full declared lists for the running and waiting versions; null means the manifest could not be read. */

@@ -395,7 +395,7 @@ function Pages(props: { state: CodePageReady; text: PageText }) {
               <Row
                 icon={automation.route!.public ? "ti ti-bolt" : "ti ti-browser"}
                 tile="page"
-                title={routeTitle(automation, t())}
+                title={routeTitle(automation)}
                 after={
                   <Show when={automation.route!.public}>
                     <Tag size="sm" icon="ti ti-world" class="cloud-code__public-tag">
@@ -415,7 +415,7 @@ function Pages(props: { state: CodePageReady; text: PageText }) {
                 trail={
                   <>
                     <Show when={opensPage(automation) && props.state.code.state === "active"}>
-                      <ButtonLink size="sm" variant="ghost" href={routeHref(props.state.code.id, automation)}>
+                      <ButtonLink size="sm" variant="ghost" href={automation.pageLink!.href}>
                         {t().launchOpen}
                       </ButtonLink>
                     </Show>

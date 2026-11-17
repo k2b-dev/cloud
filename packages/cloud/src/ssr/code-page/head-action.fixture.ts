@@ -63,6 +63,8 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
     title: de ? "Vergangene Wochen" : "Previous weeks",
     route: { ...home.route!, path: "/archive" },
   };
+  home.pageLink = { entrypoint: home.entrypoint, title: de ? "Startseite" : "Home page", href: `/code/${state.code.id}/` };
+  page.pageLink = { entrypoint: page.entrypoint, title: page.title!, href: `/code/${state.code.id}/archive` };
   const event: CodePageAutomation = {
     ...schedule,
     entrypoint: "event:received",
@@ -85,6 +87,7 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
               event,
               {
                 ...home,
+                pageLink: undefined,
                 entrypoint: "public",
                 title: de ? "Öffentlicher Eingang" : "Public inbox",
                 route: { method: "POST", path: "/inbox", public: true, page: false },
@@ -110,7 +113,17 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
     state.runs = { items: [], nextCursor: null };
     if (state.words) state.words.runs = {};
   }
-  if (name === "partial") state.automations = null;
+  const pageLinks =
+    name === "pages" || name === "both" || name === "mailbox"
+      ? [home.pageLink, page.pageLink]
+      : name === "page" || name === "reader-page" || name === "reader-waiting" || name === "paused-reader"
+        ? [home.pageLink]
+        : [];
+  state.pages = { versionId: state.code.activeVersionId!, homeUrl: pageLinks[0]?.href ?? null, pages: pageLinks };
+  if (name === "partial") {
+    state.automations = null;
+    state.pages = null;
+  }
   if (name === "loading") return { ...data, state: { kind: "loading" } };
   return data;
 }

@@ -257,6 +257,7 @@ const capabilityTitle = async (capability: string, catalog: ReturnType<typeof ca
 /** Reads a whole manifest in bounded chunks; null when it cannot be read or parsed. */
 const loadManifest = async (invoke: CodePageInvoke, codeId: string, versionId: string) => {
   let text = "";
+  let pages: z.infer<typeof VersionReadSchema>["pages"] = null;
   let offset: number | null = 0;
   for (let chunk = 0; offset !== null && chunk < MANIFEST_CHUNKS; chunk++) {
     const from: number = offset;
@@ -266,12 +267,13 @@ const loadManifest = async (invoke: CodePageInvoke, codeId: string, versionId: s
     );
     const content: { text: string; nextOffset: number | null } | null = read.ok ? read.data.data.content : null;
     if (!content) return null;
+    if (chunk === 0 && read.ok) pages = read.data.data.pages ?? null;
     text += content.text;
     offset = content.nextOffset;
   }
   if (offset !== null) return null;
   try {
-    return ManifestSchema.parse(JSON.parse(text));
+    return { ...ManifestSchema.parse(JSON.parse(text)), pages: pages?.versionId === versionId ? pages : null };
   } catch {
     return null;
   }
@@ -516,12 +518,17 @@ const loadReady = async (
     const described = event && events.get(JSON.stringify(event));
     return described ? { event: described } : {};
   };
-  const automationsFrom = (manifest: z.infer<typeof ManifestSchema>, isNew: (entrypoint: string) => boolean): CodePageAutomation[] =>
-    manifest.entrypoints.map((entry) => ({
+  const automationsFrom = (
+    manifest: z.infer<typeof ManifestSchema> & { pages?: z.infer<typeof VersionReadSchema>["pages"] },
+    isNew: (entrypoint: string) => boolean,
+  ): CodePageAutomation[] => {
+    const pages = new Map(manifest.pages?.pages.map((page) => [page.entrypoint, page]));
+    return manifest.entrypoints.map((entry) => ({
       entrypoint: entry.entrypoint,
       ...(entry.title === undefined ? {} : { title: entry.title }),
       kind: entry.kind,
       ...(entry.route ? { route: entry.route } : {}),
+      ...(pages.has(entry.entrypoint) ? { pageLink: pages.get(entry.entrypoint) } : {}),
       ...eventOf(entry.event),
       cron: entry.cron,
       ...(entry.at === undefined ? {} : { at: entry.at, timeZone: entry.timeZone ?? defaultTimeZone }),
@@ -533,6 +540,7 @@ const loadReady = async (
         : (nextRunStates.get(entry.entrypoint) ??
           (nextRuns.get(entry.entrypoint) ? "planned" : code.state === "active" && entry.kind === "schedule" ? "unavailable" : "none")),
     }));
+  };
   const activeEntrypoints = new Map(activeManifest?.entrypoints.map((entry) => [entry.entrypoint, JSON.stringify(entry.route)]) ?? []);
   const automations =
     (code.activeVersionId && !activeManifest) || (waitingReceipt && !waitingManifest)
@@ -762,6 +770,7 @@ const loadReady = async (
     moreVersions: versionsResult.ok && versionsResult.data.data.nextBefore !== null,
     active: activeVersion,
     waiting: waitingReceipt ? (versions.find((version) => version.id === waitingReceipt.version.id) ?? null) : null,
+    pages: activeManifest?.pages ?? null,
     automations:
       automations?.map((automation) => {
         const timingText = timingOf(automation);

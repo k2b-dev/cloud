@@ -1,7 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import { aiLive } from "@k2b/cloud/ai/live";
-import { CodeAutomationTitleSchema, type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
+import {
+  CodeAutomationTitleSchema,
+  CodeCheckedVersionManifestSchema,
+  type NormalizedCapabilityCall,
+  NormalizedCapabilityCallSchema,
+} from "@k2b/cloud/contracts";
 import { buildAccessPrincipalCondition, createAccess, type Principal } from "@k2b/cloud/server";
 import type { SQL, TransactionSQL } from "bun";
 import type { z } from "zod";
@@ -31,6 +36,7 @@ import {
   CodeVersionManifestSchema,
   type codeQueryContracts,
 } from "./contracts";
+import { describeCodePages } from "./page-links";
 import { type CodeEffectEvidence, CodeEffectEvidenceSchema } from "./read-model/effects";
 import { createCodeServiceAccount } from "./service-account";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -430,7 +436,9 @@ export const readCodeVersion = async (
     text = Object.hasOwn(row.source_files, input.content.path) ? row.source_files[input.content.path] : undefined;
   if (input.content && text === undefined) throw new CodeDataError("NOT_FOUND", "Version content not found.");
   const content = text === undefined ? null : codeTextChunk(text, input.offset, input.length);
-  return { version: mapVersion(row), content };
+  const manifest = input.content?.kind === "manifest" ? CodeCheckedVersionManifestSchema.safeParse(row.manifest) : null;
+  const pages = manifest?.success ? describeCodePages(code.id, { id: row.id, manifest: manifest.data }, context.locale ?? "en") : null;
+  return { version: mapVersion(row), content, pages };
 };
 
 type RunRow = {

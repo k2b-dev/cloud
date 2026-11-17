@@ -1,4 +1,4 @@
-export { type CodeRoute, CodeRouteSchema, codeOwnPath, codePageLinks, isCodePageRoute, matchCodeRoute } from "../contracts/code-routes";
+export { type CodeRoute, CodeRouteSchema, codeOwnPath, matchCodeRoute } from "../contracts/code-routes";
 export { visitCronDaySlots } from "../shared/cron-schedule";
 export { codeAiToolCovered, createCodeAiTools } from "./ai-tools";
 export type {

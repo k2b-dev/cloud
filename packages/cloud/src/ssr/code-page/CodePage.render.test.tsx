@@ -17,7 +17,7 @@ import * as coreLocation from "../../services/identity/core-origin";
 import { buildProjectedUser } from "../../services/session/user";
 import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { CODE_PAGE_FIXTURE_STATES, type CodePageFixtureState, codePageFixture } from "./code-page.fixture";
-import type { CodePageInvoke } from "./data";
+import { type CodePageInvoke, VersionReadSchema } from "./data";
 import { codePageMessages } from "./messages";
 import { nameRecentResults } from "./recent-names";
 import { describeCodeSchedule } from "./schedule";
@@ -649,7 +649,7 @@ describe("Code page loader", () => {
     cloudTimeZone?: string,
     roles: string[] = ["user"],
     /** Version words Core answers instead of the default, and other apps' answers by `app.capability`. */
-    overrides: { words?: (versionId: string) => unknown; apps?: Record<string, unknown>; spaces?: CatalogApp } = {},
+    overrides: { pages?: unknown; words?: (versionId: string) => unknown; apps?: Record<string, unknown>; spaces?: CatalogApp } = {},
   ) => {
     const appCalls: string[] = [];
     const coreCalls: string[] = [];
@@ -667,7 +667,15 @@ describe("Code page loader", () => {
         invocation.capabilityId === "code.version.words" && overrides.words
           ? overrides.words(input.versionId ?? V4)
           : core(permission, run, firstCall, checkedManifest)(invocation.capabilityId, input);
-      return { ok: true, data: capabilityResultSchema(schema).parse({ data }) };
+      return {
+        ok: true,
+        data: capabilityResultSchema(schema).parse({
+          data:
+            invocation.capabilityId === "code.version.read" && overrides.pages !== undefined
+              ? { ...VersionReadSchema.parse(data), pages: overrides.pages }
+              : data,
+        }),
+      };
     });
     const catalog = spyOn(capabilityServer, "getCapabilityCatalogApp").mockImplementation(async (appId) => ({
       ok: true,
@@ -708,6 +716,32 @@ describe("Code page loader", () => {
       fetched.mockRestore();
     }
   };
+
+  test("manifest reads carry Core's page selection and titles unchanged; another version's projection is ignored", async () => {
+    const checkedManifest = {
+      ...manifest,
+      entrypoints: [{ kind: "route", entrypoint: "home", route: { method: "GET", path: "/", public: false, page: true }, cron: null }],
+    };
+    const pages = {
+      versionId: V4,
+      homeUrl: "/code/c_3mfa/",
+      pages: [{ entrypoint: "home", title: "Vom Server benannt", href: "/code/c_3mfa/" }],
+    };
+    const { data } = await load("reader", "", failedRun, policyCall, checkedManifest, undefined, ["user"], { pages });
+    if (data.state.kind !== "ready") throw new Error("Expected ready page");
+    expect(data.state.pages).toEqual(pages);
+    expect(data.state.automations![0]!.pageLink).toEqual(pages.pages[0]);
+    const missing = await load("reader", "", failedRun, policyCall, checkedManifest);
+    if (missing.data.state.kind !== "ready") throw new Error("Expected ready page");
+    expect(missing.data.state.pages).toBeNull();
+    expect(missing.data.state.automations![0]!.pageLink).toBeUndefined();
+    const stale = await load("reader", "", failedRun, policyCall, checkedManifest, undefined, ["user"], {
+      pages: { ...pages, versionId: "00000000-0000-4000-8000-000000000005" },
+    });
+    if (stale.data.state.kind !== "ready") throw new Error("Expected ready page");
+    expect(stale.data.state.pages).toBeNull();
+    expect(stale.data.state.automations![0]!.pageLink).toBeUndefined();
+  });
 
   // #77: Core's owner check spent its one child Query on the mailbox, so it could not read the Space and kept only
   // its reference. The page reads that target itself, as the person, through the same readers as the latest results.
