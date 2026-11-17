@@ -134,16 +134,17 @@ export const createBaseController = (deps: BaseControllerDeps) => {
         rollupRetentionDays: input.rollupRetentionDays,
         sensitiveRetentionHours: input.sensitiveRetentionHours,
       };
-      await updateMutation.mutate(intent);
+      let outcome = await updateMutation.mutate(intent);
       if (disposed) return "failed";
-      const refused = updateMutation.error();
+      const refused = outcome === "error" ? updateMutation.error() : null;
       if (refused instanceof RetentionConfirmationError) {
         // A shorter retention deletes data: save only after the person saw from when and how much.
         if (!(await confirmShorterRetention(refused.preview, locale())) || disposed) return "failed";
-        await updateMutation.mutate({ ...intent, confirmShorterRetention: true, expectedRetention: refused.previewedFrom });
+        outcome = await updateMutation.mutate({ ...intent, confirmShorterRetention: true, expectedRetention: refused.previewedFrom });
         if (disposed) return "failed";
       }
-      if (updateMutation.error()) throw updateMutation.error();
+      if (outcome === "error") throw updateMutation.error();
+      if (outcome !== "success") return "failed";
       if (
         !(await reconcile(
           () => Promise.all([deps.refreshBases(), deps.refreshWorkspace()]).then(() => undefined),
@@ -172,9 +173,10 @@ export const createBaseController = (deps: BaseControllerDeps) => {
 
     deps.setLoading(true);
     try {
-      await clearMutation.mutate(base.id);
+      const outcome = await clearMutation.mutate(base.id);
       if (disposed) return;
-      if (clearMutation.error()) throw clearMutation.error();
+      if (outcome === "error") throw clearMutation.error();
+      if (outcome !== "success") return;
       if (!(await reconcile(deps.refreshWorkspace, t().clearDataStartedRefreshFailed))) return;
       toast.success(t().clearDataStarted);
     } catch (error) {
@@ -195,9 +197,10 @@ export const createBaseController = (deps: BaseControllerDeps) => {
 
     deps.setLoading(true);
     try {
-      await deleteMutation.mutate(base.id);
+      const outcome = await deleteMutation.mutate(base.id);
       if (disposed) return false;
-      if (deleteMutation.error()) throw deleteMutation.error();
+      if (outcome === "error") throw deleteMutation.error();
+      if (outcome !== "success") return false;
       if (!(await reconcile(deps.refreshBases, t().deleteBaseStartedRefreshFailed))) return false;
       const nextBase = deps.bases().find((item) => item.id !== base.id) ?? null;
       deps.navigateToBase(nextBase?.id ?? "");
@@ -215,9 +218,10 @@ export const createBaseController = (deps: BaseControllerDeps) => {
   const retryStore = async (base: PulseBase): Promise<PulseBase | null> => {
     deps.setLoading(true);
     try {
-      await retryMutation.mutate(base.id);
+      const outcome = await retryMutation.mutate(base.id);
       if (disposed) return null;
-      if (retryMutation.error()) throw retryMutation.error();
+      if (outcome === "error") throw retryMutation.error();
+      if (outcome !== "success") return null;
       const next = retryMutation.data() ?? null;
       await reconcile(deps.refreshBases, t().settingsSavedRefreshFailed);
       if (!disposed) toast.success(baseStoreMessages.resolve([locale()]).t.retryStarted);

@@ -62,8 +62,7 @@ const CreateClientButton = () => {
           close={requestClose}
           loading={mutation.loading}
           onSubmit={async (data) => {
-            await mutation.mutate(data);
-            if (!mutation.error()) close();
+            if ((await mutation.mutate(data)) === "success") close();
           }}
         />
       );

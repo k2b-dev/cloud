@@ -65,6 +65,8 @@ function SearchIndexSection(props: { conversationId: string }) {
   onCleanup(stopPolling);
 
   const load = mutation.create<{ status: AiEnrichmentStatus | null; runs: AiEnrichmentRun[] }, void>({
+    // A reload after reindexing must not be dropped by a poll in flight.
+    concurrency: "replace",
     mutation: async () => assistantApi.getEnrichment(props.conversationId),
     onSuccess: (result) => {
       setStatus(result.status);

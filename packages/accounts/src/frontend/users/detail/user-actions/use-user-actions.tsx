@@ -423,8 +423,7 @@ export function createUserActions(props: UserActionsProps) {
 
         const handleSubmit = async (date: string | null) => {
           try {
-            await setExpiryMutation.mutate(date);
-            close();
+            if ((await setExpiryMutation.mutate(date)) === "success") close();
           } catch {
             // Error is shown by onError callback.
           }

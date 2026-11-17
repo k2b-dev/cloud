@@ -26,7 +26,7 @@ type DocumentGenerateDialogArgs = {
   template: PublicDocumentTemplateSummary;
   initialRecordId: string | null;
   mode?: "generate" | "generate-again";
-  onGenerated: () => void | Promise<void>;
+  onGenerated: () => unknown;
 };
 
 export const openDocumentGenerateDialog = (args: DocumentGenerateDialogArgs) =>
