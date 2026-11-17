@@ -4,10 +4,9 @@ export const assistantMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      authoringStopTitle: "Gustav stopped",
-      authoringStopRepeated: "The same problem remained after several attempts.",
-      authoringStopAttempts: "Gustav used all attempts for this pass.",
-      authoringStopBudget: "More attempts would have cost too much.",
+      authoringStopTitle: "Gustav is taking a break",
+      authoringStopRepeated: "The same error came up several times. He is waiting for you now.",
+      authoringStopTried: "He has already tried a lot in this step and is waiting for you now.",
       authoringStopDoneLabel: "Done",
       authoringStopOpenLabel: "Still open",
       authoringStopChecked: ({ drafts }: { drafts: number }): string => (drafts === 1 ? "Draft checked" : "Drafts checked"),
@@ -21,10 +20,13 @@ export const assistantMessages = i18n.define({
       authoringStopSave: ({ count, drafts }: { count: number; drafts: number }): string =>
         drafts === 1 ? "Save a version" : `Save ${count} ${count === 1 ? "version" : "versions"}`,
       authoringStopReview: "Review the saved result",
-      authoringStopNoDraft: "No saved draft was confirmed in this pass.",
-      authoringStopSaved: ({ drafts }: { drafts: number }): string => (drafts === 1 ? "The draft is saved." : "The drafts are saved."),
+      authoringStopNoDraft: "There is no draft yet.",
+      authoringStopSaved: ({ drafts }: { drafts: number }): string =>
+        drafts === 1 ? "The draft is safe, but there is no version yet." : "The drafts are safe, but there are no versions yet.",
       authoringStopSubmitted: ({ drafts }: { drafts: number }): string =>
-        drafts === 1 ? "The version is saved." : "The versions are saved.",
+        drafts === 1 ? "The version is submitted." : "The versions are submitted.",
+      authoringStopPartlySubmitted: ({ unsubmitted, submitted }: { unsubmitted: number; submitted: number }): string =>
+        `${unsubmitted === 1 ? "1 draft is safe, but has no version yet." : `${unsubmitted} drafts are safe, but have no versions yet.`} ${submitted === 1 ? "1 version is submitted." : `${submitted} versions are submitted.`}`,
       authoringContinue: "Continue",
       authoringContinueMessage: "Continue the remaining work. Check the current saved state first.",
       authoringContinueFailed: "Could not continue. Try again.",
@@ -340,10 +342,9 @@ export const assistantMessages = i18n.define({
       waitingViewLabel: ({ title }: { title: string }) => `View: ${title}`,
     },
     de: {
-      authoringStopTitle: "Gustav hat angehalten",
-      authoringStopRepeated: "Dasselbe Problem blieb nach mehreren Versuchen.",
-      authoringStopAttempts: "Gustav hat alle Versuche für diesen Durchgang genutzt.",
-      authoringStopBudget: "Weitere Versuche wären zu teuer geworden.",
+      authoringStopTitle: "Gustav macht eine Pause",
+      authoringStopRepeated: "Derselbe Fehler kam mehrmals. Er wartet jetzt auf dich.",
+      authoringStopTried: "Er hat in diesem Schritt schon viel ausprobiert und wartet jetzt auf dich.",
       authoringStopDoneLabel: "Erledigt",
       authoringStopOpenLabel: "Noch offen",
       authoringStopChecked: ({ drafts }: { drafts: number }) => (drafts === 1 ? "Entwurf geprüft" : "Entwürfe geprüft"),
@@ -357,11 +358,13 @@ export const assistantMessages = i18n.define({
       authoringStopSave: ({ count, drafts }: { count: number; drafts: number }) =>
         drafts === 1 ? "Version speichern" : `${count} ${count === 1 ? "Version" : "Versionen"} speichern`,
       authoringStopReview: "Gespeichertes Ergebnis ansehen",
-      authoringStopNoDraft: "In diesem Durchgang wurde kein gespeicherter Entwurf bestätigt.",
+      authoringStopNoDraft: "Es gibt noch keinen Entwurf.",
       authoringStopSaved: ({ drafts }: { drafts: number }) =>
-        drafts === 1 ? "Der Entwurf ist gespeichert." : "Die Entwürfe sind gespeichert.",
+        drafts === 1 ? "Der Entwurf ist gesichert, aber noch keine Version." : "Die Entwürfe sind gesichert, aber noch keine Versionen.",
       authoringStopSubmitted: ({ drafts }: { drafts: number }) =>
-        drafts === 1 ? "Die Version ist gespeichert." : "Die Versionen sind gespeichert.",
+        drafts === 1 ? "Die Version ist eingereicht." : "Die Versionen sind eingereicht.",
+      authoringStopPartlySubmitted: ({ unsubmitted, submitted }: { unsubmitted: number; submitted: number }) =>
+        `${unsubmitted === 1 ? "1 Entwurf ist gesichert, aber noch ohne Version." : `${unsubmitted} Entwürfe sind gesichert, aber noch ohne Versionen.`} ${submitted === 1 ? "1 Version ist eingereicht." : `${submitted} Versionen sind eingereicht.`}`,
       authoringContinue: "Weiterarbeiten",
       authoringContinueMessage: "Setze die offene Arbeit fort. Prüfe zuerst den aktuellen gespeicherten Stand.",
       authoringContinueFailed: "Das ging nicht. Versuch es noch einmal.",
