@@ -82,7 +82,7 @@ import {
   toolBlockId,
 } from "./protocol";
 import { retryTransientProviderErrors } from "./provider-retry";
-import { publicAiToolInput } from "./public-tool-input";
+import { publicAiToolBlock, publicAiToolInput, publicAiToolResult } from "./public-tool-input";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { collectConversationResourceObservations } from "./resource-refs";
 import { capabilityResultView } from "./result-view";
@@ -360,7 +360,7 @@ const rebuildBlocksFromMessages = (
   pending: AiPendingTurnActionRecord[],
   steers: AiTurnSteer[] = [],
 ): AiTurnBlock[] => {
-  const blocks = buildBlocksFromMessages(projectAiChoices(messages)).map(withResultView);
+  const blocks = buildBlocksFromMessages(projectAiChoices(messages)).map(publicAiToolBlock).map(withResultView);
   const indexByCallId = new Map(blocks.map((block, index) => [block.kind === "tool" ? block.callId : `_${index}`, index]));
 
   for (const action of pending) {
@@ -384,6 +384,7 @@ const rebuildBlocksFromMessages = (
                 allowChat: action.allowChat ?? action.allowAlways,
                 ...(action.rememberToolName === AI_WEBSITE_APPROVAL_TOOL ? { website: action.approvalScope } : {}),
               },
+        ...(action.rememberToolName === AI_WEBSITE_APPROVAL_TOOL ? { presentation: undefined, review: undefined } : {}),
         frontendMode: action.frontendMode,
       };
     }
@@ -574,7 +575,10 @@ const createEventMapper = (
           : {}),
       status: patch.status ?? existing?.status ?? "running",
       at: patch.at ?? existing?.at,
-      result: patch.isError && existing?.result !== undefined ? existing.result : "result" in patch ? patch.result : existing?.result,
+      result: publicAiToolResult(
+        name,
+        patch.isError && existing?.result !== undefined ? existing.result : "result" in patch ? patch.result : existing?.result,
+      ),
       isError: "isError" in patch ? patch.isError : existing?.isError,
       approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false, allowChat: false } : approval,
       review: "review" in patch ? patch.review : existing?.review,
@@ -652,9 +656,12 @@ const createEventMapper = (
         return [setTool(event.callId, { name: event.name, args: event.args, status: "running" })];
       case "tool_action_request":
         const displayCallId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
-        const rawReview = approvalReviewForCallId(approvalReviews, event.callId);
-        const review = rawReview && location ? compactCapabilityReview(rawReview, { ...location, callId: displayCallId }) : rawReview;
         const target = event.kind === "custom_approval" ? approvalTargets.get(event.callId) : undefined;
+        const rawReview =
+          target?.toolName === AI_WEBSITE_APPROVAL_TOOL
+            ? approvalReviews.get(event.callId)
+            : approvalReviewForCallId(approvalReviews, event.callId);
+        const review = rawReview && location ? compactCapabilityReview(rawReview, { ...location, callId: displayCallId }) : rawReview;
         const allowAlways = target
           ? target.always
           : capabilityScopes.has(customApprovalParentCallId(event.callId) ?? event.callId) ||

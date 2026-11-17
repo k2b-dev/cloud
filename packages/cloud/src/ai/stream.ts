@@ -160,7 +160,7 @@ type AiStreamSnapshot = {
   activeTurnId: string | null;
 };
 
-/** `locale` is the reader's: stored steps name their app as the catalog does now, in that language. */
+/** `locale` is the reader's; relayed Code approvals keep their review's turn locale. */
 export const loadAiStreamState = async (
   conversation: AiConversation,
   viewerUserId?: string | null,
@@ -427,7 +427,7 @@ export const __aiStreamTest = { needsSavedState, streamSnapshotThenTail };
 export const createAiConversationStreamResponse = (input: {
   conversation: AiConversation;
   viewerUserId?: string | null;
-  /** The reader's locale, for the app names of stored steps. */
+  /** Reader locale for stored step names; Code approvals keep the turn locale. */
   locale?: string;
   signal?: AbortSignal;
   heartbeatMs?: number;

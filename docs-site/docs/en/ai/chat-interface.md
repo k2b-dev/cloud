@@ -968,8 +968,10 @@ Every turn with the default tool source offers server-run `code_run`,
 
 Expanded Code run steps describe the work and its outcome in words. They do
 not display the module, raw output, or diagnostic logs. Public chat history,
-pending actions, and live snapshots omit the `code_run` input's `code` field;
-the execution history retains it for the running model. An approval inside a
+pending actions, and live snapshots omit Code source fields, including the
+`code_run` input's `code`, `code_write` content, project source maps, SDK
+declarations and source rows in Code tool results. Execution and model
+continuation retain the original arguments and results. An approval inside a
 run names the target application from its stored approval and uses that
 application's catalog in the turn's request language. The administrator's
 dedicated Code approval review keeps its source field.

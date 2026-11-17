@@ -1,6 +1,6 @@
 ### Code run details describe effects in words
 
 - **What happened:** Expanding a Code run showed the module as input, and its approval card named Cloud instead of the target application.
-- **Root cause:** One-off Code runs used generic tool details. Relayed approvals copied the review but omitted the target application's presentation.
+- **Root cause:** Code details reused execution data, and the public filter covered only the one-off module input. Relayed approvals omitted the target presentation; resume and history reads applied different review and locale rules.
 - **Error class:** Internal execution data reused as reader-facing details, with target identity lost at a relay boundary.
-- **Guard:** `public-projection.test.ts` and `public-tool-input.test.ts` reject source in public reads and live details. `code-run-details.render.test.tsx` checks descriptions in German and English. `executor.integration.test.ts` checks target-app presentation and its durable history; the admin browser test retains the dedicated source field.
+- **Guard:** `public-projection.test.ts` and `public-tool-input.test.ts` reject source in public reads and live details. `code-run-details.render.test.tsx` checks descriptions in German and English. `routes.integration.test.ts` and `stream.integration.test.ts` reject lasting Code source in REST and SSE and keep approvals in their turn locale. The worker-resume guard separates a later website question from the prior app proposal; `code-source-replay.test.ts` checks the original arguments and results in follow-up and resumed provider requests. `executor.integration.test.ts` checks target-app presentation and its durable history; the admin browser test retains the dedicated source field.

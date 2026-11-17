@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Message } from "@k2b/nessi";
+import { reviewFixture } from "../_internal/capability-review.test-fixture";
 import type { AppRegistryEntry } from "../contracts/registry";
 import { visibleMessages } from "./client/projection";
 import { buildBlocksFromMessages } from "./protocol";
@@ -136,4 +137,85 @@ describe("app names of stored steps", () => {
     });
     expect(named).toEqual(turn);
   });
+});
+
+test("public history keeps the Code approval's app name in the original review locale", async () => {
+  const raw: AiStoredMessage = {
+    ...stored("code-call", "assistant", "internal-turn"),
+    message: { role: "assistant", content: [{ type: "tool_call", id: "run", name: "code_run", args: { code: "export default () => 1" } }] },
+    meta: {
+      toolPresentations: {
+        run: {
+          kind: "capability",
+          appId: "notebooks",
+          appName: "Notizbücher",
+          appIcon: "ti ti-app",
+          title: "Notiz erstellen",
+          capabilityKind: "action",
+        },
+      },
+      toolReviews: { run: { ...reviewFixture(), locale: "de" } },
+    },
+  };
+  const registry = async () => ({
+    name: "Notebooks",
+    description: "Notes",
+    presentation: { baseLocale: "en", translations: { de: { name: "Notizbücher" } } },
+  });
+  const messages = projectPublicAiStoredMessages(await withCurrentAppNames([raw], "en", registry), "chat", new Map());
+  expect(messages[0]!.meta!.toolPresentations!.run).toMatchObject({ appName: "Notizbücher", title: "Notiz erstellen" });
+  expect(messages[0]!.meta!.toolReviews!.run).toEqual(raw.meta!.toolReviews!.run);
+});
+
+test("public history omits lasting Code inputs, projects and source results without changing canonical messages", () => {
+  const source = "export default () => 'source-must-stay-internal'";
+  for (const name of [
+    "code_write",
+    "code_read",
+    "code_pull",
+    "code_init",
+    "code_sdk",
+    "code_diff",
+    "code_check",
+    "code_test",
+    "code_simulate",
+    "code_submit",
+  ]) {
+    const raw: AiStoredMessage[] = [
+      {
+        ...stored("call", "assistant", "turn"),
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "tool_call",
+              id: "call",
+              name,
+              args: { codeId: "ABCDEF", content: source, files: { "code.ts": source }, project: { files: { "code.ts": source } } },
+            },
+          ],
+        },
+        meta: { toolInterimResults: { call: { files: { "code.ts": source } } } },
+      },
+      {
+        ...stored("result", "assistant", "turn"),
+        message: {
+          role: "tool_result",
+          callId: "call",
+          name,
+          result: {
+            version: 1,
+            files: { "code.ts": source },
+            declarations: source,
+            diff: { files: [{ path: "code.ts", lines: [{ kind: "add", text: source }] }] },
+          },
+        },
+      },
+    ];
+    const canonical = structuredClone(raw);
+    const projected = projectPublicAiStoredMessages(raw, "chat", new Map());
+    expect(JSON.stringify(projected)).not.toContain(source);
+    expect(JSON.stringify(buildBlocksFromMessages(projected))).not.toContain(source);
+    expect(raw).toEqual(canonical);
+  }
 });

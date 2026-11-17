@@ -601,14 +601,14 @@ describe("nessi block event mapping", () => {
 
   describe("arguments the model is still writing", () => {
     const preview = (callId: string, delta: string) =>
-      ({ ...turn, type: "tool_args_delta", callId, name: "code_write", delta }) as OutboundEvent;
+      ({ ...turn, type: "tool_args_delta", callId, name: "write_file", delta }) as OutboundEvent;
     const toolOf = (op: unknown) => {
       const value = op as { type?: string; block?: Extract<AiTurnBlock, { kind: "tool" }> };
       return value?.type === "block_set" && value.block?.kind === "tool" ? value.block : null;
     };
     const writer = () => {
       const mapper = createEventMapper(1, []);
-      mapper.setStreamArgs(new Map([["code_write", ["path", "content"]]]));
+      mapper.setStreamArgs(new Map([["write_file", ["path", "content"]]]));
       return mapper;
     };
 
@@ -625,7 +625,7 @@ describe("nessi block event mapping", () => {
           block: {
             id: toolBlockId("call-2"),
             callId: "call-2",
-            name: "code_write",
+            name: "write_file",
             status: "running",
             args: { path: "code.ts", content: "line 1\nline" },
             liveArgs: { omittedLines: { path: 0, content: 0 } },
@@ -652,7 +652,7 @@ describe("nessi block event mapping", () => {
           type: "block_end",
           blockId: "block-2",
           index: 2,
-          block: { type: "tool_call", id: "call-2", name: "code_write", args: { path: "code.ts", content: "done" } },
+          block: { type: "tool_call", id: "call-2", name: "write_file", args: { path: "code.ts", content: "done" } },
         } as OutboundEvent);
         expect(toolOf(end)).toMatchObject({ args: { path: "code.ts", content: "done" }, status: "running" });
         expect(toolOf(end)?.liveArgs).toBeUndefined();
@@ -680,11 +680,11 @@ describe("nessi block event mapping", () => {
         ({
           ...turn,
           type: "issue",
-          issue: { kind, callId, name: "code_write", reason: "stream_ended_before_tool_call", message: "cut off", argsText: "" },
+          issue: { kind, callId, name: "write_file", reason: "stream_ended_before_tool_call", message: "cut off", argsText: "" },
         }) as OutboundEvent;
       expect(mapper.translate(issue("cancelled_tool_call", "cut"))).toEqual([{ type: "block_remove", blockId: toolBlockId("cut") }]);
       expect(
-        applyWireEventToBlocks([{ id: toolBlockId("cut"), kind: "tool", callId: "cut", name: "code_write", status: "running" }], {
+        applyWireEventToBlocks([{ id: toolBlockId("cut"), kind: "tool", callId: "cut", name: "write_file", status: "running" }], {
           v: 1,
           conversationId: "c",
           turnId: "t",
@@ -717,7 +717,7 @@ describe("nessi block event mapping", () => {
                 {
                   index: 0,
                   ...(index === 0 ? { id: "call-bad", type: "function" } : {}),
-                  function: { ...(index === 0 ? { name: "code_write" } : {}), arguments: args },
+                  function: { ...(index === 0 ? { name: "write_file" } : {}), arguments: args },
                 },
               ],
             },
@@ -765,7 +765,7 @@ describe("nessi block event mapping", () => {
                 {
                   index: 0,
                   ...(index === 0 ? { id: "call-live", type: "function" } : {}),
-                  function: { ...(index === 0 ? { name: "code_write" } : {}), arguments: args },
+                  function: { ...(index === 0 ? { name: "write_file" } : {}), arguments: args },
                 },
               ],
             },

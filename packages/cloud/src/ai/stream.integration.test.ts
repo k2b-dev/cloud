@@ -134,6 +134,60 @@ suite("AI conversation stream repair", () => {
     expect(JSON.stringify(await stream.next())).not.toContain(source);
   });
 
+  test("lasting Code source stays out of SSE history, live results and resumed baselines", async () => {
+    const chat = await createChat();
+    const { turn, save, event } = await startTurn(chat);
+    const source = "export default () => 'sse-source-fixture'";
+    const blocks: AiTurnBlock[] = [
+      {
+        id: "tool-write",
+        kind: "tool",
+        callId: "write",
+        name: "code_write",
+        args: { path: "code.ts", content: source },
+        status: "completed",
+      },
+      ...["code_read", "code_pull"].map(
+        (name): AiTurnBlock => ({
+          id: `tool-${name}`,
+          kind: "tool",
+          callId: name,
+          name,
+          args: { codeId: "ABCDEF" },
+          status: "completed",
+          result: { version: 1, files: { "code.ts": source } },
+        }),
+      ),
+    ];
+    const store = aiConversations.createSessionStore({ conversationId: chat.id, turnId: turn.id, modelId: "fixture" });
+    await store.append({
+      role: "assistant",
+      content: [{ type: "tool_call", id: "write", name: "code_write", args: { path: "code.ts", content: source } }],
+    });
+    await store.append({
+      role: "tool_result",
+      callId: "code_pull",
+      name: "code_pull",
+      result: { version: 1, files: { "code.ts": source } },
+    });
+    await save(blocks, 1);
+    const stream = follow(chat);
+    expect(JSON.stringify(expectState(await stream.next()))).not.toContain(source);
+    for (const [index, block] of blocks.entries()) {
+      await publishAiWireEvent(event(index + 2, { type: "block_set", block }));
+      expect(JSON.stringify(await stream.next())).not.toContain(source);
+    }
+    await publishAiWireEvent(event(5, { type: "turn_started", blocks, modelId: "fixture", providerModel: "fixture" }));
+    expect(JSON.stringify(await stream.next())).not.toContain(source);
+    const message = (await aiConversations.listTurnMessages({ conversationId: chat.id, loopId: turn.id })).find(
+      (message) => message.message.role === "tool_result",
+    );
+    if (!message) throw new Error("Expected a canonical message");
+    await publishAiWireEvent(event(6, { type: "message_saved", message }));
+    expect(JSON.stringify(await stream.next())).not.toContain(source);
+    expect(JSON.stringify(await store.load())).toContain(source);
+  });
+
   test("a lost live event: the stream sends the saved state once it holds the next event, then continues without a hole", async () => {
     const chat = await createChat();
     const { turn, event, save } = await startTurn(chat);
