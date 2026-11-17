@@ -1,3 +1,4 @@
+import { isUnknownActionOutcome } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { isRecord } from "./message-utils";
 import { aiChatMessages } from "./messages";
@@ -67,11 +68,15 @@ const failureCode = (tool: ToolBlock): string | null => {
   return typeof code === "string" ? code.toUpperCase() : null;
 };
 
-/** Why a failed call did not go through, as a kind the chat words itself; codes and messages never reach the person. */
-export type AiStepFailure = "denied" | "not_found" | "timeout" | "other";
+/**
+ * Why a failed call did not go through, as a kind the chat words itself; codes and messages never reach the person.
+ * `unknown`: Cloud could not see whether it happened.
+ */
+export type AiStepFailure = "denied" | "not_found" | "timeout" | "unknown" | "other";
 
 export const stepFailure = (tool: ToolBlock): AiStepFailure | null => {
   if (!isFailedTool(tool)) return null;
+  if (isUnknownActionOutcome(tool.result)) return "unknown";
   const code = failureCode(tool) ?? "";
   if (/^(?:FORBIDDEN|UNAUTHORIZED|ACCESS_DENIED|PERMISSION_DENIED)$/.test(code)) return "denied";
   if (/^(?:NOT_FOUND|GONE)$/.test(code)) return "not_found";
@@ -122,28 +127,36 @@ export const workSummary = (blocks: AiTurnBlock[], locale: string): string => {
   return sentence ? sentence.charAt(0).toLocaleUpperCase(locale) + sentence.slice(1) : "";
 };
 
+/** One part of the step meta that names an outcome needing attention, in its colour: a failure red, the rest in warning. */
+export type AiWorkIssue = { text: string; tone?: "danger" | "warning" };
+
 /**
- * The step line after the sentence: how many steps, and what did not go through. Thinking counts as a step, like in the
- * opened list. `issues` stays visible where the count gives way to the sentence.
+ * The work line's meta: how many steps, and what did not go through. Thinking counts as a step, like in the opened
+ * list. On a phone `issues` stays where the count gives way to the sentence.
  */
-export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: string): { count: string; issues: string[] } => {
+export const workStepParts = (blocks: AiTurnBlock[], steps: number, locale: string): { count: string; issues: AiWorkIssue[] } => {
   const t = aiChatMessages(locale);
-  const thoughts = blocks.filter((block) => block.kind === "thinking" && block.text.trim()).length;
+  const thoughts = blocks.filter((block) => block.kind === "thinking").length;
   const calls = tools(blocks);
-  const denied = calls.filter(isAccessDenied).length;
-  const failed = calls.filter(isFailedTool).length - denied;
+  // A check that settled an unclear outcome counts as what it found: done went through, not done failed.
+  const failures = calls.map((tool) => {
+    const kind = stepFailure(tool);
+    if (kind !== "unknown") return kind;
+    return tool.check?.state === "done" ? null : tool.check?.state === "not_done" ? "other" : kind;
+  });
+  const denied = failures.filter((kind) => kind === "denied").length;
+  const unclear = failures.filter((kind) => kind === "unknown").length;
+  const failed = failures.filter((kind) => kind !== null).length - denied - unclear;
   const rejected = calls.filter((tool) => tool.status === "rejected").length;
-  return {
-    count: t.steps({ count: steps + thoughts }),
-    issues: [
-      denied ? t.workNoAccess({ count: denied }) : "",
-      failed ? t.workFailed({ count: failed }) : "",
-      rejected ? t.workRejected({ count: rejected }) : "",
-    ].filter(Boolean),
-  };
+  const issues: AiWorkIssue[] = [];
+  if (failed) issues.push({ text: t.workFailed({ count: failed }), tone: "danger" });
+  if (unclear) issues.push({ text: t.workUnclear({ count: unclear }), tone: "warning" });
+  if (denied) issues.push({ text: t.workNoAccess({ count: denied }), tone: "warning" });
+  if (rejected) issues.push({ text: t.workRejected({ count: rejected }) });
+  return { count: t.steps({ count: steps + thoughts }), issues };
 };
 
 export const workStepLine = (blocks: AiTurnBlock[], steps: number, locale: string): string => {
   const parts = workStepParts(blocks, steps, locale);
-  return [parts.count, ...parts.issues].join(", ");
+  return [parts.count, ...parts.issues.map((issue) => issue.text)].join(", ");
 };

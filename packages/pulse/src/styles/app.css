@@ -66,8 +66,8 @@
   overflow-wrap: anywhere;
 }
 .pulse-overview__section-title { margin: 26px 0 8px; color: var(--k2b-text-muted); font-size: 13px; font-weight: 600; line-height: 1.45; }
-.pulse-overview__attention,
-.pulse-overview__activity { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.pulse-overview__attention { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.pulse-overview__activity { min-width: 0; }
 .pulse-overview__attention:not(:empty) { margin-top: 12px; }
 .pulse-overview__attention-row {
   display: grid;
@@ -80,8 +80,7 @@
 }
 .pulse-overview__attention-row[data-tone="danger"] { background: var(--k2b-danger-surface); }
 .pulse-overview__attention-row[data-tone="warning"] { background: var(--k2b-warning-surface); }
-.pulse-overview__attention-copy,
-.pulse-overview__activity-copy { min-width: 0; overflow-wrap: anywhere; }
+.pulse-overview__attention-copy { min-width: 0; overflow-wrap: anywhere; }
 .pulse-overview__attention-icon { font-size: 18px; }
 .pulse-overview__attention-title { font-size: 14.5px; font-weight: 600; }
 .pulse-overview__level { display: inline; margin-left: 6px; font-size: 12px; font-weight: 500; }
@@ -110,8 +109,6 @@
 .pulse-overview__number-time,
 .pulse-overview__number-status { margin: 4px 0 0; color: var(--k2b-text-muted); font-size: 12px; overflow-wrap: anywhere; }
 .pulse-overview__number-status[data-tone="danger"] { color: var(--k2b-danger-text); }
-.pulse-overview__activity-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: baseline; gap: 12px; min-height: 40px; padding: 6px 10px; }
-.pulse-overview__activity-time { color: var(--k2b-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .pulse-overview__hint { margin: 0; color: var(--k2b-text-muted); font-size: 14px; }
 .pulse-overview__state { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; max-width: 520px; padding: 40px 0 20px; }
 .pulse-overview__state-icon { color: var(--k2b-text-muted); font-size: 28px; }
@@ -139,7 +136,6 @@
   .pulse-overview__value { min-height: 29px; font-size: 24px; }
   .pulse-overview__attention-row { grid-template-columns: 20px minmax(0, 1fr); }
   .pulse-overview__attention-action { grid-column: 2; justify-self: start; }
-  .pulse-overview__activity-row { grid-template-columns: 64px minmax(0, 1fr); }
 }
 
 /* Source detail: the header's main action reads in the panel accent, as in every app's details panel. */

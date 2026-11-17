@@ -164,11 +164,7 @@ export const registerAppKey = async (params: {
     // Revoked/expired keys remain idempotent and are never reactivated.
     if (existing)
       return ok({ keyId: existing.id, installationId, fingerprint: existing.fingerprint, status: existing.status, accountStatus });
-    if (accountStatus !== "active")
-      return fail({
-        ...err.conflict("Service account"),
-        message: "The app service account is disabled; enable it before enrolling a new key",
-      });
+    if (accountStatus !== "active") return fail(err.conflict("The app service account is disabled; enable it before enrolling a new key"));
     if (expiresAt && expiresAt.getTime() <= Date.now()) return fail(err.badInput("Expiry must be in the future"));
     const [count] = await db<{ active: number }[]>`
       SELECT count(*)::int AS active FROM auth.service_account_credentials c
@@ -181,8 +177,7 @@ export const registerAppKey = async (params: {
           "text",
         )}))
     `;
-    if ((count?.active ?? 0) >= 2)
-      return fail({ ...err.conflict("App key"), message: "An app can have at most two active keys; revoke an old key first" });
+    if ((count?.active ?? 0) >= 2) return fail(err.conflict("An app can have at most two active keys; revoke an old key first"));
     // Grants are explicit on every new enrollment, including rotation.
     const [row] = await db<{ id: string }[]>`
       INSERT INTO auth.service_account_credentials

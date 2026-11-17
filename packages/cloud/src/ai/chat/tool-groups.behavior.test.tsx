@@ -1,8 +1,20 @@
-import { expect, test } from "bun:test";
+import { beforeAll, expect, test } from "bun:test";
 import { createComponent, createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import type { AiTurnBlock } from "../protocol";
+
+// The opened work loads its code on demand in the browser. Load it once before the tests, with time for a cold
+// transpile, so a toggle shows its rows at once.
+beforeAll(async () => {
+  if (isServer) return;
+  const dom = createDomTestHarness();
+  try {
+    await (await import("#chat-work-list")).preloadAiWorkSteps();
+  } finally {
+    dom.cleanup();
+  }
+}, 30_000);
 
 const domTest = isServer ? test.skip : test;
 
@@ -134,7 +146,8 @@ domTest("housekeeping folds at step level and opens in place; steps a reader wat
       expect.stringContaining("Ran code"),
       expect.stringContaining("App check"),
     ]);
-    expect(group!.getAttribute("data-body-inset")).toBe("false");
+    // Its steps start on the group's text edge, a real level below it.
+    expect(group!.getAttribute("data-body-inset")).toBeNull();
     view.toggle(group as HTMLDetailsElement);
     expect(group!.querySelectorAll(".ai-turn-steps > .k2b-chat-activity")).toHaveLength(3);
   } finally {
@@ -159,13 +172,16 @@ domTest("rows a reader sees in the open work list stay when later reasoning or a
     // Reasoning streams in after the group, then the next housekeeping step: the reasoning row stays.
     setBlocks([...work, { id: "t", kind: "thinking", text: "Which reference?" }]);
     const thought = view.steps()[3]!;
-    // Thinking is a step in words; its reasoning opens in place.
+    // A running thinking step offers its duration, never model text.
     expect(thought.textContent).toContain("Thinking");
-    view.toggle(thought as HTMLDetailsElement);
-    expect(thought.textContent).toContain("Which reference?");
+    expect(thought.querySelector("details")).toBeNull();
+    expect(Boolean(thought.querySelector(".k2b-chat-activity__info"))).toBe(true);
+    expect(thought.textContent).not.toContain("Which reference?");
     setBlocks([...work, { id: "t", kind: "thinking", text: "Which reference?" }, tool("c", "load_skill")]);
     expect(view.steps()[2]).toBe(group);
     expect(view.steps()[3]).toBe(thought);
+    expect(thought.textContent).toContain("Thought it over");
+    expect(Boolean(thought.querySelector(".k2b-chat-activity__info"))).toBe(false);
     expect(group.querySelector("summary")?.textContent).toContain("2 steps");
 
     // A file read starts without its arguments, so it shows as a step; its skill path arrives later and it stays.
@@ -244,13 +260,16 @@ domTest("repeated reads open in place with their title, target and call count", 
     expect(steps).toHaveLength(3);
     const repeat = steps[0]!;
     expect(repeat.querySelector("summary")?.textContent).toContain("Read file");
-    expect(repeat.querySelector("summary")?.textContent).toContain("/products-100.csv");
+    // The file, never its path.
+    expect(repeat.querySelector("summary")?.textContent).toContain("products-100.csv");
+    expect(repeat.querySelector("summary")?.textContent).not.toContain("/products-100.csv");
     expect(repeat.querySelector("summary")?.textContent).toContain("3 times");
     expect(steps.slice(1).map((step) => step.querySelector("summary")?.textContent)).toEqual([
       expect.stringContaining("Ran code"),
       expect.stringContaining("App check"),
     ]);
-    expect(repeat.getAttribute("data-body-inset")).toBe("false");
+    // Its parts start on the row's text edge, a real level below it.
+    expect(repeat.getAttribute("data-body-inset")).toBeNull();
     view.toggle(repeat as HTMLDetailsElement);
     expect(repeat.querySelectorAll(".ai-turn-steps > .k2b-chat-activity")).toHaveLength(3);
   } finally {

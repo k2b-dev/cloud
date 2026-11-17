@@ -22,7 +22,7 @@ type PublicWorkspaceDocumentTemplateRoute = Extract<PublicOkWorkspaceState["rout
 type PublicWorkspaceQueryRoute = Extract<PublicOkWorkspaceState["route"], { kind: "query" }>;
 type PublicWorkspaceWorkflowsRoute = Extract<PublicOkWorkspaceState["route"], { kind: "workflows" }>;
 
-export default function GridsRoute(props: { state: PublicOkWorkspaceState; userId?: string }) {
+export default function GridsRoute(props: { state: PublicOkWorkspaceState; userId?: string; now?: string }) {
   const { t } = workspaceMessages.resolve([useLocale()()]);
   const state = props.state;
   const route = state.route;
@@ -104,6 +104,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; userI
         initialEventCursor={state.liveCursor}
         initialSelectedRecord={records.initialSelectedRecord}
         initialSelectedRecordDetail={records.initialSelectedRecordDetail}
+        now={props.now}
         documentTemplates={records.documentTemplates}
         relationLabels={records.relationLabels}
         viewColumns={records.activeViewColumns}

@@ -663,6 +663,56 @@ describe("@k2b/ui Cloud-faithful surfaces", () => {
     expect(html).toContain("k2b-stat-cell__trend");
   });
 
+  test("a plain grid sets flat figures through its context and leaves tiles unchanged", () => {
+    const tiles = renderToString(() =>
+      createComponent(StatGrid, {
+        get children() {
+          return createComponent(StatCell, { label: "Open", value: 128, tone: "amber" });
+        },
+      }),
+    );
+    const plain = renderToString(() =>
+      createComponent(StatGrid, {
+        variant: "plain",
+        surface: "muted",
+        columns: 4,
+        get children() {
+          return [
+            createComponent(StatCell, { label: "Open", value: 128, sub: "38 % of stock" }),
+            createComponent(StatCell, {
+              label: "Overdue",
+              value: 3,
+              tone: "amber",
+              accent: { tone: "amber", icon: "ti ti-alert-triangle", text: "oldest for 2 days" },
+            }),
+            createComponent(StatCell, {
+              label: "Done",
+              value: 212,
+              delta: { value: 0.082, better: "up" },
+              compare: { label: "Last week", value: 196 },
+            }),
+          ];
+        },
+      }),
+    );
+
+    // Without the prop the grid says it is tiles and every cell stays exactly the tile it was.
+    expect(tiles).toContain('data-variant="tiles"');
+    expect(tiles).toContain('class="k2b-stat-cell" data-size="md" data-surface="white"');
+    expect(tiles).not.toContain('data-tone="amber"');
+    // A plain cell has no surface, and its tone reaches the cell so the figure and third line can carry it.
+    expect(plain).toContain('data-variant="plain"');
+    expect(plain).toContain('class="k2b-stat-cell" data-size="md" data-variant="plain"');
+    expect(plain).not.toContain('class="k2b-stat-cell" data-size="md" data-surface');
+    expect(plain).toContain('data-variant="plain" data-tone="amber"');
+    // The change stands on the third line, after the figure, not beside it.
+    const done = plain.slice(plain.indexOf(">Done<"));
+    expect(done.indexOf("k2b-stat-cell__delta")).toBeGreaterThan(done.indexOf("k2b-stat-cell__support"));
+    expect(parityCss).toContain(
+      '.k2b-ui .k2b-stat-grid[data-variant="plain"] > .k2b-stat-grid__body > .k2b-stat-cell[data-variant="plain"][data-tone="amber"]',
+    );
+  });
+
   test("sizes stat cells through the grid context so sub lines scale too", () => {
     // The getter mirrors what JSX children compile to: the cell must render
     // inside StatGrid's providers, or it never sees the grid's size.

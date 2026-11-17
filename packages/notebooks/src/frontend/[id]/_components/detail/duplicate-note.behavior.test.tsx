@@ -80,6 +80,7 @@ describe("duplicate a note", () => {
         currentUserId: "me",
         initialCommentsPage: { items: [], page: 1, perPage: 30, total: 0, hasNext: false },
         dateConfig: { locale: "de", timeZone: "UTC", ...{ base: "2026-10-16T19:30:00.000Z" } },
+        now: "2026-10-16T19:30:00.000Z",
       });
     }
     const dispose = render(

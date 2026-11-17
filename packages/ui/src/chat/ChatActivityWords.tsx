@@ -35,7 +35,7 @@ export const chatActivityWordAt = (first: string, words: readonly string[], elap
 /**
  * A word in a running activity label that changes with time, one word in its place at any moment: the old word fades out
  * completely, only then the next fades in. With reduced motion the stylesheet shows a resting `first` instead, from the
- * server's HTML on, and nothing changes. A pointer or the focus on the row holds the word;
+ * server's HTML on, and nothing changes. A pointer moved on the row, not a finger's tap, or the focus in it holds the word;
  * a hidden tab changes nothing and shows the word of the current time on return, without catching up. Place it in the
  * label of `Chat.Activity`; the host owns the words and the clock, this owns the timing and the announcement.
  */
@@ -61,7 +61,7 @@ export function ChatActivityWords(props: ChatActivityWordsProps): JSX.Element {
     let held = false;
     let tickTimer: ReturnType<typeof setTimeout> | undefined;
     let swapTimer: ReturnType<typeof setTimeout> | undefined;
-    const row = slot?.closest(".k2b-chat-activity") ?? slot;
+    const row = slot?.closest<HTMLElement>(".k2b-chat-activity") ?? slot;
     /** Shows the word of the current time at once, without a fade. */
     const settle = () => {
       clearTimeout(swapTimer);
@@ -87,27 +87,38 @@ export function ChatActivityWords(props: ChatActivityWordsProps): JSX.Element {
         setPhase("in");
       }, WORD_OUT_MS);
     };
-    const hold = () => {
-      held = true;
+    // A pointer holds the word once it moves on the row; a row that appears under a resting pointer, such as the send
+    // button just pressed, or a finger's tap holds nothing. The focus in the row holds it too.
+    let pointer = false;
+    let focus = false;
+    const sync = () => {
+      if (held === (pointer || focus)) return;
+      held = pointer || focus;
       settle();
     };
-    const release = (event: Event) => {
-      // Leaving with the pointer keeps holding while the focus stays in the row, and the other way round.
-      const focused =
-        event.type === "focusout"
-          ? row?.contains((event as FocusEvent).relatedTarget as Node | null) === true
-          : row?.contains(document.activeElement) === true;
-      const hovered = event.type === "pointerleave" ? false : row?.matches(":hover") === true;
-      held = focused || hovered;
-      if (!held) settle();
+    const move = (event: PointerEvent) => {
+      pointer = event.pointerType !== "touch";
+      sync();
+    };
+    const leave = () => {
+      pointer = false;
+      sync();
+    };
+    const focusIn = () => {
+      focus = true;
+      sync();
+    };
+    const focusOut = (event: FocusEvent) => {
+      focus = row?.contains(event.relatedTarget as Node | null) === true;
+      sync();
     };
     const visibility = () => {
       if (!document.hidden) settle();
     };
-    row?.addEventListener("pointerenter", hold);
-    row?.addEventListener("pointerleave", release);
-    row?.addEventListener("focusin", hold);
-    row?.addEventListener("focusout", release);
+    row?.addEventListener("pointermove", move);
+    row?.addEventListener("pointerleave", leave);
+    row?.addEventListener("focusin", focusIn);
+    row?.addEventListener("focusout", focusOut);
     document.addEventListener("visibilitychange", visibility);
     base = { elapsed: props.elapsedMs, at: now() };
     schedule();
@@ -117,10 +128,10 @@ export function ChatActivityWords(props: ChatActivityWordsProps): JSX.Element {
     onCleanup(() => {
       clearTimeout(tickTimer);
       clearTimeout(swapTimer);
-      row?.removeEventListener("pointerenter", hold);
-      row?.removeEventListener("pointerleave", release);
-      row?.removeEventListener("focusin", hold);
-      row?.removeEventListener("focusout", release);
+      row?.removeEventListener("pointermove", move);
+      row?.removeEventListener("pointerleave", leave);
+      row?.removeEventListener("focusin", focusIn);
+      row?.removeEventListener("focusout", focusOut);
       document.removeEventListener("visibilitychange", visibility);
     });
   });

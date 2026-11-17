@@ -487,7 +487,7 @@ describe("Mail conversation reader", () => {
       ],
     });
     expect(html).not.toContain("data-mail-conversation-activity");
-    expect(html).not.toContain("added a tag");
+    expect(html).not.toContain("Tag added");
     expect(html.match(/<article class="mail-message/g)).toHaveLength(1);
   });
 

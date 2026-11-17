@@ -21,7 +21,8 @@ test("reports decorative icons and size, opacity, or palette overrides inside no
   expect(
     await findings(
       [
-        "export const Panel = (props: { busy: boolean }) => (",
+        // One fragment holds both notices, so the sample is valid TSX and the rule reads all of it.
+        "export const Panel = (props: { busy: boolean }) => (<>",
         '  <NoticeCard tone="neutral" bodyClass="flex items-center gap-2">',
         '    <i class="ti ti-photo-shield shrink-0" aria-hidden="true" />',
         '    <span class="opacity-70">Remote images are blocked.</span>',
@@ -30,7 +31,7 @@ test("reports decorative icons and size, opacity, or palette overrides inside no
         '    <h2 class="text-sm font-medium">Endpoints</h2>',
         "  </NoticeCard>",
         '  <NoticeRow><i class="ti ti-photo" /><span class="text-xs">Row</span></NoticeRow>',
-        ");",
+        "</>);",
       ].join("\n"),
     ),
   ).toEqual([3, 4, 5, 6, 7, 9, 9].map((line) => `packages/demo/src/Panel.tsx:${line}`));
