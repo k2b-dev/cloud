@@ -52,7 +52,11 @@ replaces another, the dialog core morphs the frame's width and height with
 `--k2b-motion-morph` and `--k2b-ease-morph` while the contents stand at their
 own sizes and the frame clips them. When an open dialog's content changes
 height, the frame folds to the new height with `--k2b-motion-fold` and
-`--k2b-ease-glide`, its top edge staying put.
+`--k2b-ease-glide`, its top edge staying put. If growth needs more room below,
+the frame moves up first so its footer stays in view. Between folds it holds
+its height. Loading regions marked `aria-busy="true"`, the change that clears
+busy, and changes before the entrance has finished and the first rest take
+their new height without a fold.
 
 Choose the duration by what changes. Use the standard curve for ordinary
 entry motion. A large surface that grows, shrinks, or moves uses the morph

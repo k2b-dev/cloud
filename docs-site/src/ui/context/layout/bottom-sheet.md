@@ -70,7 +70,10 @@ A sheet moves only by transform and opacity. Its layout height is the
 content's height or, with detents, the full height. A sheet without detents
 follows its content when that changes while it is open: the dialog core
 grows or shrinks it from the bottom edge in `--k2b-motion-fold`, as every
-dialog frame does, and the sheet takes its new rest. With detents the height
+dialog frame does, and the sheet takes its new rest. Between changes it holds
+that height. Before its entrance has finished and it has first come to rest,
+and while any content is `aria-busy="true"` (including the change that clears
+busy), it takes its new height without a fold. With detents the height
 never animates. It slides up from below the edge and lands directly on its rest,
 without overshoot or settle: 280 ms with `--k2b-ease-out`, 220 ms to close,
 instant with reduced motion. The frame clips with `overflow: clip`, never

@@ -203,7 +203,9 @@ an animation frame after the scroll event.
 
 A live region that a component fills after a timer is read with a bounded
 wait, such as `waitForFunction` on its text, never once after `settled()`.
-`settled()` waits for fonts, animations, and frames, not for timers. The
+`settled()` waits for fonts, lets layout work scheduled for the next frame
+start, then waits for the running finite animations and two quiet frames. It
+still rejects a page that keeps starting animations, and never waits for timers. The
 outcome line of `ChatOutcome` in `@k2b/ui` empties its `role="status"` region
 and fills it 40 ms later, so that the same words spoken again are announced.
 The answering case in `action-question.browser.test.ts` holds the fixture's
