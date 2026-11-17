@@ -603,7 +603,6 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     if (pageEvidence.has(fn)) return pageEvidence.get(fn);
     seen.add(fn);
     let found = false;
-    let unknown = false;
     const walk = (node: ts.Node) => {
       if (found || (node !== fn && ts.isFunctionLike(node))) return;
       if (ts.isCallExpression(node)) {
@@ -628,12 +627,40 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
           found = true;
           return;
         }
-        if (calls.some((value) => value === undefined)) unknown = true;
       }
       ts.forEachChild(node, walk);
     };
     walk(fn);
-    const evidence = found ? true : unknown ? undefined : false;
+    // Absence of a discovered page is not proof of data. Only explicit, resolved data responses on every
+    // return path exclude a page; constructors, mutable callees and all other expressions stay unknown.
+    const dataResponse = (expression: ts.Expression): boolean => {
+      expression = unparen(expression);
+      if (ts.isAwaitExpression(expression)) return dataResponse(expression.expression);
+      if (ts.isConditionalExpression(expression)) return dataResponse(expression.whenTrue) && dataResponse(expression.whenFalse);
+      if (!ts.isCallExpression(expression)) return false;
+      const declaration = checker.getResolvedSignature(expression)?.declaration;
+      if (declaration?.getSourceFile().fileName === sdkFile) {
+        const name =
+          "name" in declaration && declaration.name
+            ? declaration.name.getText()
+            : ts.isPropertySignature(declaration.parent)
+              ? declaration.parent.name.getText()
+              : null;
+        return name === "json" || name === "text" || name === "redirect";
+      }
+      return returnsPage(expression.expression, new Set(seen)) === false;
+    };
+    const returns: (ts.Expression | undefined)[] = [];
+    const collectReturns = (node: ts.Node) => {
+      if (node !== fn && ts.isFunctionLike(node)) return;
+      if (ts.isReturnStatement(node)) returns.push(node.expression);
+      else ts.forEachChild(node, collectReturns);
+    };
+    // handlerFunction resolves only these function forms, but keeps a Node return type for its other callers.
+    const body = ts.isArrowFunction(fn) || ts.isFunctionExpression(fn) || ts.isFunctionDeclaration(fn) ? fn.body : undefined;
+    if (body && !ts.isBlock(body)) returns.push(body);
+    else if (body) collectReturns(body);
+    const evidence = found ? true : returns.length > 0 && returns.every((value) => value && dataResponse(value)) ? false : undefined;
     pageEvidence.set(fn, evidence);
     return evidence;
   }

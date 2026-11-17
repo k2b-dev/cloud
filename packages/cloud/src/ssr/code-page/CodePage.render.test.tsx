@@ -17,7 +17,8 @@ import * as coreLocation from "../../services/identity/core-origin";
 import { buildProjectedUser } from "../../services/session/user";
 import { loadCodeRunCallsForDetail, summarizeCallResult } from "./calls";
 import { CODE_PAGE_FIXTURE_STATES, type CodePageFixtureState, codePageFixture } from "./code-page.fixture";
-import { type CodePageInvoke, VersionReadSchema } from "./data";
+import { type CodePageData, type CodePageInvoke, VersionReadSchema } from "./data";
+import { headActionFixture } from "./head-action.fixture";
 import { codePageMessages } from "./messages";
 import { nameRecentResults } from "./recent-names";
 import { describeCodeSchedule } from "./schedule";
@@ -1550,4 +1551,70 @@ test("a week without counted effects says so in place of the numbers", () => {
   expect(page).toContain("Diese Woche noch nichts gezählt. Darunter stehen die letzten Ergebnisse.");
   expect(page).toContain("Lieferung Polsterei Weber");
   expect(page.indexOf("Diese Woche noch nichts gezählt.")).toBeLessThan(page.indexOf("Lieferung Polsterei Weber"));
+});
+
+test.each(["de", "en"])("personal readers see the owner's resources and neutral page triggers (%s)", (locale) => {
+  const render = (data: CodePageData) =>
+    visibleText(
+      renderMarkup(() =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(CodePage, { data });
+          },
+        }),
+      ),
+    );
+  for (const state of ["reader", "reader-page", "reader-waiting", "paused-reader"] as const) {
+    const page = render(headActionFixture(state, locale));
+    expect(page).not.toMatch(/deine Postfächer|dein Kontingent|Deine Seiten|your mailboxes|your quota|your allowance/);
+    if (state !== "reader-waiting") {
+      expect(page).toContain(locale === "de" ? "Lenas Postfächer" : "Lena’s mailboxes");
+      expect(page).toContain(locale === "de" ? "zählt auf Lenas Kontingent" : "counts against Lena’s quota");
+    }
+    if (state === "reader-page" || state === "paused-reader")
+      expect(page).toContain(locale === "de" ? "Die Seiten laufen, wenn jemand sie öffnet." : "The pages run when someone opens them.");
+  }
+  // The real shared read model supplies this note already localized for the viewer; rendering preserves it.
+  const data = codePageFixture("personal", locale, "Lena");
+  if (data.state.kind !== "ready") throw new Error("Expected personal fixture");
+  data.state.permission = "reader";
+  if (data.state.chatBinding) data.state.chatBinding.canChange = false;
+  const page = render(data);
+  expect(page).toContain(
+    locale === "de" ? "KI · mit Lenas Rechten, zählt auf Lenas Kontingent" : "AI · with Lena’s rights, counts toward Lena’s allowance",
+  );
+  expect(page).not.toMatch(/deine Postfächer|dein Kontingent|your mailboxes|your quota|your allowance/);
+});
+
+test("last and next starts share the request's timezone, including a DST change", () => {
+  for (const [timeZone, last, next] of [
+    ["Europe/Berlin", "Mo, 19.10., 08:00", "Mo, 16.11., 08:00"],
+    ["America/New_York", "Mo, 19.10., 02:00", "Mo, 16.11., 02:00"],
+  ]) {
+    const data = headActionFixture("schedule");
+    if (data.state.kind !== "ready") throw new Error("Expected schedule fixture");
+    data.dates.timeZone = timeZone;
+    const run = { ...data.state.runs.items[0]!, createdAt: "2026-10-19T06:00:00.000Z" };
+    data.state.runs.items = [run];
+    data.state.automations![0]!.lastRun = run;
+    const markup = renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    );
+    let trail = "";
+    new HTMLRewriter()
+      .on(".cloud-code__when .cloud-code__row-trail", {
+        text(chunk) {
+          trail += chunk.text;
+        },
+      })
+      .transform(markup);
+    expect(trail).toContain(last);
+    expect(trail).toContain(next);
+  }
 });

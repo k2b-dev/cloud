@@ -34,7 +34,17 @@ test("only editors of an active Code can start current manual and scheduled entr
 });
 
 test("head fixtures keep recurring dates, unscheduled triggers and reader identity consistent", () => {
-  for (const name of ["manual", "events", "schedules", "reader", "reader-page", "reader-waiting", "paused-reader"] as const) {
+  for (const name of [
+    "manual",
+    "events",
+    "schedule",
+    "schedules",
+    "both",
+    "reader",
+    "reader-page",
+    "reader-waiting",
+    "paused-reader",
+  ] as const) {
     const data = headActionFixture(name);
     if (data.state.kind !== "ready") throw new Error("Expected ready fixture");
     for (const item of data.state.automations ?? []) {
@@ -51,8 +61,28 @@ test("head fixtures keep recurring dates, unscheduled triggers and reader identi
             hourCycle: "h23",
           }).format(next),
         ).toBe(item.entrypoint === "reminder" ? "Fri 16:00" : "Mon 08:00");
+        expect(item.lastRun?.entrypoint).toBe(item.entrypoint);
+        expect(
+          new Intl.DateTimeFormat("en", {
+            timeZone: data.dates.timeZone,
+            weekday: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+          }).format(new Date(item.lastRun!.createdAt)),
+        ).toBe(item.entrypoint === "reminder" ? "Fri 16:00" : "Mon 08:00");
+        expect(data.state.runs.items.find((run) => run.id === item.lastRun?.id)).toEqual(item.lastRun);
       }
     }
     if (data.state.permission === "reader") expect(data.owner.runsAs).toEqual({ name: "Lena" });
+    for (const run of data.state.runs.items.filter((run) => run.entrypoint === "wochenbericht"))
+      expect(
+        new Intl.DateTimeFormat("en", {
+          timeZone: data.dates.timeZone,
+          hour: "2-digit",
+          minute: "2-digit",
+          hourCycle: "h23",
+        }).format(new Date(run.createdAt)),
+      ).toBe("08:00");
   }
 });

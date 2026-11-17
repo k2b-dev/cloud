@@ -246,3 +246,21 @@ test.each(["de", "en"])("bound chat grants defer names and preserve permission c
   });
   expect(JSON.stringify(literal.mayDo)).not.toContain(boundChat.id);
 });
+
+test.each(["de", "en"])("shared personal Code names the execution owner, never the reader's allowance (%s)", (locale) => {
+  const dynamic = {
+    ...manifest,
+    permissions: [{ ...manifest.permissions[0]!, operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null } }],
+  };
+  const model = present({ personal: true, runsAs: { name: "Lena" }, manifest: dynamic, locale });
+  expect(model.mayDo.items[0]?.note).toBe(
+    locale === "de" ? "KI · mit Lenas Rechten, zählt auf Lenas Kontingent" : "AI · with Lena’s rights, counts toward Lena’s allowance",
+  );
+  const hidden = present({ personal: true, runsAs: { name: null }, manifest: dynamic, locale });
+  expect(hidden.mayDo.items[0]?.note).toBe(
+    locale === "de"
+      ? "KI · mit den Rechten der Person, der die Automation gehört, zählt auf deren Kontingent"
+      : "AI · with the owner’s rights, counts toward their allowance",
+  );
+  expect(CodeVersionReadModelSchema.parse(model)).toEqual(model);
+});

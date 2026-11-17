@@ -33,6 +33,7 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
           ? "personal-error"
           : "personal",
     locale,
+    name.startsWith("reader") || name === "paused-reader" ? "Lena" : undefined,
   );
   if (data.state.kind !== "ready") return data;
   data.dates.now = "2026-11-14T12:49:04.000Z";
@@ -45,6 +46,28 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
   data.owner = { kind: "person", ref: null, title: de ? "Wochenbericht Vertrieb" : "Weekly sales report", typeTitle: null };
   const schedules = (state.automations ?? []).filter((item) => item.kind === "schedule").slice(0, 2);
   const schedule = schedules[0] ?? { entrypoint: "report", kind: "schedule" as const, cron: "0 8 * * 1", isNew: false, lastRun: null };
+  // The base fixture runs Mondays at 07:00 Berlin; these head examples run at 08:00.
+  // Keep the whole weekly history in the same zone and on the changed schedule.
+  state.runs.items = state.runs.items.map((run) => {
+    if (run.entrypoint !== "wochenbericht") return run;
+    const localHour = Number(
+      new Intl.DateTimeFormat("en", {
+        timeZone: data.dates.timeZone,
+        hour: "2-digit",
+        hourCycle: "h23",
+      }).format(new Date(run.createdAt)),
+    );
+    const createdAt = new Date(Date.parse(run.createdAt) + (8 - localHour) * 60 * 60_000).toISOString();
+    const words = state.words?.runs[run.id];
+    if (words) words.at = createdAt;
+    return {
+      ...run,
+      createdAt,
+      startedAt: new Date(Date.parse(createdAt) + 1000).toISOString(),
+      endedAt: new Date(Date.parse(createdAt) + 4000).toISOString(),
+    };
+  });
+  schedule.lastRun = state.runs.items.find((run) => run.entrypoint === "wochenbericht") ?? null;
   schedule.entrypoint = "wochenbericht";
   schedule.cron = "0 8 * * 1";
   schedule.timeZone = data.dates.timeZone;
@@ -58,6 +81,16 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
     nextRunAt: "2026-11-20T15:00:00.000Z",
     title: de ? "Erinnert an offene Aufgaben" : "Reminds about open tasks",
     timingText: de ? "freitags um 16:00" : "Fridays at 16:00",
+    lastRun: schedule.lastRun
+      ? {
+          ...schedule.lastRun,
+          id: "00000000-0000-4000-8000-888800000001",
+          entrypoint: "reminder",
+          createdAt: "2026-11-13T15:00:00.000Z",
+          startedAt: "2026-11-13T15:00:01.000Z",
+          endedAt: "2026-11-13T15:00:04.000Z",
+        }
+      : null,
   };
   const home: CodePageAutomation = {
     entrypoint: "route:GET:/",
@@ -117,6 +150,16 @@ export function headActionFixture(name: HeadState, locale = "de"): CodePageData 
               : name === "manual"
                 ? [{ ...schedule, kind: "manual", cron: null, timingText: undefined, title: undefined, nextRunAt: null, lastRun: null }]
                 : [schedule];
+  if (state.automations.some((item) => item.entrypoint === second.entrypoint) && second.lastRun) state.runs.items.unshift(second.lastRun);
+  if (state.words?.current && (name === "manual" || name === "events" || name === "reader"))
+    state.words.current.description.text =
+      name === "manual"
+        ? de
+          ? "Fasst die offenen Angebote zusammen, wenn du sie startest, und legt den Bericht im Notizbuch Vertrieb ab."
+          : "Sums up the open offers when you run it and files the report in the Sales notebook."
+        : de
+          ? "Ordnet eingehende Nachrichten ein, sobald sie eintreffen."
+          : "Sorts incoming messages when they arrive.";
   if (name === "mailbox")
     data.owner = {
       kind: "resource",

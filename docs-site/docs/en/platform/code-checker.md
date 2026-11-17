@@ -145,8 +145,11 @@ functions do not count. When the analysis cannot resolve a call, it leaves
 `page` absent rather than claiming the route returns data. This is display
 evidence, not an authorization or a promise that every response is HTML. Older manifests omit it; the Code page
 keeps their existing GET/ALL opening behavior for older or unknown evidence.
-Only routes proven to return data carry `page: false` and offer only their
-address.
+Only routes whose return paths all resolve to known SDK data responses
+(`json`, `text`, or `redirect`) carry `page: false` and offer only their
+address. An unresolved response value or constructor, including a Promise
+executor, leaves the evidence unknown; not finding a page call never proves
+that the response is data.
 The runtime registration comparison checks method, path, public access and
 layout; it excludes the checker-only `page` flag. Both page and data handlers
 must still execute through the checked bundle.

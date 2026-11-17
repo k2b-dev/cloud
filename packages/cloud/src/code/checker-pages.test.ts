@@ -46,3 +46,27 @@ export default app;`,
   expect(result.entrypoints.map((entry) => entry.route?.page)).toEqual([true, true, undefined, false]);
   expect(result.entrypoints[2]!.route).not.toHaveProperty("page");
 });
+
+test("only proven data returns exclude pages; constructors and dynamic response values stay unknown", () => {
+  const result = analyzeCode({
+    sdk: generateCodeSdk([], { mode: "personal" }),
+    entry: "code.tsx",
+    aiOperations: [],
+    files: {
+      "code.tsx": `import { app, Page, Text, jsx } from "@sdk";
+app.get("/executor", c => new Promise<Response>(resolve => resolve(c.page(<Page title="Home"><Text>Hello</Text></Page>))));
+app.get("/dynamic", c => {
+  const responses = [() => c.page(<Page title="Home"><Text>Hello</Text></Page>), () => c.json({ ok: true })];
+  return responses[c.user ? 0 : 1]!();
+});
+app.get("/mixed", c => c.user ? c.text("data") : new Promise<Response>(resolve => resolve(c.page(<Page title="Home"><Text>Hello</Text></Page>))));
+app.get("/data", async c => { if (c.user) return c.json({ ok: true }); return c.text("Data"); });
+app.get("/redirect", c => c.redirect("/data"));
+app.get("/conditional-data", c => c.user ? c.json({ ok: true }) : c.text("Data"));
+export default app;`,
+    },
+  });
+  expect(result.diagnostics).toEqual([]);
+  expect(result.entrypoints.map((entry) => entry.route?.page)).toEqual([undefined, undefined, undefined, false, false, false]);
+  for (const entry of result.entrypoints.slice(0, 3)) expect(entry.route).not.toHaveProperty("page");
+});

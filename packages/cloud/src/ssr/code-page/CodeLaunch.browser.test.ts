@@ -242,6 +242,7 @@ for (const theme of ["light", "dark"])
         if (state.startsWith("reader") || state === "paused-reader") {
           expect(await page.locator(".cloud-code").textContent()).not.toContain("Dein Code");
           expect(await page.locator(".cloud-code").textContent()).not.toContain("Läuft als du");
+          expect(await page.locator(".cloud-code").textContent()).not.toMatch(/deine Postfächer|dein Kontingent|Deine Seiten/);
         }
         if (state === "pages" || state === "both") {
           await settled(page);

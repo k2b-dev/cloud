@@ -21,6 +21,8 @@ export async function loadCodeVersionReadModel(
   context = { ...context, ownerReaderAnswer: null };
   const input = codeReadModelContracts.version.input.parse(raw);
   const { code } = await readCode(input.codeId, context);
+  const viewer = codePerson(context);
+  const otherOwner = code.owner.kind === "person" && code.owner.userId !== viewer.id ? code.owner.userId : null;
   const { locale } = codeReadModelMessages.resolve(context.locale ? [context.locale] : []);
   const [row] = await sql<
     {
@@ -36,12 +38,15 @@ export async function loadCodeVersionReadModel(
       explanation: string | null;
       chat_conversation_id: string | null;
       chat_schema_available: boolean;
+      owner_name: string | null;
     }[]
   >`SELECT (SELECT row_to_json(p) FROM (${codePolicySnapshotQuery(sql)}) p) AS policy,
     (SELECT COALESCE(jsonb_agg(g),'[]'::jsonb) FROM (${codePolicyGroupRowsQuery(code.owner.kind === "person" ? code.owner.userId : null, sql, input.versionId)}) g) AS memberships,
     v.number,v.created_at,v.manifest,s.evidence,cmp.manifest AS comparison,cmp.id AS comparison_id,CASE WHEN ${input.comparisonVersionId !== undefined} THEN ${input.comparisonVersionId ?? null}::uuid ELSE (s.binding->>'comparisonVersionId')::uuid END AS expected_comparison_id,e.text AS explanation,
     (SELECT c.chat_conversation_id FROM code.codes c WHERE c.id=v.code_id) AS chat_conversation_id,
-    to_regclass('ai.conversations') IS NOT NULL AS chat_schema_available
+    to_regclass('ai.conversations') IS NOT NULL AS chat_schema_available,
+    (SELECT COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),''),u.uid)
+      FROM auth.users u WHERE u.id=${viewer.roles.includes("user") ? otherOwner : null}::uuid) AS owner_name
     FROM code.versions v LEFT JOIN code.version_submissions s ON s.version_id=v.id
     LEFT JOIN code.versions cmp ON cmp.code_id=v.code_id AND cmp.id=CASE WHEN ${input.comparisonVersionId !== undefined}
       THEN ${input.comparisonVersionId ?? null}::uuid ELSE (s.binding->>'comparisonVersionId')::uuid END
@@ -69,6 +74,7 @@ export async function loadCodeVersionReadModel(
       : { missing: false, target: null };
   const result = presentCodeVersion({
     personal: code.owner.kind === "person",
+    ...(otherOwner ? { runsAs: { name: row.owner_name } } : {}),
     versionId: input.versionId,
     number: row.number,
     submittedAt: row.created_at.toISOString(),

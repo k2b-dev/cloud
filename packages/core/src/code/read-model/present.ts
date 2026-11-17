@@ -97,6 +97,8 @@ function facts(manifest: CodeCheckedVersionManifest, names: ReadModelNames, loca
 /** Only checked facts enter this projection. Model titles and explanations are deliberately absent from facts(). */
 export function presentCodeVersion(input: {
   personal: boolean;
+  /** Present only when someone else owns personal Code; null name preserves directory restrictions. */
+  runsAs?: { name: string | null };
   versionId: string;
   number: number;
   submittedAt: string;
@@ -132,7 +134,7 @@ export function presentCodeVersion(input: {
             stable({ operation, target }),
             {
               text: t.chatSend,
-              note: t.chatSendNote,
+              note: input.runsAs ? t.chatSendNoteOther(input.runsAs) : t.chatSendNote,
               // Without a readable bound chat the row still carries the SDK's own handle, so the page finds the chat
               // row and offers its owner to choose one; no reader names that handle, so the safe sentence stays.
               target: {
