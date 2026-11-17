@@ -2479,10 +2479,13 @@ export const aiConversations: AiConversationService = {
     return conversation ? { ok: true as const, conversation } : { ok: false as const, reason: "not_found" as const };
   },
 
-  archiveConversation: async (input) => {
-    // Archiving considers pending learning work once, just like learning being
-    // off at completion. Restoring cannot backfill these turns or receipts.
-    const rows = await sql<{ id: string }[]>`
+  archiveConversation: async (input) =>
+    sql.begin(async (tx) => {
+      // Same lock as turn submission and "done": a queued message cannot start while the chat is archived.
+      await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId}::uuid FOR UPDATE`;
+      // Archiving considers pending learning work once, just like learning being
+      // off at completion. Restoring cannot backfill these turns or receipts.
+      const rows = await tx<{ id: string }[]>`
       WITH archived AS (
         UPDATE ai.conversations
         SET archived_at = now(), pinned_at = NULL
@@ -2495,7 +2498,7 @@ export const aiConversations: AiConversationService = {
             WHERE conversation_id = ai.conversations.id
               AND status IN ('queued', 'running', 'waiting_for_action')
           )
-          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND ${queuedMessageHoldsChat(sql)})
+          AND NOT EXISTS (SELECT 1 FROM ai.queued_messages WHERE conversation_id = ai.conversations.id AND ${queuedMessageHoldsChat(tx)})
         RETURNING id
       ), considered_turns AS (
         UPDATE ai.turns
@@ -2523,8 +2526,8 @@ export const aiConversations: AiConversationService = {
       )
       SELECT id FROM archived
     `;
-    return Boolean(rows[0]);
-  },
+      return Boolean(rows[0]);
+    }),
 
   restoreConversation: async (input) => {
     // Restore never backfills: everything completed beforehand counts as considered,
@@ -4108,6 +4111,10 @@ export const aiConversations: AiConversationService = {
 
   resolvePendingTurnAction: async (input) =>
     sql.begin(async (tx) => {
+      // Same order as completion: the turn first, then its pending actions. A finished turn takes no answer.
+      const [turn] = await tx<{ status: AiTurnStatus }[]>`SELECT status FROM ai.turns
+        WHERE id = ${input.turnId}::uuid AND conversation_id = ${input.conversationId}::uuid FOR UPDATE`;
+      if (!turn || !(["queued", "running", "waiting_for_action"] as AiTurnStatus[]).includes(turn.status)) return null;
       const rows = await tx<PendingActionRow[]>`
         UPDATE ai.pending_actions
         SET status = 'resolved',

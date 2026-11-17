@@ -150,6 +150,52 @@ suite("AI conversation store integration", () => {
     }
   });
 
+  test("a tool answer and a stop of the same turn settle without a deadlock", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    try {
+      for (let round = 0; round < 5; round++) {
+        const { turn } = await aiConversations.submitChatTurn({
+          conversationId: chat.id,
+          modelId: "test-model",
+          userMessage: userMessage(`Round ${round}`),
+          runConfig,
+        });
+        const callId = `call-${round}`;
+        await aiConversations.savePendingTurnAction({
+          conversationId: chat.id,
+          turnId: turn.id,
+          callId,
+          kind: "client_tool",
+          status: "pending",
+          name: "browser-state",
+          args: {},
+          approvalScope: "browser-state",
+          allowAlways: false,
+          frontendMode: "client",
+          resolvedEvent: null,
+        });
+        // Both take the turn first, then its actions; neither waits on the other forever.
+        const [answer, stop] = await Promise.allSettled([
+          aiConversations.resolvePendingTurnAction({
+            conversationId: chat.id,
+            turnId: turn.id,
+            callId,
+            event: { type: "tool_result", callId, result: { value: round } },
+            signedInSession: true,
+          }),
+          aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, status: "aborted" }),
+        ]);
+        expect(answer.status).toBe("fulfilled");
+        expect(stop.status).toBe("fulfilled");
+        const [row] = await sql<{ status: string }[]>`SELECT status FROM ai.turns WHERE id=${turn.id}::uuid`;
+        expect(row?.status).toBe("aborted");
+      }
+    } finally {
+      await cleanupFixture({ userId, conversationIds: [chat.id] });
+    }
+  });
+
   test("authoring stop receipts survive reload but are omitted from forks without the draft", async () => {
     const userId = await insertUser();
     const source = await aiConversations.createConversation({ ownerUserId: userId });
