@@ -396,7 +396,9 @@ describe("Notebook detail panel recovery and pagination", () => {
       expect(authors()).toEqual(["Author 0", "Author 1", "Author 2", "Author 3", "Author 4", "Author 5"]);
       expect(dom.root.querySelector('[role="alert"]')).toBeNull();
       // Everything is there: the note's creation closes the timeline as its last row.
-      expect(lastRow()).toBe(created());
+      const creationRow = created();
+      if (!creationRow) throw new Error("Missing note creation row");
+      expect(lastRow()).toBe(creationRow);
       expect(lastRow()?.dataset.end).toBe("last");
     } finally {
       dispose();
