@@ -3,19 +3,19 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { type BlockScene, fixtureImage, blockScenes as scenes } from "./blocks.fixtures";
 import { validateBlocks } from "./validate";
 
 // Islands, flat options and the six-column rows depend on the real layout engine, at desktop and phone widths.
 const root = mkdtempSync(resolve(tmpdir(), "cloud-blocks-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { BlockTree } = await import("./BlockTree");

@@ -5,12 +5,12 @@ import { join } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { accountsAppService, type NotificationBatchRecipient, notificationBatches } from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "accounts-notification-detail-render-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./detail.page");
 

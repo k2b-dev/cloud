@@ -3,7 +3,6 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseSeenHintsCookieHeader } from "@k2b/cloud/contracts/seen-hints";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
@@ -12,6 +11,7 @@ import type { ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceItem, Space
 import { SpaceSettingsContextSchema } from "@/settings-context";
 import { browserName, launchBrowser, settled, storedCookie } from "../../../../../../ui/test/browser";
 import { headOverlaps } from "../../../../../../ui/test/head-overlap";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { parseSpaceSettings } from "../settings/SpaceSettingsStore";
 import type { SpacesViewSnapshot } from "./workspace-types";
@@ -21,14 +21,14 @@ const TIME_ZONE = "Europe/Berlin";
 const packageCache = resolve(import.meta.dir, "../../../../../node_modules/.cache");
 mkdirSync(packageCache, { recursive: true });
 const root = mkdtempSync(join(packageCache, "spaces-head-browser-"));
-const { plugin } = createConfig({
+registerSsrTestPlugin({
   dev: false,
   verbose: false,
   rootDir: root,
   // The frontend root holds the overview island, which the overview pages render as Cloud does.
   componentRoots: [resolve(import.meta.dir, "../../..")],
 });
-Bun.plugin(plugin());
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: SpaceHeadFixture, OverviewFixture } = await import("./space-head.browser-fixture");
 const ui = resolve(import.meta.dir, "../../../../../../ui/dist");

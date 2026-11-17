@@ -6,13 +6,13 @@ import { CODE_REQUEST_LIMITS, type CodeContext, CodeRouteResponseSchema, generat
 import { type CodeCheckedVersionManifest, type User, UserSchema } from "@k2b/cloud/contracts";
 import type { AuthContext, RequestActor } from "@k2b/cloud/server";
 import * as server from "@k2b/cloud/server";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { requestCodeRoute } from "./requests";
 import { checkCodeCsrf, codeCsrf } from "./route-security";
 
 const root = mkdtempSync(join(tmpdir(), "core-code-hosting-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 const { createCodeHostingRoutes, readCodeRequestBody } = await import("./hosting");
 
 const codeId = "c_routehost";

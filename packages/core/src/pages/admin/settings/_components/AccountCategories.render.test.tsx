@@ -3,17 +3,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CORE_SETTINGS } from "@k2b/cloud/services/settings/core-settings";
-import { createConfig } from "@k2b/ssr";
 import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { authMessages } from "../../../auth/messages";
 import type { SettingFieldDef } from "./CoreSettingsForm.island";
 import { settingsMessages } from "./messages";
 
 const root = mkdtempSync(join(tmpdir(), "cloud-categories-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: Form } = await import("./CoreSettingsForm.island.tsx");
 const { default: AccountCategorySwitch } = await import("../../../auth/AccountCategorySwitch.island.tsx");

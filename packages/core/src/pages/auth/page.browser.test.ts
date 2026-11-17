@@ -5,18 +5,18 @@ import { join, resolve } from "node:path";
 import * as cloud from "@k2b/cloud";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import * as services from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { browserName, launchBrowser, pageErrors, storedCookie } from "../../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 // Whether the sign-in card is a frame or flat is decided by the cascade
 // between Tailwind utilities, @k2b/ui and Cloud styles at a viewport width,
 // which only a real engine resolves.
 const root = mkdtempSync(join(tmpdir(), "core-login-page-browser-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./page");
 // Text and icon widths decide where rows wrap, so the page gets its real fonts.

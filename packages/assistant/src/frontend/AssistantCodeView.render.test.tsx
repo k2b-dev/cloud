@@ -2,16 +2,16 @@ import { afterAll, beforeAll, describe, expect, setSystemTime, test } from "bun:
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // "My apps & automations" and "Waiting for you" in every state of concept gustav-ui-neu v12, in German and English,
 // from the same fixtures the screenshots use.
 
 const root = mkdtempSync(join(tmpdir(), "assistant-apps-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 const fixtures = await import("./code-overview.fixture");
 beforeAll(() => setSystemTime(new Date(fixtures.FIXTURE_NOW)));
 afterAll(() => {

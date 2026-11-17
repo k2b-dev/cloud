@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import { MaintenanceOnInputSchema, type MaintenanceStatus, MaintenanceUntilInputSchema } from "@k2b/cloud/contracts/maintenance";
-import { createConfig } from "@k2b/ssr";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import { defaultEnd } from "./time";
 
 const PATH = "/admin/settings/maintenance";
@@ -79,7 +79,7 @@ export type MaintenanceScenario = keyof typeof MAINTENANCE_SCENARIOS;
 export async function maintenanceBrowserFixture() {
   const root = mkdtempSync(join(tmpdir(), "core-maintenance-host-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-  Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+  registerSsrTestPlugin({ dev: true, rootDir: root });
   const { AdminLayout } = await import("@k2b/cloud/ssr");
   const { default: Maintenance } = await import("./Maintenance.island.tsx");
   const { maintenanceAdminMessages } = await import("./messages");

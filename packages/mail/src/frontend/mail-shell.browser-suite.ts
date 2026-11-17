@@ -2,12 +2,11 @@ import { afterAll, beforeAll, test as bunTest, describe, expect, setDefaultTimeo
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
-import { createConfig } from "@k2b/ssr";
-
 import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, pageErrors as collectPageErrors, launchBrowser, settled, storedCookie } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { MailSearchExpression, MailWorkspacePreference } from "../contracts";
 import { resolveMailSearchRoute, simpleMailSearchExpression } from "../search-state";
 import { mailTagSearch } from "../search-url";
@@ -37,8 +36,8 @@ const test = (name: string, run: () => Promise<void> | void, timeout?: number) =
 const cache = resolve(import.meta.dir, "../../node_modules/.cache");
 mkdirSync(cache, { recursive: true });
 const root = mkdtempSync(join(cache, "mail-shell-browser-"));
-const { plugin } = createConfig({ dev: false, verbose: false, rootDir: root, componentRoots: [import.meta.dir] });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: false, verbose: false, rootDir: root, componentRoots: [import.meta.dir] });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const {
   default: Fixture,

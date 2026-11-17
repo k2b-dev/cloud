@@ -3,11 +3,11 @@ import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from "node:f
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { AiConversation, AiConversationPage, AiProject } from "@k2b/cloud/ai";
-import { createConfig } from "@k2b/ssr";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { browserName, launchBrowser } from "../../../ui/test/browser";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // Where the chat list's rows end next to its scroll track is a layout result of
 // the shipped cascade, which happy-dom does not model. A real engine lays out
@@ -17,7 +17,7 @@ const root = mkdtempSync(resolve(tmpdir(), "assistant-project-view-browser-"));
 const serovalLink = resolve(import.meta.dir, "../../node_modules/seroval");
 const createdSerovalLink = !existsSync(serovalLink);
 if (createdSerovalLink) symlinkSync(resolve(import.meta.dir, "../../../cloud/node_modules/seroval"), serovalLink, "dir");
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 const [{ default: AssistantProjectView }, { AssistantLiveProvider, createAssistantLiveHub }] = await Promise.all([
   import("./AssistantProjectView"),
   import("./assistant-live"),

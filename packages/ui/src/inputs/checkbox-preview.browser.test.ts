@@ -2,17 +2,17 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { hoverInPlace, launchBrowser } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 // Hover, focus, and touch states come from the shipped stylesheet and the
 // engine's media features, which happy-dom does not model.
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-checkbox-preview-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { Checkbox } = await import("./Checkbox");

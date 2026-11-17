@@ -2,16 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { ImgData } from "@k2b/stdlib/browser";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { DEFAULT_ADJ } from "./image-processor/constants";
 import type { ImageEntry } from "./image-processor/types";
 
 const root = mkdtempSync(join(tmpdir(), "tools-detail-panel-render-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: ImageProcessor, ImageProcessorView } = await import("./ImageProcessor.island.tsx");

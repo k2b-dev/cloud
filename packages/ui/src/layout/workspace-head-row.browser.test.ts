@@ -2,11 +2,11 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { Dynamic, renderToString } from "solid-js/web";
 import { hoverInPlace, launchBrowser, settled } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { type FixtureOptions, uiDirectory, workspaceCss, workspaceDist, workspaceTree } from "../../test/workspace-host-fixture";
 
 declare global {
@@ -19,8 +19,8 @@ declare global {
 
 setDefaultTimeout(30_000);
 const directory = mkdtempSync(resolve(tmpdir(), "k2b-workspace-head-"));
-const { plugin } = createConfig({ dev: true, rootDir: directory });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: directory });
+
 process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 const { AppWorkspace, ViewTabs, FilterChip, IconButton, PageTrailProvider, Tabs, SegmentedControl } = await import("../index");
 const components = { AppWorkspace, ViewTabs, FilterChip, IconButton, PageTrailProvider, createComponent, createSignal, Dynamic };

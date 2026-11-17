@@ -5,12 +5,12 @@ import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import type { CloudRuntime, RuntimeAppMeta } from "@k2b/cloud/contracts/app";
 import type { AuthContext } from "@k2b/cloud/server";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "cloud-help-render-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: page } = await import("./registered.page");
 const rail = await import("@k2b/cloud/services/rail-snapshot");

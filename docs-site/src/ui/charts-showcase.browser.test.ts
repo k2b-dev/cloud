@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { launchBrowser, pageErrors, settled } from "../../../packages/ui/test/browser";
+import { registerSsrTestPlugin } from "../../../packages/ui/test/ssr-test-plugin";
 
 // Driven by the showcase registry: the real Fibel pages of the overview, every kind and both dashboards render on
 // the server, hydrate without a console error into the same markup, and keep every frame in place while the state
@@ -7,8 +8,7 @@ import { launchBrowser, pageErrors, settled } from "../../../packages/ui/test/br
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
 
-const { plugin } = await import("../ssr");
-Bun.plugin(plugin());
+registerSsrTestPlugin(await import("../ssr"));
 // buildAssets regenerates the example registry, so the list below is the one the pages draw.
 await (await import("../build-assets")).buildAssets();
 const { showcaseDashboards } = await import("./demo-sections/charts/dashboards");

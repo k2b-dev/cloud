@@ -2,16 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import type { Mailbox } from "../../contracts";
 import { resolveMailSearchRoute } from "../../search-state";
 import { mailTestRow } from "./mail-list-test-fixtures";
 
 const root = mkdtempSync(join(tmpdir(), "mail-conversation-list-render-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: MailConversationList } = await import("./MailConversationList.tsx");

@@ -2,16 +2,16 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { createComponent } from "solid-js";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import type { PageOptions } from "../_internal/define-app";
 import type { RuntimeContext } from "./runtime";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-panel-layout-render-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { default: PanelLayout } = await import("./PanelLayout");

@@ -2,16 +2,16 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createConfig } from "@k2b/ssr";
 import type { Browser, Page } from "playwright";
 import { createComponent, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
+import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 setDefaultTimeout(20_000);
 const root = mkdtempSync(resolve(tmpdir(), "k2b-sidebar-chips-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: AppWorkspace } = await import("./AppWorkspace");
 const { IconButton } = await import("../actions/Button");

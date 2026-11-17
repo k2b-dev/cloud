@@ -5,14 +5,14 @@ import { join } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { session } from "@k2b/cloud/services";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { settingsFixture } from "../store/settings.test-fixture";
 
 // Pages render JSX on the server; the test installs the same SSR plugin the app uses.
 const root = mkdtempSync(join(tmpdir(), "pulse-not-set-up-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: pageRoutes } = await import(".");
 // The Cloud runtime middleware needs a started app; pages only read the app list from it.

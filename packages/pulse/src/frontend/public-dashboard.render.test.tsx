@@ -6,15 +6,15 @@ import { defineApp } from "@k2b/cloud";
 import type { CloudRuntime } from "@k2b/cloud/contracts";
 import { type AuthContext, err, fail, ok } from "@k2b/cloud/server";
 import { requireAppAccess } from "@k2b/cloud/server/middleware/app-access";
-import { createConfig } from "@k2b/ssr";
 import { Hono } from "hono";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as config from "../config";
 import * as panels from "../service/dashboard-panels";
 import * as gate from "./not-set-up";
 import { dashboardTestDashboard } from "./workspace/dashboard-test-fixtures";
 
 const root = mkdtempSync(join(tmpdir(), "pulse-public-dashboard-"));
-Bun.plugin(createConfig({ dev: true, rootDir: root }).plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const render = defineApp({
   id: "pulse",

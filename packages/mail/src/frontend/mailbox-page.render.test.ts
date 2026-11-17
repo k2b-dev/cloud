@@ -7,11 +7,11 @@ import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import { type AuthContext, REQUEST_IDLE_TIMEOUT_SECONDS } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as layoutHelp from "@k2b/cloud/ssr/help";
-import { createConfig } from "@k2b/ssr";
 import { err, fail } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { selectHtml } from "../../../../tests/fixtures/select-html";
+import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { resolveMailSearchRoute } from "../search-state";
 import { mailboxes, mailboxPreferences } from "../service";
 import * as access from "../service/access";
@@ -23,8 +23,8 @@ import * as workspace from "../service/workspace";
 import * as sidebarData from "./mail-sidebar-data";
 
 const root = mkdtempSync(join(tmpdir(), "mailbox-page-tests-"));
-const { plugin } = createConfig({ dev: true, rootDir: root });
-Bun.plugin(plugin());
+registerSsrTestPlugin({ dev: true, rootDir: root });
+
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./[mailboxId]/page");
 const { default: codeHandler } = await import("./[mailboxId]/code/page");
