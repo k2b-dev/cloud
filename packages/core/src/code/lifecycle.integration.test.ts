@@ -217,7 +217,12 @@ suiteFor(
     const proof = { runId: f.runId, generation: 1, token: "fixture-lifecycle-proof" };
     const deadlineAt = Date.UTC(2030, 0, 2);
     await openCodeOutput({ ...proof, codeId: f.id, deadlineAt, leaseExpiresAt: deadlineAt }, 32768);
-    await receiveCodeOutput(proof, { seq: 1, entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before owner deletion" }], droppedLines: 0, droppedBytes: 0 });
+    await receiveCodeOutput(proof, {
+      seq: 1,
+      entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before owner deletion" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
     expect((await deleteMailbox(context(user), f.mailboxId)).ok).toBe(true);
     const meter = await meterSql();
     try {

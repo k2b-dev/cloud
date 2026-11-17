@@ -325,8 +325,7 @@ test("shared workerd keeps console output and uncaught stacks bound to their own
           expect(operation).toBe(CODE_OUTPUT_OPERATION);
           const batch = CodeOutputBatchSchema.parse(input);
           expect(batch.entries.every((entry) => entry.kind === "log" && Number.isFinite(Date.parse(entry.at)))).toBe(true);
-          for (const entry of batch.entries)
-            if (entry.text.includes("sandbox stack right")) expect(entry.level).toBe("error");
+          for (const entry of batch.entries) if (entry.text.includes("sandbox stack right")) expect(entry.level).toBe("error");
           received.set(run.runId, [...(received.get(run.runId) ?? []), ...batch.entries.map((line) => line.text)]);
           return null;
         },

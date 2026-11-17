@@ -459,7 +459,12 @@ test("harden direct output submissions through the trusted runner transport", as
     run: async () => {
       if (!call) throw new Error("Missing bridge");
       for (let seq = 1; seq <= 100; seq++)
-        await call(CODE_OUTPUT_OPERATION, { seq, entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "fixture" }], droppedLines: 0, droppedBytes: 0 });
+        await call(CODE_OUTPUT_OPERATION, {
+          seq,
+          entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "fixture" }],
+          droppedLines: 0,
+          droppedBytes: 0,
+        });
       jest.setSystemTime(NOW + CODE_OUTPUT_INTERVAL_MS);
       return "succeeded";
     },

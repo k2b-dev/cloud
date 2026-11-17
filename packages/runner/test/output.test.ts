@@ -4,7 +4,12 @@ import { RunnerOutput } from "../src/output";
 
 const proof = { runId: "fixture", generation: 1, token: "fixture-proof" };
 const now = Date.UTC(2030, 0, 2);
-const batch = (seq: number) => ({ seq, entries: [{ kind: "log" as const, at: new Date().toISOString(), level: "log" as const, text: "fixture" }], droppedLines: 0, droppedBytes: 0 });
+const batch = (seq: number) => ({
+  seq,
+  entries: [{ kind: "log" as const, at: new Date().toISOString(), level: "log" as const, text: "fixture" }],
+  droppedLines: 0,
+  droppedBytes: 0,
+});
 afterEach(() => setSystemTime());
 test("harden supervisor pacing and aggregate direct submissions before HTTP", async () => {
   setSystemTime(now);
@@ -46,7 +51,12 @@ test("harden the complete output envelope after loss aggregation", async () => {
   const output = new RunnerOutput(async (batch) => {
     sent.push(batch);
   }, proof);
-  const raw = { seq: 1, entries: [{ kind: "log" as const, at: new Date().toISOString(), level: "log" as const, text: "" }], droppedLines: 0, droppedBytes: 0 };
+  const raw = {
+    seq: 1,
+    entries: [{ kind: "log" as const, at: new Date().toISOString(), level: "log" as const, text: "" }],
+    droppedLines: 0,
+    droppedBytes: 0,
+  };
   raw.entries[0]!.text = "x".repeat(LIVE_LIMITS.frameBytes - Buffer.byteLength(JSON.stringify(raw)));
   expect(CodeOutputBatchSchema.safeParse(raw).success).toBe(true);
   await output.write(raw);

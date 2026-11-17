@@ -460,7 +460,12 @@ suiteFor(
       }
       expect(ready).toBe(true);
       const lease = await take();
-      await receiveCodeOutput(lease, { seq: 1, entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before cancel" }], droppedLines: 0, droppedBytes: 0 });
+      await receiveCodeOutput(lease, {
+        seq: 1,
+        entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before cancel" }],
+        droppedLines: 0,
+        droppedBytes: 0,
+      });
       const meter = await meterSql();
       try {
         const statements = await meter.during(async () => {
@@ -488,14 +493,21 @@ suiteFor(
     const code = await fixture();
     await enqueueMany(code, 1);
     const lease = await take();
-    await receiveCodeOutput(lease, { seq: 1, entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before recovery" }], droppedLines: 0, droppedBytes: 0 });
+    await receiveCodeOutput(lease, {
+      seq: 1,
+      entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before recovery" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
     await sql`UPDATE code.runs SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=${lease.runId}::uuid`;
     await reconcileCodeRuns();
     expect((await state(lease.runId)).state).toBe("queued");
     await expect(receiveCodeOutput(lease, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
       RunnerLeaseLostError,
     );
-    expect((await replayCodeOutput(lease.runId)).entries).toEqual([{ id: "1:1:0", kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before recovery" }] }]);
+    expect((await replayCodeOutput(lease.runId)).entries).toEqual([
+      { id: "1:1:0", kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before recovery" }] },
+    ]);
   });
   test("HTTP failure never requeues even before the first effect", async () => {
     const code = await fixture(owner, true, true);
@@ -1324,13 +1336,20 @@ suiteFor(
     const first = await take(),
       old = await claims(first);
     await sql`UPDATE code.runs SET ai_reference_cost=0.75,ai_reserved_cost=0.25,ai_budget_call=1 WHERE id=${first.runId}::uuid`;
-    await receiveCodeOutput(first, { seq: 1, entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before retry" }], droppedLines: 0, droppedBytes: 0 });
+    await receiveCodeOutput(first, {
+      seq: 1,
+      entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before retry" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
     await completeCodeRun(old, "failed");
     expect((await state(first.runId)).state).toBe("queued");
     await expect(receiveCodeOutput(first, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
       RunnerLeaseLostError,
     );
-    expect((await replayCodeOutput(first.runId)).entries).toEqual([{ id: "1:1:0", kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before retry" }] }]);
+    expect((await replayCodeOutput(first.runId)).entries).toEqual([
+      { id: "1:1:0", kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before retry" }] },
+    ]);
     const next = await take();
     expect(next.runId).toBe(first.runId);
     expect(next.generation).toBe(2);

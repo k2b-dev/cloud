@@ -221,7 +221,12 @@ test("mounted runner key requires supervisor ownership, exact 0400 and a regular
 test("output uses the signed run-proof route, outside the terminal report, and preserves lease loss", async () => {
   jest.setSystemTime(NOW);
   const proof = { runId: INSTALLATION_ID, generation: 1, token: "run-proof" };
-  const batch = { seq: 1, lines: [{ level: "error" as const, text: "sandbox stack" }], droppedLines: 0, droppedBytes: 0 };
+  const batch = {
+    seq: 1,
+    entries: [{ kind: "log" as const, level: "error" as const, at: new Date(NOW).toISOString(), text: "sandbox stack" }],
+    droppedLines: 0,
+    droppedBytes: 0,
+  };
   let calls = 0;
   const server = Bun.serve({
     hostname: "127.0.0.1",

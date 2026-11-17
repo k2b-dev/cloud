@@ -51,7 +51,13 @@ export const CodeOutputWindowSchema = z
   })
   .strict();
 export type CodeOutputWindow = z.infer<typeof CodeOutputWindowSchema>;
-export const emptyCodeOutput = (generation = 0): CodeOutputWindow => ({ generation, seq: 0, entries: [], droppedLines: 0, droppedBytes: 0 });
+export const emptyCodeOutput = (generation = 0): CodeOutputWindow => ({
+  generation,
+  seq: 0,
+  entries: [],
+  droppedLines: 0,
+  droppedBytes: 0,
+});
 export const CodeOutputEventSchema = CodeOutputWindowSchema.omit({ entries: true })
   .extend({
     type: z.literal("code.output"),

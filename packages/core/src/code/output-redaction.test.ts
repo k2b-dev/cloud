@@ -33,7 +33,9 @@ test("harden unfinished output fragments at finalization and keep the pending su
     expect(result.pending!.text.length).toBeLessThan(redactor.longest);
     pending = result.pending;
   }
-  expect(redactOutput([], redactor, pending, true).entries).toEqual([{ kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: [{ type: "secret", name: "TOKEN" }] }]);
+  expect(redactOutput([], redactor, pending, true).entries).toEqual([
+    { kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: [{ type: "secret", name: "TOKEN" }] },
+  ]);
 });
 test("harden longest-match handling while releasing resolved ordinary text", () => {
   const redactor = compileOutputRedaction(
@@ -43,7 +45,9 @@ test("harden longest-match handling while releasing resolved ordinary text", () 
     ]),
   );
   const first = redactOutput([line("prefix abc")], redactor);
-  expect(first.entries).toEqual([{ kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: [{ type: "text", text: "prefix " }] }]);
+  expect(first.entries).toEqual([
+    { kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: [{ type: "text", text: "prefix " }] },
+  ]);
   expect(redactOutput([line("def tail")], redactor, first.pending).entries.flatMap((line) => line.text)).toEqual([
     { type: "secret", name: "LONG" },
     { type: "text", text: " tail" },

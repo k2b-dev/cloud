@@ -388,7 +388,15 @@ export async function closeCodeOutput(runId: string, generation?: number): Promi
     const pending = PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))));
     window = appendCodeOutput(
       { ...window, seq: window.seq + 1 },
-      [{ kind: pending.kind, level: pending.level, at: pending.at, id: `${state.generation}:${window.seq + 1}:0`, text: [{ type: "secret", name: pending.name }] }],
+      [
+        {
+          kind: pending.kind,
+          level: pending.level,
+          at: pending.at,
+          id: `${state.generation}:${window.seq + 1}:0`,
+          text: [{ type: "secret", name: pending.name }],
+        },
+      ],
       state.budget,
     );
   }

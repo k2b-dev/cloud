@@ -23,7 +23,12 @@ test("a run owns its console; error stacks travel only through its bounded outpu
   await output.finish();
   expect(batches).toHaveLength(1);
   expect(batches[0]!.operation).toBe(CODE_OUTPUT_OPERATION);
-  expect(batches[0]!.batch.entries[0]).toEqual({ kind: "log" as const, at: new Date().toISOString(), level: "log", text: 'hello {"answer":42}' });
+  expect(batches[0]!.batch.entries[0]).toEqual({
+    kind: "log" as const,
+    at: new Date().toISOString(),
+    level: "log",
+    text: 'hello {"answer":42}',
+  });
   expect(batches[0]!.batch.entries.some((line) => line.level === "error" && line.text.includes("sandbox failure"))).toBe(true);
   expect(batches[0]!.batch.entries.some((line) => line.text.includes("console.test.ts"))).toBe(true);
 });
@@ -85,13 +90,30 @@ test("a failed asynchronous flush joins cleanly and reports a stable failure", a
 test("console methods capture log metadata before the bundle is flushed", async () => {
   setSystemTime(fixed);
   const batches: CodeOutputBatch[] = [];
-  const output = createCodeConsole({ call: async (_operation: string, batch: CodeOutputBatch) => { batches.push(batch); } }, limits);
+  const output = createCodeConsole(
+    {
+      call: async (_operation: string, batch: CodeOutputBatch) => {
+        batches.push(batch);
+      },
+    },
+    limits,
+  );
   for (const level of ["log", "info", "debug", "warn", "error"] as const) output.console[level](level);
   setSystemTime(fixed + 250);
   output.console.warn("later\ncontinuation");
   await output.finish();
   expect(batches[0]!.entries).toEqual([
-    ...["log", "info", "debug", "warn", "error"].map((level) => ({ kind: "log", level, at: new Date(fixed).toISOString(), text: level })),
-    ...["later", "continuation"].map((text) => ({ kind: "log", level: "warn", at: new Date(fixed + 250).toISOString(), text })),
+    ...(["log", "info", "debug", "warn", "error"] as const).map((level): CodeOutputBatch["entries"][number] => ({
+      kind: "log",
+      level,
+      at: new Date(fixed).toISOString(),
+      text: level,
+    })),
+    ...["later", "continuation"].map((text): CodeOutputBatch["entries"][number] => ({
+      kind: "log",
+      level: "warn",
+      at: new Date(fixed + 250).toISOString(),
+      text,
+    })),
   ]);
 });

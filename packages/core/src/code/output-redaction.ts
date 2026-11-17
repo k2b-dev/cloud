@@ -42,10 +42,15 @@ export function redactOutput(
   final = false,
 ): { entries: RedactedOutputEntry[]; pending: OutputRedactionPending } {
   if (final && pending && input.length === 0)
-    return { entries: [{ kind: pending.kind, level: pending.level, at: pending.at, text: [{ type: "secret", name: pending.name }] }], pending: null };
+    return {
+      entries: [{ kind: pending.kind, level: pending.level, at: pending.at, text: [{ type: "secret", name: pending.name }] }],
+      pending: null,
+    };
   const fragments = [
     ...(pending ? [pending] : []),
-    ...input.flatMap(({ kind, level, at, text }) => text.split(/\r\n|\n|\r/).map((text) => ({ kind, level, at, text: cleanCodeOutput(text) }))),
+    ...input.flatMap(({ kind, level, at, text }) =>
+      text.split(/\r\n|\n|\r/).map((text) => ({ kind, level, at, text: cleanCodeOutput(text) })),
+    ),
   ];
   const text = fragments.map((line) => line.text).join("");
   const emitted = fragments.map(() => "");

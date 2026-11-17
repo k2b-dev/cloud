@@ -4,17 +4,23 @@ import {
   appendCodeOutput,
   applyCodeOutputEvent,
   CodeOutputBatchSchema,
-  CodeOutputWindowSchema,
-  CodeOutputEventSchema,
-  isCodeOutputLogEntry,
   type CodeOutputEvent,
+  CodeOutputEventSchema,
   type CodeOutputKnownEntry,
+  CodeOutputWindowSchema,
   cleanCodeOutput,
   codeOutputParts,
   emptyCodeOutput,
+  isCodeOutputLogEntry,
 } from "./output";
 
-const line = (text: string): CodeOutputKnownEntry => ({ id: text, kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: [{ type: "text", text }] });
+const line = (text: string): CodeOutputKnownEntry => ({
+  id: text,
+  kind: "log" as const,
+  at: "2030-01-02T00:00:00.000Z",
+  level: "log",
+  text: [{ type: "text", text }],
+});
 test("the same whole-line tail and loss counters apply on Core, replay and browser", () => {
   const lines = [line("first"), line("second"), line("third")];
   const budget = new TextEncoder().encode(JSON.stringify(lines.slice(1))).length;
@@ -30,10 +36,18 @@ test("the same whole-line tail and loss counters apply on Core, replay and brows
   expect(applyCodeOutputEvent(replay, { ...event, generation: 2, seq: 1 })).toEqual({ ...stored, generation: 2 });
 });
 test("input messages use the actual live frame limit, including JSON escaping and UTF-8", () => {
-  const batch = { seq: 1, entries: [{ kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: "ok" }], droppedLines: 0, droppedBytes: 0 };
+  const batch = {
+    seq: 1,
+    entries: [{ kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: "ok" }],
+    droppedLines: 0,
+    droppedBytes: 0,
+  };
   expect(CodeOutputBatchSchema.safeParse(batch).success).toBe(true);
   expect(
-    CodeOutputBatchSchema.safeParse({ ...batch, entries: [{ kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: "😀".repeat(LIVE_LIMITS.frameBytes / 4) }] }).success,
+    CodeOutputBatchSchema.safeParse({
+      ...batch,
+      entries: [{ kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: "😀".repeat(LIVE_LIMITS.frameBytes / 4) }],
+    }).success,
   ).toBe(false);
   expect(CodeOutputBatchSchema.safeParse({ ...batch, seq: Number.MAX_SAFE_INTEGER + 1 }).success).toBe(false);
 });
@@ -74,7 +88,12 @@ test("future entry kinds survive snapshot and live window accounting without bec
     expect(CodeOutputWindowSchema.parse({ ...window, entries: [entry] }).entries).toEqual([entry]);
   }
   expect(window.entries.filter(isCodeOutputLogEntry)).toEqual([known]);
-  const event = CodeOutputEventSchema.parse({ ...window, type: "code.output", runId: "11111111-1111-4111-8111-111111111111", budget: 32768 });
+  const event = CodeOutputEventSchema.parse({
+    ...window,
+    type: "code.output",
+    runId: "11111111-1111-4111-8111-111111111111",
+    budget: 32768,
+  });
   expect(applyCodeOutputEvent(emptyCodeOutput(), event)).toEqual(window);
   const budget = Buffer.byteLength(JSON.stringify([known]));
   const trimmed = appendCodeOutput(emptyCodeOutput(), window.entries, budget);
