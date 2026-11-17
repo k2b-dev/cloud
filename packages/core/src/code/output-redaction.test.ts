@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { compileOutputRedaction, type OutputRedactionPending, redactOutput } from "./output-redaction";
+import { compileOutputRedaction, type OutputRedactionPending, OutputRedactionPendingSchema, redactOutput } from "./output-redaction";
 import { secretEchoReplacements } from "./secret-echo";
 
 const line = (text: string) => ({ kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log" as const, text });
@@ -200,7 +200,7 @@ for (const spelling of replacements.keys()) {
       expect(first.dropped.bytes).toBe(Buffer.byteLength(JSON.stringify(muted)));
       expect(first.pending?.text).toBe(spelling.slice(0, middle));
       const result = boundary === "batch"
-        ? redactOutput([continuation], redactor, JSON.parse(JSON.stringify(first.pending)), false, { lost: false, skip: first.skip })
+        ? redactOutput([continuation], redactor, OutputRedactionPendingSchema.parse(JSON.parse(JSON.stringify(first.pending))), false, { lost: false, skip: first.skip })
         : redactOutput([muted, continuation], redactor, lost.pending, false, { lost: false, skip: lost.skip });
       expect(result.entries.flatMap((entry) => entry.text)).toEqual([
         { type: "secret", name: "TOKEN" },
@@ -240,7 +240,7 @@ for (const fragments of [["abc", "defghi!"], ["ab", "c", "def", "ghi!"], ["abc",
     for (const text of fragments) {
       const result = redactOutput([line(text)], redactor, pending);
       parts.push(...result.entries.flatMap((entry) => entry.text));
-      pending = result.pending;
+      pending = result.pending ? OutputRedactionPendingSchema.parse(JSON.parse(JSON.stringify(result.pending))) : null;
       if (pending) expect(pending.text.length).toBeLessThan(redactor.longest);
     }
     parts.push(...redactOutput([], redactor, pending, true).entries.flatMap((entry) => entry.text));

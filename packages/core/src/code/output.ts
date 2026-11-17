@@ -20,7 +20,7 @@ import { defineLive, LIVE_LIMITS } from "@k2b/cloud/events";
 import { purposeSecretCipher } from "@k2b/cloud/services";
 import type { SQL } from "bun";
 import { z } from "zod";
-import { compileOutputRedaction, type OutputRedactor, redactOutput } from "./output-redaction";
+import { compileOutputRedaction, type OutputRedactor, OutputRedactionPendingSchema as PendingSchema, redactOutput } from "./output-redaction";
 import { secretEchoReplacements } from "./secret-echo";
 
 /** Same bounded broker budget as the AI stream; one shared topic, partitioned by run, never one stream per run. */
@@ -198,15 +198,6 @@ export function sanitizeCodeOutput(batch: CodeOutputBatch, replacements: Readonl
     skip: 0,
   }).entries;
 }
-const PendingSchema = z.object({
-  kind: CodeOutputBatchSchema.shape.entries.element.shape.kind,
-  level: CodeOutputBatchSchema.shape.entries.element.shape.level,
-  at: CodeOutputBatchSchema.shape.entries.element.shape.at,
-  text: z.string(),
-  name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/),
-  hidden: z.number().int().nonnegative().safe().optional(),
-  covered: z.number().int().positive().safe().optional(),
-});
 const sum = (a: number, b: number) => Math.min(Number.MAX_SAFE_INTEGER, a + b);
 async function uncountedDrops(runId: string, state: State) {
   const values = z

@@ -1,6 +1,6 @@
-import { type CodeOutputBatch, type CodeOutputKnownEntry, cleanCodeOutput, codeOutputParts } from "@k2b/cloud/code";
+import { type CodeOutputBatch, type CodeOutputKnownEntry, CodeOutputBatchSchema, cleanCodeOutput, codeOutputParts } from "@k2b/cloud/code";
 
-type Fragment = CodeOutputBatch["entries"][number];
+import { z } from "zod";
 type RedactedOutputEntry = Omit<CodeOutputKnownEntry, "id">;
 type Match = { length: number; marker: string };
 type Node = {
@@ -10,13 +10,15 @@ type Node = {
   match?: Match;
   descendant?: string;
 };
-export type OutputRedactionPending = (Fragment & {
-  name: string;
+export const OutputRedactionPendingSchema = CodeOutputBatchSchema.shape.entries.element.extend({
+  text: z.string(),
+  name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,63}$/),
   /** UTF-16 prefix already counted as suppressed; never release it as plain text. */
-  hidden?: number;
+  hidden: z.number().int().nonnegative().safe().optional(),
   /** Deferred complete-match prefix overlapping the open candidate, sharing its metadata/name. */
-  covered?: number;
-}) | null;
+  covered: z.number().int().positive().safe().optional(),
+});
+export type OutputRedactionPending = z.infer<typeof OutputRedactionPendingSchema> | null;
 
 /** Aho-Corasick, compiled once per replacement revision. Failure links keep scanning amortized
  * linear in UTF-16 input units, including repetitive, overlapping prefixes.
@@ -179,17 +181,17 @@ export function redactOutput(
   if (!final && heldAt < text.length) {
     // A complete overlapping area waits as a marker plus the bounded raw suffix.
     // This keeps both earlier metadata and later candidates without retaining old raw text.
-    const keepCovered = deferred && (deferred.start < heldAt || covered) && (deferred.end > hiddenUntil || covered);
-    const metadataAt = keepCovered ? deferred.start : heldAt;
+    const retained = deferred && (deferred.start < heldAt || covered) && (deferred.end > hiddenUntil || covered) ? deferred : undefined;
+    const metadataAt = retained?.start ?? heldAt;
     let position = 0;
     for (const fragment of fragments) {
       if (position + fragment.text.length > metadataAt) {
         held = {
           kind: fragment.kind, level: fragment.level, at: fragment.at,
           text: text.slice(heldAt),
-          name: keepCovered ? deferred.marker.slice("[secret:".length, -1) : name!,
+          name: retained ? retained.marker.slice("[secret:".length, -1) : name!,
           ...(hiddenUntil > heldAt ? { hidden: hiddenUntil - heldAt } : {}),
-          ...(keepCovered ? { covered: deferred.end - heldAt } : {}),
+          ...(retained ? { covered: retained.end - heldAt } : {}),
         };
         break;
       }
