@@ -1,15 +1,27 @@
 import type { AiCodeAuthoringStop, AiStoredMessage } from "@k2b/cloud/ai";
 
-/** Fictitious persisted receipt. The platform tests the real loop and durable append. */
-export async function createStoppedAuthoringFixture(locale = "en") {
-  const state: AiCodeAuthoringStop = {
-    reason: "repeated_error",
+export const authoringStopReasons = ["input_tokens", "model_calls", "repeated_error"] as const;
+export const authoringStopSaves = ["none", "draft", "version"] as const;
+export type AuthoringStopSave = (typeof authoringStopSaves)[number];
+
+export function authoringStopState(reason: AiCodeAuthoringStop["reason"], save: AuthoringStopSave): AiCodeAuthoringStop {
+  return {
+    reason,
     completedSteps: 2,
-    drafts: 1,
+    drafts: save === "none" ? 0 : 1,
     unchecked: 0,
-    untested: 1,
-    unsubmitted: 1,
+    untested: save === "draft" ? 1 : 0,
+    unsubmitted: save === "draft" ? 1 : 0,
   };
+}
+
+/** Fictitious persisted receipt. The platform tests the real loop and durable append. */
+export async function createStoppedAuthoringFixture(
+  locale = "en",
+  reason: AiCodeAuthoringStop["reason"] = "repeated_error",
+  save: AuthoringStopSave = "draft",
+) {
+  const state = authoringStopState(reason, save);
   const base = {
     shortId: "short",
     conversationId: "chat",

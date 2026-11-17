@@ -3,13 +3,18 @@ import { Chat, LocaleProvider } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import AssistantAuthoringStop from "./AssistantAuthoringStop";
-import { createStoppedAuthoringFixture } from "./authoring-stop.test-fixture";
+import { authoringStopReasons, authoringStopSaves, createStoppedAuthoringFixture } from "./authoring-stop.test-fixture";
 
 // The persisted stop in a Gustav chat column. `window.settleSend(ok)` answers the pending continue: a failure keeps the
 // card, a success appends the new request below it as the normal send path would.
-const locale = new URLSearchParams(location.search).get("lang") === "de" ? "de" : "en";
-const { messages } = await createStoppedAuthoringFixture(locale);
+const query = new URLSearchParams(location.search);
+const locale = query.get("lang") === "de" ? "de" : "en";
+const reason = authoringStopReasons.find((value) => value === query.get("reason")) ?? "input_tokens";
+const save = authoringStopSaves.find((value) => value === query.get("save")) ?? "draft";
+const { messages } = await createStoppedAuthoringFixture(locale, reason, save);
 const [history, setHistory] = createSignal(messages);
+const [busy, setBusy] = createSignal(query.get("mode") === "blocked");
+if (query.get("mode") === "retired") setHistory([...messages, { ...messages[0]!, id: "later", seq: 3, loopId: "later" }]);
 const continued: string[] = [];
 let settle: ((ok: boolean) => void) | undefined;
 const root = document.createElement("main");
@@ -30,13 +35,14 @@ render(
               settle = (ok) => {
                 if (!ok) return reject(new Error("fixture offline"));
                 setHistory([
-                  ...messages,
+                  ...history(),
                   { ...messages[0]!, id: "next", seq: 3, loopId: "next", message: { role: "user", content: [message] } },
                 ]);
                 resolve();
               };
             });
           },
+          actionDisabled: busy,
         }}
       >
         <Chat>
@@ -51,4 +57,4 @@ render(
 const firstRect = await new Promise<DOMRect | null>((resolve) =>
   requestAnimationFrame(() => resolve(document.querySelector(".assistant-authoring-stop")?.getBoundingClientRect() ?? null)),
 );
-Object.assign(window, { continued, firstRect: firstRect?.toJSON() ?? null, settleSend: (ok: boolean) => settle?.(ok) });
+Object.assign(window, { continued, firstRect: firstRect?.toJSON() ?? null, settleSend: (ok: boolean) => settle?.(ok), setBusy });

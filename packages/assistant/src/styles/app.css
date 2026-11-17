@@ -1310,15 +1310,31 @@ a.assistant-apps__mark:focus-visible { outline: var(--k2b-focus-width) solid var
 .k2b-ui .assistant-place-starter > .k2b-button__label { width: 100%; }
 .assistant-place-row-sub { display: block; overflow: hidden; color: var(--k2b-text-secondary); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Gustav stopped authoring: the shared notice with two short lists in the task list's icons. Two text styles (the
-   notice's 14 px title and 14 px entries) and one quiet 13 px level for list labels and the saved line. Icons sit on
-   the text edge of title and reason. The saved line and its recovery text share one grid cell, so a failed send
-   changes no height. */
-.k2b-ui .assistant-authoring-stop__meta { margin: 0; color: var(--k2b-text-muted); font-size: .8125rem; line-height: 1.25rem; }
-.k2b-ui .assistant-authoring-stop__meta { display: grid; margin-block-start: .75rem; }
+/* v10: one neutral receipt, one symbol, two text roles. Feedback shares the saved line's place. */
+.k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] {
+  container-type: inline-size;
+  grid-template-columns: 1.125rem minmax(0, 1fr);
+  column-gap: .625rem;
+  padding: .6875rem .875rem;
+  border: 0;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface-muted);
+}
+.k2b-ui .assistant-authoring-stop[data-card-icon] > .k2b-notice-card__icon { font-size: 1.0625rem; }
+.k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .125rem .75rem; }
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__head { grid-column: 1; }
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__title { font-size: var(--k2b-type-14); font-weight: 400; line-height: 1.3125rem; }
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__body { grid-column: 1; margin: 0; }
+.k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions { grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 0; padding: 0; }
+.k2b-ui .assistant-authoring-stop__meta { display: grid; margin: 0; color: var(--k2b-text-muted); font-size: var(--k2b-type-13); line-height: 1.21875rem; }
 .k2b-ui .assistant-authoring-stop__meta > span { grid-area: 1 / 1; }
-.k2b-ui .assistant-authoring-stop__meta > [data-hidden] { visibility: hidden; }
-.k2b-ui .assistant-authoring-stop__alert { color: var(--k2b-danger-text); }
+.k2b-ui .assistant-authoring-stop__measure,
+.k2b-ui .assistant-authoring-stop__retired { visibility: hidden; }
+@container (max-width: 35rem) {
+  .k2b-ui .assistant-authoring-stop.k2b-notice-card[data-card-icon] > .k2b-notice-card__content { grid-template-columns: minmax(0, 1fr); }
+  .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions { grid-column: 1; grid-row: 3; margin-block-start: .5rem; margin-inline-start: -1.75rem; }
+  .k2b-ui .assistant-authoring-stop[data-card-icon] .k2b-notice-card__actions > * { flex: 1 1 0; min-width: 0; min-height: 2.5rem; }
+}
 
 /* Reading column (Gustav chat v12, Bauplan 4a): the conversation is at most 812 px wide and centred, so with its 24 px
    gutters the turns and the composer share one 764 px column; prose stops at 44 rem. */
