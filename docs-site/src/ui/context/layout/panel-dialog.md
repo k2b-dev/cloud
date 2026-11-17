@@ -158,8 +158,8 @@ dialog surface in both themes.
 The tone belongs to the dialog's moment, not its content: use it for the
 result of an action or for a consequential decision, not to decorate an
 ordinary editor. Prompts carry the same tone through their `variant`; see
-[Prompts](/en/ui/feedback/prompts). A toned dialog with an untoned dialog
-stacked above it shows only the upper one's frame. A `floating` panel draws
+[Prompts](/en/ui/feedback/prompts). A toned dialog that an untoned dialog
+replaces shows only the shown level's frame. A `floating` panel draws
 the edge on its own frame.
 
 Add `celebrate` to a success dialog that reports a finished result, such as a

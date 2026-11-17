@@ -163,6 +163,14 @@
   }
 }
 
+/* While one level replaces another, the dialog core morphs the frame's size
+ * (`dialog-frame-motion.ts`): the frame clips the contents, which stand at
+ * their own sizes, so nothing rewraps and no scrollbar flashes. */
+.k2b-ui .k2b-dialog[data-k2b-frame-motion] {
+  box-sizing: border-box;
+  overflow: clip;
+}
+
 .k2b-ui .k2b-dialog[data-modeless="true"] {
   z-index: 100;
 }
