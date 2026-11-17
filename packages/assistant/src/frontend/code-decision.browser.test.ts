@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { solidTestPlugin } from "../../../ui/test/solid-test-plugin";
 import type { CodeDecisionPages } from "./code-decision-pages";
 
@@ -80,7 +80,15 @@ afterAll(async () => {
 });
 async function open(mode: string, width = 390, theme = "light", locale = "de"): Promise<Page> {
   const page = await browser.newPage({ viewport: { width, height: width === 390 ? 780 : 900 }, reducedMotion: "reduce" });
-  await page.clock.setFixedTime(new Date("2026-11-17T10:00:00Z"));
+  // Pin Date only; timers and animation frames keep running normally.
+  await page.addInitScript((at) => {
+    const RealDate = Date;
+    globalThis.Date = new Proxy(RealDate, {
+      construct: (target, args, newTarget) => Reflect.construct(target, args.length ? args : [at], newTarget),
+      apply: () => new RealDate(at).toString(),
+      get: (target, property) => (property === "now" ? () => at : Reflect.get(target, property)),
+    });
+  }, Date.parse("2026-11-17T10:00:00Z"));
   await page.goto(`${server.url}?mode=${mode}&theme=${theme}&locale=${locale}`);
   await page.locator(".assistant-code-decision__text").waitFor();
   await settled(page);
@@ -115,7 +123,7 @@ test("one and several pages match v10 with two text styles, one icon and no hori
             const before = await card.boundingBox();
             await page.keyboard.press("Tab");
             expect(await card.evaluate((node) => node === document.activeElement)).toBe(true);
-            await card.hover();
+            await hoverInPlace(card);
             await settled(page);
             expect(await card.boundingBox()).toEqual(before);
             expect(await card.getAttribute("href")).toBe(home.href);
