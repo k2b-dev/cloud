@@ -2725,6 +2725,11 @@ suiteFor(
     const snapshot = () => sql`SELECT short_id,work_status,revision,snoozed_until FROM mail.conversations
       WHERE mailbox_id=${fixture.mailboxId}::uuid ORDER BY short_id`;
     const before = await snapshot();
+    // Fresh tiny tables have no planner statistics. Their default estimates make
+    // assignment reviews spend over a second compiling JIT rather than reading
+    // these few rows. Analyze the fixture; keep the real reviews and 5s timeout.
+    await sql`ANALYZE auth.users,auth.service_accounts,auth.access,auth.user_groups_v2,auth.group_groups_v2,
+      mail.conversations,mail.conversation_assignees,mail.mailbox_access,mail.mailbox_assigned_access`;
     const mutations = [
       ["conversation.status.set", { conversationId: "Cv4g00", expectedRevision: 1, status: "done" }],
       ["conversation.status.set.batch", { conversationIds: ["Cv4g01", "Cv4g00"], status: "done" }],
