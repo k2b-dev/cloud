@@ -228,11 +228,15 @@ suiteFor(
       RunnerLeaseLostError,
     );
     const newer = { token: newerToken, runId, generation: 2 };
-    await receiveCodeOutput(newer, batch(1, "new attempt"));
+    await receiveCodeOutput(newer, batch(1, "too soon in the same run"));
+    expect((await replayCodeOutput(runId)).lines).toEqual([]);
+    expect((await replayCodeOutput(runId)).droppedLines).toBe(1);
+    setSystemTime(fixed + 2000);
+    await receiveCodeOutput(newer, batch(2, "new attempt"));
     expect((await replayCodeOutput(runId)).lines).toEqual([{ level: "log", parts: [{ type: "text", text: "new attempt" }] }]);
     // Newline expansion adds structured per-line overhead. Both the broker frame
     // and the retained tail must stay bounded after that expansion, with counted loss.
-    for (let seq = 2; seq <= 4; seq++) {
+    for (let seq = 3; seq <= 5; seq++) {
       setSystemTime(fixed + seq * 1000);
       await receiveCodeOutput(newer, batch(seq, "x\n".repeat(LIVE_LIMITS.frameBytes / 4)));
     }
@@ -255,7 +259,7 @@ suiteFor(
         await meter.during(async () => {
           const response = await outputRoutes.request(RUNNER_PATHS.output, {
             method: "POST",
-            body: JSON.stringify({ token: `${token}.next-attempt`, runId, generation: 2, batch: batch(5, "too late") }),
+            body: JSON.stringify({ token: `${token}.next-attempt`, runId, generation: 2, batch: batch(6, "too late") }),
             headers: { "Content-Type": "application/json" },
           });
           expect(response.status).toBe(409);

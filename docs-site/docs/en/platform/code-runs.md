@@ -311,8 +311,8 @@ failure.
 Each raw bundle, including the runner's proof envelope, fits
 `LIVE_LIMITS.frameBytes`. The runner joins flushes and waits at least the AI
 stream's existing snapshot interval between bundles; Core discards excess
-bundles and counts their lines and bytes. Sanitized NATS deltas obey the same
-frame limit. `followCodeDetails` from `@k2b/cloud/ssr/code-live` requests a
+bundles and counts their lines and bytes. This cadence spans all attempts of
+the same run. Sanitized NATS deltas obey the same frame limit. `followCodeDetails` from `@k2b/cloud/ssr/code-live` requests a
 covering snapshot on admission, reconnect or a sequence gap. Apply deltas
 with `applyCodeOutputEvent` from `@k2b/cloud/code`; replace the window on a
 snapshot. Render only this bounded window, so the live, replayed and stored

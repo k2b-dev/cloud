@@ -55,7 +55,9 @@ const CAS = `if redis.call('GET',KEYS[1])~=ARGV[1] then return 0 end
   if tonumber(redis.call('GET',KEYS[2]) or '0')<=tonumber(ARGV[4]) then return -1 end
   redis.call('SET',KEYS[1],ARGV[2],'PXAT',ARGV[3]); return 1`;
 
-/** Issued only after the durable lease commit. A delayed replica cannot replace a newer generation. */
+/** Issued only after the durable lease commit. A delayed replica cannot replace a newer generation.
+ * A new attempt resets the window, not the run-wide transport cadence.
+ */
 export async function openCodeOutput(
   lease: Pick<RunnerLease, "runId" | "codeId" | "generation" | "deadlineAt" | "leaseExpiresAt" | "token">,
   budget: number,
@@ -71,9 +73,15 @@ export async function openCodeOutput(
     window: emptyCodeOutput(lease.generation),
   };
   await redis.send("EVAL", [
-    `local old=redis.call('GET',KEYS[1])
-    if old and cjson.decode(old).generation>=tonumber(ARGV[1]) then return 0 end
-    redis.call('SET',KEYS[1],ARGV[2],'PXAT',ARGV[3]);
+    // Replace only our encoded timestamp: re-encoding the state with Lua cjson
+    // would turn its empty line array into an object.
+    `local old=redis.call('GET',KEYS[1]); local next=ARGV[2]
+    if old then
+      local previous=cjson.decode(old)
+      if previous.generation>=tonumber(ARGV[1]) then return 0 end
+      next=string.gsub(next,'"lastAt":0','"lastAt":'..string.format('%.0f',previous.lastAt),1)
+    end
+    redis.call('SET',KEYS[1],next,'PXAT',ARGV[3]);
     redis.call('SET',KEYS[2],ARGV[4],'PXAT',ARGV[3]); return 1`,
     "2",
     key(lease.runId),
