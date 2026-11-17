@@ -2,7 +2,7 @@ import type { AssistantMessage, CompactEvent, LoopAggregate, Message, NessiLoop,
 import { compact, nessi } from "@k2b/nessi";
 import { z } from "zod";
 import { capabilityReviewRememberScope } from "../_internal/capability-reviews";
-import { getCapability, listCapabilities } from "../_internal/registry";
+import { getApp, getCapability, listCapabilities } from "../_internal/registry";
 import { capabilityCallFromTool } from "../capabilities/calls";
 import type { CapabilityActionReviewData } from "../contracts/capabilities";
 import { CapabilityActionReviewDataSchema, capabilityActionPolicy, NormalizedCapabilityCallSchema } from "../contracts/capabilities";
@@ -12,6 +12,7 @@ import { createHelpReader } from "../services/help";
 import { logger, trace } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
 import type { AiModelRequest } from "../shared/ai-models";
+import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { normalizeLocale } from "../shared/locale";
 import { type AiActionCheck, type AiStoredActionReview, storedActionReview } from "./action-review";
 import {
@@ -24,7 +25,13 @@ import {
 } from "./approvals";
 import { aiChatAccessSubject, isAssistantChatTurn, resolveAssistantAudioModel } from "./assistant-models";
 import { CODE_RUNTIME_TOOL_NAMES } from "./browser-code-contracts";
-import { type AiCapabilityCatalogEntry, aiCapabilityArguments, buildAiCapabilityCatalog, createAiToolResolver } from "./capabilities";
+import {
+  type AiCapabilityCatalogEntry,
+  aiCapabilityArguments,
+  buildAiCapabilityCatalog,
+  buildAiCapabilityHistoryCatalog,
+  createAiToolResolver,
+} from "./capabilities";
 import {
   AiCapabilityExecutionError,
   aiCapabilityCheckResult,
@@ -75,6 +82,7 @@ import {
   toolBlockId,
 } from "./protocol";
 import { retryTransientProviderErrors } from "./provider-retry";
+import { publicAiToolBlock, publicAiToolInput, publicAiToolResult } from "./public-tool-input";
 import { assistantQuotaProvider, inferenceProvider } from "./quota-provider";
 import { collectConversationResourceObservations } from "./resource-refs";
 import { capabilityResultView } from "./result-view";
@@ -352,7 +360,7 @@ const rebuildBlocksFromMessages = (
   pending: AiPendingTurnActionRecord[],
   steers: AiTurnSteer[] = [],
 ): AiTurnBlock[] => {
-  const blocks = buildBlocksFromMessages(projectAiChoices(messages)).map(withResultView);
+  const blocks = buildBlocksFromMessages(projectAiChoices(messages)).map(publicAiToolBlock).map(withResultView);
   const indexByCallId = new Map(blocks.map((block, index) => [block.kind === "tool" ? block.callId : `_${index}`, index]));
 
   for (const action of pending) {
@@ -376,6 +384,7 @@ const rebuildBlocksFromMessages = (
                 allowChat: action.allowChat ?? action.allowAlways,
                 ...(action.rememberToolName === AI_WEBSITE_APPROVAL_TOOL ? { website: action.approvalScope } : {}),
               },
+        ...(action.rememberToolName === AI_WEBSITE_APPROVAL_TOOL ? { presentation: undefined, review: undefined } : {}),
         frontendMode: action.frontendMode,
       };
     }
@@ -555,7 +564,7 @@ const createEventMapper = (
       kind: "tool",
       callId,
       name,
-      args: "args" in patch ? patch.args : existing?.args,
+      args: publicAiToolInput(name, "args" in patch ? patch.args : existing?.args),
       // New arguments end the live view unless they are a live update themselves.
       ...("args" in patch
         ? patch.liveArgs
@@ -566,13 +575,17 @@ const createEventMapper = (
           : {}),
       status: patch.status ?? existing?.status ?? "running",
       at: patch.at ?? existing?.at,
-      result: patch.isError && existing?.result !== undefined ? existing.result : "result" in patch ? patch.result : existing?.result,
+      result: publicAiToolResult(
+        name,
+        patch.isError && existing?.result !== undefined ? existing.result : "result" in patch ? patch.result : existing?.result,
+      ),
       isError: "isError" in patch ? patch.isError : existing?.isError,
       approval: approval && !allowRememberedApprovals ? { ...approval, allowAlways: false, allowChat: false } : approval,
-      review: patch.review ?? existing?.review,
+      review: "review" in patch ? patch.review : existing?.review,
       check: patch.check ?? existing?.check,
       frontendMode: patch.frontendMode ?? existing?.frontendMode,
-      presentation: patch.presentation ?? existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name),
+      presentation:
+        "presentation" in patch ? patch.presentation : (existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name)),
       ...(approvedCallIds.has(callId) || approvedCallIds.has(displayCallId) || existing?.approved ? { approved: true } : {}),
       ...(receiptsOf(displayCallId) ? { receipts: receiptsOf(displayCallId) } : {}),
     };
@@ -643,9 +656,12 @@ const createEventMapper = (
         return [setTool(event.callId, { name: event.name, args: event.args, status: "running" })];
       case "tool_action_request":
         const displayCallId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
-        const rawReview = approvalReviewForCallId(approvalReviews, event.callId);
-        const review = rawReview && location ? compactCapabilityReview(rawReview, { ...location, callId: displayCallId }) : rawReview;
         const target = event.kind === "custom_approval" ? approvalTargets.get(event.callId) : undefined;
+        const rawReview =
+          target?.toolName === AI_WEBSITE_APPROVAL_TOOL
+            ? approvalReviews.get(event.callId)
+            : approvalReviewForCallId(approvalReviews, event.callId);
+        const review = rawReview && location ? compactCapabilityReview(rawReview, { ...location, callId: displayCallId }) : rawReview;
         const allowAlways = target
           ? target.always
           : capabilityScopes.has(customApprovalParentCallId(event.callId) ?? event.callId) ||
@@ -668,6 +684,8 @@ const createEventMapper = (
                       ...(target?.toolName === AI_WEBSITE_APPROVAL_TOOL ? { website: target.approvalScope } : {}),
                     },
               frontendMode: event.kind === "client_tool" ? (frontendModes.get(event.name) ?? "client") : undefined,
+              // A website question after an app Action belongs to the website, not the earlier target app.
+              ...(target?.toolName === AI_WEBSITE_APPROVAL_TOOL ? { presentation: undefined, review: undefined } : {}),
             },
             displayCallId,
           ),
@@ -1745,6 +1763,7 @@ export class AiTurnExecutor {
     const outcome = await this.driveChatLoop({
       loop,
       pipeline,
+      locale: promptLocale,
       initialRoundFailed: lastToolRoundFailed(turnMessages, turnBlocks),
       conversationId,
       turnId,
@@ -1811,6 +1830,7 @@ export class AiTurnExecutor {
   }
 
   private async driveChatLoop(input: {
+    locale?: string;
     loop: NessiLoop;
     pipeline: StreamPipeline;
     initialRoundFailed: boolean;
@@ -1869,6 +1889,7 @@ export class AiTurnExecutor {
         if (event.type === "tool_action_request") {
           const suspended = await this.handleActionRequest({
             event,
+            locale: input.locale,
             loop,
             pipeline,
             conversationId,
@@ -1999,6 +2020,7 @@ export class AiTurnExecutor {
 
   /** Returns true when the turn was suspended for the action; false when resolved inline. */
   private async handleActionRequest(input: {
+    locale?: string;
     event: Extract<OutboundEvent, { type: "tool_action_request" }>;
     loop: NessiLoop;
     pipeline: StreamPipeline;
@@ -2129,19 +2151,42 @@ export class AiTurnExecutor {
         if (review) capabilityActionReviews.set(event.callId, review);
         else capabilityActionReviews.delete(event.callId);
         const callId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
-        const capability = review && "sentence" in review && !review.ask ? await getCapability(record.appId).catch(() => null) : null;
+        const capability = await getCapability(record.appId).catch(() => null);
+        const target = capability
+          ? buildAiCapabilityHistoryCatalog([capability], input.locale).find(
+              (entry) => entry.kind === "action" && entry.operation.localId === record.action,
+            )
+          : undefined;
+        const app = capability
+          ? {
+              name: capability.appName,
+              description: capability.appDescription,
+              presentation: capability.appPresentation,
+              icon: capability.appIcon,
+            }
+          : await getApp(record.appId).catch(() => null);
+        const presentation: AiToolPresentation = {
+          kind: "capability",
+          appId: record.appId,
+          appName: app ? resolveAppIdentityPresentation(app, input.locale ?? "en").name : record.appId,
+          appIcon: app?.icon ?? "ti ti-app",
+          appAccent: capability?.appAccent,
+          title: target?.display.title ?? record.sentence.split("\n", 1)[0]!,
+          capabilityKind: "action",
+        };
         // Keep the original proposal on the existing tool-call message as well as the approval.
         // Its chat reference must remain readable after the approval has been consumed.
         const stored = await recordAiToolReview({
           conversationId,
           turnId,
           callId,
+          presentation,
           review: storedActionReview(
             review ?? { message: record.sentence },
             capability ? capabilityActionPolicy(capability.manifest, record.action) : undefined,
           ),
         });
-        await pipeline.setToolReview(callId, stored);
+        await pipeline.setToolReview(callId, stored, presentation);
       } else {
         const record = await approvals.request({
           ...approvalScopeFromToolName(toolName),
@@ -2570,8 +2615,8 @@ class StreamPipeline {
     await this.maybeSnapshot();
   }
 
-  async setToolReview(callId: string, review: AiStoredActionReview): Promise<void> {
-    await this.emitOp(this.mapper.setTool(callId, { review }));
+  async setToolReview(callId: string, review: AiStoredActionReview, presentation?: AiToolPresentation): Promise<void> {
+    await this.emitOp(this.mapper.setTool(callId, { review, ...(presentation ? { presentation } : {}) }));
     await this.maybeSnapshot();
   }
 

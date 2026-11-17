@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-11-10
+updated: 2026-11-17
 ---
 
 # Chat interface
@@ -965,6 +965,18 @@ runtime monitoring and production checks.
 
 Every turn with the default tool source offers server-run `code_run`,
 `code_inspect`, `code_stop` and `code_export`, including detached CLI turns. They use Assistant's runner host and need no connected client.
+
+Expanded Code run steps describe the work and its outcome in words. They do
+not display the module, raw output, or diagnostic logs. Public chat history,
+pending actions, and live snapshots omit Code source fields, including the
+`code_run` input's `code`, `code_write` content, project source maps, SDK
+declarations, source rows and raw diagnostic messages in Code tool results.
+Diagnostic codes and worded summaries remain available. Execution and model
+continuation retain the original arguments and results. An approval inside a
+run names the target application from its stored approval and uses that
+application's catalog in the turn's request language. The administrator's
+dedicated Code approval review keeps its source field.
+
 Studio authoring, HTML checks, app opening, actions and HTML presentations are
 not advertised in chat. Lasting Code's `code_read`, `code_write` and
 `code_check` accept Code inputs only.

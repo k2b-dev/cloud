@@ -1091,7 +1091,7 @@ export const recordAiWebsiteReceipts = async (input: {
 
 /** Reviews and outcome checks belong to the assistant message containing the call, including scheduled turns. */
 const recordAiToolMeta = async (
-  input: { conversationId: string; turnId: string; callId: string },
+  input: { conversationId: string; turnId: string; callId: string; presentation?: AiToolPresentation },
   key: "toolReviews" | "toolChecks",
   value: AiStoredActionReview | AiActionCheck,
   db = sql,
@@ -1103,7 +1103,7 @@ const recordAiToolMeta = async (
       SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object(
         ${key}::text, COALESCE(meta->${key}::text, '{}'::jsonb) ||
           jsonb_build_object(${input.callId}::text, ${key === "toolReviews" ? serializeReviewSnapshot(value) : JSON.stringify(value)}::text::jsonb)
-      )
+      ) || ${input.presentation ? db`jsonb_build_object('toolPresentations', COALESCE(meta->'toolPresentations', '{}'::jsonb) || jsonb_build_object(${input.callId}::text, ${JSON.stringify(input.presentation)}::text::jsonb))` : db`'{}'::jsonb`}
       WHERE conversation_id = ${input.conversationId}::uuid AND loop_id = ${input.turnId}::text
         AND role = 'assistant'
         AND message->'content' @> jsonb_build_array(jsonb_build_object('type', 'tool_call', 'id', ${input.callId}::text))
@@ -1118,6 +1118,7 @@ export const recordAiToolReview = async (input: {
   turnId: string;
   callId: string;
   review: AiStoredActionReview;
+  presentation?: AiToolPresentation;
 }): Promise<AiStoredActionReview> => {
   const stored = storedReviewWithContent(input.review, input);
   await recordAiToolMeta(input, "toolReviews", stored);

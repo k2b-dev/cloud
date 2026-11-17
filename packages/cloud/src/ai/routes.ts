@@ -36,6 +36,7 @@ import { coreSettings } from "../services/settings/api";
 import { resolveAppIdentityPresentation } from "../shared/app-presentation";
 import { readThemeFromCookieHeader } from "../shared/theme";
 import { type AiStoredActionReview, isLegacyActionReview, isUnknownActionOutcome, storedActionReview } from "./action-review";
+import { AI_WEBSITE_APPROVAL_TOOL } from "./approvals";
 import { assistantAiSettingsState, peopleAiModels, resolveAssistantAudioModel, selectAssistantAiModel } from "./assistant-models";
 import { AI_AUDIO_MAX_BYTES } from "./audio-format";
 import { buildAiCapabilityCatalog, buildAiCapabilityHistoryCatalog } from "./capabilities";
@@ -96,6 +97,7 @@ import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import type { AiResourceContext } from "./projects-authorization";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
+import { publicAiToolInput } from "./public-tool-input";
 import { type AiMessageQuote, aiQuoteModelText } from "./quote-markers";
 import { AiQuoteError, type AiQuoteErrorReason, resolveAiQuotes } from "./quote-sources";
 import { AiRecentResourceSchema, listAiRecentResources } from "./recent-resources";
@@ -312,7 +314,7 @@ const publicPendingAction = (
   action: Awaited<ReturnType<typeof listPendingAiTurnActions>>[number],
   conversationId: string,
   turnId: string,
-) => ({ ...action, conversationId, turnId });
+) => ({ ...action, args: publicAiToolInput(action.name, action.args), conversationId, turnId });
 
 const prepareConversationForMessageRetry = async (conversationId: string): Promise<"ready" | "busy"> => {
   const active = await aiConversations.getActiveTurn({ conversationId });
@@ -1572,7 +1574,7 @@ export const aiRoutes = (() => {
             const record = records.find((record) => record.callId === action.callId);
             const request = record?.approvalId ? await approvals.get(record.approvalId, undefined, true) : null;
             const reviewCallId = record?.kind === "custom_approval" ? action.callId.replace(/-approval-[0-9]+$/, "") : action.callId;
-            const stored = reviews.get(reviewCallId);
+            const stored = reviews.get(record?.rememberToolName === AI_WEBSITE_APPROVAL_TOOL ? action.callId : reviewCallId);
             let review: AiStoredActionReview | null = stored && !isLegacyActionReview(stored) ? stored : null;
             if (!review && request) {
               review = pendingApprovalReview({ storedReview: null, details: request.details });
