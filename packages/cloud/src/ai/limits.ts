@@ -4,6 +4,11 @@ export const AI_TURN_ATTACHMENT_MAX_ITEMS = 16;
 /** Passages a message may quote from its conversation; ten of a tenth of the draft's text each always fit one message. */
 export const AI_DRAFT_QUOTE_MAX_ITEMS = 10;
 export const AI_DRAFT_QUOTE_MAX_CHARS = 2_000;
+/**
+ * The text of one message Cloud keeps for search. A quote of an answer is checked against at most this much of the
+ * answer's text, so a quote check reads no more of a turn than search already keeps of one message.
+ */
+export const AI_MESSAGE_SEARCH_TEXT_MAX_CHARS = 50_000;
 export const AI_IMAGE_INPUT_MAX_BYTES = 10 * 1024 * 1024;
 export const AI_TURN_IMAGE_MAX_TOTAL_BYTES = 40 * 1024 * 1024;
 /** One chat file; the upload route refuses larger files. */

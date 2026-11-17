@@ -32,6 +32,7 @@ import { aiProjects } from "./projects";
 import type { AiStreamEvent } from "./protocol";
 import { buildBlocksFromMessages } from "./protocol";
 import { aiQuoteModelText } from "./quote-markers";
+import { aiResourceMarker } from "./resource-markers";
 import { __aiRoutesTest, aiRoutes } from "./routes";
 import * as aiRuntime from "./runtime";
 import { createAiShortId } from "./short-id";
@@ -405,7 +406,7 @@ suite("global AI conversation boundaries", () => {
     }
   });
 
-  test("a retry keeps the message's checked quotes and the bound of 20000 characters with them", async () => {
+  test("a retry keeps the message's checked quotes and the bound of 20000 characters with them, counting words only", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     const model = spyOn(assistantModels, "selectAssistantAiModel").mockResolvedValue({ id: "test-model" });
@@ -437,19 +438,24 @@ suite("global AI conversation boundaries", () => {
       });
       await sql`UPDATE ai.turns SET status='completed' WHERE id=${first.turn.id}::uuid`;
       const headers = { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" };
-      const retry = (text?: string) =>
+      const retry = (content: { type: "text"; text: string }[]) =>
         aiRoutes.request(`/conversations/${chat.shortId}/messages/${first.message.shortId}/retry`, {
           method: "POST",
           headers,
-          body: JSON.stringify(text ? { content: [{ type: "text", text }] } : {}),
+          body: JSON.stringify({ content }),
         });
       // Ten long quotes leave room for six characters: a longer edit is refused with the reason.
-      const tooLong = await retry("Etwas mehr Text");
+      const tooLong = await retry([{ type: "text", text: "Etwas mehr Text" }]);
       expect(tooLong.status).toBe(400);
       expect(((await tooLong.json()) as { message: string }).message).toContain("20000");
       expect(submissions).toHaveLength(0);
-      // The quotes come from the message, never from the edited content, and stay attached.
-      const kept = await retry();
+      // An attached Cloud item the edit dialog keeps is no words of the person: the same message sends as it did, and
+      // the quotes come from the message, never from the edited content.
+      const item = aiResourceMarker({ ref: { type: "grids.table", id: "t1" }, title: "Tabelle Messe" });
+      const kept = await retry([
+        { type: "text", text: "Kurz" },
+        { type: "text", text: item },
+      ]);
       expect(kept.status).toBe(201);
       expect(submissions[0]?.quotes).toEqual(quotes);
     } finally {

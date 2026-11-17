@@ -1,3 +1,4 @@
+import type { Message } from "@k2b/nessi";
 import { z } from "zod";
 import { AI_DRAFT_QUOTE_MAX_CHARS, AI_DRAFT_QUOTE_MAX_ITEMS } from "./limits";
 
@@ -40,6 +41,23 @@ export const aiQuoteModelText = (quote: AiMessageQuote): string =>
  * text as a passage Cloud checked.
  */
 export const aiNeutralizeQuoteMarkers = (text: string): string => text.replaceAll(MARKER, "[Quoted⁠ passage");
+
+/**
+ * A stored user message as the model reads it: a text part that is the model text of one of its checked quotes
+ * (`meta.quotes`) stays; every other quote marker is broken, whether typed, steered, or stored before quotes were
+ * checked. The one place every turn's context passes, so no other path can hand the model an unchecked quote.
+ */
+export const aiCheckedQuotesOnly = (message: Message, quotes: readonly AiMessageQuote[] | undefined): Message => {
+  if (message.role !== "user") return message;
+  const checked = aiQuoteModelTexts(quotes);
+  const text = (value: string) => (checked.has(value) ? value : aiNeutralizeQuoteMarkers(value));
+  return {
+    ...message,
+    content: message.content.map((part) =>
+      typeof part === "string" ? text(part) : part.type === "text" ? { ...part, text: text(part.text) } : part,
+    ),
+  };
+};
 
 /** The model text parts of `quotes`, which the chat leaves out of the person's visible words. */
 export const aiQuoteModelTexts = (quotes: readonly AiMessageQuote[] | undefined): Set<string> =>

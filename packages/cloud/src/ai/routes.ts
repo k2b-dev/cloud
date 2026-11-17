@@ -1229,15 +1229,14 @@ export const aiRoutes = (() => {
               ...quotes.map((quote) => ({ type: "text" as const, text: aiQuoteModelText(quote) })),
             ]
           : target.message.content;
-        const typed = body.content?.length
-          ? body.content.map((part) => (typeof part === "string" ? part : part.type === "text" ? part.text : "")).join("")
-          : userVisibleTextFromMessage(target.message, quotes);
+        const { input, message } = aiInputToUserMessage(content as never);
+        // The bound counts the person's own words, as on send: attached items and the checked quotes' model text are
+        // not words, the quotes count by their passage.
         const problem = aiDraftContentProblem([
-          { type: "text", text: typed },
+          { type: "text", text: userVisibleTextFromMessage(message, quotes) },
           ...quotes.map((quote) => ({ type: "quote" as const, messageId: quote.messageId, text: quote.text })),
         ]);
         if (problem) return respond(c, fail(err.badInput(problem)));
-        const { input, message } = aiInputToUserMessage(content as never);
         const instruction = retryInstruction(body.mode);
         const systemPrompt = instruction ?? undefined;
         const originalRunConfig = target.loopId

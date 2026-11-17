@@ -303,6 +303,21 @@ export type AiCodeAuthoringStop = {
   unsubmitted: number;
 };
 
+/** One row of a quote check: a message a quote names, or one part of a quoted answer's text (`text` is its search text). */
+export type AiQuoteSourceRow =
+  | {
+      part: "quoted";
+      shortId: string;
+      role: string;
+      loopId: string | null;
+      /** A user message whole; nothing for other roles. */
+      message: Message | null;
+      quotes?: import("./quote-markers").AiMessageQuote[];
+      automation: boolean;
+    }
+  /** Text of a quoted answer, in order; `key` is its turn, or the message itself outside a turn. */
+  | { part: "answer"; key: string; text: string };
+
 export type AiStoredMessage = {
   /** Personal composer hint, projected only for the person who triggered the latest completed answer. */
   suggestedNextMessage?: { text: string; dismissedAt: string | null };
@@ -1029,8 +1044,11 @@ export type AiConversationService = {
     summary: Message;
     modelId?: string | null;
   }): Promise<void>;
-  /** The messages quotes name by public id, with every assistant message of a quoted answer's turn. */
-  listQuoteSources(input: { conversationId: string; messageIds: readonly string[] }): Promise<AiStoredMessage[]>;
+  /**
+   * What quotes need of the messages they name: a quoted user message whole (bounded like any message), a quoted
+   * answer as the search text of its turn's messages up to `AI_MESSAGE_SEARCH_TEXT_MAX_CHARS`, in order.
+   */
+  listQuoteSources(input: { conversationId: string; messageIds: readonly string[] }): Promise<AiQuoteSourceRow[]>;
   listTurnMessages(input: { conversationId: string; loopId: string; includeCompacted?: boolean }): Promise<AiStoredMessage[]>;
   setMessageFeedback(input: {
     conversationId: string;

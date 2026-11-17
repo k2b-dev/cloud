@@ -221,7 +221,8 @@ export const AiSubmitConversationDraftInputSchema = z
   });
 
 export const AiSteerInputSchema = z.strictObject({
-  message: z.string().trim().min(1).max(20000),
+  // Steered words are the person's own, like a sent message: a typed quote marker never passes for a checked quote.
+  message: z.string().trim().min(1).max(20000).transform(aiNeutralizeQuoteMarkers),
   clientRequestId: z.string().trim().min(1).max(120),
 });
 
