@@ -71,6 +71,9 @@ let activationEnd: "active" | "owner_refused" | "unavailable" | "lost-active" | 
 const activations: unknown[] = [];
 /** What the chat chooser of personal Code asked Core to bind. */
 const chatBindingSets: { input?: unknown; target?: unknown }[] = [];
+/** Core answers a change at revision 1 with a conflict: someone chose another chat meanwhile. */
+let chatBindingConflict = false;
+let chatBindingReads = 0;
 const chatView = (id: string, title: string) => ({
   ref: { type: "core.ai.chat", id },
   title,
@@ -120,11 +123,27 @@ const server = Bun.serve({
       });
     }
     // Personal Code's chat chooser: the owner's active chats, then the binding change.
-    if (url.pathname === "/api/capabilities/v1/queries/core/ai.chats.search")
-      return Response.json({ data: [chatView("Wk7chat", "Wochenbericht"), chatView("Lyon42", "Reise nach Lyon")] });
+    if (url.pathname === "/api/capabilities/v1/queries/core/ai.chats.search") {
+      const query = ((await request.json()) as { input?: { query?: string } }).input?.query?.toLowerCase() ?? "";
+      const chats = [chatView("Wk7chat", "Wochenbericht"), chatView("Lyon42", "Reise nach Lyon")];
+      return Response.json({ data: chats.filter((chat) => chat.title.toLowerCase().includes(query)) });
+    }
+    if (url.pathname === "/api/capabilities/v1/queries/core/code.chat_binding.read") {
+      chatBindingReads++;
+      return Response.json({
+        data: {
+          codeId: "c_woche1",
+          revision: 2,
+          canChange: true,
+          chat: { state: "available", id: "Wk7chat", title: "Wochenbericht", project: null, href: "/app/assistant" },
+        },
+      });
+    }
     if (url.pathname === "/api/capabilities/v1/actions/core/code.chat_binding.set") {
-      const body = (await request.json()) as { input?: { chatId?: string }; target?: unknown };
+      const body = (await request.json()) as { input?: { chatId?: string; revision?: number }; target?: unknown };
       chatBindingSets.push(body);
+      if (chatBindingConflict && body.input?.revision === 1)
+        return Response.json({ code: "CONFLICT", message: "Chat binding changed. Read it again." }, { status: 409 });
       return Response.json({
         data: {
           codeId: "c_woche1",
@@ -330,6 +349,46 @@ describe("Mailbox Code page in a browser", () => {
       } finally {
         await page.context().close();
       }
+    }
+  }, 60_000);
+
+  test("the chat chooser saves only a visible choice, says when nothing matches, and recovers from a conflict in place", async () => {
+    chatBindingSets.length = 0;
+    chatBindingConflict = true;
+    chatBindingReads = 0;
+    const page = await load("personal", 1440);
+    try {
+      await page.locator(".cloud-code__may").getByRole("button", { name: "Anderen Chat wählen" }).click();
+      const dialog = page.getByRole("dialog", { name: "Chat für diese Automation" });
+      const save = dialog.getByRole("button", { name: "Diesen Chat nehmen" });
+      await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).check();
+      expect(await save.isDisabled()).toBe(false);
+      // A search that hides the choice takes it out of reach; nothing invisible is saved.
+      const search = dialog.getByRole("searchbox", { name: "Deine Chats durchsuchen" });
+      await search.fill("Woch");
+      await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).waitFor({ state: "detached" });
+      expect(await save.isDisabled()).toBe(true);
+      await search.fill("Zürich");
+      await dialog.getByText("Kein aktiver Chat passt zu „Zürich“.").waitFor();
+      await search.fill("");
+      await dialog.getByRole("radio", { name: /Reise nach Lyon/ }).waitFor();
+      expect(await save.isDisabled()).toBe(false);
+      // Someone changed the chat meanwhile: the dialog stays, says so, and works on with Core's current revision.
+      await save.click();
+      await dialog.getByText("Der Chat wurde inzwischen geändert.").waitFor();
+      await settled(page);
+      await shoot(page, "chat-chooser-conflict-1440");
+      expect(chatBindingReads).toBe(1);
+      expect(await dialog.isVisible()).toBe(true);
+      await save.click();
+      await dialog.waitFor({ state: "hidden" });
+      expect(chatBindingSets.map((set) => set.input)).toEqual([
+        { chatId: "Lyon42", revision: 1 },
+        { chatId: "Lyon42", revision: 2 },
+      ]);
+    } finally {
+      chatBindingConflict = false;
+      await page.context().close();
     }
   }, 60_000);
 

@@ -1,5 +1,5 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { Button, ChoiceList, createDelayedLoading, InlineGuidance, prompts, Skeleton, TextInput, toast } from "@k2b/ui";
+import { Button, ChoiceList, createDelayedLoading, InlineGuidance, NoticeCard, prompts, Skeleton, TextInput, toast } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
@@ -13,6 +13,8 @@ const CHAT_LIMIT = 20;
 const SEARCH_DELAY_MS = 250;
 
 type Chat = { id: string; title: string };
+/** The list as Core answered it, with the search text it answered. */
+type Listed = { query: string; chats: Chat[] };
 
 /**
  * The owner picks the chat their personal Code writes to. Only their own active chats are listed; the hint says the
@@ -29,14 +31,21 @@ export async function openCodeChatChooser(params: { codeId: string; binding: Cod
 
 function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: PageText; close: () => void }) {
   const t = props.text.t;
-  const current = () => (props.binding.chat?.state === "available" ? props.binding.chat.id : null);
+  // A conflict reads the binding again, so the dialog keeps working with Core's current revision.
+  const [binding, setBinding] = createSignal(props.binding);
+  const current = () => {
+    const chat = binding().chat;
+    return chat?.state === "available" ? chat.id : null;
+  };
   const [query, setQuery] = createSignal("");
-  const [chats, setChats] = createSignal<Chat[] | null | "failed">(null);
+  const [listed, setListed] = createSignal<Listed | null | "failed">(null);
   const [chosen, setChosen] = createSignal<string | null>(current());
   const [saving, setSaving] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<"conflict" | "failed" | null>(null);
   // Placeholders only when the first list takes a moment; a later search keeps the previous list until it answers.
-  const loading = createDelayedLoading(() => chats() === null);
+  const loading = createDelayedLoading(() => listed() === null);
+  // One key per intended change, so a repeat after an unclear answer is the same request, not a conflict.
+  const keys = new Map<string, string>();
   let request = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   onCleanup(() => {
@@ -50,7 +59,7 @@ function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: Pa
       ChatsSchema,
     ).catch(() => null);
     if (id !== request) return;
-    setChats(result?.ok ? result.data.data.map((view) => ({ id: view.ref.id, title: view.title })) : "failed");
+    setListed(result?.ok ? { query: text, chats: result.data.data.map((view) => ({ id: view.ref.id, title: view.title })) } : "failed");
   };
   onMount(() => void load(""));
   const search = (text: string) => {
@@ -58,50 +67,68 @@ function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: Pa
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => void load(text.trim()), SEARCH_DELAY_MS);
   };
+  const options = () => {
+    const list = listed();
+    return list && list !== "failed"
+      ? list.chats.map((chat) => ({
+          value: chat.id,
+          label: chat.title,
+          ...(chat.id === current() ? { marker: t().chatDialogCurrent } : {}),
+        }))
+      : [];
+  };
+  // Only a chat the person can see is saved; a search that hides the choice takes it back out of reach.
+  const chosenShown = () => options().some((option) => option.value === chosen());
+  const reread = async () => {
+    const result = await invokeCapabilityWithDataSchema(
+      { appId: "core", capabilityId: "code.chat_binding.read", kind: "query", input: { codeId: props.codeId } },
+      CodeChatBindingSchema,
+    ).catch(() => null);
+    if (result?.ok) setBinding(result.data.data);
+  };
   const save = async () => {
     const chatId = chosen();
-    if (!chatId || chatId === current() || saving()) return;
+    if (!chatId || chatId === current() || !chosenShown() || saving()) return;
     setSaving(true);
     setError(null);
+    const revision = binding().revision;
+    const keyOf = `${chatId}@${revision}`;
+    const idempotencyKey = keys.get(keyOf) ?? crypto.randomUUID();
+    keys.set(keyOf, idempotencyKey);
     const result = await invokeCapabilityWithDataSchema(
       {
         appId: "core",
         capabilityId: "code.chat_binding.set",
         kind: "action",
         target: { type: "core.code", id: props.codeId },
-        input: { chatId, revision: props.binding.revision },
-        idempotencyKey: crypto.randomUUID(),
+        input: { chatId, revision },
+        idempotencyKey,
       },
       CodeChatBindingSchema,
     ).catch(() => null);
-    setSaving(false);
     if (!result?.ok) {
-      setError(result?.error.code === "CONFLICT" ? t().chatDialogConflict : t().chatDialogSaveFailed);
+      if (result?.error.code === "CONFLICT") await reread();
+      setSaving(false);
+      setError(result?.error.code === "CONFLICT" ? "conflict" : "failed");
       return;
     }
+    setSaving(false);
     const chat = result.data.data.chat;
     if (chat?.state === "available") toast.success(t().chatChanged({ title: chat.title }));
     props.close();
     refreshCurrentPath();
   };
-  const options = () => {
-    const list = chats();
-    return Array.isArray(list)
-      ? list.map((chat) => ({
-          value: chat.id,
-          label: chat.title,
-          icon: "ti ti-message-chatbot",
-          ...(chat.id === current() ? { marker: t().chatDialogCurrent } : {}),
-        }))
-      : [];
+  const empty = () => {
+    const list = listed();
+    return list && list !== "failed" && list.query ? t().chatDialogNoMatch({ query: list.query }) : t().chatDialogNone;
   };
   return (
     <div class="cloud-code__chat-chooser">
       <p class="cloud-code__chat-chooser-hint">{t().chatDialogHint}</p>
       <TextInput label={t().chatDialogSearch} type="search" value={query()} onValueChange={search} />
-      <div class="cloud-code__chat-chooser-list" aria-busy={chats() === null ? "true" : undefined}>
+      <div class="cloud-code__chat-chooser-list" aria-busy={listed() === null ? "true" : undefined}>
         <Show
-          when={chats() !== "failed"}
+          when={listed() !== "failed"}
           fallback={
             <InlineGuidance tone="danger" role="alert">
               {t().chatDialogFailed}
@@ -112,7 +139,7 @@ function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: Pa
           }
         >
           <Show
-            when={chats() !== null}
+            when={listed() !== null}
             fallback={
               <Show when={loading()}>
                 <div class="cloud-code__chat-chooser-skel">
@@ -122,29 +149,41 @@ function ChatChooser(props: { codeId: string; binding: CodeChatBinding; text: Pa
               </Show>
             }
           >
-            <Show when={options().length > 0} fallback={<p class="cloud-code__quiet-line">{t().chatDialogEmpty}</p>}>
+            <Show when={options().length > 0} fallback={<p class="cloud-code__quiet-line">{empty()}</p>}>
               <ChoiceList
                 aria-label={t().chatDialogTitle}
                 options={options()}
                 value={chosen()}
-                onValueChange={(value) => setChosen(value)}
+                onValueChange={(value) => {
+                  setChosen(value);
+                  setError(null);
+                }}
               />
             </Show>
           </Show>
         </Show>
       </div>
       <Show when={error()}>
-        {(message) => (
-          <p class="cloud-code__chat-chooser-error" role="alert">
-            {message()}
-          </p>
+        {(kind) => (
+          <NoticeCard
+            tone="danger"
+            icon="ti ti-alert-triangle"
+            title={kind() === "conflict" ? t().chatDialogConflict : t().chatDialogSaveFailed}
+            detail={kind() === "conflict" ? t().chatDialogConflictDetail : t().chatDialogSaveFailedDetail}
+            role="alert"
+          />
         )}
       </Show>
       <div class="cloud-code__dialog-actions">
         <Button variant="secondary" onClick={() => props.close()}>
           {t().chatDialogCancel}
         </Button>
-        <Button variant="primary" loading={saving()} disabled={!chosen() || chosen() === current()} onClick={() => void save()}>
+        <Button
+          variant="primary"
+          loading={saving()}
+          disabled={!chosen() || chosen() === current() || !chosenShown()}
+          onClick={() => void save()}
+        >
           {t().chatDialogSave}
         </Button>
       </div>

@@ -1337,7 +1337,7 @@ describe("the chat of personal Code", () => {
   test("a missing chat says so above everything and offers to choose or restore one", () => {
     const page = text("personal-chat-missing");
     expect(page).toContain("Der Chat „Wochenbericht“ ist archiviert.");
-    expect(page).toContain("Bis du einen Chat wählst, schreibt die Automation nichts.");
+    expect(page).toContain("Die Automation schreibt nichts, bis du einen Chat wählst oder diesen wiederherstellst.");
     expect(page).toContain("Chat wählen …");
     expect(page).toContain("Chat wiederherstellen");
     expect(page).toContain("In einen Chat schreiben, Gustav antwortet");
@@ -1399,7 +1399,8 @@ test("personal Code without a chat offers its owner to choose one", () => {
   };
   const owner = unbound(true);
   expect(owner).toContain("Diese Automation hat noch keinen Chat.");
-  expect(owner).toContain("Bis du einen Chat wählst, schreibt die Automation nichts.");
+  expect(owner).toContain("Die Automation schreibt nichts, bis du einen Chat wählst.");
+  expect(owner).toContain("Eingeschaltet, braucht dich");
   // Once in the notice, once under the chat row of "What it may do"; nothing to restore.
   expect(owner.split("Chat wählen …").length - 1).toBe(2);
   expect(owner).not.toContain("Anderen Chat wählen");
@@ -1409,6 +1410,8 @@ test("personal Code without a chat offers its owner to choose one", () => {
   expect(other).toContain("Diese Automation hat noch keinen Chat.");
   expect(other).toContain("Nur die Person, der die Automation gehört, kann einen Chat wählen.");
   expect(other).not.toContain("Chat wählen …");
+  // Someone who cannot choose a chat is not needed for it.
+  expect(other).not.toContain("Eingeschaltet, braucht dich");
   // Personal Code that never writes to a chat shows no notice at all.
   const quiet = codePageFixture("personal-chat-missing");
   if (quiet.state.kind !== "ready" || !quiet.state.chatBinding || !quiet.state.words?.current) throw new Error("Expected fixture");
@@ -1430,6 +1433,28 @@ test("personal Code without a chat offers its owner to choose one", () => {
   );
   expect(page).not.toContain("Diese Automation hat noch keinen Chat.");
   expect(page).not.toContain("Chat wählen …");
+});
+
+// The chat row never goes quiet: when Core cannot say which chat it is, the row says so with a way to read it again.
+test("a chat binding that could not be read says so at the chat row, without a notice", () => {
+  const data = codePageFixture("personal");
+  if (data.state.kind !== "ready") throw new Error("Expected a ready fixture");
+  data.state.chatBinding = null;
+  const page = renderedText(
+    renderMarkup(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(CodePage, { data });
+        },
+      }),
+    ),
+    " ",
+  );
+  expect(page).toContain("In welchen Chat sie schreibt, konnte nicht geladen werden.");
+  expect(page).toContain("Erneut versuchen");
+  expect(page).not.toContain("Anderen Chat wählen");
+  expect(page).not.toContain("Eingeschaltet, braucht dich");
 });
 
 // Rundgang 6, Fable 8: a new week without counted effects says so where the two numbers stand, above the latest results.

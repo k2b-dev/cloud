@@ -3,7 +3,7 @@ import { Button, ButtonLink, Dropdown, NoticeCard, Tag, toast } from "@k2b/ui";
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
-import { CodeChatChooseOther, CodeChatMissing } from "./CodeChatBinding";
+import { CodeChatMissing, CodeChatRowAction } from "./CodeChatBinding";
 import { CodeDatabaseStatus } from "./CodeDatabaseStatus";
 import { type CodeLive, CodeLiveStrip, EffectRows } from "./CodeLiveStrip";
 import { CodeVersionApproval } from "./CodeVersionApproval";
@@ -382,7 +382,8 @@ function MayDo(props: { data: CodePageData; state: CodePageReady; text: PageText
               // The place as quiet text, never a link (v12 picture 19): its kind and its name, "Postfach info@…".
               const place = () => placeText(row, parts.rest, props.state, props.data.owner.title);
               // Personal Code's chat: Core names it for the owner and says how it answers; the owner may choose another.
-              const chat = () => (row.target?.ref.type === "core.ai.chat" ? (props.state.chatBinding ?? null) : null);
+              // Only personal Code reads a binding (`undefined` otherwise); `null` means Core could not answer.
+              const chatRow = () => row.target?.ref.type === "core.ai.chat" && props.state.chatBinding !== undefined;
               return (
                 <Row
                   icon={iconClass(row.icon, "ti ti-apps")}
@@ -403,8 +404,8 @@ function MayDo(props: { data: CodePageData; state: CodePageReady; text: PageText
                     </Show>
                   }
                   extra={
-                    <Show when={chat()}>
-                      {(binding) => <CodeChatChooseOther codeId={props.state.code.id} binding={binding()} text={props.text} />}
+                    <Show when={chatRow()}>
+                      <CodeChatRowAction codeId={props.state.code.id} binding={props.state.chatBinding ?? null} text={props.text} />
                     </Show>
                   }
                 />

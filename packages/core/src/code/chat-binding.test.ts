@@ -195,11 +195,11 @@ test.each(["en", "de"])("unbound, archived, deleted and absent-schema destinatio
         status: 409,
         message: unbound
           ? locale === "de"
-            ? "Wähle vor dem Senden einen Chat für diesen Code."
-            : "Choose a chat for this Code before sending."
+            ? "Diese Automation hat noch keinen Chat. Wähle einen auf ihrer Seite."
+            : "This automation has no chat yet. Choose one on its page."
           : locale === "de"
-            ? "Der gebundene Chat ist nicht verfügbar. Stelle ihn wieder her oder wähle einen anderen Chat."
-            : "The bound chat is unavailable. Restore it or choose another chat.",
+            ? "Der Chat dieser Automation ist nicht verfügbar. Stelle ihn wieder her oder wähle auf ihrer Seite einen anderen Chat."
+            : "This automation's chat is unavailable. Restore it or choose another chat on the automation's page.",
       },
     });
   }

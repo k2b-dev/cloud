@@ -15,12 +15,13 @@ const messages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
-      chat_unbound: "Choose a chat for this Code before sending.",
-      chat_unavailable: "The bound chat is unavailable. Restore it or choose another chat.",
+      chat_unbound: "This automation has no chat yet. Choose one on its page.",
+      chat_unavailable: "This automation's chat is unavailable. Restore it or choose another chat on the automation's page.",
     },
     de: {
-      chat_unbound: "Wähle vor dem Senden einen Chat für diesen Code.",
-      chat_unavailable: "Der gebundene Chat ist nicht verfügbar. Stelle ihn wieder her oder wähle einen anderen Chat.",
+      chat_unbound: "Diese Automation hat noch keinen Chat. Wähle einen auf ihrer Seite.",
+      chat_unavailable:
+        "Der Chat dieser Automation ist nicht verfügbar. Stelle ihn wieder her oder wähle auf ihrer Seite einen anderen Chat.",
     },
   },
 });

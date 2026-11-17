@@ -8,15 +8,33 @@ import type { PageText } from "./page-kit";
 const choose = (codeId: string, binding: CodeChatBinding, text: PageText) =>
   import("./CodeChatChooser").then((module) => module.openCodeChatChooser({ codeId, binding, text }));
 
-/** Under the chat row of "What it may do", only for the owner: another chat, or a first one when none works. */
-export function CodeChatChooseOther(props: { codeId: string; binding: CodeChatBinding; text: PageText }) {
+/**
+ * Under the chat row of "What it may do": for the owner another chat, or a first one when none works. When Core could
+ * not say which chat it is (`binding` null), the row says so with a way to read it again instead of going quiet.
+ */
+export function CodeChatRowAction(props: { codeId: string; binding: CodeChatBinding | null; text: PageText }) {
+  const t = props.text.t;
   return (
-    <Show when={props.binding.canChange}>
-      <span class="cloud-code__row-act">
-        <Button type="button" variant="link" size="sm" onClick={() => void choose(props.codeId, props.binding, props.text)}>
-          {props.binding.chat?.state === "available" ? props.text.t().chatChooseOther : props.text.t().chatChoose}
-        </Button>
-      </span>
+    <Show
+      when={props.binding}
+      fallback={
+        <span class="cloud-code__row-act cloud-code__row-act--failed">
+          {t().chatReadFailed}
+          <Button type="button" variant="link" size="sm" onClick={() => refreshCurrentPath()}>
+            {t().tryAgain}
+          </Button>
+        </span>
+      }
+    >
+      {(binding) => (
+        <Show when={binding().canChange}>
+          <span class="cloud-code__row-act">
+            <Button type="button" variant="link" size="sm" onClick={() => void choose(props.codeId, binding(), props.text)}>
+              {binding().chat?.state === "available" ? t().chatChooseOther : t().chatChoose}
+            </Button>
+          </span>
+        </Show>
+      )}
     </Show>
   );
 }
@@ -43,7 +61,7 @@ export function CodeChatMissing(props: { codeId: string; binding: CodeChatBindin
   const t = props.text.t;
   const [restoring, setRestoring] = createSignal(false);
   const missing = () => missingCodeChat(props.state);
-  const restore = async (id: string) => {
+  const restore = async (id: string, title: string | undefined) => {
     if (restoring()) return;
     setRestoring(true);
     const response = await fetch(`/api/ai/conversations/${encodeURIComponent(id)}/restore`, {
@@ -55,6 +73,7 @@ export function CodeChatMissing(props: { codeId: string; binding: CodeChatBindin
       toast.error(t().chatRestoreFailed);
       return;
     }
+    if (title) toast.success(t().chatRestored({ title }));
     refreshCurrentPath();
   };
   return (
@@ -69,7 +88,11 @@ export function CodeChatMissing(props: { codeId: string; binding: CodeChatBindin
             if (current.title) return t().chatMissingArchived({ title: current.title });
             return current.reason === "deleted" ? t().chatMissingGone : t().chatMissingSome;
           })()}
-          detail={props.binding.canChange ? t().chatMissingDetail : t().chatMissingOther}
+          detail={(() => {
+            const current = chat();
+            if (!props.binding.canChange) return t().chatMissingOther;
+            return current.state === "unavailable" && current.reason === "archived" ? t().chatMissingDetailRestore : t().chatMissingDetail;
+          })()}
           actions={
             <Show when={props.binding.canChange}>
               <Button type="button" size="sm" variant="secondary" onClick={() => void choose(props.codeId, props.binding, props.text)}>
@@ -78,11 +101,19 @@ export function CodeChatMissing(props: { codeId: string; binding: CodeChatBindin
               <Show
                 when={(() => {
                   const current = chat();
-                  return current.state === "unavailable" && current.reason === "archived" ? current.id : undefined;
+                  return current.state === "unavailable" && current.reason === "archived" && current.id
+                    ? { id: current.id, title: current.title }
+                    : undefined;
                 })()}
               >
-                {(id) => (
-                  <Button type="button" size="sm" variant="secondary" loading={restoring()} onClick={() => void restore(id())}>
+                {(archived) => (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    loading={restoring()}
+                    onClick={() => void restore(archived().id, archived().title)}
+                  >
                     {t().chatRestore}
                   </Button>
                 )}
