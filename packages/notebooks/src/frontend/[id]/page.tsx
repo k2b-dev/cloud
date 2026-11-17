@@ -298,6 +298,7 @@ export default ssr<AuthContext>(async (c) => {
               currentUserId={user.id}
               initialCommentsPage={initialCommentsPage ?? undefined}
               dateConfig={dateConfig}
+              now={new Date().toISOString()}
             />
           )}
         </AppWorkspace.Content>
