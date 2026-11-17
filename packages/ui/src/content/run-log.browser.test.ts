@@ -266,17 +266,15 @@ test("phone actions collapse into the shared menu, one action stays, and touch t
     await settled(page);
     await set(page, { ...base, actions: [{ icon: "ti ti-refresh", label: "Wiederholen", href: "#retry" }] });
     expect(await page.locator("#test-root").getByRole("link", { name: "Wiederholen" }).isVisible()).toBe(true);
-    const targets = await page
-      .locator("#test-root button:visible, #test-root a:visible")
-      .evaluateAll((nodes) =>
-        nodes.map((node) => {
-          const bounds = node.getBoundingClientRect();
-          const pseudo = getComputedStyle(node, "::after");
-          return {
-            height: bounds.height + Math.max(0, -Number.parseFloat(pseudo.top) || 0) + Math.max(0, -Number.parseFloat(pseudo.bottom) || 0),
-          };
-        }),
-      );
+    const targets = await page.locator("#test-root button:visible, #test-root a:visible").evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const bounds = node.getBoundingClientRect();
+        const pseudo = getComputedStyle(node, "::after");
+        return {
+          height: bounds.height + Math.max(0, -Number.parseFloat(pseudo.top) || 0) + Math.max(0, -Number.parseFloat(pseudo.bottom) || 0),
+        };
+      }),
+    );
     expect(targets.every((target) => target.height >= 44)).toBe(true);
     const info = page.locator("#test-root .k2b-run-log__info");
     const bounds = await info.boundingBox();
@@ -568,6 +566,8 @@ for (const width of [1440, 390])
           await page.locator(`#${id} .k2b-run-log__toggle`).click();
           await settled(page);
           await page.screenshot({ path: resolve(out, `${id}-expanded-light-${width}.png`) });
+          await page.locator(`#${id} .k2b-run-log__toggle`).click();
+          await settled(page);
         }
         if (id === "runlog-failed" && width === 390) {
           await page.locator(`#${id}`).getByRole("button", { name: "Aktionen", exact: true }).click();
@@ -578,6 +578,13 @@ for (const width of [1440, 390])
         await page.evaluate(() => document.body.classList.add("k2b-dark"));
         await settled(page);
         await page.screenshot({ path: resolve(out, `${id}-dark-${width}.png`) });
+        if (["runlog-compact-running", "runlog-compact-failed", "runlog-compact-done", "runlog-compact-idle"].includes(id)) {
+          await page.locator(`#${id} .k2b-run-log__toggle`).click();
+          await settled(page);
+          await page.screenshot({ path: resolve(out, `${id}-expanded-dark-${width}.png`) });
+          await page.locator(`#${id} .k2b-run-log__toggle`).click();
+          await settled(page);
+        }
         await page.evaluate(() => document.body.classList.remove("k2b-dark"));
       }
     } finally {

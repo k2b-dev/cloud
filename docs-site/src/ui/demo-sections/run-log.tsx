@@ -22,9 +22,7 @@ const step = (i: number, status: RunStepEntry["status"], message?: string): RunS
   message,
   startedAt: status === "pending" ? undefined : [AT, "2026-11-17T16:42:10Z", "2026-11-17T16:42:13Z"][i],
   endedAt:
-    status === "succeeded" || status === "failed"
-      ? ["2026-11-17T16:42:10Z", "2026-11-17T16:42:13Z", "2026-11-17T16:42:16Z"][i]
-      : undefined,
+    status === "succeeded" || status === "failed" ? ["2026-11-17T16:42:10Z", "2026-11-17T16:42:13Z", "2026-11-17T16:42:16Z"][i] : undefined,
 });
 const logs = [
   { kind: "log", id: "log-1", at: AT, level: "info", text: "PDF mit 2 Seiten erhalten" },
@@ -159,13 +157,16 @@ export const runLogExamples: readonly { id: string; title: string; props: RunLog
     title: "Viele Schritte · erster Schritt läuft",
     props: {
       ...running,
-      entries: Array.from({ length: 13 }, (_, i): RunStepEntry => ({
-        kind: "step",
-        id: `first-${i}`,
-        at: AT,
-        label: `Lager ${i + 1} abgleichen`,
-        status: i === 0 ? "running" : "pending",
-      })),
+      entries: Array.from(
+        { length: 13 },
+        (_, i): RunStepEntry => ({
+          kind: "step",
+          id: `first-${i}`,
+          at: AT,
+          label: `Lager ${i + 1} abgleichen`,
+          status: i === 0 ? "running" : "pending",
+        }),
+      ),
     },
     primary: "ai",
   },

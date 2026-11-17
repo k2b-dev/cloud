@@ -47,8 +47,7 @@ test("the five run states and inherited locale render without time or connection
     expect(html).toContain('role="status"');
     expect(html).toContain("Verbindung weg, verbinde neu …");
     expect(html).toContain('class="k2b-run-log__steps"');
-    if (state === "idle" || state === "starting")
-      expect(render({ state, entries: [] })).not.toContain('class="k2b-run-log__steps"');
+    if (state === "idle" || state === "starting") expect(render({ state, entries: [] })).not.toContain('class="k2b-run-log__steps"');
   }
   expect(render({ duration: 6000 }, "en")).toContain("Running for 0:06");
   expect(render({ duration: 6000 }, "de-AT")).toContain("Läuft seit 0:06");
