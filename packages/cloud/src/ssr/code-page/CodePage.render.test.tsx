@@ -345,17 +345,19 @@ describe("Code page: personal Code (CODE_P)", () => {
   });
 });
 
-test.each(["de", "en"])("%s: no state shows source, identifiers or an unqualified status word", (locale) => {
+for (const locale of ["de", "en"]) {
   // The code tab is the one place for source (3p); its field carries its own exemption.
-  for (const state of CODE_PAGE_FIXTURE_STATES.filter((name) => name !== "code")) {
-    const visible = renderedText(
-      new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
-      "\n",
-    );
-    expect(codeSurfaceFindings(`${locale}/${state}`, visible)).toEqual([]);
-    for (const word of ["Passt", "Fertig", "Done", "OK"]) expect(visible.split(/\s+/)).not.toContain(word);
-  }
-});
+  describe(`${locale}: no state shows source, identifiers or an unqualified status word`, () => {
+    test.each(CODE_PAGE_FIXTURE_STATES.filter((name) => name !== "code"))("%s", (state) => {
+      const visible = renderedText(
+        new HTMLRewriter().on("script", { element: (element) => void element.remove() }).transform(html(state, locale)),
+        "\n",
+      );
+      expect(codeSurfaceFindings(`${locale}/${state}`, visible)).toEqual([]);
+      for (const word of ["Passt", "Fertig", "Done", "OK"]) expect(visible.split(/\s+/)).not.toContain(word);
+    });
+  });
+}
 
 test("English copy", () => {
   const page = text("overview", "en");
