@@ -1406,11 +1406,55 @@ suiteFor(
       await review`SELECT id FROM ai.conversations WHERE id=${chat.id}::uuid FOR UPDATE`;
     });
     expect(Array.from(await sql`SELECT status,error FROM ai.queued_messages WHERE id=${id}::uuid`)).toMatchObject([
-      { status: "pending", error: "dispatch_failed" },
+      { status: "pending", error: null },
     ]);
-    await sql`UPDATE ai.queued_messages SET quota_checked_at=clock_timestamp()-interval '16 seconds' WHERE id=${id}::uuid`;
     await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).not.toBeNull();
+  });
+
+  test("send refuses a reviewer's Code lock promptly and accepts a retry with the same key", async () => {
+    await setup();
+    type Outcome = { result: Awaited<ReturnType<typeof invoke>> } | { error: unknown };
+    let outcome: Outcome | undefined;
+    let whileLocked: Outcome | undefined;
+    let sending: Promise<void> | undefined;
+    const context = ctx("reviewer-contention");
+    try {
+      await sql.begin(async (review) => {
+        await review`SET LOCAL lock_timeout='3s'`;
+        await review`SELECT id FROM code.codes WHERE id=${codeId} FOR UPDATE`;
+        const [session] = await review<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        sending = invoke(chat.shortId, context).then(
+          (result) => {
+            outcome = { result };
+          },
+          (error: unknown) => {
+            outcome = { error };
+          },
+        );
+        for (let waited = 0; !outcome; waited++) {
+          const [blocked] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE ${session!.pid}::int=ANY(pg_blocking_pids(pid))`;
+          if (blocked?.count) break;
+          if (waited > 200) throw new Error("Send neither refused nor waited for the reviewer's Code lock");
+          await Bun.sleep(10);
+        }
+        whileLocked = outcome;
+        // A refusal has rolled back its Chat lock, so the reviewer can safely take it next.
+        if (whileLocked) await review`SELECT id FROM ai.conversations WHERE id=${chat.id}::uuid FOR UPDATE`;
+      });
+    } finally {
+      await sending;
+    }
+    expect(whileLocked).toMatchObject({ result: { ok: false, error: { code: "chat_busy", status: 409 } } });
+    expect(await sql`SELECT id FROM ai.chat_send_receipts WHERE conversation_id=${chat.id}::uuid`).toHaveLength(0);
+    const accepted = await invoke(chat.shortId, context);
+    expect(accepted.ok).toBeTrue();
+    if (!accepted.ok) throw new Error(accepted.error.message);
+    const id = dataSchema.parse(accepted.data.data).id;
+    const replayed = await invoke(chat.shortId, context);
+    expect(replayed).toMatchObject({ ok: true, data: { data: { id } } });
+    expect(await sql`SELECT id FROM ai.chat_send_receipts WHERE conversation_id=${chat.id}::uuid`).toHaveLength(1);
   });
 
   test("unknown Code start errors stop retrying at the existing budget-day expiry", async () => {

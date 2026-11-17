@@ -211,23 +211,22 @@ suiteFor(
     expect(await updateQueuedMessage(chat.id, id, "cancel")).toBeTrue();
   });
 
-  test("a transient database refusal leaves the accepted automation pending for recovery", async () => {
+  test.each(["55P03", "40P01", "40001", "57014"])("SQLSTATE %s leaves the accepted automation unchanged for recovery", async (sqlState) => {
     const chat = await aiConversations.createConversation({ ownerUserId: owner });
     const id = crypto.randomUUID();
     const input = submission(chat.id, "Retry infrastructure", "code-transient");
-    input.runConfig.send = { id, accountId: owner, keyHash: "transient", requestHash: "test-input" };
+    input.runConfig.send = { id, accountId: owner, keyHash: `transient-${sqlState}`, requestHash: "test-input" };
     await sql.begin((db) => enqueueAutomationChatMessage(id, input, [], db));
     await drainQueuedMessages(
       async () => {},
       chat.id,
       async () => {
-        throw Object.assign(new Error("Deadlock"), { code: "ERR_POSTGRES_SERVER_ERROR", errno: "40P01" });
+        throw Object.assign(new Error("Transaction retry"), { code: "ERR_POSTGRES_SERVER_ERROR", errno: sqlState });
       },
     );
-    expect(await sql<{ status: string; error: string | null }[]>`SELECT status,error FROM ai.queued_messages WHERE id=${id}::uuid`).toEqual(
-      [{ status: "pending", error: "dispatch_failed" }],
+    expect(Array.from(await sql`SELECT status,error,quota_checked_at,revision::text FROM ai.queued_messages WHERE id=${id}::uuid`)).toEqual(
+      [{ status: "pending", error: null, quota_checked_at: null, revision: "0" }],
     );
-    await sql`UPDATE ai.queued_messages SET quota_checked_at=clock_timestamp()-interval '16 seconds' WHERE id=${id}::uuid`;
     const jobs: string[] = [];
     await drainQueuedMessages(
       async (job) => {
@@ -237,5 +236,42 @@ suiteFor(
       async (current) => current,
     );
     expect(jobs).toHaveLength(1);
+  });
+
+  test("an entry accepted two hours ago survives NOWAIT contention and starts after the lock is released", async () => {
+    const chat = await aiConversations.createConversation({ ownerUserId: owner });
+    const blocker = await aiConversations.createConversation({ ownerUserId: owner });
+    const id = crypto.randomUUID();
+    const input = submission(chat.id, "Old accepted message", "old-contended-source");
+    input.runConfig.send = { id, accountId: owner, keyHash: "old-contended", requestHash: "test-input" };
+    await sql.begin((db) => enqueueAutomationChatMessage(id, input, [], db));
+    await sql`UPDATE ai.queued_messages SET created_at=clock_timestamp()-interval '2 hours' WHERE id=${id}::uuid`;
+    await sql.begin(async (holder) => {
+      await holder`SET LOCAL lock_timeout='3s'`;
+      await holder`SELECT id FROM ai.conversations WHERE id=${blocker.id}::uuid FOR UPDATE`;
+      await drainQueuedMessages(
+        async () => {},
+        chat.id,
+        async (current, db) => {
+          await db`SELECT id FROM ai.conversations WHERE id=${blocker.id}::uuid FOR SHARE NOWAIT`;
+          return current;
+        },
+      );
+    });
+    expect(Array.from(await sql`SELECT status,error,quota_checked_at FROM ai.queued_messages WHERE id=${id}::uuid`)).toEqual([
+      { status: "pending", error: null, quota_checked_at: null },
+    ]);
+    const jobs: string[] = [];
+    await drainQueuedMessages(
+      async (job) => {
+        jobs.push(job.turnId);
+      },
+      chat.id,
+      async (current) => current,
+    );
+    expect(jobs).toHaveLength(1);
+    expect(Array.from(await sql`SELECT status,error FROM ai.queued_messages WHERE id=${id}::uuid`)).toEqual([
+      { status: "submitted", error: null },
+    ]);
   });
 });

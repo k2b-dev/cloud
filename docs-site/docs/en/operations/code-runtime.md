@@ -261,5 +261,8 @@ the same transaction as the backfill and marks completion.
 Unknown queued-chat start errors remain pending with `dispatch_failed`, visible to the person
 and removable. Recovery attempts are at least 15 seconds apart and reuse the existing 30-minute
 queued-turn start deadline, measured from acceptance; pending Code messages can expire earlier
-at their budget-day end. Final refusals retain their original reason through later expiry and
+at their budget-day end. If an entry is already older than 30 minutes at its first unknown
+failure, that is its only start attempt: the next due sweep marks it finally failed with
+visible `dispatch_failed`. Lock contention and transaction retries leave the entry unchanged
+and do not count as unknown failures. Final refusals retain their original reason through later expiry and
 archiving, and automation refusals discard input, context and attachments.

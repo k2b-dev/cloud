@@ -70,7 +70,8 @@ const result = async (conversationId: string, chatId: string, id: string) => {
 };
 /** Until the whole-turn reservation of slice 6 lands, the daily checks see only booked or running
  * inference. At most one waiting Code message or unfinished Code turn per owner, across all chats and
- * Codes, keeps them exact. Callers hold the chat lock first, then this owner lock, then budget rows. */
+ * Codes, keeps them exact. Send/start lock Chat → owner → Code NOWAIT → run/budget rows.
+ * Review locks Code → Chat, so no path holding Chat may wait for Code. */
 export const lockOwnerCodeChats = (owner: string, db: SQL) =>
   db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.owner:${owner}`},0))`;
 /** A refused automation entry is final and does not count. At start, only messages queued before
@@ -241,7 +242,7 @@ export const aiChatSendAction = {
           if (await openOwnerCodeChatWork(owner, db)) return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
         }
         if (code && limits) {
-          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE`;
+          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE NOWAIT`;
           await db`SELECT id FROM code.runs WHERE id=${code.runId}::uuid FOR UPDATE`;
           const current = await chatWriteAuthority(context, db);
           if (!current.ok) return current;
@@ -263,6 +264,12 @@ export const aiChatSendAction = {
       wakeAiMessageQueue(chat.id);
       return result(chat.id, chat.short_id, id);
     } catch (cause) {
+      if (
+        typeof cause === "object" &&
+        cause !== null &&
+        (("errno" in cause && cause.errno === "55P03") || ("code" in cause && cause.code === "55P03"))
+      )
+        return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
       if (cause instanceof AiMessageQueueConflict) return fail({ code: "chat_busy", message: cause.message, status: 409 as const });
       if (cause instanceof AiQuotaError) return fail({ code: cause.code, message: cause.message, status: 409 as const });
       if (isAiSettingsError(cause))

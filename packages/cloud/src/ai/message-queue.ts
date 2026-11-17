@@ -23,6 +23,8 @@ export const AI_MESSAGE_QUEUE_LIMIT = 20;
 export const AUTOMATION_QUEUE_LIMIT = 32;
 /** A scheduled source may leave one pending message; its next run must observe chat_busy. */
 export const AUTOMATION_QUEUE_SOURCE_LIMIT = 1;
+/** Operational breadth per drain, retained at 32 chats to bound serial transactions independently of queue capacity. */
+const AI_QUEUE_SWEEP_CHAT_LIMIT = 32;
 export class AiMessageQueueConflict extends Error {}
 
 export type QueuedChatSubmission = Parameters<AiConversationService["submitChatTurn"]>[0];
@@ -307,7 +309,7 @@ export const drainQueuedMessages = async (
       AND (${conversationId ?? null}::uuid IS NULL OR q.conversation_id=${conversationId ?? null}::uuid)
       AND NOT EXISTS (SELECT 1 FROM ai.turns t WHERE t.conversation_id=q.conversation_id
         AND NOT COALESCE(t.run_config ? 'background',false) AND t.status IN ('queued','running','waiting_for_action'))
-    ORDER BY q.quota_checked_at NULLS FIRST,q.position LIMIT ${AUTOMATION_QUEUE_LIMIT}`;
+    ORDER BY q.quota_checked_at NULLS FIRST,q.position LIMIT ${AI_QUEUE_SWEEP_CHAT_LIMIT}`;
   for (const chat of chats) {
     // Composer settings use their normal cache; load the catalog snapshot before holding the chat lock.
     const personSettings = chat.person
@@ -383,6 +385,14 @@ export const drainQueuedMessages = async (
             });
             return { turnId: result.turn.id };
           } catch (error) {
+            // The savepoint rolled back: lock contention, serialization retries and cancellation leave admission unchanged.
+            if (
+              typeof error === "object" &&
+              error !== null &&
+              (("errno" in error && ["55P03", "40P01", "40001", "57014"].includes(String(error.errno))) ||
+                ("code" in error && ["55P03", "40P01", "40001", "57014"].includes(String(error.code))))
+            )
+              return null;
             const reason = error instanceof Error ? error.message : String(error);
             if (reason === "Queued message is no longer ready." || reason.includes("idx_ai_turns_one_active_per_conversation")) return null;
             const code =

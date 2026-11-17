@@ -1610,6 +1610,9 @@ archiving never overwrites a final refusal. Final automation refusals discard in
 Unexpected infrastructure errors remain queued with visible `dispatch_failed`; retries wait at least
 15 seconds and log each failed attempt. They end as `failed/dispatch_failed` at the existing
 30-minute queued-turn start deadline, measured from acceptance (or earlier at the Code budget-day end).
+An entry already older than 30 minutes at its first unknown failure has only that one start
+attempt; the next due sweep marks it finally failed with visible `dispatch_failed`.
+Lock contention and transaction retries leave the entry unchanged and do not count as unknown failures.
 The person can remove the queued entry at any time. Archiving
 a chat prevents its pending entries from starting, including after restoration.
 A turn never sends into its own chat. A send whose invocation source cannot be checked right
