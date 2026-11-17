@@ -11081,6 +11081,55 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 400;
 }
 
+/* Stepping (`steps`): two small arrows before the trigger and the way back to the current period after it. The way
+   back keeps its place while hidden, so the row never moves. */
+.k2b-ui .k2b-period-picker__steps {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.k2b-ui .k2b-period-picker__steps > .k2b-period-picker__trigger {
+  flex: 0 1 auto;
+  padding-inline: 0.25rem;
+}
+
+/* In a report head the period reads as text. The existing field edge still marks focus and errors. */
+.k2b-ui .k2b-period-picker:not([data-invalid="true"]) .k2b-period-picker__steps > .k2b-period-picker__trigger:not(:focus-visible) {
+  border-color: transparent;
+}
+
+.k2b-ui .k2b-period-picker__steps > .k2b-period-picker__trigger:not(:disabled):not(:hover):not(:focus-visible) {
+  background: transparent;
+}
+
+.k2b-ui .k2b-period-picker__home {
+  flex: 0 0 auto;
+  padding: 0 0.25rem;
+  border: 0;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-action);
+  background: none;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
+}
+
+.k2b-ui .k2b-period-picker__home:hover {
+  color: var(--k2b-action-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.k2b-ui .k2b-period-picker__home[hidden] {
+  display: block;
+  visibility: hidden;
+}
+
 .k2b-ui .k2b-period-picker__popover {
   position: fixed;
   z-index: 1000;
