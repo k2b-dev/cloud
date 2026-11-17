@@ -36,6 +36,7 @@ import contentMessageRows from "./content/message-rows.md" with { type: "text" }
 import contentMoney from "./content/money.md" with { type: "text" };
 import contentProgressPath from "./content/progress-path.md" with { type: "text" };
 import contentReactionBar from "./content/reaction-bar.md" with { type: "text" };
+import contentRunLog from "./content/run-log.md" with { type: "text" };
 import contentSteps from "./content/steps.md" with { type: "text" };
 import contentStructuredData from "./content/structured-data.md" with { type: "text" };
 import contentTables from "./content/tables.md" with { type: "text" };
@@ -223,6 +224,7 @@ const catalogContextSources = {
   "content/label-chip": { file: "content/label-chip.md", content: contentLabelChip },
   "content/match-text": { file: "content/match-text.md", content: contentMatchText },
   "content/progress-path": { file: "content/progress-path.md", content: contentProgressPath },
+  "content/run-log": { file: "content/run-log.md", content: contentRunLog },
   "content/steps": { file: "content/steps.md", content: contentSteps },
   "layout/table-of-contents": { file: "layout/table-of-contents.md", content: layoutTableOfContents },
   "content/charts": { file: "content/charts.md", content: contentCharts },
