@@ -142,7 +142,7 @@ for (const theme of ["light", "dark"]) {
           const frame = getComputedStyle(row.parentElement!);
           const probe = document.createElement("span");
           row.append(probe);
-          probe.style.background = "var(--k2b-selected)";
+          probe.style.background = "color-mix(in srgb, var(--k2b-selected) 50%, var(--k2b-surface))";
           const expected = getComputedStyle(probe).backgroundColor;
           const ctx = document.createElement("canvas").getContext("2d")!;
           const luminance = (color: string) => {

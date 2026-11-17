@@ -9043,8 +9043,9 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   line-height: 1.25rem;
 }
 
+/* The chosen row is quietly tinted: half the platform selection, so it reads as chosen without weight. */
 .k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option[aria-checked="true"] {
-  background: var(--k2b-selected);
+  background: color-mix(in srgb, var(--k2b-selected) 50%, var(--k2b-surface));
 }
 
 .k2b-ui .k2b-choice-list[data-variant="list"] > .k2b-choice-list__option[aria-checked="true"] .k2b-choice-list__label {

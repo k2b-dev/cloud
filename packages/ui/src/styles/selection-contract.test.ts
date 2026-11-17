@@ -133,7 +133,9 @@ describe("selection hooks", () => {
     expect(declarations(frame).get("border")).toEqual(["1px solid var(--k2b-border)"]);
     expect(declarations(frame).get("overflow")).toEqual(["hidden"]);
     expect(declarations(`${frame} > .k2b-choice-list__option`).get("box-shadow")).toEqual(["none"]);
-    expect(declarations(`${frame} > .k2b-choice-list__option[aria-checked="true"]`).get("background")).toEqual(["var(--k2b-selected)"]);
+    expect(declarations(`${frame} > .k2b-choice-list__option[aria-checked="true"]`).get("background")).toEqual([
+      "color-mix(in srgb, var(--k2b-selected) 50%, var(--k2b-surface))",
+    ]);
     const focus = declarations(`${frame} > .k2b-choice-list__option:focus-visible`);
     expect(focus.get("outline")).toEqual(["var(--k2b-focus-width) solid var(--k2b-edge-focus)"]);
     expect(focus.get("outline-offset")).toEqual(["calc(-1 * var(--k2b-focus-width))"]);
