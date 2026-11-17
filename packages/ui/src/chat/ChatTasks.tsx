@@ -40,14 +40,16 @@ function TaskRow(props: { item: ChatTask; statusLabel: string; fresh: boolean })
     <li class="k2b-chat-task" data-status={props.item.status}>
       <StepRowContent
         classes={{ leading: "k2b-chat-task__mark", label: "k2b-chat-task__content" }}
-        leading={<>
-        <Show when={props.item.status === "completed"}>
-          <i class="ti ti-check" data-fresh={props.fresh ? "" : undefined} />
-        </Show>
-        <Show when={props.item.status === "cancelled"}>
-          <i class="ti ti-x" />
-        </Show>
-        </>}
+        leading={
+          <>
+            <Show when={props.item.status === "completed"}>
+              <i class="ti ti-check" data-fresh={props.fresh ? "" : undefined} />
+            </Show>
+            <Show when={props.item.status === "cancelled"}>
+              <i class="ti ti-x" />
+            </Show>
+          </>
+        }
         label={props.item.content}
         statusLabel={props.statusLabel}
       />

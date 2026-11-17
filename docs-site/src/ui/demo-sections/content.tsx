@@ -97,8 +97,8 @@ import { DemoCard } from "../DemoCard";
 import { BarChartStatesDemo, ChartDemo, ChartFrameStatesDemo, CountryMapDemo, ReferenceLineStylesDemo } from "./charts";
 import { tableExamples } from "./charts/examples/table";
 import { FileGridDemo } from "./file-grid";
-import { RunLogDemos } from "./run-log";
 import { PaginationDemo } from "./layout";
+import { RunLogDemos } from "./run-log";
 import { CalendarDemo } from "./surfaces";
 import { DemoGrid, type DemoSection } from "./types";
 

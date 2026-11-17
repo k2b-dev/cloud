@@ -13,14 +13,33 @@ Bun.plugin(plugin());
 const { RunLog } = await import("./RunLog");
 const { LocaleProvider } = await import("../intl/locale");
 const AT = "2026-11-17T16:42:07Z";
-const step: RunStepEntry = { kind: "step", id: "read", at: AT, label: "Beleg lesen", status: "running", icon: "ti ti-file-text", description: "Liest das PDF" };
-const render = (props: Partial<RunLogProps> = {}, locale = "de") => renderToString(() => createComponent(LocaleProvider, {
-  locale,
-  get children() { return createComponent(RunLog, { state: "running", entries: [step], ...props }); },
-}));
+const step: RunStepEntry = {
+  kind: "step",
+  id: "read",
+  at: AT,
+  label: "Beleg lesen",
+  status: "running",
+  icon: "ti ti-file-text",
+  description: "Liest das PDF",
+};
+const render = (props: Partial<RunLogProps> = {}, locale = "de") =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(RunLog, { state: "running", entries: [step], ...props });
+      },
+    }),
+  );
 
 test("the five run states and inherited locale render without time or connection ownership", () => {
-  for (const [state, text] of [["idle", "Noch nicht ausgeführt"], ["starting", "Startet …"], ["running", "Läuft seit 0:06"], ["succeeded", "Fertig nach 0:06"], ["failed", "Gescheitert nach 0:06"]] as const) {
+  for (const [state, text] of [
+    ["idle", "Noch nicht ausgeführt"],
+    ["starting", "Startet …"],
+    ["running", "Läuft seit 0:06"],
+    ["succeeded", "Fertig nach 0:06"],
+    ["failed", "Gescheitert nach 0:06"],
+  ] as const) {
     const html = render({ state, duration: 6000, meta: "Verbindung weg, verbinde neu …" });
     expect(html).toContain(text);
     expect(html).toContain('role="status"');
@@ -32,7 +51,12 @@ test("the five run states and inherited locale render without time or connection
 });
 
 test("a step id updates its original row, unknown kinds disappear, and successful pending steps become skipped", () => {
-  const entries = [step, { kind: "step", id: "write", at: AT, label: "Daten erfassen", status: "pending" }, { ...step, status: "succeeded", startedAt: AT, endedAt: "2026-11-17T16:42:10Z" }, { kind: "future" }] satisfies RunLogProps["entries"];
+  const entries = [
+    step,
+    { kind: "step", id: "write", at: AT, label: "Daten erfassen", status: "pending" },
+    { ...step, status: "succeeded", startedAt: AT, endedAt: "2026-11-17T16:42:10Z" },
+    { kind: "future" },
+  ] satisfies RunLogProps["entries"];
   const html = render({ state: "succeeded", entries });
   expect((html.match(/class="k2b-run-log__step"/g) ?? []).length).toBe(2);
   expect(html).toContain('data-status="skipped"');
@@ -43,10 +67,15 @@ test("a step id updates its original row, unknown kinds disappear, and successfu
 });
 
 test("output is text, has no live announcements, and exposes counts, levels, and history", () => {
-  const html = render({ output: "open", olderCount: 312, entries: [step,
-    { kind: "log", id: "log", at: AT, level: "warn", text: '<script>alert("x")</script>' },
-    { kind: "log", id: "error", at: AT, level: "error", text: "Kein Einlieferer" },
-  ] });
+  const html = render({
+    output: "open",
+    olderCount: 312,
+    entries: [
+      step,
+      { kind: "log", id: "log", at: AT, level: "warn", text: '<script>alert("x")</script>' },
+      { kind: "log", id: "error", at: AT, level: "error", text: "Kein Einlieferer" },
+    ],
+  });
   expect(html).toContain('role="log" aria-live="off"');
   expect(html).toContain('data-level="warn"');
   expect(html).toContain('data-level="error"');
@@ -60,8 +89,8 @@ test("output is text, has no live announcements, and exposes counts, levels, and
 test("compact disclosure, reasons and description controls are present in the initial server HTML", () => {
   const html = render({ size: "compact", entries: [{ ...step, status: "failed", message: "Kundennummer fehlt" }] });
   expect(html).toContain('aria-expanded="false"');
-  expect(html).toContain('aria-controls=');
-  expect(html).toContain('inert');
+  expect(html).toContain("aria-controls=");
+  expect(html).toContain("inert");
   expect(html).toContain("Details zu Beleg lesen");
   expect(html).toContain("Kundennummer fehlt");
   expect(html).toContain('role="tooltip"');

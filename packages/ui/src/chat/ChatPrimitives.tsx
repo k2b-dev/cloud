@@ -378,25 +378,37 @@ const ActivityContent = (props: ChatActivityProps & { label: JSX.Element; disclo
       meta: "k2b-chat-activity__meta k2b-truncate-fade",
       duration: "k2b-chat-activity__duration",
     }}
-    leading={<Show when={props.leading} fallback={<i class={props.icon ?? "ti ti-sparkles"} />}>{props.leading}</Show>}
-    label={<>
-      <strong title={typeof props.label === "string" ? props.label : undefined}>{props.label}</strong>
-      <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
-    </>}
-    meta={(props.meta || props.trailing) && <>
-        {props.meta}
-        {props.trailing && <span class="k2b-chat-activity__trailing">{props.trailing}</span>}
-    </>}
+    leading={
+      <Show when={props.leading} fallback={<i class={props.icon ?? "ti ti-sparkles"} />}>
+        {props.leading}
+      </Show>
+    }
+    label={
+      <>
+        <strong title={typeof props.label === "string" ? props.label : undefined}>{props.label}</strong>
+        <Show when={props.description}>{(description) => <small>{description()}</small>}</Show>
+      </>
+    }
+    meta={
+      (props.meta || props.trailing) && (
+        <>
+          {props.meta}
+          {props.trailing && <span class="k2b-chat-activity__trailing">{props.trailing}</span>}
+        </>
+      )
+    }
     metaTone={props.metaTone}
     duration={props.duration}
     durationTitle={props.durationTitle}
     silentDuration={props.busy}
-    end={<>
-    <Show when={props.disclosure}>
-      <i class="ti ti-chevron-right k2b-chat-activity__chevron" aria-hidden="true" />
-    </Show>
-    {!props.expandable && props.end}
-    </>}
+    end={
+      <>
+        <Show when={props.disclosure}>
+          <i class="ti ti-chevron-right k2b-chat-activity__chevron" aria-hidden="true" />
+        </Show>
+        {!props.expandable && props.end}
+      </>
+    }
   />
 );
 

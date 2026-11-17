@@ -15,10 +15,14 @@ export function StepRowContent(props: {
 }) {
   return (
     <>
-      <span class={props.classes.leading} aria-hidden="true">{props.leading}</span>
+      <span class={props.classes.leading} aria-hidden="true">
+        {props.leading}
+      </span>
       <span class={props.classes.label}>{props.label}</span>
       <Show when={props.meta}>
-        <span class={props.classes.meta} data-tone={props.metaTone}>{props.meta}</span>
+        <span class={props.classes.meta} data-tone={props.metaTone}>
+          {props.meta}
+        </span>
       </Show>
       <Show when={props.duration}>
         <span class={props.classes.duration} title={props.durationTitle} aria-hidden={props.silentDuration ? "true" : undefined}>
@@ -26,7 +30,9 @@ export function StepRowContent(props: {
         </span>
       </Show>
       {props.end}
-      <Show when={props.statusLabel}><span class="k2b-sr-only">{props.statusLabel}</span></Show>
+      <Show when={props.statusLabel}>
+        <span class="k2b-sr-only">{props.statusLabel}</span>
+      </Show>
     </>
   );
 }

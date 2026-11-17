@@ -206,7 +206,6 @@ export { ProgressPath, type ProgressPathProps, type ProgressPathStep } from "./P
 export type { RangeOption, RangePickerProps } from "./RangePicker";
 export { default as RangePicker } from "./RangePicker";
 export { ReactionBar, type ReactionBarItem, type ReactionBarProps } from "./ReactionBar";
-export { RunLog, type RunLogProps, type RunLogState, type RunLogAction, type RunEntry, type RunStepEntry, type RunLogEntry, type RunLevel } from "./RunLog";
 export type {
   ReferenceChipObjectProps,
   ReferenceChipPersonProps,
@@ -214,6 +213,16 @@ export type {
   ReferenceChipTimeProps,
 } from "./ReferenceChip";
 export { REFERENCE_CHIP_MAX_CHARACTERS, ReferenceChip, truncateMiddle } from "./ReferenceChip";
+export {
+  type RunEntry,
+  type RunLevel,
+  RunLog,
+  type RunLogAction,
+  type RunLogEntry,
+  type RunLogProps,
+  type RunLogState,
+  type RunStepEntry,
+} from "./RunLog";
 export type { StepsProps } from "./Steps";
 export { Steps } from "./Steps";
 export type { StructuredDataPreviewMode, StructuredDataPreviewProps, StructuredDataValue } from "./StructuredDataPreview";
