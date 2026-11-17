@@ -248,7 +248,6 @@ export function PeriodPicker(props: PeriodPickerProps): JSX.Element {
       <IconButton
         variant="ghost"
         size="xs"
-        class="k2b-period-picker__step"
         // At a bound the arrow stays focusable and says why it does not step; without a neighbour it is plainly off.
         label={reason() ? `${name()}: ${reason()}` : name()}
         aria-disabled={reason() ? "true" : undefined}

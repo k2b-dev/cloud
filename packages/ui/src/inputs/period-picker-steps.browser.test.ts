@@ -66,8 +66,8 @@ const load = async (width: number, options: NonNullable<Window["stepFixture"]>):
   await settled(tab);
   return tab;
 };
-const previous = (page: Page) => page.locator(".k2b-period-picker__step").first();
-const next = (page: Page) => page.locator(".k2b-period-picker__step").last();
+const previous = (page: Page) => page.getByRole("button", { name: /^Vorheriger Zeitraum/ });
+const next = (page: Page) => page.getByRole("button", { name: /^Nächster Zeitraum/ });
 const home = (page: Page) => page.locator(".k2b-period-picker__home");
 const shown = (page: Page) => page.locator(".k2b-period-picker__value > span:not([aria-hidden])").innerText();
 const boxes = (page: Page) =>
@@ -166,7 +166,7 @@ describe("PeriodPicker steps", () => {
       expect(await previous(page).getAttribute("aria-disabled")).toBe("true");
       expect(await previous(page).getAttribute("aria-label")).toBe("Vorheriger Zeitraum: nichts vor dem 15.10.2026");
       await previous(page).focus();
-      expect(await page.evaluate(() => document.activeElement?.classList.contains("k2b-period-picker__step"))).toBe(true);
+      expect(await previous(page).evaluate((button) => document.activeElement === button)).toBe(true);
     } finally {
       await page.close();
     }
