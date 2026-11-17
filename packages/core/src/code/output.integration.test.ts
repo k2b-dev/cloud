@@ -140,6 +140,13 @@ suiteFor(
         });
       expect(
         await meter.during(async () => {
+          // Entry-policy exemption does not authorize an output request without its lease proof.
+          const missingProof = await outputRoutes.request(RUNNER_PATHS.output, {
+            method: "POST",
+            body: JSON.stringify({ batch: batch(1, "refused") }),
+            headers: { "Content-Type": "application/json" },
+          });
+          expect(missingProof.status).toBe(400);
           expect((await request({ token: "forged", runId, generation: 1 }, "refused")).status).toBe(409);
           expect((await request({ token, runId: "66666666-6666-4666-8666-666666666666", generation: 1 }, "wrong run")).status).toBe(409);
           expect((await request({ token, runId, generation: 2 }, "wrong attempt")).status).toBe(409);
