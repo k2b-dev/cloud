@@ -22,6 +22,7 @@ beforeAll(async () => {
     entrypoints: [resolve(import.meta.dir, "authoring-stop.browser-harness.tsx")],
     target: "browser",
     format: "esm",
+    minify: true,
     conditions: ["browser"],
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
     plugins: [
