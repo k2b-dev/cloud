@@ -1,25 +1,19 @@
 import { Dropdown } from "@k2b/ui";
-import { createSignal, onCleanup, onMount } from "solid-js";
+import { type Accessor, createEffect, createSignal } from "solid-js";
 import { platformMessages } from "../ssr/platform-messages";
 import type { PanelState } from "./panel-context-bridge";
 
-/**
- * The slot head's ⋯ menu for providers that need consent. The lazy slot controller mounts it over the server's
- * placeholder button, so it costs no island and can never change an answer before the controller listens. Only
- * document events cross the menu/controller boundary.
- */
-export default function PanelMenu(props: { initial: PanelState; locale: string }) {
+/** The lazy controller mounts this menu over the server-rendered button after its consent listener is ready. */
+export default function PanelMenu(props: { state: Accessor<PanelState>; locale: string }) {
   const t = () => platformMessages.resolve([props.locale]).t;
-  const [state, setState] = createSignal(props.initial);
+  const state = props.state;
   const [open, setOpen] = createSignal(false);
-  onMount(() => {
-    const changed = (event: CustomEvent<PanelState>) => {
-      // A closed slot, another provider or one without consent leaves no reason for the menu to stay expanded.
-      if (!event.detail.open || event.detail.provider !== state().provider || !event.detail.consent) setOpen(false);
-      setState(event.detail);
-    };
-    window.addEventListener("cloud.panel.state", changed);
-    onCleanup(() => window.removeEventListener("cloud.panel.state", changed));
+  let provider = state().provider;
+  createEffect(() => {
+    const current = state();
+    // A closed slot, another provider or one without consent leaves no reason for the menu to stay expanded.
+    if (!current.open || current.provider !== provider || !current.consent) setOpen(false);
+    provider = current.provider;
   });
   return (
     <Dropdown.Root
@@ -34,9 +28,11 @@ export default function PanelMenu(props: { initial: PanelState; locale: string }
             {
               label: t().panelShareContext,
               choice: "checkbox",
-              // A getter: the menu keeps its rows, so a plain value would show the answer from when it opened.
+              // Rows persist while consent changes: read both the answer and saving state reactively.
               checked: () => state().allowed,
-              disabled: state().saving,
+              get disabled() {
+                return state().saving;
+              },
               action: () =>
                 window.dispatchEvent(
                   new CustomEvent("cloud.panel.consent", {
