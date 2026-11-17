@@ -3363,8 +3363,8 @@ export default function AssistantWorkspace(props: Props) {
                                 <AiChatActionsProvider
                                   actions={{
                                     onQuote: addQuote,
-                                    renderCodeAuthoringStop: (state, continuable) => (
-                                      <AssistantAuthoringStop state={state} continuable={continuable} />
+                                    renderCodeAuthoringStop: (state, continuable, superseded) => (
+                                      <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
                                     ),
                                     renderCodeDecision: (entry) => (
                                       <AssistantCodeDecisionEntry entry={entry} messages={chat.usageMessages} timeZone={props.timeZone} />
