@@ -366,7 +366,7 @@ function ActivityRowItem(props: {
       data-count={count() > 1 ? count() : undefined}
       data-expanded={open() ? "" : undefined}
       onClick={onRowClick}
-      onAuxClick={(event) => {
+      onAuxClick={(event: MouseEvent) => {
         if (event.button === 1 && href()) onRowClick(event);
       }}
     >
