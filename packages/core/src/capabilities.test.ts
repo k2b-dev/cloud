@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import {
   type AiConversation,
-  type AiInterChatMessage,
   AiResourceCredentialError,
   type AiSkill,
   AiSkillAppForbiddenError,
@@ -528,75 +527,6 @@ describe("Core AI capabilities", () => {
     expect(globalResult).toMatchObject({ ok: true, data: { data: [{ ref: resource.ref, chat: { id: chat.shortId } }] } });
   });
 
-  test("reviews the exact inter-chat target and refuses untrusted action origins", async () => {
-    spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
-    const review = await aiCapabilities.actions["ai.chat.message"].review!(
-      { text: "Please verify it." },
-      { ...context, target: { type: "core.ai.chat", id: chat.shortId } },
-    );
-    expect(review).toMatchObject({
-      ok: true,
-      data: { message: `Send this message to ${chat.title} (${chat.shortId}).`, details: [{ label: "Target chat" }, { label: "Message" }] },
-    });
-
-    const origin = spyOn(aiConversations, "getCapabilityInvocationOrigin").mockResolvedValue(null);
-    const result = await aiCapabilities.actions["ai.chat.message"].run(
-      { text: "Please verify it." },
-      { ...context, idempotencyKey: "ai-test", target: { type: "core.ai.chat", id: chat.shortId } },
-    );
-    expect(result).toEqual({
-      ok: false,
-      error: { code: "FORBIDDEN", message: "Inter-chat messages require an AI conversation turn", status: 403 },
-    });
-    expect(origin).toHaveBeenCalledWith({
-      idempotencyKey: "ai-test",
-      toolName: aiCapabilityId("core", "ai.chat.message"),
-    });
-  });
-
-  test("returns the persisted status for an idempotent message retry", async () => {
-    spyOn(aiConversations, "getCapabilityInvocationOrigin").mockResolvedValue({
-      conversationId: chat.id,
-      conversationShortId: chat.shortId,
-      turnId: "33333333-3333-4333-8333-333333333333",
-      turnShortId: "tRn234",
-      callId: "call-1",
-    });
-    const message: AiInterChatMessage = {
-      id: "44444444-4444-4444-8444-444444444444",
-      shortId: "aMs234",
-      sourceConversationId: chat.id,
-      sourceChatId: chat.shortId,
-      sourceTitle: chat.title,
-      sourceTurnId: "33333333-3333-4333-8333-333333333333",
-      sourceTurnShortId: "tRn234",
-      sourceCallId: "call-1",
-      targetConversationId: "55555555-5555-4555-8555-555555555555",
-      targetChatId: "cHt567",
-      targetTitle: "Target chat",
-      actorUserId: user.id,
-      text: "Please verify it.",
-      status: "delivered",
-      targetTurnId: "66666666-6666-4666-8666-666666666666",
-      targetTurnShortId: "tRn567",
-      targetMessageId: "77777777-7777-4777-8777-777777777777",
-      error: null,
-      createdAt: chat.createdAt,
-      deliveredAt: chat.updatedAt,
-    };
-    spyOn(aiConversations, "createInterChatMessage").mockResolvedValue({ ok: true, message });
-
-    const result = await aiCapabilities.actions["ai.chat.message"].run(
-      { text: message.text },
-      { ...context, idempotencyKey: "ai-test", target: { type: "core.ai.chat", id: chat.shortId } },
-    );
-
-    expect(result).toMatchObject({
-      ok: true,
-      data: { data: { id: message.shortId, status: "delivered" }, summary: "Sent a message to “Target chat”." },
-    });
-  });
-
   test("does not reveal missing or other users' chats", async () => {
     spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(null);
 
@@ -758,7 +688,6 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "address.reverse",
     "ai.chat.read",
     "ai.chat.resources",
-    "ai.chat.run.read",
     "ai.chat.search",
     "ai.chats.resources",
     "ai.chats.search",
@@ -809,9 +738,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "route.update",
   ];
   const actions = [
-    "ai.chat.deliver",
-    "ai.chat.message",
-    "ai.chat.run",
+    "ai.chat.send",
     "ai.skill.access.change",
     "ai.skill.create",
     "ai.skill.delete",
@@ -885,9 +812,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "code.version.reject": { destructive: false, idempotency: "required" },
     "code.version.request_changes": { destructive: false, idempotency: "required" },
     "code.version.submit": { destructive: false, idempotency: "required" },
-    "ai.chat.deliver": { destructive: false, idempotency: "required" },
-    "ai.chat.message": { destructive: false, idempotency: "required" },
-    "ai.chat.run": { destructive: false, idempotency: "required" },
+    "ai.chat.send": { destructive: false, idempotency: "required" },
     "ai.skill.access.change": { destructive: true, idempotency: "required" },
     "ai.skill.create": { destructive: false, idempotency: "required" },
     "ai.skill.delete": { destructive: true, idempotency: "required" },
@@ -897,7 +822,7 @@ test("publishes Core AI capabilities and provider-backed geo queries", () => {
     "ai.skill.references.set": { destructive: false, idempotency: "none" },
     "ai.skill.update": { destructive: false, idempotency: "none" },
   });
-  expect(aiCapabilities.actions["ai.chat.message"].input.safeParse({ chatId: chat.shortId, text: "x".repeat(10_001) }).success).toBe(false);
+  expect(aiCapabilities.actions["ai.chat.send"].input.safeParse({ chatId: chat.shortId, text: "x".repeat(10_001) }).success).toBe(false);
   expect(
     aiCapabilities.actions["ai.skill.create"].input.safeParse({
       name: "Weekly Status",
@@ -984,77 +909,8 @@ test("scopes remembered Skill approvals globally", async () => {
   }
 });
 
-test("returns a schema-valid user outcome from the inter-chat action", async () => {
-  spyOn(aiConversations, "getCapabilityInvocationOrigin").mockResolvedValue({
-    conversationId: chat.id,
-    conversationShortId: chat.shortId,
-    turnId: "33333333-3333-4333-8333-333333333333",
-    turnShortId: "tRn234",
-    callId: "call-1",
-  });
-  spyOn(aiConversations, "createInterChatMessage").mockResolvedValue({
-    ok: true,
-    message: {
-      id: "44444444-4444-4444-8444-444444444444",
-      shortId: "aMs234",
-      sourceConversationId: chat.id,
-      sourceChatId: chat.shortId,
-      sourceTitle: chat.title,
-      sourceTurnId: "33333333-3333-4333-8333-333333333333",
-      sourceTurnShortId: "tRn234",
-      sourceCallId: "call-1",
-      targetConversationId: "55555555-5555-4555-8555-555555555555",
-      targetChatId: "cHt567",
-      targetTitle: "Target chat",
-      actorUserId: user.id,
-      text: "Please verify it.",
-      status: "delivered",
-      targetTurnId: "66666666-6666-4666-8666-666666666666",
-      targetTurnShortId: "tRn567",
-      targetMessageId: "77777777-7777-4777-8777-777777777777",
-      error: null,
-      createdAt: chat.createdAt,
-      deliveredAt: chat.updatedAt,
-    },
-  });
-
-  const results = {
-    "ai.chat.message": await aiCapabilities.actions["ai.chat.message"].run(
-      { text: "Please verify it." },
-      { ...idempotentContext, target: { type: "core.ai.chat", id: chat.shortId } },
-    ),
-  };
-
-  expect(Object.keys(results)).toHaveLength(1);
-  for (const [localId, result] of Object.entries(results)) {
-    expect(result.ok).toBeTrue();
-    if (!result.ok) continue;
-    expect(result.data.summary?.length).toBeGreaterThan(0);
-    const action = (aiCapabilities.actions as unknown as Record<string, CapabilityActionDefinition>)[localId];
-    if (!action) throw new Error(`Missing Core action ${localId}`);
-    const parsed = capabilityResultSchema(action.data).safeParse(result.data);
-    if (!parsed.success) throw new Error(`Invalid Core result for ${localId}: ${JSON.stringify(parsed.error.issues)}`);
-  }
-  expect(results["ai.chat.message"]).toMatchObject({ ok: true, data: { summary: "Sent a message to “Target chat”." } });
-});
-
-test("Skill and chat reviews and summaries use the reader's language", async () => {
+test("Skill reviews and summaries use the reader's language", async () => {
   const german: CapabilityExecutionContext = { ...context, locale: "de-DE" };
-  spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
-  expect(
-    await aiCapabilities.actions["ai.chat.message"].review!(
-      { text: "Bitte prüfen." },
-      { ...german, target: { type: "core.ai.chat", id: chat.shortId } },
-    ),
-  ).toMatchObject({
-    ok: true,
-    data: {
-      message: `Diese Nachricht an ${chat.title} (${chat.shortId}) senden.`,
-      details: [{ label: "Zielchat" }, { label: "Nachricht", value: "Bitte prüfen." }],
-      links: [{ title: "Zielchat öffnen" }],
-    },
-  });
-
   const created = { name: skill.name, description: skill.description, instructions: skill.instructions };
   expect(await aiCapabilities.actions["ai.skill.create"].review!(created, german)).toMatchObject({
     ok: true,

@@ -376,6 +376,8 @@ export const aiRoutes = (() => {
             const prepared = await prepareAiChatTurn({
               assistantChat: true,
               signedInSession: true,
+              writerOrigin: ctx.actor.kind === "user" ? { kind: "person", id: ctx.actor.user.id } : undefined,
+              turnTrigger: ctx.actor.kind === "user" ? { kind: "person", id: ctx.actor.user.id } : undefined,
               conversationId: conversation.id,
               chatId: conversation.shortId,
               input: "Choice",
@@ -1047,7 +1049,9 @@ export const aiRoutes = (() => {
           if (ctx instanceof Response) return ctx;
           const conversation = await loadConversation(c, ctx);
           if (!conversation || !z.uuid().safeParse(c.req.param("messageId")).success) return notFound(c);
-          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text))
+          return (await editQueuedMessage(conversation.id, c.req.param("messageId") ?? "", c.req.valid("json").text, {
+            signedInSession: ctx.signedInSession,
+          }))
             ? respond(c, ok({ ok: true }))
             : notFound(c);
         },
@@ -1122,6 +1126,9 @@ export const aiRoutes = (() => {
         try {
           const submission = {
             assistantChat: true as const,
+            writerOrigin: ctx.actor.kind === "user" ? { kind: "person" as const, id: ctx.actor.user.id } : undefined,
+            turnTrigger: ctx.actor.kind === "user" ? { kind: "person" as const, id: ctx.actor.user.id } : undefined,
+            ...(!ctx.signedInSession ? { sourceRestricted: true as const } : {}),
             ...(ctx.signedInSession ? { signedInSession: true as const } : {}),
             conversationId: conversation.id,
             chatId: conversation.shortId,
@@ -1187,6 +1194,7 @@ export const aiRoutes = (() => {
           turnId: turn.id,
           clientRequestId: body.clientRequestId,
           text: body.message,
+          signedInSession: ctx.signedInSession,
         });
         if (!result.ok) {
           if (result.reason === "not_found") return respond(c, fail(err.notFound("Turn")));
@@ -1234,6 +1242,14 @@ export const aiRoutes = (() => {
           }
           const result = await submitAiChatTurn({
             assistantChat: true,
+            // Editing makes the message the person's own; retrying keeps its writer. Either way the
+            // person's retry runs on their own allowance, without the Code's budget attribution.
+            writerOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.writerOrigin : undefined,
+            turnTrigger: originalRunConfig?.kind !== "compact" ? originalRunConfig?.turnTrigger : undefined,
+            send: originalRunConfig?.kind !== "compact" ? originalRunConfig?.send : undefined,
+            ...(!ctx.signedInSession || (originalRunConfig?.kind !== "compact" && originalRunConfig?.sourceRestricted)
+              ? { sourceRestricted: true as const }
+              : {}),
             ...(ctx.signedInSession ? { signedInSession: true as const } : {}),
             conversationId: conversation.id,
             chatId: conversation.shortId,
@@ -1252,6 +1268,7 @@ export const aiRoutes = (() => {
             truncateFromSeq: target.seq,
             fileSnapshot: originalRunConfig?.kind !== "compact" ? originalRunConfig?.files : undefined,
             retrySourceTurnId: target.loopId ?? undefined,
+            ...(body.content?.length ? { retryEdited: true as const } : {}),
             // Local context and tools belong to the retrying client, not the original workspace.
             clientToolIds:
               body.clientToolIds ??

@@ -326,7 +326,7 @@ app.schedule({ cron: "0 7 * * 1", timeZone: "Europe/Berlin", name: "weekly-quote
   });
   if (typeof quote.output !== "string") return;
   // Fictional chat ID of the owner's chat.
-  await core.ai.chat("Chat23").deliver({ text: quote.output, idempotencyKey: `weekly-quote:${scheduledAt ?? runId}` });
+  await core.ai.chat("Chat23").send({ text: "Confirm the supplied quote in one sentence.", context: quote.output, idempotencyKey: `weekly-quote:${scheduledAt ?? runId}` });
 });
 export default app;
 ```
@@ -348,13 +348,13 @@ export default app;
       ]
     },
     {
-      "operation": "core.ai.chat.deliver",
+      "operation": "core.ai.chat.send",
       "target": { "type": "core.ai.chat", "id": "Chat23" },
-      "replies": [{ "ok": true, "data": { "id": "Msg7Ab", "status": "delivered", "targetChatId": "Chat23" } }]
+      "replies": [{ "ok": true, "data": { "id": "44000000-0000-4000-8000-000000000001", "chatId": "Chat23", "status": "queued", "reason": null, "origin": { "kind": "automation", "id": "c_quote" } } }]
     }
   ],
   "runs": [
-    { "entrypoint": "weekly-quote", "expect": { "ok": true, "calls": [{ "operation": "core.ai.generate", "result": { "ok": true, "data": { "data": { "output": "A fresh week, a fresh start.", "model": { "id": "fictional-model" }, "usage": null } } } }, { "operation": "core.ai.chat.deliver", "replayed": false }] } },
+    { "entrypoint": "weekly-quote", "expect": { "ok": true, "calls": [{ "operation": "core.ai.generate", "result": { "ok": true, "data": { "data": { "output": "A fresh week, a fresh start.", "model": { "id": "fictional-model" }, "usage": null } } } }, { "operation": "core.ai.chat.send", "replayed": false }] } },
     { "entrypoint": "weekly-quote", "scheduledAt": null, "expect": { "ok": false, "error": "code_ai_daily_budget_limit", "calls": [{ "operation": "core.ai.generate", "result": { "ok": false, "error": "code_ai_daily_budget_limit" } }] } }
   ]
 }

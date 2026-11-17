@@ -46,7 +46,7 @@ import { app, core } from "@sdk";
 
 app.schedule({ at: "2026-12-01T09:00:00+01:00", timeZone: "Europe/Berlin", name: "yearly-report-reminder", title: "Yearly report reminder" }, async () => {
   // Fictional chat ID; discover the owner's chat first.
-  await core.ai.chat("Chat23").deliver({
+  await core.ai.chat("Chat23").send({
     text: "Reminder: the yearly report is due today.",
     idempotencyKey: "yearly-report-reminder",
   });

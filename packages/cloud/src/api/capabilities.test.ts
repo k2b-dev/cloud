@@ -2736,53 +2736,50 @@ test("target HTTP statuses survive runner dispatch and Code page data without pa
   }
 });
 
-test.each(["ai.chat.deliver", "ai.chat.run"])(
-  "%s and business-key Actions share one cross-run idempotency scope",
-  async (chatCapability) => {
-    const scopes: Parameters<typeof claimIdempotency>[0][] = [];
-    claimIdempotency = async (scope) => {
-      scopes.push(scope);
-      return { state: "claimed" };
-    };
-    const call = async (workloadRun?: string, delivery = true) => {
-      const appId = delivery ? "core" : "demo";
-      const capabilityId = delivery ? chatCapability : "rename";
-      const capability = entry(appId);
-      capability.manifest.actions[0] = { ...capability.manifest.actions[0]!, localId: capabilityId, idempotency: "required" };
-      const response = await dispatchCapability({
-        origin: "app",
-        appId,
-        capabilityId,
-        kind: "actions",
-        codeRun: true,
-        workloadRun,
-        request: new Request("https://cloud.example.test/action", { method: "POST", headers: { "idempotency-key": "result" } }),
-        input: { id: "one", name: "Two" },
-        dependencies: {
-          getCapability: async () => capability,
-          fetch: async (_url, init) => {
-            expect(new Headers(init?.headers).get("idempotency-key")).toBe("result");
-            return Response.json({ data: { id: "one", name: "Two" } });
-          },
+test.each(["ai.chat.send"])("%s and business-key Actions share one cross-run idempotency scope", async (chatCapability) => {
+  const scopes: Parameters<typeof claimIdempotency>[0][] = [];
+  claimIdempotency = async (scope) => {
+    scopes.push(scope);
+    return { state: "claimed" };
+  };
+  const call = async (workloadRun?: string, delivery = true) => {
+    const appId = delivery ? "core" : "demo";
+    const capabilityId = delivery ? chatCapability : "rename";
+    const capability = entry(appId);
+    capability.manifest.actions[0] = { ...capability.manifest.actions[0]!, localId: capabilityId, idempotency: "required" };
+    const response = await dispatchCapability({
+      origin: "app",
+      appId,
+      capabilityId,
+      kind: "actions",
+      codeRun: true,
+      workloadRun,
+      request: new Request("https://cloud.example.test/action", { method: "POST", headers: { "idempotency-key": "result" } }),
+      input: { id: "one", name: "Two" },
+      dependencies: {
+        getCapability: async () => capability,
+        fetch: async (_url, init) => {
+          expect(new Headers(init?.headers).get("idempotency-key")).toBe("result");
+          return Response.json({ data: { id: "one", name: "Two" } });
         },
-      });
-      expect(response.status).toBe(200);
-    };
-    try {
-      await call("run-1");
-      await call("run-1");
-      await call("run-2");
-      await call();
-      await call("run-1", false);
-      await call("run-2", false);
-      expect(scopes).toHaveLength(6);
-      expect(scopes[0]).toEqual(scopes[1]);
-      expect(scopes[0]).toEqual(scopes[2]);
-      expect(scopes[0]).toEqual(scopes[3]);
-      expect(scopes[4]).toEqual(scopes[5]);
-      expect(scopes.every((scope) => scope.keyHash === scopes[0]?.keyHash)).toBeTrue();
-    } finally {
-      claimIdempotency = async () => ({ state: "claimed" });
-    }
-  },
-);
+      },
+    });
+    expect(response.status).toBe(200);
+  };
+  try {
+    await call("run-1");
+    await call("run-1");
+    await call("run-2");
+    await call();
+    await call("run-1", false);
+    await call("run-2", false);
+    expect(scopes).toHaveLength(6);
+    expect(scopes[0]).toEqual(scopes[1]);
+    expect(scopes[0]).toEqual(scopes[2]);
+    expect(scopes[0]).toEqual(scopes[3]);
+    expect(scopes[4]).toEqual(scopes[5]);
+    expect(scopes.every((scope) => scope.keyHash === scopes[0]?.keyHash)).toBeTrue();
+  } finally {
+    claimIdempotency = async () => ({ state: "claimed" });
+  }
+});

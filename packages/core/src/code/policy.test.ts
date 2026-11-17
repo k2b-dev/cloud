@@ -257,8 +257,17 @@ test("public routes require a deliberate policy choice, including historical tab
   }
 });
 
-test("AI inference classification excludes delivery and stored-run reads", () => {
-  for (const capability of ["core.ai.generate", "core.ai.decide", "core.ai.chat.run"]) expect(isCodeAiOperation(capability)).toBe(true);
-  for (const capability of ["core.ai.chat.deliver", "core.ai.chat.run.read", "mail.message.read", "other.ai.generate"])
+test("AI inference classification includes only generate, decide and send", () => {
+  for (const capability of ["core.ai.generate", "core.ai.decide", "core.ai.chat.send"]) expect(isCodeAiOperation(capability)).toBe(true);
+  for (const capability of [
+    "core.ai.chat.read",
+    "core.ai.chat.search",
+    "core.ai.chats.search",
+    "core.ai.chat.create",
+    "core.ai.chat.resources",
+    "core.ai.skill.read",
+    "mail.message.read",
+    "other.ai.generate",
+  ])
     expect(isCodeAiOperation(capability)).toBe(false);
 });

@@ -3,7 +3,8 @@ import { AI_SHORT_ID_PATTERN, ChatTaskExportPageSchema } from "@k2b/cloud/ai";
 import { compileCapabilityManifest } from "@k2b/cloud/capabilities/testing";
 import { createCodeTestBridge, generateCodeSdk } from "@k2b/cloud/code";
 import { z } from "zod";
-import { aiChatRunAction, aiChatRunReadQuery } from "../../../core/src/ai-chat-run";
+import { aiChatSendAction } from "../../../core/src/ai-chat-send";
+import { aiCapabilities } from "../../../core/src/capabilities";
 import { mailAutomationExportPageSchema } from "../../../mail/src/automation-export-contracts";
 import { ConversationListDataSchema, ConversationListInputSchema } from "../../../mail/src/capability-contracts";
 import {
@@ -97,8 +98,8 @@ test("agent mocks use the real start Action and snapshot Query contracts with th
   const manifest = compileCapabilityManifest("core", {
     protocolVersion: 2,
     types: { "ai.chat": { title: "Gustav chat", description: "The owner's original Gustav chat." } },
-    queries: { "ai.chat.run.read": aiChatRunReadQuery },
-    actions: { "ai.chat.run": aiChatRunAction },
+    queries: { "ai.chat.read": aiCapabilities.queries["ai.chat.read"] },
+    actions: { "ai.chat.send": aiChatSendAction },
   });
   const sdk = generateCodeSdk([manifest], { mode: "personal" });
   const caseData = AUTOMATION_REBUILD_CASES[2];
@@ -118,7 +119,7 @@ test("agent mocks use the real start Action and snapshot Query contracts with th
   if (!later.ok) throw new Error("Expected fictional snapshot");
   expect(snapshot).toEqual({ data: later.data });
   expect(run).toMatchObject({ status: "queued" });
-  expect(snapshot).toMatchObject({ data: { status: "waiting_for_approval" } });
+  expect(snapshot).toMatchObject({ data: { message: { status: "waiting" } } });
   expect(bridge.failure()).toBeNull();
 });
 
