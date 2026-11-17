@@ -1,13 +1,15 @@
 import { afterAll, beforeAll, beforeEach, expect, setSystemTime, spyOn, test } from "bun:test";
 import { Readable } from "node:stream";
+import { bindProcessSync, unbindProcessSync } from "@k2b/cloud";
 import * as decision from "@k2b/cloud/ai";
 import type { Provider } from "@k2b/nessi";
 import { err } from "@k2b/stdlib";
+import { createSync, type Sync } from "@k2b/sync";
 import { createLocalJWKSet, exportJWK, generateKeyPair, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import { APP_KEY_FIXTURES } from "../../../../scripts/fixtures/app-key-fixtures";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
-import { suiteFor, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
+import { connectTestNats, suiteFor, testSyncNamespace, useFreshDatabase } from "../../../../scripts/fixtures/test-infra";
 import { aiDecisionQuery } from "../../../core/src/ai-decision-capability";
 import { decisionInputFixture, decisionResultFixture } from "../../../core/src/ai-decision-capability.test-fixture";
 import { aiGenerationQuery } from "../../../core/src/ai-generation-capability";
@@ -176,8 +178,14 @@ const baseEntry: CapabilityRegistryEntry = {
   manifest,
 };
 
-suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call authorization", () => {
+suiteFor(
+  "database",
+  "valkey",
+  "nats",
+)("C4 signed runner bridge and independent per-call authorization", () => {
   let database: Awaited<ReturnType<typeof useFreshDatabase>>;
+  let connection: Awaited<ReturnType<typeof connectTestNats>>;
+  let sync: Sync;
   let runner: AppKey, other: AppKey;
   let signer: { kid: string; key: CryptoKey; signUntil: Date };
   let key: JWTVerifyGetKey;
@@ -410,6 +418,10 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
   beforeAll(async () => {
     setSystemTime(now);
     database = await useFreshDatabase("code_bridge_c4");
+    connection = await connectTestNats();
+    sync = createSync({ connection, namespace: testSyncNamespace("code-bridge"), application: "core", defaults: { replicas: 1 } });
+    bindProcessSync(sync, connection);
+    await sync.ready();
     await migrateAuth();
     await migrateRailPreferences();
     await migrateRailShortcuts();
@@ -642,6 +654,9 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     aiSettingsSpy?.mockRestore();
     registrySpy?.mockRestore();
     capabilitySpy?.mockRestore();
+    unbindProcessSync();
+    await sync?.drain();
+    await connection?.drain();
     await database?.drop();
     setSystemTime();
   });
@@ -2710,6 +2725,11 @@ suiteFor("database", "valkey")("C4 signed runner bridge and independent per-call
     const snapshot = () => sql`SELECT short_id,work_status,revision,snoozed_until FROM mail.conversations
       WHERE mailbox_id=${fixture.mailboxId}::uuid ORDER BY short_id`;
     const before = await snapshot();
+    // Fresh tiny tables have no planner statistics. Their default estimates make
+    // assignment reviews spend over a second compiling JIT rather than reading
+    // these few rows. Analyze the fixture; keep the real reviews and 5s timeout.
+    await sql`ANALYZE auth.users,auth.service_accounts,auth.access,auth.user_groups_v2,auth.group_groups_v2,
+      mail.conversations,mail.conversation_assignees,mail.mailbox_access,mail.mailbox_assigned_access`;
     const mutations = [
       ["conversation.status.set", { conversationId: "Cv4g00", expectedRevision: 1, status: "done" }],
       ["conversation.status.set.batch", { conversationIds: ["Cv4g01", "Cv4g00"], status: "done" }],

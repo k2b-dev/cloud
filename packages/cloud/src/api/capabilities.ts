@@ -327,7 +327,7 @@ export type CapabilityDispatchParams = {
   mandate?: MandatedCapabilityAuthority;
   callingAppId?: string;
   /** Internal observation only: called immediately before attempting the app request. */
-  onUpstreamAttempt?: () => void;
+  onUpstreamAttempt?: () => void | Promise<void>;
   /** Internal observation of the actual provider status, before body validation or transport projection. */
   onUpstreamResponse?: (status: number) => void;
   onReplay?: () => void;
@@ -920,7 +920,7 @@ const runCapabilityDispatch = async (
 
   let response: Response;
   try {
-    params.onUpstreamAttempt?.();
+    await params.onUpstreamAttempt?.();
     const fetchResponse = () =>
       fetchUpstream(
         `${entry.endpoint}/${params.appCaller ? `app-capabilities/${params.kind}` : params.workload ? "app-queries" : params.kind}/${encodeURIComponent(params.capabilityId)}${params.review ? "/review" : ""}`,
@@ -1704,6 +1704,7 @@ export async function dispatchCodeSdkCall({
       onUpstreamResponse: (status) => {
         targetStatus = status;
       },
+      onUpstreamAttempt: authority.onReceiptCommitted,
       onReplay: authority.onReplay,
       workloadRun: claims.runId,
       workloadGeneration: claims.generation,

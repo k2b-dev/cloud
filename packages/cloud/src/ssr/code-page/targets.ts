@@ -70,7 +70,7 @@ export const codeDynamicOperations = (
 };
 
 /** A called Query or Action as people read it: its title in the reader's language and its app's name, from the registry. */
-export type CodeOperationLabel = { title: string; app: string | null };
+export type CodeOperationLabel = { title: string; app: string | null; running?: string; done?: string };
 export type CodeOperationLabels = Readonly<Record<string, CodeOperationLabel>>;
 
 /** "Import file · Files"; an operation the registry does not name keeps its ID. */

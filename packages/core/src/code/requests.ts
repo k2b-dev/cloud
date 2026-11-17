@@ -10,6 +10,7 @@ import { type CodeCheckedVersionManifest, CodeCheckedVersionManifestSchema } fro
 import { CodeDataError } from "./access";
 import { codeAdmissionLock } from "./admission";
 import type { CodeOwner } from "./contracts";
+import { persistCodeOutput } from "./output";
 import { codeSettings } from "./settings";
 import { type CodeRow, codeRowOwner, findCode, insertCodeRun } from "./store";
 import { requireCodeVersionApproval } from "./versions";
@@ -122,7 +123,10 @@ export async function requestCodeRoute(input: {
   } finally {
     // Transient visitor input/output never becomes the Code page's retained payload. Calls keep their existing audit contract.
     await sql.begin(async (db) => {
-      await db`SELECT id FROM code.runs WHERE id=${runId}::uuid FOR UPDATE`;
+      const [run] = await db<
+        { generation: number; console_output: unknown }[]
+      >`SELECT generation,console_output FROM code.runs WHERE id=${runId}::uuid FOR UPDATE`;
+      if (run && run.console_output === null) await persistCodeOutput(runId, db, run.generation);
       await db`UPDATE code.calls SET state='uncertain',ended_at=clock_timestamp(),result='{"ok":false,"error":{"code":"code_result_unknown"}}'::json
         WHERE run_id=${runId}::uuid AND state='running'`;
       await db`UPDATE code.runs SET outcome=CASE WHEN state IN('queued','running') THEN ${input.signal.aborted ? "code_request_cancelled" : "code_request_timeout"} ELSE outcome END,state=CASE WHEN state IN('queued','running') THEN 'cancelled' ELSE state END,

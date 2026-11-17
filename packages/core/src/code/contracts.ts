@@ -1,4 +1,10 @@
-import { CAPABILITY_MAX_RESULT_BYTES, CloudResourceRefSchema, CODE_BRIDGE_REFUSAL_KINDS, CodePageLinksSchema } from "@k2b/cloud/contracts";
+import {
+  CAPABILITY_MAX_RESULT_BYTES,
+  CloudResourceRefSchema,
+  CODE_BRIDGE_REFUSAL_KINDS,
+  CodeOutputWindowSchema,
+  CodePageLinksSchema,
+} from "@k2b/cloud/contracts";
 import { z } from "zod";
 
 export const CodeEventDeliverySchema = z
@@ -322,6 +328,9 @@ export const codeQueryContracts = {
           .object({
             input: z.json(),
             output: z.json().nullable(),
+            consoleOutput: CodeOutputWindowSchema.nullable()
+              .optional()
+              .describe("Sanitized output tail on the first call page; null on later pages. Editors only."),
             inputChunked: z.boolean(),
             outputChunked: z.boolean(),
             content: textChunk.nullable(),

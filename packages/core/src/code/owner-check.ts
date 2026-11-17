@@ -3,6 +3,7 @@ import { cancelResourceEventSubscriptions } from "@k2b/cloud/services/app-events
 import type { SQL } from "bun";
 import { CodeOwnerUnavailableError } from "./access";
 import type { Code } from "./contracts";
+import { persistCodeOutput } from "./output";
 import { readCodeResourceOwnerTitle } from "./owner-transport";
 
 /** Read the current owner's title independently of whoever activated resource Code. */
@@ -55,8 +56,11 @@ export async function checkCodeOwnerBeforeRun(code: Code, signal?: AbortSignal):
     await cancelResourceEventSubscriptions(tx, "core.code", code.id);
     await tx`UPDATE code.codes SET state='paused',pause_reason='owner_not_found',pause_rows='{}',pause_policy_revision=NULL
       WHERE id=${code.id} AND state<>'deleting'`;
-    await tx`UPDATE code.runs SET state='skipped',outcome='owner_not_found',ended_at=clock_timestamp()
-      WHERE code_id=${code.id} AND state='queued'`;
+    const stopped = await tx<
+      { id: string; generation: number }[]
+    >`UPDATE code.runs SET state='skipped',outcome='owner_not_found',ended_at=clock_timestamp()
+      WHERE code_id=${code.id} AND state='queued' RETURNING id,generation`;
+    for (const run of stopped) await persistCodeOutput(run.id, tx, run.generation);
     return false;
   });
 }

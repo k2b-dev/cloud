@@ -193,6 +193,44 @@ suiteFor(
       await meter.close();
     }
   });
+  test("private details delivery costs no SQL; removing an editor share revokes the related details key before further payload", async () => {
+    await sql`UPDATE auth.access SET permission='write' WHERE id IN(SELECT access_id FROM code.shares WHERE code_id=${codeId})`;
+    const who = await viewer(reader);
+    const engine = createLiveEngine({ appId: "core", topic: () => topic, channels: codeLiveChannels });
+    const frames: { t: string; data?: unknown }[] = [];
+    const details = `code.details:${codeId}`;
+    const outbox = liveOutbox("core", (row) => topic.publish({ data: row.payload, orderingKey: row.ordering_key, idempotencyKey: row.id }));
+    const meter = await meterSql();
+    try {
+      const socket = engine.open(
+        { send: (frame) => frames.push(JSON.parse(frame)), close: () => {}, getBufferedAmount: () => 0 },
+        who,
+        async () => who,
+      );
+      socket.message(JSON.stringify({ t: "sub", id: "details", channel: "codeDetails", scope: { codeId }, after: await topic.head() }));
+      await until(() => frames.some((frame) => frame.t === "ready"));
+      const data = { type: "code.call", runId, ordinal: 1, operation: "example.read", state: "running" };
+      expect(
+        await meter.during(async () => {
+          await topic.publish({ data: { v: 1, k: details, d: data } });
+          await until(() => frames.some((frame) => frame.t === "event"));
+        }),
+      ).toEqual([]);
+      expect(frames.find((frame) => frame.t === "event")?.data).toEqual(data);
+      await sql`UPDATE auth.access SET permission='read' WHERE id IN(SELECT access_id FROM code.shares WHERE code_id=${codeId})`;
+      // Share invalidations use codeId. The private channel's accessKey must map back to that same owner key.
+      await topic.publish({ data: { v: 1, k: codeId, a: true } });
+      await until(() => frames.some((frame) => frame.t === "revoked"));
+      await topic.publish({ data: { v: 1, k: details, d: { ...data, state: "succeeded" } } });
+      await connection.flush();
+      await Bun.sleep(30);
+      expect(frames.filter((frame) => frame.t === "event")).toHaveLength(1);
+    } finally {
+      engine.stop();
+      await outbox.stop();
+      await meter.close();
+    }
+  });
 });
 
 async function until(ready: () => boolean) {

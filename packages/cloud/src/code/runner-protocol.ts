@@ -2,10 +2,13 @@ import { z } from "zod";
 import { CodeInternetOriginSchema } from "../contracts/code-internet";
 import { ChatRunReplySchema } from "./chat-run";
 import { CodeCheckResultSchema } from "./checker-contract";
+import { CodeOutputBatchSchema } from "./output";
 import { CodeRouteResponseSchema } from "./request-contract";
 import { CodeTestResultSchema } from "./test-contract";
 
-/** Private Core routes. Every POST uses a fresh cloud-app+jwt proof over its exact path and UTF-8 body. */
+/** Private Core routes. Execution/enrollment require a fresh cloud-app+jwt proof.
+ * Output alone uses the Core-issued lease token and shared live lease cache.
+ */
 export const RUNNER_PATHS = {
   config: "/_internal/code/runner/config",
   fetch: "/_internal/code/runner/fetch",
@@ -13,6 +16,7 @@ export const RUNNER_PATHS = {
   heartbeat: "/_internal/code/runner/heartbeat",
   complete: "/_internal/code/runner/complete",
   call: "/_internal/code/runner/call",
+  output: "/_internal/code/runner/output",
   jobInput: "/_internal/code/runner/job-input",
   jobCall: "/_internal/code/runner/job-call",
 } as const;
@@ -129,7 +133,10 @@ export type RunnerBundleRequest = z.infer<typeof RunnerBundleRequestSchema>;
 /** Core records these bounded, payload-free terminal outcomes; lease_lost stays owned by Core's lease reconciler. */
 export const RunnerOutcomeSchema = z.enum(["succeeded", "failed", "wall_clock_limit", "memory_limit", "stalled", "lease_lost"]);
 export type RunnerOutcome = z.infer<typeof RunnerOutcomeSchema>;
-/** Terminal reports carry no exception text or result payload. */
+/** Terminal reports still carry no exception text. Sandbox console/error text may
+ * leave only through the separate bounded output route, where Core redacts it
+ * before any publication or storage; it never becomes a terminal error message.
+ */
 export const RunnerCompleteRequestSchema = RunnerLeaseProofSchema.extend({
   outcome: RunnerOutcomeSchema,
   response: CodeRouteResponseSchema.optional(),
@@ -138,6 +145,8 @@ export type RunnerCompleteRequest = z.infer<typeof RunnerCompleteRequestSchema>;
 /** The only sandbox binding. The supervisor attaches identity; code cannot select a token, run or generation. */
 export const RunnerCallRequestSchema = RunnerLeaseProofSchema.extend({ operation: id, input: z.json() }).strict();
 export type RunnerCallRequest = z.infer<typeof RunnerCallRequestSchema>;
+export const RunnerOutputRequestSchema = RunnerLeaseProofSchema.extend({ batch: CodeOutputBatchSchema }).strict();
+export type RunnerOutputRequest = z.infer<typeof RunnerOutputRequestSchema>;
 /** Stable codes plus a validated refused HTTPS origin; raw exception messages never enter the sandbox. */
 export const RunnerCallErrorSchema = z
   .object({
@@ -172,6 +181,7 @@ export class RunnerCallError extends Error {
 }
 /** Transport-neutral seam used by C13 and the C14/C17 mock bridge. No database or queue client belongs here. */
 export interface RunnerBridge {
+  output?(request: RunnerOutputRequest, signal: AbortSignal): Promise<void>;
   configure(signal: AbortSignal): Promise<RunnerConfig>;
   fetch(request: RunnerFetchRequest, signal: AbortSignal): Promise<RunnerFetchResponse>;
   bundle(request: RunnerBundleRequest, signal: AbortSignal): Promise<string>;
