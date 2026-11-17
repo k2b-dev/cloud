@@ -387,13 +387,20 @@ export const drainQueuedMessages = async (
             return { turnId: result.turn.id };
           } catch (error) {
             // The savepoint rolled back: lock contention, serialization retries and cancellation leave admission unchanged.
-            if (
-              typeof error === "object" &&
-              error !== null &&
-              (("errno" in error && ["55P03", "40P01", "40001", "57014"].includes(String(error.errno))) ||
-                ("code" in error && ["55P03", "40P01", "40001", "57014"].includes(String(error.code))))
-            )
-              return null;
+            if (typeof error === "object" && error !== null) {
+              const sqlState = ["errno" in error ? String(error.errno) : "", "code" in error ? String(error.code) : ""].find((state) =>
+                ["55P03", "40P01", "40001", "57014"].includes(state),
+              );
+              if (sqlState) {
+                log.warn("Queued message start contended", {
+                  code: "queue_start_contended",
+                  conversationId: chat.conversation_id,
+                  messageId: row.id,
+                  sqlState,
+                });
+                return null;
+              }
+            }
             const reason = error instanceof Error ? error.message : String(error);
             if (reason === "Queued message is no longer ready." || reason.includes("idx_ai_turns_one_active_per_conversation")) return null;
             const code =
