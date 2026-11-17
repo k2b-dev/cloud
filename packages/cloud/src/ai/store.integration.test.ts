@@ -150,47 +150,64 @@ suite("AI conversation store integration", () => {
     }
   });
 
-  test("a tool answer and a stop of the same turn settle without a deadlock", async () => {
+  test("a tool answer waits for a stop that holds its turn, and both settle without a deadlock", async () => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     try {
-      for (let round = 0; round < 5; round++) {
-        const { turn } = await aiConversations.submitChatTurn({
-          conversationId: chat.id,
-          modelId: "test-model",
-          userMessage: userMessage(`Round ${round}`),
-          runConfig,
-        });
-        const callId = `call-${round}`;
-        await aiConversations.savePendingTurnAction({
+      const { turn } = await aiConversations.submitChatTurn({
+        conversationId: chat.id,
+        modelId: "test-model",
+        userMessage: userMessage("Answer the tool"),
+        runConfig,
+      });
+      const callId = "call-overlap";
+      await aiConversations.savePendingTurnAction({
+        conversationId: chat.id,
+        turnId: turn.id,
+        callId,
+        kind: "client_tool",
+        status: "pending",
+        name: "browser-state",
+        args: {},
+        approvalScope: "browser-state",
+        allowAlways: false,
+        frontendMode: "client",
+        resolvedEvent: null,
+      });
+      let answer: Promise<unknown> | undefined;
+      // The stop's order, as completeTurn takes it: the turn, then its actions, then its status.
+      await sql.begin(async (stop) => {
+        const [stopSession] = await stop<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        if (!stopSession) throw new Error("The stop has no session");
+        const { pid } = stopSession;
+        await stop`SELECT id FROM ai.turns WHERE id=${turn.id}::uuid FOR UPDATE`;
+        // A tool result without a signed-in session also marks the turn, so the answer needs the turn row.
+        answer = aiConversations.resolvePendingTurnAction({
           conversationId: chat.id,
           turnId: turn.id,
           callId,
-          kind: "client_tool",
-          status: "pending",
-          name: "browser-state",
-          args: {},
-          approvalScope: "browser-state",
-          allowAlways: false,
-          frontendMode: "client",
-          resolvedEvent: null,
+          event: { type: "tool_result", callId, result: { value: 1 } },
+          signedInSession: false,
         });
-        // Both take the turn first, then its actions; neither waits on the other forever.
-        const [answer, stop] = await Promise.allSettled([
-          aiConversations.resolvePendingTurnAction({
-            conversationId: chat.id,
-            turnId: turn.id,
-            callId,
-            event: { type: "tool_result", callId, result: { value: round } },
-            signedInSession: true,
-          }),
-          aiConversations.completeTurn({ conversationId: chat.id, turnId: turn.id, status: "aborted" }),
-        ]);
-        expect(answer.status).toBe("fulfilled");
-        expect(stop.status).toBe("fulfilled");
-        const [row] = await sql<{ status: string }[]>`SELECT status FROM ai.turns WHERE id=${turn.id}::uuid`;
-        expect(row?.status).toBe("aborted");
-      }
+        for (let waited = 0; ; waited++) {
+          const [blocked] = await sql<{ count: number }[]>`
+            SELECT count(*)::int AS count FROM pg_stat_activity WHERE ${pid}::int = ANY(pg_blocking_pids(pid))`;
+          if (blocked?.count) break;
+          if (waited > 200) throw new Error("The tool answer never waited for the stop");
+          await Bun.sleep(10);
+        }
+        // Holding the action here as well would deadlock: the answer must wait without holding it.
+        await stop`UPDATE ai.pending_actions SET status='aborted', resolved_at=now()
+          WHERE turn_id=${turn.id}::uuid AND status='pending'`;
+        await stop`UPDATE ai.turns SET status='aborted', completed_at=now() WHERE id=${turn.id}::uuid`;
+      });
+      // The answer finds a finished turn and takes nothing.
+      expect(await answer).toBeNull();
+      const [row] = await sql<{ status: string; restricted: boolean }[]>`
+        SELECT status, COALESCE((run_config->>'sourceRestricted')::boolean,false) AS restricted FROM ai.turns WHERE id=${turn.id}::uuid`;
+      expect(row).toEqual({ status: "aborted", restricted: false });
+      const [action] = await sql<{ status: string }[]>`SELECT status FROM ai.pending_actions WHERE turn_id=${turn.id}::uuid`;
+      expect(action?.status).toBe("aborted");
     } finally {
       await cleanupFixture({ userId, conversationIds: [chat.id] });
     }
