@@ -505,9 +505,13 @@ suiteFor(
     await expect(receiveCodeOutput(lease, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
       RunnerLeaseLostError,
     );
-    expect((await replayCodeOutput(lease.runId)).entries).toEqual([
+    const page = await readCodeRun({ codeId: code.codeId, runId: lease.runId }, context());
+    expect(page.run.state).toBe("queued");
+    expect(page.contents?.consoleOutput?.entries).toEqual([
       { id: "1:1:0", kind: "log", at: new Date().toISOString(), level: "log", text: [{ type: "text", text: "before recovery" }] },
     ]);
+    const [stored] = await sql<{ console_output: unknown }[]>`SELECT console_output FROM code.runs WHERE id=${lease.runId}::uuid`;
+    expect(stored!.console_output).toBeNull();
   });
   test("HTTP failure never requeues even before the first effect", async () => {
     const code = await fixture(owner, true, true);

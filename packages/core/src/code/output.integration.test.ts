@@ -329,6 +329,53 @@ suiteFor(
       { id: "1:2:0", kind: "log" as const, at: new Date().toISOString(), level: "log", text: [{ type: "secret", name: "TOKEN" }] },
     ]);
   });
+  for (const source of ["cadence", "batch", "sequence"] as const) {
+    test(`harden deferred output continuity with ${source} loss`, async () => {
+      setSystemTime(fixed);
+      const proof = await attempt();
+      const value = "abcdefgh";
+      await rememberCodeOutputSecrets({ ...claims, ...proof }, [{ name: "TOKEN", value, sent: value }]);
+      await receiveCodeOutput(proof, batch(1, "abcd"));
+      if (source === "cadence") await receiveCodeOutput(proof, batch(2, "efgh"));
+      setSystemTime(fixed + 1000);
+      const next = batch(source === "batch" ? 2 : 3, "ordinary");
+      if (source === "batch") {
+        next.droppedLines = 1;
+        next.droppedBytes = Buffer.byteLength("efgh");
+      }
+      await receiveCodeOutput(proof, next);
+      const user = await accounts.users.get({ id: owner });
+      if (!user) throw new Error("Missing output fixture user");
+      const read = () =>
+        readCodeRun(
+          { codeId, runId: proof.runId },
+          {
+            authority: {
+              actor: { kind: "user", user },
+              accessSubject: { type: "user", userId: owner },
+              scopes: [],
+              credentialKind: "session",
+            },
+          },
+        );
+      const page = await read();
+      expect(page.contents?.consoleOutput?.entries.filter(isCodeOutputLogEntry).flatMap((entry) => entry.text)).toEqual([
+        { type: "secret", name: "TOKEN" },
+      ]);
+      expect(page.contents?.consoleOutput?.droppedLines).toBeGreaterThanOrEqual(1);
+      const longest = Math.max(...[...secretEchoReplacements([{ name: "TOKEN", value, sent: value }]).keys()].map((text) => text.length));
+      setSystemTime(fixed + 2000);
+      await receiveCodeOutput(proof, batch(next.seq + 1, ".".repeat(longest)));
+      setSystemTime(fixed + 3000);
+      await receiveCodeOutput(proof, batch(next.seq + 2, "later"));
+      const recovered = await read();
+      expect(recovered.contents?.consoleOutput?.entries.filter(isCodeOutputLogEntry).flatMap((entry) => entry.text)).toEqual([
+        { type: "secret", name: "TOKEN" },
+        { type: "text", text: "later" },
+      ]);
+      expect(recovered.contents?.consoleOutput?.droppedLines).toBeGreaterThan(page.contents!.consoleOutput!.droppedLines);
+    });
+  }
   test("harden bounded replacement admission, deduplication and compiled revision reuse", async () => {
     setSystemTime(fixed);
     const budget = LIVE_LIMITS.frameBytes;

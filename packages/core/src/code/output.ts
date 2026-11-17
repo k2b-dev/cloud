@@ -49,6 +49,7 @@ const StateSchema = z.object({
   inputSeq: z.number(),
   pending: z.string().nullable(),
   redactionRevision: z.number(),
+  redactionSkip: z.number().int().nonnegative().safe().default(0),
   countedDropLines: z.number(),
   countedDropBytes: z.number(),
   window: CodeOutputWindowSchema,
@@ -77,6 +78,7 @@ export async function openCodeOutput(
     inputSeq: 0,
     pending: null,
     redactionRevision: 0,
+    redactionSkip: 0,
     countedDropLines: 0,
     countedDropBytes: 0,
     window: emptyCodeOutput(lease.generation),
@@ -191,7 +193,10 @@ async function redactorFor(claims: Pick<CodeRunTokenClaims, "runId" | "generatio
   return redactor;
 }
 export function sanitizeCodeOutput(batch: CodeOutputBatch, replacements: ReadonlyMap<string, string>) {
-  return redactOutput(batch.entries, compileOutputRedaction(replacements), null, true).entries;
+  return redactOutput(batch.entries, compileOutputRedaction(replacements), null, true, {
+    lost: batch.droppedLines > 0 || batch.droppedBytes > 0,
+    skip: 0,
+  }).entries;
 }
 const PendingSchema = z.object({
   kind: CodeOutputBatchSchema.shape.entries.element.shape.kind,
@@ -275,14 +280,19 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
   const pending = state.pending
     ? PendingSchema.parse(JSON.parse(purposeSecretCipher(secretPurpose).decrypt(state.pending, secretContext(claims))))
     : null;
-  const redacted = redactOutput(batch.entries, await redactorFor(claims, state.deadlineAt, state.redactionRevision), pending);
+  const redacted = redactOutput(batch.entries, await redactorFor(claims, state.deadlineAt, state.redactionRevision), pending, false, {
+    // Counters locate no individual gap within a batch. Sequence gaps also cover
+    // failed delivery and saturated loss counters without touching the hot-path fence.
+    lost: batch.droppedLines > 0 || batch.droppedBytes > 0 || counts.seq > state.inputSeq || batch.seq > state.inputSeq + 1,
+    skip: state.redactionSkip,
+  });
   // Identity belongs to the accepted stream position, survives window eviction and
   // replay, and needs neither caller-selected keys nor another persistence model.
   const entries = redacted.entries.map((entry, index) => ({
     ...entry,
     id: `${state.generation}:${state.window.seq + 1}:${index}`,
   }));
-  const dropped = { lines: batch.droppedLines, bytes: batch.droppedBytes };
+  const dropped = { lines: sum(batch.droppedLines, redacted.dropped.lines), bytes: sum(batch.droppedBytes, redacted.dropped.bytes) };
   // Reserve the maximum encoded counter/sequence widths, derived from the safe-integer wire schema.
   // Trim in linear time before windowing: one raw text can contain many newline-separated lines.
   const envelopeBytes =
@@ -309,6 +319,7 @@ export async function receiveCodeOutput(proof: RunnerLeaseProof, raw: CodeOutput
     lastAt: now,
     window: nextWindow,
     pending: redacted.pending ? purposeSecretCipher(secretPurpose).encrypt(JSON.stringify(redacted.pending), secretContext(claims)) : null,
+    redactionSkip: redacted.skip,
     countedDropLines: counts.lines,
     countedDropBytes: counts.bytes,
   };
@@ -400,7 +411,7 @@ export async function closeCodeOutput(runId: string, generation?: number): Promi
       state.budget,
     );
   }
-  const next: State = { ...state, pending: null, window, countedDropLines: counts.lines, countedDropBytes: counts.bytes };
+  const next: State = { ...state, pending: null, redactionSkip: 0, window, countedDropLines: counts.lines, countedDropBytes: counts.bytes };
   await redis.send("EVAL", [
     `if redis.call('GET',KEYS[1])~=ARGV[1] then return 0 end
     redis.call('SET',KEYS[1],ARGV[2],'KEEPTTL'); return 1`,

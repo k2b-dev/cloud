@@ -568,7 +568,7 @@ export const readCodeRun = async (input: z.input<typeof codeQueryContracts.runRe
         (input.cursor ?? 0) === 0
           ? payload.console_output
             ? CodeOutputWindowSchema.parse(payload.console_output)
-            : row.state === "running" && payload.generation > 0
+            : (row.state === "running" || row.state === "queued") && payload.generation > 0
               ? await replayCodeOutput(input.runId)
               : emptyCodeOutput()
           : null,

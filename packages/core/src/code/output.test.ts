@@ -49,3 +49,17 @@ test("text is split into lines and cleaned on both sides of redaction", () => {
     { kind: "log" as const, at: "2030-01-02T00:00:00.000Z", level: "log", text: [{ type: "text", text: "third" }] },
   ]);
 });
+
+test("harden bounded output when a batch reports a continuity gap", () => {
+  expect(
+    sanitizeCodeOutput(
+      {
+        seq: 2,
+        entries: [{ kind: "log", at: "2030-01-02T00:00:00.000Z", level: "log", text: "efgh" }],
+        droppedLines: 1,
+        droppedBytes: 4,
+      },
+      new Map([["abcdefgh", "[secret:TOKEN]"]]),
+    ),
+  ).toEqual([]);
+});

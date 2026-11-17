@@ -303,6 +303,7 @@ a named secret marker; deferred fragments can be combined into one entry with th
 
 `core.code.run.read` returns `contents.consoleOutput` on the first call page
 (`cursor: 0`), or `null` on later pages. Readers still get `contents: null`.
+A queued retry retains the previous attempt's frozen output until the next attempt starts.
 The same permission-aware service serves API, CLI and agent calls. SSR exposes
 the window as `CodePageRunDetail.consoleOutput`.
 
@@ -351,7 +352,8 @@ of the structured entries. Fixed metadata is outside that budget. Oversized
 lines, earlier lines displaced from the window, and excess batches contribute
 to the loss counters. `droppedLines` is the number needed for an “N earlier
 lines missing” notice. These counters describe dropped output, not execution
-failure.
+failure. After a gap, Cloud can discard nearby entries conservatively while
+completing pending secret markers. Those additional losses also count here.
 
 Each raw bundle, including the runner's proof envelope, fits
 `LIVE_LIMITS.frameBytes`. The trusted supervisor joins submissions and waits at least the AI

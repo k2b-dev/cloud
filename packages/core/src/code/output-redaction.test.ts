@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { compileOutputRedaction, type OutputRedactionPending, redactOutput } from "./output-redaction";
 import { secretEchoReplacements } from "./secret-echo";
 
@@ -83,5 +83,102 @@ test("deferred structured entries retain their original kind, level and timestam
   ]);
   expect(redactOutput([], redactor, pending, true).entries).toEqual([
     { kind: first.kind, level: first.level, at: first.at, text: [{ type: "secret", name: "TOKEN" }] },
+  ]);
+});
+
+for (const boundary of ["batch", "following fragments"] as const) {
+  test(`harden pending output when loss precedes ${boundary}`, () => {
+    const redactor = compileOutputRedaction(new Map([["abcdefgh", "[secret:TOKEN]"]]));
+    const accepted = redactOutput([line("abcd")], redactor);
+    expect(accepted.entries.flatMap((entry) => entry.text)).toEqual([]);
+    const lost = redactOutput(boundary === "batch" ? [line("normal")] : [], redactor, accepted.pending, false, { lost: true, skip: 0 });
+    expect(lost.entries.flatMap((entry) => entry.text)).toEqual([{ type: "secret", name: "TOKEN" }]);
+    expect(lost.pending).toBeNull();
+    expect(lost.skip).toBe(redactor.longest - 1);
+    // The missing continuation may be inside the reported batch or between it
+    // and later fragments. Keep the conservative suffix across both boundaries.
+    const following = redactOutput([line("gh")], redactor, lost.pending, false, { lost: false, skip: lost.skip });
+    expect(following.entries).toEqual([]);
+    expect(following.dropped.lines).toBe(1);
+    const ordinary = redactOutput([line("normal")], redactor, following.pending, false, { lost: false, skip: following.skip });
+    expect(ordinary.entries).toEqual([]);
+    expect(ordinary.skip).toBe(0);
+    expect(ordinary.dropped.bytes).toBe(Buffer.byteLength(JSON.stringify(line("normal"))));
+    const restored = redactOutput([line("later")], redactor, ordinary.pending, false, { lost: false, skip: ordinary.skip });
+    expect(restored.entries.flatMap((entry) => entry.text)).toEqual([{ type: "text", text: "later" }]);
+  });
+}
+for (const spelling of replacements.keys()) {
+  test(`harden deferred encoded output across a gap for ${Buffer.from(spelling).toString("hex")}`, () => {
+    const redactor = compileOutputRedaction(replacements);
+    const middle = Math.floor(spelling.length / 2);
+    const accepted = redactOutput([line(spelling.slice(0, middle))], redactor);
+    const lost = redactOutput([line(spelling.slice(middle)), line("ordinary")], redactor, accepted.pending, false, { lost: true, skip: 0 });
+    expect(lost.entries.flatMap((entry) => entry.text)).toEqual([{ type: "secret", name: "TOKEN" }]);
+    expect(lost.dropped.lines).toBe(2);
+    const following = redactOutput([line(".".repeat(redactor.longest))], redactor, lost.pending, false, { lost: false, skip: lost.skip });
+    expect(following.entries).toEqual([]);
+    expect(following.skip).toBe(0);
+  });
+}
+
+test("harden repetitive prefix matching with a deterministic linear transition bound", () => {
+  const redactor = compileOutputRedaction(new Map([["a".repeat(6000) + "b", "[secret:TOKEN]"]]));
+  const nodes = [redactor.root];
+  for (let index = 0; index < nodes.length; index++) nodes.push(...nodes[index]!.next.values());
+  let comparisons = 0;
+  const lookups = nodes.map((node) => {
+    const get = node.next.get.bind(node.next);
+    return spyOn(node.next, "get").mockImplementation((char) => {
+      comparisons++;
+      return get(char);
+    });
+  });
+  try {
+    const text = "a".repeat(10 * 1024);
+    const result = redactOutput([line(text)], redactor);
+    expect(comparisons).toBeGreaterThanOrEqual(text.length);
+    expect(comparisons).toBeLessThanOrEqual(2 * text.length);
+    expect(result.pending?.text.length).toBeLessThan(redactor.longest);
+  } finally {
+    for (const lookup of lookups) lookup.mockRestore();
+  }
+});
+
+test("harden failure suffixes and overlapping matches without releasing covered text", () => {
+  const redactor = compileOutputRedaction(
+    new Map([
+      ["abcd", "[secret:FIRST]"],
+      ["cdef", "[secret:SECOND]"],
+      ["abz", "[secret:THIRD]"],
+      ["bz", "[secret:FOURTH]"],
+    ]),
+  );
+  expect(redactOutput([line("abcdef abz bz!")], redactor, null, true).entries.flatMap((entry) => entry.text)).toEqual([
+    { type: "secret", name: "FIRST" },
+    { type: "text", text: " " },
+    { type: "secret", name: "THIRD" },
+    { type: "text", text: " " },
+    { type: "secret", name: "FOURTH" },
+    { type: "text", text: "!" },
+  ]);
+});
+
+test("harden pending failure suffixes after a completed match", () => {
+  const redactor = compileOutputRedaction(
+    new Map([
+      ["abc", "[secret:FIRST]"],
+      ["bcdefghi", "[secret:SECOND]"],
+      ["ghijk", "[secret:THIRD]"],
+    ]),
+  );
+  const first = redactOutput([line("abcdefgh")], redactor);
+  expect(first.entries.flatMap((entry) => entry.text)).toEqual([
+    { type: "secret", name: "FIRST" },
+    { type: "text", text: "def" },
+  ]);
+  expect(first.pending?.text).toBe("gh");
+  expect(redactOutput([line("ijk")], redactor, first.pending).entries.flatMap((entry) => entry.text)).toEqual([
+    { type: "secret", name: "THIRD" },
   ]);
 });

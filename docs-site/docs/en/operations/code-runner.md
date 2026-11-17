@@ -690,7 +690,10 @@ entries. Further secret-bearing requests are refused with
 `code_http_output_redaction_limit` if their required entries cannot fit;
 existing entries stay available for the attempt. Compiled matching state is
 reused until those entries change. Unresolved prefixes remain encrypted and
-bounded by the longest replacement; finalization emits named markers.
+bounded by the longest replacement; finalization emits named markers. Known
+output gaps also complete pending markers and can discard nearby entries
+conservatively; the loss counters include those additional entries. Queued
+retries retain the frozen attempt window until the next attempt starts.
 `LIVE_LIMITS.frameBytes` is the bundle limit, and the existing AI snapshot
 interval supplies the console bundling cadence. The trusted supervisor
 aggregates excess lines into loss counters before HTTP. Core counts and discards
