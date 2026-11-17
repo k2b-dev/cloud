@@ -149,6 +149,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   let lastPointer: { x: number; y: number } | null = null;
   const covered = new Set<Element>();
   const madeInert = new Set<Element>();
+  const nextCovered = new Set<Element>();
   const channel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(PRIVACY_CHANNEL);
 
   // One polite live region, an island itself, so the screen reader hears the state while everything else is inert.
@@ -181,11 +182,15 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
   const holdsIsland = (element: Element) =>
     element.contains(hint) || Boolean(element.querySelector(`${ISLAND}, ${SESSION_WARNING_ACTION}`));
   const mark = (element: Element, kind: string) => {
-    element.setAttribute(COVERED, kind);
+    nextCovered.add(element);
+    if (element.getAttribute(COVERED) !== kind) element.setAttribute(COVERED, kind);
     covered.add(element);
     // A dialog that hosts the hint blurs but stays usable: the hint in the top layer escapes the blur, not an inert
     // ancestor. Its other input lifts the screen like any click or key.
-    if (!element.hasAttribute("inert") && !element.contains(hint)) {
+    if (element.contains(hint)) {
+      // Covers stay from pass to pass: one that holds the hint again (a dialog above it closed) is usable again.
+      if (madeInert.delete(element)) element.removeAttribute("inert");
+    } else if (!element.hasAttribute("inert")) {
       element.setAttribute("inert", "");
       madeInert.add(element);
     }
@@ -214,12 +219,14 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
       }
     };
     for (const surface of [...open("dialog[open]"), ...open(":popover-open")]) {
-      if (surface === hint || isIsland(surface) || surface.hasAttribute(COVERED)) continue;
+      if (surface === hint || isIsland(surface) || nextCovered.has(surface)) continue;
       if (holdsIsland(surface) && !hasOwnText(surface)) cover(surface);
       else mark(surface, "");
     }
     for (const part of document.querySelectorAll('[data-cloud-privacy="blur"]')) {
-      if (!part.closest(`[${COVERED}]`)) mark(part, "part");
+      let ancestor: Element | null = part;
+      while (ancestor && !nextCovered.has(ancestor)) ancestor = ancestor.parentElement;
+      if (!ancestor) mark(part, "part");
     }
   };
   const uncover = () => {
@@ -227,6 +234,7 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     for (const element of madeInert) element.removeAttribute("inert");
     covered.clear();
     madeInert.clear();
+    nextCovered.clear();
   };
   /** A modal dialog makes everything outside it inert, so the hint moves into the topmost one that is not the warning. */
   const hintHost = (): Element => {
@@ -256,12 +264,18 @@ export const installPrivacyScreen = (options: PrivacyScreenOptions): (() => void
     hint.style.setProperty("--cloud-privacy-hint-x", `${Math.round(x)}px`);
     hint.style.setProperty("--cloud-privacy-hint-y", `${Math.round(y)}px`);
   };
-  /** One pass from scratch: islands, dialogs and popovers may have come, gone, opened or closed since the last. */
+  /** Keep unchanged covers in place: a layout read between removing and restoring a filter restarts its transition. */
   const reconcile = () => {
-    uncover();
+    nextCovered.clear();
     placeHint();
     cover(document.body);
     coverSurfaces();
+    for (const element of covered) {
+      if (nextCovered.has(element)) continue;
+      element.removeAttribute(COVERED);
+      covered.delete(element);
+      if (madeInert.delete(element)) element.removeAttribute("inert");
+    }
   };
   let arrived = false;
   let reconciling = false;

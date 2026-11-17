@@ -6,6 +6,7 @@ import {
   maintenanceBypassOffSentence,
   maintenanceOffSentence,
   maintenanceOnSentence,
+  maintenanceResumeSentence,
   maintenanceStatusLines,
   maintenanceUntilSentence,
   markMaintenanceWord,
@@ -25,18 +26,29 @@ export const maintenanceCommands = [
   command("maintenance on", {
     summary: "Switch maintenance mode on: everyone sees the maintenance page instead of the Cloud",
     description:
-      "Run it again while maintenance is on to change the note or the planned end; the running maintenance stays. Maintenance never ends by itself.",
+      "Run it again while maintenance is on to change the note, the planned end or stage „Ruhe“; the running maintenance stays. Maintenance never ends by itself.",
     flags: {
       message: flag.string({ description: "Note on the maintenance page (plain text, at most 500 characters)" }),
       until: flag.string({ description: "Planned end: HH:MM today in local time, or an ISO date-time" }),
+      quiesce: flag.boolean({ description: "Stage „Ruhe“: background work in every app stops and drains; off resumes it" }),
+      noQuiesce: flag.boolean({ name: "no-quiesce", description: "Resume background work while maintenance stays on" }),
     },
-    examples: ['cld admin maintenance on --message "Wir spielen Version 2.4 ein." --until 14:30'],
+    examples: [
+      'cld admin maintenance on --message "Wir spielen Version 2.4 ein." --until 14:30',
+      "cld admin maintenance on --quiesce",
+      "cld admin maintenance on --no-quiesce",
+    ],
     async run({ ctx, flags }) {
+      if (flags.quiesce && flags.noQuiesce) throw new Error("Use either --quiesce or --no-quiesce.");
       const status = await call(ctx, "POST", "/on", {
         ...(flags.message !== undefined ? { message: flags.message } : {}),
         ...(flags.until !== undefined ? { until: parseMaintenanceTime(flags.until) } : {}),
+        ...(flags.quiesce ? { quiesce: true } : flags.noQuiesce ? { quiesce: false } : {}),
       });
-      if (!printStructured(ctx, status)) say(ctx, [maintenanceOnSentence(status, { locale: ctx.options.locale })]);
+      if (printStructured(ctx, status)) return;
+      const lines = [maintenanceOnSentence(status, { locale: ctx.options.locale })];
+      if (flags.noQuiesce) lines.push(maintenanceResumeSentence({ locale: ctx.options.locale }));
+      say(ctx, lines);
     },
   }),
   command("maintenance until", {
@@ -70,7 +82,7 @@ export const maintenanceCommands = [
     },
   }),
   command("maintenance status", {
-    summary: "Show whether maintenance mode is on, its note and end, and how many apps are ready",
+    summary: "Show whether maintenance mode is on, its note and end, how many apps are ready and, in stage „Ruhe“, how many are quiet",
     async run({ ctx }) {
       const status = await call(ctx, "GET", "");
       if (!printStructured(ctx, status)) say(ctx, maintenanceStatusLines(status, { locale: ctx.options.locale }));

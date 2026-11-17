@@ -1004,10 +1004,17 @@ test("base settings preserve arbitrary values and show only measured usage on ph
       await dialog.getByRole("button", { name: "Verwerfen", exact: true }).click();
       expect(await raw.inputValue()).toBe("45");
       await dialog.getByRole("tab", { name: "Nutzung und Grenzen", exact: true }).click();
-      await dialog.getByRole("progressbar").first().waitFor();
-      expect(await dialog.getByRole("progressbar").count()).toBe(2);
-      expect(await dialog.getByRole("progressbar").first().getAttribute("aria-valuenow")).toBe("36");
-      expect(await dialog.getByText("Obergrenze; die aktuelle Rate wird nicht gemessen.", { exact: true }).isVisible()).toBe(true);
+      // Three flat figures: the limit stands quietly at the figure, the share used on the third line.
+      const figures = dialog.locator('.k2b-stat-grid[data-variant="plain"] .k2b-stat-cell');
+      await figures.first().waitFor();
+      expect(await figures.count()).toBe(3);
+      expect(
+        await figures
+          .first()
+          .getByText(/^36\s%\sgenutzt · gemessen /)
+          .isVisible(),
+      ).toBe(true);
+      expect(await dialog.getByText("Obergrenze, die Rate wird nicht gemessen", { exact: true }).isVisible()).toBe(true);
       expect(await overflow(tab)).toBeLessThanOrEqual(0);
     } finally {
       await tab.close();
@@ -1065,12 +1072,15 @@ test("SQL usage loading and failure preserve known base facts and recover withou
       expect(await dialog.getByText("1,8 GB", { exact: false }).count()).toBeGreaterThan(0);
       release?.();
       await dialog.getByRole("alert").filter({ hasText: "SQL-Nutzung und Grenzen konnten nicht geladen werden" }).waitFor();
-      expect(await dialog.getByText("Nutzung konnte nicht geladen werden", { exact: true }).isVisible()).toBe(true);
+      // The queries figure keeps its place and says it did not load; the stored usage stays a known fact.
+      expect(await dialog.locator('.k2b-stat-cell[data-status="error"]').getByText("Nicht geladen", { exact: true }).isVisible()).toBe(
+        true,
+      );
       expect(await dialog.getByText("Noch nicht gemessen", { exact: true }).count()).toBe(0);
       fail = false;
       await dialog.getByRole("alert").getByRole("button").click();
       await dialog.getByText("16 KiB · 32 × 2 KiB", { exact: true }).waitFor();
-      expect(await dialog.getByText("Nutzung konnte nicht geladen werden", { exact: true }).count()).toBe(0);
+      expect(await dialog.locator('.k2b-stat-cell[data-status="error"]').count()).toBe(0);
       expect(await dialog.locator(".k2b-skeleton").count()).toBe(0);
       await dialog.getByRole("tab", { name: "Leeren und löschen", exact: true }).click();
       expect(await dialog.locator('button[data-variant="danger"]').count()).toBe(0);

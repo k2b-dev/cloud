@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "@typescript/typescript6";
-import { isTestFile, listFiles } from "./files";
+import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 /** Controls inside a notice may keep their icons; anywhere else an icon is decoration. */
@@ -51,7 +51,8 @@ export const rule: Rule = {
       if (isTestFile(file)) continue;
       const source = readFileSync(file, "utf8");
       if (!source.includes("<NoticeCard") && !source.includes("<NoticeRow")) continue;
-      const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const { sourceFile, findings: unparsed } = parseSource(file, source);
+      findings.push(...unparsed);
       const lineOf = (node: ts.Node) => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
 
       const visit = (node: ts.Node, inNotice: boolean, inControl: boolean, inControlIcon: boolean): void => {

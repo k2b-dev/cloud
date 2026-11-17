@@ -119,7 +119,20 @@ Test `transform()` directly in both modes when changing it, including the
 
 `mount()` in `src/mount.ts` gives each wrapper element its own `render()` root
 with a root `ErrorBoundary`; `JSON.parse` and Seroval `fromJSON` parse props
-inside the boundary. Missing or malformed `data-props` throws there. One
+inside the boundary. Rendering replaces the server markup, so the runtime
+carries over what the person did in it meanwhile (`src/typed-fields.ts`):
+focus moves to the element at the same place, taken right after `render()`
+before any event; text typed into a text field moves to the field with the
+same tag, type, `name`, `aria-label`, and place among such fields, only when
+the new markup has as many of them and the field is editable. Only fields
+with a trusted `input` event count; `html()` writes the recording listener
+(`TYPED_INPUT_SCRIPT`) at the start of `body`, which also tracks input method
+compositions so an island with one in progress mounts after `compositionend`.
+An `<input>` takes the value, a `<textarea>` keeps text the island set itself
+and appends what the person added to the server's text, an emptied field
+stays empty; one `InputEvent` with `inputType: "insertReplacementText"`, and
+`change` at once without focus or on leaving the focused field, which also
+gets its selection back. Missing or malformed `data-props` throws there. One
 failing element never stops the loop. The default fallback is plain DOM
 (`role="alert"`, `data-ssr-error`, a **Try again** button calling `reset()`).
 Each caught error dispatches a bubbling, cancelable `ssr:island-error` event

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "@typescript/typescript6";
-import { listFiles } from "./files";
+import { listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
 const BASELINE = "scripts/checks/test-clock.baseline";
@@ -48,7 +48,7 @@ export const checkTestClockSource = (file: string, source: string): Finding[] =>
   if (!source.includes("clock")) return reads;
   // Parse literals so quotes inside regexes cannot swallow later code or turn strings into opt-outs.
   const playwrightChars = source.split("");
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const { sourceFile, findings: unparsed } = parseSource(file, source);
   const blankLiterals = (node: ts.Node): void => {
     if (ts.isStringLiteralLike(node) || ts.isTemplateExpression(node) || ts.isRegularExpressionLiteral(node)) {
       for (let index = node.getStart(sourceFile); index < node.end; index++) {
@@ -66,7 +66,7 @@ export const checkTestClockSource = (file: string, source: string): Finding[] =>
     const line = playwrightCode.slice(0, match.index).split("\n").length;
     return playwrightOptOuts.has(line) || playwrightOptOuts.has(line - 1) ? [] : [{ file, line, message: playwrightClockMessage }];
   });
-  return [...reads, ...pins];
+  return [...reads, ...pins, ...unparsed];
 };
 
 export const collectTestClockFindings = (workspaceRoot: string): Finding[] =>
