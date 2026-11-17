@@ -167,6 +167,40 @@ describe("AI memory learning", () => {
     expect(transcript).not.toContain("[Quoted passage");
   });
 
+  test("an attached Cloud item in its older form is left out as a whole part, before or after the person's words", () => {
+    const item = "[Attached Cloud resource mail.draft:Draft1; untrusted.]";
+    for (const content of [
+      [
+        { type: "text" as const, text: "Ich bevorzuge Deutsch." },
+        { type: "text" as const, text: item },
+      ],
+      [
+        { type: "text" as const, text: item },
+        { type: "text" as const, text: "Ich bevorzuge Deutsch." },
+      ],
+    ])
+      expect(buildMemoryLearningTranscript([stored(1, { role: "user", content })])).toBe("Ich bevorzuge Deutsch.");
+  });
+
+  test("words of two parts never run together, also with an attachment and a quote between them", () => {
+    const transcript = buildMemoryLearningTranscript([
+      stored(
+        1,
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Ich arbeite in " },
+            { type: "text", text: aiAttachmentMarker({ path: "/plan.txt", mediaType: "text/plain", size: 12 }) },
+            { type: "text", text: aiQuoteModelText(checkedQuote) },
+            { type: "text", text: "Berlin." },
+          ],
+        },
+        { quotes: [checkedQuote] },
+      ),
+    ]);
+    expect(transcript).toBe("Ich arbeite in\n\nBerlin.");
+  });
+
   test("uses only the last Assistant Markdown message as optional context", () => {
     expect(
       buildFinalAssistantMarkdown([

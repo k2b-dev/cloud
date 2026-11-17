@@ -8,7 +8,7 @@ import { normalizeAiUploadMediaType } from "../file-media-type";
 import { aiProjectFilePathFromMount, aiSkillFilePathFromMount } from "../file-mount";
 import { AI_IMAGE_INPUT_MAX_BYTES, AI_TURN_ATTACHMENT_MAX_ITEMS } from "../limits";
 import { type AiMessageQuote, aiNeutralizeQuoteMarkers, aiQuoteModelTexts } from "../quote-markers";
-import { type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
+import { AI_RESOURCE_MARKER_PREFIX, type AiResourceMarker, parseAiResourceMarker } from "../resource-markers";
 import { assistantVisibleTextFromMessage } from "../timeline";
 import type { AiStoredMessage, AiUserContentPart } from "../types";
 import { AI_IMAGE_MEDIA_TYPES, isAiImageMediaType } from "../types";
@@ -205,11 +205,24 @@ export const userVisibleTextFromMessage = (message: Message, quotes?: readonly A
 
 /**
  * The person's own words of a stored user message as a model reads them in a transcript (titles, search summaries,
- * memory learning): checked quotes and attached items left out, any other quote marker broken. Quoted words are never
+ * memory learning), part by part: a checked quote, an attached-files note, and an attached Cloud item in any form
+ * (also one no parser reads any more) are left out as whole parts, attachment markers are cut out, and any other quote
+ * marker is broken. Parts stay apart by a blank line, so words of two parts never run together. Quoted words are never
  * the person's own evidence.
  */
-export const aiUserWordsForModel = (entry: Pick<AiStoredMessage, "message" | "meta">): string =>
-  entry.message.role === "user" ? aiNeutralizeQuoteMarkers(userVisibleTextFromMessage(entry.message, entry.meta?.quotes)) : "";
+export const aiUserWordsForModel = (entry: Pick<AiStoredMessage, "message" | "meta">): string => {
+  if (entry.message.role !== "user") return "";
+  const quoted = aiQuoteModelTexts(entry.meta?.quotes);
+  return entry.message.content
+    .flatMap((part) => {
+      const text = typeof part === "string" ? part : part.type === "text" ? part.text : "";
+      if (quoted.has(text) || text.startsWith(ATTACHMENT_CONTEXT_PREFIX) || text.trimStart().startsWith(AI_RESOURCE_MARKER_PREFIX))
+        return [];
+      const words = parseAiAttachmentMarkers(text).text.trim();
+      return words ? [aiNeutralizeQuoteMarkers(words)] : [];
+    })
+    .join("\n\n");
+};
 
 /** VFS attachments referenced by this user message (rendered as chips). */
 export const vfsAttachmentsFromMessage = (message: Message): (AiAttachmentRef & { name: string; icon: string })[] => {

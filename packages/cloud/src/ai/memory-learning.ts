@@ -245,7 +245,7 @@ export const buildMemoryLearningTranscript = (messages: AiStoredMessage[]): stri
         return [];
       // Only the person's own visible words are evidence: never a quote, an attached item, or a marker.
       const text = aiUserWordsForModel(stored);
-      return text && !text.startsWith("[Attached Cloud resource ") ? [text] : [];
+      return text ? [text] : [];
     })
     .join("\n\n");
 

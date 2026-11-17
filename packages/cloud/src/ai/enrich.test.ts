@@ -115,6 +115,19 @@ describe("buildEnrichmentTranscript", () => {
     expect(transcript).toBe("user: How do I write tests?\nassistant: Use bun test.");
   });
 
+  it("keeps the words of two parts apart", () => {
+    const transcript = buildEnrichmentTranscript([
+      stored(1, {
+        role: "user",
+        content: [
+          { type: "text", text: "Ich arbeite in " },
+          { type: "text", text: "Berlin." },
+        ],
+      }),
+    ]);
+    expect(transcript).toBe("user: Ich arbeite in\n\nBerlin.");
+  });
+
   it("caps at maxChars keeping the newest messages", () => {
     const transcript = buildEnrichmentTranscript(
       [stored(1, userMessage("old ".repeat(50))), stored(2, userMessage("newest question"))],
