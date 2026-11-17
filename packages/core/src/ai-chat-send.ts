@@ -8,13 +8,7 @@ import {
   listAiConversationFiles,
   personalAiModelPolicy,
 } from "@k2b/cloud/ai";
-import {
-  AiMessageQueueConflict,
-  enqueueChatMessage,
-  prepareAiChatTurn,
-  type QueuedCodeStart,
-  wakeAiMessageQueue,
-} from "@k2b/cloud/ai/runtime";
+import { AiMessageQueueConflict, enqueueAutomationChatMessage, prepareAiChatTurn, wakeAiMessageQueue } from "@k2b/cloud/ai/runtime";
 import { CAPABILITY_CLAIM_RETENTION_HOURS } from "@k2b/cloud/capabilities/store";
 import { type CapabilityExecutionContext, CapabilityIdempotencyKeySchema, capabilityIdempotencyConflict } from "@k2b/cloud/contracts";
 import { accounts, coreSettings } from "@k2b/cloud/services";
@@ -75,15 +69,17 @@ const result = async (conversationId: string, chatId: string, id: string) => {
     : snapshot;
 };
 /** Until the whole-turn reservation of slice 6 lands, the daily checks see only booked or running
- * inference. At most one open, unsettled Code message or turn per owner, across all chats and Codes,
- * keeps them exact. Every caller takes this owner lock before any budget row lock. */
-const lockOwnerCodeChats = (owner: string, db: SQL) =>
+ * inference. At most one waiting Code message or unfinished Code turn per owner, across all chats and
+ * Codes, keeps them exact. Send/start lock Chat → owner → Code NOWAIT → run/budget rows.
+ * Review locks Code → Chat, so no path holding Chat may wait for Code. */
+export const lockOwnerCodeChats = (owner: string, db: SQL) =>
   db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send.owner:${owner}`},0))`;
-/** At start, only messages queued before this one count, so two waiting messages never block each other. */
-const openOwnerCodeChatWork = async (owner: string, db: SQL, startingMessageId?: string) => {
+/** A refused automation entry is final and does not count. At start, only messages queued before
+ * this one count, so two waiting messages never block each other. */
+export const openOwnerCodeChatWork = async (owner: string, db: SQL, startingMessageId?: string) => {
   const [open] = await db`SELECT 1 FROM ai.queued_messages q JOIN ai.conversations c ON c.id=q.conversation_id
       WHERE c.created_by_user_id=${owner}::uuid AND c.archived_at IS NULL
-        AND q.status IN ('pending','failed') AND q.submission->'runConfig' ? 'codeOrigin'
+        AND q.status='pending' AND q.submission->'runConfig' ? 'codeOrigin'
         AND (${startingMessageId ?? null}::uuid IS NULL
           OR q.position < (SELECT position FROM ai.queued_messages WHERE id=${startingMessageId ?? null}::uuid))
     UNION ALL SELECT 1 FROM ai.turns t JOIN ai.conversations c ON c.id=t.conversation_id
@@ -92,50 +88,6 @@ const openOwnerCodeChatWork = async (owner: string, db: SQL, startingMessageId?:
     LIMIT 1`;
   return Boolean(open);
 };
-
-/** A queued Code send starts only while its run exists, its Code is enabled, its owner has no older
- * open Code message or turn, and the Code and owner daily AI limits have room. A message that waited,
- * for any reason, does not outlive the budget day it was accepted on. */
-export const admitQueuedCodeSend: QueuedCodeStart["admit"] = async (submission, messageId) => {
-  const origin = submission.runConfig.codeOrigin;
-  const owner = submission.runConfig.send?.accountId;
-  if (!origin?.runId || !owner) return "code_run_gone";
-  const limits = {
-    code: await codeSettings.get("core.code.ai_daily_budget_usd"),
-    owner: await codeSettings.get("core.code.ai_owner_daily_budget_usd"),
-    timeZone: (await coreSettings.get<string>("app.timezone")) || "UTC",
-  };
-  return sql.begin(async (db) => {
-    await lockOwnerCodeChats(owner, db);
-    const [code] = await db<{ state: string }[]>`SELECT state FROM code.codes WHERE id=${origin.codeId}`;
-    if (!code || code.state !== "active") return "code_inactive";
-    // Waiting or pending: a Code message never starts after the budget day it was accepted on.
-    const [entry] = await db<{ stale: boolean }[]>`SELECT
-      (created_at AT TIME ZONE ${limits.timeZone})::date < (clock_timestamp() AT TIME ZONE ${limits.timeZone})::date AS stale
-      FROM ai.queued_messages WHERE id=${messageId}::uuid`;
-    if (entry?.stale) return "code_budget_day_ended";
-    if (await openOwnerCodeChatWork(owner, db, messageId)) return "code_busy";
-    return checkCodeChatRunBudget(origin.runId, db, limits);
-  });
-};
-
-/** The same final refusals as admitQueuedCodeSend, as one expression over the queued row `q`, so the
- * queue can retire every Code message that can never start without checking them one by one. */
-const expiredCodeSendReason: QueuedCodeStart["expiredReason"] = async () => {
-  const timeZone = (await coreSettings.get<string>("app.timezone")) || "UTC";
-  // The first branch proves the run id a UUID before the last one casts it, so a malformed id retires
-  // its message instead of failing the drain, and the run lookup uses the primary key.
-  const expression = sql`(CASE
-      WHEN q.submission#>>'{runConfig,send,accountId}' IS NULL
-        OR NOT COALESCE(q.submission#>>'{runConfig,codeOrigin,runId}' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', false) THEN 'code_run_gone'
-      WHEN NOT EXISTS (SELECT 1 FROM code.codes c WHERE c.id = q.submission#>>'{runConfig,codeOrigin,codeId}' AND c.state = 'active') THEN 'code_inactive'
-      WHEN (q.created_at AT TIME ZONE ${timeZone})::date < (clock_timestamp() AT TIME ZONE ${timeZone})::date THEN 'code_budget_day_ended'
-      WHEN NOT EXISTS (SELECT 1 FROM code.runs r WHERE r.id = (q.submission#>>'{runConfig,codeOrigin,runId}')::uuid) THEN 'code_run_gone'
-    END)`;
-  return { expression };
-};
-
-export const queuedCodeSendStart: QueuedCodeStart = { admit: admitQueuedCodeSend, expiredReason: expiredCodeSendReason };
 
 export const aiChatSendAction = {
   target: "ai.chat",
@@ -195,6 +147,7 @@ export const aiChatSendAction = {
     });
   },
   async run(input: z.infer<typeof aiChatSendInput>, context: CapabilityExecutionContext) {
+    // Unattended Code calls are reviewed with this same authority first, so a replay never outlives it.
     const source = await chatWriteAuthority(context, sql);
     if (!source.ok) return source;
     if (!context.user) return fail(err.forbidden("Chat writes require their owner"));
@@ -203,24 +156,26 @@ export const aiChatSendAction = {
     if (!key.success || !parsed.success) return fail(err.badInput("Supply text and a valid idempotency key"));
     const owner = context.user.id;
     const keyHash = sendKeyHash(owner, key.data);
-    const id = crypto.randomUUID();
-    const hash = approvalArgsDigest({ chatId: codeChatDestination(context), ...parsed.data });
-    const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
-    if (!chat) return fail(err.notFound("Chat"));
-    if (sendsToItself(source.data.origin, chat.short_id)) return fail(err.badInput("Choose another chat"));
     // A key holds for the dispatcher's claim retention, per person; afterwards it starts a new message.
     const existing = async (db = sql) => {
-      const [row] = await db<{ id: string; hash: string; conversation_id: string }[]>`
-        SELECT id,submission->'runConfig'->'send'->>'requestHash' AS hash,conversation_id FROM ai.queued_messages
-        WHERE submission#>>'{runConfig,send,accountId}'=${owner} AND submission#>>'{runConfig,send,keyHash}'=${keyHash}
-          AND created_at > clock_timestamp() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})`;
+      const [row] = await db<{ id: string; input_hash: string; conversation_id: string; chat_id: string }[]>`
+        SELECT id,input_hash,conversation_id,chat_id FROM ai.chat_send_receipts
+        WHERE account_id=${owner}::uuid AND operation='ai.chat.send' AND key_hash=${keyHash}
+          AND created_at > clock_timestamp() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})
+        ORDER BY created_at DESC LIMIT 1`;
       if (!row) return null;
-      return row.hash === hash && row.conversation_id === chat.id
-        ? result(chat.id, chat.short_id, row.id)
+      // Hash against the originally resolved destination, before looking at today's binding or limits.
+      return row.input_hash === approvalArgsDigest({ chatId: row.chat_id, ...parsed.data })
+        ? result(row.conversation_id, row.chat_id, row.id)
         : fail(capabilityIdempotencyConflict("The key was used for a different chat message"));
     };
     const previous = await existing();
     if (previous) return previous;
+    const id = crypto.randomUUID();
+    const chat = await ownedActiveChat(owner, codeChatDestination(context), sql);
+    if (!chat) return fail(err.notFound("Chat"));
+    if (sendsToItself(source.data.origin, chat.short_id)) return fail(err.badInput("Choose another chat"));
+    const hash = approvalArgsDigest({ chatId: chat.short_id, ...parsed.data });
     const user = await accounts.users.get({ id: owner });
     if (!user || isAccountExpired(user.accountExpires)) return fail(err.forbidden("The chat owner is inactive"));
     const actor = { kind: "user" as const, user };
@@ -278,27 +233,30 @@ export const aiChatSendAction = {
         await db`SELECT pg_advisory_xact_lock(hashtextextended(${`ai.chat.send:${keyHash}`},0))`;
         const previous = await existing(db);
         if (previous) return previous;
+        const currentChat = await ownedActiveChat(owner, chat.short_id, db, { lock: true });
+        if (!currentChat) return fail(err.notFound("Chat"));
+        if (currentChat.project_id !== chat.project_id)
+          return fail({ code: "chat_changed", message: "The chat Project changed; read the chat again.", status: 409 as const });
         if (code) {
           await lockOwnerCodeChats(owner, db);
           if (await openOwnerCodeChatWork(owner, db)) return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
         }
         if (code && limits) {
-          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE`;
+          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE NOWAIT`;
           await db`SELECT id FROM code.runs WHERE id=${code.runId}::uuid FOR UPDATE`;
           const current = await chatWriteAuthority(context, db);
           if (!current.ok) return current;
           const refused = await checkCodeChatRunBudget(code.runId, db, limits);
           if (refused) return fail({ code: refused, message: refused === "code_run_gone" ? t.run_gone : t.budget, status: 409 as const });
         }
-        const currentChat = await ownedActiveChat(owner, chat.short_id, db, { lock: true });
-        if (!currentChat) return fail(err.notFound("Chat"));
-        if (currentChat.project_id !== chat.project_id)
-          return fail({ code: "chat_changed", message: "The chat Project changed; read the chat again.", status: 409 as const });
-        // An expired use of this key keeps its message and status but releases the key.
+        // An expired use of this key keeps its message, receipt and status but releases the key.
         await db`UPDATE ai.queued_messages SET submission=submission #- '{runConfig,send,keyHash}'
           WHERE submission#>>'{runConfig,send,accountId}'=${owner} AND submission#>>'{runConfig,send,keyHash}'=${keyHash}
             AND created_at <= clock_timestamp() - make_interval(hours => ${CAPABILITY_CLAIM_RETENTION_HOURS})`;
-        await enqueueChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
+        await enqueueAutomationChatMessage(id, prepared, [{ type: "text", text: parsed.data.text }], db);
+        await db`INSERT INTO ai.chat_send_receipts(id,account_id,operation,key_hash,input_hash,conversation_id,chat_id,origin,turn_trigger,queued_message_id)
+          VALUES(${id}::uuid,${owner}::uuid,'ai.chat.send',${keyHash},${hash},${chat.id}::uuid,${chat.short_id},
+            (${JSON.stringify(source.data.origin)}::text)::jsonb,(${JSON.stringify(source.data.turnTrigger)}::text)::jsonb,${id}::uuid)`;
         return ok(null);
       });
       if (!admitted.ok) return admitted;
@@ -306,6 +264,12 @@ export const aiChatSendAction = {
       wakeAiMessageQueue(chat.id);
       return result(chat.id, chat.short_id, id);
     } catch (cause) {
+      if (
+        typeof cause === "object" &&
+        cause !== null &&
+        (("errno" in cause && cause.errno === "55P03") || ("code" in cause && cause.code === "55P03"))
+      )
+        return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
       if (cause instanceof AiMessageQueueConflict) return fail({ code: "chat_busy", message: cause.message, status: 409 as const });
       if (cause instanceof AiQuotaError) return fail({ code: cause.code, message: cause.message, status: 409 as const });
       if (isAiSettingsError(cause))

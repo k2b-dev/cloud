@@ -234,9 +234,35 @@ that reused one key in every run, such as `daily-briefing`, now replays the
 first message for 24 hours instead of starting a new one. Include the
 occurrence in the key, for example the scheduled time.
 
+Automation sends now have 32 waiting places per chat, separate from the person's
+20 composer places, with one place per source Code or source chat. A refusal at
+start is final for that message and releases its place; re-enabling Code does
+not restart it. Code messages also expire when their accepted budget day ends,
+even behind a blocked queue head. Use the read Query to inspect the reason and
+a new occurrence key for a later scheduled attempt.
+
+The migration creates durable send receipts and backfills accepted messages
+that still carry their send metadata. A replay keeps the original destination
+after a chat-binding change or queue removal. Deploy Core and the platform
+library together so queue promotion uses Core's current admission policy.
+
 Back up the
 database before upgrading. The migration
 removes `code.chat_deliveries`, its recovery path, `code.chat_runs` and old
 `meta.codeDelivery` markers. Existing message text stays readable. Send uses
 the normal turn-completion notification path. Rollback requires the pre-upgrade
 database backup together with its matching application release.
+
+Chat-send receipts are retained for the owner's account lifetime as admission evidence and
+status references, including after queue removal or chat deletion. The 24-hour key window does
+not limit receipt retention. The legacy queue backfill runs once; the immutable receipt trigger is created in
+the same transaction as the backfill and marks completion.
+
+Unknown queued-chat start errors remain pending with `dispatch_failed`, visible to the person
+and removable. Recovery attempts are at least 15 seconds apart and reuse the existing 30-minute
+queued-turn start deadline, measured from acceptance; pending Code messages can expire earlier
+at their budget-day end. If an entry is already older than 30 minutes at its first unknown
+failure, that is its only start attempt: the next due sweep marks it finally failed with
+visible `dispatch_failed`. Lock contention and transaction retries leave the entry unchanged
+and do not count as unknown failures. Final refusals retain their original reason through later expiry and
+archiving, and automation refusals discard input, context and attachments.

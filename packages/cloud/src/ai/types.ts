@@ -1082,6 +1082,8 @@ export type AiConversationService = {
     input: {
       choice?: import("./choices").AiChoiceSubmission;
       queuedMessageId?: string;
+      /** Revision observed under the conversation lock by the queue dispatcher. */
+      queuedMessageRevision?: string;
       conversationId: string;
       modelId: string;
       runConfig: AiChatTurnRunConfig;

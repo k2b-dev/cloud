@@ -28,17 +28,68 @@ that draft revision and preserves its text, resource references, model selection
 and exact attachment bytes. Repeating the same `queueId` is idempotent, including
 after the message has started. A later composer draft remains independent.
 
-Each conversation accepts up to 32 pending or failed messages. Queued attachment
+Each conversation accepts up to 20 pending or failed person messages. Queued attachment
 snapshots share a 250 MiB budget. The existing turn worker processes messages in
 acceptance order, one active turn per conversation. Queues survive navigation,
 reloads and worker restarts. Completion, failure or cancellation of a turn allows
-the next queued message to start; a dispatch failure keeps the failed entry at the
-head until the user retries or removes it. Approval waits keep the current turn
-active and do not advance the queue.
+the next queued message to start. A final refusal keeps a person's failed entry at
+the head until the person retries or removes it. A final automation refusal releases
+its place immediately. Transient infrastructure errors remain pending as described
+below. Approval waits keep the current turn active and do not advance the queue.
+
+`AUTOMATION_QUEUE_LIMIT = 32` bounds pending automation entries separately from
+the person's composer capacity. `AUTOMATION_QUEUE_SOURCE_LIMIT = 1` prevents a
+Code or source chat from filling the queue while its previous message waits.
+Both constants are exported from `@k2b/cloud/ai/runtime`. The capacity check and
+FIFO ordering share the conversation lock. Automation sends return `chat_busy`
+when either automation limit is reached.
+
+`enqueueAutomationChatMessage` is the trusted host's draft-free insertion path;
+composer submission continues through `enqueueChatMessage`. On dequeue, Cloud
+reads the current payload and revision under the conversation lock.
+`submitChatTurn` consumes that stored payload and rejects a mismatched
+`queuedMessageRevision`. Core registers `validateQueuedChatStart` on the first
+`startAiRuntime` call. Its `expiredReason` hook supplies a scalar SQL expression
+wrapped in `{ expression }` (SQL queries are thenable). One bounded statement
+marks pending expired or invalid Code entries `failed` independently of FIFO and deletes their
+input, context and attachments. Pending Code entries expire at their accepted budget day's end;
+retry never revives them. A final refusal keeps its status and reason through later day changes
+and archiving. Before promotion it checks current ownership, source
+authority, enabled Code, model access and allowances. Automation work fails
+closed when that host policy is absent: entries remain pending until the host
+registers its policy, including across runtime shutdown. The validator uses the
+supplied database executor for account, Project, settings, model-access and
+quota reads. It checks Project access without loading Project content. One
+model-catalog snapshot serves both the validator and quota check. These services
+accept optional transaction executors so a dequeue
+never needs another pool connection while holding its chat lock. Settings
+reads with an executor bypass the cache and read the stored value and defaults. Composer
+entries instead prefetch cached settings and a catalog snapshot before taking the chat lock.
+Code starts lock chat, owner and Code in that order, taking the Code row with `NOWAIT` to avoid
+waiting for a reviewer that holds Code before chat.
+
+Only typed quota, settings and source-policy refusals are final. Unknown start errors keep the
+entry pending with visible `dispatch_failed` and log each failed attempt's reason and error class.
+`quota_checked_at` also schedules these retries at least 15 seconds apart; it never proves that
+quota admission succeeded. They end at the existing 30-minute queued-turn start deadline,
+measured from acceptance, or earlier at a Code's budget-day end. The person can remove the entry;
+a final person failure keeps FIFO until the person retries or removes it.
+
+`ai.chat.send` stores an immutable admission in `ai.chat_send_receipts`: account,
+operation, key hash, input hash, original destination, origin, initiator and
+queue ID. Turn state is read from the associated turns; retries retain the send
+ID. Queue payload cleanup and conversation deletion do not remove the receipt.
+Receipts are durable evidence and status references, retained for the account's lifetime;
+24-hour idempotency does not expire that evidence. Account deletion removes its receipts.
+Replay reads it before resolving today's destination or checking allowances,
+so it never redirects an accepted message. The caller's current authority is
+checked first: paused Code or an ended run gets no receipt back. Read current state with
+`ai.chat.read({ id: originalChatId, message: sendId })`.
 
 The owner-authorized queue API provides:
 
-- `GET /conversations/:id/queue`: ordered pending and failed entries.
+- `GET /conversations/:id/queue`: ordered pending and failed person entries, plus pending automation entries;
+  each item includes `error` and `retrying` for a visible infrastructure retry.
 - `PATCH /conversations/:id/queue/:messageId` with `{ text }`: edit queued text
   while retaining attachments and resource references.
 - `DELETE /conversations/:id/queue/:messageId`: remove an entry that has not started.
@@ -106,8 +157,9 @@ per-conversation socket is required.
 Use the existing Core log and trace views. Filter logs by `ai:runtime`,
 `ai:message-queue`, `ai:executor`, `ai:files`, or `ai:transcription`. AI live
 updates log under `events:live` with the application ID `core`.
-Queue dispatch errors carry `conversationId`, `messageId` and
-`queue_dispatch_failed`. Heartbeat, recovery and completion-publication warnings
+Queue start failures carry `conversationId`, `messageId`, the stable refusal `code`
+(or `dispatch_failed`), and `errorType`. Each failed attempt is logged, including
+the transition to the retry deadline. Heartbeat, recovery and completion-publication warnings
 carry conversation and turn IDs. A heartbeat warning is emitted once per failure
 streak; recovery uses the existing durable turn state.
 
@@ -1134,7 +1186,9 @@ Direct interactive Assistant submissions check optional cost allowances before
 consuming the draft or promoting a queued message. Each subsequent direct model
 round checks again. API rejection uses HTTP 429 with `quota_exhausted` or
 `quota_usage_unknown`; model access is still checked independently. A blocked
-queue head retains its content and attachments for later dispatch. Already
+person queue head retains its content and attachments for later dispatch.
+Automation queue entries fail permanently on a quota refusal and release their
+place. Already
 running provider calls may finish and exceed the allowance.
 
 The feature is disabled by default and does not limit generic application AI,

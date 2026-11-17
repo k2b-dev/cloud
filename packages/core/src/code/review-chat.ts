@@ -246,7 +246,7 @@ export async function startCodeReviewRevision(versionId: string) {
     EXISTS(SELECT 1 FROM code.version_withdrawals WHERE version_id=w.version_id) AS withdrawn,
     w.version_id=(SELECT id FROM code.versions WHERE code_id=w.code_id ORDER BY number DESC LIMIT 1) AS latest,
     EXISTS(SELECT 1 FROM ai.turns WHERE conversation_id=w.conversation_id AND NOT COALESCE(run_config ? 'background',false) AND status IN ('queued','running','waiting_for_action')) AS busy,
-    EXISTS(SELECT 1 FROM ai.queued_messages WHERE conversation_id=w.conversation_id AND status IN ('pending','failed')) AS queued,
+    EXISTS(SELECT 1 FROM ai.queued_messages WHERE conversation_id=w.conversation_id AND (status='pending' OR (status='failed' AND automation_source IS NULL))) AS queued,
     decision_message_id IS NOT NULL AS delivered FROM code.review_chat_work w WHERE version_id=${versionId}::uuid`;
   if (!ready) return;
   if (ready.withdrawn || !ready.latest) return skip(ready.withdrawn ? "withdrawn" : "superseded");
@@ -303,7 +303,7 @@ export async function startCodeReviewRevision(versionId: string) {
       const [busy] = await tx`SELECT id FROM ai.turns WHERE conversation_id=${work.conversation_id}::uuid
         AND NOT COALESCE(run_config ? 'background',false) AND status IN ('queued','running','waiting_for_action') LIMIT 1`;
       const [queued] =
-        await tx`SELECT id FROM ai.queued_messages WHERE conversation_id=${work.conversation_id}::uuid AND status IN ('pending','failed') LIMIT 1`;
+        await tx`SELECT id FROM ai.queued_messages WHERE conversation_id=${work.conversation_id}::uuid AND (status='pending' OR (status='failed' AND automation_source IS NULL)) LIMIT 1`;
       if (busy || queued || !current.decision_message_id)
         throw new PgOutboxDeferred("The person's current answer and queued messages go first");
       const submitted = await aiConversations.submitChatTurn(

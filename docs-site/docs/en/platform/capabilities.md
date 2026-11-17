@@ -1589,25 +1589,37 @@ its result contains `{ chat, messages, message }`. Do not poll for a human.
 
 Repeating a key across Code runs recovers the accepted message, even when model
 or quota admission would now refuse a new one. The dispatcher can replay an
-admission response; the read Query gives current state. Different text, context
-or destination under that key returns `IDEMPOTENCY_CONFLICT`. A full queue
+admission response; the read Query gives current state. Different text or context
+under that key returns `IDEMPOTENCY_CONFLICT`. Replay keeps the original
+resolved destination, including after a chat-binding change or removal from the
+queue. Receipts are durable evidence and status references, retained for the account's lifetime
+(including after queue removal or chat deletion); the 24-hour window limits key reuse, not receipt retention.
+Automation entries have 32 separate places per chat and one per source
+Code or chat; they never spend a person's 20 composer places. A full queue
 returns `chat_busy`; a Project change during preparation returns `chat_changed`.
+At start, Core rechecks ownership, source authority, the Code run and enabled
+Code, model access and allowances under the chat lock. A failed automation entry
+is final with its reason (for example `code_inactive`, `code_run_gone` or a
+daily limit), frees its place and does not block the next entry or the person.
 A person's Codes have at most one waiting or running message across all chats;
-another send returns `chat_busy` until it finishes. A Code message starts only
-while its run exists, its Code is enabled, no older Code message of the person
-is open and the Code and owner daily AI limits still have room. While it waits,
-its status is `queued` with the reason, and the person's own messages and chat
-actions pass it. Whatever it waits for, it does not outlive the budget day it
-was accepted on. A message that cannot start is `cancelled` with the reason,
-for example `code_inactive`, `code_run_gone`, `code_budget_day_ended`,
-`chat_archived` or `dispatch_failed`. Archiving a chat withdraws its waiting
-Code messages; restoring does not bring them back. A turn never sends into its
-own chat. A send whose invocation source cannot be checked right now returns
-`409 source_unavailable`; repeat the same call later. A key holds for 24 hours
-per person, like every Action key; after that, the same key queues a new
-message. When the person retries a sent message, the retry runs on the person's
-allowance; the initiator stays for the chain rule. Separate
-automation receipts and capacity follow with the automation queue.
+another send returns `chat_busy` until it finishes. At start, only older Code
+messages of the person count. A Code message never outlives the budget day it
+was accepted on. Expired or invalid Code entries become `failed` with their original refusal reason independently of
+FIFO, even behind a blocked person message; retry does not revive them. Later expiry or
+archiving never overwrites a final refusal. Final automation refusals discard input and context.
+Unexpected infrastructure errors remain queued with visible `dispatch_failed`; retries wait at least
+15 seconds and log each failed attempt. They end as `failed/dispatch_failed` at the existing
+30-minute queued-turn start deadline, measured from acceptance (or earlier at the Code budget-day end).
+An entry already older than 30 minutes at its first unknown failure has only that one start
+attempt; the next due sweep marks it finally failed with visible `dispatch_failed`.
+Lock contention and transaction retries leave the entry unchanged and do not count as unknown failures.
+The person can remove the queued entry at any time. Archiving
+a chat prevents its pending entries from starting, including after restoration.
+A turn never sends into its own chat. A send whose invocation source cannot be checked right
+now returns `409 source_unavailable`; repeat the same call later. A key holds
+for 24 hours per person, like every Action key; after that, the same key queues
+a new message. When the person retries a sent message, the retry runs on the
+person's allowance; the initiator stays for the chain rule.
 
 Code classifies only `ai.generate`, `ai.decide` and `ai.chat.send` as `ai`.
 Chat reads are `read`; send retains the `ai` version-approval rule until the

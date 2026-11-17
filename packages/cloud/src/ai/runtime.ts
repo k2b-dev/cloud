@@ -25,10 +25,18 @@ import { AiTurnExecutor, type ExecutorConfig } from "./executor";
 import { canonicalizeAiConversationAttachments, snapshotAiConversationFiles } from "./file-context";
 import { AiClientToolResultSchema } from "./http";
 import type { AiLocalClient, AiLocalContext } from "./local-tool-contracts";
-import { drainQueuedMessages, type QueuedCodeStart } from "./message-queue";
+import { drainQueuedMessages, type ValidateQueuedChatStart } from "./message-queue";
+import { AI_QUEUE_SWEEP_INTERVAL_MS } from "./queue-waits";
 
-export type { QueuedCodeStart } from "./message-queue";
-export { AiMessageQueueConflict, enqueueChatMessage } from "./message-queue";
+export type { QueuedChatSubmission, ValidateQueuedChatStart } from "./message-queue";
+export {
+  AiMessageQueueConflict,
+  AiQueuedChatStartError,
+  AUTOMATION_QUEUE_LIMIT,
+  AUTOMATION_QUEUE_SOURCE_LIMIT,
+  enqueueAutomationChatMessage,
+  enqueueChatMessage,
+} from "./message-queue";
 export { AI_QUEUE_RETRYABLE_ERRORS, isAiQueueRetryableError } from "./queue-waits";
 
 import { aiUserPrefs } from "./prefs";
@@ -73,8 +81,6 @@ const AI_TURN_HEARTBEAT_MS = 3_000;
 const AI_TURN_WORKER_CONCURRENCY = 8;
 const AI_TURN_MAX_ATTEMPTS = 5;
 
-const AI_SWEEP_INTERVAL_MS = 15_000;
-
 // ---------------------------------------------------------------------------
 // Queue
 // ---------------------------------------------------------------------------
@@ -97,7 +103,7 @@ const enqueueAiTurn = (job: AiTurnJob): Promise<unknown> => aiTurnQueue().send({
 
 /** Wake the durable queue promptly; the periodic sweep retries a failed wake-up. */
 export const wakeAiMessageQueue = (conversationId: string): void => {
-  void drainQueuedMessages(enqueueAiTurn, conversationId, running?.queuedCodeStart).catch(() =>
+  void drainQueuedMessages(enqueueAiTurn, conversationId, running?.validateQueuedChatStart).catch(() =>
     log.warn("AI message queue wake-up failed", { code: "queue_wakeup_failed", conversationId }),
   );
 };
@@ -617,7 +623,7 @@ const publishSweepFinished = async (turn: AiTurnFinalizedAction & { error?: stri
 
 export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>): Promise<void> => {
   await aiQuotas.prune().catch(() => log.warn("Quota retention failed", { code: "quota_retention_failed" }));
-  await drainQueuedMessages(enqueueAiTurn, undefined, running?.queuedCodeStart);
+  await drainQueuedMessages(enqueueAiTurn, undefined, running?.validateQueuedChatStart);
   const sweep = await aiConversations.sweepTurns({ maxAttempts: AI_TURN_MAX_ATTEMPTS });
   await Promise.all([
     ...sweep.requeued.map((job) =>
@@ -644,7 +650,7 @@ export const sweepAiRuntime = async (onTurnFinalized?: (event: AiTurnFinalizedEv
 type AiRuntimeState = {
   listeners: Set<(event: AiTurnFinalizedEvent) => Promise<void>>;
   approvalListeners: Set<ApprovalRequestedListener>;
-  queuedCodeStart?: QueuedCodeStart;
+  validateQueuedChatStart?: ValidateQueuedChatStart;
   stop: () => void;
 };
 
@@ -656,8 +662,8 @@ export const startAiRuntime = (
     /** Host-owned tools for default Assistant turns. Register on the first runtime start. */
     tools?: readonly AiRuntimeTool[];
     concurrency?: number;
-    /** Host-owned checks for queued Code-started messages; without them such messages wait. */
-    queuedCodeStart?: QueuedCodeStart;
+    /** Host-owned admission policy; runs on the current queued snapshot under the conversation lock. */
+    validateQueuedChatStart?: ValidateQueuedChatStart;
     onTurnFinalized?: (event: AiTurnFinalizedEvent) => Promise<void>;
     onApprovalRequested?: ApprovalRequestedListener;
   } = {},
@@ -721,7 +727,7 @@ export const startAiRuntime = (
     run: async () => {
       await sweepAiRuntime(dispatchTurnFinalized);
     },
-    intervalMs: AI_SWEEP_INTERVAL_MS,
+    intervalMs: AI_QUEUE_SWEEP_INTERVAL_MS,
     onError: (error) => log.warn("AI runtime sweep failed", { error: error instanceof Error ? error.message : "sweep failed" }),
   });
 
@@ -729,7 +735,7 @@ export const startAiRuntime = (
   const state: AiRuntimeState = {
     listeners,
     approvalListeners,
-    queuedCodeStart: input.queuedCodeStart,
+    validateQueuedChatStart: input.validateQueuedChatStart,
     stop: () => {
       if (running !== state) return;
       controller.abort();
