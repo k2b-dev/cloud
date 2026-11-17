@@ -2,9 +2,6 @@ import type { AiQuoteMarker } from "@k2b/cloud/ai/browser";
 import { SelectionAction } from "@k2b/ui";
 import type { JSX } from "solid-js";
 
-// The draft's quote rows share this chunk: a draft has quotes only once it loaded.
-export { ChatComposerQuotes } from "@k2b/ui";
-
 /**
  * "Quote" at text selected in the chat, loaded with the first selection there. Gustav's finished answers and the
  * person's own messages are passages; steps, notes between them, statuses, and messages on their way are none.

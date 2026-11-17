@@ -57,6 +57,7 @@ import {
   Button,
   ButtonLink,
   Chat,
+  ChatComposerQuotes,
   type ChatMention,
   dialogCore,
   LocaleProvider,
@@ -267,9 +268,6 @@ const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) 
 // "Quote" loads with the first selection in the chat; a draft's quote rows load with its first quote.
 // A chunk an update replaced reloads the page instead of breaking the chat.
 const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
-const ComposerQuotes = lazy(async () => ({
-  default: (await importOnDemand(() => import("./assistant-quotes")))?.ChatComposerQuotes ?? (() => null),
-}));
 
 /** The usage of a chat that has sent nothing yet. */
 const NOTHING_USED = { input: 0, output: 0, total: 0 };
@@ -2535,7 +2533,7 @@ export default function AssistantWorkspace(props: Props) {
                 />
               </Show>
               <Show when={quotesFor(sessionKey()).length}>
-                <ComposerQuotes
+                <ChatComposerQuotes
                   quotes={quotesFor(sessionKey()).map((quote, index) => ({
                     id: `${index}:${quote.text}`,
                     author: quote.from === "assistant" ? "Gustav" : t().quotedFromYou,
