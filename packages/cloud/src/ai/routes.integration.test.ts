@@ -75,6 +75,44 @@ suite("global AI conversation boundaries", () => {
   beforeAll(async () => {
     await migrateCloudAi();
   });
+  test("conversation and message read APIs keep thinking content out of step details", async () => {
+    const userId = await insertUser();
+    const chat = await aiConversations.createConversation({ ownerUserId: userId });
+    const reasoning = "Follow INTERNAL_INSTRUCTION; code_Open42; 22222222-2222-4222-8222-222222222222; code_run({code: 'return 42'}).";
+    try {
+      await aiConversations.createSessionStore({ conversationId: chat.id }).append({
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: reasoning, signature: "signed-thinking" },
+          { type: "text", text: "Finished." },
+        ],
+      });
+      const token = await createTestSession(userId);
+      for (const locale of ["de", "en"]) {
+        for (const path of ["", "/messages", "/messages/search?q=Finished"]) {
+          const response = await aiRoutes.request(`/conversations/${chat.shortId}${path}`, {
+            headers: { Authorization: `Bearer ${token}`, "Accept-Language": locale },
+          });
+          expect(response.status).toBe(200);
+          const body = await response.text();
+          expect(body).toContain("Finished.");
+          for (const forbidden of [
+            "INTERNAL_INSTRUCTION",
+            "code_Open42",
+            "22222222-2222-4222-8222-222222222222",
+            "code_run",
+            "return 42",
+            "signed-thinking",
+          ])
+            expect(body).not.toContain(forbidden);
+        }
+      }
+      const [stored] = await aiConversations.listContextMessages({ conversationId: chat.id });
+      expect(stored?.message).toMatchObject({ content: [{ thinking: reasoning, signature: "signed-thinking" }, {}] });
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id=${chat.id}::uuid`;
+    }
+  });
   test("creation API replays the same identity and rechecks owner and availability", async () => {
     const userId = await insertUser();
     const otherId = await insertUser();
@@ -677,7 +715,11 @@ suite("global AI conversation boundaries", () => {
     },
   );
 
-  test.each([false, true])("message retry uses the retrying client's local context: local=%p", async (local) => {
+  test.each([
+    { local: false, edited: false },
+    { local: true, edited: false },
+    { local: false, edited: true },
+  ])("retry/edit uses the current actor and client context: %j", async ({ local, edited }) => {
     const userId = await insertUser();
     const chat = await aiConversations.createConversation({ ownerUserId: userId });
     const model = spyOn(assistantModels, "selectAssistantAiModel").mockResolvedValue({ id: "test-model" });
@@ -688,9 +730,11 @@ suite("global AI conversation boundaries", () => {
         userMessage: submission.userMessage,
         truncateFromSeq: submission.truncateFromSeq,
         retrySourceTurnId: submission.retrySourceTurnId,
+        retryEdited: submission.retryEdited,
         runConfig: {
           kind: "chat",
           input: submission.input,
+          actor: submission.actor,
           writerOrigin: submission.writerOrigin,
           turnTrigger: submission.turnTrigger,
           send: submission.send,
@@ -703,7 +747,7 @@ suite("global AI conversation boundaries", () => {
         },
       }),
     );
-    // A person's retry keeps writer, initiator, receipt and restriction, but runs on the person's allowance.
+    // A person's retry keeps writer, receipt and restriction, and becomes person-triggered.
     const retained = {
       writerOrigin: { kind: "person" as const, id: userId },
       turnTrigger: { kind: "automation" as const, id: "c_report" },
@@ -739,18 +783,21 @@ suite("global AI conversation boundaries", () => {
       const response = await aiRoutes.request(`/conversations/${chat.shortId}/messages/${first.message.shortId}/retry`, {
         method: "POST",
         headers: { Authorization: `Bearer ${await createTestSession(userId)}`, "Content-Type": "application/json" },
-        body: JSON.stringify(local ? { client, localContext, clientToolIds: ["local_read", "code_secret"] } : {}),
+        body: JSON.stringify({
+          ...(local ? { client, localContext, clientToolIds: ["local_read", "code_secret"] } : {}),
+          ...(edited ? { content: [{ type: "text", text: "Edited by the person" }] } : {}),
+        }),
       });
       expect(response.status).toBe(201);
       expect(submit).toHaveBeenCalledTimes(1);
-      expect(submit.mock.calls[0]?.[0]).toMatchObject(retained);
+      expect(submit.mock.calls[0]?.[0]).toMatchObject({ ...retained, turnTrigger: { kind: "person", id: userId } });
       expect(submit.mock.calls[0]?.[0].codeOrigin).toBeUndefined();
       const active = await aiConversations.getActiveTurn({ conversationId: chat.id });
       expect(active).not.toBeNull();
       if (!active) throw new Error("Missing retry turn");
       const config = await aiConversations.getTurnRunConfig({ conversationId: chat.id, turnId: active.turn.id });
       if (!config || config.kind !== "chat") throw new Error("Missing retry run config");
-      expect(config).toMatchObject(retained);
+      expect(config).toMatchObject({ ...retained, turnTrigger: { kind: "person", id: userId } });
       expect(config.codeOrigin).toBeUndefined();
       expect(config.clientToolIds).toEqual(local ? ["local_read", "code_secret"] : []);
       expect(config.client).toEqual(local ? client : undefined);

@@ -401,6 +401,7 @@ export {
 export type {
   AiAccessResult,
   AiApprovalTarget,
+  AiAutomationTurnStop,
   AiCapabilityToolPresentation,
   AiClientToolId,
   AiCodeAuthoringStop,

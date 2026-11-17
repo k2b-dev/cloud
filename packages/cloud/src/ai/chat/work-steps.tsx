@@ -1,7 +1,7 @@
 import { Button, Chat, type ChatActivityMetaTone, useLocale } from "@k2b/ui";
 // From its own entry: this module loads on demand, and the main entry would keep the card in the island's first code.
 import { HoverCard } from "@k2b/ui/hover-card";
-import { children, createContext, createMemo, createSignal, For, type JSX, Show, useContext } from "solid-js";
+import { children, createComputed, createContext, createMemo, createSignal, For, type JSX, on, Show, useContext } from "solid-js";
 import { type AiActionCheck, preferredActionCheck } from "../action-review";
 import type { AiTurnBlock } from "../protocol";
 import { toolOutcome, toolSubject, useReaderTimeZone } from "./action-sentences";
@@ -46,9 +46,11 @@ type StepCard = { label: string; title: string; detail?: string; content: JSX.El
  * The ⓘ at the end of a step's row and the card with its details. A card with an action is a dialog that opens only on
  * a press or Enter; one without opens on pointing and focus. It lives with the opened work, so it loads with it.
  */
-function StepInfo(props: { card: StepCard }): JSX.Element {
+function StepInfo(props: { card: StepCard; triggerRef?: (button: HTMLButtonElement) => void; liveDetails?: boolean }): JSX.Element {
   return (
     <HoverCard.Trigger
+      ref={props.triggerRef}
+      data-ai-live-detail={props.liveDetails ? "" : undefined}
       triggerClass="k2b-chat-activity__info"
       aria-label={props.card.label}
       align="end"
@@ -268,12 +270,30 @@ export function AiWorkStep(props: { block: ToolBlock; busy: boolean }): JSX.Elem
 
 /**
  * Gustav's own step in words, such as "Thought it over": the icon in the third grey, one line, and the whole text
- * behind its ⓘ, where a long text scrolls. Used for reasoning and for what Gustav wrote between two steps.
+ * behind its ⓘ, where a long text scrolls. Used for what Gustav wrote between two steps.
  */
-export function AiNoteStep(props: { label: string; busy: boolean; icon?: string; children?: JSX.Element }): JSX.Element {
+export function AiNoteStep(props: {
+  label: string;
+  busy: boolean;
+  icon?: string;
+  children?: JSX.Element;
+  liveDetails?: boolean;
+}): JSX.Element {
   const locale = useLocale();
   const work = useContext(AiWorkContext);
   const details = children(() => props.children);
+  let trigger: HTMLButtonElement | undefined;
+  const hasDetails = createMemo(() => details.toArray().length > 0);
+  const returnToOverview = () => {
+    if (!trigger || trigger.ownerDocument.activeElement !== trigger) return;
+    trigger.closest(".ai-turn-work")?.querySelector<HTMLElement>(":scope > summary")?.focus({ preventScroll: true });
+  };
+  // Move keyboard focus before Show disposes the trigger and its open card. The overview's existing ring applies.
+  createComputed(
+    on(hasDetails, (visible) => {
+      if (!visible) returnToOverview();
+    }),
+  );
   const content = <div class="ai-step-card__note">{details()}</div>;
   return (
     <Chat.Activity
@@ -282,8 +302,12 @@ export function AiNoteStep(props: { label: string; busy: boolean; icon?: string;
       label={props.label}
       duration={props.busy ? work.liveDuration() : undefined}
       end={
-        <Show when={details.toArray().length > 0}>
-          <StepInfo card={{ label: aiChatMessages(locale()).stepDetails({ step: props.label }), title: props.label, content }} />
+        <Show when={hasDetails()}>
+          <StepInfo
+            triggerRef={(button) => (trigger = button)}
+            liveDetails={props.liveDetails}
+            card={{ label: aiChatMessages(locale()).stepDetails({ step: props.label }), title: props.label, content }}
+          />
         </Show>
       }
       busy={props.busy}
@@ -291,16 +315,16 @@ export function AiNoteStep(props: { label: string; busy: boolean; icon?: string;
   );
 }
 
-/** Thinking is a step: "Thought it over", and its reasoning in the card. */
+/** Thinking is a step, with only its available duration in the card. Model text is never a reader summary. */
 export function AiThoughtStep(props: { block: Extract<AiTurnBlock, { kind: "thinking" }>; busy: boolean }): JSX.Element {
   const locale = useLocale();
+  const work = useContext(AiWorkContext);
   const t = () => aiChatMessages(locale());
-  const text = () => props.block.text.trim();
+  const duration = () => (props.busy ? work.liveDuration() : undefined);
+  const label = () => (props.busy ? t().stepThinking : t().stepThought);
   return (
-    <Show when={text()} fallback={<AiNoteStep label={t().stepThinking} busy={props.busy} />}>
-      <AiNoteStep label={props.busy ? t().stepThinking : t().stepThought} busy={props.busy}>
-        <p class="ai-turn-steps__thought">{text()}</p>
-      </AiNoteStep>
-    </Show>
+    <AiNoteStep label={label()} busy={props.busy} liveDetails>
+      {duration() ? <p>{duration()}</p> : undefined}
+    </AiNoteStep>
   );
 }

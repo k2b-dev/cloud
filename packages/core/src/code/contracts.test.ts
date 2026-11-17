@@ -440,3 +440,23 @@ test("the capability seam preserves the stable guest authoring refusal", async (
     },
   });
 });
+
+test("send-only checked manifests reach submission without generic AI authority", () => {
+  const manifest = {
+    version: 1,
+    entry: "code.ts",
+    entrypoints: [],
+    ai: true,
+    policyRows: ["ai_chat_you"],
+    permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 1 }],
+    hashes: { source: "a".repeat(64), sdk: "b".repeat(64), bundle: "c".repeat(64) },
+  };
+  expect(CodeCheckedVersionManifestSchema.safeParse(manifest).success).toBeTrue();
+  for (const operation of ["core.ai.generate", "core.ai.decide"])
+    expect(
+      CodeCheckedVersionManifestSchema.safeParse({
+        ...manifest,
+        permissions: [...manifest.permissions, { ...manifest.permissions[0], operation }],
+      }).success,
+    ).toBeFalse();
+});

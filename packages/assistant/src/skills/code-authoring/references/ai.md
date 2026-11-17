@@ -222,13 +222,14 @@ again (`chat_chain_forbidden`). Retry, resume and queue promotion preserve the
 original initiator; missing origin never grants chaining authority.
 
 Only `ai.generate`, `ai.decide` and `ai.chat.send` count as Code AI operations.
-Chat reads use the `read` policy. Send currently uses the `ai` row, including its
-version approval. A sent turn uses the owner's normal Assistant allowance by
-actual usage, without passing the Code mandate to its tools or debiting the
-whole text-AI attempt allowance. Existing Code daily admission checks still
-apply; they do not reserve a whole future turn. See the
-Fibel send contract for limits
-and error codes.
+Chat reads use `read`. A priced Code-started turn uses `ai_chat_you` and
+reserves its whole maximum against the Code and owner daily limits at execution.
+The maximum includes 192,000 input tokens, one 32,000-token call for the last
+round's estimation margin, and 12,000 output tokens. Compaction shares the
+allowance. A missing context window refuses a priced turn. Unpriced or
+zero-priced models require the ordinary `ai` rule and approval coverage; a pure
+`send` version under the default policy should use a priced model. The Code
+mandate never passes to the target chat's tools.
 
 ## A model loop with SDK tools and files
 

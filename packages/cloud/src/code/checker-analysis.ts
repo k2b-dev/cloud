@@ -411,9 +411,65 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
     }
     if (request.aiOperations.includes(operation)) result.ai = true;
   };
+  // Inspect source initializers, never a claimed literal type: a type assertion
+  // cannot turn event/mail/model data into a fixed instruction.
+  function fixedChatText(expression: ts.Expression, seen = new Set<ts.Symbol>()): boolean {
+    const node = unparen(expression);
+    if (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node) || ts.isSatisfiesExpression(node))
+      return fixedChatText(node.expression, seen);
+    if (ts.isStringLiteralLike(node)) return true;
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken)
+      return fixedChatText(node.left, new Set(seen)) && fixedChatText(node.right, new Set(seen));
+    if (!ts.isIdentifier(node)) return false;
+    let symbol = ts.isShorthandPropertyAssignment(node.parent)
+      ? checker.getShorthandAssignmentValueSymbol(node.parent)
+      : checker.getSymbolAtLocation(node);
+    if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+    if (!symbol || seen.has(symbol)) return false;
+    seen.add(symbol);
+    const declaration = symbol.valueDeclaration;
+    return Boolean(
+      declaration &&
+        ts.isVariableDeclaration(declaration) &&
+        ts.isIdentifier(declaration.name) &&
+        ts.isVariableDeclarationList(declaration.parent) &&
+        declaration.parent.flags & ts.NodeFlags.Const &&
+        declaration.initializer &&
+        fixedChatText(declaration.initializer, seen),
+    );
+  }
+  function fixedChatInput(expression: ts.Expression | undefined): boolean {
+    if (!expression) return false;
+    const node = unparen(expression);
+    if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) return fixedChatInput(node.expression);
+    // Keep the instruction visible at its call site. A const object can still
+    // be mutated or overridden; only the text value may be a const binding.
+    if (
+      !ts.isObjectLiteralExpression(node) ||
+      node.properties.some(
+        (property) =>
+          !(ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) ||
+          !(ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)),
+      )
+    )
+      return false;
+    const textProperties = node.properties.filter(
+      (property) =>
+        property.name && (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) && property.name.text === "text",
+    );
+    const property = textProperties.length === 1 ? textProperties[0] : undefined;
+    return Boolean(
+      property &&
+        (ts.isPropertyAssignment(property)
+          ? fixedChatText(property.initializer)
+          : ts.isShorthandPropertyAssignment(property) && fixedChatText(property.name)),
+    );
+  }
   const operationCall = (node: ts.CallExpression, op: CodeSdkOperation, target: ReturnType<typeof handle>) => {
     permission(node, op.capability, op.target ? target : null);
     const arg = node.arguments[0];
+    if (op.capability === "core.ai.chat.send" && request.sdk.manifest.mode !== "code_run" && !fixedChatInput(arg))
+      report(arg ?? node, "code_chat_text_fixed", t.chat_text_fixed);
     if (arg)
       for (const [field, expected] of Object.entries(op.refs)) {
         const refType = propertyType(checker.getTypeAtLocation(arg), field, arg);
@@ -606,6 +662,8 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       const signatures = memberType.getCallSignatures();
       const tool = aiToolElement(node);
       if (tool) {
+        if (tool.op.capability === "core.ai.chat.send" && request.sdk.manifest.mode !== "code_run")
+          report(node, "code_chat_text_fixed", t.chat_text_fixed);
         if (Object.keys(tool.op.refs).length) report(node, "code_unresolved_ref", t.unresolved_ref2);
         else permission(node, tool.op.capability, tool.target);
       }

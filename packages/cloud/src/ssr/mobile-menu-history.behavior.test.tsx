@@ -6,12 +6,14 @@ test("selection finishes menu history before opening the next dialog", async () 
   const { dialogCore } = await import("@k2b/ui");
   const { openMobileMenu } = await import("./mobile-menu-history");
   history.replaceState({ applicationState: "kept" }, "");
+  dom.document.body.dataset.k2bPrimary = "ai";
   let select = async () => false;
   const menu = openMobileMenu((beforeSelect) => () => {
     select = beforeSelect;
     return document.createElement("button");
   });
   expect(history.state.cloudMobileMenu).toBeString();
+  expect(dom.document.querySelector("dialog[open]")?.getAttribute("data-k2b-primary")).toBe("blue");
   expect(openMobileMenu(() => () => document.createElement("button"))).toBe(menu);
   expect(await select()).toBe(true);
   await menu;

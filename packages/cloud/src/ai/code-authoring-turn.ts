@@ -1,6 +1,7 @@
 import { type CompactFn, estimateTokens, type Message, type Provider, type ProviderRequest, type Tool } from "@k2b/nessi";
+import { AiTurnInferenceLimit } from "./turn-failure";
 import type { AiTurnPolicyToolCall } from "./turn-policy";
-import type { AiCodeAuthoringStop } from "./types";
+import type { AiAutomationTurnStop, AiChatTurnRunConfig, AiCodeAuthoringStop } from "./types";
 
 /**
  * Authoring has no F7 attempt allowance: F7 covers AI invoked BY saved Code.
@@ -19,6 +20,34 @@ export const CODE_AUTHORING_TURN_BUDGET = {
   // Initial failure plus the same two repair attempts allowed for malformed model calls.
   identicalErrorRetries: 2,
 } as const;
+
+/** Allocation for a turn that a person did not start (automation, chat chain).
+ * Measured on 16.11.2026 with the R1 default model: 20 morning briefings in
+ * fresh chats used 101k input tokens (median), 173k (p95) and 178k (max) over
+ * 6 (median) to 9 model calls; one call returned at most 2.8k and one turn at
+ * most 5.1k output tokens. A one-sentence number post costs one call and reads
+ * the chat history (57k before, 10k after compaction). The input and call
+ * allowances cover every measured briefing; the output caps give twice the
+ * measured maximum. Chat calls, provider retries and compaction share it.
+ */
+export const AUTOMATION_TURN_BUDGET = {
+  inputTokens: 192_000,
+  modelCalls: 12,
+  /** Ceiling for a single model call, sent to the provider. */
+  maxOutputTokens: 4096,
+  /** Ceiling for all calls of the turn together. */
+  outputTokens: 12_000,
+  /** One representative call: reserved for an input estimate that undershoots on the last call. */
+  reserveInputTokens: 32_000,
+  /** Charged per attempt that reports no usage, when the model's context window is unknown. */
+  unknownInputTokens: 64_000,
+  /** Automatic turns compact a chat history above this size; person turns keep the model's fill threshold. */
+  compactAboveTokens: 32_000,
+} as const;
+
+/** Missing triggers retain legacy/person behavior; review revisions use authoring's allocation. */
+export const isAutomaticAiChatTurn = (config: Pick<AiChatTurnRunConfig, "turnTrigger" | "codeReview">): boolean =>
+  !config.codeReview && config.turnTrigger !== undefined && config.turnTrigger.kind !== "person";
 
 const authoringNames = new Set([
   "code_init",
@@ -116,10 +145,17 @@ export function createCodeAuthoringTurnBudget(input: {
   priorCalls: { calls: number; inputTokens: number };
   finishedToolCalls: readonly AiTurnPolicyToolCall[];
   selected: boolean;
-  onStop?: (reason: "model_calls" | "input_tokens" | "repeated_error") => void;
+  /** Only an explicit non-person trigger uses the automatic allocation. */
+  nonPerson?: boolean;
+  /** Priced Code uses the model window for attempts with unknown input usage. */
+  inputTokenCeiling?: number;
+  onStop?: (reason: "model_calls" | "input_tokens" | "output_tokens" | "repeated_error") => void;
 }) {
-  let active = input.selected;
+  let authoring = input.selected;
+  const active = () => input.nonPerson || authoring;
+  const allocation = input.nonPerson ? AUTOMATION_TURN_BUDGET : CODE_AUTHORING_TURN_BUDGET;
   let stopped: AiCodeAuthoringStop | null = null;
+  let automationStop: AiAutomationTurnStop | null = null;
   const receipts = new Map<string | number, AiTurnPolicyToolCall>();
   const progress = () => {
     let completedSteps = 0;
@@ -175,8 +211,8 @@ export function createCodeAuthoringTurnBudget(input: {
     // supersedes the wrapper's provisional success, for the stop snapshot.
     receipts.set(call.callId ?? receipts.size, call);
     if (call.callId && seenCalls.has(call.callId)) return;
-    if (authoringNames.has(call.name) || (call.name === "load_skill" && record(call.result)?.name === "code-authoring")) active = true;
-    if (!active) return;
+    if (authoringNames.has(call.name) || (call.name === "load_skill" && record(call.result)?.name === "code-authoring")) authoring = true;
+    if (!authoring) return;
     const keys = failureKeys(call);
     // Output validation follows the tool wrapper. A provisional success must
     // not hide a later failed result from nessi for that same call ID.
@@ -185,27 +221,28 @@ export function createCodeAuthoringTurnBudget(input: {
   };
   for (const call of input.finishedToolCalls) noteToolCall(call);
   const stopReason = (estimate: number) =>
-    [...errors.values()].some((count) => count > CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries)
+    authoring && [...errors.values()].some((count) => count > CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries)
       ? "repeated_error"
-      : calls >= CODE_AUTHORING_TURN_BUDGET.modelCalls
+      : calls >= allocation.modelCalls
         ? "model_calls"
-        : inputTokens + estimate > CODE_AUTHORING_TURN_BUDGET.inputTokens
+        : inputTokens + estimate > allocation.inputTokens
           ? "input_tokens"
           : null;
   return {
     noteToolCall,
     stopped: () => stopped,
+    automationStopped: () => automationStop,
     // Compaction's source is bounded to 60k characters; a half-window reserves
     // room for that source, its instructions, and the next chat admission.
     // Never let a locally generated stop become a persisted conversation summary.
     compact:
       (compact: CompactFn): CompactFn =>
       (context) => {
-        if (active && stopReason(CODE_AUTHORING_TURN_BUDGET.unknownInputTokens)) return null;
+        if (active() && stopReason(allocation.unknownInputTokens)) return null;
         // Large-window models may reach the turn allowance before their normal
         // fill threshold. Compact history early so a later turn can continue.
-        const largeHistory =
-          active && estimateTokens(context.entries.map((entry) => entry.message)) > CODE_AUTHORING_TURN_BUDGET.unknownInputTokens;
+        const threshold = input.nonPerson ? AUTOMATION_TURN_BUDGET.compactAboveTokens : allocation.unknownInputTokens;
+        const largeHistory = active() && estimateTokens(context.entries.map((entry) => entry.message)) > threshold;
         return compact(largeHistory ? { ...context, fillRatio: Math.max(1, context.fillRatio ?? 0) } : context);
       },
     tools: (tools: Tool[]): Tool[] =>
@@ -215,7 +252,7 @@ export function createCodeAuthoringTurnBudget(input: {
           : {
               ...tool,
               async execute(args, context) {
-                active = true;
+                authoring = true;
                 if ([...errors.values()].some((count) => count > CODE_AUTHORING_TURN_BUDGET.identicalErrorRetries))
                   return {
                     version: 1,
@@ -234,16 +271,14 @@ export function createCodeAuthoringTurnBudget(input: {
     wrap: (provider: Provider, purpose: "chat" | "compaction" = "chat"): Provider => ({
       ...provider,
       async *stream(request) {
-        const prepared = active ? { ...request, messages: projectCodeAuthoringContext(request.messages) } : request;
+        const prepared = authoring ? { ...request, messages: projectCodeAuthoringContext(request.messages) } : request;
         const estimated = codeAuthoringInputTokens(prepared);
-        const reason = active ? stopReason(estimated) : null;
+        const reason = active() ? stopReason(estimated) : null;
         if (reason) {
           // An oversized custom compaction prompt must never persist the stop as a summary.
           if (purpose === "compaction") return;
-          stopped = {
-            reason,
-            ...progress(),
-          };
+          if (input.nonPerson && !authoring && reason !== "repeated_error") automationStop = { reason };
+          else stopped = { reason, ...progress() };
           input.onStop?.(reason);
           // A local terminal response costs no additional model call and cannot request more tools.
           // This boundary runs only after all tools of the previous response have settled.
@@ -263,9 +298,17 @@ export function createCodeAuthoringTurnBudget(input: {
             if (event.type === "usage" && Number.isSafeInteger(event.usage.input) && event.usage.input >= 0) reported = event.usage.input;
             yield event;
           }
+        } catch (error) {
+          if (!(error instanceof AiTurnInferenceLimit) || !input.nonPerson) throw error;
+          if (purpose === "compaction") return;
+          if (authoring) stopped = { reason: error.reason, ...progress() };
+          else automationStop = { reason: error.reason };
+          input.onStop?.(error.reason);
+          yield { type: "block_start", blockId: "authoring-limit", index: 0, kind: "text" };
+          yield { type: "block_end", blockId: "authoring-limit", index: 0, block: { type: "text", text: "" } };
         } finally {
           // Snapshots replace rather than add. Keep the estimate as a floor for missing/zero usage.
-          inputTokens += Math.max(estimated, reported ?? estimated) - estimated;
+          inputTokens += Math.max(estimated, reported && reported > 0 ? reported : (input.inputTokenCeiling ?? estimated)) - estimated;
         }
       },
     }),

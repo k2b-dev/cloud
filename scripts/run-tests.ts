@@ -38,7 +38,7 @@
  * (`scripts/fixtures/test-sync.ts`).
  */
 import { readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { describeDatabaseActivity } from "./fixtures/database-activity";
 import { closeMigratedDatabaseTemplate, integrationSchemaHash, retainMigratedDatabaseTemplate } from "./fixtures/test-database-template";
 import { applyTestRuntimeEnv, dotenvLeak, hasIntegrationTarget, noEnvFile, readTestTarget } from "./fixtures/test-infra-env";
@@ -104,6 +104,22 @@ export const testPartPrefix = "test:part:";
 
 const readPackageJson = (path: string): PackageJson => JSON.parse(readFileSync(path, "utf8")) as PackageJson;
 
+/** A package script that prints the files its `test:integration` script runs; that script then also runs one given file. */
+export const integrationListScript = "test:integration:list";
+
+/** The files a package's own integration script runs, relative to `cwd`, without starting infrastructure. */
+export const listOwnedIntegrationFiles = (cwd: string): string[] => {
+  const listed = Bun.spawnSync(["bun", "--no-env-file", "run", integrationListScript], { cwd, stdout: "pipe", stderr: "pipe" });
+  if (listed.exitCode !== 0) throw new Error(`${integrationListScript} failed in ${cwd}: ${listed.stderr.toString().trim()}`);
+  const files = listed.stdout
+    .toString()
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((path) => relative(cwd, resolve(cwd, path.trim())));
+  if (files.length === 0) throw new Error(`${integrationListScript} listed no file in ${cwd}`);
+  return files;
+};
+
 /** Test files of one workspace, relative to `cwd`, as this runner discovers them. */
 export const listTestFiles = async (cwd: string): Promise<string[]> => {
   const out: string[] = [];
@@ -141,6 +157,7 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
     packageCommand: string[] | null,
     integrationCommand: string[] | null,
     parts: string[] = [],
+    listsIntegrationFiles = false,
   ) => {
     if (options.browser) {
       for (const file of await listBrowserFiles(cwd)) {
@@ -151,6 +168,13 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
     }
     if (options.integration) {
       // A package that owns its integration preload (private database, isolation) runs its own script.
+      // When the package also lists its files, each file runs through that script as a suite of its own,
+      // so shards can balance a large package by its measured file times.
+      if (integrationCommand && listsIntegrationFiles) {
+        for (const file of listOwnedIntegrationFiles(cwd))
+          suites.push({ name: `${name} ${file}`, cwd, command: [...integrationCommand, file] });
+        return;
+      }
       if (integrationCommand) {
         suites.push({ name, cwd, command: integrationCommand });
         return;
@@ -183,6 +207,7 @@ export const discoverTestSuites = async (workspaceRoot: string, options: Options
       pkg.scripts?.test ? ["bun", "run", "test"] : null,
       pkg.scripts?.["test:integration"] ? ["bun", "run", "test:integration"] : null,
       Object.keys(pkg.scripts ?? {}).filter((script) => script.startsWith(testPartPrefix)),
+      Boolean(pkg.scripts?.[integrationListScript]),
     );
   }
   await add("workspace root tests", join(workspaceRoot, "tests"), null, null);

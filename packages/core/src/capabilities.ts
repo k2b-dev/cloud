@@ -290,6 +290,10 @@ const VisibleMessageSchema = z
     seq: z.number().int().min(1),
     role: z.enum(["user", "assistant", "summary"]),
     text: z.string().min(1).max(MAX_MESSAGE_TEXT_CHARS),
+    safetyStop: z
+      .object({ reason: z.enum(["model_calls", "input_tokens", "output_tokens", "repeated_error"]) })
+      .strict()
+      .optional(),
     truncated: z.boolean(),
     origin: AiChatOriginSchema.optional(),
     createdAt: z.string(),
@@ -544,23 +548,27 @@ const toResourceView = (chat: AiConversation, locale: string): CloudResourceView
   };
 };
 
-const visibleMessage = (stored: AiStoredMessage) => {
+const visibleMessage = (stored: AiStoredMessage, locale: string) => {
   const message = stored.message;
   if (message.role === "tool_result") return null;
-  const text = message.content
+  const contentText = message.content
     .flatMap((part) => {
       if (typeof part === "string") return [part];
       return part.type === "text" ? [part.text] : [];
     })
     .join("")
     .trim();
-  if (!text) return null;
+  const stop = stored.meta?.automationTurnStop ?? stored.meta?.codeAuthoringStop;
+  const safetyStop = message.role === "assistant" && stop ? { reason: stop.reason } : undefined;
+  if (!contentText && !safetyStop) return null;
+  const text = contentText || coreCapabilityMessages(locale).t.chatWorkStopped;
   return {
     id: stored.shortId,
     seq: stored.seq,
     role: stored.kind === "summary" ? ("summary" as const) : message.role,
     text: text.slice(0, MAX_MESSAGE_TEXT_CHARS),
     truncated: text.length > MAX_MESSAGE_TEXT_CHARS,
+    ...(safetyStop ? { safetyStop } : {}),
     ...(stored.meta?.writerOrigin ? { origin: stored.meta.writerOrigin } : {}),
     createdAt: stored.createdAt,
   };
@@ -1087,7 +1095,7 @@ export const aiCapabilities = defineCapabilities({
               chat: chatSummary(chat),
               view: { title: chat.title, permission: "write" as const },
               message: sent.data.data,
-              messages: messages.flatMap((message) => visibleMessage(message) ?? []).slice(-input.limit),
+              messages: messages.flatMap((message) => visibleMessage(message, context.locale) ?? []).slice(-input.limit),
             },
             refs: [chatReference(chat)],
             links: [{ rel: "open" as const, href: chatHref(chat.shortId) }],
@@ -1103,7 +1111,7 @@ export const aiCapabilities = defineCapabilities({
           data: {
             chat: chatSummary(chat),
             view: { title: chat.title, permission: "write" as const },
-            messages: page.messages.flatMap((message) => visibleMessage(message) ?? []),
+            messages: page.messages.flatMap((message) => visibleMessage(message, context.locale) ?? []),
           },
           summary: coreCapabilityMessages(context.locale).t.chatRead({ title: chat.title }),
           refs: [chatReference(chat)],
@@ -1132,7 +1140,7 @@ export const aiCapabilities = defineCapabilities({
           limit: input.limit,
         });
         return ok({
-          data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message) ?? []) },
+          data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message, context.locale) ?? []) },
           refs: [chatReference(chat)],
           links: [{ rel: "open", href: chatHref(chat.shortId) }],
           page: capabilityPage(page.nextCursor),

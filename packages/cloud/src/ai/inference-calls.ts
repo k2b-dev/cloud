@@ -3,7 +3,8 @@ import { sql } from "../runtime/clients";
 import type { AccessSubject } from "../server/services/access";
 import { aiBudgetUnits, aiCostDecimal, aiCostUnits, aiDecimalUnits, hasBillableAiPricing } from "../shared/ai-costs";
 import { AiQuotaError, aiQuotas, quotaWindow } from "./quotas";
-import type { AiModelProfile } from "./types";
+import { AiTurnFailure, AiTurnInferenceLimit } from "./turn-failure";
+import type { AiChatTurnRunConfig, AiModelProfile } from "./types";
 
 export class AiBackgroundCostError extends Error {
   readonly code = "ai_background_cost_stop";
@@ -77,9 +78,52 @@ export async function beginAiCall(
   inputTokens: number,
   requestedOutput?: number,
   outputBound?: number,
+  unmeasuredInput = false,
 ) {
   const result = await sql.begin(async (db) => {
-    await db`SELECT singleton FROM ai.cost_config WHERE singleton FOR UPDATE`;
+    // Reuse the existing accounting lock: every provider admission and cost
+    // settlement already holds it, so parallel tool calls cannot reuse a slot.
+    const [turn] = await db<
+      {
+        id: string | null;
+        budget: AiChatTurnRunConfig["inferenceBudget"] | null;
+        code_origin: boolean | null;
+        status: string | null;
+        alive: boolean | null;
+      }[]
+    >`
+      SELECT t.id,t.run_config->'inferenceBudget' AS budget,t.run_config ? 'codeOrigin' AS code_origin,t.status,t.lease_expires_at>clock_timestamp() AS alive FROM ai.cost_config config
+      LEFT JOIN ai.turns t ON t.id=${context.turnId ?? null}::uuid WHERE config.singleton FOR UPDATE OF config`;
+    if (context.turnId && !turn?.id) throw new AiTurnFailure("not_allowed", "The source turn no longer exists.");
+    const budget = turn?.budget;
+    if (turn?.code_origin && !budget) throw new AiTurnFailure("not_allowed", "Code turn cost admission is missing.");
+    let outputCeiling = budget?.maxOutputTokens;
+    if (budget) {
+      if (turn?.status !== "running" || !turn.alive) throw new AiTurnFailure("not_allowed", "Turn inference lease is no longer active.");
+      if (
+        budget.modelProfileId &&
+        (profile.id !== budget.modelProfileId ||
+          profile.pricing?.inputPerMillion !== budget.pricing?.inputPerMillion ||
+          profile.pricing?.outputPerMillion !== budget.pricing?.outputPerMillion ||
+          profile.contextWindow !== budget.contextWindow)
+      )
+        throw new AiTurnFailure("not_allowed", "This model is outside the turn's reserved allowance.");
+      const [usage] = await db<{ calls: number; input: number; output: number }[]>`SELECT count(*)::int AS calls,
+        COALESCE(sum(CASE WHEN status='failed' AND first_byte_ms IS NULL THEN COALESCE(input,0) WHEN input IS NULL OR estimated OR input=0 THEN GREATEST(COALESCE(input,0),${budget.unknownInputTokens}) ELSE input END),0)::float8 AS input,
+        COALESCE(sum(CASE WHEN status='failed' AND first_byte_ms IS NULL THEN COALESCE(output,0) WHEN output IS NULL OR estimated THEN GREATEST(COALESCE(output,0),${budget.maxOutputTokens ?? 0}) ELSE output END),0)::float8 AS output
+        FROM ai.inference_calls WHERE turn_id=${context.turnId ?? null}::uuid`;
+      if (usage!.calls >= budget.modelCalls) throw new AiTurnInferenceLimit("model_calls");
+      // No catalog image-token bound exists. For non-text parts use the model's
+      // whole context window, never encoded bytes or an invented per-image cost.
+      // The turn allowance excludes the host's one-call estimation reserve.
+      if (unmeasuredInput) inputTokens = Math.max(inputTokens, profile.contextWindow ?? Infinity);
+      if (usage!.input + inputTokens > budget.inputTokens) throw new AiTurnInferenceLimit("input_tokens");
+      if (budget.outputTokens !== undefined) {
+        if (usage!.output >= budget.outputTokens) throw new AiTurnInferenceLimit("output_tokens");
+        // A turn's output allowance caps each call by what the turn has left.
+        outputCeiling = Math.min(budget.maxOutputTokens ?? Infinity, budget.outputTokens - usage!.output);
+      }
+    }
     const config = await aiQuotas.config(db);
     let remaining: bigint | undefined;
     let backgroundHeadroom: bigint | undefined;
@@ -119,7 +163,7 @@ export async function beginAiCall(
         remaining = remaining === undefined || available < remaining ? available : remaining;
       }
     }
-    let maxOutputTokens = requestedOutput;
+    let maxOutputTokens = outputCeiling === undefined ? requestedOutput : Math.min(requestedOutput ?? outputCeiling, outputCeiling);
     let reserved = "0";
     if (profile.pricing && remaining !== undefined) {
       const inputCost = aiCostUnits(profile.pricing, inputTokens, 0);
@@ -132,9 +176,9 @@ export async function beginAiCall(
               ? new AiBackgroundAdmissionError(backgroundHeadroom !== undefined && inputCost + outputPrice <= backgroundHeadroom)
               : new AiQuotaError("quota_exhausted", "Chat usage limit reached."),
         };
-      const reserveOutput = Math.min(requestedOutput ?? outputBound ?? affordable, affordable);
+      const reserveOutput = Math.min(maxOutputTokens ?? outputBound ?? affordable, affordable);
       // Preserve adapter defaults unless an explicit maximum or budget requires a cap.
-      if (requestedOutput !== undefined || reserveOutput < (outputBound ?? Infinity)) maxOutputTokens = reserveOutput;
+      if (maxOutputTokens !== undefined || reserveOutput < (outputBound ?? Infinity)) maxOutputTokens = reserveOutput;
       reserved = aiCostDecimal(aiCostUnits(profile.pricing, inputTokens, Number.isFinite(reserveOutput) ? reserveOutput : 0));
     }
     const workflow = context.workflowRunId
@@ -196,11 +240,13 @@ export async function finishAiCall(
     >`SELECT pricing,kind FROM ai.inference_calls WHERE id=${id}::uuid AND finished_at IS NULL FOR UPDATE`;
     if (!call) return;
     const cost =
-      call.pricing?.inputPerMillion === 0 && call.pricing.outputPerMillion === 0
+      status === "failed" && details.firstByteMs === undefined && !usage
         ? "0"
-        : call.pricing && usage
-          ? aiCostDecimal(aiCostUnits(call.pricing, usage.input, usage.output))
-          : null;
+        : call.pricing?.inputPerMillion === 0 && call.pricing.outputPerMillion === 0
+          ? "0"
+          : call.pricing && usage
+            ? aiCostDecimal(aiCostUnits(call.pricing, usage.input, usage.output))
+            : null;
     await db`UPDATE ai.inference_calls SET input=${usage?.input ?? null},output=${usage?.output ?? null},estimated=${usage?.estimated ?? false},
       audio_ms=${ms(details.audioMs)},cost=${cost}::numeric,reserved=0,finished_at=clock_timestamp(),status=${status},error_code=${status === "failed" ? "ai_provider_call_failed" : null},
       error=${status === "failed" && details.error ? redactAiCallError(details.error) : null},cancelled=${details.cancelled ?? false},
@@ -226,10 +272,14 @@ export async function releaseBackgroundCostStop(actorId: string) {
 }
 
 /** Read once per executor attempt, including failed calls. Never query per stream event. */
-export async function readAiTurnCallUsage(turnId: string): Promise<{ calls: number; inputTokens: number; unknownCalls: number }> {
+export async function readAiTurnCallUsage(
+  turnId: string,
+  inputTokenCeiling?: number,
+): Promise<{ calls: number; inputTokens: number; unknownCalls: number }> {
   const [usage] = await sql<{ calls: number; inputTokens: number; unknownCalls: number }[]>`
-    SELECT count(*)::int AS calls, COALESCE(sum(input),0)::float8 AS "inputTokens",
-      count(*) FILTER (WHERE input IS NULL)::int AS "unknownCalls"
-    FROM ai.inference_calls WHERE turn_id=${turnId}::uuid AND (kind='chat' OR task='chat-compaction')`;
+    SELECT count(*)::int AS calls, COALESCE(sum(CASE WHEN status='failed' AND first_byte_ms IS NULL THEN COALESCE(input,0) WHEN ${inputTokenCeiling ?? null}::int IS NOT NULL AND (estimated OR input=0)
+      THEN GREATEST(input,${inputTokenCeiling ?? null}::int) ELSE input END),0)::float8 AS "inputTokens",
+      count(*) FILTER (WHERE input IS NULL AND NOT(status='failed' AND first_byte_ms IS NULL))::int AS "unknownCalls"
+    FROM ai.inference_calls WHERE turn_id=${turnId}::uuid AND (${inputTokenCeiling !== undefined} OR (kind='chat' AND task='chat') OR task='chat-compaction')`;
   return usage!;
 }

@@ -1281,7 +1281,7 @@ export const aiRoutes = (() => {
             // Editing makes the message the person's own; retrying keeps its writer. Either way the
             // person's retry runs on their own allowance, without the Code's budget attribution.
             writerOrigin: originalRunConfig?.kind !== "compact" ? originalRunConfig?.writerOrigin : undefined,
-            turnTrigger: originalRunConfig?.kind !== "compact" ? originalRunConfig?.turnTrigger : undefined,
+            turnTrigger: ctx.actor.kind === "user" ? { kind: "person" as const, id: ctx.actor.user.id } : undefined,
             send: originalRunConfig?.kind !== "compact" ? originalRunConfig?.send : undefined,
             ...(!ctx.signedInSession || (originalRunConfig?.kind !== "compact" && originalRunConfig?.sourceRestricted)
               ? { sourceRestricted: true as const }

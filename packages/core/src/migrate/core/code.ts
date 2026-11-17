@@ -113,6 +113,16 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       day DATE NOT NULL, scope_kind TEXT NOT NULL CHECK (scope_kind IN ('code','owner')), scope_key TEXT NOT NULL,
       reference_cost NUMERIC NOT NULL DEFAULT 0 CHECK (reference_cost>=0), PRIMARY KEY(day,scope_kind,scope_key)
     )`.simple();
+    // A deleted chat/Code cannot replenish its day. One turn keeps one reservation
+    // across worker retries, suspension and compaction; unknown outcomes keep it spent.
+    await tx`CREATE TABLE IF NOT EXISTS code.chat_turn_budgets (
+      turn_id UUID PRIMARY KEY, code_id TEXT NOT NULL, owner_user_id UUID NOT NULL, owner_key TEXT NOT NULL,
+      day DATE NOT NULL, reserved NUMERIC NOT NULL CHECK(reserved>=0), cost NUMERIC CHECK(cost>=0),
+      model_profile_id TEXT NOT NULL, pricing JSONB, output_tokens INTEGER, context_window INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), settled_at TIMESTAMPTZ
+    )`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS chat_turn_budgets_open ON code.chat_turn_budgets(created_at) WHERE settled_at IS NULL`.simple();
+    await tx`CREATE INDEX IF NOT EXISTS chat_turn_budgets_retention ON code.chat_turn_budgets(settled_at,turn_id) WHERE settled_at IS NOT NULL`.simple();
     // A run keeps its origin as long as the failed run and the person's account exist.
     await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS rerun_of UUID REFERENCES code.runs(id) ON DELETE SET NULL,
       ADD COLUMN IF NOT EXISTS rerun_by UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();

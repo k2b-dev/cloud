@@ -67,9 +67,19 @@ else {
     view.close();
   });
 
-  test("a pointer on the row holds the word; leaving shows the word of the current time at once", async () => {
+  test("a row that a pointer only arrives on, or a finger taps, keeps changing its words", async () => {
     const view = await mount(2_950);
+    // A row that only arrives under a resting pointer holds nothing; a finger's tap neither.
     view.row.dispatchEvent(new Event("pointerenter"));
+    view.row.dispatchEvent(Object.assign(new Event("pointermove"), { pointerType: "touch" }));
+    await wait(250);
+    expect(view.words()).toEqual(["Grübelt"]);
+    view.close();
+  });
+
+  test("a mouse moving on the row holds the word; leaving shows the word of the current time at once", async () => {
+    const view = await mount(2_950);
+    view.row.dispatchEvent(Object.assign(new Event("pointermove"), { pointerType: "mouse" }));
     await wait(250);
     expect(view.words()).toEqual([FIRST]);
     view.row.dispatchEvent(new Event("pointerleave"));

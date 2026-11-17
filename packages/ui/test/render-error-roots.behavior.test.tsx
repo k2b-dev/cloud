@@ -76,7 +76,7 @@ describe("render errors in dialogs and floating windows", () => {
     );
     const dialog = dom.document.querySelector("dialog")!;
     expect(dialog.className).toBe("k2b-dialog k2b-dialog--small");
-    expect(dialog.firstElementChild?.className).toBe("k2b-dialog__viewport");
+    expect(dialog.querySelector(":scope > :not([data-k2b-dialog-live])")?.className).toBe("k2b-dialog__viewport");
     expect(dialog.querySelector('[role="alert"]')?.textContent).toContain("Dieser Inhalt konnte nicht angezeigt werden.");
     expect([...dialog.querySelectorAll("button")].map((button) => button.textContent)).toContain("Schließen");
     core.close();
