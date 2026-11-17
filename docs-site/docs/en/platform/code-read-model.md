@@ -49,9 +49,10 @@ to this Code. Ordinary Code read permission suffices.
   types, without raw structured payloads.
 - `notices` contains a sentence and consequence for each checker finding.
   Technical codes and source coordinates remain available to CLI clients.
-  An archived or deleted bound chat adds a blocking notice with
+  In the owner's projection, an archived or deleted bound chat adds a blocking notice with
   `code: "chat_missing"` and localized instructions to choose another chat or
-  restore the archived chat. This notice reflects the current binding.
+  restore the archived chat. A version that uses the bound chat without a first
+  binding receives the same notice. This notice reflects the current binding.
 
 An unavailable target reader produces a neutral type label and no link;
 a reader's explicit refusal may say that the target is not visible. Within one
@@ -78,7 +79,7 @@ it cannot unhide descriptions, examples, or comparison text. Pass the request
 signal to cancel pending readers and prevent further batches.
 
 For personal Code, a dynamic `core.ai.chat.send` permission uses the current
-chat binding as a naming hint when that chat is active. Core returns:
+chat binding as a naming hint in its owner's projection when that chat is active. Core returns:
 
 ```ts
 {
@@ -94,9 +95,13 @@ chat binding as a naming hint when that chat is active. Core returns:
 The existing `nameCodeGrantTargets` helper resolves this hint through the
 catalog's `core.ai.chat` reader, `ai.chat.read`. Its authorized `data.view`
 contains the title and permission. Only the chat owner receives the title;
-other Code readers keep the neutral sentence. No binding, an archived chat,
-or a deleted chat leaves out `target`. Changing the binding updates this hint
+other Code readers keep the neutral sentence. Without an available naming hint,
+`target.ref` retains the SDK's `bound-chat` handle; it names no conversation.
+Changing the binding updates this hint
 without changing version permissions, comparisons, or admin approvals.
+
+The SQL meter pins the personal version read to three statements without a
+binding and four with a binding, excluding canonical target readers' own costs.
 
 Descriptions and example text are visible only when the caller can read every
 version target. Otherwise the answer explains that the description names

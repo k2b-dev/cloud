@@ -247,7 +247,11 @@ export const aiChatSendAction = {
           if (await openOwnerCodeChatWork(owner, db)) return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
         }
         if (code && limits) {
-          await db`SELECT id FROM code.codes WHERE id=${code.id} FOR SHARE NOWAIT`;
+          const [locked] = await db<{ chat_binding_revision: number }[]>`SELECT chat_binding_revision FROM code.codes
+            WHERE id=${code.id} FOR SHARE NOWAIT`;
+          const binding = destination.data.binding;
+          if (binding && (binding.codeId !== code.id || locked?.chat_binding_revision !== binding.revision))
+            return fail({ code: "chat_busy", message: t.busy, status: 409 as const });
           await db`SELECT id FROM code.runs WHERE id=${code.runId}::uuid FOR UPDATE`;
           const current = await chatWriteAuthority(context, db);
           if (!current.ok) return current;

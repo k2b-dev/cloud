@@ -38,6 +38,7 @@ import { validateQueuedChatStart } from "./ai-chat-queue";
 import { aiChatSendAction, lockOwnerCodeChats } from "./ai-chat-send";
 import { aiCapabilities } from "./capabilities";
 import { reserveCodeAiBudget, settleCodeAiBudget } from "./code/ai-budget";
+import { setCodeChatBinding } from "./code/chat-binding";
 import { codeSettings } from "./code/settings";
 import { migrate as migrateCode } from "./migrate/core/code";
 
@@ -1435,6 +1436,57 @@ suiteFor(
     ]);
     await drainQueuedMessages(async () => {}, chat.id, validateQueuedChatStart);
     expect(await aiConversations.getLatestTurn({ conversationId: chat.id })).not.toBeNull();
+  });
+
+  test("a binding change during send admission refuses the old destination and retries the same key once", async () => {
+    await setup();
+    const nextChat = await aiConversations.createConversation({ ownerUserId: owner });
+    const [initial] = await sql<{ chat_binding_revision: number }[]>`UPDATE code.codes
+      SET chat_conversation_id=${chat.id}::uuid,chat_binding_revision=chat_binding_revision+1
+      WHERE id=${codeId} RETURNING chat_binding_revision`;
+    if (!initial) throw new Error("Missing Code binding fixture");
+    const context = ctx("binding-admission-change");
+    if (!context.authority) throw new Error("Missing owner authority fixture");
+    const bindingContext = { authority: context.authority, locale: context.locale };
+    type Outcome = { result: Awaited<ReturnType<typeof invoke>> } | { error: unknown };
+    let sending: Promise<void> | undefined;
+    let outcome: Outcome | undefined;
+    try {
+      await sql.begin(async (holder) => {
+        await holder`SET LOCAL lock_timeout='3s'`;
+        await lockOwnerCodeChats(owner, holder);
+        const [session] = await holder<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+        sending = invoke(CODE_BOUND_CHAT_ID, context).then(
+          (result) => {
+            outcome = { result };
+          },
+          (error: unknown) => {
+            outcome = { error };
+          },
+        );
+        for (let waited = 0; ; waited++) {
+          if (outcome) throw new Error("Send ended before the controlled binding change");
+          const [blocked] = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM pg_stat_activity
+            WHERE ${session!.pid}::int=ANY(pg_blocking_pids(pid))`;
+          if (blocked?.count) break;
+          if (waited > 200) throw new Error("Send never reached the owner lock");
+          await Bun.sleep(10);
+        }
+        await setCodeChatBinding({ codeId, chatId: nextChat.shortId, revision: initial.chat_binding_revision }, bindingContext);
+      });
+    } finally {
+      await sending;
+    }
+    expect(outcome).toMatchObject({ result: { ok: false, error: { code: "chat_busy", status: 409 } } });
+    expect(await sql`SELECT id FROM ai.chat_send_receipts`).toHaveLength(0);
+    expect(await sql`SELECT id FROM ai.queued_messages`).toHaveLength(0);
+    const retry = await invoke(CODE_BOUND_CHAT_ID, context);
+    expect(retry.ok).toBeTrue();
+    if (!retry.ok) throw new Error(retry.error.message);
+    const id = dataSchema.parse(retry.data.data).id;
+    expect(await invoke(CODE_BOUND_CHAT_ID, context)).toMatchObject({ ok: true, data: { data: { id } } });
+    expect(Array.from(await sql`SELECT id,chat_id FROM ai.chat_send_receipts`)).toEqual([{ id, chat_id: nextChat.shortId }]);
+    expect(Array.from(await sql`SELECT id,conversation_id FROM ai.queued_messages`)).toEqual([{ id, conversation_id: nextChat.id }]);
   });
 
   test("send refuses a reviewer's Code lock promptly and accepts a retry with the same key", async () => {

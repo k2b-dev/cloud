@@ -110,6 +110,12 @@ ordinary chat messages and turns retain their own history. Keep the normal AI wo
 recover after a failed wake-up. A waiting turn appears in the chat and remains
 subject to its normal wait and execution limits.
 
+A personal Code using `chat.send` needs a chat even before its first binding.
+Its owner can recover from the Code page or Waiting for you. A binding change
+during send admission returns `chat_busy` (409) without queuing a message;
+retry with the same idempotency key to use the current chat. Messages already
+queued keep their destination. This requires no additional configuration.
+
 ## File transfers
 
 Core now transfers a Code FileRef directly between capability providers.

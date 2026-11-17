@@ -78,7 +78,10 @@ export function codeChatMissingCondition(chatSchemaAvailable: boolean, db: SQL =
     ? db`NOT EXISTS(SELECT 1 FROM ai.conversations chat WHERE chat.id=c.chat_conversation_id
         AND chat.created_by_user_id=c.owner_user_id AND chat.archived_at IS NULL)`
     : db`TRUE`;
-  return db`(c.owner_kind='person' AND c.chat_conversation_id IS NOT NULL AND ${missing})`;
+  const usesBoundChat = db`COALESCE((SELECT v.manifest->'permissions' FROM code.versions v WHERE v.code_id=c.id
+    ORDER BY (v.id=c.active_version_id) IS TRUE DESC,v.number DESC LIMIT 1)
+    @> '[{"operation":"core.ai.chat.send","target":{"type":"core.ai.chat","id":null}}]'::jsonb,false)`;
+  return db`(c.owner_kind='person' AND (c.chat_conversation_id IS NOT NULL OR ${usesBoundChat}) AND ${missing})`;
 }
 export async function codeChatMissing(codeId: string, db: SQL = sql): Promise<boolean> {
   const condition = codeChatMissingCondition(await codeChatSchemaAvailable(db), db);
@@ -86,8 +89,12 @@ export async function codeChatMissing(codeId: string, db: SQL = sql): Promise<bo
   return row?.missing === true;
 }
 type BindingChat = { short_id: string; title: string; project_id: string | null; archived_at: Date | null };
-async function readBindingChat(row: Pick<BindingRow, "chat_conversation_id" | "owner_user_id">, db: SQL): Promise<BindingChat | null> {
-  if (!row.chat_conversation_id || !(await codeChatSchemaAvailable(db))) return null;
+async function readBindingChat(
+  row: Pick<BindingRow, "chat_conversation_id" | "owner_user_id">,
+  chatSchemaAvailable: boolean,
+  db: SQL,
+): Promise<BindingChat | null> {
+  if (!row.chat_conversation_id || !chatSchemaAvailable) return null;
   const [chat] = await db<BindingChat[]>`SELECT short_id,title,project_id,archived_at FROM ai.conversations
     WHERE id=${row.chat_conversation_id}::uuid AND created_by_user_id=${row.owner_user_id}::uuid`;
   return chat ?? null;
@@ -95,18 +102,22 @@ async function readBindingChat(row: Pick<BindingRow, "chat_conversation_id" | "o
 /** Internal data only. Callers must authorize Code access before exposing this projection. */
 export async function readCodeChatBinding(codeId: string, db: SQL) {
   const [code] = await db<BindingRow[]>`SELECT * FROM code.codes WHERE id=${codeId}`;
-  return code ? { code, chat: await readBindingChat(code, db) } : null;
+  return code
+    ? { code, chat: code.chat_conversation_id ? await readBindingChat(code, await codeChatSchemaAvailable(db), db) : null }
+    : null;
 }
 /**
- * Internal projection after Code read authorization. Names remain the viewer's canonical reader's responsibility.
- * The caller already read the Code row, so unbound or non-personal Code costs no statement here.
+ * Internal projection for the authenticated personal owner. The caller authorizes and probes schema availability.
+ * Names remain the canonical reader's responsibility. Unbound or non-personal Code costs no statement here.
  */
 export async function codeChatReadModelState(
   code: Pick<BindingRow, "owner_kind" | "owner_user_id" | "chat_conversation_id">,
+  options: { usesBoundChat: boolean; chatSchemaAvailable: boolean },
   db: SQL = sql,
 ) {
-  if (code.owner_kind !== "person" || !code.chat_conversation_id) return { missing: false, target: null };
-  const found = await readBindingChat(code, db);
+  if (code.owner_kind !== "person") return { missing: false, target: null };
+  if (!code.chat_conversation_id) return { missing: options.usesBoundChat, target: null };
+  const found = await readBindingChat(code, options.chatSchemaAvailable, db);
   const chat = found && !found.archived_at ? found : null;
   return { missing: !chat, target: chat ? { type: "core.ai.chat", id: chat.short_id } : null };
 }
@@ -149,7 +160,8 @@ async function presentBinding(row: BindingRow, context: CodeContext, db: SQL, lo
   const base = { codeId: row.id, revision: row.chat_binding_revision, canChange };
   if (!row.chat_conversation_id) return { ...base, chat: null };
   if (!canChange) return { ...base, chat: { state: "hidden" } };
-  const chat = loadedChat === undefined ? await readBindingChat(row, db) : loadedChat;
+  // Mutating callers already verified schema availability in this transaction; reads supply loadedChat.
+  const chat = loadedChat === undefined ? await readBindingChat(row, true, db) : loadedChat;
   if (!chat) return { ...base, chat: { state: "unavailable", reason: "deleted" } };
   if (chat.archived_at) return { ...base, chat: { state: "unavailable", reason: "archived", id: chat.short_id, title: chat.title } };
   const project = chat.project_id

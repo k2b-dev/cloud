@@ -145,7 +145,9 @@ The binding is neither source text nor version state. A Code's owner never
 changes, so the binding stays with the person who chose it; a new copy starts
 unbound. Only personal Code can have a binding. AI remains optional, so the stored UUID has no foreign key.
 
-An archived or deleted bound chat supplies `chat_missing` through Code attention.
+An archived or deleted bound chat supplies `chat_missing` through Code attention
+for its owner. A personal Code that has never had a binding also needs a chat
+when its running version, or its newest version before activation, uses `chat.send`.
 The version read model includes a blocking notice with `code: "chat_missing"`
 and a localized recovery sentence. The existing `ai.open_questions` feed carries
 one `kind: "code_attention"` item with “<title> needs a chat” and an `href` to the
@@ -171,9 +173,9 @@ check current permissions in Core's Code service.
 | `core.code.attention.list` | Optional `cursor` | Across owners: resource or application Code the caller may edit that needs them, plus own personal Code with a missing bound chat, with `lastRunAt` and the same `reasons` plus `paused`; checks 50 candidates per page and returns `nextCursor`, also on empty pages |
 
 `core.code.attention` serves an owner's navigation. The reasons per Code are
-the same for every reader, so Core keeps them for 30 seconds and computes one
-at a time; who sees which Code is checked on every request. `chat_missing` is
-checked live so restoration or a changed binding clears it immediately. Missing access
+cached for 30 seconds, with one computation at a time; who sees which Code is
+checked on every request. The owner's `chat_missing` reason is checked live so
+restoration or a changed binding clears it immediately. Missing access
 comes from a recorded `target_refused` call in the latest failed run, never
 from target-rights inspection. `missingTargets` and `removedTargets` retain
 that recorded reference for editors, with no fetched title; readers receive no

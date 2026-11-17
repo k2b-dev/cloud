@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:tes
 import { sql } from "@k2b/cloud";
 import { CODE_BOUND_CHAT_ID } from "@k2b/cloud/code";
 import { type CapabilityExecutionContext, UserSchema } from "@k2b/cloud/contracts";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite, useMigratedDatabase } from "../../../../scripts/fixtures/test-infra";
 import type { CodeContext } from "./access";
 import { listCodeAttention, readCodeAttention } from "./attention";
@@ -207,7 +208,7 @@ databaseSuite()("personal Code chat binding", () => {
     });
   });
 
-  test("version words expose only a live chat naming hint to Code readers and never change version permissions", async () => {
+  test("version words preserve the viewer's chat presentation and never change version permissions", async () => {
     const destination = await chat("Wrd433");
     const item = await code("Words fixture", destination);
     const [grant] = await sql<{ id: string }[]>`INSERT INTO auth.access(user_id,permission) VALUES(${editor}::uuid,'read') RETURNING id`;
@@ -228,8 +229,8 @@ databaseSuite()("personal Code chat binding", () => {
       context(),
     );
     const words = (viewer = owner) => loadCodeVersionReadModel({ codeId: item.id, versionId: version.id }, context(viewer));
-    for (const viewer of [owner, editor]) {
-      const model = await words(viewer);
+    {
+      const model = await words();
       expect(model.mayDo.items[0]).toMatchObject({
         text: "In einen Chat schreiben, Gustav antwortet",
         note: "KI · mit deinen Rechten, zählt auf dein Kontingent",
@@ -237,6 +238,10 @@ databaseSuite()("personal Code chat binding", () => {
       });
       expect(JSON.stringify(model.mayDo)).not.toContain("Chat Wrd433");
     }
+    const reader = await words(editor);
+    expect(reader.mayDo.items[0]).toMatchObject({ text: "In einen Chat schreiben, Gustav antwortet" });
+    expect(reader.mayDo.items[0]?.target?.ref.id).toBe(CODE_BOUND_CHAT_ID);
+    expect(JSON.stringify(reader)).not.toContain("Wrd433");
     const changes = (await words()).changes;
     await chat("Rbd433");
     await setCodeChatBinding({ codeId: item.id, chatId: "Rbd433", revision: 1 }, context());
@@ -248,10 +253,75 @@ databaseSuite()("personal Code chat binding", () => {
     const handle = { ref: { type: "core.ai.chat", id: CODE_BOUND_CHAT_ID }, text: "In den Chat „{name}“ schreiben, Gustav antwortet" };
     await sql`UPDATE ai.conversations SET archived_at=${fixed} WHERE id=${bound.chat_conversation_id}::uuid`;
     expect((await words()).mayDo.items[0]?.target).toEqual(handle);
+    expect((await words(editor)).notices.items.map((notice) => notice.code)).not.toContain("chat_missing");
+    expect((await readCodeAttention({ owner: item.owner }, context(editor))).items).toContainEqual({ codeId: item.id, reasons: [] });
     await sql`DELETE FROM ai.conversations WHERE id=${bound.chat_conversation_id}::uuid`;
     expect((await words()).mayDo.items[0]?.target).toEqual(handle);
+    expect((await words(editor)).notices.items.map((notice) => notice.code)).not.toContain("chat_missing");
+    expect((await readCodeAttention({ owner: item.owner }, context(editor))).items).toContainEqual({ codeId: item.id, reasons: [] });
     await setCodeChatBinding({ codeId: item.id, chatId: "Wrd433", revision: 2 }, context());
     expect((await words()).mayDo.items[0]?.target?.ref.id).toBe("Wrd433");
+  });
+
+  test("a never-bound chat sender appears in version notices, attention and Waiting until its owner chooses a chat", async () => {
+    const item = await code("Unbound briefing");
+    const version = await createCodeVersion(
+      {
+        codeId: item.id,
+        sourceFiles: { "code.ts": "export {};" },
+        bundle: "export {};",
+        manifest: {
+          ...codeReadModelFixtureManifest,
+          permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: null }, file: "code.ts", line: 1 }],
+          policyRows: ["ai"],
+        },
+        baseVersionId: null,
+      },
+      context(),
+    );
+    expect(await getCodeChatBinding({ codeId: item.id }, context())).toMatchObject({ revision: 0, chat: null });
+    expect(await codeChatMissing(item.id)).toBe(true);
+    const words = () => loadCodeVersionReadModel({ codeId: item.id, versionId: version.id }, context());
+    expect((await words()).notices.items.map((notice) => notice.code)).toContain("chat_missing");
+    expect((await readCodeAttention({ owner: item.owner }, context())).items).toContainEqual({
+      codeId: item.id,
+      reasons: ["chat_missing"],
+    });
+    expect((await listCodeAttention({}, context())).items).toContainEqual(
+      expect.objectContaining({ code: expect.objectContaining({ id: item.id }), reasons: ["chat_missing"] }),
+    );
+    const waiting = () => listCodeWaiting({ ownerUserId: owner, locale: "de", timeZone: "UTC" }, new AbortController().signal);
+    expect((await waiting()).items).toContainEqual(
+      expect.objectContaining({ id: `code-attention:${item.id}`, short: "Unbound briefing braucht einen Chat" }),
+    );
+    const meter = await meterSql();
+    try {
+      expect(await meter.during(words)).toHaveLength(3);
+      await chat("Never433");
+      await setCodeChatBinding({ codeId: item.id, chatId: "Never433", revision: 0 }, context());
+      expect(await meter.during(words)).toHaveLength(4);
+    } finally {
+      await meter.close();
+    }
+    expect(await codeChatMissing(item.id)).toBe(false);
+    expect((await words()).notices.items.map((notice) => notice.code)).not.toContain("chat_missing");
+    expect((await waiting()).items.map((row) => row.id)).not.toContain(`code-attention:${item.id}`);
+    const unused = await code("No chat action");
+    expect(await codeChatMissing(unused.id)).toBe(false);
+    await createCodeVersion(
+      {
+        codeId: unused.id,
+        sourceFiles: { "code.ts": "export {};" },
+        bundle: "export {};",
+        manifest: {
+          ...codeReadModelFixtureManifest,
+          permissions: [{ operation: "core.ai.chat.send", target: { type: "core.ai.chat", id: "Literal433" }, file: "code.ts", line: 1 }],
+        },
+        baseVersionId: null,
+      },
+      context(),
+    );
+    expect(await codeChatMissing(unused.id)).toBe(false);
   });
 
   test("archived and deleted chats fail before dispatch and supply one recoverable waiting entry plus live attention", async () => {
@@ -292,6 +362,7 @@ databaseSuite()("personal Code chat binding", () => {
       codeId: item.id,
       reasons: ["chat_missing"],
     });
+    expect((await readCodeAttention({ owner: item.owner }, context(editor))).items).toContainEqual({ codeId: item.id, reasons: [] });
     expect((await listCodeAttention({}, context())).items).toContainEqual(
       expect.objectContaining({ code: expect.objectContaining({ id: item.id }), reasons: ["chat_missing"] }),
     );

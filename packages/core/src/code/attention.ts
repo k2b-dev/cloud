@@ -132,7 +132,7 @@ const cachedRunAttentionReasons = (code: Code, context: CodeContext, now = Date.
 export async function cachedCodeAttentionReasons(code: Code, context: CodeContext, now = Date.now()): Promise<CodeAttentionReason[]> {
   const [reasons, missing] = await Promise.all([
     cachedRunAttentionReasons(code, context, now),
-    codeChatMissing(code.id).catch(() => false),
+    code.owner.kind === "person" && code.owner.userId === codePerson(context).id ? codeChatMissing(code.id).catch(() => false) : false,
   ]);
   return [...reasons, ...(missing ? ["chat_missing" as const] : [])];
 }

@@ -848,7 +848,10 @@ The `chat` export is available only for personal Code, when the live catalog
 offers `core.ai.chat.send`; resource Code and one-off `code_run` do not export it.
 The binding is read at each call, so choosing another chat needs no source
 change, new version or administrator approval. The chat's Project, model and
-files determine the resulting turn. Already queued messages keep their target.
+files determine the resulting turn. Admission checks the binding revision again
+under the Code row lock. A changed revision returns `chat_busy` (409) before
+queuing; retry with the same idempotency key to use the current binding.
+Already queued messages keep their target.
 The binding is a default destination; explicit chat handles remain available.
 
 Only the personal owner may change the binding; a shared Code editor cannot.
@@ -859,7 +862,9 @@ bound chat was archived or deleted, or is no longer the owner's active chat.
 Both return HTTP 409 during bound-chat resolution, before queuing a message.
 Choose another own active chat or restore the
 archived chat. A missing bound chat supplies the `chat_missing` attention reason
-and a recoverable notice on the Code page and in Waiting for you.
+and a recoverable notice on the Code page and in Waiting for you. This also
+applies when the running version, or the newest version before activation,
+uses `chat.send` but the Code has never had a chat.
 Explicit chat handles return `NOT_FOUND` (404) for missing, archived or foreign
 chats, keeping those targets hidden. If a resolved bound chat becomes unavailable
 during preparation, the subsequent chat lookup also returns `NOT_FOUND`.
