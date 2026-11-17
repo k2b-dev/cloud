@@ -158,7 +158,8 @@ true, highlightText: text })`. People select the passages with
 holds them in `ChatComposerQuotes` above its field until the message is sent.
 A message that is not a `MessageRow`, such as a chat with an assistant, shows
 the same passage with `<MessageQuote quote={{ author, text, onSelect }} />`,
-above its text.
+above its text; put several in one `<div class="k2b-message-quotes">` so they
+stack with the same gap.
 
 `forwarded` adds a "Forwarded" line above the bubble. `edited` ends the last
 paragraph of the text with a quiet "edited", so it takes no line of its own
