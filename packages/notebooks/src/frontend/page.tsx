@@ -80,6 +80,7 @@ export default ssr<AuthContext>(async (c) => {
         initialActivityError={activityResult.error}
         initialPinnedNotebookIds={parsePinnedNotebookIds(cookieHeader)}
         dateConfig={getDateConfig(c)}
+        now={new Date().toISOString()}
       />
     </Layout>
   );

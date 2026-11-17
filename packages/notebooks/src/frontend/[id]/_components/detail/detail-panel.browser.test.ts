@@ -141,7 +141,7 @@ const open = async (width: number, delayActivity = false, state = "many") => {
     await page.goto(`${server.url}?state=${state}`);
     await page.waitForFunction(() => Boolean(window.harness));
     if (delayActivity) await request;
-    else await page.locator(".notebook-activity-skeleton").first().waitFor({ state: "detached" });
+    else await page.locator(".notebook-activity .k2b-activity__placeholder").first().waitFor({ state: "detached" });
     await settle(page);
     return { page, release };
   } catch (error) {
@@ -216,17 +216,13 @@ for (const width of [1440, 390]) {
         // Each row on its own, so one row stepping in or back is not hidden by another on the edge.
         const rows = [
           ...document.querySelectorAll(
-            ".k2b-detail-panel__body .k2b-section__body :is(.k2b-detail-panel__action:not(.notebook-outline-row:not([data-depth='0'])), .k2b-detail-panel__row, .k2b-discussion__item, .k2b-file-grid__item, .k2b-detail-section-label, .k2b-detail-tags > li:first-child, .k2b-detail-properties dt, .k2b-detail-presence__strip, .k2b-detail-presence__where)",
+            ".k2b-detail-panel__body .k2b-section__body :is(.k2b-detail-panel__action:not(.notebook-outline-row:not([data-depth='0'])), .k2b-detail-panel__row, .k2b-discussion__item, .k2b-file-grid__item, .k2b-detail-section-label, .k2b-detail-tags > li:first-child, .k2b-detail-properties dt, .k2b-detail-presence__strip, .k2b-detail-presence__where, .k2b-activity__entry)",
           ),
         ]
           .filter((row) => visible(row) && !row.closest("[hidden]"))
           .map((row) => ({ label: row.textContent?.trim().slice(0, 30) ?? "", x: inkLeft(row) }))
           .filter((row) => Number.isFinite(row.x));
-        const right = [
-          ...document.querySelectorAll(
-            ".k2b-discussion__timestamp, .notebook-activity .notebook-time time, .k2b-section__actions .k2b-button",
-          ),
-        ]
+        const right = [...document.querySelectorAll(".k2b-discussion__timestamp, .k2b-section__actions .k2b-button")]
           .filter(visible)
           .map((element) => {
             // Compare label ink, excluding a control's padding and icon column.
@@ -252,7 +248,8 @@ for (const width of [1440, 390]) {
       expect(edges.bodies.filter((body) => Math.abs(body.x - edge) > 1).map((body) => `${body.label}: ${body.x - edge}`)).toEqual([]);
       expect(edges.rows.length).toBeGreaterThan(30);
       expect(edges.rows.filter((row) => Math.abs(row.x - edge) > 1).map((row) => `${row.label}: ${row.x - edge}`)).toEqual([]);
-      expect(edges.right.length).toBeGreaterThan(8);
+      // Comment times and section actions; the activity timeline keeps its times in the meta line under each sentence.
+      expect(edges.right.length).toBeGreaterThanOrEqual(5);
       for (const right of edges.right) closeTo(right.x, edges.right[0]!.x, 2);
     } finally {
       await page.close();
@@ -365,11 +362,11 @@ for (const width of [1440, 390]) {
   test(`${width}: activity, presence and disclosure keep earlier content in place`, async () => {
     const { page, release } = await open(width, true);
     try {
-      expect(await page.locator(".notebook-activity-skeleton").count()).toBe(4);
+      expect(await page.locator(".notebook-activity .k2b-activity__placeholder").count()).toBe(3);
       const tracked = [header, `${contents} > .k2b-section__header`, ".k2b-discussion__item"];
       const before = await Promise.all(tracked.map((selector) => box(page, selector)));
       release();
-      await page.locator(".notebook-activity-skeleton").first().waitFor({ state: "detached" });
+      await page.locator(".notebook-activity .k2b-activity__placeholder").first().waitFor({ state: "detached" });
       await settle(page);
       for (let index = 0; index < tracked.length; index++) sameBox(await box(page, tracked[index]!), before[index]!);
       const presenceTracked = [".k2b-detail-panel__supporting > p", ".k2b-detail-panel__body > :first-child", ".k2b-detail-panel__header"];

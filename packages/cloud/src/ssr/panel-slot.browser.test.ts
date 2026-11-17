@@ -187,6 +187,27 @@ const separator = ".cloud-panel__resize";
 const ready = (page: Page) => page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.state === "ready");
 const closed = (page: Page) => page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.state === "closed");
 const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+// Independently mounted controls must not need a document notification to catch up with the controller.
+const delayPanelState = async (page: Page) => {
+  await page.evaluate(() => {
+    const dispatch = window.dispatchEvent.bind(window);
+    const pending: Event[] = [];
+    window.dispatchEvent = (event) => {
+      if (event.type !== "cloud.panel.state") return dispatch(event);
+      pending.push(event);
+      return true;
+    };
+    window.addEventListener(
+      "fixture.resume-panel-state",
+      () => {
+        window.dispatchEvent = dispatch;
+        for (const event of pending) dispatch(event);
+      },
+      { once: true },
+    );
+  });
+  return () => page.evaluate(() => window.dispatchEvent(new Event("fixture.resume-panel-state")));
+};
 const panelCookie = async (page: Page) => (await storedCookie(page, "cloud_panel"))?.value;
 const modJ = async (page: Page) =>
   (await page.evaluate(() => /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent))) ? "Meta+j" : "Control+j";
@@ -1060,7 +1081,7 @@ test("a panel frame without a document root does not leave a partially installed
   }
 });
 
-test("an open panel menu follows a delayed consent save without closing or replacing its row", async () => {
+test("an open panel menu follows a delayed consent save even before state notifications arrive", async () => {
   const { context, page } = await fixture(1440, "1:fixture:", { ask: true });
   const saving = Promise.withResolvers<void>();
   const response = Promise.withResolvers<void>();
@@ -1073,6 +1094,9 @@ test("an open panel menu follows a delayed consent save without closing or repla
       await route.fulfill({ response: saved });
     });
     await ready(page);
+    // Hold the notification while the controller and slot have already entered saving.
+    // Opening in this gap must still read the controller's current state.
+    const resumeState = await delayPanelState(page);
     await page.getByRole("button", { name: "Allow", exact: true }).click();
     await saving.promise;
     expect(await page.locator(slot).getAttribute("data-context-allowed")).toBe("false");
@@ -1088,6 +1112,8 @@ test("an open panel menu follows a delayed consent save without closing or repla
     expect(await choice.isVisible()).toBe(true);
     expect(await choice.isDisabled()).toBe(false);
     expect(await choice.getAttribute("aria-checked")).toBe("true");
+    await resumeState();
+    expect(await row!.evaluate((element) => element.isConnected)).toBe(true);
     await page.waitForFunction(() =>
       document
         .querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")
@@ -1126,6 +1152,8 @@ test("Allow delivers the place live; the menu checkbox withdraws it and stops su
     const provider = page.frameLocator("[data-cloud-panel-frame]");
     expect(await provider.locator("#panel-context-probe").textContent()).toBe("null");
     const before = providerRequests;
+    // Open and withdraw before the menu's former event-driven copy could receive the saved answer.
+    const resumeState = await delayPanelState(page);
     await page.getByRole("button", { name: "Allow", exact: true }).click();
     await page.waitForFunction(() => document.getElementById("cloud-panel")?.dataset.contextAllowed === "true");
     await provider.locator("#panel-context-probe").waitFor();
@@ -1148,6 +1176,7 @@ test("Allow delivers the place live; the menu checkbox withdraws it and stops su
         document.querySelector<HTMLIFrameElement>("[data-cloud-panel-frame]")?.contentDocument?.getElementById("panel-context-probe")
           ?.textContent === "null",
     );
+    await resumeState();
     await page.locator("#change-context").click();
     await settle(page);
     expect(await provider.locator("#panel-context-probe").textContent()).toBe("null");

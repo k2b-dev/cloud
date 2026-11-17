@@ -142,6 +142,8 @@ type Props = {
   bulkSelectionLaunchers: WorkspaceBulkLauncher[];
   recordActionLaunchers: WorkspaceRecordLauncher[];
   dateConfig?: DateContext;
+  /** Server time for the same history on the server and the first browser render. */
+  now?: string;
   workspaceRouteKey: string;
 };
 
@@ -984,6 +986,7 @@ export default function RecordsView(props: Props) {
             auditPolicy={tableAuditPolicy()}
             record={selectedRecord}
             detail={selectedRecordDetail}
+            now={props.now}
             recordFailure={selectedRecordFailure()}
             selectedGroup={selectedGroup()}
             query={queryWithSearch()}
