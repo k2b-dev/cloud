@@ -51,7 +51,13 @@ document.body.append(loading);
 render(() => createComponent(ActivityList.Loading, {}), loading);
 
 `;
-const build = await Bun.build({ entrypoints: [entry], files: { [entry]: fixture }, target: "browser", format: "iife" });
+const build = await Bun.build({
+  entrypoints: [entry],
+  files: { [entry]: fixture },
+  target: "browser",
+  format: "iife",
+  minify: true,
+});
 if (!build.success) throw new AggregateError(build.logs, "Could not bundle the activity list fixture.");
 const script = await build.outputs[0]!.text();
 
