@@ -105,9 +105,9 @@ const archive = mutation.create<void, { itemId: string }>({
 `mutate(vars)` starts the operation. `loading()`, `error()`, and `data()` are
 reactive accessors. `status()` says where the mutation stands: `idle`,
 `pending` while `onBefore` runs, `loading` while the mutation function runs,
-then `success`, `error`, or `aborted` for the last call. `settledAt()` is the
-time of the last end and changes on every end, also for two equal errors in a
-row. Every place that reads one mutation shows the same state, no matter which
+then `success`, `error`, or `aborted` for the operation that owns the state.
+`settledAt()` is the time of its last end and changes for two equal errors in a
+row. Dropped and superseded calls leave these signals unchanged. Every place that reads one mutation shows the same state, no matter which
 button, menu item, hotkey, or code started the call.
 
 `abort()` cancels the active operation. An aborted fetch calls `onAbort`, not
