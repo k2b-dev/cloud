@@ -253,7 +253,7 @@ test.each(["/app/assistant", "/app/assistant/panel"])(
     spies.push(state);
     const response = await request(`https://cloud.example.test${path}?conversation=${chat.shortId}`);
     expect(response.status).toBe(200);
-    expect(state).toHaveBeenCalledWith(expect.objectContaining({ id: chat.id }), user.id, expect.any(String));
+    expect(state).toHaveBeenCalledWith(expect.objectContaining({ id: chat.id }), user.id, { locale: expect.any(String) });
   },
 );
 
