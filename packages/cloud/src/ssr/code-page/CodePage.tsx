@@ -1,13 +1,14 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { Button, Dropdown, type DropdownItem, Placeholder, prompts, Skeleton, toast, ViewTabs } from "@k2b/ui";
-import { createSignal, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
+import { batch, createSignal, type JSX, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { openPanel } from "../../browser/panel";
 import { invokeCapabilityWithDataSchema } from "../../capabilities/client";
 import { CodeActivityReadModelSchema } from "../../contracts/code-read-model";
-import { openActivationDialog, switchOnReady } from "./CodeActivation";
+import { openActivationDialog } from "./CodeActivation";
 import { missingCodeChat } from "./CodeChatBinding";
-import { type CodeLive, type CodeLiveFeed, createCodeLive } from "./CodeLiveStrip";
+import { CodeLaunch } from "./CodeLaunch";
+import { CODE_STRIP_RUNS, type CodeLive, type CodeLiveFeed, createCodeLive } from "./CodeLiveStrip";
 import { CodeLede, CodeOverview, lastFinishedRun } from "./CodeOverview";
 import { copyHandle } from "./CodeRefusalNotice";
 import { CodeRuns, Failed } from "./CodeRuns";
@@ -15,10 +16,12 @@ import { CodeSecretsTab } from "./CodeSecrets";
 import { CodeSourceTab } from "./CodeSourceTab";
 import { CodeVersions } from "./CodeVersions";
 import { followCodeRuns } from "./code-live";
-import type { CodePageData, CodePageInvoke, CodePageReady } from "./data";
+import { type CodePageData, type CodePageInvoke, type CodePageReady, coreQuery, RunListSchema } from "./data";
+import { launchPages, runnable } from "./launch";
 import type { CodePageMessages } from "./messages";
-import { Island, type PageText, personal, type Tone, usePageText, withQuery } from "./page-kit";
+import { Island, type PageText, personal, Row, type Tone, usePageText, withQuery } from "./page-kit";
 import { nameRecentResults, recentResultKey } from "./recent-names";
+import { createRunAction } from "./run-action";
 
 export { switchOnReady } from "./CodeActivation";
 export { CodeDatabaseDelete, CodeDatabaseStatus } from "./CodeDatabaseStatus";
@@ -170,13 +173,17 @@ const place = (data: CodePageData, text: PageText) => {
 };
 
 /** The automation's state in one large word with its sign and colour (Bild 19, 21). */
-const bigState = (state: CodePageReady, t: CodePageMessages): { tone: Tone; icon: string; label: string } => {
+const bigState = (
+  state: CodePageReady,
+  t: CodePageMessages,
+  last: { state: string } | null | undefined = lastFinishedRun(state),
+): { tone: Tone; icon: string; label: string } => {
   if (state.code.state === "paused") return { tone: "warn", icon: "ti ti-player-pause", label: t.statePaused };
   if (state.code.state === "deleting") return { tone: "muted", icon: "ti ti-trash", label: t.stateDeleting };
   if (state.code.state !== "active" || !state.active) return { tone: "muted", icon: "ti ti-circle-dashed", label: t.stateOff };
   // A failed run, or a chat that personal Code writes to but no longer has: it writes nothing until its owner acts.
   // Someone who cannot choose a chat is not needed for it.
-  if (lastFinishedRun(state)?.state === "failed" || (missingCodeChat(state) && state.chatBinding?.canChange))
+  if (last?.state === "failed" || (missingCodeChat(state) && state.chatBinding?.canChange))
     return { tone: "danger", icon: "ti ti-alert-circle", label: t.stateNeedsYou };
   return { tone: "ok", icon: "ti ti-circle-check", label: t.stateOn };
 };
@@ -189,7 +196,7 @@ const bigState = (state: CodePageReady, t: CodePageMessages): { tone: Tone; icon
 const EFFECT_REFRESH_GAP_MS = 30_000;
 /** The browser reads with the person's own session, the same rights the server used for the first names. */
 const browserInvoke: CodePageInvoke = (invocation, schema) => invokeCapabilityWithDataSchema(invocation, schema);
-const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (() => void) => {
+const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive, text: PageText): (() => void) => {
   const feed = live.feed;
   const timeZone = data.dates.timeZone ?? "UTC";
   const refreshEffects = async () => {
@@ -222,10 +229,59 @@ const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (
       Math.max(0, last + EFFECT_REFRESH_GAP_MS - Date.now()),
     );
   };
+  // Only unknown identities need a metadata snapshot, not every state change. Bound deduplication by the
+  // visible run window, and coalesce bursts into one authorized list read per refresh window (DATA-13).
+  const snapshotAbort = new AbortController();
+  const attempted = new Set<string>();
+  let snapshotTimer: ReturnType<typeof setTimeout> | undefined;
+  let snapshotBusy = false;
+  let snapshotAt = 0;
+  const assignRuns = () => {
+    if (snapshotTimer || snapshotBusy || snapshotAbort.signal.aborted) return;
+    const visible = live.runs();
+    for (const id of attempted) if (!visible.some((run) => run.id === id)) attempted.delete(id);
+    if (!visible.some((run) => !run.entrypoint && !attempted.has(run.id))) return;
+    snapshotTimer = setTimeout(
+      async () => {
+        snapshotTimer = undefined;
+        const unknown = live.runs().filter((run) => !run.entrypoint && !attempted.has(run.id));
+        if (!unknown.length) return;
+        for (const run of unknown) attempted.add(run.id);
+        snapshotBusy = true;
+        snapshotAt = Date.now();
+        const result = await invokeCapabilityWithDataSchema(
+          { ...coreQuery("code.run.list", { codeId: state.code.id, limit: CODE_STRIP_RUNS }), signal: snapshotAbort.signal },
+          RunListSchema,
+        ).catch(() => null);
+        if (snapshotAbort.signal.aborted) return;
+        let missing = false;
+        batch(() => {
+          for (const run of unknown) {
+            const current = live.runs().find((item) => item.id === run.id);
+            if (!current || current.entrypoint) continue;
+            const metadata = result?.ok && result.data.data.items.find((item) => item.id === run.id);
+            if (metadata) {
+              // State hints received while reading are newer than the snapshot. Enrich identity only.
+              feed.run({ ...current, entrypoint: metadata.entrypoint, startedAt: current.startedAt ?? metadata.startedAt });
+            } else missing = true;
+          }
+        });
+        if (missing)
+          toast.error(text.t().runSnapshotFailed, {
+            duration: 0,
+            action: { label: text.t().tryAgain, onClick: () => refreshCurrentPath() },
+          });
+        snapshotBusy = false;
+        assignRuns();
+      },
+      Math.max(0, snapshotAt + EFFECT_REFRESH_GAP_MS - Date.now()),
+    );
+  };
   const stop = followCodeRuns(
     state.code.id,
     (event) => {
-      feed.run({ id: event.runId, state: event.state, createdAt: event.at });
+      feed.run({ id: event.runId, state: event.state, createdAt: event.at, ...(event.state === "running" ? { startedAt: event.at } : {}) });
+      assignRuns();
       if (event.state === "succeeded" || event.state === "failed") effects();
     },
     // A gap in the live stream: the page loads its state again instead of guessing.
@@ -234,6 +290,8 @@ const followLive = (data: CodePageData, state: CodePageReady, live: CodeLive): (
   );
   return () => {
     if (timer) clearTimeout(timer);
+    if (snapshotTimer) clearTimeout(snapshotTimer);
+    snapshotAbort.abort();
     stop();
   };
 };
@@ -246,10 +304,23 @@ function ReadyPage(props: {
   onLive?: (feed: CodeLiveFeed) => (() => void) | undefined;
 }) {
   const t = props.text.t;
-  const editor = () => props.state.permission === "editor";
-  const live = createCodeLive(props.state);
+  const [currentCode, setCurrentCode] = createSignal(props.state.code);
+  const [snapshotAt, setSnapshotAt] = createSignal(Date.parse(props.data.dates.now));
+  const pageState = (): CodePageReady => ({ ...props.state, code: currentCode() });
+  const editor = () => pageState().permission === "editor";
+  const live = createCodeLive(pageState());
+  const run = createRunAction({
+    data: props.data,
+    state: pageState,
+    live,
+    text: props.text,
+    reconcile: (code) => {
+      setSnapshotAt(Date.now());
+      setCurrentCode(code);
+    },
+  });
   onMount(() => {
-    const stop = props.onLive ? props.onLive(live.feed) : followLive(props.data, props.state, live);
+    const stop = props.onLive ? props.onLive(live.feed) : followLive(props.data, pageState(), live, props.text);
     if (stop) onCleanup(stop);
   });
   const [busy, setBusy] = createSignal<"pause" | "resume" | null>(null);
@@ -261,7 +332,7 @@ function ReadyPage(props: {
         appId: "core",
         capabilityId: paused ? "code.pause" : "code.resume",
         kind: "action",
-        target: { type: "core.code", id: props.state.code.id },
+        target: { type: "core.code", id: pageState().code.id },
         input: {},
         idempotencyKey: crypto.randomUUID(),
       },
@@ -276,11 +347,11 @@ function ReadyPage(props: {
     refreshCurrentPath();
   };
   const activate = () => {
-    const version = props.state.waiting;
+    const version = pageState().waiting;
     if (!version) return;
-    void openActivationDialog({ data: props.data, state: props.state, version, text: props.text });
+    void openActivationDialog({ data: props.data, state: pageState(), version, text: props.text });
   };
-  const paused = () => props.state.code.state === "paused";
+  const paused = () => pageState().code.state === "paused";
   const tabs = () => [
     { id: "overview", label: t().tabOverview, href: props.data.href },
     { id: "runs", label: t().tabRuns, href: withQuery(props.data.href, { tab: "runs" }) },
@@ -290,7 +361,7 @@ function ReadyPage(props: {
             id: "secrets",
             label: t().tabSecrets,
             href: withQuery(props.data.href, { tab: "secrets" }),
-            count: props.state.secretNames?.length ?? undefined,
+            count: pageState().secretNames?.length ?? undefined,
           },
         ]
       : []),
@@ -298,59 +369,76 @@ function ReadyPage(props: {
       id: "versions",
       label: t().tabVersions,
       href: withQuery(props.data.href, { tab: "versions" }),
-      count: props.state.versions.length ? `${props.state.versions.length}${props.state.moreVersions ? "+" : ""}` : undefined,
+      count: pageState().versions.length ? `${pageState().versions.length}${pageState().moreVersions ? "+" : ""}` : undefined,
     },
     // The code is for the people who may change the automation (F30); others see four tabs.
     ...(editor() ? [{ id: "code", label: t().tabCode, href: withQuery(props.data.href, { tab: "code" }) }] : []),
   ];
   const menu = (): DropdownItem[] => [
-    ...(editor() && props.state.code.state === "active"
+    ...(editor() && pageState().code.state === "active"
       ? [{ label: t().pause, icon: "ti ti-player-pause", action: () => void setPaused(true), disabled: busy() !== null }]
       : []),
     ...(editor() && paused()
       ? [{ label: t().resume, icon: "ti ti-player-play", action: () => void setPaused(false), disabled: busy() !== null }]
       : []),
-    ...(props.state.code.serviceAccountHandle
-      ? [{ label: t().copyHandle, icon: "ti ti-id-badge-2", action: () => void copyHandle(props.state.code.serviceAccountHandle!, t()) }]
+    ...(pageState().code.serviceAccountHandle
+      ? [{ label: t().copyHandle, icon: "ti ti-id-badge-2", action: () => void copyHandle(pageState().code.serviceAccountHandle!, t()) }]
       : []),
     { label: t().copyLink, icon: "ti ti-link", action: () => void copyPageLink(props.data, t()) },
     // Source is for editors only (F30); readers get no command that names it.
     ...(editor() ? [{ label: t().pullSource, icon: "ti ti-terminal-2", action: () => openPull(props.data, t()) }] : []),
   ];
-  const state = () => bigState(props.state, t());
+  const state = () =>
+    bigState(
+      pageState(),
+      t(),
+      live.runs().find((run) => run.state === "succeeded" || run.state === "failed"),
+    );
   const meta = () => {
-    const active = props.state.active;
-    const code = props.state.code;
+    const active = pageState().active;
+    const code = pageState().code;
     if (paused())
-      return code.pausedAt
-        ? t().headPausedOn({ version: active?.number ?? null, date: props.text.short(code.pausedAt) })
-        : t().headPaused({ version: active?.number ?? null });
+      return code.pausedBy?.name &&
+        code.pausedAt &&
+        snapshotAt() - Date.parse(code.pausedAt) >= 0 &&
+        snapshotAt() - Date.parse(code.pausedAt) < 60_000
+        ? t().headPausedSince({ name: code.pausedBy.name })
+        : code.pausedAt
+          ? t().headPausedOn({ version: active?.number ?? null, date: props.text.short(code.pausedAt) })
+          : t().headPaused({ version: active?.number ?? null });
     if (!active) return t().headNoVersion;
     // When and by whom the running version was switched on (Bild 19); older Core answers name its author instead.
     if (code.activatedAt)
       return t().headActivated({ version: active.number, date: props.text.short(code.activatedAt), name: code.activatedBy?.name ?? null });
     return t().headVersion({ version: active.number, name: active.createdBy?.name ?? null, date: props.text.short(active.createdAt) });
   };
-  /** "Change with Gustav" is filled unless a waiting version or "Resume" takes that place. */
-  // One filled action: "Change with Gustav", unless the approval below offers switching on or "Resume" leads (#55).
-  const changeFilled = () =>
-    !paused() &&
-    !(
-      props.state.waiting &&
-      (props.state.waiting.status === "submitted" || props.state.waiting.status === "approved") &&
-      switchOnReady(props.state)
-    );
+  const waitingAction = () => !!pageState().waiting && ["submitted", "approved"].some((status) => status === pageState().waiting!.status);
+  const needsYou = () => state().tone === "danger";
+  const hasLaunch = () =>
+    pageState().code.state === "active" &&
+    pageState().automations !== null &&
+    !!pageState().active &&
+    (launchPages(pageState()).length > 0 || runnable(pageState()).length > 0);
+  const changeFilled = () => !paused() && !waitingAction() && (needsYou() || !hasLaunch());
   return (
     <>
       <header class="cloud-code__head">
         <div class="cloud-code__head-text">
           <h1 class="cloud-code__title">
             <Show when={personal(props.data)} fallback={<span class="sr-only">{t().pageOf({ name: props.data.owner.title })}: </span>}>
-              <span class="cloud-code__name">{props.data.owner.title}</span>
+              <span class="cloud-code__name" title={props.data.owner.title}>
+                {props.data.owner.title}
+              </span>
             </Show>
             <span class="cloud-code__state" data-tone={state().tone}>
-              <i class={state().icon} aria-hidden="true" />
-              {state().label}
+              <span>
+                <i class={state().icon} aria-hidden="true" />
+                {state().label}
+              </span>
+              <span class="cloud-code__state-reserve" aria-hidden="true">
+                <i class="ti ti-alert-circle" />
+                {t().stateNeedsYou}
+              </span>
             </span>
           </h1>
           <p class="cloud-code__meta">
@@ -358,8 +446,15 @@ function ReadyPage(props: {
           </p>
         </div>
         <div class="cloud-code__head-actions">
+          <CodeLaunch state={pageState()} text={props.text} run={run} secondary={needsYou() || waitingAction()} />
           <Show when={editor() && paused()}>
-            <Button type="button" variant="primary" loading={busy() === "resume"} onClick={() => void setPaused(false)}>
+            <Button
+              type="button"
+              variant="primary"
+              class="cloud-code__launch"
+              loading={busy() === "resume"}
+              onClick={() => void setPaused(false)}
+            >
               <i class="ti ti-player-play" aria-hidden="true" />
               {t().resume}
             </Button>
@@ -369,23 +464,23 @@ function ReadyPage(props: {
               const content = () => (
                 <>
                   <i class={panel().icon} aria-hidden="true" />
-                  {t().changeWith({ name: panel().label })}
+                  <span class="cloud-code__change-full">{t().changeWith({ name: panel().label })}</span>
+                  <span class="cloud-code__change-short" aria-hidden="true">
+                    {t().changeShort}
+                  </span>
                 </>
               );
               // One filled action in the head: Gustav, unless a waiting version or "Resume" takes that place.
               return (
-                <Show
-                  when={changeFilled()}
-                  fallback={
-                    <Button type="button" variant="secondary" onClick={() => openPanel(panel().provider)}>
-                      {content()}
-                    </Button>
-                  }
+                <Button
+                  type="button"
+                  variant={changeFilled() ? "primary" : "secondary"}
+                  class={`cloud-code__change${!hasLaunch() && !paused() ? " cloud-code__change--alone" : ""}`}
+                  aria-label={t().changeWith({ name: panel().label })}
+                  onClick={() => openPanel(panel().provider)}
                 >
-                  <Button type="button" variant="primary" onClick={() => openPanel(panel().provider)}>
-                    {content()}
-                  </Button>
-                </Show>
+                  {content()}
+                </Button>
               );
             }}
           </Show>
@@ -395,35 +490,39 @@ function ReadyPage(props: {
             </Dropdown.Trigger>
           </Dropdown.Root>
         </div>
+        <Show when={paused() && !editor() && launchPages(pageState()).length}>
+          <p class="cloud-code__paused-reason">{t().pagesPaused}</p>
+        </Show>
       </header>
       <ViewTabs label={t().tabsLabel} items={tabs()} current={props.data.tab} max={5} class="cloud-code__tabs" />
       <Switch>
         <Match when={props.data.tab === "overview"}>
-          <CodeLede state={props.state} text={props.text} />
+          <CodeLede state={pageState()} text={props.text} />
           <CodeOverview
             data={props.data}
-            state={props.state}
+            state={pageState()}
             text={props.text}
             live={live}
+            run={run}
             onActivate={activate}
             footer={paused() ? undefined : props.footer}
           />
         </Match>
         <Match when={props.data.tab === "runs"}>
-          <CodeRuns data={props.data} state={props.state} text={props.text} live={live} />
+          <CodeRuns data={props.data} state={pageState()} text={props.text} live={live} />
         </Match>
         <Match when={props.data.tab === "secrets"}>
-          <CodeSecretsTab data={props.data} state={props.state} />
+          <CodeSecretsTab data={props.data} state={pageState()} />
         </Match>
         <Match when={props.data.tab === "versions"}>
-          <CodeVersions data={props.data} state={props.state} text={props.text} onActivate={activate} />
+          <CodeVersions data={props.data} state={pageState()} text={props.text} onActivate={activate} />
         </Match>
         <Match when={props.data.tab === "code"}>
-          <Show when={props.state.sourceTab} fallback={<Failed title={t().partFailed} detail={t().loadKeeps} />}>
+          <Show when={pageState().sourceTab} fallback={<Failed title={t().partFailed} detail={t().loadKeeps} />}>
             {(source) => (
               <CodeSourceTab
                 data={source()}
-                codeId={props.state.code.id}
+                codeId={pageState().code.id}
                 href={withQuery(props.data.href, { tab: "code" })}
                 versionsHref={withQuery(props.data.href, { tab: "versions" })}
                 dates={props.data.dates}
@@ -439,28 +538,62 @@ function ReadyPage(props: {
 /** The page while it loads (Bild 33): placeholders at the heights of the content they stand for. */
 export function CodePageSkeleton(props: { data: CodePageData; text: PageText }) {
   const t = props.text.t;
-  const rows = (count: number) =>
-    Array.from({ length: count }, () => (
-      <div class="cloud-code__skel-row">
-        <Skeleton class="cloud-code__skel-tile" />
-        <span>
-          <Skeleton class="cloud-code__skel-line" />
-          <Skeleton class="cloud-code__skel-line cloud-code__skel-line--short" />
-        </span>
-      </div>
-    ));
+  const rows = (count: number, timed = false) => (
+    <ul class="cloud-code__rows" data-plain={timed ? undefined : ""}>
+      {Array.from({ length: count }, () => (
+        <Row
+          icon="ti ti-clock"
+          tile="neutral"
+          title={<Skeleton class="cloud-code__skel-line" />}
+          sub={<Skeleton class="cloud-code__skel-sub" />}
+          trail={
+            timed ? (
+              <>
+                <Skeleton class="cloud-code__skel-status" />
+                <Skeleton class="cloud-code__skel-label" />
+              </>
+            ) : undefined
+          }
+        />
+      ))}
+    </ul>
+  );
   // The tabs and island titles are known before the data: they stand as they will, so nothing moves when it loads.
   const tabs = () => [
     { id: "overview", label: t().tabOverview, href: props.data.href },
     { id: "runs", label: t().tabRuns, href: withQuery(props.data.href, { tab: "runs" }) },
+    ...(props.data.canManageOwner ? [{ id: "secrets", label: t().tabSecrets, href: withQuery(props.data.href, { tab: "secrets" }) }] : []),
     { id: "versions", label: t().tabVersions, href: withQuery(props.data.href, { tab: "versions" }) },
+    ...(props.data.canManageOwner ? [{ id: "code", label: t().tabCode, href: withQuery(props.data.href, { tab: "code" }) }] : []),
   ];
   return (
     <div class="cloud-code__skeleton" role="status" aria-busy="true" aria-label={t().loadingPage}>
       <header class="cloud-code__head">
         <div class="cloud-code__head-text">
-          <Skeleton class="cloud-code__skel-title" />
+          <div class="cloud-code__skel-heading" aria-hidden="true">
+            <h1 class="cloud-code__title">
+              <Show when={personal(props.data)}>
+                <span class="cloud-code__name" title={props.data.owner.title}>
+                  {props.data.owner.title}
+                </span>
+              </Show>
+              <span class="cloud-code__state">
+                <span>
+                  <i class="ti ti-circle-check" />
+                  {t().stateOn}
+                </span>
+                <span class="cloud-code__state-reserve">
+                  <i class="ti ti-alert-circle" />
+                  {t().stateNeedsYou}
+                </span>
+              </span>
+            </h1>
+            <Skeleton class="cloud-code__skel-title" />
+          </div>
           <Skeleton class="cloud-code__skel-meta" />
+        </div>
+        <div class="cloud-code__head-actions" aria-hidden="true">
+          <Skeleton class="cloud-code__skel-actions" />
         </div>
       </header>
       <ViewTabs label={t().tabsLabel} items={tabs()} current={props.data.tab} max={5} class="cloud-code__tabs" />
@@ -468,23 +601,21 @@ export function CodePageSkeleton(props: { data: CodePageData; text: PageText }) 
         <Skeleton class="cloud-code__skel-lede" />
         <Skeleton class="cloud-code__skel-lede cloud-code__skel-line--short" />
       </span>
-      <Show when={!personal(props.data)}>
-        <div class="cloud-code__lage cloud-code__lage--skeleton">
-          <span class="cloud-code__lage-cell">
-            <Skeleton class="cloud-code__skel-label" />
-            <Skeleton class="cloud-code__skel-big" />
-          </span>
-          <span class="cloud-code__lage-cell">
-            <Skeleton class="cloud-code__skel-label" />
-            <Skeleton class="cloud-code__skel-last" />
-          </span>
-          <span class="cloud-code__runs">
-            <Skeleton class="cloud-code__skel-label" />
-            <Skeleton class="cloud-code__skel-strip" />
-            <Skeleton class="cloud-code__skel-label" />
-          </span>
-        </div>
-      </Show>
+      <div class="cloud-code__lage cloud-code__lage--skeleton">
+        <span class="cloud-code__lage-cell">
+          <Skeleton class="cloud-code__skel-label" />
+          <Skeleton class="cloud-code__skel-big" />
+        </span>
+        <span class="cloud-code__lage-cell">
+          <Skeleton class="cloud-code__skel-label" />
+          <Skeleton class="cloud-code__skel-last" />
+        </span>
+        <span class="cloud-code__runs">
+          <Skeleton class="cloud-code__skel-label" />
+          <Skeleton class="cloud-code__skel-strip" />
+          <Skeleton class="cloud-code__skel-label" />
+        </span>
+      </div>
       <div class="cloud-code__grid">
         <div class="cloud-code__stack">
           <Show when={!personal(props.data)}>
@@ -496,13 +627,20 @@ export function CodePageSkeleton(props: { data: CodePageData; text: PageText }) 
               {rows(4)}
             </Island>
           </Show>
-          <Island title={t().whenTitle} class="cloud-code__o1">
-            {rows(personal(props.data) ? 1 : 2)}
+          <Island
+            title={t().whenTitle}
+            class="cloud-code__o1 cloud-code__when"
+            actions={props.data.canManageOwner ? <Skeleton class="cloud-code__skel-run-now" /> : undefined}
+          >
+            {rows(personal(props.data) ? 1 : 2, true)}
           </Island>
         </div>
         <div class="cloud-code__stack">
-          <Island title={t().mayTitle} class="cloud-code__o2">
+          <Island title={t().mayTitle} class="cloud-code__o2 cloud-code__may">
             {rows(3)}
+            <p class="cloud-code__foot">
+              <Skeleton class="cloud-code__skel-label" />
+            </p>
           </Island>
         </div>
       </div>

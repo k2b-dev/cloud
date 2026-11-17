@@ -11,7 +11,17 @@ export function codeCheckHostSource(entries: CodeVersionManifest["entrypoints"],
       .map(({ kind, entrypoint, cron, at, timeZone, title, route, event }) => ({
         kind,
         entrypoint,
-        ...(route ? { route } : {}),
+        // `page` describes the handler's response; it is not part of the runtime route registration.
+        ...(route
+          ? {
+              route: {
+                method: route.method,
+                path: route.path,
+                public: route.public,
+                ...(route.layout === undefined ? {} : { layout: route.layout }),
+              },
+            }
+          : {}),
         cron,
         ...(at === undefined ? {} : { at }),
         ...(timeZone === undefined ? {} : { timeZone }),

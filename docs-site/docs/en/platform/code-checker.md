@@ -5,7 +5,7 @@ section: Platform services
 order: 681
 description: Check Code types, review called operations and targets, and build an immutable runner version.
 tags: [code, checker, permissions, runner]
-updated: 2026-11-09
+updated: 2026-11-17
 ---
 
 # Code checker
@@ -137,6 +137,22 @@ contract, shared with the version service, contains:
   a database call. `code_run` reports `code_db_temporary` because it has no lasting
   Code to own a database;
 - `hashes`: lowercase SHA-256 digests for `source`, `sdk`, and `bundle`.
+
+Route metadata includes optional `page`: the checker found a reachable SDK
+`ctx.page` call in the handler, a called local function, or a passed callback
+(including Promise continuations and forwarding helpers). Unused nested
+functions do not count. When the analysis cannot resolve a call, it leaves
+`page` absent rather than claiming the route returns data. This is display
+evidence, not an authorization or a promise that every response is HTML. Older manifests omit it; the Code page
+keeps their existing GET/ALL opening behavior for older or unknown evidence.
+Only routes whose return paths all resolve to known SDK data responses
+(`json`, `text`, or `redirect`) carry `page: false` and offer only their
+address. An unresolved response value or constructor, including a Promise
+executor, leaves the evidence unknown; not finding a page call never proves
+that the response is data.
+The runtime registration comparison checks method, path, public access and
+layout; it excludes the checker-only `page` flag. Both page and data handlers
+must still execute through the checked bundle.
 
 The source hash covers `JSON.stringify({ entry, files })`, with `files` holding
 `[path, source]` pairs sorted by path. The SDK hash covers the `GeneratedCodeSdk`

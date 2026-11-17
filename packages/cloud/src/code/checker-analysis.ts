@@ -595,6 +595,76 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
       for (const child of node.children)
         if (ts.isJsxText(child) && child.text.trim()) report(child, "code_page_child", t.page_child3({ tag: tag }));
   }
+  const pageEvidence = new Map<ts.Node, boolean | undefined>();
+  /** Display metadata only: follow local calls, never execute code or count an unused nested function. */
+  function returnsPage(handler: ts.Expression, seen = new Set<ts.Node>()): boolean | undefined {
+    const fn = handlerFunction(checker, handler);
+    if (!fn || seen.has(fn)) return undefined;
+    if (pageEvidence.has(fn)) return pageEvidence.get(fn);
+    seen.add(fn);
+    let found = false;
+    const walk = (node: ts.Node) => {
+      if (found || (node !== fn && ts.isFunctionLike(node))) return;
+      if (ts.isCallExpression(node)) {
+        const declaration = checker.getResolvedSignature(node)?.declaration;
+        if (
+          declaration?.getSourceFile().fileName === sdkFile &&
+          (("name" in declaration && declaration.name?.getText() === "page") ||
+            (ts.isPropertySignature(declaration.parent) && declaration.parent.name.getText() === "page"))
+        ) {
+          found = true;
+          return;
+        }
+        // A callback passed to a call can supply its response (Promise.then, local forwarding helpers).
+        // Unused function declarations are still skipped by the ordinary walk.
+        const calls = [
+          ...(declaration?.getSourceFile().fileName === sdkFile ? [] : [returnsPage(node.expression, new Set(seen))]),
+          ...node.arguments
+            .filter((argument) => checker.getTypeAtLocation(argument).getCallSignatures().length > 0)
+            .map((argument) => returnsPage(argument, new Set(seen))),
+        ];
+        if (calls.some((value) => value === true)) {
+          found = true;
+          return;
+        }
+      }
+      ts.forEachChild(node, walk);
+    };
+    walk(fn);
+    // Absence of a discovered page is not proof of data. Only explicit, resolved data responses on every
+    // return path exclude a page; constructors, mutable callees and all other expressions stay unknown.
+    const dataResponse = (expression: ts.Expression): boolean => {
+      expression = unparen(expression);
+      if (ts.isAwaitExpression(expression)) return dataResponse(expression.expression);
+      if (ts.isConditionalExpression(expression)) return dataResponse(expression.whenTrue) && dataResponse(expression.whenFalse);
+      if (!ts.isCallExpression(expression)) return false;
+      const declaration = checker.getResolvedSignature(expression)?.declaration;
+      if (declaration?.getSourceFile().fileName === sdkFile) {
+        const name =
+          "name" in declaration && declaration.name
+            ? declaration.name.getText()
+            : ts.isPropertySignature(declaration.parent)
+              ? declaration.parent.name.getText()
+              : null;
+        return name === "json" || name === "text" || name === "redirect";
+      }
+      return returnsPage(expression.expression, new Set(seen)) === false;
+    };
+    const returns: (ts.Expression | undefined)[] = [];
+    const collectReturns = (node: ts.Node) => {
+      if (node !== fn && ts.isFunctionLike(node)) return;
+      if (ts.isReturnStatement(node)) returns.push(node.expression);
+      else ts.forEachChild(node, collectReturns);
+    };
+    // handlerFunction resolves only these function forms, but keeps a Node return type for its other callers.
+    const body = ts.isArrowFunction(fn) || ts.isFunctionExpression(fn) || ts.isFunctionDeclaration(fn) ? fn.body : undefined;
+    if (body && !ts.isBlock(body)) returns.push(body);
+    else if (body) collectReturns(body);
+    const evidence = found ? true : returns.length > 0 && returns.every((value) => value && dataResponse(value)) ? false : undefined;
+    pageEvidence.set(fn, evidence);
+    return evidence;
+  }
+
   function visit(node: ts.Node) {
     if (ts.isPropertyAccessExpression(node)) {
       const type = checker.getNonNullableType(checker.getTypeAtLocation(node.expression));
@@ -863,10 +933,11 @@ export function analyzeCode(request: CodeCheckRequest): CodeAnalysis {
                     .map((item) => item.handler),
                 });
               const sf = node.getSourceFile();
+              const page = routeHandler ? returnsPage(routeHandler) : undefined;
               result.entrypoints.push({
                 kind: "route",
                 entrypoint: name,
-                route: route.data,
+                route: { ...route.data, ...(page === undefined ? {} : { page }) },
                 cron: null,
                 file: sf.fileName.slice(root.length),
                 line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,

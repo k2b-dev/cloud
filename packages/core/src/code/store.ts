@@ -1,7 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import { sql } from "@k2b/cloud";
 import { aiLive } from "@k2b/cloud/ai/live";
-import { CodeAutomationTitleSchema, type NormalizedCapabilityCall, NormalizedCapabilityCallSchema } from "@k2b/cloud/contracts";
+import {
+  CodeAutomationTitleSchema,
+  CodeCheckedVersionManifestSchema,
+  type NormalizedCapabilityCall,
+  NormalizedCapabilityCallSchema,
+} from "@k2b/cloud/contracts";
 import { buildAccessPrincipalCondition, createAccess, type Principal } from "@k2b/cloud/server";
 import { audit } from "@k2b/cloud/services";
 import type { SQL, TransactionSQL } from "bun";
@@ -32,6 +37,7 @@ import {
   CodeVersionManifestSchema,
   type codeQueryContracts,
 } from "./contracts";
+import { describeCodePages } from "./page-links";
 import { type CodeEffectEvidence, CodeEffectEvidenceSchema } from "./read-model/effects";
 import { createCodeServiceAccount } from "./service-account";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -125,7 +131,21 @@ export const readCode = async (codeId: string, context: CodeContext) => {
     WHERE owner_app_id IN ('core','runner') AND workload_type='code.version'
       AND workload_id=${code.activeVersionId} AND policy IS NOT NULL AND state IN ('active','paused')
     LIMIT 1`;
-  return { code: { ...code, needsReconfirmation: Boolean(legacy) }, permission };
+  // A detail snapshot may name the person from this exact manual pause. Never put audit reads on admission or live events.
+  let pausedBy: { name: string } | null = null;
+  if (code.state === "paused" && code.pauseReason === "manual" && code.pausedAt) {
+    const [pause] = await sql<{ name: string | null }[]>`SELECT
+      COALESCE(NULLIF(trim(u.display_name),''),NULLIF(trim(concat_ws(' ',u.given_name,u.sn)),'')) AS name
+      FROM code.codes c JOIN audit.events e ON e.target_type='code' AND e.target_id=c.id AND e.created_at=c.paused_at
+      JOIN auth.users u ON u.id=e.actor_user_id
+      WHERE c.id=${code.id} AND c.state='paused' AND c.pause_reason='manual'
+        AND e.action='core.code.paused' AND e.outcome='allowed'
+        AND e.created_at>=${code.pausedAt}::timestamptz AND e.created_at<${code.pausedAt}::timestamptz + interval '1 millisecond'
+        AND (${viewer.roles.includes("user")} OR e.actor_user_id=${viewer.id}::uuid)
+      ORDER BY e.id DESC LIMIT 1`;
+    if (pause?.name) pausedBy = { name: pause.name };
+  }
+  return { code: { ...code, pausedBy, needsReconfirmation: Boolean(legacy) }, permission };
 };
 /** Paginate a bounded candidate window. An empty authorized page may still have nextCursor. */
 export const listCodes = async (
@@ -449,7 +469,9 @@ export const readCodeVersion = async (
     text = Object.hasOwn(row.source_files, input.content.path) ? row.source_files[input.content.path] : undefined;
   if (input.content && text === undefined) throw new CodeDataError("NOT_FOUND", "Version content not found.");
   const content = text === undefined ? null : codeTextChunk(text, input.offset, input.length);
-  return { version: mapVersion(row), content };
+  const manifest = input.content?.kind === "manifest" ? CodeCheckedVersionManifestSchema.safeParse(row.manifest) : null;
+  const pages = manifest?.success ? describeCodePages(code.id, { id: row.id, manifest: manifest.data }) : null;
+  return { version: mapVersion(row), content, pages };
 };
 
 type RunRow = {

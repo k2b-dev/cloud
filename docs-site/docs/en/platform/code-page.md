@@ -5,7 +5,7 @@ section: Platform services
 order: 967
 description: Mount the shared Code page at a resource so its administrators see automations, targets, refused calls, runs, versions and switch Code on.
 tags: [code, ssr, ui, permissions]
-updated: 2026-11-14
+updated: 2026-11-17
 ---
 
 # Show a resource's Code page
@@ -23,12 +23,16 @@ The page shows what the Code does, in words. It shows no source except in the
 editors' **Code** tab. Targets are named for the person who reads them, or by
 their type ("a space you cannot see").
 
-- **Head:** the state as one large word with its sign (Switched on; Switched
-  on, needs you; Paused with **Resume**; Not switched on yet), one quiet line
-  with the place and the running version, **Change with <panel>** and a **…**
-  menu. The menu offers pause or resume, **Copy handle** of the service
-  account, **Copy link** and, for editors, **Get the source locally**, which
-  shows the `cld code pull` command.
+- **Head:** the state, place and active version, followed by **Open** when
+  the active version has a page. Open goes directly to its home page; the arrow
+  lists other pages and, for editors, **Run now**. Without pages, one runnable
+  automation starts directly; several open a menu with their titles and timing.
+  Menus become a sheet on phones. **Change with <panel>** is secondary unless
+  the Code needs attention or has no launch action. A waiting version keeps the
+  launch action secondary. Paused editors get **Resume**; readers get a
+  focusable disabled Open action with the reason. The **…** menu offers pause
+  or resume, **Copy handle**, **Copy link** and, for editors, **Get the source
+  locally**, which shows the `cld code pull` command.
 - **Tabs** in one row: Overview, Runs, Secrets (editors), Versions and Code
   (editors). The tab is in the address (`?tab=`), so reload and back return to
   it.
@@ -66,7 +70,7 @@ their type ("a space you cannot see").
   and non-interactive credentials see why they cannot switch on.
 
 Only people who manage the owner and editors or readers of the Code see the
-page. Readers see runs without their calls and no actions. Every part that
+page. Readers can open pages, but cannot start runs or change Code; runs hide their calls. Every part that
 cannot load shows an error with a way to try again, and says that loading
 changes nothing about the automation.
 
@@ -94,6 +98,52 @@ lists such as a card's next run. The weekday words are fixed, so every surface
 writes the same day the same way. Pass the server's clock as `now` when a page
 renders on the server, so the server and the first browser render agree on
 "today".
+
+## Open pages and start runs
+
+**Pages and addresses** lists routes with **Copy address**. **Open** appears
+only for a non-public GET or ALL route without named path segments whose
+checker metadata allows a page. The root route `/` is the home page and reads
+**Home page** when it has no title; otherwise the first eligible route in
+manifest order is the home page. Data routes and routes that only accept
+input offer Copy address. Core's server-only `describeCodePages(codeId,
+{ id: versionId, manifest })` in `packages/core/src/code/page-links.ts`
+is the single selection for the Code page and version handoffs. It returns
+`{ versionId, homeUrl, pages: [{ entrypoint, title, path, isRoot, href }] }`;
+`homeUrl` is null when no route qualifies. Only the first matching GET entry
+for an address can qualify: an earlier ALL or parameter route can hide a later
+page. `title` is the declared title or null; each caller localizes a missing
+root title using its request locale, and otherwise displays the path. Authorize the Code and
+version read before calling it: the function projects a checked manifest and
+grants no access. `core.code.version.read` includes this projection as `pages`
+when reading manifest content (null otherwise). The Code page uses that result
+for its head and overview, without repeating eligibility or home selection in
+the browser. Handoffs may project a submitted version, but only offer Open after
+that version is active and the Code is enabled. Waiting versions do not expose
+Open yet. Paused pages explain why Open is unavailable.
+
+**Run now** stays available in **When it runs** and shares its pending state
+with the head. A pending menu start disables only its own entry, which says
+**Starting …**; other entries keep their actions and independent receipts. Only editors may start schedule and manual automations;
+event handlers and routes are excluded. Starting keeps the current page and
+shows **Run is starting.** with **View run**. The situation replaces **Last**
+with **Starting** or **Running now**, including elapsed time from the browser
+clock. View run opens that run in the Runs tab. The toast stays neutral when
+another run is active: a browser snapshot cannot confirm that this start waits.
+Payload-free live hints keep known runs current. Unknown run IDs join one
+authorized metadata-list snapshot, at most once per visible ID and at most
+once per 30-second window; inputs, outputs and calls are never requested.
+A failed or incomplete assignment offers a page refresh. Newer live states
+received during the snapshot are preserved.
+
+A failed start offers **Try again** with the original idempotency key, so an
+uncertain response cannot create a duplicate run. A pause rejection refreshes
+the canonical Code state and names the person who paused it when the current
+pause audit entry and directory visibility allow that name. A version approval
+rejection links to Versions and keeps **Run now** available.
+When a run started on this page fails, a persistent **The run failed: …** toast reports its reason
+and links to the run. The head changes in place; the full attention notice
+appears on the next load.
 
 ## Refused calls
 
