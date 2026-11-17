@@ -5,7 +5,7 @@ section: Operations
 order: 1255
 description: Upgrade and recover Code activation while preserving normal shares and version entries.
 tags: [code, operations, recovery]
-updated: 2026-11-15
+updated: 2026-11-18
 ---
 
 # Code activation recovery
@@ -135,3 +135,21 @@ session does not supply that authority.
 
 Code service accounts receive only direct View or Edit, never Manage or
 inherited group, signed-in or public access.
+
+## Version card snapshots
+
+Upgrade Core and consumers together when adopting `core.code.version.cards`.
+Core installs targeted `codeId` hints on the existing AI live channel; no new
+service, environment variable or operator setting is required. Older hints
+without the ID still cause a covering read. The Query is read-only and leaves
+activation Actions and their durable identities unchanged.
+
+The shared Cloud library now accepts capability manifests up to 400 KiB,
+previously 384 KiB. The capability registry itself stays at 512 KiB per record;
+its configuration and existing Sync resources do not change. The full Core
+presentation catalog plus the maximum 80-byte app ID adds 68,743 bytes around
+the manifest: a 409,600-byte manifest occupies 478,343 bytes in that record,
+leaving 45,945 bytes below the registry limit. Deploy matching Cloud library
+consumers before relying on a manifest above the previous limit; older
+application runtimes still reject it at startup. Invocation and island budgets
+are unchanged.

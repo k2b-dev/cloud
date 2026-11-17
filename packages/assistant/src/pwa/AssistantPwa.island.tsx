@@ -41,6 +41,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
 import { assistantApi } from "../api/client";
+import type { CodeVersionCardEntry } from "../code-version-cards";
 import AssistantAuthoringStop from "../frontend/AssistantAuthoringStop";
 import { AssistantWaitingStrip, createWaitingQuestionFocus } from "../frontend/AssistantWaitingStrip";
 import { createAssistantDictation } from "../frontend/assistant-dictation";
@@ -53,6 +54,7 @@ import {
 import { audioMessages } from "../frontend/audio-messages";
 import { AssistantCodeDecisionEntry } from "../frontend/code-decision-deferred";
 import { AssistantCodeVersionCard } from "../frontend/code-version-card-deferred";
+import { createCodeVersionCardStore } from "../frontend/code-version-card-store";
 import { assistantMessages } from "../frontend/messages";
 import { waitingQuestionsView } from "../frontend/waiting-questions";
 import { AllChats, type AllChatsSnapshot } from "./AllChats";
@@ -76,6 +78,7 @@ type Detail = {
 };
 
 export type AssistantPwaProps = {
+  initialCodeVersionCards?: CodeVersionCardEntry[];
   userId: string;
   /** The part's name and icon from the app's presentation. */
   name: string;
@@ -162,6 +165,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
 
   // ---- live updates, as on the web
   const liveHub = createAssistantLiveHub();
+  const codeVersionCards = createCodeVersionCardStore(liveHub, props.initialCodeVersionCards);
   onMount(() => {
     const unregisterList = liveHub.register({
       matches: matchesAssistantInvalidation(["conversation-list"]),
@@ -994,6 +998,7 @@ export default function AssistantPwa(props: AssistantPwaProps) {
                     renderCodeVersion: (version) => (
                       <AssistantLiveProvider value={liveHub}>
                         <AssistantCodeVersionCard
+                          store={codeVersionCards}
                           {...version}
                           timeZone={props.timeZone}
                           onAsk={(text) => void send({ intent: "send", text, attachments: [] }, false)}

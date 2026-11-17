@@ -47,23 +47,7 @@ export function approvalFixture(state: ApprovalState, locale = "de"): CodeVersio
       commentCount: 0,
       activeVersion: null,
     },
-    words: {
-      versionId,
-      number: 1,
-      submittedAt: "2026-11-17T08:00:00.000Z",
-      locale,
-      description: { state: "visible", text: null, modelLabel: "" },
-      assurance: "",
-      mayDo: {
-        items: [{ text: de ? "liest Mails" : "reads mail" }, { text: de ? "legt Dateien ab" : "stores files" }],
-        more: 0,
-        moreText: null,
-      },
-      timing: { items: [{ text: de ? "stündlich" : "hourly" }], more: 0, moreText: null },
-      changes: { state: "first", text: "", rows: { items: [], more: 0, moreText: null }, assurance: "" },
-      examples: { state: "passed", passed: 2, total: 2, summary: "", explanation: "", items: [] },
-      notices: { items: [], more: 0, moreText: null },
-    },
+    facts: de ? ["liest Mails", "legt Dateien ab", "stündlich"] : ["reads mail", "stores files", "hourly"],
     code: { state: "draft", activeVersionId: null },
     pages: { versionId, homeUrl: null, pages: [] },
     latest: null,
@@ -122,4 +106,53 @@ export function approvalModel(state: ApprovalState, locale = "de") {
     nextRun: "2026-11-17T09:00:00.000Z",
     canAsk: true,
   });
+}
+
+/** The public batch response, stripped to its transport contract. */
+export function approvalSnapshot(
+  state: ApprovalState = "ready",
+  locale = "de",
+): import("@k2b/cloud/contracts/code-version-cards").CodeVersionCardSnapshot {
+  const value = approvalFixture(state, locale),
+    p = value.preview,
+    r = value.review;
+  return {
+    preview: {
+      codeId: p.codeId,
+      versionId: p.versionId,
+      number: p.number,
+      title: p.title,
+      ownerKind: p.ownerKind,
+      page: p.page ?? null,
+      running: p.running,
+      latest: p.latest,
+      activated: p.activated,
+      allowed: p.allowed,
+      readiness: p.readiness,
+    },
+    review: r
+      ? {
+          status: r.status,
+          origin: r.origin,
+          decidedBy: r.decidedBy,
+          message: r.message,
+          commentCount: r.commentCount,
+          revision: r.revision
+            ? { state: r.revision.state, reason: r.revision.reason, submittedNumber: r.revision.submittedNumber ?? null }
+            : null,
+        }
+      : null,
+    facts: value.facts,
+    code: {
+      state: value.code!.state,
+      activeVersionId: value.code!.activeVersionId,
+      pausedAt: value.code!.pausedAt ?? null,
+      pausedBy: value.code!.pausedBy ?? null,
+    },
+    pages: value.pages,
+    latest: value.latest,
+    permission: "editor",
+    canActivate: true,
+    canManage: true,
+  };
 }

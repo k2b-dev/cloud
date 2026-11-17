@@ -29,6 +29,7 @@ import type { Code } from "./contracts";
 import * as explanations from "./read-model/explanation";
 import { CODE_SETTINGS, codeSettings } from "./settings";
 import { codeBundleHash, codeSourceHash, findCode, insertCodeRun, readCode } from "./store";
+import { readCodeVersionCards } from "./version-cards";
 import { submitCodeVersion } from "./versions";
 
 const fixed = new Date("2026-10-31T12:00:00.000Z");
@@ -176,6 +177,67 @@ databaseSuite()("durable Code activation", () => {
     return activateCodeVersion({ codeId: code.id, versionId, activationId: crypto.randomUUID() }, ctx);
   }
   const status = (code: Code, id: string) => readCodeActivation({ codeId: code.id, activationId: id }, owner);
+  test("a batch of N displayed versions and a targeted invalidation have a fixed SQL budget, without detail refreshes", async () => {
+    const code = await newCode();
+    const saved: Array<{ codeId: string; versionId: string }> = [];
+    let base: string | null = null;
+    for (let n = 0; n < 6; n++) {
+      const receipt = await version(code, [], base);
+      base = receipt.version.id;
+      saved.push({ codeId: code.id, versionId: base });
+    }
+    await sql`UPDATE code.codes SET active_version_id=${base}::uuid,state='active' WHERE id=${code.id}`;
+    const meter = await meterSql();
+    try {
+      for (const versions of [saved.slice(0, 1), saved, saved]) {
+        const statements = await meter.during(async () => {
+          const result = await readCodeVersionCards(
+            { versions, knownPages: versions === saved ? saved.map((v) => v.versionId) : [] },
+            owner,
+          );
+          expect(result.items).toHaveLength(versions.length);
+          expect(result.items.every((item) => item.state === "available")).toBe(true);
+        });
+        // One Code read, its shares + effective permission, one version projection. No SQL per historical card.
+        expect(statements).toHaveLength(4);
+        expect(statements.some((statement) => /UPDATE|code\.calls|code\.runs|rsql/i.test(statement))).toBe(false);
+      }
+    } finally {
+      await meter.close();
+    }
+  });
+  test("version-card rights matrix: owner, reader, admin view, shared chat and revoked rights", async () => {
+    const code = await newCode();
+    const saved = await version(code, []);
+    await sql`UPDATE code.versions SET manifest=jsonb_set(manifest,'{entrypoints}',${JSON.stringify([
+      { kind: "route", entrypoint: "home", file: "code.ts", line: 1, route: { method: "GET", path: "/", public: false, page: true } },
+    ])}::text::jsonb) WHERE id=${saved.version.id}::uuid`;
+    const versions = [{ codeId: code.id, versionId: saved.version.id }];
+    const [grant] = await sql<
+      { id: string }[]
+    >`INSERT INTO auth.access(user_id,permission) VALUES(${nextOwnerId}::uuid,'read') RETURNING id`;
+    await sql`INSERT INTO code.shares(code_id,access_id) VALUES(${code.id},${grant!.id}::uuid)`;
+    const read = (ctx: CodeContext) => readCodeVersionCards({ versions }, ctx).then((result) => result.items[0]!);
+    expect(await read(owner)).toMatchObject({ state: "available", snapshot: { permission: "editor", canManage: true } });
+    expect(await read(context(nextOwnerId))).toMatchObject({
+      state: "available",
+      snapshot: {
+        permission: "reader",
+        canManage: false,
+        review: { message: null, origin: { kind: "cli" } },
+        pages: { pages: [{ isRoot: true }] },
+      },
+    });
+    expect(await read(administrator)).toMatchObject({ state: "available", snapshot: { permission: "reader", canManage: false } });
+    await sql`DELETE FROM code.shares WHERE access_id=${grant!.id}::uuid`;
+    // Seeing a reference in a shared conversation is no Code grant, and neither is a previous successful read.
+    expect(await read(context(nextOwnerId))).toEqual({ ...versions[0]!, state: "denied" });
+    const guest = context(ownerId);
+    if (guest.authority.actor.kind === "user") guest.authority.actor.user = { ...guest.authority.actor.user, profile: "guest" };
+    expect(await readCodeVersionCards({ versions, knownPages: [saved.version.id] }, guest)).toMatchObject({
+      items: [{ state: "available", snapshot: { pages: { pages: [], homeUrl: null } } }],
+    });
+  });
   test("SQL budget of an open approval card's initial preview and invalidation reload", async () => {
     const code = await newCode();
     const [rule] = await sql<{ value: string }[]>`SELECT value FROM code.policy_rules WHERE row='silent_draft' AND group_id IS NULL`;

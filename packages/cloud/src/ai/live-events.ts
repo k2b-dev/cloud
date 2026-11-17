@@ -26,6 +26,11 @@ export const AiInvalidationSchema = z
     conversationId: AiResourceIdSchema.nullable(),
     projectId: AiResourceIdSchema.nullable(),
     domains: z.array(AiInvalidationDomainSchema).min(1),
+    /** Code-scoped hint only; the covering read still authorizes every version. Absent on old events and resync. */
+    codeId: z
+      .string()
+      .regex(/^c_[a-z0-9]{4,16}$/)
+      .optional(),
     at: z.string().datetime(),
   })
   .strict();

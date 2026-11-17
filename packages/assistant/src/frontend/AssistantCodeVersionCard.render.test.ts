@@ -95,3 +95,14 @@ test("loading, denial, unreadable state and failure keep the same surface and of
     expect(model.primary?.id).not.toBe("activate");
   }
 });
+
+test("the real deferred card server-renders authorized operating state and pages, rather than a mount placeholder", async () => {
+  const { ApprovalSnapshotView } = await import("./code-version-card-ssr.test-fixture");
+  const { approvalSnapshot } = await import("./code-version-card.test-fixture");
+  const snapshot = approvalSnapshot("on");
+  const html = renderToString(() => createComponent(ApprovalSnapshotView, { initial: [{ codeId: snapshot.preview.codeId, versionId: snapshot.preview.versionId, state: "available", snapshot }] }));
+  expect(live(html, "status")).toBe("Version 1 ist eingeschaltet.");
+  expect(html).toContain("Öffnen");
+  expect(html).toContain("Weitere Seiten");
+  expect(html).not.toContain("Diese Version wird geladen");
+});

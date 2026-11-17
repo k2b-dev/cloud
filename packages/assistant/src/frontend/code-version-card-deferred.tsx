@@ -1,21 +1,25 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
-import { Button, NoticeCard, useLocale } from "@k2b/ui";
-import { type ComponentProps, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { type ComponentProps, createMemo, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { codeVersionCardMessages } from "./code-version-card-messages";
+import { useAssistantLive } from "./assistant-live";
+import { type CodeVersionCardAction, describeCodeVersionCard } from "./code-version-card-state";
+import { createCodeVersionCardStore } from "./code-version-card-store";
+import { CodeVersionCardView } from "./code-version-card-view";
 
 type CardProps = ComponentProps<typeof import("./AssistantCodeVersionCard").default>;
 const loadCard = () => import("./AssistantCodeVersionCard").then((module) => module.default);
 
-/**
- * The version card loads with its first use, so its code stays out of the workspace's first download. Until then it
- * holds the card's own room with the same placeholder the card shows while it reads its state, so nothing moves.
- */
+/** SSR and the first browser render use the same authorized snapshot; only the interaction controller is deferred. */
 export function AssistantCodeVersionCard(props: CardProps): JSX.Element {
   const locale = useLocale();
-  const t = () => codeVersionCardMessages.resolve([locale()]).t;
+  const store = props.store ?? createCodeVersionCardStore(useAssistantLive());
+  const ref = { codeId: props.codeId, versionId: props.versionId };
+  const release = store.retain(ref);
+  onCleanup(release);
   const [card, setCard] = createSignal<Awaited<ReturnType<typeof loadCard>>>();
   const [failed, setFailed] = createSignal(false);
+  const [initialAction, setInitialAction] = createSignal<CodeVersionCardAction["id"]>();
   let active = true;
   onCleanup(() => {
     active = false;
@@ -27,40 +31,34 @@ export function AssistantCodeVersionCard(props: CardProps): JSX.Element {
     if (loaded) setCard(() => loaded);
     else setFailed(true);
   };
+  const model = createMemo(() =>
+    describeCodeVersionCard({
+      value: failed() ? "failed" : store.read(ref),
+      version: props.number,
+      versionId: props.versionId,
+      locale: locale(),
+      timeZone: props.timeZone,
+      activation: { kind: "idle" },
+      nextRun: null,
+      canAsk: Boolean(props.onAsk),
+    }),
+  );
   onMount(() => void load());
   return (
     <Show
       when={card()}
       fallback={
-        <div class="assistant-code-version-host">
-          <NoticeCard
-            class="assistant-code-version"
-            tone="neutral"
-            icon="ti ti-shield-check"
-            layout="card"
-            data-k2b-primary="ai"
-            data-chat-anchor={`code-version-${props.versionId}`}
-            tabIndex={-1}
-            aria-busy={failed() ? undefined : "true"}
-            title={<span role={failed() ? "alert" : "status"}>{failed() ? t().lineNotLoaded : t().loading}</span>}
-            actions={
-              failed() ? (
-                <div class="assistant-code-version__actions">
-                  <div class="assistant-code-version__action">
-                    <Button size="md" variant="secondary" data-code-version-primary onClick={() => void load()}>
-                      {t().retry}
-                    </Button>
-                  </div>
-                </div>
-              ) : undefined
-            }
-          >
-            <p class="assistant-code-version__quiet">{""}</p>
-          </NoticeCard>
-        </div>
+        <CodeVersionCardView
+          model={model()}
+          anchorId={`code-version-${props.versionId}`}
+          onAction={(action) => {
+            setInitialAction(action);
+            void load();
+          }}
+        />
       }
     >
-      {(Card) => <Dynamic component={Card()} {...props} />}
+      {(Card) => <Dynamic component={Card()} {...props} store={store} initialAction={initialAction()} />}
     </Show>
   );
 }

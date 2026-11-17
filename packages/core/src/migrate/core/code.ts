@@ -204,11 +204,18 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     // Activation also runs without the optional version-review schema, so the base owns this function.
     // Invalidate the submitting person's card in the same transaction, independently of chat receipts.
     // A database without AI has no such viewers.
+    await tx`CREATE OR REPLACE FUNCTION code.enqueue_card_live(p_user_id UUID,p_code_id TEXT,p_domains TEXT[]) RETURNS void AS $$
+    BEGIN
+      IF p_user_id IS NULL OR to_regclass('ai.conversations') IS NULL THEN RETURN; END IF;
+      PERFORM events.enqueue(gen_random_uuid(),'core','live','u:' || p_user_id::text,
+        jsonb_build_object('v',1,'k','u:' || p_user_id::text,'d',jsonb_build_object(
+          'type','ai.invalidated','changeId',gen_random_uuid(),'conversationId',NULL,'projectId',NULL,
+          'codeId',p_code_id,'domains',to_jsonb(p_domains),
+          'at',to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))));
+    END $$ LANGUAGE plpgsql`.simple();
     await tx`CREATE OR REPLACE FUNCTION code.version_card_live() RETURNS TRIGGER AS $$
     BEGIN
-      IF to_regprocedure('ai.enqueue_live_for_user(uuid,uuid,text,text,text[])') IS NULL THEN RETURN NEW; END IF;
-      PERFORM ai.enqueue_live_for_user(gen_random_uuid(), (SELECT created_by FROM code.versions WHERE id=NEW.version_id),
-        NULL, NULL, ARRAY['code-versions']::text[]);
+      PERFORM code.enqueue_card_live((SELECT created_by FROM code.versions WHERE id=NEW.version_id),NEW.code_id,ARRAY['code-versions']::text[]);
       RETURN NEW;
     END $$ LANGUAGE plpgsql`.simple();
     await tx`ALTER TABLE code.codes ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ,

@@ -100,8 +100,14 @@ export const isPersonVisibleCapabilityQuery = (query: CapabilityQueryManifest): 
 export const isPersonVisibleCapabilityAction = (action: CapabilityActionManifest): boolean => !action.localId.startsWith("code.access.");
 
 type JsonSchema = Record<string, unknown>;
-/** Stays below the 512 KiB registry value limit (`CAPABILITY_REGISTRY_CONFIG`), which also holds the record around the manifest. */
-const MAX_CAPABILITY_MANIFEST_BYTES = 384 * 1024;
+/**
+ * CAPABILITY_REGISTRY_CONFIG caps the complete JSON record at 512 KiB (524,288 B).
+ * Measured with Core's complete presentation and the maximum 80-byte appId (2026-11-18):
+ * record minus manifest = 68,743 B. A 400 KiB manifest gives 409,600 + 68,743 = 478,343 B,
+ * leaving 45,945 B below the registry cap (112 KiB reserved for the whole envelope).
+ * Presentation varies by app; Sync still enforces the complete-record cap independently.
+ */
+const MAX_CAPABILITY_MANIFEST_BYTES = 400 * 1024;
 
 /**
  * The producer side of the shared manifest shape: an app registers exactly the fields and entries its

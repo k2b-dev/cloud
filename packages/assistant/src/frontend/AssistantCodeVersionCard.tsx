@@ -1,12 +1,8 @@
 import { useLocale } from "@k2b/ui";
-import { createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { loadCodeNextRun } from "../code-summary";
-import { matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { useAssistantLive } from "./assistant-live";
 import {
   type CodeVersionActivation,
-  loadCodeVersionPreview,
-  loadCodeVersionReview,
-  loadCodeVersionWords,
   pendingCodeVersionActivation,
   readCodeVersionActivation,
   requestCodeVersionAgain,
@@ -14,13 +10,11 @@ import {
   stopCodeReviewRevision,
   withdrawCodeVersion,
 } from "./code-activation";
-import { browserCodeInvoke } from "./code-client";
-import { loadCodeVersionCardContext, loadLatestCodeVersion } from "./code-version-card-data";
+import { type CodeVersionCardStore, createCodeVersionCardStore } from "./code-version-card-store";
 import { codeVersionCardMessages } from "./code-version-card-messages";
 import {
   type CodeVersionCardAction,
   type CodeVersionCardActivation,
-  type CodeVersionCardLoaded,
   describeCodeVersionCard,
 } from "./code-version-card-state";
 import { CodeVersionCardView } from "./code-version-card-view";
@@ -38,15 +32,16 @@ export default function AssistantCodeVersionCard(props: {
   versionId: string;
   number: number;
   timeZone: string;
+  store?: CodeVersionCardStore;
+  initialAction?: CodeVersionCardAction["id"];
   onActivated?: () => void;
   onAsk?: (text: string) => void;
 }) {
   const locale = useLocale();
   const live = useAssistantLive();
   const t = () => codeVersionCardMessages.resolve([locale()]).t;
-  const [loaded, setLoaded] = createSignal<CodeVersionCardLoaded | "failed" | "denied" | null>(null);
+  const store = props.store ?? createCodeVersionCardStore(live);
   const [activation, setActivation] = createSignal<CodeVersionCardActivation>({ kind: "idle" });
-  const [nextRun, setNextRun] = createSignal<string | null>(null);
   const [versionId, setVersionId] = createSignal(props.versionId);
   const [number, setNumber] = createSignal(props.number);
   const [actionError, setActionError] = createSignal<string | null>(null);
@@ -58,33 +53,10 @@ export default function AssistantCodeVersionCard(props: {
     clearTimeout(recheck);
   });
 
-  let reads = 0;
-  let newest: Promise<boolean> = Promise.resolve(true);
-  const load = (live = false): Promise<boolean> => {
-    const read = ++reads;
-    const id = versionId();
-    const run = (async (): Promise<boolean> => {
-      const [preview, review, words, context] = await Promise.all([
-        loadCodeVersionPreview(props.codeId, id),
-        loadCodeVersionReview(props.codeId, id),
-        loadCodeVersionWords(props.codeId, id),
-        loadCodeVersionCardContext(props.codeId, id),
-      ]);
-      const running = typeof preview === "object" && preview.running === preview.number;
-      const [next, latest] = await Promise.all([
-        running && context.code?.state === "active" ? loadCodeNextRun(browserCodeInvoke, props.codeId) : null,
-        typeof preview === "object" && preview.latest > preview.number ? loadLatestCodeVersion(props.codeId) : null,
-      ]);
-      if (disposed) return false;
-      if (read !== reads) return newest;
-      if (live && loaded() !== null && (preview === "failed" || (typeof preview === "object" && review === null))) return false;
-      setNextRun(next);
-      setLoaded(typeof preview === "object" ? { preview, review, words, ...context, latest } : preview);
-      return preview !== "failed" && (!running || context.code !== null);
-    })();
-    newest = run;
-    return run;
-  };
+  const ref = () => ({ codeId: props.codeId, versionId: versionId() });
+  const loaded = () => store.read(ref());
+  const load = () => store.refresh(ref());
+  createEffect(() => onCleanup(store.retain(ref())));
 
   // Lost responses resume the same durable attempt, including after a reload.
   let pending = pendingCodeVersionActivation(props.codeId, versionId());
@@ -214,16 +186,8 @@ export default function AssistantCodeVersionCard(props: {
     }
   };
   onMount(() => {
-    void load();
     if (pending.read()) void check();
-    onCleanup(
-      live.register({
-        matches: matchesAssistantInvalidation(["code-versions"]),
-        invalidate: async () => {
-          if (!(await load(true))) throw new Error("The Code version could not be read again.");
-        },
-      }),
-    );
+    else if (props.initialAction) onAction(props.initialAction);
   });
   const model = createMemo(() =>
     describeCodeVersionCard({
@@ -233,7 +197,7 @@ export default function AssistantCodeVersionCard(props: {
       locale: locale(),
       timeZone: props.timeZone,
       activation: activation(),
-      nextRun: nextRun(),
+      nextRun: null,
       canAsk: Boolean(props.onAsk),
       actionError: actionError(),
       actionBusy: actionBusy(),
