@@ -70,7 +70,7 @@ describe("Record history", () => {
     expect(plain).toContain("Mira Lang · Updated");
     // Without a person: the system or an anonymous actor; a deleted account keeps its own words.
     expect(plain).toContain("System or anonymous actor · Created");
-    expect(plain).toContain("Deleted user · Finalized");
+    expect(plain).toContain("Deleted user · Record finalized");
     // The avatar keeps one axis; redundant action icons stay out of the sentence.
     expect(html).not.toContain('<i class="ti ti-pencil"');
     expect(html).toContain("k2b-activity__avatar");
