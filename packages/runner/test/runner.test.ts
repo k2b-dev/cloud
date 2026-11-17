@@ -442,3 +442,45 @@ test("request leases return the checked response through completion; background 
     jest.useRealTimers();
   }
 });
+
+test("harden direct output submissions through the trusted runner transport", async () => {
+  const { CODE_OUTPUT_OPERATION, CODE_OUTPUT_INTERVAL_MS } = await import("@k2b/cloud/code");
+  jest.setSystemTime(NOW);
+  const mock = mockBridge([lease()]);
+  const sent: { at: number; dropped: number }[] = [];
+  mock.bridge.output = async ({ batch }) => {
+    sent.push({ at: Date.now(), dropped: batch.droppedLines });
+  };
+  let call: Parameters<RunnerEngine["load"]>[3] | undefined;
+  const runner = new Runner(mock.bridge, {
+    load: async (_lease, _source, _config, submit) => {
+      call = submit;
+    },
+    run: async () => {
+      if (!call) throw new Error("Missing bridge");
+      for (let seq = 1; seq <= 100; seq++)
+        await call(CODE_OUTPUT_OPERATION, {
+          seq,
+          entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "fixture" }],
+          droppedLines: 0,
+          droppedBytes: 0,
+        });
+      jest.setSystemTime(NOW + CODE_OUTPUT_INTERVAL_MS);
+      return "succeeded";
+    },
+    kill: async () => {},
+    close: async () => {},
+  });
+  const running = runner.start();
+  try {
+    await waitFor(() => mock.completions.length === 1);
+    expect(sent).toEqual([
+      { at: NOW, dropped: 0 },
+      { at: NOW + CODE_OUTPUT_INTERVAL_MS, dropped: 99 },
+    ]);
+  } finally {
+    runner.stop();
+    await running;
+    jest.useRealTimers();
+  }
+});

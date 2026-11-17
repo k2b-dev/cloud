@@ -22,6 +22,7 @@ import type { SQL } from "bun";
 import { z } from "zod";
 import { CodeDataError } from "./access";
 import { codeAiReferenceCost, codeAiReservesAttemptBudget, reserveCodeAiBudget, settleCodeAiBudget } from "./ai-budget";
+import { publishCodeCallHint } from "./live";
 import { codePolicyGroupRowsQuery, codePolicyGroupsFromRows, codePolicySnapshotFromRow, codePolicySnapshotQuery } from "./policy";
 import { codeOperationPolicyRow } from "./policy-contracts";
 import { effective } from "./policy-effective";
@@ -252,6 +253,18 @@ export function createCodeBridgeHost(
     let ordinal: number | undefined;
     let receiptTransactionId: string | undefined;
     let manifest: Awaited<ReturnType<typeof lockCall>>["manifest"] | undefined;
+    const hinted = new Set<number>();
+    const runningHint = async () => {
+      if (ordinal === undefined || hinted.has(ordinal)) return;
+      hinted.add(ordinal);
+      await publishCodeCallHint(call.claims.codeId, {
+        type: "code.call",
+        runId: call.claims.runId,
+        ordinal,
+        operation: call.call.capability,
+        state: "running",
+      });
+    };
     // The dispatcher's signer transaction owns admission and the durable receipt.
     // It commits before transport. Local/AI/file paths still record up front.
     const deferredReceipt =
@@ -284,6 +297,7 @@ export function createCodeBridgeHost(
       }
     };
     if (!deferredReceipt) ({ ordinal, manifest, receiptTransactionId } = await sql.begin((tx) => recordReceipt(tx)));
+    if (!deferredReceipt) await runningHint();
     let response: Response;
     let refusalKind: CodeBridgeRefusalKind = "bridge";
     let replayed = false;
@@ -385,6 +399,7 @@ export function createCodeBridgeHost(
           return mandates.withIssueAuthority(input, (authority) => use({ ...authority, trigger }), options);
         };
         response = await execution.capability({
+          onReceiptCommitted: runningHint,
           consumeFileRef: (digest) =>
             sql.begin(async (tx) => {
               await authorizeCodeCall(call, tx);
@@ -433,6 +448,7 @@ export function createCodeBridgeHost(
     // signer transaction rolled its receipt back, so verify it before completion.
     if (ordinal === undefined) {
       ({ ordinal, manifest, receiptTransactionId } = await sql.begin((tx) => recordReceipt(tx)));
+      await runningHint();
       // Dispatch can refuse an invalid shape before requesting issuance. Preserve
       // the host's declared-coordinate error and durable refusal in that path too.
       if (deferredReceipt) {
@@ -494,10 +510,19 @@ export function createCodeBridgeHost(
         // A signer abort/failed commit invalidated the in-memory ordinal. Record
         // this failure afresh, without touching a different call that reused it.
         const receipt = await sql.begin((tx) => recordReceipt(tx));
+        ordinal = receipt.ordinal;
+        await runningHint();
         await complete(sql, receipt.ordinal, receipt.receiptTransactionId);
       }
     }
     if (call.kind === "action" && success && !replayed) aiLive.wake();
+    await publishCodeCallHint(call.claims.codeId, {
+      type: "code.call",
+      runId: call.claims.runId,
+      ordinal,
+      operation: call.call.capability,
+      state: success ? "succeeded" : "failed",
+    });
     return response;
   };
   return {

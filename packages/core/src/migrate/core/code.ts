@@ -79,6 +79,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       CHECK (octet_length(input::text) <= payload_bytes AND (output IS NULL OR octet_length(output::text) <= 262144))
     )`.simple();
     // Only digests, scoped to the run; bounded by its call budget and removed with run retention.
+    await tx`ALTER TABLE code.runs ADD COLUMN IF NOT EXISTS console_output JSONB`.simple();
     await tx`CREATE TABLE IF NOT EXISTS code.file_redemptions (
       run_id UUID NOT NULL REFERENCES code.runs(id) ON DELETE CASCADE,
       digest TEXT NOT NULL CHECK (digest ~ '^[a-f0-9]{64}$'),

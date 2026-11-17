@@ -5,7 +5,7 @@ section: Platform services
 order: 965
 description: Start Code, understand retry and schedule outcomes, and read the recorded calls.
 tags: [code, runs, schedules, runner]
-updated: 2026-11-07
+updated: 2026-11-17
 ---
 
 # Code runs
@@ -267,3 +267,112 @@ An unavailable owner reader leaves its claim to expire. Automatic retry retains
 the original deadline and consumes the next attempt in the configured budget.
 This uses `checkCodeOwnerBeforeRun(code)`; its optional signal cancels the owner
 transport request.
+
+## Follow calls and console output
+
+The `code` channel on `/api/ai/live` carries only run state. Readers receive
+no call hints or console output. The separate `codeDetails` channel accepts
+`{ codeId }` and authorizes Code editors, including administrators of the
+owning resource. Being a Cloud administrator alone does not grant access to
+these contents. Revocation and credential scopes apply to both channels.
+
+After committing a call receipt, Core publishes a `code.call` hint with
+`runId`, `ordinal`, `operation` and `state`. Completion publishes another
+hint after committing the result. Hints contain no inputs, results, names or
+links. They cost no SQL; reload the authorized run snapshot after reconnect
+or completion. The page's SSR `operationLabels` supplies `running` and `done`
+strings from the operation catalog before subscribing. Values that require
+actual results are resolved when the run ends.
+
+A Code invocation gets its own `console.log`, `info`, `debug`, `warn` and
+`error`. Uncaught sandbox errors include their text and stack in this output.
+Core removes terminal escapes, controls and direction marks, and replaces
+recognized echoes of secrets used by the attempt with `{ type: "secret",
+name }` parts. Other parts are `{ type: "text", text }`. Render text parts
+with text nodes, and secret parts by name; never use HTML or a terminal
+interpreter. The replacement spellings match HTTP response redaction,
+including supported encodings.
+
+Cloud hides known secret values in output to protect against accidental
+printing. Code that deliberately changes a secret before printing it can
+still reveal it. Only authorized Code editors can view the output.
+
+Possible secret prefixes wait in a bounded, encrypted
+redaction buffer across lines and bundles. An unresolved final fragment becomes
+a named secret marker; deferred fragments can be combined into one entry with the original timestamp and level.
+
+`core.code.run.read` returns `contents.consoleOutput` on the first call page
+(`cursor: 0`), or `null` on later pages. Readers still get `contents: null`.
+A queued retry retains the previous attempt's frozen output until the next attempt starts.
+The same permission-aware service serves API, CLI and agent calls. SSR exposes
+the window as `CodePageRunDetail.consoleOutput`.
+
+Stored snapshots and live deltas carry an `entries` array of structured records.
+The current discriminated record is:
+
+```ts
+type LogEntry = {
+  id: string, // stable within this run
+  kind: "log",
+  level: "log" | "info" | "debug" | "warn" | "error",
+  at: string, // ISO 8601 UTC timestamp captured by the invocation's console
+  text: Array<{ type: "text", text: string } | { type: "secret", name: string }>
+};
+```
+
+`console.log` produces `kind: "log", level: "log"`; the other console methods
+keep their level. `console.error` and uncaught errors with stacks use
+`level: "error"`. Multiline text produces entries with the same timestamp.
+The timestamp describes capture time, not trusted execution order; `generation`
+and `seq` order transport deltas. Core assigns each published log entry an
+`id` from its generation, delta sequence and position in that delta. The ID
+survives window eviction, snapshot reads and replay; it is not an author-supplied key.
+
+Readers retain unknown `kind` values as opaque objects in the same bounded
+window and skip their rendering. Use `isCodeOutputLogEntry` from
+`@k2b/cloud/code` before reading log fields. Malformed known entries are
+rejected. This extensible JSON format allows future kinds, including steps,
+without a database migration; no step API is available yet. In particular,
+future `kind: "step"` records can retain `id`, creation time `at`, `label`,
+optional `icon` and `description`, `status` (`pending`, `running`, `succeeded`,
+`failed` or `skipped`), and optional `startedAt`, `endedAt` and `message` for
+the result or reason in this same array. Current readers preserve those fields
+without interpreting step transitions. The later step implementation owns
+updates of the same step ID and the step lifecycle.
+
+At the RunLog display boundary, render named secret parts as text labels and
+map console `log`/`debug` to the display level `info`. Never pass raw HTML.
+Step descriptions and reasons will need the same text sanitization and secret
+redaction as log text before publication when step production is added.
+
+The window contains `generation`, `seq`, `entries`, `droppedLines` and
+`droppedBytes`. It keeps whole recent lines within the run's pinned
+`core.code.payload_bytes` budget (32 KiB by default), measured as UTF-8 JSON
+of the structured entries. Fixed metadata is outside that budget. Oversized
+lines, earlier lines displaced from the window, and excess batches contribute
+to the loss counters. `droppedLines` is the number needed for an “N earlier
+lines missing” notice. These counters describe dropped output, not execution
+failure. After a gap, Cloud can discard nearby entries conservatively while
+completing pending secret markers. Those additional losses also count here.
+
+Each raw bundle, including the runner's proof envelope, fits
+`LIVE_LIMITS.frameBytes`. The trusted supervisor joins submissions and waits at least the AI
+stream's existing snapshot interval between bundles; Core discards excess
+bundles and counts their lines and bytes. This cadence spans all attempts of
+the same run. Sanitized NATS deltas obey the same frame limit. `followCodeDetails` from `@k2b/cloud/ssr/code-live` requests a
+covering snapshot on admission, reconnect or a sequence gap. Apply deltas
+with `applyCodeOutputEvent` from `@k2b/cloud/code`; replace the window on a
+snapshot. The resync callback returns `CodeDetailPositions` for the currently
+observed active runs. Snapshot replacement and disposal remove old positions.
+Render only this bounded window, so the live, replayed and stored
+tails agree.
+
+Late arrivals replay the run's dedicated NATS topic. A shared cache repairs
+publication gaps or topic retention with a covering snapshot. Terminal
+settlement freezes output admission and stores the window once in the run
+row. Retry, visitor cancellation and owner deletion close the attempt fence
+too; retry retains a frozen snapshot until the next attempt starts. Output
+for every retained terminal run is stored once; output batches issue zero SQL. The row and its output expire together
+after 30 days. A new attempt starts a new output generation; output is not an
+execution journal. Loss of the shared cache can lose the active window.
+A forcibly terminated isolate can lose its last unflushed bundle.

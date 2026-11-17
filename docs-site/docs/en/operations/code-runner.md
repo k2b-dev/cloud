@@ -247,9 +247,9 @@ While a chat capability call awaits a reply, Core also polls the stored call
 result every 100 ms. This separate wait loop is not covered by the mailbox
 endpoint budget and remains an open measurement gap.
 
-Run lists and details in the Code page and `cld code runs` are snapshots, with
-no run-event stream. Child console output is discarded rather than delivered
-as log events. The Runner transport smoke test uses a stubbed Core and checks
+Code run lists and details have state hints and a separate editor-only call
+and console channel; `cld code runs` reads authorized snapshots. One-off chat
+job child console output follows its existing chat transport. The Runner transport smoke test uses a stubbed Core and checks
 reply chunk assembly; it provides no SQL budget for Core or providers. SQL
 budgets measure the Core bridge and database-backed paths separately.
 
@@ -356,7 +356,7 @@ The suite requires these results:
 | io_uring, namespace, mount, BPF, or pidfd bypass | `EPERM` |
 | Memory bomb; CPU loop | `memory_limit`; `stalled`; another organization continues |
 | Giant bridge input or result | `runner_bridge_unavailable`; oversized input never reaches the callback |
-| Giant return value or console output | Return and diagnostics discarded; none reach the job log, a growing pipe, or a file |
+| Giant return value or console output | Return discarded; console lines use the bounded private output channel with loss counters and never a growing pipe or process log |
 | Concurrent bridge flood | `runner_bridge_busy`; only the configured number admitted |
 | Sustained calls through real Core and Valkey | `code_rate_limited`, with bounded failed call observations |
 | Calls beyond the saved per-run budget | `code_call_limit`; observation count stops at the budget |
@@ -394,14 +394,16 @@ for the combined workerd and supervisor memory.
 Core and runner consumers import protocol types and strict schemas from
 `@k2b/cloud/code/runner`. `RUNNER_PATHS` names the private POST routes for
 configuration, run acquisition, bundle download, heartbeat, completion, and
-bridge calls. `RunnerBridge` is the mockable transport seam. Core implements
+bridge calls and console output. `RunnerBridge` is the mockable transport seam. Core implements
 the receiving side; the runner shell uses `CoreBridge` with real Ed25519 signatures.
 
 Each HTTP transmission, including retry, signs its exact method, path, and
-UTF-8 body through `signAppProof` from `@k2b/cloud/app-proof`. Core must verify
+UTF-8 body through `signAppProof` from `@k2b/cloud/app-proof`. For execution and enrollment, Core verifies
 the enrolled `runner` identity, current key state, installation, body digest,
 and fresh nonce before granting work. For run-scoped routes, it must also
 verify `RunnerLeaseProof` against the current run generation and deadline.
+The output-only route compares the token with its admission-pinned digest and shared lease cache
+instead of the SQL-backed app grant check; see the output boundary below.
 
 `RunnerFetchRequest` carries `instanceId` and `freeSlots`.
 `RunnerFetchResponse` contains `RunnerLease` values: immutable code/version,
@@ -644,3 +646,66 @@ contracts before upgrading Core; older strict validators reject the added field.
 Names for additional grant targets require independent viewer-authorized reader
 composition at the consuming page. The one-child-Query limit and runner settings
 are unchanged.
+
+## Code output boundary and rollout
+
+Cloud hides known secret values in output to protect against accidental
+printing. Code that deliberately changes a secret before printing it can
+still reveal it. Only authorized Code editors can view the output.
+
+Update Core and Runner together before enabling console output consumers.
+Core's Code migration adds `code.runs.console_output`; the signed runner
+protocol adds `/_internal/code/runner/output`. A run's console stays inside
+its dynamic workerd isolate and uses that run's existing bridge binding.
+Saved windows and live deltas use the same structured `entries` records
+(`kind`, `id`, `level`, `at`, `text`); see the [output contract](/en/docs/platform/code-runs#follow-calls-and-console-output).
+Readers retain unknown entry kinds in their bounded window and skip rendering them,
+so adding a future kind does not require a storage migration.
+Several runs may share a workerd process: process stderr is never a source
+for this feature.
+
+Sandbox-originated console text and uncaught error stacks now cross one
+additional boundary: the separate output request with its Core-issued run
+lease token. The supervisor holds that token; sandbox code never receives it.
+This route authorizes output only. Enrollment, execution and heartbeats still
+check the runner app proof; the output route avoids that SQL-backed check per
+bundle. Revoking a runner stops its next heartbeat, and its output permission
+expires with the last admitted lease. Core compares the token with its digest
+pinned after durable admission and checks the issued generation and shared
+lease expiry cache. This avoids identity settings or signing-key reads on the
+output path. Core removes unsafe text, redacts known secret echoes, and bounds
+the window before publishing. Heartbeats refresh that cache only after
+the durable lease check commits. Expiry, retry, visitor cancellation, owner deletion, a newer generation or
+terminal settlement closes the attempt output fence. A heartbeat or delayed
+admission does not reopen a closed attempt. Revocation of execution authority continues
+to be checked on the normal bridge and heartbeat paths. The terminal report
+still carries only an outcome and never exception text. Host and provider
+exceptions still do not enter the sandbox as raw text.
+
+No new setting is introduced. `core.code.payload_bytes` also bounds the
+structured console window, pinned when the run is admitted. Reducing this
+setting reduces retained console output as well as accepted input sizes.
+The same admitted byte budget bounds encrypted, deduplicated HTTP redaction
+entries. Further secret-bearing requests are refused with
+`code_http_output_redaction_limit` if their required entries cannot fit;
+existing entries stay available for the attempt. Compiled matching state is
+reused until those entries change. Unresolved prefixes remain encrypted and
+bounded by the longest replacement; finalization emits named markers. Known
+output gaps also complete pending markers and can discard nearby entries
+conservatively; the loss counters include those additional entries. Queued
+retries retain the frozen attempt window until the next attempt starts.
+`LIVE_LIMITS.frameBytes` is the bundle limit, and the existing AI snapshot
+interval supplies the console bundling cadence. The trusted supervisor
+aggregates excess lines into loss counters before HTTP. Core counts and discards
+excess bundles before redaction, updating only bounded counters. One shared output topic uses the AI stream's existing
+15-minute / 256-MiB broker retention budget; it is partitioned by run.
+
+The output hot path uses NATS and Valkey, with no SQL per line or bundle.
+Final settlement performs one guarded output update. Valkey holds the bounded
+active window and encrypted, attempt-scoped HTTP secret replacement spellings;
+they expire after the run deadline plus the topic retention interval. A cache
+failure refuses secret-bearing HTTP dispatch rather than losing its redaction
+set. Terminal settlement retries if its snapshot cannot be frozen. Monitor
+`code_output_live_unavailable`, `code_output_replay_unavailable`, `code_output_busy` and
+`code_call_hint_unavailable`; the authorized snapshot repairs missed live
+notifications. Saved output follows the run's 30-day deletion policy.

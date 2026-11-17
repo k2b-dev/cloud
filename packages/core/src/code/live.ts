@@ -1,4 +1,6 @@
+import { type CodeCallEvent, CodeCallEventSchema, codeDetailsKey } from "@k2b/cloud/code";
 import type { LiveViewer } from "@k2b/cloud/events";
+import { defineLive } from "@k2b/cloud/events";
 import { z } from "zod";
 import { codeLiveReaders } from "./access";
 import { CodeIdSchema } from "./contracts";
@@ -6,6 +8,17 @@ import { findCode } from "./store";
 
 /** Served beside `user` on Core's socket. SQL is confined to admission, access changes and reauthorize sweeps. */
 export const codeLiveChannels = {
+  codeDetails: {
+    eventOnly: true as const,
+    reauthorize: true as const,
+    scope: z.object({ codeId: CodeIdSchema }).strict(),
+    keys: async ({ codeId }: { codeId: string }) => [codeDetailsKey(codeId)],
+    accessKey: (key: string) => key.slice("code.details:".length),
+    authorize: async (key: string, viewers: readonly LiveViewer[]) => {
+      const code = await findCode(key.slice("code.details:".length));
+      return code ? codeLiveReaders(code, viewers, undefined, true) : new Set<string>();
+    },
+  },
   code: {
     eventOnly: true as const,
     reauthorize: true as const,
@@ -17,3 +30,14 @@ export const codeLiveChannels = {
     },
   },
 };
+
+const details = defineLive({ appId: "core", event: CodeCallEventSchema });
+/** A hint failure cannot undo a committed call or prevent its external effect. */
+export async function publishCodeCallHint(codeId: string, event: CodeCallEvent) {
+  try {
+    await details.publishTransient({ key: codeDetailsKey(codeId), data: event });
+  } catch {
+    // Keep the observation path SQL-free even when NATS is unavailable. No exception or payload text.
+    console.warn("code_call_hint_unavailable", { runId: event.runId });
+  }
+}

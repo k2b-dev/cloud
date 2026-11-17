@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import * as cloud from "@k2b/cloud";
 import { codeOwnerDeleted, sql } from "@k2b/cloud";
+import { RunnerLeaseLostError } from "@k2b/cloud/code/runner";
 import type { CapabilityExecutionContext, User } from "@k2b/cloud/contracts";
 import { accounts } from "@k2b/cloud/services";
 import { z } from "zod";
@@ -10,6 +11,7 @@ import {
   invokeCompiledCapability,
   codeOwnerProofs as proofs,
 } from "../../../../scripts/fixtures/code-platform";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import type { MailRequestContext } from "../../../mail/src/service/auth";
 import { migrate as migrateCode } from "../migrate/core/code";
@@ -25,6 +27,7 @@ import {
   processCodeCleanupJob,
   processCodeOwnerDeleted,
 } from "./lifecycle";
+import { openCodeOutput, receiveCodeOutput, replayCodeOutput } from "./output";
 import { checkCodeOwnerBeforeRun } from "./owner-check";
 import * as transport from "./owner-transport";
 import { CODE_SETTINGS, codeSettings } from "./settings";
@@ -134,7 +137,11 @@ async function drainDeletion() {
   for (const row of await codeDeletionOutbox.claim()) await codeDeletionOutbox.dispatch(row);
 }
 
-suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces", () => {
+suiteFor(
+  "database",
+  "nats",
+  "valkey",
+)("Code owner lifecycle across Mail, Core and Spaces", () => {
   let settingsSpy: ReturnType<typeof spyOn<typeof codeSettings, "get">>;
   const removed: string[] = [];
   let removeFails = false;
@@ -203,6 +210,39 @@ suiteFor("database", "nats")("Code owner lifecycle across Mail, Core and Spaces"
     expect(removed).toContain(codeDatabaseNamespace(f.id));
   });
 
+  test("harden owner deletion with the attempt fence and retained output snapshot", async () => {
+    const user = await person(),
+      f = await fixture(user);
+    await sql`UPDATE code.runs SET state='running',generation=1,lease_expires_at='2030-01-02T00:00:00Z',deadline_at='2030-01-02T00:00:00Z' WHERE id=${f.runId}::uuid`;
+    const proof = { runId: f.runId, generation: 1, token: "fixture-lifecycle-proof" };
+    const deadlineAt = Date.UTC(2030, 0, 2);
+    await openCodeOutput({ ...proof, codeId: f.id, deadlineAt, leaseExpiresAt: deadlineAt }, 32768);
+    await receiveCodeOutput(proof, {
+      seq: 1,
+      entries: [{ kind: "log", at: new Date().toISOString(), level: "log", text: "before owner deletion" }],
+      droppedLines: 0,
+      droppedBytes: 0,
+    });
+    expect((await deleteMailbox(context(user), f.mailboxId)).ok).toBe(true);
+    const meter = await meterSql();
+    try {
+      const statements = await meter.during(() => deliver());
+      expect(statements.filter((statement) => statement.includes("UPDATE code.runs SET console_output="))).toHaveLength(1);
+    } finally {
+      await meter.close();
+    }
+    const [run] = await sql<
+      { state: string; console_output: unknown }[]
+    >`SELECT state,console_output FROM code.runs WHERE id=${f.runId}::uuid`;
+    expect(run!.state).toBe("cancelled");
+    expect(run!.console_output).toEqual(await replayCodeOutput(f.runId));
+    expect(run!.console_output).not.toBeNull();
+    await expect(receiveCodeOutput(proof, { seq: 2, entries: [], droppedLines: 0, droppedBytes: 0 })).rejects.toBeInstanceOf(
+      RunnerLeaseLostError,
+    );
+    await drainDeletion();
+    expect(await sql`SELECT id FROM code.runs WHERE id=${f.runId}::uuid`).toHaveLength(0);
+  });
   test("direct Code deletion retries remote DB cleanup before dropping its mapping", async () => {
     const user = await person(),
       f = await fixture(user);

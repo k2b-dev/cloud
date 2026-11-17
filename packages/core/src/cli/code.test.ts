@@ -782,6 +782,24 @@ test("runs retain reader redaction and paginate ordered call metadata", async ()
 Laufinhalte erfordern Bearbeitungsrechte."
 `);
   const contents = {
+    consoleOutput: {
+      generation: 1,
+      seq: 1,
+      entries: [
+        {
+          id: "1:1:0",
+          kind: "log",
+          at: "2030-01-02T00:00:00.000Z",
+          level: "log",
+          text: [
+            { type: "text", text: "Started " },
+            { type: "secret", name: "TOKEN" },
+          ],
+        },
+      ],
+      droppedLines: 0,
+      droppedBytes: 0,
+    },
     firstRefusedCall: null,
     input: null,
     output: null,
@@ -805,12 +823,16 @@ Laufinhalte erfordern Bearbeitungsrechte."
     ],
     nextCursor: 2,
   };
+  const first = context(["runs", directory], { run: uuid }, "json", () => Response.json({ version: 1, run: runMetadata, contents }));
+  expect(await code.run(first.ctx)).toBe(0);
+  expect(first.printed).toEqual([{ version: 1, run: runMetadata, contents }]);
+  const later = { ...contents, consoleOutput: null };
   const editor = context(["runs", directory], { run: uuid, "call-cursor": "1" }, "json", () =>
-    Response.json({ version: 1, run: runMetadata, contents }),
+    Response.json({ version: 1, run: runMetadata, contents: later }),
   );
   expect(await code.run(editor.ctx)).toBe(0);
   expect(editor.requests[0]?.input.cursor).toBe(1);
-  expect(editor.printed).toEqual([{ version: 1, run: runMetadata, contents }]);
+  expect(editor.printed).toEqual([{ version: 1, run: runMetadata, contents: later }]);
 });
 test("secret file values never enter argv, output or error details, even when remote errors echo them", async () => {
   const { root, directory } = await project();

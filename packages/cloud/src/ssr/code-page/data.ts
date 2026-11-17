@@ -1,6 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { z } from "zod";
 import type { CapabilityClientResult, CapabilityInvocation } from "../../capabilities/types";
+import { type CodeOutputWindow, CodeOutputWindowSchema } from "../../code/output";
 import type { CloudResourceRef } from "../../contracts/capabilities";
 import { CODE_BRIDGE_REFUSAL_KINDS, type CodeBridgeRefusalKind } from "../../contracts/code-call";
 import { CodeInternetOriginsSchema } from "../../contracts/code-internet";
@@ -155,6 +156,7 @@ export const RunReadSchema = z.object({
   contents: z
     .object({
       input: z.json(),
+      consoleOutput: CodeOutputWindowSchema.nullable().optional(),
       inputChunked: z.boolean(),
       content: z.object({ text: z.string(), nextOffset: z.number().int().nullable() }).nullable(),
       calls: z.array(CallSchema),
@@ -303,6 +305,7 @@ export type CodePageCall = {
   summary: string | null;
 };
 export type CodePageRunDetail = {
+  consoleOutput?: CodeOutputWindow | null;
   run: CodePageRun;
   /** Null for readers: they see when and how a run ended, never its contents. */
   calls: CodePageCall[] | null;

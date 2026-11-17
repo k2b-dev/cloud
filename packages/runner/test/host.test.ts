@@ -4,10 +4,15 @@ import { expect, test } from "bun:test";
 const source = await Bun.file(new URL("../src/assets/host.js", import.meta.url)).text();
 const { Cloud } = await import(
   `data:text/javascript;base64,${Buffer.from(
-    source.replace(
-      'import { WorkerEntrypoint } from "cloudflare:workers";',
-      "class WorkerEntrypoint { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }",
-    ),
+    source
+      .replace(
+        'import consoleSource from "console-source";',
+        `const consoleSource = ${JSON.stringify(await Bun.file(new URL("../src/assets/console.js", import.meta.url)).text())};`,
+      )
+      .replace(
+        'import { WorkerEntrypoint } from "cloudflare:workers";',
+        "class WorkerEntrypoint { constructor(ctx, env) { this.ctx = ctx; this.env = env; } }",
+      ),
   ).toString("base64")}`
 );
 

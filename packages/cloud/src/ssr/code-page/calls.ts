@@ -47,6 +47,7 @@ export const loadCodeRunCalls = async (
   input: unknown;
   inputTooLarge: boolean;
   readable: boolean;
+  consoleOutput: NonNullable<z.infer<typeof RunReadSchema>["contents"]>["consoleOutput"] | null;
   /** The run's first target refusal with its target, for editors; null otherwise. */
   firstRefusedCall: NonNullable<z.infer<typeof RunReadSchema>["contents"]>["firstRefusedCall"] | null;
 } | null> => {
@@ -57,7 +58,8 @@ export const loadCodeRunCalls = async (
   if (!first?.ok) return null;
   const contents = first.data.data.contents;
   const run = first.data.data.run;
-  if (!contents) return { run, calls: [], next: null, input: null, inputTooLarge: false, readable: false, firstRefusedCall: null };
+  if (!contents)
+    return { run, calls: [], next: null, input: null, inputTooLarge: false, readable: false, consoleOutput: null, firstRefusedCall: null };
   const calls: CodePageCall[] = [];
   let next: number | null = null;
   for (const page of pages) {
@@ -92,6 +94,7 @@ export const loadCodeRunCalls = async (
     input: contents.inputChunked ? null : contents.input,
     inputTooLarge: contents.inputChunked,
     readable: true,
+    consoleOutput: contents.consoleOutput ?? null,
     firstRefusedCall: contents.firstRefusedCall ?? null,
   };
 };
